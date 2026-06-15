@@ -40,13 +40,18 @@ def main():
 
     session = ChatSession(config["default_system_prompt"], config)
     modo_diagnostico = 0
-    modo_agente = False
+    modo_agente = True
 
     # Inicializa o orquestrador uma única vez com as skills
     from agent.orchestrator import Orchestrator
     from agent.skills import load_all_skills
     skills = load_all_skills()
-    orchestrator = Orchestrator(session, skills)
+    orchestrator = Orchestrator(session, skills, verbose=(modo_diagnostico >= 1))
+
+    # Injeta o orquestrador nas skills que precisam
+    for skill in skills:
+        if hasattr(skill, 'orchestrator'):
+            skill.orchestrator = orchestrator
 
     print("=== CHAT INICIADO ===")
     exibir_menu()
@@ -146,6 +151,8 @@ def main():
             else:
                 modo_diagnostico = 0
                 print("🔧 Diagnóstico DESLIGADO.")
+            # 👇 LINHA NOVA: mantém o verbose do agente sincronizado
+            orchestrator.verbose = (modo_diagnostico >= 1)
             continue
 
         # ---- Comando /agent (toggle e execução avulsa) ----
@@ -167,6 +174,57 @@ def main():
                     session.add_assistant_message(resposta)
                 except KeyboardInterrupt:
                     print("\n⚠️ Agente interrompido.")
+            continue
+        # ---- Memória ----
+        if cmd.startswith("/remember"):
+            partes = texto.strip().split(maxsplit=2)
+            if len(partes) >= 3:
+                chave = partes[1]
+                valor = partes[2]
+                orchestrator.remember(chave, valor)
+                print(f"🧠 Lembrei: {chave} = {valor}")
+            else:
+                print("Uso: /remember chave valor")
+            continue
+
+        if cmd in ["/memory", "/memoria"]:
+            print("🧠 Memória da sessão:")
+            for section, content in orchestrator.memory.items():
+                if content:
+                    print(f"\n[{section}]")
+                    if isinstance(content, dict):
+                        for k, v in content.items():
+                            print(f"  {k}: {v}")
+                    elif isinstance(content, list):
+                        for item in content:
+                            print(f"  - {item}")
+            continue
+
+        if cmd in ["/forget", "/esquecer"]:
+            chave = input("Chave a esquecer: ").strip()
+            orchestrator.forget(chave)
+            print(f"🧠 Chave '{chave}' removida (se existia).")
+            continue
+
+        if cmd in ["/clearmemory", "/limpamemoria"]:
+            orchestrator.clear_memory()
+            print("🧠 Memória da sessão limpa.")
+            continue
+
+        if cmd in ["/save_memory", "/salvarmemoria"]:
+            caminho = input("Caminho (Enter para 'agent_memory.json'): ").strip()
+            if not caminho:
+                caminho = "agent_memory.json"
+            msg = orchestrator.save_memory_to_file(caminho)
+            print(f"💾 {msg}")
+            continue
+
+        if cmd in ["/load_memory", "/carregarmemoria"]:
+            caminho = input("Caminho (Enter para 'agent_memory.json'): ").strip()
+            if not caminho:
+                caminho = "agent_memory.json"
+            msg = orchestrator.load_memory_from_file(caminho)
+            print(f"📂 {msg}")
             continue
 
         # ---- Se modo agente ativo e não é comando, trata como objetivo ----

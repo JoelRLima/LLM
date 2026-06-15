@@ -9,6 +9,7 @@ SKILL_CONFIG = {
     "DirectoryListerSkill": {"base_dir": "."},
     "GrepSkill": {"base_dir": "."},
     "CodeAnalyzerSkill": {"base_dir": "."},
+    "SessionMemorySkill": {"orchestrator": None},
     "PythonExecutorSkill": {"timeout_seconds": 10},
 }
 
