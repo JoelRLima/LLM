@@ -18,10 +18,12 @@ def exibir_menu():
     print("  /clear   -> Limpa o histórico de conversas")
     print("  /save    -> Salva o histórico em um arquivo")
     print("  /load    -> Carrega o histórico de um arquivo")
+    print("  /agent   -> Ativa/desativa o modo agente (toggle)")
+    print("  /agent <objetivo> -> Executa um objetivo avulso no modo agente")
     print("  /debug   -> Alterna modo diagnóstico (desligado/normal/verbose)")
     print("  /help    -> Mostra esta ajuda")
     print("  exit     -> Encerra o programa")
-    print("(você também pode usar os comandos em português: /sistema, /prompt, /pensar, /limpar, /salvar, /carregar, /diagnostico, /ajuda, sair)")
+    print("(você também pode usar os comandos em português: /sistema, /prompt, /pensar, /limpar, /salvar, /carregar, /agente, /diagnostico, /ajuda, sair)")
 
 def obter_status_think(session):
     if session.thinking_budget > 0:
@@ -38,6 +40,13 @@ def main():
 
     session = ChatSession(config["default_system_prompt"], config)
     modo_diagnostico = 0
+    modo_agente = False
+
+    # Inicializa o orquestrador uma única vez com as skills
+    from agent.orchestrator import Orchestrator
+    from agent.skills import load_all_skills
+    skills = load_all_skills()
+    orchestrator = Orchestrator(session, skills)
 
     print("=== CHAT INICIADO ===")
     exibir_menu()
@@ -50,8 +59,10 @@ def main():
         elif modo_diagnostico == 2:
             diag_status = " [DIAG VERBOSE]"
 
+        agente_status = " [AGENTE]" if modo_agente else ""
+
         try:
-            texto = input(f"\n[Pensamento: {status_think}]{diag_status} > ")
+            texto = input(f"\n[Pensamento: {status_think}]{diag_status}{agente_status} > ")
         except (EOFError, KeyboardInterrupt):
             print("\n👋 Encerrando...")
             break
@@ -137,7 +148,38 @@ def main():
                 print("🔧 Diagnóstico DESLIGADO.")
             continue
 
-        # ---- Mensagem normal ----
+        # ---- Comando /agent (toggle e execução avulsa) ----
+        if cmd.startswith("/agent") or cmd.startswith("/agente"):
+            # Extrai possível objetivo
+            partes = texto.strip().split(maxsplit=1)
+            if len(partes) == 1:
+                # Sem argumentos: alterna o modo
+                modo_agente = not modo_agente
+                estado = "LIGADO" if modo_agente else "DESLIGADO"
+                print(f"🤖 Modo agente {estado}.")
+            else:
+                # Com argumentos: executa objetivo avulso (não altera o modo atual)
+                objetivo = partes[1]
+                print(f"🚀 Executando objetivo avulso: {objetivo}")
+                try:
+                    resposta = orchestrator.run(objetivo)
+                    print(f"\n🤖 Agente: {resposta}")
+                    session.add_assistant_message(resposta)
+                except KeyboardInterrupt:
+                    print("\n⚠️ Agente interrompido.")
+            continue
+
+        # ---- Se modo agente ativo e não é comando, trata como objetivo ----
+        if modo_agente and not texto.startswith("/"):
+            try:
+                resposta = orchestrator.run(texto)
+                print(f"\n🤖 Agente: {resposta}")
+                session.add_assistant_message(resposta)
+            except KeyboardInterrupt:
+                print("\n⚠️ Agente interrompido.")
+            continue
+
+        # ---- Mensagem normal (chat) ----
 
         session.add_user_message(texto)
 
@@ -155,7 +197,7 @@ def main():
 
         try:
             payload = session.build_payload()
-            resp = session.send_request(payload)
+            resp = session.send_request(payload, stream=True)
             resp.raise_for_status()
         except requests.exceptions.Timeout:
             print(f"\r❌ Erro: Tempo limite da requisição excedido.                    ")
@@ -184,7 +226,6 @@ def main():
         def on_raw_line(line_str):
             nonlocal chunk_count, spinner_ativo
             chunk_count += 1
-            # Spinner visual enquanto não chega conteúdo
             if not cabecalho_resposta_impresso and session.thinking_budget == 0:
                 if not spinner_ativo:
                     spinner_ativo = True
@@ -209,7 +250,6 @@ def main():
         def on_content_chunk(text):
             nonlocal cabecalho_resposta_impresso, spinner_ativo
             if not cabecalho_resposta_impresso:
-                # Limpa linha do spinner se necessário
                 if modo_diagnostico == 1:
                     print("\r" + " " * 50, end="", flush=True)
                 if spinner_ativo and session.thinking_budget > 0:
@@ -234,7 +274,6 @@ def main():
             "on_done": on_done
         }
 
-        # Inicia o indicador imediatamente (antes de receber qualquer chunk)
         if session.thinking_budget == 0:
             print("⏳ Gerando resposta...", end="", flush=True)
 
@@ -245,7 +284,6 @@ def main():
             resposta_visivel = ""
             resposta_interrompida = True
 
-        # ---- Pós-stream ----
         if modo_diagnostico >= 1 and ultimo_timings:
             prompt_n = ultimo_timings.get("prompt_n", "?")
             predicted_n = ultimo_timings.get("predicted_n", "?")

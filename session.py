@@ -78,12 +78,6 @@ class ChatSession:
     # ---- Construção de payloads ----
 
     def build_payload(self, response_format=None):
-        """
-        Monta o dicionário para a requisição POST.
-
-        Se `response_format` for fornecida, será anexada ao prompt do sistema
-        (apenas para esta requisição, sem alterar o histórico).
-        """
         system_content = self.get_effective_system_prompt()
         if response_format:
             system_content += "\n\n" + response_format
@@ -95,24 +89,26 @@ class ChatSession:
             "messages": payload_messages,
             "temperature": self.config["temperature"],
             "max_tokens": self.config["max_tokens"],
-            "stream": True
-        }
-        # Apenas inclui thinking se o orçamento for > 0
-        if self.thinking_budget > 0:
-            payload["chat_template_kwargs"] = {
-                "enable_thinking": True,
-                "thinking_budget": self.thinking_budget
+            "stream": True,
+            # Sempre incluir a configuração de pensamento para evitar comportamento automático
+            "chat_template_kwargs": {
+                "enable_thinking": self.thinking_budget > 0,
+                "thinking_budget": self.thinking_budget if self.thinking_budget > 0 else 0
             }
+        }
         return payload
 
     # ---- Envio de requisições ----
 
     def send_request(self, payload, stream=True):
-        """Envia a requisição POST e retorna o objeto response (streaming ou não)."""
+        """Envia a requisição POST e retorna o objeto response."""
+        # Garante que o payload tenha o campo stream conforme solicitado
+        payload_with_stream = {**payload, "stream": stream}
         return requests.post(
             self.config["api_url"],
-            json={**payload, "stream": stream},
-            timeout=self.config["timeout"]
+            json=payload_with_stream,
+            timeout=self.config["timeout"],
+            stream=stream  # necessário para iter_lines() funcionar corretamente
         )
 
     def send_non_streaming_request(self, payload):
@@ -170,7 +166,11 @@ class ChatSession:
                         callbacks["on_error"](erro_msg)
                     return ""
 
-                delta = chunk_data["choices"][0]["delta"]
+                choices = chunk_data.get("choices")
+                if not choices:
+                    continue
+
+                delta = choices[0].get("delta", {})
                 chunk_thinking = delta.get("reasoning_content") or ""
                 chunk_text = delta.get("content") or ""
 
