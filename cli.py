@@ -1,5 +1,6 @@
 import sys
 import json
+import itertools
 import requests
 from config import carregar_config
 from session import ChatSession
@@ -7,6 +8,7 @@ from session import ChatSession
 # ---- Constantes de UI ----
 
 NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
+SPINNER = itertools.cycle(["|", "/", "-", "\\"])
 
 def exibir_menu():
     print("\nComandos disponíveis:")
@@ -14,10 +16,12 @@ def exibir_menu():
     print("  /prompt  -> Mostra o System Prompt ativo")
     print("  /think   -> Liga/Desliga o pensamento")
     print("  /clear   -> Limpa o histórico de conversas")
+    print("  /save    -> Salva o histórico em um arquivo")
+    print("  /load    -> Carrega o histórico de um arquivo")
     print("  /debug   -> Alterna modo diagnóstico (desligado/normal/verbose)")
     print("  /help    -> Mostra esta ajuda")
     print("  exit     -> Encerra o programa")
-    print("(você também pode usar os comandos em português: /sistema, /prompt, /pensar, /limpar, /diagnostico, /ajuda, sair)")
+    print("(você também pode usar os comandos em português: /sistema, /prompt, /pensar, /limpar, /salvar, /carregar, /diagnostico, /ajuda, sair)")
 
 def obter_status_think(session):
     if session.thinking_budget > 0:
@@ -33,13 +37,12 @@ def main():
         sys.exit(1)
 
     session = ChatSession(config["default_system_prompt"], config)
-    modo_diagnostico = 0  # 0 = off, 1 = normal, 2 = verbose
+    modo_diagnostico = 0
 
     print("=== CHAT INICIADO ===")
     exibir_menu()
 
     while True:
-        # Status na linha de input
         status_think = obter_status_think(session)
         diag_status = ""
         if modo_diagnostico == 1:
@@ -56,9 +59,9 @@ def main():
         if not texto.strip():
             continue
 
-        # ---- Comandos ----
-
         cmd = texto.strip().lower()
+
+        # ---- Comandos ----
 
         if cmd in ["sair", "exit"]:
             break
@@ -96,6 +99,28 @@ def main():
             print("🧹 Histórico limpo!")
             continue
 
+        if cmd in ["/save", "/salvar"]:
+            caminho = input("Caminho do arquivo (ou Enter para 'chat_history.json'): ").strip()
+            if not caminho:
+                caminho = "chat_history.json"
+            sucesso, erro = session.save_to_file(caminho)
+            if sucesso:
+                print(f"💾 Histórico salvo em '{caminho}'.")
+            else:
+                print(f"❌ Erro ao salvar: {erro}")
+            continue
+
+        if cmd in ["/load", "/carregar"]:
+            caminho = input("Caminho do arquivo (ou Enter para 'chat_history.json'): ").strip()
+            if not caminho:
+                caminho = "chat_history.json"
+            sucesso, erro = session.load_from_file(caminho)
+            if sucesso:
+                print(f"📂 Histórico carregado de '{caminho}'.")
+            else:
+                print(f"❌ Erro ao carregar: {erro}")
+            continue
+
         if cmd in ["/help", "/ajuda"]:
             exibir_menu()
             continue
@@ -116,7 +141,6 @@ def main():
 
         session.add_user_message(texto)
 
-        # Modo verbose: mostra resumo do payload
         if modo_diagnostico == 2:
             payload_preview = session.build_payload()
             print("\n[DIAGNÓSTICO] Payload enviado:")
@@ -124,65 +148,72 @@ def main():
             preview["num_messages"] = len(payload_preview["messages"])
             print(json.dumps(preview, indent=2, ensure_ascii=False))
 
-        # ---- Envio da requisição ----
-
+        # ---- Envio unificado ----
         print("\n=== RESPOSTA ===")
-        if session.thinking_budget > 0:
-            print("🧠 [PENSAMENTO]:\n", end="", flush=True)
-        else:
-            print("⏳ Pensando...", end="", flush=True)
+        spinner_ativo = False
+        resposta_interrompida = False
 
-        resp = None
         try:
             payload = session.build_payload()
             resp = session.send_request(payload)
             resp.raise_for_status()
         except requests.exceptions.Timeout:
-            print(f"\n❌ Erro: Tempo limite da requisição excedido.")
+            print(f"\r❌ Erro: Tempo limite da requisição excedido.                    ")
             session.remove_last_user_message()
             continue
         except requests.exceptions.HTTPError:
-            status = resp.status_code if resp is not None else "?"
-            texto_erro = resp.text if resp is not None else ""
-            print(f"\n❌ Erro HTTP {status}: {texto_erro}")
-            if modo_diagnostico >= 1 and resp is not None:
+            status = resp.status_code if 'resp' in locals() and resp is not None else "?"
+            texto_erro = resp.text if 'resp' in locals() and resp is not None else ""
+            print(f"\r❌ Erro HTTP {status}: {texto_erro}                    ")
+            if modo_diagnostico >= 1 and 'resp' in locals() and resp is not None:
                 print(f"[DIAG] Headers: {resp.headers}")
                 print(f"[DIAG] Corpo completo: {resp.text}")
             session.remove_last_user_message()
             continue
         except Exception as e:
-            print(f"\n❌ Erro de conexão: {e}")
+            print(f"\r❌ Erro de conexão: {e}                    ")
             session.remove_last_user_message()
             continue
 
-        # ---- Processamento do stream ----
-
+        # ---- Callbacks para process_stream (unificado) ----
         chunk_count = 0
         cabecalho_resposta_impresso = False
         ultimo_timings = None
+        spinner_state = {"last_spin": 0}
 
         def on_raw_line(line_str):
-            nonlocal chunk_count
+            nonlocal chunk_count, spinner_ativo
             chunk_count += 1
+            # Spinner visual enquanto não chega conteúdo
+            if not cabecalho_resposta_impresso and session.thinking_budget == 0:
+                if not spinner_ativo:
+                    spinner_ativo = True
+                if chunk_count - spinner_state["last_spin"] >= 2:
+                    print(f"\r⏳ Gerando resposta... {next(SPINNER)}", end="", flush=True)
+                    spinner_state["last_spin"] = chunk_count
+
             if modo_diagnostico == 2 and line_str.strip():
                 print(f"\n[DIAG] Chunk {chunk_count}: {line_str[:300]}{'...' if len(line_str) > 300 else ''}")
             if modo_diagnostico == 1 and chunk_count % 5 == 0:
                 print(f"\r⏳ Recebendo... {chunk_count} chunks", end="", flush=True)
 
         def on_thinking_chunk(text):
-            nonlocal cabecalho_resposta_impresso
-            # Se já havia indicador de progresso, limpa
-            if modo_diagnostico == 1:
-                print("\r" + " " * 50, end="", flush=True)
+            nonlocal spinner_ativo, cabecalho_resposta_impresso
+            if not spinner_ativo:
+                if modo_diagnostico == 1:
+                    print("\r" + " " * 50, end="", flush=True)
+                print("🧠 [PENSAMENTO]:\n", end="", flush=True)
+                spinner_ativo = True
             print(text, end="", flush=True)
 
         def on_content_chunk(text):
-            nonlocal cabecalho_resposta_impresso
+            nonlocal cabecalho_resposta_impresso, spinner_ativo
             if not cabecalho_resposta_impresso:
+                # Limpa linha do spinner se necessário
                 if modo_diagnostico == 1:
                     print("\r" + " " * 50, end="", flush=True)
-                if session.thinking_budget > 0:
-                    print("\n\n🤖 [RESPOSTA FINAL]:\n", end="", flush=True)
+                if spinner_ativo and session.thinking_budget > 0:
+                    print("\n🤖 [RESPOSTA FINAL]:\n", end="", flush=True)
                 else:
                     print(f"\r🤖 [RESPOSTA]:{'':20}\n", end="", flush=True)
                 cabecalho_resposta_impresso = True
@@ -203,10 +234,18 @@ def main():
             "on_done": on_done
         }
 
-        resposta_visivel = session.process_stream(resp, callbacks)
+        # Inicia o indicador imediatamente (antes de receber qualquer chunk)
+        if session.thinking_budget == 0:
+            print("⏳ Gerando resposta...", end="", flush=True)
+
+        try:
+            resposta_visivel = session.process_stream(resp, callbacks)
+        except KeyboardInterrupt:
+            print("\r⚠️  Interrompido pelo usuário.                    ")
+            resposta_visivel = ""
+            resposta_interrompida = True
 
         # ---- Pós-stream ----
-
         if modo_diagnostico >= 1 and ultimo_timings:
             prompt_n = ultimo_timings.get("prompt_n", "?")
             predicted_n = ultimo_timings.get("predicted_n", "?")
@@ -215,13 +254,15 @@ def main():
             print(f"\n\n[DIAG] 📊 Tokens: prompt={prompt_n}, resposta={predicted_n}")
             print(f"[DIAG] ⏱️  Tempo: prompt={prompt_ms:.0f}ms, geração={predicted_ms:.0f}ms")
 
-        if not cabecalho_resposta_impresso:
+        if not cabecalho_resposta_impresso and not resposta_interrompida:
             print("\r⚠️  Sem resposta recebida.                    ")
 
         print("\n==========================")
 
-        if resposta_visivel:
+        if resposta_visivel and not resposta_interrompida:
             session.add_assistant_message(resposta_visivel)
+        elif resposta_interrompida:
+            print("ℹ️  Resposta interrompida. Sua mensagem anterior foi mantida no histórico.")
         else:
             print("ℹ️  A resposta veio vazia. Sua mensagem anterior foi mantida no histórico.")
 

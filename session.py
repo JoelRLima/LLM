@@ -26,13 +26,17 @@ class ChatSession:
             )
         return self.messages[0]["content"]
 
-    # ---- Histórico ----
+    # ---- Histórico (mensagens de qualquer role) ----
+
+    def add_message(self, role, content):
+        """Adiciona uma mensagem com role arbitrário (user, assistant, tool, function, etc.)."""
+        self.messages.append({"role": role, "content": content})
 
     def add_user_message(self, content):
-        self.messages.append({"role": "user", "content": content})
+        self.add_message("user", content)
 
     def add_assistant_message(self, content):
-        self.messages.append({"role": "assistant", "content": content})
+        self.add_message("assistant", content)
 
     def remove_last_user_message(self):
         """Remove a última mensagem do usuário (usado quando a requisição falha)."""
@@ -43,35 +47,89 @@ class ChatSession:
         """Mantém apenas o system prompt."""
         self.messages = [{"role": "system", "content": self.messages[0]["content"]}]
 
-    # ---- Construção do payload ----
+    # ---- Salvar / Carregar ----
 
-    def build_payload(self):
-        """Monta o dicionário para a requisição POST."""
+    def save_to_file(self, caminho="chat_history.json"):
+        """Salva o histórico completo em um arquivo JSON."""
+        try:
+            with open(caminho, "w", encoding="utf-8") as f:
+                json.dump(self.messages, f, ensure_ascii=False, indent=2)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def load_from_file(self, caminho="chat_history.json"):
+        """Carrega o histórico de um arquivo JSON, substituindo o atual."""
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                return False, "Formato inválido (esperado lista de mensagens)."
+            for msg in data:
+                if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+                    return False, "Mensagens devem ter 'role' e 'content'."
+            self.messages = data
+            return True, ""
+        except FileNotFoundError:
+            return False, f"Arquivo '{caminho}' não encontrado."
+        except Exception as e:
+            return False, str(e)
+
+    # ---- Construção de payloads ----
+
+    def build_payload(self, response_format=None):
+        """
+        Monta o dicionário para a requisição POST.
+
+        Se `response_format` for fornecida, será anexada ao prompt do sistema
+        (apenas para esta requisição, sem alterar o histórico).
+        """
         system_content = self.get_effective_system_prompt()
+        if response_format:
+            system_content += "\n\n" + response_format
+
         payload_messages = [{"role": "system", "content": system_content}] + self.messages[1:]
 
-        return {
+        payload = {
             "model": self.config["model"],
             "messages": payload_messages,
             "temperature": self.config["temperature"],
             "max_tokens": self.config["max_tokens"],
-            "stream": True,
-            "chat_template_kwargs": {
-                "enable_thinking": self.thinking_budget > 0,
-                "thinking_budget": self.thinking_budget if self.thinking_budget > 0 else 0
-            }
+            "stream": True
         }
+        # Apenas inclui thinking se o orçamento for > 0
+        if self.thinking_budget > 0:
+            payload["chat_template_kwargs"] = {
+                "enable_thinking": True,
+                "thinking_budget": self.thinking_budget
+            }
+        return payload
 
-    # ---- Envio e streaming ----
+    # ---- Envio de requisições ----
 
-    def send_request(self, payload):
-        """Envia a requisição POST e retorna o objeto response em streaming."""
+    def send_request(self, payload, stream=True):
+        """Envia a requisição POST e retorna o objeto response (streaming ou não)."""
         return requests.post(
             self.config["api_url"],
-            json=payload,
-            stream=True,
+            json={**payload, "stream": stream},
             timeout=self.config["timeout"]
         )
+
+    def send_non_streaming_request(self, payload):
+        """
+        Envia uma requisição sem streaming e retorna o texto da resposta.
+        Levanta exceções em caso de erro (timeout, HTTPError, etc.).
+        """
+        resp = self.send_request(payload, stream=False)
+        resp.raise_for_status()
+        data = resp.json()
+        # Estrutura esperada: {"choices": [{"message": {"content": "..."}}]}
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError) as e:
+            raise ValueError("Resposta do servidor em formato inesperado") from e
+
+    # ---- Processamento de stream (mantido) ----
 
     def process_stream(self, response, callbacks):
         """
@@ -97,23 +155,20 @@ class ChatSession:
             if line_str.strip() == "[DONE]":
                 break
 
-            # Callback de linha bruta
             if callbacks.get("on_raw_line"):
                 callbacks["on_raw_line"](line_str)
 
             try:
                 chunk_data = json.loads(line_str)
 
-                # Guarda timings se existirem (vem no último chunk)
                 if "timings" in chunk_data:
                     ultimo_timings = chunk_data["timings"]
 
-                # Verifica erro no stream
                 if "error" in chunk_data:
                     erro_msg = chunk_data["error"].get("message", str(chunk_data["error"]))
                     if callbacks.get("on_error"):
                         callbacks["on_error"](erro_msg)
-                    return ""  # resposta vazia
+                    return ""
 
                 delta = chunk_data["choices"][0]["delta"]
                 chunk_thinking = delta.get("reasoning_content") or ""
@@ -131,8 +186,31 @@ class ChatSession:
             except (json.JSONDecodeError, KeyError, IndexError):
                 continue
 
-        # Callback final com timings
         if callbacks.get("on_done") and ultimo_timings:
             callbacks["on_done"](ultimo_timings)
 
         return resposta_visivel.strip()
+
+    # ---- Utilitário para respostas estruturadas ----
+
+    @staticmethod
+    def extrair_json(texto):
+        """
+        Tenta extrair um objeto JSON de uma string que pode conter cercaduras
+        (ex.: ```json ... ```) ou texto extra.
+        Retorna o objeto Python (dict, list, etc.) ou None se falhar.
+        """
+        # Remove blocos de código Markdown
+        import re
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", texto)
+        if match:
+            texto = match.group(1)
+        # Tenta encontrar a primeira ocorrência de { ou [
+        start = min((texto.find("{"), texto.find("[")))
+        if start == -1:
+            return None
+        # Tenta parsear a partir dali
+        try:
+            return json.loads(texto[start:])
+        except json.JSONDecodeError:
+            return None
