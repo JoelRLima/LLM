@@ -37,6 +37,9 @@ Available tools:
 
 - Use the tool session_memory to remember important information during the session.
 - Prefer using code_analyzer in 'directory' mode when analyzing multiple files.
+- When asked to analyze a specific file, first use code_analyzer on that file to get its structure. Then, if you need more details, use file_reader with specific line ranges based on what you found, not arbitrary intervals. Provide a concise summary of the file's purpose, key components, and how they connect.
+- When analyzing a file, use code_analyzer with include_code=true to get the full content immediately. Avoid file_reader unless you need specific line ranges that are not already covered by code_analyzer.
+- After reading 3-4 sections of the same file, you MUST stop and produce a final answer. Do not re-read sections you already have. If you obtain the complete file (total_lines equals the range you read), immediately give your analysis without any further tool calls.
 
 Tool/agent contract:
 - Tools MUST return a JSON object with:
@@ -351,7 +354,8 @@ class Orchestrator:
                 if action == "final":
                     if self._is_task_solved():
                         answer = decision.get("answer", "")
-                        print(f"💬 {answer}")
+                        if self.verbose:
+                            print(f"[DEBUG] Final aceito: {answer[:100]}...")
                         return answer
 
                     early_final_count += 1

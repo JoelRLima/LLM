@@ -1,4 +1,3 @@
-# agent/skills/code_analyzer.py
 import ast
 import os
 from pathlib import Path
@@ -6,7 +5,7 @@ from .base import BaseSkill
 
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
-    description = "Analisa arquivos Python e gera mapa estrutural com dependências de chamadas."
+    description = "Analisa arquivos Python e gera mapa estrutural com dependências de chamadas. Opcionalmente inclui o código fonte completo."
 
     def __init__(self, base_dir: str = "."):
         self.base_dir = Path(base_dir).resolve()
@@ -15,50 +14,62 @@ class CodeAnalyzerSkill(BaseSkill):
         return {
             "target": {
                 "type": "string",
-                "description": "Caminho relativo do arquivo ou diretório."
+                "description": "Caminho relativo do arquivo ou diretório a ser analisado."
             },
             "mode": {
                 "type": "string",
-                "description": "'file' para um único arquivo, 'directory' para diretório inteiro."
+                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro. Padrão: 'file'."
+            },
+            "include_code": {
+                "type": "boolean",
+                "description": "Se true, inclui o código fonte completo de cada função/método. Padrão: false."
             }
         }
 
     def execute(self, args: dict) -> dict:
         target = args.get("target", "")
         mode = args.get("mode", "file")
+        include_code = args.get("include_code", False)
+
         if not target:
             return {"ok": False, "done": True, "error": "alvo vazio", "message": "Nenhum caminho fornecido."}
+
         try:
             requested = (self.base_dir / target).resolve()
         except Exception as e:
             return {"ok": False, "done": True, "error": str(e), "message": f"Caminho inválido: {target}"}
+
         if not str(requested).startswith(str(self.base_dir)):
             return {"ok": False, "done": True, "error": "acesso negado", "message": f"Fora do diretório seguro: {target}"}
+
         if mode == "file":
-            return self._analyze_file(requested)
+            return self._analyze_file(requested, include_code)
         elif mode == "directory":
-            return self._analyze_directory(requested)
+            return self._analyze_directory(requested, include_code)
         else:
             return {"ok": False, "done": True, "error": "modo inválido", "message": "Use 'file' ou 'directory'."}
 
-    def _analyze_file(self, file_path: Path) -> dict:
+    def _analyze_file(self, file_path: Path, include_code: bool = False) -> dict:
         if not file_path.is_file():
             return {"ok": False, "done": True, "error": "não é arquivo", "message": f"'{file_path}' não é um arquivo."}
         if file_path.suffix != ".py":
-            return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py."}
+            return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py são analisados."}
+
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()
             tree = ast.parse(source)
+        except SyntaxError as e:
+            return {"ok": False, "done": True, "error": str(e), "message": f"Erro de sintaxe no arquivo."}
         except Exception as e:
-            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao parsear."}
+            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler/parsear o arquivo."}
 
         imports = []
         functions = []
         classes = []
-        # Mapa de chamadas: nome_da_função -> [funções chamadas]
         calls = {}
 
+        # Primeira passada: coletar estrutura
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -71,9 +82,10 @@ class CodeAnalyzerSkill(BaseSkill):
                 func_info = {
                     "name": node.name,
                     "line": node.lineno,
+                    "end_line": node.end_lineno,
                     "args": [arg.arg for arg in node.args.args],
                     "docstring": ast.get_docstring(node) or "",
-                    "calls": []  # será preenchido depois
+                    "calls": []
                 }
                 functions.append(func_info)
             elif isinstance(node, ast.ClassDef):
@@ -83,22 +95,23 @@ class CodeAnalyzerSkill(BaseSkill):
                         methods.append({
                             "name": item.name,
                             "line": item.lineno,
+                            "end_line": item.end_lineno,
                             "args": [arg.arg for arg in item.args.args],
                             "docstring": ast.get_docstring(item) or ""
                         })
                 classes.append({
                     "name": node.name,
                     "line": node.lineno,
+                    "end_line": node.end_lineno,
                     "methods": methods,
                     "docstring": ast.get_docstring(node) or ""
                 })
 
         # Segunda passada: identificar chamadas de função
-        # Precisamos saber o escopo atual (dentro de qual função estamos)
         class CallVisitor(ast.NodeVisitor):
             def __init__(self):
                 self.current_function = None
-                self.calls = {}  # func_name -> [called_names]
+                self.calls = {}
 
             def visit_FunctionDef(self, node):
                 old = self.current_function
@@ -110,7 +123,6 @@ class CodeAnalyzerSkill(BaseSkill):
 
             def visit_Call(self, node):
                 if self.current_function:
-                    # Pega o nome da função chamada
                     if isinstance(node.func, ast.Name):
                         called = node.func.id
                     elif isinstance(node.func, ast.Attribute):
@@ -128,6 +140,19 @@ class CodeAnalyzerSkill(BaseSkill):
         for func in functions:
             func["calls"] = list(set(visitor.calls.get(func["name"], [])))
 
+        # Opcional: inclui código fonte completo
+        if include_code:
+            source_lines = source.splitlines(keepends=True)
+            for func in functions:
+                if "end_line" in func:
+                    func["source"] = "".join(source_lines[func["line"]-1:func["end_line"]])
+            for cls in classes:
+                if "end_line" in cls:
+                    cls["source"] = "".join(source_lines[cls["line"]-1:cls["end_line"]])
+                for method in cls["methods"]:
+                    if "end_line" in method:
+                        method["source"] = "".join(source_lines[method["line"]-1:method["end_line"]])
+
         return {
             "ok": True,
             "done": True,
@@ -136,24 +161,26 @@ class CodeAnalyzerSkill(BaseSkill):
                 "imports": imports,
                 "functions": functions,
                 "classes": classes,
-                "call_graph": visitor.calls  # mapa completo
+                "call_graph": visitor.calls
             },
             "error": None,
-            "message": f"Analisado: {len(functions)} funções, {len(classes)} classes."
+            "message": f"Analisado: {len(functions)} funções, {len(classes)} classes, {len(imports)} imports."
         }
 
-    def _analyze_directory(self, dir_path: Path) -> dict:
+    def _analyze_directory(self, dir_path: Path, include_code: bool = False) -> dict:
         if not dir_path.is_dir():
             return {"ok": False, "done": True, "error": "não é diretório", "message": f"'{dir_path}' não é um diretório."}
+
         project_map = {}
         dependencies = {}
         total_files = 0
+
         for root, _, files in os.walk(dir_path):
             for file in files:
                 if file.endswith(".py"):
                     file_path = Path(root) / file
                     rel_path = str(file_path.relative_to(self.base_dir))
-                    result = self._analyze_file(file_path)
+                    result = self._analyze_file(file_path, include_code=include_code)
                     if result["ok"]:
                         project_map[rel_path] = result["data"]
                         for imp in result["data"]["imports"]:
@@ -162,6 +189,7 @@ class CodeAnalyzerSkill(BaseSkill):
                                 dependencies[base] = []
                             dependencies[base].append(rel_path)
                         total_files += 1
+
         return {
             "ok": True,
             "done": True,
@@ -171,5 +199,5 @@ class CodeAnalyzerSkill(BaseSkill):
                 "total_files": total_files
             },
             "error": None,
-            "message": f"Mapa gerado com {total_files} arquivos."
+            "message": f"Mapa gerado com {total_files} arquivos e {len(dependencies)} módulos dependentes."
         }
