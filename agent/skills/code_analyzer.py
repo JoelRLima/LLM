@@ -5,7 +5,7 @@ from .base import BaseSkill
 
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
-    description = "Analisa arquivos Python e gera mapa estrutural com dependências de chamadas. Opcionalmente inclui o código fonte completo."
+    description = "Analisa arquivos Python e gera mapa estrutural com dependências de chamadas. Suporta modo compacto para visão geral."
 
     def __init__(self, base_dir: str = "."):
         self.base_dir = Path(base_dir).resolve()
@@ -23,6 +23,10 @@ class CodeAnalyzerSkill(BaseSkill):
             "include_code": {
                 "type": "boolean",
                 "description": "Se true, inclui o código fonte completo de cada função/método. Padrão: false."
+            },
+            "compact": {
+                "type": "boolean",
+                "description": "Se true, retorna apenas nomes de classes e funções (sem detalhes, imports, docstrings). Ideal para visão geral de diretórios grandes. Padrão: false."
             }
         }
 
@@ -30,6 +34,7 @@ class CodeAnalyzerSkill(BaseSkill):
         target = args.get("target", "")
         mode = args.get("mode", "file")
         include_code = args.get("include_code", False)
+        compact = args.get("compact", False)
 
         if not target:
             return {"ok": False, "done": True, "error": "alvo vazio", "message": "Nenhum caminho fornecido."}
@@ -43,13 +48,13 @@ class CodeAnalyzerSkill(BaseSkill):
             return {"ok": False, "done": True, "error": "acesso negado", "message": f"Fora do diretório seguro: {target}"}
 
         if mode == "file":
-            return self._analyze_file(requested, include_code)
+            return self._analyze_file(requested, include_code, compact)
         elif mode == "directory":
-            return self._analyze_directory(requested, include_code)
+            return self._analyze_directory(requested, include_code, compact)
         else:
             return {"ok": False, "done": True, "error": "modo inválido", "message": "Use 'file' ou 'directory'."}
 
-    def _analyze_file(self, file_path: Path, include_code: bool = False) -> dict:
+    def _analyze_file(self, file_path: Path, include_code: bool = False, compact: bool = False) -> dict:
         if not file_path.is_file():
             return {"ok": False, "done": True, "error": "não é arquivo", "message": f"'{file_path}' não é um arquivo."}
         if file_path.suffix != ".py":
@@ -64,12 +69,34 @@ class CodeAnalyzerSkill(BaseSkill):
         except Exception as e:
             return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler/parsear o arquivo."}
 
+        # Modo compacto: apenas nomes de classes e funções
+        if compact:
+            functions = []
+            classes = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    functions.append(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    methods = [item.name for item in node.body if isinstance(item, ast.FunctionDef)]
+                    classes.append({"name": node.name, "methods": methods})
+            return {
+                "ok": True,
+                "done": True,
+                "data": {
+                    "file": str(file_path.relative_to(self.base_dir)),
+                    "classes": classes,
+                    "functions": functions
+                },
+                "error": None,
+                "message": f"{len(functions)} funções, {len(classes)} classes (modo compacto)."
+            }
+
+        # Modo completo (código existente)
         imports = []
         functions = []
         classes = []
         calls = {}
 
-        # Primeira passada: coletar estrutura
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -107,7 +134,6 @@ class CodeAnalyzerSkill(BaseSkill):
                     "docstring": ast.get_docstring(node) or ""
                 })
 
-        # Segunda passada: identificar chamadas de função
         class CallVisitor(ast.NodeVisitor):
             def __init__(self):
                 self.current_function = None
@@ -136,11 +162,9 @@ class CodeAnalyzerSkill(BaseSkill):
         visitor = CallVisitor()
         visitor.visit(tree)
 
-        # Anexa as chamadas às funções
         for func in functions:
             func["calls"] = list(set(visitor.calls.get(func["name"], [])))
 
-        # Opcional: inclui código fonte completo
         if include_code:
             source_lines = source.splitlines(keepends=True)
             for func in functions:
@@ -167,7 +191,7 @@ class CodeAnalyzerSkill(BaseSkill):
             "message": f"Analisado: {len(functions)} funções, {len(classes)} classes, {len(imports)} imports."
         }
 
-    def _analyze_directory(self, dir_path: Path, include_code: bool = False) -> dict:
+    def _analyze_directory(self, dir_path: Path, include_code: bool = False, compact: bool = False) -> dict:
         if not dir_path.is_dir():
             return {"ok": False, "done": True, "error": "não é diretório", "message": f"'{dir_path}' não é um diretório."}
 
@@ -175,29 +199,38 @@ class CodeAnalyzerSkill(BaseSkill):
         dependencies = {}
         total_files = 0
 
-        for root, _, files in os.walk(dir_path):
+        for root, dirs, files in os.walk(dir_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "venv", "env", "node_modules", "build", "dist")]
+            
             for file in files:
                 if file.endswith(".py"):
                     file_path = Path(root) / file
                     rel_path = str(file_path.relative_to(self.base_dir))
-                    result = self._analyze_file(file_path, include_code=include_code)
+                    result = self._analyze_file(file_path, include_code=include_code, compact=compact)
                     if result["ok"]:
                         project_map[rel_path] = result["data"]
-                        for imp in result["data"]["imports"]:
-                            base = imp.split(".")[0]
-                            if base not in dependencies:
-                                dependencies[base] = []
-                            dependencies[base].append(rel_path)
+                        # Só coleta dependências se não for modo compacto (para manter leve)
+                        if not compact:
+                            for imp in result["data"].get("imports", []):
+                                base = imp.split(".")[0]
+                                if base not in dependencies:
+                                    dependencies[base] = []
+                                dependencies[base].append(rel_path)
                         total_files += 1
 
-        return {
+        response = {
             "ok": True,
             "done": True,
             "data": {
                 "files": project_map,
-                "dependencies": dependencies,
                 "total_files": total_files
             },
             "error": None,
-            "message": f"Mapa gerado com {total_files} arquivos e {len(dependencies)} módulos dependentes."
+            "message": f"Mapa gerado com {total_files} arquivos (modo {'compacto' if compact else 'completo'})."
         }
+
+        if not compact:
+            response["data"]["dependencies"] = dependencies
+            response["message"] += f" e {len(dependencies)} módulos dependentes."
+
+        return response

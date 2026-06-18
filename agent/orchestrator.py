@@ -1,252 +1,183 @@
 import json
-import re
 import os
 import sys
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from session import ChatSession
-
-AGENT_SYSTEM_PROMPT = """You are a strict execution agent.
-
-You MUST respond ONLY with JSON.
-
-No explanations. No text. No markdown.
-
-You decide ONLY between:
-- tool execution
-- final answer
-
-Rules:
-- NEVER describe progress
-- NEVER say partial / maybe / almost
-- NEVER ask questions
-- NEVER justify
-
-Output format:
-
-Tool:
-{{"action":"tool","tool":"<tool_name>","args":{{...}}}}
-
-Final:
-{{"action":"final","answer":"<answer in Portuguese>"}}
-
-Available tools:
-{tools_description}
-
-- Use the tool session_memory to remember important information during the session.
-- Prefer using code_analyzer in 'directory' mode when analyzing multiple files.
-- When asked to analyze a specific file, first use code_analyzer on that file to get its structure. Then, if you need more details, use file_reader with specific line ranges based on what you found, not arbitrary intervals. Provide a concise summary of the file's purpose, key components, and how they connect.
-- When analyzing a file, use code_analyzer with include_code=true to get the full content immediately. Avoid file_reader unless you need specific line ranges that are not already covered by code_analyzer.
-- After reading 3-4 sections of the same file, you MUST stop and produce a final answer. Do not re-read sections you already have. If you obtain the complete file (total_lines equals the range you read), immediately give your analysis without any further tool calls.
-
-Tool/agent contract:
-- Tools MUST return a JSON object with:
-  - ok: boolean
-  - done: boolean
-  - data: any (nullable)
-  - error: string (nullable)
-  - message: string (nullable)
-- If ok=false, done must be false.
-- The agent may only emit final when the last tool result has ok=true and done=true.
-- However, if NO tool has been called yet, the agent may emit final directly if the task is trivial (e.g., greeting).
-"""
-
-ERROR_PATTERNS = [
-    "erro", "falha", "exception", "não encontrado", "not found",
-    "timeout", "permissão negada", "access denied", "invalid",
-    "inválido", "sem resultado", "no result",
-]
+from logger import logger
+from agent.prompts import AGENT_SYSTEM_PROMPT, ERROR_PATTERNS
+from agent.parsers import extract_json, stringify, validate_decision, normalize_tool_result
+from agent.state import AgentState
 
 class Orchestrator:
-    def __init__(self, session: ChatSession, skills: list = None, verbose: bool = False):
+    def __init__(self, session: ChatSession, skills: Optional[List[Any]] = None, verbose: bool = False) -> None:
         self.session = session
-        self.skills = {}
-        self.max_steps = 15
-        self.max_total_actions = 20
-        self.max_early_final_attempts = 3
-        self.max_loop_repetitions = 3
-        self.verbose = verbose          # agora controla apenas detalhes técnicos
+        self.skills: Dict[str, Any] = {}
+        self.max_steps: int = 15
+        self.max_total_actions: int = 20
+        self.max_early_final_attempts: int = 3
+        self.max_loop_repetitions: int = 3
+        self.verbose: bool = verbose
+        self.active_skills: List[str] = []
 
-        self.state = {
-            "objective": None,
-            "last_result": None,
-            "last_tool": None,
-            "last_args": None,
-            "step": 0,
-            "tool_history": []
-        }
-
-        self.memory = {
-            "project_map": {},
-            "key_findings": {},
-            "files_index": {},
-            "todo": [],
-            "notes": {}
-        }
+        # Estado unificado do agente
+        self.agent_state = AgentState()
 
         if skills:
             for s in skills:
                 self.register_skill(s)
 
     # ---- Skills ----
-    def register_skill(self, skill):
+    def register_skill(self, skill: Any) -> None:
         self.skills[skill.name] = skill
 
-    def unregister_skill(self, name):
+    def unregister_skill(self, name: str) -> None:
         self.skills.pop(name, None)
 
-    def _build_tools_description(self):
+    def _build_tools_description(self) -> str:
         out = []
         for s in self.skills.values():
-            out.append(f"- {s.name}: {s.description}\nArgs: {json.dumps(s.get_schema(), indent=2, ensure_ascii=False)}")
+            if not self.active_skills or s.name in self.active_skills:
+                out.append(f"- {s.name}: {s.description}\nArgs: {json.dumps(s.get_schema(), indent=2, ensure_ascii=False)}")
         return "\n".join(out)
 
-    # ---- JSON parser ----
-    def _extract_json(self, text: str) -> Optional[dict]:
-        if not text:
-            return None
-        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text)
-        start = cleaned.find("{")
-        if start == -1:
-            return None
-        balance = 0
-        in_string = False
-        escape = False
-        end = -1
-        for i in range(start, len(cleaned)):
-            c = cleaned[i]
-            if escape:
-                escape = False
-                continue
-            if c == '\\':
-                escape = True
-                continue
-            if c == '"':
-                in_string = not in_string
-                continue
-            if not in_string:
-                if c == '{':
-                    balance += 1
-                elif c == '}':
-                    balance -= 1
-                    if balance == 0:
-                        end = i
-                        break
-        if end == -1:
-            return None
-        json_str = cleaned[start:end + 1]
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            return None
+    # ---- Delegação para a memória (mantém compatibilidade com comandos atuais) ----
+    def remember(self, key: str, value: Any, section: str = "key_findings") -> None:
+        self.agent_state.memory.remember(key, value, section)
 
-    def _stringify(self, obj: Any) -> str:
-        try:
-            return json.dumps(obj, ensure_ascii=False, indent=2, default=str)
-        except Exception:
-            return str(obj)
+    def forget(self, key: str) -> None:
+        self.agent_state.memory.forget(key)
 
-    # ---- Memory management ----
-    def remember(self, key: str, value: Any, section: str = "key_findings"):
-        if section in self.memory and isinstance(self.memory[section], dict):
-            self.memory[section][key] = value
-        else:
-            self.memory[key] = value
-
-    def forget(self, key: str):
-        self.memory.pop(key, None)
-
-    def clear_memory(self):
-        self.memory.clear()
+    def clear_memory(self) -> None:
+        self.agent_state.memory.clear()
+        self.agent_state.events.clear()
     
     def save_memory_to_file(self, path: str = "agent_memory.json") -> str:
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.memory, f, ensure_ascii=False, indent=2)
-            return f"Memória salva em {path}."
-        except Exception as e:
-            return f"Erro ao salvar memória: {e}"
+        return self.agent_state.memory.save_to_file(path)
 
     def load_memory_from_file(self, path: str = "agent_memory.json") -> str:
+        return self.agent_state.memory.load_from_file(path)
+
+    # ---- Emissão de eventos ----
+    def _emit(self, event_type: str, data: Dict[str, Any] = None) -> None:
+        """Registra um evento de telemetria."""
+        event = {
+            "type": event_type,
+            "step": self.agent_state.objective is not None,  # passo atual será obtido do loop
+            "data": data or {}
+        }
+        self.agent_state.events.append(event)
+        if self.verbose:
+            emoji = {
+                "plan_created": "📋",
+                "tool_start": "⚙️",
+                "tool_end": "✅",
+                "final": "💬",
+                "error": "❌",
+                "hard_block": "🚫",
+                "loop_detected": "🔄"
+            }.get(event_type, "•")
+            print(f"{emoji} [{event_type}] {data}")
+
+    # ---- Helpers (resumo e verificação) ----
+    def _maybe_summarize_and_store(self, tool_name: str, args: Dict[str, Any], result: Dict[str, Any]) -> None:
+        if tool_name in ("code_analyzer", "file_reader") and result.get("ok"):
+            file_path = args.get("target") or args.get("file_path")
+            if file_path and "data" in result:
+                content = result.get("data")
+                if isinstance(content, dict):
+                    content = stringify(content)
+                if content and len(content) > 300:
+                    summary = self._summarize_text(content, context=f"Arquivo: {file_path}")
+                    self.agent_state.memory.state["analyzed_files"][file_path] = summary[:150]
+                    self.agent_state.memory.state["file_summaries"][file_path] = summary
+
+    def _summarize_text(self, text: str, context: str = "") -> str:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            for section in self.memory:
-                if section in loaded:
-                    if isinstance(self.memory[section], dict):
-                        self.memory[section].update(loaded[section])
-                    elif isinstance(self.memory[section], list):
-                        self.memory[section].extend(loaded[section])
-            return f"Memória carregada de {path}."
-        except FileNotFoundError:
-            return f"Arquivo {path} não encontrado."
+            summarize_skill = self.skills.get("summarize")
+            if summarize_skill:
+                result = summarize_skill.execute({"text": text, "context": context})
+                if result.get("ok"):
+                    return result.get("data", text[:300])
         except Exception as e:
-            return f"Erro ao carregar memória: {e}"
-
-    # ---- Decision validation ----
-    def _validate_decision(self, decision) -> Tuple[bool, Optional[str]]:
-        if not isinstance(decision, dict):
-            return False, "Decisão não é um dicionário."
-        action = decision.get("action")
-        if action not in ("tool", "final"):
-            return False, f"Ação inválida: {action}"
-        if action == "tool":
-            if "tool" not in decision:
-                return False, "Falta o campo 'tool'."
-            if not isinstance(decision.get("tool"), str) or not decision.get("tool").strip():
-                return False, "'tool' deve ser uma string não vazia."
-            args = decision.get("args", {})
-            if args is not None and not isinstance(args, dict):
-                return False, "'args' deve ser um dicionário."
-        if action == "final":
-            if "answer" not in decision:
-                return False, "Falta o campo 'answer'."
-            if not isinstance(decision.get("answer"), str):
-                return False, "'answer' deve ser uma string."
-        return True, None
-
-    # ---- Tool result contract ----
-    def _normalize_tool_result(self, result: Any) -> Dict[str, Any]:
-        if isinstance(result, dict):
-            ok = result.get("ok") is True
-            done = result.get("done") is True
-            if not ok:
-                done = False
-            normalized = {"ok": ok, "done": done, "data": result.get("data"), "error": result.get("error"), "message": result.get("message")}
-            for k, v in result.items():
-                if k not in normalized:
-                    normalized[k] = v
-            return normalized
-        if result is None:
-            return {"ok": False, "done": False, "data": None, "error": "Tool retornou None.", "message": "Retorno vazio da ferramenta."}
-        if isinstance(result, str):
-            lower = result.strip().lower()
-            if any(pattern in lower for pattern in ERROR_PATTERNS):
-                return {"ok": False, "done": False, "data": None, "error": result, "message": "A ferramenta retornou uma mensagem de erro."}
-            return {"ok": True, "done": True, "data": result, "error": None, "message": None}
-        return {"ok": True, "done": True, "data": result, "error": None, "message": None}
+            logger.warning(f"Falha ao usar summarize_skill: {e}")
+        return text[:300] + "..." if len(text) > 300 else text
 
     def _is_task_solved(self) -> bool:
-        if not self.state["tool_history"]:
+        if not self.agent_state.tool_history:
             return True
-        r = self.state["last_result"]
+        r = self.agent_state.last_result
         if not isinstance(r, dict):
             return False
         return r.get("ok") is True and r.get("done") is True
 
-    # ---- Model call (injeta memória) ----
+    def _build_project_context(self) -> str:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "ls-files", "--others", "--cached", "--exclude-standard"],
+                capture_output=True, text=True, timeout=5, cwd=os.getcwd()
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                files = result.stdout.strip().splitlines()[:50]
+                file_list = "\n".join(f"  {f}" for f in files)
+                return f"\n\n--- CONTEXTO DO PROJETO ---\nArquivos rastreados pelo Git ({len(files)} arquivos):\n{file_list}\n"
+        except Exception:
+            pass
+        try:
+            root = os.getcwd()
+            entries = []
+            for item in sorted(os.listdir(root)):
+                if item.startswith(".") or item == "__pycache__":
+                    continue
+                full = os.path.join(root, item)
+                tag = "/" if os.path.isdir(full) else ""
+                entries.append(f"  {item}{tag}")
+            return f"\n\n--- CONTEXTO DO PROJETO ---\nEstrutura raiz:\n" + "\n".join(entries[:40]) + "\n"
+        except Exception:
+            return ""
+
+    # ---- Chamada ao modelo ----
     def _ask_model(self, prompt: str) -> Dict[str, Any]:
+        analyzed_context = ""
+        if self.agent_state.memory.state.get("analyzed_files"):
+            analyzed_context = "\n\n--- ARQUIVOS JÁ ANALISADOS ---\n"
+            for file, summary in self.agent_state.memory.state["analyzed_files"].items():
+                analyzed_context += f"- {file}: {summary}\n"
+            analyzed_context += "NÃO reanalise arquivos já listados aqui, a menos que o usuário peça explicitamente.\n"
+
         original = self.session.messages[0]["content"]
 
         memory_context = ""
-        if self.memory:
-            memory_context = "\n\n--- SESSION MEMORY (important context) ---\n" + self._stringify(self.memory)
+        if self.agent_state.memory.state:
+            memory_context = "\n\n--- SESSION MEMORY ---\n" + self.agent_state.memory.stringify()
+        memory_context += analyzed_context
 
-        self.session.messages[0]["content"] = AGENT_SYSTEM_PROMPT.format(
-            tools_description=self._build_tools_description()
-        ) + memory_context
+        history_context = ""
+        if self.agent_state.conversation_history:
+            turns = self.agent_state.conversation_history[-self.agent_state.max_history_turns:]
+            history_context = "\n\n--- HISTÓRICO RECENTE ---\n"
+            for turn in turns:
+                history_context += f"Usuário: {turn['user']}\nAgente: {turn['agent']}\n\n"
+
+        persona_prefix = getattr(self, "current_persona_prompt", "")
+
+        from datetime import datetime
+        now_str = datetime.now().strftime("%A, %d de %B de %Y %H:%M")
+        datetime_context = f"\n\n[SISTEMA] Data e hora atual: {now_str}. Use esta informação para responder perguntas sobre datas."
+
+        project_context = self._build_project_context()
+
+        self.session.messages[0]["content"] = (
+            persona_prefix + "\n\n"
+            + AGENT_SYSTEM_PROMPT.format(tools_description=self._build_tools_description())
+            + datetime_context
+            + project_context
+            + history_context
+            + memory_context
+        )
 
         self.session.add_user_message(prompt)
         payload = self.session.build_payload()
@@ -255,10 +186,13 @@ class Orchestrator:
 
         if self.verbose:
             print("⏳ Consultando o modelo...", end="", flush=True)
+            
         try:
             response = self.session.send_non_streaming_request(payload)
         except Exception as e:
+            logger.error(f"Erro na requisição ao modelo: {e}")
             response = f"Erro na requisição: {e}"
+            
         if self.verbose:
             print(" ✓")
 
@@ -268,112 +202,152 @@ class Orchestrator:
         if self.verbose:
             print(f"[DEBUG] Resposta bruta: {str(response)[:300]}")
 
-        decision = self._extract_json(response)
+        decision = extract_json(response)
         if decision is not None:
             return decision
         return {"action": "error", "message": "Falha ao extrair JSON da resposta.", "raw_response": str(response)}
 
-    # ---- Tool execution ----
+    # ---- Execução de ferramenta ----
     def _run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        if tool_name not in self.skills:
-            result = {"ok": False, "done": False, "data": None, "error": f"Tool '{tool_name}' não existe.", "message": None}
+        if tool_name not in self.skills or (self.active_skills and tool_name not in self.active_skills):
+            result = {"ok": False, "done": False, "data": None, "error": f"Tool '{tool_name}' não existe ou não está permitida para esta persona.", "message": None}
         else:
-            # Mensagem narrativa (sempre visível)
             print(f"⚙️  Usando {tool_name}...", end="", flush=True)
+            logger.info(f"Executando tool {tool_name} com args {args}")
             try:
                 raw_result = self.skills[tool_name].execute(args)
             except Exception as e:
+                logger.error(f"Erro ao executar tool {tool_name}: {e}", exc_info=True)
                 raw_result = {"ok": False, "done": False, "data": None, "error": f"Erro ao executar tool: {e}", "message": "Exceção durante a execução da ferramenta."}
-            result = self._normalize_tool_result(raw_result)
+            result = normalize_tool_result(raw_result, ERROR_PATTERNS)
 
-        # Mostra resultado amigável (sempre)
         msg = result.get("message") or ("Concluído" if result.get("ok") else "Falha")
         print(f" {msg}")
 
-        # Detalhes técnicos (apenas verbose)
         if self.verbose:
-            print(f"[DEBUG] Resultado completo: {self._stringify(result)}")
+            print(f"[DEBUG] Resultado completo: {stringify(result)}")
 
-        self.state["last_tool"] = tool_name
-        self.state["last_args"] = args
-        self.state["last_result"] = result
-        self.state["tool_history"].append({"tool": tool_name, "args": args, "result": result})
+        self.agent_state.last_tool = tool_name
+        self.agent_state.last_args = args
+        self.agent_state.last_result = result
+        self.agent_state.tool_history.append({"tool": tool_name, "args": args, "result": result})
         return result
 
-    # ---- Main loop ----
-    def run(self, objective: str):
+    # ---- Loop principal ----
+    def run(self, objective: str) -> str:
         original_msg_count = len(self.session.messages)
-        tool_usage_count = {}
+        tool_usage_count: Dict[str, int] = {}
 
         try:
-            self.state["objective"] = objective
-            self.state["step"] = 0
-            self.state["last_result"] = None
-            self.state["last_tool"] = None
-            self.state["last_args"] = None
-            self.state["tool_history"] = []
+            from agent.router import route_objective
+            
+            self.agent_state.objective = objective
+            self.agent_state.plan = []
+            self.agent_state.plan_step = 0
+            self.agent_state.last_result = None
+            self.agent_state.last_tool = None
+            self.agent_state.last_args = None
+            self.agent_state.tool_history = []
+            self.agent_state.events.clear()
 
             early_final_count = 0
             loop_count = 0
             total_actions = 0
 
-            # Narrativa de início
             print(f"\n🤖 Analisando: \"{objective}\"")
+            logger.info(f"Iniciando objetivo do agente: {objective}")
+            
+            if self.verbose:
+                print("🧭 Consultando roteador de persona...", end="", flush=True)
+            persona_prompt, allowed_skills = route_objective(objective, self.session)
+            if self.verbose:
+                print(f" ✓ ({len(allowed_skills)} skills permitidas)")
+                
+            self.current_persona_prompt = persona_prompt
+            self.active_skills = allowed_skills
 
-            prompt = objective
-
-            while self.state["step"] < self.max_steps:
-                self.state["step"] += 1
+            plan_context = ""
+            if self.agent_state.plan:
+                plan_lines = []
+                for i, step in enumerate(self.agent_state.plan):
+                    marker = "✓" if i < self.agent_state.plan_step else "→" if i == self.agent_state.plan_step else "○"
+                    plan_lines.append(f"{marker} Passo {i+1}: {step}")
+                plan_context = "\n\n--- PLANO DE EXECUÇÃO ---\n" + "\n".join(plan_lines) + "\nSiga o plano. Marque cada passo como concluído após executá-lo."
+                
+            prompt = objective + plan_context
+            error_streak = 0
+            while self.agent_state.plan_step < self.max_steps:
+                self.agent_state.plan_step += 1
                 total_actions += 1
 
                 if total_actions > self.max_total_actions:
                     print("⚠️ Limite de ações atingido. Encerrando.")
-                    last = self.state.get("last_result", {})
-                    return f"Tarefa não resolvida no limite de ações. Último resultado: {self._stringify(last)}"
+                    last = self.agent_state.last_result or {}
+                    ans = f"Tarefa não resolvida no limite de ações. Último resultado: {stringify(last)}"
+                    self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                    return ans
 
                 decision = self._ask_model(prompt)
 
                 if decision.get("action") == "error":
-                    print(f"❌ Erro ao interpretar resposta do modelo.")
+                    error_streak += 1
+                    if error_streak >= 3:
+                        print("⚠️ Muitas falhas consecutivas. Encerrando.")
+                        ans = f"Erro persistente: {decision.get('message')}"
+                        self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                        return ans
                     if self.verbose:
-                        print(f"[DEBUG] {decision.get('message')}")
-                    prompt = "Sua última resposta não foi um JSON válido. Responda apenas com JSON no formato exigido."
+                        print(f"[DEBUG] Erro ao interpretar resposta: {decision.get('message')}")
+                    prompt = f"Responda APENAS com o JSON exigido. Objetivo: {objective}"
                     continue
+                else:
+                    error_streak = 0
 
-                valid, error_msg = self._validate_decision(decision)
+                valid, error_msg = validate_decision(decision)
                 if not valid:
-                    print(f"❌ Resposta inválida do modelo.")
                     if self.verbose:
-                        print(f"[DEBUG] {error_msg}")
-                    prompt = f"Resposta inválida. Reenvie no formato JSON correto."
+                        print(f"[DEBUG] Decisão inválida: {error_msg}")
+                    prompt = f"Sua última resposta foi inválida: {error_msg}. Corrija e reenvie APENAS o JSON no formato correto."
                     continue
 
                 action = decision["action"]
 
-                # FINAL
+                # Extrai e armazena o plano (se existir)
+                plan = decision.get("plan")
+                if plan and isinstance(plan, list):
+                    self.agent_state.plan = plan
+                    self.agent_state.plan_step = 0
+                    self._emit("plan_created", {"steps": len(plan), "plan": plan})
+                    if self.verbose:
+                        print(f"[DEBUG] Plano recebido com {len(plan)} passos: {plan}")
+
                 if action == "final":
                     if self._is_task_solved():
                         answer = decision.get("answer", "")
+                        self._emit("final", {"answer": answer[:100]})
                         if self.verbose:
                             print(f"[DEBUG] Final aceito: {answer[:100]}...")
+                        logger.info(f"Tarefa resolvida com sucesso: {answer[:50]}...")
+                        self.agent_state.conversation_history.append({"user": objective, "agent": answer})
                         return answer
 
                     early_final_count += 1
                     if early_final_count >= self.max_early_final_attempts:
                         print("⚠️ Tentativas excessivas de finalizar. Encerrando.")
-                        last = self.state["last_result"] or {}
-                        return decision.get("answer") or f"Tarefa não resolvida. Último resultado: {self._stringify(last)}"
+                        last = self.agent_state.last_result or {}
+                        ans = decision.get("answer") or f"Tarefa não resolvida. Último resultado: {stringify(last)}"
+                        self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                        return ans
 
                     if self.verbose:
                         print(f"[DEBUG] Tentativa de final precoce ({early_final_count}/{self.max_early_final_attempts}).")
                     prompt = (
                         f"OBJETIVO: {objective}\n\n"
-                        f"ÚLTIMO RESULTADO DA TOOL: {self._stringify(self.state['last_result'])}\n\n"
+                        f"ÚLTIMO RESULTADO DA TOOL: {stringify(self.agent_state.last_result)}\n\n"
                         "A tarefa NÃO está resolvida. Você DEVE usar uma ferramenta agora. Não retorne 'final'."
                     )
                     continue
 
-                # TOOL
                 if action == "tool":
                     early_final_count = 0
                     tool = decision["tool"]
@@ -381,29 +355,62 @@ class Orchestrator:
                     if not isinstance(args, dict):
                         args = {}
 
-                    # Proteção contra loops consecutivos
-                    if tool == self.state["last_tool"] and args == self.state["last_args"]:
+                    file_path = args.get("target") or args.get("file_path")
+                    if (tool in ("code_analyzer", "file_reader") and 
+                        file_path and 
+                        file_path in self.agent_state.memory.state.get("analyzed_files", {})):
+                        self._emit("hard_block", {"file": file_path})
+                        if self.verbose:
+                            print(f"[DEBUG] Bloqueada reanálise de {file_path}. Usando resumo existente.")
+                        prompt = (
+                            f"O arquivo '{file_path}' já foi analisado e seu resumo está na memória da sessão. "
+                            f"Use as informações existentes em SESSION MEMORY. "
+                            f"Escolha outra ação ou finalize com uma resposta baseada no que já sabe."
+                        )
+                        continue
+
+                    if tool == self.agent_state.last_tool and args == self.agent_state.last_args:
                         loop_count += 1
                         if loop_count >= self.max_loop_repetitions:
+                            self._emit("loop_detected", {"tool": tool, "count": loop_count})
                             print("⚠️ Loop de ferramenta detectado. Encerrando.")
-                            return f"Loop de ferramenta ({tool}). Tarefa interrompida."
+                            ans = f"Loop de ferramenta ({tool}). Tarefa interrompida."
+                            self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                            return ans
                     else:
                         loop_count = 0
 
-                    # Proteção contra repetições não consecutivas
                     usage_key = json.dumps((tool, args), sort_keys=True, default=str)
                     tool_usage_count[usage_key] = tool_usage_count.get(usage_key, 0) + 1
                     if tool_usage_count[usage_key] > self.max_loop_repetitions:
+                        self._emit("loop_detected", {"tool": tool, "key": usage_key})
                         print("⚠️ Ferramenta já usada muitas vezes com os mesmos argumentos. Encerrando.")
-                        return f"Repetição excessiva da ferramenta {tool}."
+                        ans = f"Repetição excessiva da ferramenta {tool}."
+                        self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                        return ans
 
+                    self._emit("tool_start", {"tool": tool, "args": args})
                     result = self._run_tool(tool, args)
+                    self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
+                    self._maybe_summarize_and_store(tool, args, result)
+
+                    if self.agent_state.plan and self.agent_state.plan_step < len(self.agent_state.plan):
+                        self.agent_state.plan_step += 1
+
+                    result_str = stringify(result)
+                    MAX_RESULT_CHARS = 4000
+                    if len(result_str) > MAX_RESULT_CHARS:
+                        file_path = args.get("target") or args.get("file_path")
+                        if file_path and file_path in self.agent_state.memory.state.get("analyzed_files", {}):
+                            result_str = f"[Resumo armazenado] {self.agent_state.memory.state['analyzed_files'][file_path]}"
+                        else:
+                            result_str = result_str[:MAX_RESULT_CHARS] + "... (truncado)"
 
                     prompt = (
                         f"OBJETIVO: {objective}\n\n"
                         f"ÚLTIMA FERRAMENTA: {tool}\n"
-                        f"ARGUMENTOS: {self._stringify(args)}\n"
-                        f"RESULTADO DA TOOL: {self._stringify(result)}\n\n"
+                        f"ARGUMENTOS: {stringify(args)}\n"
+                        f"RESULTADO DA TOOL: {result_str}\n\n"
                         "Decida: usar outra ferramenta ou retornar 'final' apenas se a última tool tiver ok=true e done=true."
                     )
                     continue
@@ -411,8 +418,13 @@ class Orchestrator:
                 print(f"❌ Ação desconhecida: {action}")
                 break
 
-            return "Número máximo de passos atingido."
+            ans = "Número máximo de passos atingido."
+            self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+            return ans
 
         finally:
             while len(self.session.messages) > original_msg_count:
                 self.session.messages.pop()
+            if len(self.agent_state.conversation_history) > self.agent_state.max_history_turns:
+                self.agent_state.conversation_history = self.agent_state.conversation_history[-self.agent_state.max_history_turns:]
+            self.save_memory_to_file("agent_memory.json")

@@ -62,6 +62,28 @@ class PythonExecutorSkill(BaseSkill):
             if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                 if node.value.id == "__builtins__" or node.attr.startswith("__"):
                     return "Acesso a builtins perigoso detectado."
+            # Bloqueia chamadas a open() em modo escrita
+            if isinstance(node, ast.Call):
+                func = node.func
+                func_name = None
+                if isinstance(func, ast.Name):
+                    func_name = func.id
+                elif isinstance(func, ast.Attribute):
+                    func_name = func.attr
+                if func_name == "open" and len(node.args) >= 2:
+                    mode_arg = node.args[1]
+                    if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str):
+                        if any(m in mode_arg.value for m in ("w", "a", "x", "+")):
+                            return "open() em modo escrita/append é proibido. Use a skill file_writer para escrever arquivos."
+                # Bloqueia também calls de keywords: open("f", mode="w")
+                if func_name == "open":
+                    for kw in node.keywords:
+                        if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                            if any(m in str(kw.value.value) for m in ("w", "a", "x", "+")):
+                                return "open() em modo escrita/append é proibido. Use a skill file_writer para escrever arquivos."
+                # Bloqueia os.remove, os.unlink, shutil.rmtree etc.
+                if isinstance(func, ast.Attribute) and func.attr in ("remove", "unlink", "rmtree", "rmdir", "rename"):
+                    return f"Chamada proibida: '{func.attr}' pode deletar arquivos. Operação não permitida."
         return None
 
     def execute(self, args: dict) -> dict:

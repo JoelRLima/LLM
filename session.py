@@ -1,21 +1,23 @@
 import json
 import requests
+from typing import List, Dict, Any, Optional, Tuple, Callable
+from logger import logger
 
 class ChatSession:
     """Gerencia o histórico, o orçamento de pensamento e a comunicação com o servidor."""
 
-    def __init__(self, system_prompt, config):
-        self.messages = [{"role": "system", "content": system_prompt}]
-        self.thinking_budget = 0
-        self.config = config
+    def __init__(self, system_prompt: str, config: Dict[str, Any]) -> None:
+        self.messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        self.thinking_budget: int = 0
+        self.config: Dict[str, Any] = config
 
     # ---- Gerenciamento de prompts ----
 
-    def set_system_prompt(self, prompt):
+    def set_system_prompt(self, prompt: str) -> None:
         """Substitui o system prompt base."""
         self.messages[0]["content"] = prompt
 
-    def get_effective_system_prompt(self):
+    def get_effective_system_prompt(self) -> str:
         """Retorna o prompt com a instrução de pensamento, se ativo."""
         if self.thinking_budget > 0:
             return (
@@ -28,37 +30,39 @@ class ChatSession:
 
     # ---- Histórico (mensagens de qualquer role) ----
 
-    def add_message(self, role, content):
+    def add_message(self, role: str, content: str) -> None:
         """Adiciona uma mensagem com role arbitrário (user, assistant, tool, function, etc.)."""
         self.messages.append({"role": role, "content": content})
 
-    def add_user_message(self, content):
+    def add_user_message(self, content: str) -> None:
         self.add_message("user", content)
 
-    def add_assistant_message(self, content):
+    def add_assistant_message(self, content: str) -> None:
         self.add_message("assistant", content)
 
-    def remove_last_user_message(self):
+    def remove_last_user_message(self) -> None:
         """Remove a última mensagem do usuário (usado quando a requisição falha)."""
         if self.messages and self.messages[-1]["role"] == "user":
             self.messages.pop()
 
-    def clear_history(self):
+    def clear_history(self) -> None:
         """Mantém apenas o system prompt."""
         self.messages = [{"role": "system", "content": self.messages[0]["content"]}]
 
     # ---- Salvar / Carregar ----
 
-    def save_to_file(self, caminho="chat_history.json"):
+    def save_to_file(self, caminho: str = "chat_history.json") -> Tuple[bool, str]:
         """Salva o histórico completo em um arquivo JSON."""
         try:
             with open(caminho, "w", encoding="utf-8") as f:
                 json.dump(self.messages, f, ensure_ascii=False, indent=2)
+            logger.info(f"Histórico salvo em {caminho}")
             return True, ""
         except Exception as e:
+            logger.error(f"Erro ao salvar histórico em {caminho}: {e}")
             return False, str(e)
 
-    def load_from_file(self, caminho="chat_history.json"):
+    def load_from_file(self, caminho: str = "chat_history.json") -> Tuple[bool, str]:
         """Carrega o histórico de um arquivo JSON, substituindo o atual."""
         try:
             with open(caminho, "r", encoding="utf-8") as f:
@@ -69,15 +73,17 @@ class ChatSession:
                 if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
                     return False, "Mensagens devem ter 'role' e 'content'."
             self.messages = data
+            logger.info(f"Histórico carregado de {caminho}")
             return True, ""
         except FileNotFoundError:
             return False, f"Arquivo '{caminho}' não encontrado."
         except Exception as e:
+            logger.error(f"Erro ao carregar histórico de {caminho}: {e}")
             return False, str(e)
 
     # ---- Construção de payloads ----
 
-    def build_payload(self, response_format=None):
+    def build_payload(self, response_format: Optional[str] = None) -> Dict[str, Any]:
         system_content = self.get_effective_system_prompt()
         if response_format:
             system_content += "\n\n" + response_format
@@ -100,10 +106,11 @@ class ChatSession:
 
     # ---- Envio de requisições ----
 
-    def send_request(self, payload, stream=True):
+    def send_request(self, payload: Dict[str, Any], stream: bool = True) -> requests.Response:
         """Envia a requisição POST e retorna o objeto response."""
         # Garante que o payload tenha o campo stream conforme solicitado
         payload_with_stream = {**payload, "stream": stream}
+        logger.debug(f"Enviando requisição POST para {self.config['api_url']}")
         return requests.post(
             self.config["api_url"],
             json=payload_with_stream,
@@ -111,7 +118,7 @@ class ChatSession:
             stream=stream  # necessário para iter_lines() funcionar corretamente
         )
 
-    def send_non_streaming_request(self, payload):
+    def send_non_streaming_request(self, payload: Dict[str, Any]) -> str:
         """
         Envia uma requisição sem streaming e retorna o texto da resposta.
         Levanta exceções em caso de erro (timeout, HTTPError, etc.).
@@ -123,11 +130,12 @@ class ChatSession:
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as e:
+            logger.error(f"Resposta do servidor em formato inesperado: {data}")
             raise ValueError("Resposta do servidor em formato inesperado") from e
 
     # ---- Processamento de stream (mantido) ----
 
-    def process_stream(self, response, callbacks):
+    def process_stream(self, response: requests.Response, callbacks: Dict[str, Callable]) -> str:
         """
         Itera sobre as linhas do stream e chama callbacks apropriados.
 
@@ -194,7 +202,7 @@ class ChatSession:
     # ---- Utilitário para respostas estruturadas ----
 
     @staticmethod
-    def extrair_json(texto):
+    def extrair_json(texto: str) -> Optional[Any]:
         """
         Tenta extrair um objeto JSON de uma string que pode conter cercaduras
         (ex.: ```json ... ```) ou texto extra.

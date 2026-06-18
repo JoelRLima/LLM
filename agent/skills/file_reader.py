@@ -46,9 +46,31 @@ class FileReaderSkill(BaseSkill):
         if not requested.is_file():
             return self._error("não é um arquivo", f"'{file_path}' não é um arquivo regular.")
 
-        allowed_extensions = {".txt", ".md", ".py", ".json", ".csv", ".log", ".yaml", ".yml", ".html", ".css", ".js"}
-        if requested.suffix.lower() not in allowed_extensions:
-            return self._error("tipo não permitido", f"Extensão não permitida: {requested.suffix}")
+        # Extensões permitidas para leitura
+        allowed_extensions = {
+            ".txt", ".md", ".py", ".json", ".csv", ".log",
+            ".yaml", ".yml", ".html", ".css", ".js", ".ts", ".tsx",
+            ".toml", ".ini", ".cfg", ".sh", ".env", ".xml", ".rst",
+            ".gitignore", ".dockerignore", ".editorconfig",
+        }
+        # Arquivos sem extensão mas com nomes reconhecidos como texto
+        allowed_no_ext_names = {
+            "makefile", "dockerfile", "procfile", "readme",
+            "license", "notice", "authors", "changelog",
+        }
+
+        ext = requested.suffix.lower()
+        name_lower = requested.name.lower()
+
+        # Para dotfiles (ex: .gitignore), Path.suffix retorna "" e Path.name retorna ".gitignore".
+        # Por isso verificamos: extensão, nome completo (cobre dotfiles), ou nomes sem extensão conhecidos.
+        is_allowed = (
+            ext in allowed_extensions          # ex: config.toml -> ext=".toml"
+            or name_lower in allowed_extensions  # ex: .gitignore -> name=".gitignore"
+            or name_lower in allowed_no_ext_names  # ex: Makefile -> name="makefile"
+        )
+        if not is_allowed:
+            return self._error("tipo não permitido", f"Extensão não permitida: '{ext or name_lower}' para '{requested.name}'.")
 
         try:
             with open(requested, "r", encoding="utf-8") as f:

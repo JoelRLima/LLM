@@ -1,0 +1,629 @@
+2026-06-15 22:08:12,245 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi
+2026-06-15 22:08:12,246 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:13,756 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:08:13,756 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:16,890 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Olá! Como posso ajudar você hoje?...
+2026-06-15 22:08:22,800 - LLM_Agent - INFO - Iniciando objetivo do agente: Que dia é hoje?
+2026-06-15 22:08:22,800 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:23,556 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:08:23,557 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:25,113 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'current_date'}
+2026-06-15 22:08:25,114 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'get'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 42, in execute
+    val = self.orchestrator.memory.get(key, None)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'get'
+2026-06-15 22:08:25,117 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:27,174 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'set', 'key': 'current_date', 'value': '2023-10-27'}
+2026-06-15 22:08:27,175 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:30,351 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Hoje é 27 de outubro de 2023....
+2026-06-15 22:08:44,208 - LLM_Agent - INFO - Iniciando objetivo do agente: Quais skills vc tem?
+2026-06-15 22:08:44,208 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:44,819 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:08:44,820 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:46,230 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys'}
+2026-06-15 22:08:46,230 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'keys'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 45, in execute
+    keys = list(self.orchestrator.memory.keys())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'keys'
+2026-06-15 22:08:46,232 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:47,532 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys', 'key': ''}
+2026-06-15 22:08:47,532 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'keys'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 45, in execute
+    keys = list(self.orchestrator.memory.keys())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'keys'
+2026-06-15 22:08:47,533 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:48,826 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys', 'key': ''}
+2026-06-15 22:08:48,826 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'keys'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 45, in execute
+    keys = list(self.orchestrator.memory.keys())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'keys'
+2026-06-15 22:08:48,827 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:54,961 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:56,254 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys', 'key': 'skills'}
+2026-06-15 22:08:56,254 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'keys'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 45, in execute
+    keys = list(self.orchestrator.memory.keys())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'keys'
+2026-06-15 22:08:56,255 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:08:57,768 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'skills', 'value': None}
+2026-06-15 22:08:57,769 - LLM_Agent - ERROR - Erro ao executar tool session_memory: 'AgentMemory' object has no attribute 'get'
+Traceback (most recent call last):
+  File "C:\Users\JoelR\Desktop\LLM\agent\orchestrator.py", line 162, in _run_tool
+    raw_result = self.skills[tool_name].execute(args)
+  File "C:\Users\JoelR\Desktop\LLM\agent\skills\session_memory.py", line 42, in execute
+    val = self.orchestrator.memory.get(key, None)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'AgentMemory' object has no attribute 'get'
+2026-06-15 22:08:57,770 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:09:00,222 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'set', 'key': 'skills', 'value': 'Avaliação matemática, Memória de sessão, Resumo de texto, Análise de código, Leitura de arquivos'}
+2026-06-15 22:09:00,222 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:09:04,064 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Minhas skills são: Avaliação matemática, Memória d...
+2026-06-15 22:11:29,379 - LLM_Agent - INFO - Iniciando objetivo do agente: Que dia é hoje?
+2026-06-15 22:11:29,379 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:29,936 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:11:29,936 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:32,944 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'current_date'}
+2026-06-15 22:11:32,944 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:34,414 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Hoje é dia 27 de outubro de 2023....
+2026-06-15 22:11:47,471 - LLM_Agent - INFO - Iniciando objetivo do agente: Conseugue pesquisar na internet que dia é hoje?
+2026-06-15 22:11:47,472 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:48,380 - LLM_Agent - INFO - Router selecionou a persona: researcher
+2026-06-15 22:11:48,380 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:51,744 - LLM_Agent - INFO - Executando tool web_search com args {'query': 'data de hoje', 'max_results': 3}
+2026-06-15 22:11:52,592 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:53,937 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'current_date'}
+2026-06-15 22:11:53,938 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:11:55,415 - LLM_Agent - INFO - Executando tool web_search com args {'query': 'hoje é dia', 'max_results': 1}
+2026-06-15 22:11:55,722 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:12:03,040 - LLM_Agent - INFO - Tarefa resolvida com sucesso: A busca confirmou que a data atual está disponível...
+2026-06-15 22:14:02,240 - LLM_Agent - WARNING - Erro ao carregar skill 'web_search': No module named 'ddgs'
+2026-06-15 22:14:03,597 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi
+2026-06-15 22:14:03,598 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:04,331 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:14:04,332 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:05,227 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Olá! Como posso ajudar?...
+2026-06-15 22:14:15,036 - LLM_Agent - INFO - Iniciando objetivo do agente: Que dia é hoje?
+2026-06-15 22:14:15,036 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:15,842 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:14:15,842 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:17,407 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'current_date'}
+2026-06-15 22:14:17,407 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:18,899 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Hoje é 27 de outubro de 2023....
+2026-06-15 22:14:27,468 - LLM_Agent - INFO - Iniciando objetivo do agente: Pesquise na internet
+2026-06-15 22:14:27,468 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:28,462 - LLM_Agent - INFO - Router selecionou a persona: researcher
+2026-06-15 22:14:28,462 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:32,084 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'current_date'}
+2026-06-15 22:14:32,085 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:33,577 - LLM_Agent - INFO - Executando tool calculator com args {'expression': '2023-10-27'}
+2026-06-15 22:14:33,577 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:35,532 - LLM_Agent - INFO - Executando tool summarize com args {'text': 'Hoje é 27 de outubro de 2023.', 'context': 'Data atual'}
+2026-06-15 22:14:35,532 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:37,523 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:39,245 - LLM_Agent - INFO - Executando tool calculator com args {'expression': '2023-10-27 + 0'}
+2026-06-15 22:14:39,245 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:14:40,520 - LLM_Agent - INFO - Tarefa resolvida com sucesso: A data de hoje é 1986....
+2026-06-15 22:16:24,387 - LLM_Agent - WARNING - Erro ao carregar skill 'web_search': No module named 'ddgs'
+2026-06-15 22:16:56,067 - LLM_Agent - INFO - Iniciando objetivo do agente: Que dia é hoje?
+2026-06-15 22:16:56,067 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:16:56,772 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:16:56,772 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:17:00,195 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Hoje é segunda-feira, 15 de junho de 2026....
+2026-06-15 22:17:50,426 - LLM_Agent - INFO - Iniciando objetivo do agente: Conseuge ler o gitignore?
+2026-06-15 22:17:50,427 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:17:51,209 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:17:51,209 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:17:55,589 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': 'gitignore'}
+2026-06-15 22:17:55,590 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:17:57,258 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': None, 'end_line': None}
+2026-06-15 22:17:57,259 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:17:58,939 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': None, 'end_line': None}
+2026-06-15 22:17:58,940 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:00,594 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': None, 'end_line': None}
+2026-06-15 22:18:00,595 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:05,271 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:05,272 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:07,035 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:07,036 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:08,805 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:08,806 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:20,681 - LLM_Agent - INFO - Iniciando objetivo do agente: Leia o arquivo .gitignore
+2026-06-15 22:18:20,681 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:21,588 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:18:21,589 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:23,377 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:18:23,378 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:24,650 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:18:24,653 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:26,345 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': None}
+2026-06-15 22:18:26,346 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:28,091 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': None}
+2026-06-15 22:18:28,092 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:29,887 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': None}
+2026-06-15 22:18:29,888 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:31,805 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:31,807 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:33,639 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:33,640 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:18:35,565 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:18:35,566 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:19:55,277 - LLM_Agent - INFO - Iniciando objetivo do agente: Leia o gitignore
+2026-06-15 22:19:55,278 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:19:56,066 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:19:56,067 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:19:59,999 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:20:00,000 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:04,628 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:20:04,629 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:06,397 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:20:06,398 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:08,174 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:20:08,175 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:19,032 - LLM_Agent - INFO - Iniciando objetivo do agente: Leia o .gitignore
+2026-06-15 22:20:19,032 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:19,809 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:20:19,809 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:21,632 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:20:21,633 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:23,470 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:25,078 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': 'src/engine.py', 'start_line': 21, 'end_line': 40}
+2026-06-15 22:20:25,079 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:27,025 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:20:27,026 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:28,890 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore', 'start_line': 1, 'end_line': 100}
+2026-06-15 22:20:28,892 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:31,081 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:33,635 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:34,938 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:20:34,939 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:36,699 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:38,721 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:39,999 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:42,784 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:44,039 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:20:44,041 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:20:45,331 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:21:43,208 - LLM_Agent - INFO - Iniciando objetivo do agente: Conseuge achar o gitignore?
+2026-06-15 22:21:43,210 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:21:44,047 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:21:44,048 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:21:48,027 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:21:48,029 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:21:52,923 - LLM_Agent - INFO - Tarefa resolvida com sucesso: O arquivo .gitignore foi encontrado e contém as se...
+2026-06-15 22:23:04,422 - LLM_Agent - INFO - Iniciando objetivo do agente: Conte até 10 partindo de 1, e some todos os elementos
+2026-06-15 22:23:04,422 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:23:05,539 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:23:05,540 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:23:09,428 - LLM_Agent - INFO - Executando tool calculator com args {'expression': '1+2+3+4+5+6+7+8+9+10'}
+2026-06-15 22:23:09,429 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:23:10,378 - LLM_Agent - INFO - Tarefa resolvida com sucesso: 55...
+2026-06-15 22:30:47,895 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi
+2026-06-15 22:30:47,895 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:30:48,652 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:30:48,818 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:30:53,572 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Olá! Como posso ajudar você hoje?...
+2026-06-15 22:31:02,241 - LLM_Agent - INFO - Iniciando objetivo do agente: Você acredita na minha existencia?
+2026-06-15 22:31:02,241 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:03,038 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:31:03,202 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:09,534 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Sim, acredito na sua existência. O fato de você es...
+2026-06-15 22:31:26,112 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue ler oq tanto tá aqui nesse diretório? e qual o nome dele?
+2026-06-15 22:31:26,113 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:26,816 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:31:26,983 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:32,472 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'status', 'args': ''}
+2026-06-15 22:31:32,886 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:34,968 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'diff', 'args': '--stat'}
+2026-06-15 22:31:35,315 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:37,271 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'log', 'args': '--oneline -n 5'}
+2026-06-15 22:31:37,595 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:39,161 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'status', 'args': ''}
+2026-06-15 22:31:39,497 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:41,658 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'log', 'args': '--oneline -n 5'}
+2026-06-15 22:31:41,984 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:43,470 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'status', 'args': ''}
+2026-06-15 22:31:43,840 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:31:46,088 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'log', 'args': '--oneline -n 10'}
+2026-06-15 22:31:46,438 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:32:11,871 - LLM_Agent - INFO - Iniciando objetivo do agente: consegue ler o arquivo gitignore?
+2026-06-15 22:32:11,871 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:32:12,963 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:32:13,121 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:32:19,633 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': '.gitignore'}
+2026-06-15 22:32:19,796 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:32:24,089 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Sim, consigo ler o arquivo .gitignore. O conteúdo ...
+2026-06-15 22:33:19,455 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue descrever a estrutura do projeto?
+2026-06-15 22:33:19,456 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:33:20,563 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:33:20,724 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:33:27,571 - LLM_Agent - INFO - Executando tool git_reader com args {'command': 'status', 'args': ''}
+2026-06-15 22:33:27,908 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:33:30,073 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': '.', 'mode': 'directory', 'include_code': True}
+2026-06-15 22:33:47,240 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:34:31,464 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:34:32,659 - LLM_Agent - ERROR - Erro na requisição ao modelo: 413 Client Error: Payload Too Large for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:34:32,845 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:36:56,991 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue falar a estrutura do projeto?
+2026-06-15 22:36:56,991 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:36:57,890 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:36:58,066 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:37:04,268 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:37:20,830 - LLM_Agent - INFO - Tarefa resolvida com sucesso: A sessão já possui o mapa do projeto carregado na ...
+2026-06-15 22:37:56,973 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue fazer um tree?
+2026-06-15 22:37:56,973 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:37:58,307 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:37:58,468 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:06,629 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'project_map', 'value': ''}
+2026-06-15 22:38:07,093 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:15,054 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries', 'value': ''}
+2026-06-15 22:38:15,385 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:17,039 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'project_map', 'value': ''}
+2026-06-15 22:38:17,260 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:18,771 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys', 'key': '', 'value': ''}
+2026-06-15 22:38:18,983 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:20,594 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'project_map', 'value': ''}
+2026-06-15 22:38:20,809 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:22,610 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:51,275 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue fazer um uso de comando tipo o tree? a ideia é mostrar a arvore do projeto
+2026-06-15 22:38:51,276 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:38:52,090 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:38:52,680 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:03,874 - LLM_Agent - INFO - Executando tool shell com args {'command': "find . -type f -name '*.py' -o -name '*.json' -o -name '*.yml' -o -name '*.toml' -o -name '*.md' -o -name '*.txt' -o -name 'Dockerfile' | head -100"}
+2026-06-15 22:39:04,043 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:11,676 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:12,825 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'project_map'}
+2026-06-15 22:39:12,990 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:14,272 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'keys'}
+2026-06-15 22:39:14,436 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:16,059 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:17,543 - LLM_Agent - INFO - Executando tool shell com args {'command': 'ls -laR --group-directories-first'}
+2026-06-15 22:39:17,713 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:19,208 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files --sort=name --recursive'}
+2026-06-15 22:39:19,380 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:20,872 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files --sort=name --recursive'}
+2026-06-15 22:39:21,036 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:22,779 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files --sort=name --recursive | sort'}
+2026-06-15 22:39:22,944 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:24,329 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git status'}
+2026-06-15 22:39:25,016 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:27,863 - LLM_Agent - INFO - Executando tool shell com args {'command': "git ls-files -z | tr '\\0' '\\n' | sed 's/^/  /' | sort"}
+2026-06-15 22:39:28,050 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:29,513 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files | sort'}
+2026-06-15 22:39:29,707 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:30,929 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git status'}
+2026-06-15 22:39:31,423 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:33,488 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files | sort'}
+2026-06-15 22:39:33,663 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:39:35,021 - LLM_Agent - INFO - Executando tool shell com args {'command': 'git ls-files | sort'}
+2026-06-15 22:42:02,076 - LLM_Agent - INFO - Iniciando objetivo do agente: Consegue rodar o comando tree e me fornecer?
+2026-06-15 22:42:02,077 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:42:02,948 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:42:03,111 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:42:08,869 - LLM_Agent - INFO - Executando tool shell com args {'command': 'tree -L 3 --dirsfirst'}
+2026-06-15 22:42:09,108 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:42:10,494 - LLM_Agent - INFO - Executando tool shell com args {'command': 'tree -L 3 --dirsfirst'}
+2026-06-15 22:42:10,721 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:42:26,303 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Aqui está a estrutura de diretórios do projeto ger...
+2026-06-15 22:52:33,430 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e veja se há algo duplicado
+2026-06-15 22:52:33,431 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:34,287 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:52:34,449 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:40,451 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'include_code': True}
+2026-06-15 22:52:40,505 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:40,928 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:41,526 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:41,695 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:42,076 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:42,245 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:42,565 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:42,738 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:43,088 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:43,255 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:43,580 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:43,744 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:44,096 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:44,262 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:44,588 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:44,753 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:45,119 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:45,288 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:45,627 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:45,795 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:46,148 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:46,314 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:46,663 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:46,827 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:47,198 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:47,367 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:47,726 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:47,892 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:52:48,262 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:57:19,135 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e veja se há algo duplicado
+2026-06-15 22:57:19,136 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:57:19,828 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 22:57:20,001 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:57:26,691 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:57:39,640 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na análise anterior do diretório `agent/s...
+2026-06-15 22:58:29,262 - LLM_Agent - INFO - Iniciando objetivo do agente: Pesquise as últimas notícias sobre Python 3.13
+2026-06-15 22:58:29,262 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:58:30,781 - LLM_Agent - INFO - Router selecionou a persona: researcher
+2026-06-15 22:58:30,938 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:58:37,127 - LLM_Agent - INFO - Executando tool web_search com args {'query': 'últimas notícias Python 3.13', 'max_results': 5}
+2026-06-15 22:58:40,680 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:59:01,654 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na busca realizada, aqui estão as últimas...
+2026-06-15 22:59:25,165 - LLM_Agent - INFO - Iniciando objetivo do agente: Bom dia, como você está?
+2026-06-15 22:59:25,165 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:59:26,985 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 22:59:27,148 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:59:36,047 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 22:59:48,772 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na análise anterior do diretório `agent/s...
+2026-06-15 23:00:03,501 - LLM_Agent - INFO - Iniciando objetivo do agente: Bom dia, como você está?
+2026-06-15 23:00:03,501 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:00:04,989 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 23:00:05,142 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:00:18,573 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Bom dia! Estou bem, funcionando perfeitamente. Com...
+2026-06-15 23:03:34,988 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi, como você está?
+2026-06-15 23:03:34,989 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:03:36,023 - LLM_Agent - INFO - Router selecionou a persona: general
+2026-06-15 23:03:36,178 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:03:41,731 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Estou bem, obrigado! Como posso ajudar você hoje?...
+2026-06-15 23:04:37,482 - LLM_Agent - INFO - Iniciando objetivo do agente: Eu quero passar pra outra ia como está o meu projeot aqui, pra isso eu quero mandar a estrutura de como está o arquivo, ok?
+2026-06-15 23:04:37,482 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:04:38,395 - LLM_Agent - INFO - Router selecionou a persona: coder
+2026-06-15 23:04:38,563 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:04:47,422 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:04:48,531 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Estou bem, obrigado! Como posso ajudar você hoje?...
+2026-06-15 23:06:27,453 - LLM_Agent - INFO - Iniciando objetivo do agente: Eu quero passar pra outra ia como está o meu projeot aqui, pra isso eu quero mandar a estrutura de como está o arquivo, ok?
+2026-06-15 23:06:27,453 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-15 23:06:27,628 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:06:34,387 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:06:39,490 - LLM_Agent - INFO - Tarefa resolvida com sucesso: O diretório raiz ('.') já foi analisado e seu resu...
+2026-06-15 23:11:12,278 - LLM_Agent - INFO - Iniciando objetivo do agente: Eu quero passar pra outra ia como está o meu projeot aqui, pra isso eu quero mandar a estrutura de como está o arquivo, ok?
+2026-06-15 23:11:12,278 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-15 23:11:12,441 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:18,300 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': '.', 'mode': 'directory', 'include_code': True}
+2026-06-15 23:11:18,411 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:18,939 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:19,491 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:19,650 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:20,195 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:20,365 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:20,914 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:24,165 - LLM_Agent - INFO - Iniciando objetivo do agente: Eu quero passar pra outra ia como está o meu projeot aqui, pra isso eu quero mandar a estrutura de como está o arquivo, ok?
+2026-06-15 23:11:24,166 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-15 23:11:24,328 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:30,948 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries', 'value': ''}
+2026-06-15 23:11:31,106 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:32,611 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'analyzed_files', 'value': ''}
+2026-06-15 23:11:32,769 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:11:34,273 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries', 'value': ''}
+2026-06-15 23:11:34,432 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:12:33,636 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Aqui está a estrutura completa do seu projeto:
+
+##...
+2026-06-15 23:19:56,034 - LLM_Agent - INFO - Iniciando objetivo do agente: gere um resumo técnico detalhado de cada módulo, incluindo principais funções e dependências
+2026-06-15 23:19:56,034 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:19:59,936 - LLM_Agent - INFO - Router (LLM) selecionou a persona: coder
+2026-06-15 23:20:00,117 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:20:14,369 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:21:23,358 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Aqui está a estrutura completa do seu projeto:
+
+##...
+2026-06-15 23:22:53,008 - LLM_Agent - INFO - Iniciando objetivo do agente: Para cada arquivo Python no diretório agent/skills, use code_analyzer com include_code=true. Depois, gere um resumo técnico listando: nome da classe, métodos públicos com seus parâmetros, e dependências (imports). Ignore a memória existente — quero uma análise nova e detalhada.
+2026-06-15 23:22:53,009 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-15 23:22:53,171 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:12,642 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'include_code': True}
+2026-06-15 23:23:12,704 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:13,291 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:13,727 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:13,912 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:14,444 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:14,631 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:15,168 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:23:46,831 - LLM_Agent - INFO - Iniciando objetivo do agente: Para cada arquivo Python no diretório agent/skills, use code_analyzer com include_code=true. Depois, gere um resumo técnico listando: nome da classe, métodos públicos com seus parâmetros, e dependências (imports). Ignore a memória existente — quero uma análise nova e detalhada.
+2026-06-15 23:23:46,831 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-15 23:23:46,991 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:24:07,250 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:26:13,625 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:26:33,751 - LLM_Agent - INFO - Executando tool directory_lister com args {'path': 'agent/skills'}
+2026-06-15 23:26:33,952 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:26:36,930 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills/base.py', 'mode': 'file', 'include_code': True}
+2026-06-15 23:26:36,933 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:27:18,166 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:27:41,029 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills/echo.py', 'mode': 'file', 'include_code': True}
+2026-06-15 23:27:41,033 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:28:17,305 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:28:45,339 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:28:47,422 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:28:49,371 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:28:51,544 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:31:15,256 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:31:40,446 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:31:42,419 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:31:44,388 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-15 23:31:46,364 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:34:53,466 - LLM_Agent - INFO - Iniciando objetivo do agente: Use code_analyzer com mode='directory', target='agent/skills', include_code=true. Depois, com base no mapa gerado, produza um resumo técnico detalhado.
+2026-06-16 09:34:53,468 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:34:53,635 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:35:04,108 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:35:35,409 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na análise já realizada e armazenada na m...
+2026-06-16 09:36:42,543 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:36:47,289 - LLM_Agent - WARNING - Geração de resposta interrompida pelo usuário.
+2026-06-16 09:37:22,592 - LLM_Agent - INFO - Iniciando objetivo do agente: Use code_analyzer com mode='directory', target='agent/skills'. Depois, com base APENAS nesse mapa estrutural, produza um resumo técnico detalhado de cada módulo, listando classe, métodos principais (com parâmetros) e dependências.
+2026-06-16 09:37:22,592 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:37:22,754 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:29,617 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'include_code': True}
+2026-06-16 09:37:29,720 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:30,185 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:30,568 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:30,732 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:31,178 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:31,378 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:31,853 - LLM_Agent - ERROR - Erro na requisição ao modelo: 400 Client Error: Bad Request for url: http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:37,743 - LLM_Agent - INFO - Iniciando objetivo do agente: Use code_analyzer com mode='directory', target='agent/skills'. Depois, com base APENAS nesse mapa estrutural, produza um resumo técnico detalhado de cada módulo, listando classe, métodos principais (com parâmetros) e dependências.
+2026-06-16 09:37:37,743 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:37:37,898 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:37:45,669 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:38:23,680 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na análise estrutural já realizada e arma...
+2026-06-16 09:44:53,692 - LLM_Agent - INFO - Iniciando objetivo do agente: Use code_analyzer com mode='directory', target='agent/skills', compact=true. Depois produza um resumo técnico detalhado.
+2026-06-16 09:44:53,692 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:44:53,851 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:45:00,890 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:45:12,435 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base no resumo existente na memória da sessão,...
+2026-06-16 09:45:37,002 - LLM_Agent - INFO - Iniciando objetivo do agente: Use code_analyzer com mode='directory', target='agent/skills', compact=true. Depois produza um resumo técnico detalhado.
+2026-06-16 09:45:37,002 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:45:37,166 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:45:43,592 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'compact': True}
+2026-06-16 09:45:43,713 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:46:34,304 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:46:44,656 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:47:09,216 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória da sessão, o módulo `agent/ski...
+2026-06-16 09:48:16,809 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise agent/skills/code_analyzer.py com mode='file' e include_code=true. Explique a classe CallVisitor.
+2026-06-16 09:48:16,809 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:48:16,980 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:48:28,755 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills/code_analyzer.py', 'mode': 'file', 'include_code': True}
+2026-06-16 09:48:28,764 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:49:33,307 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:49:48,318 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:50:28,920 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base nas informações existentes na memória da ...
+2026-06-16 09:55:53,498 - LLM_Agent - INFO - Iniciando objetivo do agente: oi
+2026-06-16 09:55:53,498 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:55:54,891 - LLM_Agent - INFO - Router (LLM) selecionou a persona: general
+2026-06-16 09:55:55,043 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:56:03,319 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Olá! Como posso ajudar você hoje?...
+2026-06-16 09:56:35,092 - LLM_Agent - INFO - Iniciando objetivo do agente: analise a pasta skills
+2026-06-16 09:56:35,092 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-16 09:56:35,312 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:56:42,257 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'compact': True}
+2026-06-16 09:56:42,292 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:57:12,324 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 09:57:48,413 - LLM_Agent - INFO - Tarefa resolvida com sucesso: A pasta `agent/skills` contém **15 arquivos** que ...
+2026-06-16 10:01:54,159 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi
+2026-06-16 10:01:54,160 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:01:56,251 - LLM_Agent - INFO - Router (LLM) selecionou a persona: general
+2026-06-16 10:01:56,415 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:02:05,422 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:02:13,441 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Olá! Como posso ajudar você hoje?...
+2026-06-16 10:04:59,399 - LLM_Agent - INFO - Iniciando objetivo do agente: Oii
+2026-06-16 10:04:59,400 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:05:00,428 - LLM_Agent - INFO - Router (LLM) selecionou a persona: general
+2026-06-16 10:05:00,589 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:05:05,871 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Oi! Como posso ajudar você hoje?...
+2026-06-16 10:09:05,875 - LLM_Agent - INFO - Iniciando objetivo do agente: Oi
+2026-06-16 10:09:05,875 - LLM_Agent - INFO - Router (trivial) → general
+2026-06-16 10:09:06,039 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:09:11,781 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-16 10:09:12,595 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Oi! Como posso ajudar hoje?...
+2026-06-18 17:48:16,867 - LLM_Agent - INFO - Iniciando objetivo do agente: A primeira coisa que eu quero que vc faça é ler o agent/prompts e entender ele, ok?
+2026-06-18 17:48:16,868 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 17:48:17,035 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:25,283 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/prompts', 'mode': 'file', 'include_code': True}
+2026-06-18 17:48:25,463 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:27,149 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/prompts', 'mode': 'directory', 'include_code': True}
+2026-06-18 17:48:27,313 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:29,228 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': 'agent/prompts', 'start_line': 1, 'end_line': 100}
+2026-06-18 17:48:29,388 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:30,666 - LLM_Agent - INFO - Executando tool directory_lister com args {'path': 'agent/prompts'}
+2026-06-18 17:48:30,837 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:32,052 - LLM_Agent - INFO - Executando tool directory_lister com args {'path': 'agent'}
+2026-06-18 17:48:32,213 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:48:34,562 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': 'agent/prompts.py', 'start_line': 1, 'end_line': 500}
+2026-06-18 17:48:34,563 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:49:02,647 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:49:28,534 - LLM_Agent - INFO - Tarefa resolvida com sucesso: O arquivo `agent/prompts.py` foi lido e contém as ...
+2026-06-18 17:52:16,251 - LLM_Agent - INFO - Iniciando objetivo do agente: Eu gostaria de Adicionar ao prompt do agente system a instrução para gerar um plano antes de agir. O plano será um campo "plan" dentro do JSON de resposta. 
+2026-06-18 17:52:16,251 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 17:52:16,412 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:52:27,816 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:52:56,142 - LLM_Agent - INFO - Tarefa resolvida com sucesso: O arquivo `agent/prompts.py` contém a definição de...
+2026-06-18 17:59:34,839 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 17:59:34,839 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 17:59:34,992 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 17:59:45,733 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:00:10,596 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória da sessão, o módulo `agent/ski...
+2026-06-18 18:02:29,045 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 18:02:29,046 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:02:29,205 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:02:36,061 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'compact': True}
+2026-06-18 18:02:36,160 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:03:16,126 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:03:25,658 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:03:53,272 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória da sessão (`SESSION MEMORY`), ...
+2026-06-18 18:06:39,522 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 18:06:39,523 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:08:04,114 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 18:08:04,115 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:08:04,275 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:08:15,178 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:08:32,551 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória de sessão, o projeto possui um...
+2026-06-18 18:08:47,856 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 18:08:47,856 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:08:48,007 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:08:56,772 - LLM_Agent - INFO - Executando tool session_memory com args {}
+2026-06-18 18:08:56,937 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:08:59,741 - LLM_Agent - INFO - Executando tool directory_lister com args {'path': 'agent/skills'}
+2026-06-18 18:08:59,936 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:09:05,888 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'include_code': False, 'compact': True}
+2026-06-18 18:09:05,922 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:09:50,438 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:09,037 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:24,268 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries'}
+2026-06-18 18:10:24,438 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:29,998 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:34,640 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:40,283 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:45,411 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries'}
+2026-06-18 18:10:45,608 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:10:50,424 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries'}
+2026-06-18 18:10:50,662 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:14:04,269 - LLM_Agent - INFO - Iniciando objetivo do agente: Analise o diretório agent/skills e sugira duplicações
+2026-06-18 18:14:04,269 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:14:04,430 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:14:13,911 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'skills_structure'}
+2026-06-18 18:14:14,067 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:14:18,092 - LLM_Agent - INFO - Executando tool directory_lister com args {'path': 'agent/skills'}
+2026-06-18 18:14:18,251 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:14:23,437 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/skills', 'mode': 'directory', 'compact': True}
+2026-06-18 18:14:23,472 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:15:03,102 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:15:17,669 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:15:24,639 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'file_summaries'}
+2026-06-18 18:15:24,802 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:16:26,826 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória de sessão (`file_summaries`), ...
+2026-06-18 18:43:00,426 - LLM_Agent - INFO - Iniciando objetivo do agente: Leia o arquivo agent/prompts.py e resuma
+2026-06-18 18:43:00,426 - LLM_Agent - INFO - Router (keyword) → coder
+2026-06-18 18:43:00,598 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:43:11,647 - LLM_Agent - INFO - Executando tool code_analyzer com args {'target': 'agent/prompts.py', 'mode': 'file', 'include_code': False}
+2026-06-18 18:43:11,821 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:43:16,276 - LLM_Agent - INFO - Executando tool file_reader com args {'file_path': 'agent/prompts.py', 'start_line': 1, 'end_line': 50}
+2026-06-18 18:43:16,278 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:43:38,684 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:43:52,635 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:43:57,048 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'agent/prompts.py'}
+2026-06-18 18:43:57,249 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:44:02,123 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:44:16,142 - LLM_Agent - INFO - Executando tool session_memory com args {'action': 'get', 'key': 'agent/prompts.py'}
+2026-06-18 18:44:16,328 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:44:20,010 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:44:26,795 - LLM_Agent - DEBUG - Enviando requisição POST para http://127.0.0.1:8080/v1/chat/completions
+2026-06-18 18:45:09,412 - LLM_Agent - INFO - Tarefa resolvida com sucesso: Com base na memória de sessão, temos as seguintes ...

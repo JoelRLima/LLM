@@ -30,24 +30,27 @@ class SessionMemorySkill(BaseSkill):
         action = args.get("action", "")
         key = args.get("key", "")
         value = args.get("value", "")
+        
+        # Todos os dados de "chave simples" ficam em key_findings
+        memory_store = self.orchestrator.memory.state.get("key_findings", {})
 
         if action == "set":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            self.orchestrator.remember(key, value)
+            self.orchestrator.remember(key, value, section="key_findings")
             return {"ok": True, "done": True, "message": f"Memorizado: {key}"}
         elif action == "get":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            val = self.orchestrator.memory.get(key, None)
-            return {"ok": True, "done": True, "data": val, "message": f"Valor de {key}"}
+            val = memory_store.get(key, None)
+            return {"ok": True, "done": True, "data": val, "message": f"Valor de {key}: {val}"}
         elif action == "keys":
-            keys = list(self.orchestrator.memory.keys())
-            return {"ok": True, "done": True, "data": keys, "message": f"{len(keys)} chaves."}
+            keys = list(memory_store.keys())
+            return {"ok": True, "done": True, "data": keys, "message": f"{len(keys)} chaves na memória."}
         elif action == "delete":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
             self.orchestrator.forget(key)
             return {"ok": True, "done": True, "message": f"Removido: {key}"}
         else:
-            return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}
+            return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}
