@@ -22,14 +22,12 @@ class Orchestrator:
         self.verbose: bool = verbose
         self.active_skills: List[str] = []
 
-        # Estado unificado do agente
         self.agent_state = AgentState()
 
         if skills:
             for s in skills:
                 self.register_skill(s)
 
-    # ---- Skills ----
     def register_skill(self, skill: Any) -> None:
         self.skills[skill.name] = skill
 
@@ -43,7 +41,6 @@ class Orchestrator:
                 out.append(f"- {s.name}: {s.description}\nArgs: {json.dumps(s.get_schema(), indent=2, ensure_ascii=False)}")
         return "\n".join(out)
 
-    # ---- Delegação para a memória (mantém compatibilidade com comandos atuais) ----
     def remember(self, key: str, value: Any, section: str = "key_findings") -> None:
         self.agent_state.memory.remember(key, value, section)
 
@@ -60,12 +57,10 @@ class Orchestrator:
     def load_memory_from_file(self, path: str = "agent_memory.json") -> str:
         return self.agent_state.memory.load_from_file(path)
 
-    # ---- Emissão de eventos ----
     def _emit(self, event_type: str, data: Dict[str, Any] = None) -> None:
-        """Registra um evento de telemetria."""
         event = {
             "type": event_type,
-            "step": self.agent_state.objective is not None,  # passo atual será obtido do loop
+            "step": self.agent_state.objective is not None,
             "data": data or {}
         }
         self.agent_state.events.append(event)
@@ -81,16 +76,17 @@ class Orchestrator:
             }.get(event_type, "•")
             print(f"{emoji} [{event_type}] {data}")
 
-    # ---- Helpers (resumo e verificação) ----
     def _maybe_summarize_and_store(self, tool_name: str, args: Dict[str, Any], result: Dict[str, Any]) -> None:
         if tool_name in ("code_analyzer", "file_reader") and result.get("ok"):
             file_path = args.get("target") or args.get("file_path")
             if file_path and "data" in result:
                 content = result.get("data")
                 if isinstance(content, dict):
+                    if not content.get("classes") and not content.get("functions"):
+                        return
                     content = stringify(content)
-                if content and len(content) > 300:
-                    summary = self._summarize_text(content, context=f"Arquivo: {file_path}")
+                if content and len(str(content)) > 300:
+                    summary = self._summarize_text(str(content), context=f"Arquivo: {file_path}")
                     self.agent_state.memory.state["analyzed_files"][file_path] = summary[:150]
                     self.agent_state.memory.state["file_summaries"][file_path] = summary
 
@@ -139,7 +135,6 @@ class Orchestrator:
         except Exception:
             return ""
 
-    # ---- Chamada ao modelo ----
     def _ask_model(self, prompt: str) -> Dict[str, Any]:
         analyzed_context = ""
         if self.agent_state.memory.state.get("analyzed_files"):
@@ -207,7 +202,6 @@ class Orchestrator:
             return decision
         return {"action": "error", "message": "Falha ao extrair JSON da resposta.", "raw_response": str(response)}
 
-    # ---- Execução de ferramenta ----
     def _run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name not in self.skills or (self.active_skills and tool_name not in self.active_skills):
             result = {"ok": False, "done": False, "data": None, "error": f"Tool '{tool_name}' não existe ou não está permitida para esta persona.", "message": None}
@@ -233,7 +227,6 @@ class Orchestrator:
         self.agent_state.tool_history.append({"tool": tool_name, "args": args, "result": result})
         return result
 
-    # ---- Loop principal ----
     def run(self, objective: str) -> str:
         original_msg_count = len(self.session.messages)
         tool_usage_count: Dict[str, int] = {}
@@ -312,7 +305,6 @@ class Orchestrator:
 
                 action = decision["action"]
 
-                # Extrai e armazena o plano (se existir)
                 plan = decision.get("plan")
                 if plan and isinstance(plan, list):
                     self.agent_state.plan = plan
@@ -356,9 +348,59 @@ class Orchestrator:
                         args = {}
 
                     file_path = args.get("target") or args.get("file_path")
+
+                    # 🚫 Bloqueia code_analyzer repetido para o mesmo arquivo
+                    if tool == "code_analyzer" and file_path:
+                        code_analyzer_key = f"code_analyzer_{file_path}"
+                        tool_usage_count[code_analyzer_key] = tool_usage_count.get(code_analyzer_key, 0) + 1
+                        if tool_usage_count[code_analyzer_key] > 1:
+                            self._emit("hard_block", {"file": file_path, "reason": "code_analyzer repetido"})
+                            if self.verbose:
+                                print(f"[DEBUG] Bloqueada reanálise estrutural de {file_path}. Use file_reader para detalhes.")
+                            prompt = (
+                                f"O arquivo '{file_path}' já teve sua estrutura analisada. "
+                                f"NÃO use code_analyzer novamente. Use file_reader com start_line e end_line para detalhes, "
+                                f"ou finalize a resposta com base nas informações já disponíveis."
+                            )
+                            continue
+
+                    # 🚫 Bloqueia releitura do mesmo intervalo com file_reader
+                    if tool == "file_reader" and file_path and "start_line" in args and "end_line" in args:
+                        chunk_key = f"file_reader_{file_path}_{args['start_line']}_{args['end_line']}"
+                        tool_usage_count[chunk_key] = tool_usage_count.get(chunk_key, 0) + 1
+                        if tool_usage_count[chunk_key] > 1:
+                            self._emit("hard_block", {"file": file_path, "reason": "chunk repetido"})
+                            if self.verbose:
+                                print(f"[DEBUG] Bloqueada releitura do chunk {args['start_line']}-{args['end_line']} de {file_path}.")
+                            prompt = (
+                                f"O trecho {args['start_line']}-{args['end_line']} de '{file_path}' já foi lido. "
+                                f"Você já possui o conteúdo completo do arquivo. "
+                                f"Produza a resposta final com as sugestões de melhoria AGORA, sem usar mais ferramentas."
+                            )
+                            continue
+
+                    # 🚫 Bloqueia qualquer leitura adicional de arquivo já totalmente lido
+                    if tool == "file_reader" and file_path:
+                        fully_read_key = f"fully_read_{file_path}"
+                        if tool_usage_count.get(fully_read_key, 0) > 0:
+                            self._emit("hard_block", {"file": file_path, "reason": "arquivo já totalmente lido"})
+                            if self.verbose:
+                                print(f"[DEBUG] Bloqueada leitura de '{file_path}' – arquivo já totalmente lido.")
+                            prompt = (
+                                f"O arquivo '{file_path}' já foi lido completamente. "
+                                f"Você já possui todo o conteúdo necessário. "
+                                f"Produza a resposta final com as sugestões AGORA, sem usar mais ferramentas."
+                            )
+                            continue
+
+                    # 🚫 Hard block: não reanalisar arquivos que já estão na memória
+                    # (a menos que o usuário tenha pedido explicitamente para analisar/revisar)
+                    explicit_analysis = any(kw in self.agent_state.objective.lower() 
+                                            for kw in ["analise", "analisar", "analise", "review", "sugira", "sugest", "melhoria", "melhorar", "improve", "examine"])
                     if (tool in ("code_analyzer", "file_reader") and 
                         file_path and 
-                        file_path in self.agent_state.memory.state.get("analyzed_files", {})):
+                        file_path in self.agent_state.memory.state.get("analyzed_files", {}) and
+                        not explicit_analysis):
                         self._emit("hard_block", {"file": file_path})
                         if self.verbose:
                             print(f"[DEBUG] Bloqueada reanálise de {file_path}. Usando resumo existente.")
@@ -393,6 +435,16 @@ class Orchestrator:
                     result = self._run_tool(tool, args)
                     self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
                     self._maybe_summarize_and_store(tool, args, result)
+
+                    # Marca arquivo como completamente lido se o último chunk atingiu total_lines
+                    if tool == "file_reader" and result.get("ok") and "total_lines" in result:
+                        total_lines = result["total_lines"]
+                        end_line = args.get("end_line", total_lines)
+                        if end_line == total_lines:
+                            fully_read_key = f"fully_read_{file_path}"
+                            tool_usage_count[fully_read_key] = 1
+                            if self.verbose:
+                                print(f"[DEBUG] Arquivo '{file_path}' completamente lido ({total_lines} linhas). Bloqueando futuras leituras.")
 
                     if self.agent_state.plan and self.agent_state.plan_step < len(self.agent_state.plan):
                         self.agent_state.plan_step += 1

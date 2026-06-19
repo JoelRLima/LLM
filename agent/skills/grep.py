@@ -1,4 +1,3 @@
-# agent/skills/grep.py
 import os
 import re
 from pathlib import Path
@@ -32,6 +31,14 @@ class GrepSkill(BaseSkill):
             "max_results": {
                 "type": "integer",
                 "description": "Número máximo de resultados a retornar. Padrão: 20."
+            },
+            "exclude_dirs": {
+                "type": "array",
+                "description": "Lista de nomes de diretórios a excluir da busca. Padrão: ['.venv', '__pycache__', '.git', 'node_modules']."
+            },
+            "exclude_files": {
+                "type": "array",
+                "description": "Lista de nomes de arquivos a excluir da busca. Padrão: ['agent.log', 'agent_memory.json']."
             }
         }
 
@@ -44,6 +51,8 @@ class GrepSkill(BaseSkill):
         recursive = args.get("recursive", True)
         case_sensitive = args.get("case_sensitive", True)
         max_results = args.get("max_results", 20)
+        exclude_dirs = args.get("exclude_dirs", [".venv", "__pycache__", ".git", "node_modules"])
+        exclude_files = args.get("exclude_files", ["agent.log", "agent_memory.json"])
 
         # Resolve caminho seguro
         try:
@@ -62,15 +71,23 @@ class GrepSkill(BaseSkill):
             files_to_search = [requested]
         elif requested.is_dir():
             if recursive:
-                for root, _, files in os.walk(requested):
+                for root, dirs, files in os.walk(requested):
+                    # Exclui diretórios indesejados
+                    dirs[:] = [d for d in dirs if d not in exclude_dirs and not d.startswith(".")]
                     for file in files:
                         files_to_search.append(Path(root) / file)
             else:
-                files_to_search = [requested / f for f in os.listdir(requested) if (requested / f).is_file()]
+                for f in os.listdir(requested):
+                    full = requested / f
+                    if full.is_file():
+                        files_to_search.append(full)
 
         # Filtra apenas arquivos de texto
         text_extensions = {".txt", ".md", ".py", ".json", ".csv", ".log", ".yaml", ".yml", ".html", ".css", ".js"}
         files_to_search = [f for f in files_to_search if f.suffix.lower() in text_extensions]
+
+        # Exclui arquivos indesejados por nome
+        files_to_search = [f for f in files_to_search if f.name not in exclude_files]
 
         # Compila o padrão
         try:
@@ -92,13 +109,12 @@ class GrepSkill(BaseSkill):
                             results.append({
                                 "file": str(file_path.relative_to(self.base_dir)),
                                 "line": line_num,
-                                "content": line.strip()[:200]  # limita tamanho da linha exibida
+                                "content": line.strip()[:200]
                             })
                             total_matches += 1
                             if len(results) >= max_results:
                                 break
             except Exception:
-                # Ignora arquivos que não puderam ser lidos (binários, permissão, etc.)
                 continue
 
         return {

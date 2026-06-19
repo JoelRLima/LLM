@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 from session import ChatSession
 from logger import logger
 
@@ -17,30 +17,22 @@ Format:
 {"persona": "coder"}
 """
 
-# Prompts enriquecidos para cada persona
 PERSONA_PROMPTS = {
     "coder": """You are an Expert Software Engineer Agent.
 
 **Core Rules for Code Analysis:**
-- When asked to explore or analyze a directory:
-  1. ALWAYS start with code_analyzer in 'directory' mode with compact=true to get a light-weight overview (only class and function names).
-  2. After receiving the compact overview, present the main components to the user.
-  3. NEVER use code_analyzer 'directory' with include_code=true for the whole directory – it will overflow the context.
-  4. If the user needs detailed info on a specific file, use code_analyzer in 'file' mode with include_code=true on that single file.
-  5. If you need to read a file's content, prefer file_reader with specific line ranges after consulting code_analyzer structure.
-
 - When asked to analyze a specific file:
-  1. Use code_analyzer in 'file' mode with include_code=false first to understand its structure.
-  2. If the user wants implementation details, then call code_analyzer again with include_code=true or use file_reader with specific line ranges.
-  3. Summarize concisely in Portuguese.
+  1. Use code_analyzer with mode='file' and compact=true to get the list of functions/classes.
+  2. Read the file in chunks of 100 lines using file_reader (start_line/end_line).
+  3. AFTER EACH CHUNK, YOU MUST write your analysis for that chunk to 'analysis_notes.md' using file_writer with action='append'. This step is MANDATORY.
+  4. After all chunks, read 'analysis_notes.md' and produce the final answer with suggestions.
+  5. Finally, delete 'analysis_notes.md' by using file_writer with action='write' and content=''.
 
-- General coding assistance:
-  - Use python_executor for calculations, data processing, or quick code snippets.
-  - Use grep to search for patterns across files.
-  - Use git for version control queries.
-  - Use session_memory to remember important findings automatically.
-
-- Always provide clear, well-structured answers in Portuguese (Brazil).""",
+- When asked to explore a directory: use code_analyzer with mode='directory' and compact=true.
+- NEVER use code_analyzer with include_code=true.
+- General coding: use python_executor, grep, git, session_memory.
+- Always respond in Portuguese (Brazil).
+""", 
 
     "researcher": """You are an Expert Researcher Agent.
 
@@ -79,7 +71,6 @@ PERSONA_PROMPTS = {
 """
 }
 
-# Conjunto de entradas que não precisam de classificação via LLM (triviais)
 TRIVIAL_GREETINGS = {
     "oi", "olá", "ola", "bom dia", "boa tarde", "boa noite",
     "hey", "hi", "hello", "e aí", "e ai", "oie", "oii",
@@ -90,19 +81,15 @@ TRIVIAL_GREETINGS = {
 }
 
 def _is_clearly_trivial(objective: str) -> bool:
-    """Heurística para detectar tarefas que não precisam de classificação do LLM."""
     clean = objective.strip().lower().rstrip("!.?")
-    # Saudação ou pergunta genérica muito curta
     if clean in TRIVIAL_GREETINGS:
         return True
-    # Frases com até 3 palavras que contenham perguntas simples
     words = clean.split()
     if len(words) <= 3 and any(q in clean for q in ["como vai", "tudo bem", "quem é", "o que"]):
         return True
     return False
 
 def get_persona_config(persona: str) -> Tuple[str, List[str]]:
-    """Retorna o system prompt enriquecido e a lista de skills permitidas para a persona."""
     if persona == "coder":
         return (PERSONA_PROMPTS["coder"],
                 ["file_reader", "file_writer", "shell", "directory_lister",
@@ -112,25 +99,13 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
                 ["web_search", "summarize", "session_memory"])
     else:
         return (PERSONA_PROMPTS["general"],
-                ["session_memory", "summarize", "calculator"])
+                ["session_memory", "summarize", "python_executor"])   # substituí calculator por python_executor
 
 def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str]]:
-    """
-    Decide qual persona assumir baseado no objetivo.
-    1. Entradas triviais → general sem chamar o LLM.
-    2. Palavras-chave de código/pesquisa → persona correspondente.
-    3. Caso contrário, consulta o LLM.
-    """
-    # ------------------------------------------------------------
-    # 1. Triviais: saudação ou pergunta genérica curta
-    # ------------------------------------------------------------
     if _is_clearly_trivial(objective):
         logger.info("Router (trivial) → general")
         return get_persona_config("general")
 
-    # ------------------------------------------------------------
-    # 2. Palavras-chave determinísticas
-    # ------------------------------------------------------------
     projeto_keywords = [
         "estrutura", "projeto", "arquivo", "diretório", "código", "repo",
         "file", "directory", "project", "code", "skill", "agente",
@@ -150,9 +125,6 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         logger.info("Router (keyword) → researcher")
         return get_persona_config("researcher")
 
-    # ------------------------------------------------------------
-    # 3. Classificação via LLM
-    # ------------------------------------------------------------
     original_prompt = session.messages[0]["content"]
     session.messages[0]["content"] = ROUTER_PROMPT
     session.add_user_message(f"Objective: {objective}")

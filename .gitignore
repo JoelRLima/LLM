@@ -2,3 +2,6 @@ config.json
 .venv/
 __pycache__/
 *.pyc
+agent_memory.json
+agent.log
+.temp_analysis/

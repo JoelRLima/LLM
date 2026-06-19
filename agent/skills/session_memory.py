@@ -32,7 +32,7 @@ class SessionMemorySkill(BaseSkill):
         value = args.get("value", "")
         
         # Todos os dados de "chave simples" ficam em key_findings
-        memory_store = self.orchestrator.memory.state.get("key_findings", {})
+        memory_store = self.orchestrator.agent_state.memory.state.get("key_findings", {})
 
         if action == "set":
             if not key:
@@ -45,7 +45,7 @@ class SessionMemorySkill(BaseSkill):
             val = memory_store.get(key, None)
             return {"ok": True, "done": True, "data": val, "message": f"Valor de {key}: {val}"}
         elif action == "keys":
-            keys = list(memory_store.keys())
+            keys = list(self.orchestrator.agent_state.memory.state.keys())
             return {"ok": True, "done": True, "data": keys, "message": f"{len(keys)} chaves na memória."}
         elif action == "delete":
             if not key:
@@ -53,4 +53,4 @@ class SessionMemorySkill(BaseSkill):
             self.orchestrator.forget(key)
             return {"ok": True, "done": True, "message": f"Removido: {key}"}
         else:
-            return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}
+            return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}

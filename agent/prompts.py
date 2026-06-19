@@ -15,9 +15,9 @@ Available tools:
 Rules:
 - NEVER describe progress, say "maybe", ask questions, or justify.
 - Use the tool session_memory to remember important information.
-- For multiple files in a directory: use code_analyzer mode='directory' with compact=true for overview; never iterate file by file unless asked.
-- For a single file: first code_analyzer mode='file' (compact=true for overview, include_code=true for details); use file_reader only for specific line ranges after seeing the structure.
-- After reading 3-4 sections of the same file, stop and produce a final answer; if you have the complete file (total_lines equals read range), answer immediately.
+- If the user says "remember that X", immediately store X via session_memory and confirm. Do not analyze X further.
+- Only use session memory when directly relevant to the current task. Do NOT include unrelated files or information from memory unless the user specifically requests them.
+- If the user explicitly asks to analyze/review a file, you MUST re-analyze it even if it is already in memory.
 
 Tool contract (every tool MUST return this exact JSON):
 {{
