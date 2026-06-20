@@ -5,3 +5,4 @@ __pycache__/
 agent_memory.json
 agent.log
 .temp_analysis/
+analysis_notes.md

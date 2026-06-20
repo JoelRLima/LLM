@@ -6,12 +6,20 @@ from typing import Any, Dict
 from .base import BaseSkill
 from logger import logger
 
+# ----------------------------------------------------------------------
 # Comandos permitidos por prefixo
+# ----------------------------------------------------------------------
 ALLOWED_COMMANDS = {
     "pytest", "python", "pip", "ruff", "mypy",
     "git status", "git log", "git diff", "git add", "git commit",
     "npm", "node", "echo", "type", "dir", "tree", "ls",
 }
+
+# ----------------------------------------------------------------------
+# Limite de caracteres para a saída da ferramenta
+# ----------------------------------------------------------------------
+MAX_OUTPUT_CHARS = 4000
+
 
 def _is_command_allowed(cmd: str) -> bool:
     cmd_lower = cmd.strip().lower()
@@ -19,6 +27,7 @@ def _is_command_allowed(cmd: str) -> bool:
         if cmd_lower == allowed or cmd_lower.startswith(allowed + " "):
             return True
     return False
+
 
 class ShellSkill(BaseSkill):
     name = "shell"
@@ -60,13 +69,28 @@ class ShellSkill(BaseSkill):
             if result.stderr:
                 output += ("\n[stderr]\n" + result.stderr)
 
+            # -------------------------------------------------------------
+            # Truncamento de saída (Item 1.2)
+            # -------------------------------------------------------------
+            total_chars = len(output)
+            if total_chars > MAX_OUTPUT_CHARS:
+                output = output[:MAX_OUTPUT_CHARS] + (
+                    f"\n... (output truncado, {total_chars} caracteres no total)"
+                )
+                trunc_msg = f" (truncado, {total_chars} caracteres)"
+            else:
+                trunc_msg = ""
+
             ok = result.returncode == 0
             return {
                 "ok": ok,
                 "done": True,
                 "data": output.strip() or "(sem saída)",
                 "error": None if ok else f"Exit code {result.returncode}",
-                "message": "Comando executado com sucesso." if ok else f"Comando falhou (exit {result.returncode})."
+                "message": (
+                    "Comando executado com sucesso." if ok
+                    else f"Comando falhou (exit {result.returncode})."
+                ) + trunc_msg,
             }
         except subprocess.TimeoutExpired:
             return {"ok": False, "done": True, "error": f"Timeout após {self.timeout}s."}

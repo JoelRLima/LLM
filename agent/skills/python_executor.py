@@ -23,6 +23,12 @@ ALLOWED_BUILTINS = {
     "sorted", "str", "sum", "tuple", "type", "zip"
 }
 
+# ----------------------------------------------------------------------
+# Limite de caracteres para a saída da ferramenta (Item 1.2)
+# ----------------------------------------------------------------------
+MAX_OUTPUT_CHARS = 4000
+
+
 class PythonExecutorSkill(BaseSkill):
     name = "python_executor"
     description = "Executa código Python seguro em um subprocesso isolado, com timeout e imports restritos."
@@ -135,6 +141,18 @@ class PythonExecutorSkill(BaseSkill):
             if result.stderr:
                 output += "\n[stderr]\n" + result.stderr
 
+            # -------------------------------------------------------------
+            # Truncamento de saída (Item 1.2)
+            # -------------------------------------------------------------
+            total_chars = len(output)
+            if total_chars > MAX_OUTPUT_CHARS:
+                output = output[:MAX_OUTPUT_CHARS] + (
+                    f"\n... (output truncado, {total_chars} caracteres no total)"
+                )
+                trunc_msg = f" (truncado, {total_chars} caracteres)"
+            else:
+                trunc_msg = ""
+
             # Determina sucesso baseado no código de saída
             if result.returncode == 0:
                 return {
@@ -142,28 +160,28 @@ class PythonExecutorSkill(BaseSkill):
                     "done": True,
                     "data": output.strip() or "(sem saída)",
                     "error": None,
-                    "message": "Código executado com sucesso."
+                    "message": "Código executado com sucesso." + trunc_msg,
                 }
             else:
                 return {
                     "ok": False,
                     "done": True,
                     "error": f"Código terminou com erro (exit {result.returncode})",
-                    "message": output.strip() or "(sem saída)"
+                    "message": (output.strip() or "(sem saída)") + trunc_msg,
                 }
         except subprocess.TimeoutExpired:
             return {
                 "ok": False,
                 "done": True,
                 "error": f"Timeout após {self.timeout}s",
-                "message": "O código excedeu o tempo limite."
+                "message": "O código excedeu o tempo limite.",
             }
         except Exception as e:
             return {
                 "ok": False,
                 "done": True,
                 "error": str(e),
-                "message": "Erro ao executar o subprocesso."
+                "message": "Erro ao executar o subprocesso.",
             }
         finally:
             # Remove o arquivo temporário

@@ -90,3 +90,15 @@ def normalize_tool_result(result: Any, error_patterns: list) -> Dict[str, Any]:
             return {"ok": False, "done": False, "data": None, "error": result, "message": "A ferramenta retornou uma mensagem de erro."}
         return {"ok": True, "done": True, "data": result, "error": None, "message": None}
     return {"ok": True, "done": True, "data": result, "error": None, "message": None}
+
+def extract_json_from_end(text: str) -> Optional[Dict]:
+    """Tenta extrair o último objeto JSON válido no texto."""
+    import re
+    # Procura por { ... } que seja um JSON válido
+    matches = list(re.finditer(r'\{.*?\}', text, re.DOTALL))
+    for match in reversed(matches):
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            continue
+    return None
