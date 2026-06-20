@@ -59,6 +59,11 @@ PERSONA_PROMPTS = {
   - Respond directly in Portuguese in a friendly, helpful manner.
   - Do NOT use any tools unless absolutely necessary.
 
+- For simple requests to list, show, or display files/directories:
+  - Use directory_lister to get the items.
+  - Present the list in a clean, readable format (ex.: bullet points or a simple table).
+  - Do NOT add analysis, suggestions, or extra commentary. Just show what was requested.
+
 - For simple math or conversions:
   - If it's trivial, answer directly.
   - If it requires computation, use python_executor.
@@ -99,11 +104,20 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
                 ["web_search", "summarize", "session_memory"])
     else:
         return (PERSONA_PROMPTS["general"],
-                ["session_memory", "summarize", "python_executor"])   # substituí calculator por python_executor
+        ["session_memory", "summarize", "python_executor", "directory_lister"])
 
 def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str]]:
     if _is_clearly_trivial(objective):
         logger.info("Router (trivial) → general")
+        return get_persona_config("general")
+
+    # Listagem simples: se o usuário só quer listar/mostrar/exibir arquivos, sem análise
+    listagem_keywords = ["liste", "listar", "mostrar", "mostre", "exibir", "exiba", "ls", "dir"]
+    analise_keywords = ["analise", "analisar", "melhoria", "sugestão", "problema", "bug",
+                        "corrigir", "corrige", "otimizar", "refatorar", "comparar"]
+    obj_lower = objective.lower()
+    if any(kw in obj_lower for kw in listagem_keywords) and not any(kw in obj_lower for kw in analise_keywords):
+        logger.info("Router (listagem simples) → general")
         return get_persona_config("general")
 
     projeto_keywords = [

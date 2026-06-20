@@ -13,6 +13,7 @@ Available tools:
 {tools_description}
 
 Rules:
+- Sempre verifique a lista de ferramentas disponíveis antes de criar um plano. Se uma ferramenta não estiver listada, NÃO a utilize.
 - NEVER describe progress, say "maybe", ask questions, or justify.
 - Use the tool session_memory to remember important information.
 - If the user says "remember that X", immediately store X via session_memory and confirm. Do not analyze X further.

@@ -3,6 +3,11 @@ import os
 import re
 import sys
 from typing import Any, Dict, Optional, Tuple, List
+import datetime
+import time
+import glob
+import hashlib
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -12,6 +17,14 @@ from agent.prompts import AGENT_SYSTEM_PROMPT, ERROR_PATTERNS
 from agent.parsers import extract_json, stringify, validate_decision, normalize_tool_result, extract_json_from_end
 from agent.state import AgentState
 from agent.router import route_objective, _is_clearly_trivial
+
+CONTEXT_LIMIT = 8192
+CONTEXT_COMPRESSION_THRESHOLD = 0.8  # 80%
+
+AGENT_METRICS_FILE = "agent_metrics.jsonl"
+
+MAX_MEMORY_BACKUPS = 5  # número máximo de arquivos de backup mantidos
+MEMORY_BACKUP_DIR = "memory_backups"
 
 # ----------------------------------------------------------------------
 # Orçamento de tokens para decisões do agente (por tipo de passo)
@@ -88,6 +101,8 @@ class Orchestrator:
         self.agent_state.events.clear()
 
     def save_memory_to_file(self, path: str = "agent_memory.json") -> str:
+        """Salva a memória em disco com backup rotativo em subpasta."""
+        self._backup_memory_file(path)
         return self.agent_state.memory.save_to_file(path)
 
     def load_memory_from_file(self, path: str = "agent_memory.json") -> str:
@@ -125,6 +140,13 @@ class Orchestrator:
                     summary = self._summarize_text(str(content), context=f"Arquivo: {file_path}")
                     self.agent_state.memory.state["analyzed_files"][file_path] = summary[:150]
                     self.agent_state.memory.state["file_summaries"][file_path] = summary
+                    # Armazena hash do ARQUIVO REAL (não do resultado da ferramenta)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_hash = hashlib.sha256(f.read().encode('utf-8')).hexdigest()
+                        self.agent_state.memory.state.setdefault("file_hashes", {})[file_path] = file_hash
+                    except Exception:
+                        pass
 
     def _summarize_text(self, text: str, context: str = "") -> str:
         try:
@@ -137,6 +159,78 @@ class Orchestrator:
             logger.warning(f"Falha ao usar summarize_skill: {e}")
         return text[:300] + "..." if len(text) > 300 else text
 
+    def _validate_args(self, tool_name: str, args: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """
+        Valida os argumentos de uma ferramenta contra o schema que ela exporta.
+        Retorna (válido, mensagem_de_erro).
+        """
+        skill = self.skills.get(tool_name)
+        if not skill:
+            return True, None  # ferramenta desconhecida, deixa executar e falhar depois
+
+        schema = skill.get_schema()
+        if not schema or not isinstance(schema, dict):
+            return True, None  # sem schema, não valida
+
+        required = schema.get("required", [])
+        properties = schema.get("properties", {})
+        errors = []
+
+        # 1. Verifica campos obrigatórios
+        for field in required:
+            if field not in args or args[field] is None:
+                errors.append(f"Campo obrigatório ausente: '{field}'")
+
+        # 2. Verifica tipos e valores permitidos
+        for field, value in args.items():
+            prop = properties.get(field)
+            if not prop:
+                continue  # campo extra, ignoramos (poderia ser erro, mas é permissivo)
+
+            expected_type = prop.get("type", "string")
+            actual_type = type(value).__name__
+
+            # Validação de tipo
+            if expected_type == "string" and not isinstance(value, str):
+                errors.append(f"'{field}': esperado string, recebido {actual_type}")
+            elif expected_type == "number" and not isinstance(value, (int, float)):
+                errors.append(f"'{field}': esperado número, recebido {actual_type}")
+            elif expected_type == "boolean" and not isinstance(value, bool):
+                errors.append(f"'{field}': esperado booleano, recebido {actual_type}")
+            elif expected_type == "object" and not isinstance(value, dict):
+                errors.append(f"'{field}': esperado objeto, recebido {actual_type}")
+            elif expected_type == "array" and not isinstance(value, list):
+                errors.append(f"'{field}': esperado array, recebido {actual_type}")
+
+            # Validação de enum (valores permitidos)
+            allowed = prop.get("enum")
+            if allowed and value not in allowed:
+                errors.append(f"'{field}': valor '{value}' não está entre os permitidos: {allowed}")
+
+            # Validação de range numérico
+            if expected_type == "number" and isinstance(value, (int, float)):
+                minimum = prop.get("minimum")
+                maximum = prop.get("maximum")
+                if minimum is not None and value < minimum:
+                    errors.append(f"'{field}': valor {value} é menor que o mínimo {minimum}")
+                if maximum is not None and value > maximum:
+                    errors.append(f"'{field}': valor {value} é maior que o máximo {maximum}")
+
+        # 3. Validações específicas por ferramenta
+        if tool_name == "file_reader":
+            start = args.get("start_line")
+            end = args.get("end_line")
+            if start is not None and end is not None:
+                if start > end:
+                    errors.append(f"'start_line' ({start}) não pode ser maior que 'end_line' ({end})")
+            file_path = args.get("file_path", "")
+            if file_path and not os.path.exists(file_path):
+                errors.append(f"Arquivo não encontrado: '{file_path}'")
+
+        if errors:
+            return False, "; ".join(errors)
+        return True, None
+
     def _is_task_solved(self) -> bool:
         if not self.agent_state.tool_history:
             return True
@@ -144,6 +238,14 @@ class Orchestrator:
         if not isinstance(r, dict):
             return False
         return r.get("ok") is True and r.get("done") is True
+
+    def _log_metric(self, entry: Dict[str, Any]) -> None:
+        """Adiciona uma linha de métrica ao arquivo JSONL."""
+        try:
+            with open(AGENT_METRICS_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"Falha ao registrar métrica: {e}")
 
     # ------------------------------------------------------------------
     # Contexto do projeto com cache (calculado uma vez por execução)
@@ -184,6 +286,68 @@ class Orchestrator:
         self._cached_project_context = ctx
         return ctx
 
+    # ------------------
+    # Comprime contexto caso chegue perto de estourar a janela
+    # ------------------
+    def _estimate_conversation_tokens(self) -> int:
+        """Estima o total de tokens em self.session.messages (heurística 1 token ≈ 4 chars)."""
+        total_chars = sum(len(str(m.get("content", ""))) for m in self.session.messages)
+        return total_chars // 4
+
+    def _maybe_compress_context(self) -> None:
+        """Se a conversa estiver muito grande, comprime o histórico em um resumo."""
+        estimated = self._estimate_conversation_tokens()
+        threshold = int(CONTEXT_LIMIT * CONTEXT_COMPRESSION_THRESHOLD)
+
+        if estimated <= threshold:
+            return
+
+        if self.verbose:
+            print(f"⚡ [COMPRESS] Contexto atingiu ~{estimated} tokens (limiar: {threshold}). Comprimindo...")
+
+        # Monta prompt para o modelo resumir o histórico
+        compress_prompt = (
+            "Resuma a conversa abaixo em um parágrafo denso, mantendo APENAS:\n"
+            "- Objetivo original da tarefa\n"
+            "- Plano restante (passos já concluídos e pendentes)\n"
+            "- Principais descobertas e resultados obtidos\n"
+            "- Próximas ações necessárias\n\n"
+            "NÃO inclua saudações, repetições ou informações irrelevantes.\n\n"
+            "Histórico:\n"
+        )
+        # Inclui as últimas N mensagens (ex.: as 20 mais recentes) para não estourar
+        recent = self.session.messages[-20:]
+        for msg in recent:
+            compress_prompt += f"[{msg['role']}] {msg['content']}\n"
+
+        # Salva o system prompt original
+        original_system = self.session.messages[0]["content"] if self.session.messages else ""
+
+        # Cria uma sessão temporária isolada
+        temp_session = ChatSession("", self.session.config)  # system vazio
+        temp_session.set_system_prompt("Resuma o histórico da conversa de forma concisa e técnica.")
+        temp_session.add_user_message(compress_prompt)
+
+        temp_payload = temp_session.build_payload()
+        temp_payload["max_tokens"] = 1024
+        temp_payload["stream"] = False
+        try:
+            temp_response = self.session.send_non_streaming_request(temp_payload)
+        except Exception as e:
+            logger.warning(f"Falha ao comprimir contexto: {e}")
+            return
+
+        if isinstance(temp_response, str) and temp_response.strip():
+            summary = temp_response.strip()
+            # Limpa o histórico da sessão principal, mantendo o system prompt
+            self.session.messages = [{"role": "system", "content": original_system}]
+            # Insere o resumo como uma mensagem de sistema adicional
+            self.session.add_message("system", f"[RESUMO DO CONTEXTO]: {summary}")
+            if self.verbose:
+                print(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary)//4} tokens.")
+        else:
+            logger.warning("Resposta vazia ao comprimir contexto.")
+
     # ------------------------------------------------------------------
     # Descoberta do tamanho de arquivos mencionados no objetivo
     # ------------------------------------------------------------------
@@ -211,6 +375,61 @@ class Orchestrator:
             return "\n".join(f"- {h}" for h in hints)
         return ""
 
+    def _check_prompt_size(self, context_limit: int = 8192) -> None:
+        """
+        Estima o tamanho do system prompt atual e emite aviso se estiver
+        acima de 80% do limite de contexto.
+        """
+        system_content = self.session.messages[0]["content"]
+        estimated_tokens = len(system_content) // 4  # heurística comum
+        threshold = int(context_limit * 0.8)
+        pct = estimated_tokens / context_limit * 100
+
+        if self.verbose:
+            print(f"📏 [AUDITORIA] Prefixo estimado: ~{estimated_tokens} tokens ({pct:.1f}% do limite de {context_limit})")
+        
+        if estimated_tokens > threshold:
+            logger.warning(f"Prefixo grande: ~{estimated_tokens} tokens ({pct:.1f}%)")
+            if self.verbose:
+                print(f"⚠️  Atenção: prefixo acima de 80%! Considere limpar memória ou reduzir histórico.")
+
+    def _count_tokens_precise(self, text: str) -> Optional[int]:
+        """
+        Usa o endpoint /tokenize do llama-server para contar os tokens de um texto.
+        Retorna None se a chamada falhar.
+        """
+        try:
+            import requests
+            api_url = self.session.config.get("api_url", "http://127.0.0.1:8080/v1/chat/completions")
+            # Extrai a base da URL (remove /v1/chat/completions)
+            base_url = api_url.rsplit("/v1/", 1)[0]
+            tokenize_url = f"{base_url}/tokenize"
+            resp = requests.post(tokenize_url, json={"content": text}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                tokens = data.get("tokens", [])
+                return len(tokens)
+        except Exception as e:
+            logger.warning(f"Não foi possível usar /tokenize: {e}")
+        return None
+
+    #-----------------Evita ficar reenviando system prompts pro modelo ----------------------
+    def _build_base_system_prompt(self) -> str:
+        """Monta a parte fixa do system prompt (persona + tools + datetime + projeto)."""
+        persona_prefix = getattr(self, "current_persona_prompt", "")
+        from datetime import datetime
+        now_str = datetime.now().strftime("%A, %d de %B de %Y %H:%M")
+        datetime_context = f"\n\n[SISTEMA] Data e hora atual: {now_str}. Use esta informação para responder perguntas sobre datas."
+        project_context = self._get_project_context()
+        # Usa descrição completa das ferramentas, pois é o system prompt permanente da tarefa
+        tools_desc = self._build_tools_description(compact=False)
+        return (
+            persona_prefix + "\n\n"
+            + AGENT_SYSTEM_PROMPT.format(tools_description=tools_desc)
+            + datetime_context
+            + project_context
+        )
+
     # ------------------------------------------------------------------
     # Comunicação com o modelo (com budget variável por step_type)
     # ------------------------------------------------------------------
@@ -218,9 +437,16 @@ class Orchestrator:
         # Salva estado original da sessão
         original_messages = [m.copy() for m in self.session.messages]
         original_system_content = self.session.messages[0]["content"]
+        # Auditoria de prefixo (estimativa rápida + exata opcional)
+        if self.verbose:
+            self._check_prompt_size()
+            exact = self._count_tokens_precise(self.session.messages[0]["content"])
+            if exact is not None:
+                print(f"📏 [AUDITORIA] Tokens exatos: {exact}")
 
         try:
-            # --- Montagem do contexto (igual antes) ---
+            # --- Montagem do contexto ---
+            # --- Partes dinâmicas: histórico e memória ---
             analyzed_context = ""
             if self.agent_state.memory.state.get("analyzed_files"):
                 analyzed_context = "\n\n--- ARQUIVOS JÁ ANALISADOS ---\n"
@@ -240,22 +466,14 @@ class Orchestrator:
                 for turn in turns:
                     history_context += f"Usuário: {turn['user']}\nAgente: {turn['agent']}\n\n"
 
-            persona_prefix = getattr(self, "current_persona_prompt", "")
+            # Usa a base fixa cacheada (persona + tools + datetime + projeto)
+            base_prompt = getattr(self, '_cached_base_prompt', None)
+            if base_prompt is None:
+                # Fallback (não deve ocorrer em uso normal)
+                base_prompt = self._build_base_system_prompt()
 
-            from datetime import datetime
-            now_str = datetime.now().strftime("%A, %d de %B de %Y %H:%M")
-            datetime_context = f"\n\n[SISTEMA] Data e hora atual: {now_str}. Use esta informação para responder perguntas sobre datas."
-
-            project_context = self._get_project_context()
-
-            # Monta o system prompt completo
             self.session.messages[0]["content"] = (
-                persona_prefix + "\n\n"
-                + AGENT_SYSTEM_PROMPT.format(tools_description=self._build_tools_description())
-                + datetime_context
-                + project_context
-                + history_context
-                + memory_context
+                base_prompt + history_context + memory_context
             )
 
             # Adiciona a mensagem de usuário
@@ -269,6 +487,7 @@ class Orchestrator:
             else:
                 budget = STEP_BUDGETS.get(step_type, DEFAULT_AGENT_MAX_TOKENS)
 
+            start_time = time.time()
             payload["max_tokens"] = budget
             payload["stream"] = False
 
@@ -289,6 +508,27 @@ class Orchestrator:
             decision = extract_json(response)
             if decision is None:
                 decision = extract_json_from_end(response)
+            # Coleta métricas
+            duration_ms = int((time.time() - start_time) * 1000)
+            prompt_tokens = None
+            completion_tokens = None
+            if isinstance(response, dict):
+                usage = response.get("usage") or {}
+                prompt_tokens = usage.get("prompt_tokens")
+                completion_tokens = usage.get("completion_tokens")
+
+            metric = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "step_type": step_type,
+                "tool": decision.get("tool") if isinstance(decision, dict) else None,
+                "budget": budget,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "duration_ms": duration_ms,
+                "success": decision is not None and isinstance(decision, dict) and "action" in decision
+            }
+            self._log_metric(metric)
+
             if decision is not None:
                 return decision
 
@@ -316,6 +556,39 @@ class Orchestrator:
             self.session.messages = original_messages
             self.session.messages[0]["content"] = original_system_content
 
+    def _backup_memory_file(self, path: str, max_backups: int = MAX_MEMORY_BACKUPS) -> None:
+        """
+        Cria uma cópia de segurança do arquivo de memória dentro da pasta MEMORY_BACKUP_DIR.
+        Mantém apenas os últimos max_backups arquivos.
+        """
+        if not os.path.exists(path):
+            return
+
+        try:
+            # Garante que a pasta de backups existe
+            os.makedirs(MEMORY_BACKUP_DIR, exist_ok=True)
+
+            # Gera nome com timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = os.path.basename(path) + f".{timestamp}.bak"
+            backup_path = os.path.join(MEMORY_BACKUP_DIR, backup_name)
+
+            import shutil
+            shutil.copy2(path, backup_path)
+
+            # Remove backups excedentes (apenas os arquivos .bak da pasta)
+            all_backups = sorted(
+                f for f in os.listdir(MEMORY_BACKUP_DIR)
+                if f.startswith(os.path.basename(path)) and f.endswith(".bak")
+            )
+            while len(all_backups) > max_backups:
+                oldest = all_backups.pop(0)
+                os.remove(os.path.join(MEMORY_BACKUP_DIR, oldest))
+                if self.verbose:
+                    print(f"[DEBUG] Backup antigo removido: {MEMORY_BACKUP_DIR}/{oldest}")
+        except Exception as e:
+            logger.warning(f"Não foi possível criar backup da memória: {e}")
+
     def _run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         # Bloqueia qualquer tentativa de esvaziar o arquivo de notas
         if tool_name == "file_writer":
@@ -326,7 +599,10 @@ class Orchestrator:
                 self._emit("hard_block", {"file": file_path, "reason": "tentativa de esvaziar analysis_notes.md"})
                 return {"ok": False, "done": False, "data": None, "error": "Operação bloqueada: não é permitido esvaziar o arquivo de notas.", "message": "Operação bloqueada."}
         if tool_name not in self.skills or (self.active_skills and tool_name not in self.active_skills):
-            result = {"ok": False, "done": False, "data": None, "error": f"Tool '{tool_name}' não existe ou não está permitida para esta persona.", "message": None}
+            allowed = ", ".join(sorted(self.active_skills)) if self.active_skills else "todas disponíveis"
+            result = {"ok": False, "done": False, "data": None,
+                    "error": f"Tool '{tool_name}' não está permitida para esta persona. Ferramentas disponíveis: {allowed}",
+                    "message": None}
         else:
             print(f"⚙️  Usando {tool_name}...", end="", flush=True)
             logger.info(f"Executando tool {tool_name} com args {args}")
@@ -575,6 +851,9 @@ class Orchestrator:
             self.current_persona_prompt = persona_prompt
             self.active_skills = allowed_skills
 
+            # Cache da parte fixa do system prompt (evita reconstrução a cada chamada)
+            self._cached_base_prompt = self._build_base_system_prompt()
+
             # ----------------------------------------------------------
             # Fase 1: Gerar o plano (com dicas de tamanho de arquivos)
             # ----------------------------------------------------------
@@ -600,202 +879,175 @@ class Orchestrator:
             plan_prompt = (
                 f"Objetivo: {objective}{hint_block}\n\n"
                 f"Ferramentas disponíveis:\n{tools_desc_compact}\n\n"
-                "Com base nessas ferramentas, crie um plano sequencial ESTRITAMENTE ORDENADO. "
-                "Cada passo deve conter EXATAMENTE UMA chamada de ferramenta. "
-                "NÃO agrupe múltiplas ações em um único passo.\n"
-                "Formato de cada passo: 'Usar [ferramenta] com [parâmetros] em [alvo]'.\n"
-                "Se o arquivo tiver muitas linhas, crie UM PASSO POR CHUNK "
-                "(ex.: 'Ler [ARQUIVO] linhas 1-100', depois 'Ler [ARQUIVO] linhas 101-200').\n"
-                "NÃO inclua passos para deletar, apagar, limpar ou esvaziar arquivos."
-                "Responda APENAS com um JSON contendo o campo 'plan' (lista de strings).\n"
-                "Exemplo genérico (NÃO USE ESTES VALORES, use os do objetivo acima): {\"plan\": ["
-                "\"Usar code_analyzer com mode='file' e compact=true em [ARQUIVO]\", "
-                "\"Usar file_reader para ler [ARQUIVO] linhas 1-100\", "
-                "\"Usar file_reader para ler [ARQUIVO] linhas 101-200\""
-                "]}"
+                "Crie um plano sequencial para atingir o objetivo. "
+                "Cada passo deve conter exatamente UMA ferramenta.\n"
+                "Responda APENAS com um JSON no seguinte formato:\n"
+                "{\n"
+                '  "plan": [\n'
+                '    {"tool": "code_analyzer", "args": {"target": "cli.py", "mode": "file", "compact": true}},\n'
+                '    {"tool": "file_reader", "args": {"file_path": "cli.py"}}\n'
+                "  ]\n"
+                "}\n"
+                "Regras:\n"
+                "- Use APENAS ferramentas da lista acima.\n"
+                "- Cada objeto do plano deve ter os campos 'tool' (string) e 'args' (objeto).\n"
+                "- Não inclua comentários, texto extra ou formatação fora do JSON.\n"
+                "- Quando o objetivo for analisar um arquivo, inclua SEMPRE um passo para ler o conteúdo com file_reader.\n"
+                "- Informe apenas o file_path no file_reader; o sistema divide automaticamente se necessário.\n"
+                "- NÃO especifique start_line ou end_line ao usar file_reader, a menos que queira um trecho específico.\n"
+                "- NÃO inclua passos para deletar, apagar ou esvaziar arquivos."
             )
             plan_decision = self._ask_model(plan_prompt, step_type="plan")
-
             plan = plan_decision.get("plan")
             if plan and isinstance(plan, list) and len(plan) > 0:
-                # --------------------------------------------------
-                # Filtro de segurança: remove passos que tentam deletar
-                # o arquivo de notas (analysis_notes.md)
-                # --------------------------------------------------
+                # Plano canônico: cada item deve ser {"tool": "...", "args": {...}}
                 filtered_plan = []
                 for step in plan:
-                    step_lower = step.lower()
-                    # Bloqueia passos de deleção/limpeza
-                    if ("deletar" in step_lower or "apagar" in step_lower or 
-                        "excluir" in step_lower or "remover" in step_lower or 
-                        "limpar" in step_lower) and "analysis_notes" in step_lower:
-                        if self.verbose:
-                            print(f"[DEBUG] Removido passo de deleção do plano: {step}")
+                    if not isinstance(step, dict):
                         continue
-                    # Bloqueia file_writer que esvazia o arquivo
-                    if ("file_writer" in step_lower and "analysis_notes.md" in step_lower and
-                        ("content=''" in step_lower or 'content=""' in step_lower)):
-                        if self.verbose:
-                            print(f"[DEBUG] Removido passo que esvazia analysis_notes.md: {step}")
-                        continue
-                    filtered_plan.append(step)
+                    tool = step.get("tool", "")
+                    args = step.get("args", {})
+                    if not isinstance(args, dict):
+                        args = {}
+                    # Filtro de segurança: não esvaziar analysis_notes.md (qualquer caminho)
+                    if tool == "file_writer" and "analysis_notes.md" in str(args.get("file_path", "")):
+                        content = str(args.get("content", ""))
+                        if content.strip() == "":
+                            if self.verbose:
+                                print(f"[DEBUG] Removido passo que esvazia analysis_notes.md: {step}")
+                            continue
+                    filtered_plan.append({"tool": tool, "args": args})
+
+                if not filtered_plan:
+                    # Plano ficou vazio após filtro → todos os passos foram bloqueados
+                    self._emit("hard_block", {"reason": "plano vazio após filtros"})
+                    answer = "Não foi possível executar esta ação. Ela foi bloqueada pelas políticas de segurança do agente."
+                    self.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                    return answer
 
                 self.agent_state.plan = filtered_plan
                 self.agent_state.plan_step = 0
                 self._emit("plan_created", {"steps": len(filtered_plan), "plan": filtered_plan})
                 if self.verbose:
-                    print(f"[DEBUG] Plano filtrado com {len(filtered_plan)} passos: {filtered_plan}")
+                    print(f"[DEBUG] Plano canônico com {len(filtered_plan)} passos: {filtered_plan}")
             else:
                 if self.verbose:
-                    print("[DEBUG] Plano não gerado, usando modo reativo.")
+                    print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
                 return self._run_reactive(objective, tool_usage_count, original_msg_count)
 
             # ----------------------------------------------------------
-            # Fase 2: Executar cada passo do plano
+            # Fase 2: Executar cada passo do plano (modo direto, sem LLM)
             # ----------------------------------------------------------
             for i, step in enumerate(self.agent_state.plan):
                 self.agent_state.plan_step = i + 1
 
-                # Monta prompt para execução do passo
-                progress_lines = []
-                for j, s in enumerate(self.agent_state.plan):
-                    if j < i:
-                        marker = "✓"
-                    elif j == i:
-                        marker = "→"
-                    else:
-                        marker = "○"
-                    progress_lines.append(f"{marker} Passo {j+1}: {s}")
-                progress = "\n".join(progress_lines)
+                tool = step["tool"]
+                args = step["args"]
+                # Valida os argumentos contra o schema da ferramenta
+                valid, error_msg = self._validate_args(tool, args)
+                if not valid:
+                    self._emit("error", {"step": i+1, "error": f"Validação de schema falhou: {error_msg}"})
+                    continue
+                file_path = args.get("target") or args.get("file_path") or ""
+                if not isinstance(args, dict):
+                    args = {}
 
-                step_prompt = (
-                    f"Plano de execução:\n{progress}\n\n"
-                    f"Agora execute o Passo {i+1}: \"{step}\"\n\n"
-                    "Responda APENAS com o JSON da ação necessária:\n"
-                    "{\"action\":\"tool\",\"tool\":\"<nome>\",\"args\":{...}}\n"
-                    "Se este passo já foi concluído ou é trivial, responda:\n"
-                    "{\"action\":\"final\",\"answer\":\"<texto>\"}"
-                )
+                # Verifica se a ferramenta é permitida para a persona
+                if tool not in self.skills or (self.active_skills and tool not in self.active_skills):
+                    self._emit("error", {"step": i+1, "error": f"Tool '{tool}' não permitida para esta persona."})
+                    continue
 
-                # Se o passo for de escrita, forçar divisão em partes pequenas
-                if "file_writer" in step.lower() or "analysis_notes" in step.lower():
-                    already_written = any(
-                        "file_writer" in h.get("tool", "") and h.get("result", {}).get("ok")
-                        for h in self.agent_state.tool_history
-                    )
-                    if not already_written:
-                        write_mode = "action='write' (CRIAR o arquivo)"
-                    else:
-                        write_mode = "action='append' (ADICIONAR ao arquivo existente)"
-
-                    step_prompt += (
-                        f"\n\n**IMPORTANTE:** Use file_writer com {write_mode}. "
-                        "O conteúdo DEVE ter NO MÁXIMO 300 caracteres. "
-                        "Divida a análise em MÚLTIPLAS chamadas curtas. "
-                        "NUNCA tente escrever mais de 300 caracteres de uma vez."
-                    )
-
-                # Tenta executar o passo (com retry em caso de erro)
-                max_retries = 2
-                for attempt in range(max_retries):
-                    decision = self._ask_model(step_prompt, step_type="tool_decision")
-
-                    if decision.get("action") == "error":
-                        if attempt == max_retries - 1:
-                            break
+                # 🚫 Hard blocks (mesmos do modo antigo)
+                if tool == "code_analyzer" and file_path:
+                    code_analyzer_key = f"code_analyzer_{file_path}"
+                    tool_usage_count[code_analyzer_key] = tool_usage_count.get(code_analyzer_key, 0) + 1
+                    if tool_usage_count[code_analyzer_key] > 1:
+                        self._emit("hard_block", {"file": file_path, "reason": "code_analyzer repetido"})
+                        if self.verbose:
+                            print(f"[DEBUG] Bloqueada reanálise estrutural de {file_path}. Use file_reader para detalhes.")
                         continue
 
-                    valid, error_msg = validate_decision(decision)
-                    if not valid:
-                        if attempt == max_retries - 1:
-                            break
+                if tool == "file_reader" and file_path:
+                    if "start_line" in args and "end_line" in args:
+                        chunk_key = f"file_reader_{file_path}_{args['start_line']}_{args['end_line']}"
+                        tool_usage_count[chunk_key] = tool_usage_count.get(chunk_key, 0) + 1
+                        if tool_usage_count[chunk_key] > 1:
+                            self._emit("hard_block", {"file": file_path, "reason": "chunk repetido"})
+                            if self.verbose:
+                                print(f"[DEBUG] Bloqueada releitura do chunk {args['start_line']}-{args['end_line']} de {file_path}.")
+                            continue
+                    # Bloqueia leitura de arquivo já totalmente lido
+                    fully_read_key = f"fully_read_{file_path}"
+                    if tool_usage_count.get(fully_read_key, 0) > 0:
+                        self._emit("hard_block", {"file": file_path, "reason": "arquivo já totalmente lido"})
+                        if self.verbose:
+                            print(f"[DEBUG] Bloqueada leitura de '{file_path}' – arquivo já totalmente lido.")
                         continue
 
-                    action = decision["action"]
+                # 🔍 Pula chunks impossíveis
+                if tool == "file_reader" and "start_line" in args and "end_line" in args and file_path:
+                    known_total = None
+                    for h in self.agent_state.tool_history:
+                        if h["tool"] == "file_reader" and h.get("result", {}).get("total_lines"):
+                            h_file = h.get("args", {}).get("file_path") or h.get("args", {}).get("target")
+                            if h_file == file_path:
+                                known_total = h["result"]["total_lines"]
+                                break
+                    if known_total and args["start_line"] > known_total:
+                        if self.verbose:
+                            print(f"[DEBUG] Pulando passo: start_line ({args['start_line']}) > total_lines ({known_total}) para '{file_path}'.")
+                        continue
 
-                    if action == "final":
-                        answer = decision.get("answer", "")
-                        self._emit("final", {"answer": answer[:100]})
-                        self.agent_state.conversation_history.append({"user": objective, "agent": answer})
-                        return answer
+                # Verifica cache de hash
+                cache_hit = False
+                if tool in ("code_analyzer", "file_reader") and file_path:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            current_hash = hashlib.sha256(f.read().encode('utf-8')).hexdigest()
+                    except Exception:
+                        current_hash = None
 
-                    if action == "tool":
-                        tool = decision["tool"]
-                        args = decision.get("args", {})
-                        if not isinstance(args, dict):
-                            args = {}
+                    stored_hash = self.agent_state.memory.state.get("file_hashes", {}).get(file_path)
+                    if current_hash and stored_hash and current_hash == stored_hash:
+                        summary = self.agent_state.memory.state.get("file_summaries", {}).get(file_path, "")
+                        if summary:
+                            self._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
+                            result = {"ok": True, "done": True, "data": summary, "message": f"Usando análise em cache de {file_path}."}
+                            self._emit("tool_end", {"tool": tool, "ok": True})
+                            self.agent_state.last_tool = tool
+                            self.agent_state.last_args = args
+                            self.agent_state.last_result = result
+                            self.agent_state.tool_history.append({"tool": tool, "args": args, "result": result})
+                            cache_hit = True
 
-                        file_path = args.get("target") or args.get("file_path")
+                if not cache_hit:
+                    self._emit("tool_start", {"tool": tool, "args": args})
+                    result = self._run_tool(tool, args)
+                    self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
+                    self._maybe_summarize_and_store(tool, args, result)
+                else:
+                    # result já foi definido no bloco de cache hit
+                    pass
 
-                        # 🔍 Pula chunks impossíveis (start_line > total_lines conhecido)
-                        if tool == "file_reader" and "start_line" in args and "end_line" in args:
-                            known_total = None
-                            if file_path:
-                                for h in self.agent_state.tool_history:
-                                    if h["tool"] == "file_reader" and h.get("result", {}).get("total_lines"):
-                                        h_file = h.get("args", {}).get("file_path") or h.get("args", {}).get("target")
-                                        if h_file == file_path:
-                                            known_total = h["result"]["total_lines"]
-                                            break
-                            if known_total and args["start_line"] > known_total:
-                                if self.verbose:
-                                    print(f"[DEBUG] Pulando passo: start_line ({args['start_line']}) > total_lines ({known_total}) para '{file_path}'.")
-                                break  # sai do retry e vai para o próximo passo
+                # Marca arquivo como completamente lido
+                if tool == "file_reader" and result.get("ok") and "total_lines" in result:
+                    total_lines = result["total_lines"]
+                    end_line = args.get("end_line", total_lines)
+                    if end_line == total_lines:
+                        fully_read_key = f"fully_read_{file_path}"
+                        tool_usage_count[fully_read_key] = 1
+                        if self.verbose:
+                            print(f"[DEBUG] Arquivo '{file_path}' completamente lido ({total_lines} linhas).")
 
-                        # 🚫 Bloqueia code_analyzer repetido para o mesmo arquivo
-                        if tool == "code_analyzer" and file_path:
-                            code_analyzer_key = f"code_analyzer_{file_path}"
-                            tool_usage_count[code_analyzer_key] = tool_usage_count.get(code_analyzer_key, 0) + 1
-                            if tool_usage_count[code_analyzer_key] > 1:
-                                self._emit("hard_block", {"file": file_path, "reason": "code_analyzer repetido"})
-                                if self.verbose:
-                                    print(f"[DEBUG] Bloqueada reanálise estrutural de {file_path}. Use file_reader para detalhes.")
-                                step_prompt += "\n\nO code_analyzer já foi usado para este arquivo. Use file_reader ou finalize."
-                                continue
+                # Comprime contexto se necessário
+                self._maybe_compress_context()
 
-                        # 🚫 Bloqueia releitura do mesmo intervalo com file_reader
-                        if tool == "file_reader" and file_path and "start_line" in args and "end_line" in args:
-                            chunk_key = f"file_reader_{file_path}_{args['start_line']}_{args['end_line']}"
-                            tool_usage_count[chunk_key] = tool_usage_count.get(chunk_key, 0) + 1
-                            if tool_usage_count[chunk_key] > 1:
-                                self._emit("hard_block", {"file": file_path, "reason": "chunk repetido"})
-                                if self.verbose:
-                                    print(f"[DEBUG] Bloqueada releitura do chunk {args['start_line']}-{args['end_line']} de {file_path}.")
-                                step_prompt += "\n\nEsse trecho já foi lido. Use outro intervalo ou finalize."
-                                continue
-
-                        # 🚫 Bloqueia qualquer leitura adicional de arquivo já totalmente lido
-                        if tool == "file_reader" and file_path:
-                            fully_read_key = f"fully_read_{file_path}"
-                            if tool_usage_count.get(fully_read_key, 0) > 0:
-                                self._emit("hard_block", {"file": file_path, "reason": "arquivo já totalmente lido"})
-                                if self.verbose:
-                                    print(f"[DEBUG] Bloqueada leitura de '{file_path}' – arquivo já totalmente lido.")
-                                step_prompt += "\n\nO arquivo já foi lido completamente. Não leia novamente. Finalize a resposta."
-                                continue
-
-                        self._emit("tool_start", {"tool": tool, "args": args})
-                        result = self._run_tool(tool, args)
-                        self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
-                        self._maybe_summarize_and_store(tool, args, result)
-
-                        if tool == "file_reader" and result.get("ok") and "total_lines" in result:
-                            total_lines = result["total_lines"]
-                            end_line = args.get("end_line", total_lines)
-                            if end_line == total_lines:
-                                fully_read_key = f"fully_read_{file_path}"
-                                tool_usage_count[fully_read_key] = 1
-                                if self.verbose:
-                                    print(f"[DEBUG] Arquivo '{file_path}' completamente lido ({total_lines} linhas).")
-
-                        if result.get("ok"):
-                            break  # sucesso, vai para próximo passo
-                        else:
-                            if attempt == max_retries - 1:
-                                self._emit("error", {"step": i+1, "error": result.get("error")})
+                if not result.get("ok"):
+                    self._emit("error", {"step": i+1, "error": result.get("error")})
+                    # Continua para o próximo passo mesmo com erro
 
             # ----------------------------------------------------------
-            # Fase 3: Resposta final (com retry e fallback)
+            # Fase 3: Resposta final (modo texto puro, sem JSON)
             # ----------------------------------------------------------
             notes_content = ""
             if os.path.exists("analysis_notes.md"):
@@ -805,58 +1057,72 @@ class Orchestrator:
                 except Exception:
                     pass
 
+            # Monta um resumo dos resultados das ferramentas
+            tool_results_summary = ""
+            for h in self.agent_state.tool_history:
+                tool_name = h.get("tool", "")
+                result_data = h.get("result", {}).get("data", "")
+                if result_data:
+                    truncated = str(result_data)[:2000]
+                    tool_results_summary += f"\n\n--- Resultado de {tool_name} ---\n{truncated}"
+
             if notes_content:
-                final_base = (
-                    f"Objetivo concluído: {objective}\n\n"
+                final_prompt = (
+                    f"Objetivo: {objective}\n\n"
                     f"Conteúdo das notas de análise:\n```\n{notes_content}\n```\n\n"
+                    "Responda ao objetivo do usuário com base nesse conteúdo. "
+                    "Não use ferramentas. Apenas texto."
                 )
             else:
-                final_base = (
-                    f"Objetivo concluído: {objective}\n\n"
-                    "Com base em TODAS as ferramentas executadas e seus resultados "
-                    "(que estão no histórico desta conversa),\n"
-                )
-
-            final_prompt = final_base + (
-                "Gere AGORA a resposta final em português. "
-                "Responda SOMENTE com um JSON: {\"action\":\"final\",\"answer\":\"...\"}. "
-                "NÃO use ferramentas. NÃO inclua plano."
-            )
-
-            max_final_attempts = 2
-            answer = None
-            for attempt in range(max_final_attempts):
-                final_decision = self._ask_model(final_prompt, step_type="final")
-                if final_decision.get("action") == "final" and "answer" in final_decision:
-                    answer = final_decision["answer"]
-                    break
-                # Se veio tool call ou sem answer, reforça o prompt
                 final_prompt = (
-                    "Sua última resposta NÃO foi um JSON com 'action':'final'. "
-                    "Agora, SEM USAR FERRAMENTAS, produza a resposta final em português "
-                    "no campo 'answer'. Exemplo: {\"action\":\"final\",\"answer\":\"Minha resposta\"}"
+                    f"Objetivo: {objective}\n\n"
+                    "Resultados das ferramentas executadas:\n"
+                    f"{tool_results_summary}\n\n"
+                    "Responda ao objetivo do usuário com base nesses resultados. "
+                    "Não use ferramentas. Apenas texto."
                 )
 
-            if not answer:
-                # Fallback: tenta extrair qualquer texto útil da última resposta
-                raw = final_decision.get("raw_response", "") if 'final_decision' in locals() else ""
-                if raw:
-                    # Tenta obter um JSON com answer no final
-                    json_end = extract_json_from_end(raw) if 'extract_json_from_end' in globals() else None
-                    if json_end and json_end.get("answer"):
-                        answer = json_end["answer"]
-                if not answer:
-                    answer = "Não foi possível gerar uma resposta final automática. Por favor, verifique os resultados manualmente."
+            # Chama o modelo diretamente, sem esperar JSON
+            self.session.add_user_message(final_prompt)
+            final_payload = self.session.build_payload()
+            final_payload["max_tokens"] = 4096
+            final_payload["stream"] = False
 
-            # --- Pós-validação anti-alucinação: verifica se a resposta menciona arquivos não lidos ---
-            mentioned_files = set(re.findall(r'\b[\w\-/]+\.(?:py|json|yaml|yml|md|txt|toml|cfg)\b', answer))
+            try:
+                final_response = self.session.send_non_streaming_request(final_payload)
+            except Exception as e:
+                logger.error(f"Erro na requisição final: {e}")
+                final_response = ""
+
+            # Limpa as mensagens temporárias
+            self.session.remove_last_user_message()
+            if self.session.messages and self.session.messages[-1]["role"] == "assistant":
+                self.session.messages.pop()
+
+            if isinstance(final_response, str) and final_response.strip():
+                answer = final_response.strip()
+                if answer.startswith("{"):
+                    try:
+                        parsed = json.loads(answer)
+                        answer = parsed.get("answer", answer)
+                    except Exception:
+                        pass
+            else:
+                answer = "Não foi possível gerar uma resposta final."
+
+            # Pós-validação anti-alucinação (mantida)
+            mentioned_files = set(re.findall(r'(?<!\w)[\w\-/]+\.(?:py|json|yaml|yml|md|txt|toml|cfg)(?!\w)', answer))
             read_files = set()
             for h in self.agent_state.tool_history:
                 fp = h.get("args", {}).get("file_path") or h.get("args", {}).get("target", "")
                 if fp:
                     read_files.add(fp)
             unread = mentioned_files - read_files
-            if unread:
+            houve_leitura = any(
+                h.get("tool") in ("file_reader", "code_analyzer")
+                for h in self.agent_state.tool_history
+            )
+            if unread and houve_leitura:
                 answer += "\n\n[⚠️ Aviso: esta análise menciona arquivos que não foram lidos durante a execução: "
                 answer += ", ".join(sorted(unread))
                 answer += ". As sugestões relacionadas a esses arquivos podem ser imprecisas.]"
@@ -869,4 +1135,6 @@ class Orchestrator:
                 self.session.messages.pop()
             if len(self.agent_state.conversation_history) > self.agent_state.max_history_turns:
                 self.agent_state.conversation_history = self.agent_state.conversation_history[-self.agent_state.max_history_turns:]
+            self._maybe_compress_context()
             self.save_memory_to_file("agent_memory.json")
+            
