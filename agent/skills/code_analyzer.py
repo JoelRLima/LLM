@@ -18,7 +18,8 @@ class CodeAnalyzerSkill(BaseSkill):
             },
             "mode": {
                 "type": "string",
-                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro. Padrão: 'file'."
+                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro. Padrão: 'file'.",
+                "enum": ["file", "directory"]
             },
             "include_code": {
                 "type": "boolean",
