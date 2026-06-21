@@ -18,6 +18,11 @@ from agent.parsers import extract_json, stringify, validate_decision, normalize_
 from agent.state import AgentState
 from agent.router import route_objective, _is_clearly_trivial
 
+# Limites de custo por tarefa (valores padrão, podem ser sobrescritos em config.json)
+DEFAULT_MAX_TASK_STEPS = 20          # passos do plano
+DEFAULT_MAX_TASK_TOKENS = 25000      # tokens estimados de toda a conversa na tarefa
+DEFAULT_MAX_TASK_TOOL_CALLS = 40     # chamadas totais a ferramentas
+
 CONTEXT_LIMIT = 8192
 CONTEXT_COMPRESSION_THRESHOLD = 0.8  # 80%
 
@@ -67,6 +72,8 @@ class Orchestrator:
         self.verbose: bool = verbose
         self.active_skills: List[str] = []
         self._cached_project_context: Optional[str] = None   # cache para contexto do projeto
+        self._restore_points: List[Dict[str, str]] = []      # backup -> original
+        self._task_failed = False
 
         self.agent_state = AgentState()
 
@@ -226,6 +233,14 @@ class Orchestrator:
             file_path = args.get("file_path", "")
             if file_path and not os.path.exists(file_path):
                 errors.append(f"Arquivo não encontrado: '{file_path}'")
+
+        if tool_name == "file_writer":
+            action = args.get("action", "write")
+            if action == "ast_patch":
+                if not args.get("target"):
+                    errors.append("Campo 'target' obrigatório para ast_patch")
+                if not args.get("new_code"):
+                    errors.append("Campo 'new_code' obrigatório para ast_patch")
 
         if errors:
             return False, "; ".join(errors)
@@ -589,6 +604,55 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Não foi possível criar backup da memória: {e}")
 
+    def _create_restore_point(self) -> None:
+        """
+        Cria backups de todos os arquivos que o plano pretende modificar.
+        """
+        if not self.agent_state.plan:
+            return
+
+        import shutil
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        restore_dir = os.path.join(MEMORY_BACKUP_DIR, "restore", timestamp)
+        os.makedirs(restore_dir, exist_ok=True)
+
+        for step in self.agent_state.plan:
+            tool = step.get("tool", "") if isinstance(step, dict) else ""
+            args = step.get("args", {}) if isinstance(step, dict) else {}
+            if tool in ("file_writer", "shell", "python_executor"):
+                file_path = args.get("file_path") or args.get("target") or ""
+                if file_path and os.path.exists(file_path):
+                    backup_path = os.path.join(restore_dir, file_path.replace(os.sep, "_"))
+                    try:
+                        shutil.copy2(file_path, backup_path)
+                        self._restore_points.append({"original": file_path, "backup": backup_path})
+                        if self.verbose:
+                            print(f"[DEBUG] Checkpoint salvo para '{file_path}'")
+                    except Exception as e:
+                        logger.warning(f"Falha ao criar checkpoint para '{file_path}': {e}")
+
+    def _rollback(self) -> None:
+        """
+        Restaura todos os arquivos a partir dos backups, na ordem inversa.
+        """
+        if not self._restore_points:
+            return
+
+        import shutil
+        if self.verbose:
+            print("⏪ [ROLLBACK] Restaurando arquivos ao estado original...")
+
+        for entry in reversed(self._restore_points):
+            try:
+                shutil.copy2(entry["backup"], entry["original"])
+                os.remove(entry["backup"])
+                if self.verbose:
+                    print(f"   ✅ Restaurado: {entry['original']}")
+            except Exception as e:
+                logger.error(f"Falha ao restaurar '{entry['original']}': {e}")
+
+        self._restore_points.clear()
+
     def _run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         # Bloqueia qualquer tentativa de esvaziar o arquivo de notas
         if tool_name == "file_writer":
@@ -625,6 +689,49 @@ class Orchestrator:
         self.agent_state.tool_history.append({"tool": tool_name, "args": args, "result": result})
         return result
 
+    #---------- Fallback -----------
+    def _handle_step_failure(self, step_index: int, reason: str, 
+                             tool: str = "", args: dict = None) -> str:
+        """
+        Trata falhas na execução de um passo da Fase 2.
+        Retorna "continue", "abort" ou "replan" (por enquanto, sempre "continue").
+        """
+        self._emit("error", {"step": step_index, "error": reason})
+        logger.warning(f"Passo {step_index} falhou ({tool}): {reason}")
+        # Futuramente pode evoluir para abort, replanejamento, etc.
+        return "continue"
+
+    def _generate_content(self, tool: str, args: dict, objective: str) -> Optional[str]:
+        """
+        Gera o conteúdo a ser escrito por file_writer usando o LLM.
+        Tenta extrair código/texto de várias formas comuns de resposta.
+        """
+        prompt = (
+            f"Objetivo: {objective}\n\n"
+            f"Ferramenta: {tool}\n"
+            f"Argumentos: {json.dumps({k: v for k, v in args.items() if k != 'content'}, ensure_ascii=False)}\n\n"
+            "Retorne APENAS o conteúdo a ser escrito no arquivo, sem formatação extra."
+        )
+        decision = self._ask_model(prompt, step_type="tool_decision")
+
+        if isinstance(decision, dict):
+            # Tenta várias chaves comuns
+            content = (
+                decision.get("content") or
+                decision.get("answer") or
+                decision.get("text") or
+                decision.get("code") or
+                ""
+            )
+            if content.strip():
+                return content.strip()
+
+        # Se a resposta foi string pura (não JSON), usa a string inteira
+        if isinstance(decision, str) and decision.strip():
+            return decision.strip()
+
+        return None
+
     # ==================================================================
     # Fallback reativo (modo antigo) para quando o plano não é gerado
     # ==================================================================
@@ -644,7 +751,44 @@ class Orchestrator:
                 last = self.agent_state.last_result or {}
                 ans = f"Tarefa não resolvida no limite de ações. Último resultado: {stringify(last)}"
                 self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                self._task_failed = True
                 return ans
+
+            # Verifica limites de custo da tarefa
+            max_steps = self.session.config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
+            max_tokens = self.session.config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
+            max_tool_calls = self.session.config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
+            estimated_tokens = self._estimate_conversation_tokens()
+
+            if (self.agent_state.plan_step > max_steps or
+                estimated_tokens > max_tokens or
+                len(self.agent_state.tool_history) > max_tool_calls):
+
+                self._emit("cost_limit", {
+                    "reason": "Limite de custo da tarefa atingido (modo reativo)",
+                    "steps": self.agent_state.plan_step,
+                    "max_steps": max_steps,
+                    "estimated_tokens": estimated_tokens,
+                    "max_tokens": max_tokens,
+                    "tool_calls": len(self.agent_state.tool_history),
+                    "max_tool_calls": max_tool_calls
+                })
+
+                summary_parts = []
+                if self.agent_state.tool_history:
+                    tools_used = set(h["tool"] for h in self.agent_state.tool_history)
+                    summary_parts.append(f"Ferramentas usadas: {', '.join(tools_used)}")
+                    last = self.agent_state.last_result or {}
+                    summary_parts.append(f"Último resultado: {stringify(last)[:500]}")
+
+                answer = (
+                    "A tarefa foi interrompida porque atingiu o limite de custo definido. "
+                    "Resumo do que foi feito:\n" + "\n".join(summary_parts)
+                )
+                self.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                self._task_failed = True
+                return answer
+
 
             decision = self._ask_model(prompt, step_type="tool_decision")
 
@@ -654,6 +798,7 @@ class Orchestrator:
                     print("⚠️ Muitas falhas consecutivas. Encerrando.")
                     ans = f"Erro persistente: {decision.get('message')}"
                     self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                    self._task_failed = True
                     return ans
                 if self.verbose:
                     print(f"[DEBUG] Erro ao interpretar resposta: {decision.get('message')}")
@@ -684,6 +829,7 @@ class Orchestrator:
                     last = self.agent_state.last_result or {}
                     ans = decision.get("answer") or f"Tarefa não resolvida. Último resultado: {stringify(last)}"
                     self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                    self._task_failed = True
                     return ans
 
                 if self.verbose:
@@ -755,6 +901,7 @@ class Orchestrator:
                         print("⚠️ Loop de ferramenta detectado. Encerrando.")
                         ans = f"Loop de ferramenta ({tool}). Tarefa interrompida."
                         self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                        self._task_failed = True
                         return ans
                 else:
                     loop_count = 0
@@ -766,6 +913,7 @@ class Orchestrator:
                     print("⚠️ Ferramenta já usada muitas vezes com os mesmos argumentos. Encerrando.")
                     ans = f"Repetição excessiva da ferramenta {tool}."
                     self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+                    self._task_failed = True
                     return ans
 
                 self._emit("tool_start", {"tool": tool, "args": args})
@@ -805,6 +953,7 @@ class Orchestrator:
 
         ans = "Número máximo de passos atingido."
         self.agent_state.conversation_history.append({"user": objective, "agent": ans})
+        self._task_failed = True
         return ans
 
     # ==================================================================
@@ -825,6 +974,8 @@ class Orchestrator:
             self.agent_state.tool_history = []
             self.agent_state.events.clear()
             self._cached_project_context = None
+            self._task_failed = False
+            self._restore_points.clear()
 
             print(f"\n🤖 Analisando: \"{objective}\"")
             logger.info(f"Iniciando objetivo do agente: {objective}")
@@ -896,6 +1047,7 @@ class Orchestrator:
                 "- Informe apenas o file_path no file_reader; o sistema divide automaticamente se necessário.\n"
                 "- NÃO especifique start_line ou end_line ao usar file_reader, a menos que queira um trecho específico.\n"
                 "- NÃO inclua passos para deletar, apagar ou esvaziar arquivos."
+                "- Quando o objetivo for corrigir, modificar ou sobrescrever um arquivo existente, inclua SEMPRE um passo final com file_writer (action='write') para salvar as alterações."
             )
             plan_decision = self._ask_model(plan_prompt, step_type="plan")
             plan = plan_decision.get("plan")
@@ -907,6 +1059,12 @@ class Orchestrator:
                         continue
                     tool = step.get("tool", "")
                     args = step.get("args", {})
+                    # Valida os argumentos contra o schema da ferramenta
+                    valid, error_msg = self._validate_args(tool, args)
+                    if not valid:
+                        if self.verbose:
+                            print(f"[DEBUG] Passo removido por schema inválido: {step} → {error_msg}")
+                        continue
                     if not isinstance(args, dict):
                         args = {}
                     # Filtro de segurança: não esvaziar analysis_notes.md (qualquer caminho)
@@ -923,6 +1081,7 @@ class Orchestrator:
                     self._emit("hard_block", {"reason": "plano vazio após filtros"})
                     answer = "Não foi possível executar esta ação. Ela foi bloqueada pelas políticas de segurança do agente."
                     self.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                    self._task_failed = True
                     return answer
 
                 self.agent_state.plan = filtered_plan
@@ -934,57 +1093,106 @@ class Orchestrator:
                 if self.verbose:
                     print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
                 return self._run_reactive(objective, tool_usage_count, original_msg_count)
-
+            result = None
+            # Cria ponto de restauração se houver operações de escrita
+            self._create_restore_point()
             # ----------------------------------------------------------
             # Fase 2: Executar cada passo do plano (modo direto, sem LLM)
             # ----------------------------------------------------------
             for i, step in enumerate(self.agent_state.plan):
                 self.agent_state.plan_step = i + 1
 
+                # Verifica limites de custo da tarefa
+                max_steps = self.session.config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
+                max_tokens = self.session.config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
+                max_tool_calls = self.session.config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
+
+                # Estima tokens da conversa
+                estimated_tokens = self._estimate_conversation_tokens()
+
+                if (i + 1 > max_steps or
+                    estimated_tokens > max_tokens or
+                    len(self.agent_state.tool_history) > max_tool_calls):
+
+                    self._emit("cost_limit", {
+                        "reason": "Limite de custo da tarefa atingido",
+                        "steps": i + 1,
+                        "max_steps": max_steps,
+                        "estimated_tokens": estimated_tokens,
+                        "max_tokens": max_tokens,
+                        "tool_calls": len(self.agent_state.tool_history),
+                        "max_tool_calls": max_tool_calls
+                    })
+
+                    # Gera resumo do que foi feito
+                    summary_parts = []
+                    if self.agent_state.tool_history:
+                        tools_used = set(h["tool"] for h in self.agent_state.tool_history)
+                        summary_parts.append(f"Ferramentas usadas: {', '.join(tools_used)}")
+                        summary_parts.append(f"Último resultado: {stringify(self.agent_state.last_result)[:500]}")
+
+                    answer = (
+                        "A tarefa foi interrompida porque atingiu o limite de custo definido. "
+                        "Resumo do que foi feito:\n" + "\n".join(summary_parts)
+                    )
+                    self.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                    self._task_failed = True
+                    return answer
+
                 tool = step["tool"]
                 args = step["args"]
-                # Valida os argumentos contra o schema da ferramenta
-                valid, error_msg = self._validate_args(tool, args)
-                if not valid:
-                    self._emit("error", {"step": i+1, "error": f"Validação de schema falhou: {error_msg}"})
-                    continue
-                file_path = args.get("target") or args.get("file_path") or ""
                 if not isinstance(args, dict):
                     args = {}
 
-                # Verifica se a ferramenta é permitida para a persona
-                if tool not in self.skills or (self.active_skills and tool not in self.active_skills):
-                    self._emit("error", {"step": i+1, "error": f"Tool '{tool}' não permitida para esta persona."})
-                    continue
+                file_path = args.get("target") or args.get("file_path") or ""
 
-                # 🚫 Hard blocks (mesmos do modo antigo)
-                if tool == "code_analyzer" and file_path:
-                    code_analyzer_key = f"code_analyzer_{file_path}"
-                    tool_usage_count[code_analyzer_key] = tool_usage_count.get(code_analyzer_key, 0) + 1
-                    if tool_usage_count[code_analyzer_key] > 1:
-                        self._emit("hard_block", {"file": file_path, "reason": "code_analyzer repetido"})
-                        if self.verbose:
-                            print(f"[DEBUG] Bloqueada reanálise estrutural de {file_path}. Use file_reader para detalhes.")
+                # Validação de schema
+                valid, error_msg = self._validate_args(tool, args)
+                if not valid:
+                    action = self._handle_step_failure(i+1, f"Schema: {error_msg}", tool, args)
+                    if action == "continue":
                         continue
+                    else:
+                        self._task_failed = True
+                        break
+
+                # Verifica permissão da persona
+                if tool not in self.skills or (self.active_skills and tool not in self.active_skills):
+                    action = self._handle_step_failure(i+1, f"Tool '{tool}' não permitida", tool, args)
+                    if action == "continue":
+                        continue
+                    else:
+                        self._task_failed = True
+                        break
+
+                # 🚫 Hard blocks (unificados)
+                hard_block_reason = None
+                if tool == "code_analyzer" and file_path:
+                    key = f"code_analyzer_{file_path}"
+                    tool_usage_count[key] = tool_usage_count.get(key, 0) + 1
+                    if tool_usage_count[key] > 1:
+                        hard_block_reason = "code_analyzer repetido"
 
                 if tool == "file_reader" and file_path:
                     if "start_line" in args and "end_line" in args:
                         chunk_key = f"file_reader_{file_path}_{args['start_line']}_{args['end_line']}"
                         tool_usage_count[chunk_key] = tool_usage_count.get(chunk_key, 0) + 1
                         if tool_usage_count[chunk_key] > 1:
-                            self._emit("hard_block", {"file": file_path, "reason": "chunk repetido"})
-                            if self.verbose:
-                                print(f"[DEBUG] Bloqueada releitura do chunk {args['start_line']}-{args['end_line']} de {file_path}.")
-                            continue
-                    # Bloqueia leitura de arquivo já totalmente lido
+                            hard_block_reason = "chunk repetido"
                     fully_read_key = f"fully_read_{file_path}"
                     if tool_usage_count.get(fully_read_key, 0) > 0:
-                        self._emit("hard_block", {"file": file_path, "reason": "arquivo já totalmente lido"})
-                        if self.verbose:
-                            print(f"[DEBUG] Bloqueada leitura de '{file_path}' – arquivo já totalmente lido.")
-                        continue
+                        hard_block_reason = "arquivo já totalmente lido"
 
-                # 🔍 Pula chunks impossíveis
+                if hard_block_reason:
+                    self._emit("hard_block", {"file": file_path, "reason": hard_block_reason})
+                    action = self._handle_step_failure(i+1, f"Hard block: {hard_block_reason}", tool, args)
+                    if action == "continue":
+                        continue
+                    else:
+                        self._task_failed = True
+                        break
+
+                # Pula chunks impossíveis
                 if tool == "file_reader" and "start_line" in args and "end_line" in args and file_path:
                     known_total = None
                     for h in self.agent_state.tool_history:
@@ -998,7 +1206,24 @@ class Orchestrator:
                             print(f"[DEBUG] Pulando passo: start_line ({args['start_line']}) > total_lines ({known_total}) para '{file_path}'.")
                         continue
 
-                # Verifica cache de hash
+                # Geração de conteúdo para file_writer se necessário
+                if tool == "file_writer" and not args.get("content"):
+                    generated = None
+                    for retry in range(2):
+                        generated = self._generate_content(tool, args, objective)
+                        if generated:
+                            break
+                    if generated:
+                        args["content"] = generated
+                    else:
+                        action = self._handle_step_failure(i+1, "Conteúdo não gerado para file_writer", tool, args)
+                        if action == "continue":
+                            continue
+                        else:
+                            self._task_failed = True
+                            break
+
+                # Cache de hash
                 cache_hit = False
                 if tool in ("code_analyzer", "file_reader") and file_path:
                     try:
@@ -1012,7 +1237,7 @@ class Orchestrator:
                         summary = self.agent_state.memory.state.get("file_summaries", {}).get(file_path, "")
                         if summary:
                             self._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
-                            result = {"ok": True, "done": True, "data": summary, "message": f"Usando análise em cache de {file_path}."}
+                            result = {"ok": True, "done": True, "data": summary, "message": f"Usando cache de {file_path}."}
                             self._emit("tool_end", {"tool": tool, "ok": True})
                             self.agent_state.last_tool = tool
                             self.agent_state.last_args = args
@@ -1025,11 +1250,8 @@ class Orchestrator:
                     result = self._run_tool(tool, args)
                     self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
                     self._maybe_summarize_and_store(tool, args, result)
-                else:
-                    # result já foi definido no bloco de cache hit
-                    pass
 
-                # Marca arquivo como completamente lido
+                # Marca arquivo completamente lido
                 if tool == "file_reader" and result.get("ok") and "total_lines" in result:
                     total_lines = result["total_lines"]
                     end_line = args.get("end_line", total_lines)
@@ -1039,13 +1261,16 @@ class Orchestrator:
                         if self.verbose:
                             print(f"[DEBUG] Arquivo '{file_path}' completamente lido ({total_lines} linhas).")
 
-                # Comprime contexto se necessário
+                # Compressão de contexto
                 self._maybe_compress_context()
 
-                if not result.get("ok"):
-                    self._emit("error", {"step": i+1, "error": result.get("error")})
-                    # Continua para o próximo passo mesmo com erro
-
+                if result is not None and not result.get("ok"):
+                    action = self._handle_step_failure(i+1, f"Tool '{tool}' falhou: {result.get('error')}", tool, args)
+                    if action == "continue":
+                        continue
+                    else:
+                        self._task_failed = True
+                        break
             # ----------------------------------------------------------
             # Fase 3: Resposta final (modo texto puro, sem JSON)
             # ----------------------------------------------------------
@@ -1131,10 +1356,13 @@ class Orchestrator:
             return answer
 
         finally:
+            # Rollback se a tarefa falhou
+            if self._task_failed:
+                self._rollback()
+
             while len(self.session.messages) > original_msg_count:
                 self.session.messages.pop()
             if len(self.agent_state.conversation_history) > self.agent_state.max_history_turns:
                 self.agent_state.conversation_history = self.agent_state.conversation_history[-self.agent_state.max_history_turns:]
             self._maybe_compress_context()
             self.save_memory_to_file("agent_memory.json")
-            

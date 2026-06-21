@@ -27,13 +27,16 @@ class FileWriterSkill(BaseSkill):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "action": "string: 'write' (cria/sobrescreve), 'patch' (substitui trecho), 'append' (adiciona ao final), 'delete_lines' (remove linhas)",
+            "action": "string: 'write' (cria/sobrescreve), 'patch' (substitui trecho exato), 'append' (adiciona ao final), 'delete_lines' (remove linhas), 'ast_patch' (substitui função/classe por nome)",
             "file_path": "string: caminho relativo do arquivo",
             "content": "string: conteúdo a escrever (para 'write' e 'append')",
             "old_content": "string: trecho EXATO a ser substituído (para 'patch')",
             "new_content": "string: novo trecho que vai substituir o old_content (para 'patch')",
-            "start_line": "integer: linha inicial a deletar (1-indexada, para 'delete_lines')",
-            "end_line": "integer: linha final a deletar (1-indexada, para 'delete_lines')",
+            "start_line": "integer: linha inicial a deletar (para 'delete_lines')",
+            "end_line": "integer: linha final a deletar (para 'delete_lines')",
+            "target": "string: nome da função, classe ou método a substituir (para 'ast_patch')",
+            "new_code": "string: novo código completo da função/classe (para 'ast_patch')",
+            "old_hash": "string: hash SHA256 do arquivo antes da edição (opcional, para 'ast_patch')"
         }
 
     def _is_safe(self, requested: Path) -> tuple[bool, str]:
@@ -61,6 +64,80 @@ class FileWriterSkill(BaseSkill):
             return False, f"Extensão '{requested.suffix}' não é permitida para escrita."
 
         return True, ""
+
+    def _ast_patch(self, file_path: Path, target: str, new_code: str, old_hash: str = None) -> dict:
+        import ast, hashlib
+
+        try:
+            original = file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler arquivo para patch."}
+
+        # Validação opcional de hash
+        if old_hash:
+            current_hash = hashlib.sha256(original.encode("utf-8")).hexdigest()
+            if current_hash != old_hash:
+                return {"ok": False, "done": True, "error": "hash mismatch",
+                        "message": f"Hash não confere (esperado {old_hash[:8]}..., atual {current_hash[:8]}...)."}
+
+        try:
+            tree = ast.parse(original)
+        except SyntaxError as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "Arquivo com erro de sintaxe, patch não aplicado."}
+
+        # Encontra o nó alvo
+        found = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name == target:
+                found = node
+                break
+
+        if not found:
+            return {"ok": False, "done": True, "error": "target not found",
+                    "message": f"'{target}' não encontrado no arquivo."}
+
+        # Determina linhas e indentação
+        lines = original.splitlines(keepends=True)
+        start = found.lineno - 1
+        end = found.end_lineno - 1 if hasattr(found, 'end_lineno') and found.end_lineno else start
+
+        orig_line = lines[start]
+        indent = len(orig_line) - len(orig_line.lstrip())
+        indent_str = orig_line[:indent]
+
+        # Indenta o novo código com a mesma indentação
+        new_lines = []
+        for line in new_code.strip().splitlines(keepends=True):
+            if line.strip():
+                new_lines.append(indent_str + line.lstrip())
+            else:
+                new_lines.append(line)
+        new_block = "".join(new_lines)
+
+        # Monta novo conteúdo
+        new_content_lines = lines[:start] + [new_block] + lines[end+1:]
+        new_content = "".join(new_content_lines)
+
+        # Verifica sintaxe do novo arquivo
+        try:
+            ast.parse(new_content)
+        except SyntaxError as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "O novo código tem erro de sintaxe."}
+
+        # Backup leve (na mesma pasta, com extensão .bak)
+        backup_path = file_path.with_suffix(file_path.suffix + ".ast_bak")
+        try:
+            backup_path.write_text(original, encoding="utf-8")
+        except Exception:
+            pass  # backup não é obrigatório
+
+        # Escreve o arquivo
+        try:
+            file_path.write_text(new_content, encoding="utf-8")
+        except Exception as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao escrever o patch."}
+
+        return {"ok": True, "done": True, "message": f"'{target}' substituído com sucesso em '{file_path}'."}
 
     def execute(self, args: Dict[str, Any]) -> Any:
         action = args.get("action", "write")
@@ -119,6 +196,16 @@ class FileWriterSkill(BaseSkill):
                 new_lines = lines[:start - 1] + lines[end:]
                 requested.write_text("".join(new_lines), encoding="utf-8")
                 return {"ok": True, "done": True, "message": f"Linhas {start}-{end} removidas de '{file_path}'."}
+
+            elif action == "ast_patch":
+                target = args.get("target", "")
+                new_code = args.get("new_code", "")
+                old_hash = args.get("old_hash")
+                if not target or not new_code:
+                    return {"ok": False, "done": True, "error": "'target' e 'new_code' são obrigatórios para ast_patch."}
+                if not requested.exists():
+                    return {"ok": False, "done": True, "error": f"Arquivo '{file_path}' não existe."}
+                return self._ast_patch(requested, target, new_code, old_hash)
 
             else:
                 return {"ok": False, "done": True, "error": f"Ação desconhecida: '{action}'. Use 'write', 'append', 'patch' ou 'delete_lines'."}
