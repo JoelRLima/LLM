@@ -653,6 +653,63 @@ class Orchestrator:
 
         self._restore_points.clear()
 
+    def _show_diff(self, file_path: str, new_content: str) -> None:
+        """
+        Exibe a diferença entre o arquivo original e o novo conteúdo usando difflib.
+        """
+        import difflib
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                original = f.read()
+        except Exception:
+            original = ""
+
+        diff = difflib.unified_diff(
+            original.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=file_path,
+            tofile=f"{file_path} (proposto)",
+        )
+        diff_text = ''.join(diff)
+        if diff_text.strip():
+            print(f"\n📝 [DIFF] Mudanças propostas para '{file_path}':")
+            print(diff_text)
+        else:
+            print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
+
+    def _lint_check(self, file_path: str) -> Optional[str]:
+        """
+        Verifica a sintaxe e boas práticas de um arquivo Python.
+        Retorna mensagem de erro se houver problemas, ou None se estiver limpo.
+        """
+        if not file_path.endswith(".py"):
+            return None
+
+        errors = []
+
+        # 1. Verificação de sintaxe (py_compile)
+        import py_compile
+        try:
+            py_compile.compile(file_path, doraise=True)
+        except py_compile.PyCompileError as e:
+            errors.append(f"Sintaxe: {str(e)}")
+
+        # 2. Verificação de estilo com flake8 (opcional, se instalado)
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["flake8", "--max-line-length=120", file_path],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.stdout.strip():
+                errors.append(f"Estilo: {result.stdout.strip()}")
+        except Exception:
+            pass  # flake8 não instalado ou falhou, ignora
+
+        if errors:
+            return "\n".join(errors)
+        return None
+
     def _run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         # Bloqueia qualquer tentativa de esvaziar o arquivo de notas
         if tool_name == "file_writer":
@@ -690,48 +747,292 @@ class Orchestrator:
         return result
 
     #---------- Fallback -----------
-    def _handle_step_failure(self, step_index: int, reason: str, 
+    def _handle_step_failure(self, step_index: int, reason: str,
                              tool: str = "", args: dict = None) -> str:
         """
-        Trata falhas na execução de um passo da Fase 2.
-        Retorna "continue", "abort" ou "replan" (por enquanto, sempre "continue").
+        Trata falhas na execução de um passo da Fase 2.
+        Sanitiza o erro e registra de forma enxuta.
+        Retorna "continue", "abort" ou "replan".
         """
-        self._emit("error", {"step": step_index, "error": reason})
-        logger.warning(f"Passo {step_index} falhou ({tool}): {reason}")
-        # Futuramente pode evoluir para abort, replanejamento, etc.
+        sanitized = self._sanitize_error(reason)
+        self._emit("error", {"step": step_index, "error": sanitized})
+        logger.warning(f"Passo {step_index} falhou ({tool}): {sanitized}")
         return "continue"
+
+    def _sanitize_error(self, error_message: str) -> str:
+        """
+        Extrai apenas o tipo do erro, a mensagem essencial e a linha relevante
+        de um stack trace ou mensagem de erro, economizando tokens.
+        """
+        if not error_message:
+            return ""
+
+        # Remove quebras de linha duplicadas e espaços excessivos
+        cleaned = re.sub(r'\n{3,}', '\n\n', error_message.strip())
+
+        # Tenta extrair a última linha relevante de um traceback Python
+        lines = cleaned.split('\n')
+        error_type = ""
+        error_msg = ""
+        relevant_line = ""
+
+        # Procura por padrões de traceback
+        for i, line in enumerate(lines):
+            # Detecta a linha do erro (ex: "TypeError: ...")
+            if re.match(r'^[A-Za-z_]\w*Error:', line):
+                error_type = line.split(':')[0].strip()
+                error_msg = line
+                # Tenta pegar a linha seguinte como contexto
+                if i + 1 < len(lines) and lines[i+1].strip():
+                    relevant_line = lines[i+1].strip()[:200]
+                break
+
+        # Se não encontrou padrão de traceback, retorna versão curta
+        if not error_type:
+            # Pega apenas as primeiras e últimas linhas
+            if len(lines) > 10:
+                cleaned = '\n'.join(lines[:3] + ['...'] + lines[-3:])
+            return cleaned[:600]
+
+        # Monta versão sanitizada
+        sanitized = f"{error_msg}"
+        if relevant_line:
+            sanitized += f"\n  → {relevant_line}"
+
+        # Adiciona dica de linha se disponível (ex: "line 42")
+        line_match = re.search(r'line (\d+)', error_msg)
+        if line_match:
+            sanitized += f" (linha {line_match.group(1)})"
+
+        return sanitized[:500]
+
+    def _purge_stale_context(self) -> None:
+        """
+        Remove tentativas antigas da sessão, mantendo apenas:
+        - O system prompt original
+        - O resumo do contexto (se existir)
+        - A última mensagem do usuário
+        - O último erro sanitizado
+        """
+        if len(self.session.messages) <= 2:
+            return
+
+        # Preserva o system prompt (índice 0)
+        preserved = [self.session.messages[0]]
+
+        # Mantém mensagens de sistema adicionais (ex.: resumo de compressão)
+        for msg in self.session.messages[1:]:
+            if msg["role"] == "system":
+                preserved.append(msg)
+
+        # Mantém a última mensagem do usuário
+        last_user_msg = None
+        for msg in reversed(self.session.messages):
+            if msg["role"] == "user":
+                last_user_msg = msg
+                break
+        if last_user_msg:
+            preserved.append(last_user_msg)
+
+        # Substitui o histórico
+        self.session.messages = preserved
+
+        if self.verbose:
+            print(f"🧹 [PURGE] Contexto limpo: {len(preserved)} mensagens mantidas.")
+
+
+    def _generate_tests(self, code: str, file_path: str) -> Optional[str]:
+        """
+        Gera testes unitários para o código fornecido.
+        Retorna o código de teste pronto para execução.
+        """
+        prompt = (
+            f"Gere testes unitários em Python para o seguinte código do arquivo '{file_path}':\n\n"
+            f"```python\n{code[:4000]}\n```\n\n"
+            "Regras:\n"
+            "- Use apenas bibliotecas padrão (unittest ou pytest).\n"
+            "- Cubra os casos principais e casos de borda.\n"
+            "- NÃO inclua mocks de arquivos ou rede.\n"
+            "- NÃO use bibliotecas externas.\n"
+            "- Retorne APENAS o código Python dos testes, pronto para ser executado."
+        )
+        decision = self._ask_model(prompt, step_type="tool_decision")
+        if isinstance(decision, dict):
+            content = decision.get("content") or decision.get("answer") or decision.get("code") or ""
+            return content.strip() if content.strip() else None
+        if isinstance(decision, str) and decision.strip():
+            return decision.strip()
+        return None
+
+    def _correct_code(self, original_code: str, file_path: str, test_code: str, error_msg: str) -> Optional[str]:
+        """
+        Corrige o código original com base no erro de teste.
+        Retorna o código corrigido.
+        """
+        prompt = (
+            f"O seguinte código Python do arquivo '{file_path}' falhou nos testes:\n\n"
+            f"```python\n{original_code[:4000]}\n```\n\n"
+            f"Testes executados:\n```python\n{test_code[:2000]}\n```\n\n"
+            f"Erro reportado:\n{self._sanitize_error(error_msg)}\n\n"
+            "Corrija APENAS o código original para que os testes passem. "
+            "Retorne APENAS o código corrigido completo (incluindo imports)."
+        )
+        decision = self._ask_model(prompt, step_type="tool_decision")
+        if isinstance(decision, dict):
+            content = decision.get("content") or decision.get("answer") or decision.get("code") or ""
+            return content.strip() if content.strip() else None
+        if isinstance(decision, str) and decision.strip():
+            return decision.strip()
+        return None
+
+    def _test_and_correct(self, file_path: str, objective: str) -> bool:
+        """
+        Ciclo teste-correção automático.
+        Retorna True se os testes passaram (ou não foram necessários),
+        False se falhou após todas as tentativas.
+        """
+        if not file_path.endswith(".py"):
+            return True  # só testa arquivos Python
+
+        # Lê o código atual
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                code = f.read()
+        except Exception:
+            return True  # não consegue ler, não testa
+
+        # Só testa se parece código (contém funções ou classes)
+        if "def " not in code and "class " not in code:
+            return True
+
+        max_attempts = 3
+        current_code = code
+        test_code = None
+
+        for attempt in range(max_attempts):
+            if self.verbose:
+                print(f"🧪 [TEST] Tentativa {attempt + 1}/{max_attempts} para '{file_path}'")
+
+            # Gera ou regenera testes
+            test_code = self._generate_tests(current_code, file_path)
+            if not test_code:
+                if self.verbose:
+                    print("   ⚠️ Não foi possível gerar testes, pulando.")
+                return True
+
+            # Cria um arquivo temporário com o código + testes
+            import tempfile
+            import subprocess
+
+            test_file = None
+            try:
+                # Salva código + testes num arquivo temporário
+                combined = f"{current_code}\n\n# --- TESTES ---\n{test_code}"
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
+                    tmp.write(combined)
+                    test_file = tmp.name
+
+                # Executa o arquivo temporário com timeout
+                result = subprocess.run(
+                    ["python", test_file],
+                    capture_output=True, text=True, timeout=15,
+                    cwd=os.path.dirname(os.path.abspath(file_path)) or "."
+                )
+                output = result.stdout + result.stderr
+
+                if result.returncode == 0 and "FAILED" not in output and "Error" not in output:
+                    if self.verbose:
+                        print(f"   ✅ Testes passaram na tentativa {attempt + 1}!")
+                    # Escreve o código corrigido de volta (se houve correção)
+                    if attempt > 0:
+                        try:
+                            with open(file_path, 'w', encoding='utf-8') as f:
+                                f.write(current_code)
+                        except Exception:
+                            pass
+                    return True
+
+                # Testes falharam
+                if attempt < max_attempts - 1:
+                    corrected = self._correct_code(current_code, file_path, test_code, output)
+                    if corrected:
+                        current_code = corrected
+                        if self.verbose:
+                            print(f"   🔄 Código corrigido, retentando...")
+                        self._purge_stale_context()
+                    else:
+                        if self.verbose:
+                            print(f"   ⚠️ Não foi possível corrigir o código.")
+                        break
+
+            except subprocess.TimeoutExpired:
+                if self.verbose:
+                    print(f"   ⏱️ Timeout na execução dos testes.")
+            except Exception as e:
+                if self.verbose:
+                    print(f"   ❌ Erro ao executar testes: {e}")
+            finally:
+                if test_file and os.path.exists(test_file):
+                    try:
+                        os.remove(test_file)
+                    except Exception:
+                        pass
+
+        # Todas as tentativas falharam
+        self._task_failed = True
+        self._emit("error", {"step": self.agent_state.plan_step, "error": "Ciclo teste-correção falhou após todas as tentativas"})
+        return False
 
     def _generate_content(self, tool: str, args: dict, objective: str) -> Optional[str]:
         """
         Gera o conteúdo a ser escrito por file_writer usando o LLM.
-        Tenta extrair código/texto de várias formas comuns de resposta.
+        Tenta extrair o conteúdo do texto completo da resposta.
         """
         prompt = (
             f"Objetivo: {objective}\n\n"
             f"Ferramenta: {tool}\n"
             f"Argumentos: {json.dumps({k: v for k, v in args.items() if k != 'content'}, ensure_ascii=False)}\n\n"
-            "Retorne APENAS o conteúdo a ser escrito no arquivo, sem formatação extra."
+            "Retorne APENAS o conteúdo a ser escrito no arquivo, sem formatação extra. "
+            "Não use markdown, blocos de código ou explicações."
         )
         decision = self._ask_model(prompt, step_type="tool_decision")
 
+        full_text = ""
+
+        # Coleta todo texto possível da resposta
         if isinstance(decision, dict):
-            # Tenta várias chaves comuns
-            content = (
-                decision.get("content") or
-                decision.get("answer") or
-                decision.get("text") or
-                decision.get("code") or
-                ""
-            )
-            if content.strip():
-                return content.strip()
+            # Tenta campos estruturados primeiro
+            for key in ["content", "answer", "text", "code", "raw_response"]:
+                val = decision.get(key, "")
+                if val and len(str(val)) > 10:
+                    full_text = str(val)
+                    break
+            # Se não achou, junta tudo que for string
+            if not full_text:
+                parts = []
+                for v in decision.values():
+                    if isinstance(v, str) and len(v) > 10:
+                        parts.append(v)
+                full_text = "\n".join(parts)
+        elif isinstance(decision, str) and len(decision) > 10:
+            full_text = decision
 
-        # Se a resposta foi string pura (não JSON), usa a string inteira
-        if isinstance(decision, str) and decision.strip():
-            return decision.strip()
+        if not full_text:
+            return None
 
-        return None
+        # Limpeza agressiva
+        cleaned = full_text.strip()
+        # Remove blocos de código markdown
+        cleaned = re.sub(r'```[a-z]*\s*\n?', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'```', '', cleaned)
+        # Remove cabeçalhos markdown e formatação
+        cleaned = re.sub(r'^\*\*.*?\*\*\s*:?\n?', '', cleaned)
+        cleaned = re.sub(r'^#{1,6}\s+', '', cleaned, flags=re.MULTILINE)
+        # Remove linhas de explicação comuns
+        cleaned = re.sub(r'^(Aqui está|Segue|Abaixo| Eis|O conteúdo|Conteúdo:|A poesia).*?\n', '', cleaned, flags=re.IGNORECASE)
 
+        result = cleaned.strip()
+        return result if len(result) > 10 else None
     # ==================================================================
     # Fallback reativo (modo antigo) para quando o plano não é gerado
     # ==================================================================
@@ -1047,7 +1348,9 @@ class Orchestrator:
                 "- Informe apenas o file_path no file_reader; o sistema divide automaticamente se necessário.\n"
                 "- NÃO especifique start_line ou end_line ao usar file_reader, a menos que queira um trecho específico.\n"
                 "- NÃO inclua passos para deletar, apagar ou esvaziar arquivos."
-                "- Quando o objetivo for corrigir, modificar ou sobrescrever um arquivo existente, inclua SEMPRE um passo final com file_writer (action='write') para salvar as alterações."
+                "- Para passos de file_writer, NÃO inclua o conteúdo no campo 'content'. Use 'content' como string vazia (\"\"). O sistema gerará o conteúdo automaticamente."
+                "- Para alterar uma parte específica de um arquivo (ex.: uma linha, uma função), prefira usar file_writer com action='patch' (substituição exata de trecho) ou action='ast_patch' (substituição de função/classe por nome).\n"
+                "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
             )
             plan_decision = self._ask_model(plan_prompt, step_type="plan")
             plan = plan_decision.get("plan")
@@ -1151,6 +1454,7 @@ class Orchestrator:
                 if not valid:
                     action = self._handle_step_failure(i+1, f"Schema: {error_msg}", tool, args)
                     if action == "continue":
+                        self._purge_stale_context()
                         continue
                     else:
                         self._task_failed = True
@@ -1160,6 +1464,7 @@ class Orchestrator:
                 if tool not in self.skills or (self.active_skills and tool not in self.active_skills):
                     action = self._handle_step_failure(i+1, f"Tool '{tool}' não permitida", tool, args)
                     if action == "continue":
+                        self._purge_stale_context()
                         continue
                     else:
                         self._task_failed = True
@@ -1187,6 +1492,7 @@ class Orchestrator:
                     self._emit("hard_block", {"file": file_path, "reason": hard_block_reason})
                     action = self._handle_step_failure(i+1, f"Hard block: {hard_block_reason}", tool, args)
                     if action == "continue":
+                        self._purge_stale_context()
                         continue
                     else:
                         self._task_failed = True
@@ -1209,15 +1515,23 @@ class Orchestrator:
                 # Geração de conteúdo para file_writer se necessário
                 if tool == "file_writer" and not args.get("content"):
                     generated = None
-                    for retry in range(2):
+                    for retry in range(3):
                         generated = self._generate_content(tool, args, objective)
                         if generated:
                             break
+                    # Fallback: tenta extrair da última resposta do assistente no histórico
+                    if not generated:
+                        for msg in reversed(self.session.messages):
+                            if msg["role"] == "assistant" and len(msg.get("content", "")) > 20:
+                                generated = self._sanitize_error(msg["content"])  # usa sanitização como limpeza
+                                if len(generated) > 10:
+                                    break
                     if generated:
                         args["content"] = generated
                     else:
                         action = self._handle_step_failure(i+1, "Conteúdo não gerado para file_writer", tool, args)
                         if action == "continue":
+                            self._purge_stale_context()
                             continue
                         else:
                             self._task_failed = True
@@ -1245,11 +1559,33 @@ class Orchestrator:
                             self.agent_state.tool_history.append({"tool": tool, "args": args, "result": result})
                             cache_hit = True
 
+                # Exibe diff preview ANTES de modificar o arquivo
+                if tool == "file_writer" and args.get("content") and file_path:
+                    self._show_diff(file_path, args["content"])
+
                 if not cache_hit:
                     self._emit("tool_start", {"tool": tool, "args": args})
                     result = self._run_tool(tool, args)
                     self._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
                     self._maybe_summarize_and_store(tool, args, result)
+
+                # Ciclo teste‑correção automático
+                if tool == "file_writer" and result.get("ok") and file_path.endswith(".py"):
+                    if self.verbose:
+                        print(f"🧪 [TEST] Iniciando ciclo teste‑correção para '{file_path}'...")
+                    if not self._test_and_correct(file_path, objective):
+                        # Testes falharam → rollback será acionado no finally
+                        self._task_failed = True
+                        self._emit("error", {"step": i+1, "error": "Ciclo teste‑correção falhou"})
+                        break
+
+                # Verificação de lint pós‑escrita
+                if tool == "file_writer" and result.get("ok") and file_path.endswith(".py"):
+                    lint_error = self._lint_check(file_path)
+                    if lint_error:
+                        self._emit("warning", {"step": i+1, "warning": f"Problemas de lint em '{file_path}':\n{lint_error}"})
+                        if self.verbose:
+                            print(f"⚠️ [LINT] Problemas encontrados em '{file_path}':\n{lint_error}")
 
                 # Marca arquivo completamente lido
                 if tool == "file_reader" and result.get("ok") and "total_lines" in result:
@@ -1267,10 +1603,19 @@ class Orchestrator:
                 if result is not None and not result.get("ok"):
                     action = self._handle_step_failure(i+1, f"Tool '{tool}' falhou: {result.get('error')}", tool, args)
                     if action == "continue":
+                        self._purge_stale_context()
                         continue
                     else:
                         self._task_failed = True
                         break
+
+                # Se o objetivo foi uma edição e o file_writer foi bem‑sucedido,
+                # encerra com uma resposta curta, sem chamar o LLM.
+                if any(kw in objective.lower() for kw in ["mudar", "mude", "alterar", "altere", "corrigir", "corrija", "substituir", "substitua", "editar", "edite", "ajustar", "ajuste"]):
+                    if any(h["tool"] == "file_writer" and h.get("result", {}).get("ok") for h in self.agent_state.tool_history):
+                        answer = "Arquivo alterado com sucesso."
+                        self.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                        return answer
             # ----------------------------------------------------------
             # Fase 3: Resposta final (modo texto puro, sem JSON)
             # ----------------------------------------------------------
