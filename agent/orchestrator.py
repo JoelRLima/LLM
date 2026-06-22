@@ -363,6 +363,37 @@ class Orchestrator:
         else:
             logger.warning("Resposta vazia ao comprimir contexto.")
 
+    def _build_compact_view(self) -> List[Dict[str, Any]]:
+        """
+        Constrói uma visão compactada da conversa para envio ao LLM,
+        substituindo o conteúdo bruto de file_reader pelos resumos estruturados.
+        Não altera self.session.messages.
+        """
+        compact = []
+        for msg in self.session.messages:
+            if msg["role"] == "system":
+                compact.append(msg)
+                continue
+
+            # Procura no tool_history se esta mensagem veio de um file_reader
+            replaced = False
+            for h in self.agent_state.tool_history:
+                if h["tool"] == "file_reader" and h.get("result", {}).get("ok"):
+                    file_path = h.get("args", {}).get("file_path", "")
+                    # Se o conteúdo da mensagem contém o resultado bruto do file_reader
+                    if file_path and len(msg.get("content", "")) > 500:
+                        summary = self.agent_state.memory.state.get("file_summaries", {}).get(file_path)
+                        if summary:
+                            new_msg = msg.copy()
+                            new_msg["content"] = f"[Resumo de '{file_path}']: {summary}"
+                            compact.append(new_msg)
+                            replaced = True
+                            break
+            if not replaced:
+                compact.append(msg)
+
+        return compact
+
     # ------------------------------------------------------------------
     # Descoberta do tamanho de arquivos mencionados no objetivo
     # ------------------------------------------------------------------
@@ -493,7 +524,18 @@ class Orchestrator:
 
             # Adiciona a mensagem de usuário
             self.session.add_user_message(prompt)
-            payload = self.session.build_payload()
+            # Verifica pressão de contexto e usa view compactada se necessário
+            estimated = self._estimate_conversation_tokens()
+            if estimated > int(CONTEXT_LIMIT * 0.75):
+                compact_messages = self._build_compact_view()
+                # Substitui temporariamente as mensagens da sessão pela view compactada
+                original_messages_in_session = self.session.messages
+                self.session.messages = compact_messages
+                payload = self.session.build_payload()
+                # Restaura após construir o payload
+                self.session.messages = original_messages_in_session
+            else:
+                payload = self.session.build_payload()
 
             # Define budget
             config_max = self.session.config.get("agent_max_tokens")

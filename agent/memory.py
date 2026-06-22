@@ -68,3 +68,61 @@ class AgentMemory:
             return json.dumps(active_state, ensure_ascii=False, indent=2, default=str)
         except Exception:
             return str(self.state)
+
+    def get_context_for_prompt(self, objective: str = "", budget_tokens: int = 800) -> str:
+        """
+        Retorna um contexto de memória enxuto para ser injetado no system prompt.
+        Nunca retorna a memória inteira - apenas o necessário para a tarefa atual.
+        
+        Estratégia:
+        1. Inclui SEMPRE analyzed_files (índice leve, resumos de 150 chars cada).
+        2. Se o orçamento permitir, inclui file_summaries APENAS dos arquivos
+           mencionados no objetivo ou que tenham hash armazenado.
+        3. NUNCA inclui file_hashes, timestamps, ou metadados internos.
+        """
+        parts = []
+        budget_used = 0
+        
+        # Camada 1: Índice leve (sempre incluído, truncado se necessário)
+        analyzed = self.state.get("analyzed_files", {})
+        if analyzed:
+            index_lines = []
+            for fpath, summary in list(analyzed.items())[:30]:  # no máximo 30 arquivos
+                line = f"- {fpath}: {summary}"
+                index_lines.append(line)
+            index_text = "\n".join(index_lines)
+            # Estima tokens (1 token ≈ 4 chars)
+            estimated = len(index_text) // 4
+            if estimated > budget_tokens * 0.6:  # no máximo 60% do orçamento
+                index_text = "\n".join(index_lines[:15])  # trunca para 15 arquivos
+                estimated = len(index_text) // 4
+            parts.append(f"--- ARQUIVOS JÁ ANALISADOS ---\n{index_text}")
+            budget_used += estimated
+        
+        # Camada 2: Resumos detalhados APENAS dos arquivos relevantes
+        remaining_budget = budget_tokens - budget_used
+        if remaining_budget > 100 and objective:
+            # Extrai menções a arquivos no objetivo
+            import re
+            mentioned = set(re.findall(r'[\w\-/]+\.\w+', objective))
+            summaries = self.state.get("file_summaries", {})
+            relevant = []
+            for fpath, summary in summaries.items():
+                fname = fpath.split("/")[-1] if "/" in fpath else fpath
+                if fname in mentioned or fpath in mentioned:
+                    relevant.append((fpath, summary))
+            
+            if relevant:
+                summary_lines = []
+                for fpath, summary in relevant[:5]:  # no máximo 5 resumos detalhados
+                    truncated = summary[:300]  # cada resumo limitado a 300 chars
+                    summary_lines.append(f"- {fpath}: {truncated}")
+                summary_text = "\n".join(summary_lines)
+                estimated = len(summary_text) // 4
+                if estimated <= remaining_budget:
+                    parts.append(f"--- RESUMOS DETALHADOS ---\n{summary_text}")
+        
+        if not parts:
+            return ""
+        
+        return "\n\n".join(parts)

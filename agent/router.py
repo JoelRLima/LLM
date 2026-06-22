@@ -103,7 +103,8 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
                 ["web_search", "summarize", "session_memory"])
     else:
         return (PERSONA_PROMPTS["general"],
-        ["session_memory", "summarize", "python_executor", "directory_lister"])
+                ["session_memory", "summarize", "python_executor", "directory_lister",
+                 "file_reader", "file_writer"])
 
 def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str]]:
     if _is_clearly_trivial(objective):
