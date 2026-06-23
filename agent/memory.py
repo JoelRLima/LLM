@@ -1,5 +1,13 @@
+import datetime
 import json
+import os
+import shutil
 from typing import Any, Dict
+
+from logger import logger
+
+MAX_MEMORY_BACKUPS = 5
+MEMORY_BACKUP_DIR = "memory_backups"
 
 class AgentMemory:
     def __init__(self):
@@ -34,8 +42,33 @@ class AgentMemory:
             "analyzed_files": {},
             "file_summaries": {}
         }
-    
+
+    def backup_to_file(self, path: str = "agent_memory.json", max_backups: int = MAX_MEMORY_BACKUPS) -> None:
+        """
+        Cria uma cópia de segurança do arquivo de memória dentro da pasta MEMORY_BACKUP_DIR.
+        Mantém apenas os últimos max_backups arquivos.
+        """
+        if not os.path.exists(path):
+            return
+        try:
+            os.makedirs(MEMORY_BACKUP_DIR, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = os.path.basename(path) + f".{timestamp}.bak"
+            backup_path = os.path.join(MEMORY_BACKUP_DIR, backup_name)
+            shutil.copy2(path, backup_path)
+
+            all_backups = sorted(
+                f for f in os.listdir(MEMORY_BACKUP_DIR)
+                if f.startswith(os.path.basename(path)) and f.endswith(".bak")
+            )
+            while len(all_backups) > max_backups:
+                oldest = all_backups.pop(0)
+                os.remove(os.path.join(MEMORY_BACKUP_DIR, oldest))
+        except Exception as e:
+            logger.warning(f"Não foi possível criar backup da memória: {e}")
+
     def save_to_file(self, path: str = "agent_memory.json") -> str:
+        self.backup_to_file(path)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, ensure_ascii=False, indent=2)
@@ -73,7 +106,7 @@ class AgentMemory:
         """
         Retorna um contexto de memória enxuto para ser injetado no system prompt.
         Nunca retorna a memória inteira - apenas o necessário para a tarefa atual.
-        
+
         Estratégia:
         1. Inclui SEMPRE analyzed_files (índice leve, resumos de 150 chars cada).
         2. Se o orçamento permitir, inclui file_summaries APENAS dos arquivos
@@ -82,7 +115,7 @@ class AgentMemory:
         """
         parts = []
         budget_used = 0
-        
+
         # Camada 1: Índice leve (sempre incluído, truncado se necessário)
         analyzed = self.state.get("analyzed_files", {})
         if analyzed:
@@ -98,7 +131,7 @@ class AgentMemory:
                 estimated = len(index_text) // 4
             parts.append(f"--- ARQUIVOS JÁ ANALISADOS ---\n{index_text}")
             budget_used += estimated
-        
+
         # Camada 2: Resumos detalhados APENAS dos arquivos relevantes
         remaining_budget = budget_tokens - budget_used
         if remaining_budget > 100 and objective:
@@ -111,7 +144,7 @@ class AgentMemory:
                 fname = fpath.split("/")[-1] if "/" in fpath else fpath
                 if fname in mentioned or fpath in mentioned:
                     relevant.append((fpath, summary))
-            
+
             if relevant:
                 summary_lines = []
                 for fpath, summary in relevant[:5]:  # no máximo 5 resumos detalhados
@@ -121,8 +154,8 @@ class AgentMemory:
                 estimated = len(summary_text) // 4
                 if estimated <= remaining_budget:
                     parts.append(f"--- RESUMOS DETALHADOS ---\n{summary_text}")
-        
+
         if not parts:
             return ""
-        
+
         return "\n\n".join(parts)
