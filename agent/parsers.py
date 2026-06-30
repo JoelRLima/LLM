@@ -241,8 +241,6 @@ def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, A
             if start > end:
                 errors.append(f"'start_line' ({start}) não pode ser maior que 'end_line' ({end})")
         file_path = args.get("file_path", "")
-        if file_path and not os.path.exists(file_path):
-            errors.append(f"Arquivo não encontrado: '{file_path}'")
 
     if tool_name == "file_writer":
         action = args.get("action", "write")

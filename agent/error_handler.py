@@ -1,6 +1,7 @@
 import re
 
 from logger import logger
+from agent.replan import classify_error
 
 
 class ErrorHandler:
@@ -15,39 +16,29 @@ class ErrorHandler:
         if not error_message:
             return ""
 
-        # Remove quebras de linha duplicadas e espaços excessivos
         cleaned = re.sub(r'\n{3,}', '\n\n', error_message.strip())
-
-        # Tenta extrair a última linha relevante de um traceback Python
         lines = cleaned.split('\n')
         error_type = ""
         error_msg = ""
         relevant_line = ""
 
-        # Procura por padrões de traceback
         for i, line in enumerate(lines):
-            # Detecta a linha do erro (ex: "TypeError: ...")
             if re.match(r'^[A-Za-z_]\w*Error:', line):
                 error_type = line.split(':')[0].strip()
                 error_msg = line
-                # Tenta pegar a linha seguinte como contexto
                 if i + 1 < len(lines) and lines[i+1].strip():
                     relevant_line = lines[i+1].strip()[:200]
                 break
 
-        # Se não encontrou padrão de traceback, retorna versão curta
         if not error_type:
-            # Pega apenas as primeiras e últimas linhas
             if len(lines) > 10:
                 cleaned = '\n'.join(lines[:3] + ['...'] + lines[-3:])
             return cleaned[:600]
 
-        # Monta versão sanitizada
         sanitized = f"{error_msg}"
         if relevant_line:
             sanitized += f"\n  → {relevant_line}"
 
-        # Adiciona dica de linha se disponível (ex: "line 42")
         line_match = re.search(r'line (\d+)', error_msg)
         if line_match:
             sanitized += f" (linha {line_match.group(1)})"
@@ -60,8 +51,11 @@ class ErrorHandler:
                            emit_callback=None, verbose: bool = False) -> str:
         """
         Trata falhas na execução de um passo.
-        Sanitiza o erro e registra de forma enxuta.
-        Retorna "continue", "abort" ou "replan".
+        Sanitiza o erro, classifica e decide a ação.
+        Retorna:
+            "continue" – para erros não recuperáveis (pular passo).
+            "replan"   – para erros potencialmente recuperáveis.
+            "abort"    – (reservado para falhas críticas, ainda não usado).
         """
         sanitized = ErrorHandler.sanitize_error(reason)
 
@@ -69,6 +63,12 @@ class ErrorHandler:
             emit_callback("error", {"step": step_index, "error": sanitized})
 
         logger.warning(f"Passo {step_index} falhou ({tool}): {sanitized}")
+
+        # Classifica o erro para decidir se vale a pena replanejar
+        category = classify_error(sanitized)
+        if category.value in ("FileNotFoundError", "SandboxError", "SchemaError",
+                              "ToolBlocked", "TimeoutError"):
+            return "replan"
 
         return "continue"
 
@@ -84,15 +84,12 @@ class ErrorHandler:
         if len(session.messages) <= 2:
             return
 
-        # Preserva o system prompt (índice 0)
         preserved = [session.messages[0]]
 
-        # Mantém mensagens de sistema adicionais (ex.: resumo de compressão)
         for msg in session.messages[1:]:
             if msg["role"] == "system":
                 preserved.append(msg)
 
-        # Mantém a última mensagem do usuário
         last_user_msg = None
         for msg in reversed(session.messages):
             if msg["role"] == "user":
@@ -101,7 +98,6 @@ class ErrorHandler:
         if last_user_msg:
             preserved.append(last_user_msg)
 
-        # Substitui o histórico
         session.messages = preserved
 
         if verbose:

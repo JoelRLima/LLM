@@ -4,6 +4,7 @@ from typing import Any, Dict
 from agent.cost_guard import CostGuard
 from agent.watchdog import Watchdog
 from agent.parsers import stringify, validate_tool_args
+from agent.replan import replan, ReplanContext
 
 
 class ReactiveLoop:
@@ -15,7 +16,6 @@ class ReactiveLoop:
         Fallback reativo (modo antigo) para quando o plano não é gerado
         """
         while True:
-            # Verifica limites de custo da tarefa
             step_number = self.orchestrator.agent_state.plan_step + 1
             estimated_tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
             tool_history = self.orchestrator.agent_state.tool_history
@@ -24,21 +24,12 @@ class ReactiveLoop:
             if CostGuard.check_limits(step_number, tool_history, estimated_tokens, config):
                 event_data = CostGuard.build_limit_reached_event(step_number, tool_history, estimated_tokens, config)
                 self.orchestrator._emit("cost_limit", event_data)
-
-                answer = CostGuard.build_limit_summary(
-                    objective,
-                    tool_history,
-                    self.orchestrator.agent_state.last_result
-                )
+                answer = CostGuard.build_limit_summary(objective, tool_history, self.orchestrator.agent_state.last_result)
                 self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
                 self.orchestrator.fail_task()
                 return answer
 
-            watchdog_reason = Watchdog.check_all(
-                self.orchestrator._task_start_time,
-                tool_history,
-                config,
-            )
+            watchdog_reason = Watchdog.check_all(self.orchestrator._task_start_time, tool_history, config)
             if watchdog_reason:
                 event_data = Watchdog.build_watchdog_event(watchdog_reason, self.orchestrator._task_start_time)
                 self.orchestrator._emit("watchdog", event_data)
@@ -47,7 +38,6 @@ class ReactiveLoop:
                 self.orchestrator.fail_task()
                 return answer
 
-
             self.orchestrator.agent_state.plan_step += 1
 
             prompt = (
@@ -55,9 +45,9 @@ class ReactiveLoop:
                 f"Ferramentas disponíveis:\n{self.orchestrator._build_tools_description(compact=True)}\n\n"
             )
 
-            if self.orchestrator.agent_state.tool_history:
+            if tool_history:
                 prompt += "Histórico Recente de Ferramentas:\n"
-                recent_history = self.orchestrator.agent_state.tool_history[-3:]
+                recent_history = tool_history[-3:]
                 for action in recent_history:
                     res_str = stringify(action['result'])
                     if len(res_str) > 1000:
@@ -81,7 +71,6 @@ class ReactiveLoop:
                 answer = decision.get("answer") or decision.get("message") or "Tarefa concluída."
                 self.orchestrator._emit("final", {"answer": answer[:100]})
 
-                # Check unread files
                 unread = set()
                 houve_leitura = False
                 for step in self.orchestrator.agent_state.plan:
@@ -134,7 +123,6 @@ class ReactiveLoop:
                         if lint_error:
                             if self.orchestrator.verbose:
                                 print(f"⚠️ Aviso de Linter em {args.get('file_path')}:\n{lint_error}")
-
                             if self.orchestrator.session.config.get("auto_test_and_correct", True):
                                 if self.orchestrator.auto_coder.test_and_correct(args.get("file_path"), objective):
                                     continue
@@ -142,11 +130,37 @@ class ReactiveLoop:
                                     break
                 else:
                     self.orchestrator._emit("tool_result", {"tool": tool, "success": False})
-                    self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, result.get('error', 'Erro desconhecido'), tool, args)
+                    error_msg = result.get('error', 'Erro desconhecido')
+                    action_decision = self.orchestrator._handle_step_failure(
+                        self.orchestrator.agent_state.plan_step, error_msg, tool, args
+                    )
+
+                    if action_decision == "replan":
+                        ctx = ReplanContext(
+                            task=objective,
+                            current_step={"tool": tool, "args": args},
+                            tool_history=tool_history,
+                            last_exception=error_msg,
+                            last_tool_result=result,
+                        )
+                        action_obj = replan(ctx, error_msg, self.orchestrator)
+                        if action_obj:
+                            for new_step in action_obj.steps:
+                                new_result = self.orchestrator._run_tool(new_step["tool"], new_step.get("args", {}))
+                                if not new_result.get("ok"):
+                                    self.orchestrator._emit("tool_result", {"tool": new_step["tool"], "success": False})
+                                    self.orchestrator._handle_step_failure(
+                                        self.orchestrator.agent_state.plan_step,
+                                        new_result.get('error', 'Erro no passo replanejado'),
+                                        new_step["tool"], new_step.get("args", {})
+                                    )
+                            continue  # volta ao loop principal após tentar os passos replanejados
+
+                    # Se não replanejar ou replanejamento falhou, continua o loop (ou aborta dependendo da política)
+                    continue
 
             else:
                 self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, f"Ação desconhecida: {action}")
 
-        # Se quebrar o loop por falha:
         self.orchestrator.fail_task()
         return "A tarefa falhou e foi abortada."

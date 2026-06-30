@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 from agent.cost_guard import CostGuard
 from agent.watchdog import Watchdog
 from agent.parsers import stringify, validate_tool_args
+from agent.replan import replan, ReplanContext
 
 
 class PlanExecutor:
@@ -14,7 +15,9 @@ class PlanExecutor:
         result = None
         self.orchestrator.workspace.create_restore_point(self.orchestrator.agent_state.plan)
 
-        for i, step in enumerate(self.orchestrator.agent_state.plan):
+        i = 0
+        while i < len(self.orchestrator.agent_state.plan):
+            step = self.orchestrator.agent_state.plan[i]
             self.orchestrator.agent_state.plan_step = i + 1
             limit_answer = self._check_cost_limits(i + 1)
             watchdog_answer = self._check_watchdog()
@@ -28,16 +31,45 @@ class PlanExecutor:
             file_path = args.get("target") or args.get("file_path") or ""
 
             if not self._validate_step(i + 1, tool, args):
+                # Validação falhou – pode ter retornado "replan"
+                action = self.orchestrator._handle_step_failure(
+                    i + 1, f"Schema: validação falhou para '{tool}'", tool, args
+                )
+                if action == "replan":
+                    new_steps = self._attempt_replan(step, tool, args, objective, tool_usage_count)
+                    if new_steps:
+                        self._replace_current_step(i, new_steps)
+                        continue
+                i += 1
                 continue
 
             if self._is_hard_blocked(i + 1, tool, args, file_path, tool_usage_count):
+                action = self.orchestrator._handle_step_failure(
+                    i + 1, f"Hard block: '{tool}' em '{file_path}'", tool, args
+                )
+                if action == "replan":
+                    new_steps = self._attempt_replan(step, tool, args, objective, tool_usage_count)
+                    if new_steps:
+                        self._replace_current_step(i, new_steps)   # ✅ novo
+                        continue
+                i += 1
                 continue
 
             if self._is_impossible_chunk(tool, args, file_path):
+                i += 1
                 continue
 
             if tool == "file_writer" and args.get("content") is None:
                 if not self._fill_generated_content(i + 1, tool, args, objective):
+                    action = self.orchestrator._handle_step_failure(
+                        i + 1, "Conteúdo não gerado para file_writer", tool, args
+                    )
+                    if action == "replan":
+                        new_steps = self._attempt_replan(step, tool, args, objective, tool_usage_count)
+                        if new_steps:
+                            self._replace_current_step(i, new_steps)   # ✅ novo
+                            continue
+                    i += 1
                     continue
 
             cache_hit, result = self._try_cache(tool, args, file_path)
@@ -52,15 +84,57 @@ class PlanExecutor:
                 self.orchestrator._maybe_summarize_and_store(tool, args, result)
 
             if not self._post_process_tool(i + 1, tool, args, result, file_path, objective, tool_usage_count):
-                break
+                # _post_process_tool já chama _handle_step_failure internamente.
+                # Se for "replan", tratamos aqui.
+                action = self.orchestrator._handle_step_failure(
+                    i + 1, f"Tool '{tool}' falhou: {result.get('error')}", tool, args
+                )
+                if action == "replan":
+                    new_steps = self._attempt_replan(step, tool, args, objective, tool_usage_count)
+                    if new_steps:
+                        self._replace_current_step(i, new_steps)   # ✅ novo
+                        continue
+                i += 1
+                continue
 
             edit_answer = self._maybe_finish_edit(objective)
             if edit_answer:
                 return edit_answer
+            i += 1
+
         if result is not None and not result.get("ok"):
             error_msg = result.get("error", "Erro desconhecido")
             return f"A tarefa não pôde ser concluída. Último erro: {error_msg}"
         return None
+
+    def _attempt_replan(self, step: Dict[str, Any], tool: str, args: Dict[str, Any],
+                        objective: str, tool_usage_count: Dict[str, int]) -> Optional[list]:
+        """Chama o replanner e retorna uma lista de novos passos, ou None."""
+        ctx = ReplanContext(
+            task=objective,
+            current_step=step,
+            tool_history=self.orchestrator.agent_state.tool_history,
+            last_exception=self.orchestrator.agent_state.last_result.get("error") if self.orchestrator.agent_state.last_result else None,
+            last_tool_result=self.orchestrator.agent_state.last_result,
+        )
+        error_msg = self.orchestrator.agent_state.last_result.get("error", "") if self.orchestrator.agent_state.last_result else ""
+        action = replan(ctx, error_msg, self.orchestrator)
+        return action.steps if action else None
+
+    def _inject_steps(self, position: int, new_steps: list) -> None:
+        """Insere novos passos no plano a partir de position."""
+        for j, new_step in enumerate(new_steps):
+            self.orchestrator.agent_state.plan.insert(position + j, new_step)
+        if self.orchestrator.verbose:
+            print(f"[DEBUG] {len(new_steps)} passo(s) injetado(s) pelo replanner na posição {position}.")
+
+    def _replace_current_step(self, i: int, new_steps: list) -> None:
+        """Remove o passo na posição i e insere os novos passos no lugar."""
+        del self.orchestrator.agent_state.plan[i]
+        for j, step in enumerate(new_steps):
+            self.orchestrator.agent_state.plan.insert(i + j, step)
+        if self.orchestrator.verbose:
+            print(f"[DEBUG] Passo {i+1} substituído por {len(new_steps)} passo(s) do replanner.")
 
     def _check_cost_limits(self, step_number: int) -> Optional[str]:
         estimated_tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
@@ -81,7 +155,6 @@ class PlanExecutor:
         self.orchestrator.agent_state.conversation_history.append({"user": self.orchestrator.agent_state.objective, "agent": answer})
         self.orchestrator.fail_task()
         return answer
-
 
     def _validate_step(self, step_number: int, tool: str, args: Dict[str, Any]) -> bool:
         valid, error_msg = validate_tool_args(tool, args, self.orchestrator.skills)

@@ -74,6 +74,7 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 │   ├── plan_executor.py
 │   ├── prompts.py
 │   ├── reactive_loop.py
+│   ├── replan.py
 │   ├── router.py
 │   ├── skills
 │   │   ├── __init__.py
@@ -316,6 +317,18 @@ Monitora a execução de uma tarefa e decide quando abortar por segurança ou fa
 * **Ponto de entrada único:** `Watchdog.check_all(start_time, tool_history, config)` — executado a cada passo pelo `PlanExecutor` e `ReactiveLoop`, do mesmo modo que `CostGuard.check_limits(...)`.
 * **Telemetria:** `build_watchdog_event` e `build_watchdog_summary` padronizam a emissão de eventos e a mensagem ao usuário.
 
+### 4.19. [replan.py](agent/replan.py) 🆕
+Implementa o replanejamento automático quando uma ferramenta falha repetidamente (Fase 4C, item 5). Segue o fluxo: **classificar erro → heurística determinística → LLM (último recurso) → aborto**:
+* **`ErrorCategory` (Enum):** classifica erros em `FILE_NOT_FOUND`, `SANDBOX`, `SCHEMA`, `TOOL_BLOCKED`, `TIMEOUT`, `UNKNOWN`.
+* **`ReplanContext` (dataclass):** agrupa o estado completo do replanejamento (task, current_step, tool_history, retries, exceção, orçamento).
+* **`ReplanAction` (dataclass):** representa um ou mais passos gerados pelo replanejador, com indicação da fonte (`heuristic` ou `llm`) e o motivo da substituição.
+* **`RetryPolicy` (classe):** limites configuráveis de tentativas (`max_total=2`, `max_heuristic=2`, `max_llm=1`), preparada para evoluir por ferramenta.
+* **`classify_error(message) → ErrorCategory`:** classificação determinística baseada na mensagem de erro.
+* **`try_heuristic(category, tool, args) → Optional[ReplanAction]`:** heurísticas determinísticas. Atualmente cobre `FileNotFoundError` (gera `grep` + `directory_lister`). Heurísticas inseguras foram deliberadamente excluídas.
+* **`ask_llm_for_alternative(step, error, orchestrator) → Optional[ReplanAction]`:** último recurso — consulta o LLM para sugerir um passo alternativo, apenas se a heurística falhar e a `RetryPolicy` permitir.
+* **`replan(ctx, error_msg, orchestrator) → Optional[ReplanAction]`:** ponto de entrada único chamado por `PlanExecutor` e `ReactiveLoop`. Registra logs de cada replanejamento via `logger.info`.
+* **Integração:** `error_handler.py` retorna `"replan"` para erros recuperáveis; `plan_executor.py` usa loop `while` e injeta novos passos no plano; `reactive_loop.py` chama o replanner quando uma ferramenta falha.
+
 ---
 
 ## 5. Mapeamento de Ferramentas (Skills) em `agent/skills/`
@@ -386,6 +399,7 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Mudar o endpoint, modelo ou timeouts da API** | `config.json` ou `config.example.json` | Edite as chaves globais `api_url`, `model`, `timeout` e `temperature`. |
 | **Ajustar limites de custo da tarefa** | [agent/cost_guard.py](agent/cost_guard.py) | Altere as constantes `DEFAULT_MAX_TASK_STEPS`, `DEFAULT_MAX_TASK_TOKENS` ou `DEFAULT_MAX_TASK_TOOL_CALLS`. |
 | **Ajustar limites do Watchdog (timeout global, loop, falhas consecutivas)** | [agent/watchdog.py](agent/watchdog.py) e `config.json` | Altere as constantes `DEFAULT_MAX_TASK_WALL_SECONDS`, `DEFAULT_MAX_REPEATED_NO_PROGRESS`, `DEFAULT_MAX_CONSECUTIVE_SAME_ERROR` no módulo, ou defina `max_task_wall_seconds`, `max_repeated_no_progress`, `max_consecutive_same_error` no arquivo de configuração. |
+| **Ajustar limites ou política do Replanner** | [agent/replan.py](agent/replan.py) | Altere a classe `RetryPolicy` (`max_total`, `max_heuristic`, `max_llm`) ou expanda `try_heuristic` com novas categorias de erro. |
 | **Modificar a lógica de comunicação HTTP com o LLM** | [agent/model_client.py](agent/model_client.py) | Ajuste o método `request` para alterar retry, timeouts ou formato de métricas. |
 | **Ajustar validação de limites de custo ou fallbacks de config** | [config.py](config.py) e [agent/plan_executor.py](agent/plan_executor.py) | Altere a função `carregar_config` para adicionar campos na validação e a função `_check_cost_limits` no executor para regular o teto de tokens, passos e chamadas. |
 | **Modificar a lógica de compressão de histórico de conversas** | [agent/context_manager.py](agent/context_manager.py) (função `maybe_compress_context`) | Altere os limites de tokens da janela de contexto ou as regras de sumarização do histórico do chat. |

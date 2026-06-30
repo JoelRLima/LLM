@@ -12,3 +12,4 @@ agent_metrics.jsonl
 .agents
 .pytest_cache
 .ruff_cache
+benchmark_results.json
