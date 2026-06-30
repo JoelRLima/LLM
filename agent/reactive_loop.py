@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict
 
+from agent.cost_guard import CostGuard
 from agent.parsers import stringify, validate_tool_args
 
 
@@ -14,39 +15,24 @@ class ReactiveLoop:
         """
         while True:
             # Verifica limites de custo da tarefa
-            max_steps = self.orchestrator.session.config.get("max_task_steps", 15)  # DEFAULT_MAX_TASK_STEPS
-            max_tokens = self.orchestrator.session.config.get("max_task_tokens", 50000) # DEFAULT_MAX_TASK_TOKENS
-            max_tool_calls = self.orchestrator.session.config.get("max_task_tool_calls", 30) # DEFAULT_MAX_TASK_TOOL_CALLS
-
+            step_number = self.orchestrator.agent_state.plan_step + 1
             estimated_tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
+            tool_history = self.orchestrator.agent_state.tool_history
+            config = self.orchestrator.session.config
 
-            if (self.orchestrator.agent_state.plan_step + 1 > max_steps or
-                estimated_tokens > max_tokens or
-                len(self.orchestrator.agent_state.tool_history) > max_tool_calls):
+            if CostGuard.check_limits(step_number, tool_history, estimated_tokens, config):
+                event_data = CostGuard.build_limit_reached_event(step_number, tool_history, estimated_tokens, config)
+                self.orchestrator._emit("cost_limit", event_data)
 
-                self.orchestrator._emit("cost_limit", {
-                    "reason": "Limite de custo da tarefa atingido",
-                    "steps": self.orchestrator.agent_state.plan_step + 1,
-                    "max_steps": max_steps,
-                    "estimated_tokens": estimated_tokens,
-                    "max_tokens": max_tokens,
-                    "tool_calls": len(self.orchestrator.agent_state.tool_history),
-                    "max_tool_calls": max_tool_calls
-                })
-
-                summary_parts = []
-                if self.orchestrator.agent_state.tool_history:
-                    tools_used = set(h["tool"] for h in self.orchestrator.agent_state.tool_history)
-                    summary_parts.append(f"Ferramentas usadas: {', '.join(tools_used)}")
-                    summary_parts.append(f"Último resultado: {stringify(self.orchestrator.agent_state.last_result)[:500]}")
-
-                answer = (
-                    "A tarefa foi interrompida porque atingiu o limite de custo definido. "
-                    "Resumo do que foi feito:\n" + "\n".join(summary_parts)
+                answer = CostGuard.build_limit_summary(
+                    objective,
+                    tool_history,
+                    self.orchestrator.agent_state.last_result
                 )
                 self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
-                self.orchestrator._task_failed = True
+                self.orchestrator.fail_task()
                 return answer
+
 
             self.orchestrator.agent_state.plan_step += 1
 
@@ -148,5 +134,5 @@ class ReactiveLoop:
                 self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, f"Ação desconhecida: {action}")
 
         # Se quebrar o loop por falha:
-        self.orchestrator._task_failed = True
+        self.orchestrator.fail_task()
         return "A tarefa falhou e foi abortada."

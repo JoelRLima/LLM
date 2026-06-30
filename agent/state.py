@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 from agent.memory import AgentMemory
 
 class AgentState:
@@ -18,3 +20,14 @@ class AgentState:
         self.events: list = []             # telemetria
         self.conversation_history: list = []   # histórico multi‑turno
         self.max_history_turns: int = 6
+
+    def record_tool_result(self, tool_name: str, args: Dict[str, Any], result: Dict[str, Any]) -> None:
+        """Registra o resultado de uma execução de ferramenta no estado global.
+
+        Centraliza a mutação de last_tool, last_args, last_result e tool_history,
+        evitando que múltiplos componentes escrevam diretamente nesses atributos.
+        """
+        self.last_tool = tool_name
+        self.last_args = args
+        self.last_result = result
+        self.tool_history.append({"tool": tool_name, "args": args, "result": result})

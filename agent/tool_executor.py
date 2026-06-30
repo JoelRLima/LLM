@@ -57,10 +57,7 @@ class ToolExecutor:
         if self.orchestrator.verbose:
             print(f"[DEBUG] Resultado completo: {stringify(result)}")
 
-        self.orchestrator.agent_state.last_tool = tool_name
-        self.orchestrator.agent_state.last_args = args
-        self.orchestrator.agent_state.last_result = result
-        self.orchestrator.agent_state.tool_history.append({"tool": tool_name, "args": args, "result": result})
+        self.orchestrator.agent_state.record_tool_result(tool_name, args, result)
         return result
 
     def summarize_text(self, text: str, context: str = "") -> str:

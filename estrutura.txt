@@ -1,0 +1,52 @@
+.
+├── .gitignore
+├── agent
+│   ├── __init__.py
+│   ├── auto_coder.py
+│   ├── context_manager.py
+│   ├── error_handler.py
+│   ├── final_response.py
+│   ├── memory.py
+│   ├── orchestrator.py
+│   ├── parsers.py
+│   ├── plan_builder.py
+│   ├── plan_executor.py
+│   ├── prompts.py
+│   ├── reactive_loop.py
+│   ├── router.py
+│   ├── skills
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── calculator.py
+│   │   ├── code_analyzer.py
+│   │   ├── directory_reader.py
+│   │   ├── echo.py
+│   │   ├── file_reader.py
+│   │   ├── file_writer.py
+│   │   ├── git.py
+│   │   ├── grep.py
+│   │   ├── python_executor.py
+│   │   ├── session_memory.py
+│   │   ├── shell.py
+│   │   ├── summarize.py
+│   │   └── web_search.py
+│   ├── state.py
+│   ├── tool_executor.py
+│   └── workspace.py
+├── cli.py
+├── commands.py
+├── config.example.json
+├── config.py
+├── logger.py
+├── pyproject.toml
+├── refactor_orchestrator.py
+├── requirements.txt
+├── session.py
+└── tests
+    ├── __init__.py
+    ├── test_config.py
+    ├── test_hello.py
+    ├── test_orchestrator.py
+    ├── test_parsers.py
+    ├── test_session.py
+    └── test_temp.py

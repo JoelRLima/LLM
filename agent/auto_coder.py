@@ -142,7 +142,7 @@ class AutoCoder:
                     except Exception:
                         pass
 
-        self.orchestrator._task_failed = True
+        self.orchestrator.fail_task()
         self.orchestrator._emit("error", {"step": self.orchestrator.agent_state.plan_step, "error": "Ciclo teste-correção falhou após todas as tentativas"})
         return False
 

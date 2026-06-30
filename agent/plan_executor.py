@@ -1,11 +1,8 @@
 import hashlib
 from typing import Any, Dict, Optional
 
+from agent.cost_guard import CostGuard
 from agent.parsers import stringify, validate_tool_args
-
-DEFAULT_MAX_TASK_STEPS = 20
-DEFAULT_MAX_TASK_TOKENS = 25000
-DEFAULT_MAX_TASK_TOOL_CALLS = 40
 
 
 class PlanExecutor:
@@ -35,7 +32,7 @@ class PlanExecutor:
             if self._is_impossible_chunk(tool, args, file_path):
                 continue
 
-            if tool == "file_writer" and not args.get("content"):
+            if tool == "file_writer" and args.get("content") is None:
                 if not self._fill_generated_content(i + 1, tool, args, objective):
                     continue
 
@@ -56,40 +53,31 @@ class PlanExecutor:
             edit_answer = self._maybe_finish_edit(objective)
             if edit_answer:
                 return edit_answer
-
+        if result is not None and not result.get("ok"):
+            error_msg = result.get("error", "Erro desconhecido")
+            return f"A tarefa não pôde ser concluída. Último erro: {error_msg}"
         return None
 
     def _check_cost_limits(self, step_number: int) -> Optional[str]:
-        max_steps = self.orchestrator.session.config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
-        max_tokens = self.orchestrator.session.config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
-        max_tool_calls = self.orchestrator.session.config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
         estimated_tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
+        tool_history = self.orchestrator.agent_state.tool_history
+        config = self.orchestrator.session.config
 
-        if (
-            step_number <= max_steps
-            and estimated_tokens <= max_tokens
-            and len(self.orchestrator.agent_state.tool_history) <= max_tool_calls
-        ):
+        if not CostGuard.check_limits(step_number, tool_history, estimated_tokens, config):
             return None
 
-        self.orchestrator._emit("cost_limit", {
-            "reason": "Limite de custo da tarefa atingido",
-            "steps": step_number,
-            "max_steps": max_steps,
-            "estimated_tokens": estimated_tokens,
-            "max_tokens": max_tokens,
-            "tool_calls": len(self.orchestrator.agent_state.tool_history),
-            "max_tool_calls": max_tool_calls,
-        })
-        summary_parts = []
-        if self.orchestrator.agent_state.tool_history:
-            tools_used = set(h["tool"] for h in self.orchestrator.agent_state.tool_history)
-            summary_parts.append(f"Ferramentas usadas: {', '.join(tools_used)}")
-            summary_parts.append(f"Último resultado: {stringify(self.orchestrator.agent_state.last_result)[:500]}")
-        answer = "A tarefa foi interrompida porque atingiu o limite de custo definido. Resumo do que foi feito:\n" + "\n".join(summary_parts)
+        event_data = CostGuard.build_limit_reached_event(step_number, tool_history, estimated_tokens, config)
+        self.orchestrator._emit("cost_limit", event_data)
+
+        answer = CostGuard.build_limit_summary(
+            self.orchestrator.agent_state.objective,
+            tool_history,
+            self.orchestrator.agent_state.last_result
+        )
         self.orchestrator.agent_state.conversation_history.append({"user": self.orchestrator.agent_state.objective, "agent": answer})
-        self.orchestrator._task_failed = True
+        self.orchestrator.fail_task()
         return answer
+
 
     def _validate_step(self, step_number: int, tool: str, args: Dict[str, Any]) -> bool:
         valid, error_msg = validate_tool_args(tool, args, self.orchestrator.skills)
@@ -98,7 +86,7 @@ class PlanExecutor:
             if action == "continue":
                 self.orchestrator._purge_stale_context()
                 return False
-            self.orchestrator._task_failed = True
+            self.orchestrator.fail_task()
             return False
 
         if tool not in self.orchestrator.skills or (self.orchestrator.active_skills and tool not in self.orchestrator.active_skills):
@@ -106,7 +94,7 @@ class PlanExecutor:
             if action == "continue":
                 self.orchestrator._purge_stale_context()
                 return False
-            self.orchestrator._task_failed = True
+            self.orchestrator.fail_task()
             return False
         return True
 
@@ -137,7 +125,7 @@ class PlanExecutor:
         if action == "continue":
             self.orchestrator._purge_stale_context()
             return True
-        self.orchestrator._task_failed = True
+        self.orchestrator.fail_task()
         return True
 
     def _is_impossible_chunk(self, tool: str, args: Dict[str, Any], file_path: str) -> bool:
@@ -176,7 +164,7 @@ class PlanExecutor:
         if action == "continue":
             self.orchestrator._purge_stale_context()
             return False
-        self.orchestrator._task_failed = True
+        self.orchestrator.fail_task()
         return False
 
     def _try_cache(self, tool: str, args: Dict[str, Any], file_path: str):
@@ -199,10 +187,7 @@ class PlanExecutor:
         result = {"ok": True, "done": True, "data": summary, "message": f"Usando cache de {file_path}."}
         self.orchestrator._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
         self.orchestrator._emit("tool_end", {"tool": tool, "ok": True})
-        self.orchestrator.agent_state.last_tool = tool
-        self.orchestrator.agent_state.last_args = args
-        self.orchestrator.agent_state.last_result = result
-        self.orchestrator.agent_state.tool_history.append({"tool": tool, "args": args, "result": result})
+        self.orchestrator.agent_state.record_tool_result(tool, args, result)
         return True, result
 
     def _post_process_tool(self, step_number: int, tool: str, args: Dict[str, Any], result: Dict[str, Any],
@@ -211,7 +196,7 @@ class PlanExecutor:
             if self.orchestrator.verbose:
                 print(f"🧪 [TEST] Iniciando ciclo teste-correção para '{file_path}'...")
             if not self.orchestrator._test_and_correct(file_path, objective):
-                self.orchestrator._task_failed = True
+                self.orchestrator.fail_task()
                 self.orchestrator._emit("error", {"step": step_number, "error": "Ciclo teste-correção falhou"})
                 return False
 
@@ -236,7 +221,7 @@ class PlanExecutor:
             if action == "continue":
                 self.orchestrator._purge_stale_context()
                 return True
-            self.orchestrator._task_failed = True
+            self.orchestrator.fail_task()
             return False
         return True
 

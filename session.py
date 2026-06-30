@@ -1,6 +1,6 @@
 import json
 import requests
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Dict, Callable, Tuple
 from logger import logger
 
 class ChatSession:
@@ -198,27 +198,4 @@ class ChatSession:
             callbacks["on_done"](ultimo_timings)
 
         return resposta_visivel.strip()
-
-    # ---- Utilitário para respostas estruturadas ----
-
-    @staticmethod
-    def extrair_json(texto: str) -> Optional[Any]:
-        """
-        Tenta extrair um objeto JSON de uma string que pode conter cercaduras
-        (ex.: ```json ... ```) ou texto extra.
-        Retorna o objeto Python (dict, list, etc.) ou None se falhar.
-        """
-        # Remove blocos de código Markdown
-        import re
-        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", texto)
-        if match:
-            texto = match.group(1)
-        # Tenta encontrar a primeira ocorrência de { ou [
-        start = min((texto.find("{"), texto.find("[")))
-        if start == -1:
-            return None
-        # Tenta parsear a partir dali
-        try:
-            return json.loads(texto[start:])
-        except json.JSONDecodeError:
-            return None
+

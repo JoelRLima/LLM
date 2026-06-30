@@ -9,3 +9,6 @@ analysis_notes.md
 memory_backups/
 agent_metrics.jsonl
 .github
+.agents
+.pytest_cache
+.ruff_cache

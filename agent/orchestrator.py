@@ -19,10 +19,8 @@ from agent.workspace import WorkspaceManager
 from logger import logger
 from session import ChatSession
 
-DEFAULT_MAX_TASK_STEPS = 20
-DEFAULT_MAX_TASK_TOKENS = 25000
-DEFAULT_MAX_TASK_TOOL_CALLS = 40
 CONTEXT_LIMIT = 8192
+
 CONTEXT_COMPRESSION_THRESHOLD = 0.8
 AGENT_METRICS_FILE = "agent_metrics.jsonl"
 MAX_MEMORY_BACKUPS = 5
@@ -162,6 +160,14 @@ class Orchestrator:
 
     def _purge_stale_context(self) -> None:
         ErrorHandler.purge_stale_context(self.session, self.verbose)
+
+    def fail_task(self) -> None:
+        """Marca a tarefa atual como falhada, disparando rollback ao final do run().
+
+        Método público para que subcomponentes (PlanExecutor, ReactiveLoop, etc.)
+        não precisem acessar diretamente o atributo privado _task_failed.
+        """
+        self._task_failed = True
 
     def _summarize_text(self, text: str, context: str = "") -> str:
         return self.tool_executor.summarize_text(text, context)

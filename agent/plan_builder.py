@@ -48,6 +48,7 @@ class PlanBuilder:
             "- Para passos de file_writer, NÃO inclua o conteúdo no campo 'content'. Use 'content' como string vazia (\"\"). O sistema gerará o conteúdo automaticamente."
             "- Para alterar uma parte específica de um arquivo (ex.: uma linha, uma função), prefira usar file_writer com action='patch' (substituição exata de trecho) ou action='ast_patch' (substituição de função/classe por nome).\n"
             "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
+            "- NÃO use shell para criar, modificar ou apagar arquivos. Use file_writer para qualquer operação de escrita."
         )
         plan_decision = self.orchestrator.context_manager.ask_model(
             plan_prompt,
@@ -82,7 +83,7 @@ class PlanBuilder:
 
         if not filtered_plan:
             self.orchestrator._emit("hard_block", {"reason": "plano vazio após filtros"})
-            self.orchestrator._task_failed = True
+            self.orchestrator.fail_task()
             return [], "Não foi possível executar esta ação. Ela foi bloqueada pelas políticas de segurança do agente."
 
         self.orchestrator.agent_state.plan = filtered_plan
