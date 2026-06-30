@@ -65,7 +65,7 @@ PERSONA_PROMPTS = {
 
 - For simple math or conversions:
   - If it's trivial, answer directly.
-  - If it requires computation, use python_executor.
+  - If it requires computation, use python_executor. The code MUST use print() to display the result. Never pass expressions without print().
 
 - You have access to tools, but only use them when the user's request clearly requires them.
 - Keep responses natural and conversational.

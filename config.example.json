@@ -7,5 +7,8 @@
     "max_task_steps": 20,
     "max_task_tokens": 25000,
     "max_task_tool_calls": 40,
+    "max_task_wall_seconds": 300,
+    "max_repeated_no_progress": 3,
+    "max_consecutive_same_error": 3,
     "default_system_prompt": "You are a helpful assistant."
 }

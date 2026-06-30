@@ -93,6 +93,7 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 │   │   └── web_search.py
 │   ├── state.py
 │   ├── tool_executor.py
+│   ├── watchdog.py
 │   └── workspace.py
 ├── cli.py
 ├── commands.py
@@ -307,6 +308,14 @@ Cliente HTTP para comunicação com o modelo LLM. Extraído do `ContextManager` 
 * **Fallback de tokens:** Utiliza `FALLBACK_AGENT_MAX_TOKENS = 4096` para o retry.
 * **Separação de responsabilidades:** O `ContextManager` não depende mais de `requests`, `time` ou `extract_json` para a comunicação com o modelo, facilitando a troca do backend de comunicação no futuro.
 
+### 4.18. [watchdog.py](agent/watchdog.py) 🆕
+Monitora a execução de uma tarefa e decide quando abortar por segurança ou falta de progresso, sem nenhuma chamada adicional ao LLM. Atua como uma camada de proteção independente do `CostGuard` e dos hard blocks do `PlanExecutor`:
+* **Timeout global da tarefa:** soma do tempo de parede de todos os passos (complementa o timeout individual do `python_executor` e `shell`). Configurável via `max_task_wall_seconds` (padrão: 300s).
+* **Detecção de loop sem progresso:** mesma ferramenta chamada repetidamente com os mesmos argumentos e resultado idêntico, sinal de que o agente está "girando" sem avançar. Configurável via `max_repeated_no_progress` (padrão: 3).
+* **Falhas consecutivas com o mesmo erro:** mesmo que os argumentos variem entre tentativas, se o erro for idêntico por N vezes seguidas, o agente é interrompido. Configurável via `max_consecutive_same_error` (padrão: 3).
+* **Ponto de entrada único:** `Watchdog.check_all(start_time, tool_history, config)` — executado a cada passo pelo `PlanExecutor` e `ReactiveLoop`, do mesmo modo que `CostGuard.check_limits(...)`.
+* **Telemetria:** `build_watchdog_event` e `build_watchdog_summary` padronizam a emissão de eventos e a mensagem ao usuário.
+
 ---
 
 ## 5. Mapeamento de Ferramentas (Skills) em `agent/skills/`
@@ -341,7 +350,7 @@ Toda skill **deve** herdar de `BaseSkill` e implementar os seguintes membros:
 | `directory_lister` | `DirectoryListerSkill` | Lista conteúdo de diretórios. | Restringe acesso fora da pasta do projeto e retorna tipo de arquivo (`file` ou `dir`). |
 | `file_reader` | `FileReaderSkill` | Lê conteúdo de arquivos. | Limita a leitura a arquivos de texto (lista de extensões permitidas). Implementa chunking e resumo automático para arquivos grandes, salvando o conteúdo bruto em `.temp_analysis/`. |
 | `file_writer` | `FileWriterSkill` | Cria ou modifica arquivos. | Impede alteração de arquivos do núcleo do agente (`CORE_FILES_BLOCKLIST`). Suporta escrita inteira, anexo, substituição por correspondência simples de linhas e substituição sintática de blocos via árvore abstrata (`ast_patch`). |
-| `python_executor` | `PythonExecutorSkill` | Executa código Python. | Executa o código em um subprocesso com timeout. Valida o script via AST para bloquear imports perigosos (permite apenas lista branca como `math`, `re`, `json`, etc.) e proíbe abertura de arquivos em modo escrita ou remoção de caminhos. |
+| `python_executor` | `PythonExecutorSkill` | Executa código Python em uma sandbox de múltiplas camadas (Isolation Box). | Cada execução roda em um workspace efêmero (`TemporaryDirectory`) isolado via subprocesso (sem `os.chdir`). Validação AST expandida bloqueia imports perigosos (whitelist), execução dinâmica (`eval`/`exec`/`compile`), monkey patch de builtins críticos, path traversal e caminhos absolutos, APIs de resolução de caminho (`abspath`/`resolve`) e padrões de criação de processos — independente do módulo de origem. Após a execução, valida o estado real do workspace (limites de arquivos, diretórios, profundidade, tamanho, e detecção de symlinks/junctions) e impõe limites rígidos de stdout/stderr. Política fail-closed: qualquer caminho ou comportamento não classificável estaticamente é rejeitado. Ver `tests/test_python_executor.py` para a cobertura completa. |
 | `shell` | `ShellSkill` | Executa comandos Shell. | Permite apenas comandos explícitos da lista branca (`pytest`, `python`, `pip`, `ruff`, `mypy`, `npm`, `node`, `echo`, `type`, `dir`, `tree`, `ls`, e leitura/commit do `git`). Limita saída de caracteres. |
 | `git_reader` | `GitSkill` | Executa comandos de leitura do Git. | Aceita unicamente os comandos `status`, `log` e `diff` de forma segura. |
 | `grep` | `GrepSkill` | Busca por padrões regex. | Varre recursivamente o diretório raiz à procura de correspondências textuais, filtrando pastas e arquivos de log temporários. |
@@ -376,10 +385,12 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Alterar o Prompt de Sistema global** | [agent/prompts.py](agent/prompts.py) (`AGENT_SYSTEM_PROMPT`) | Modifique as regras contratuais, a estrutura do JSON de saída exigido e diretrizes gerais de comportamento do modelo. |
 | **Mudar o endpoint, modelo ou timeouts da API** | `config.json` ou `config.example.json` | Edite as chaves globais `api_url`, `model`, `timeout` e `temperature`. |
 | **Ajustar limites de custo da tarefa** | [agent/cost_guard.py](agent/cost_guard.py) | Altere as constantes `DEFAULT_MAX_TASK_STEPS`, `DEFAULT_MAX_TASK_TOKENS` ou `DEFAULT_MAX_TASK_TOOL_CALLS`. |
+| **Ajustar limites do Watchdog (timeout global, loop, falhas consecutivas)** | [agent/watchdog.py](agent/watchdog.py) e `config.json` | Altere as constantes `DEFAULT_MAX_TASK_WALL_SECONDS`, `DEFAULT_MAX_REPEATED_NO_PROGRESS`, `DEFAULT_MAX_CONSECUTIVE_SAME_ERROR` no módulo, ou defina `max_task_wall_seconds`, `max_repeated_no_progress`, `max_consecutive_same_error` no arquivo de configuração. |
 | **Modificar a lógica de comunicação HTTP com o LLM** | [agent/model_client.py](agent/model_client.py) | Ajuste o método `request` para alterar retry, timeouts ou formato de métricas. |
 | **Ajustar validação de limites de custo ou fallbacks de config** | [config.py](config.py) e [agent/plan_executor.py](agent/plan_executor.py) | Altere a função `carregar_config` para adicionar campos na validação e a função `_check_cost_limits` no executor para regular o teto de tokens, passos e chamadas. |
 | **Modificar a lógica de compressão de histórico de conversas** | [agent/context_manager.py](agent/context_manager.py) (função `maybe_compress_context`) | Altere os limites de tokens da janela de contexto ou as regras de sumarização do histórico do chat. |
 | **Alterar a lógica do linter ou do backup antes de rodar código** | [agent/workspace.py](agent/workspace.py) e [agent/skills/file_writer.py](agent/skills/file_writer.py) | Ajuste as funções de criação de pontos de restauração (`create_restore_point`), de verificação de sintaxe (`lint_check`) ou expanda a `CORE_FILES_BLOCKLIST` no file_writer. |
+| **Ajustar limites ou regras da sandbox do python_executor (Isolation Box)** | [agent/skills/python_executor.py](agent/skills/python_executor.py) | Altere as constantes da classe (`MAX_FILES_CREATED`, `MAX_DIRS_CREATED`, `MAX_TREE_DEPTH`, `MAX_FILE_SIZE_BYTES`, `MAX_TOTAL_SIZE_BYTES`, `MAX_STDOUT_HARD_LIMIT`, `MAX_STDERR_HARD_LIMIT`) para os limites pós-execução, ou os conjuntos `BLOCKED_MODULES`, `PROCESS_CREATION_ATTRS`, `DANGEROUS_PATH_APIS`, `CRITICAL_BUILTINS_TO_PROTECT` no topo do módulo para as regras de validação AST (Camada 3). |
 | **Corrigir como o JSON de saída é parseado ou validado** | [agent/parsers.py](agent/parsers.py) | Ajuste a expressão regular de extração em `extract_json` ou expanda a validação de parâmetros das ferramentas em `validate_tool_args`. |
 | **Mudar o ciclo automático de teste e correção do código** | [agent/auto_coder.py](agent/auto_coder.py) (função `test_and_correct`) | Modifique o prompt de geração de testes, o comando de execução do subprocesso do arquivo temporário de testes ou o número de tentativas de correção automática. |
 | **Incluir novos comandos com barra na CLI** | [commands.py](commands.py) | Registre o comando na tabela da função `exibir_menu` e implemente a respectiva condicional na função `handle_command`. |

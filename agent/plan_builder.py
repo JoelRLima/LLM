@@ -49,6 +49,7 @@ class PlanBuilder:
             "- Para alterar uma parte específica de um arquivo (ex.: uma linha, uma função), prefira usar file_writer com action='patch' (substituição exata de trecho) ou action='ast_patch' (substituição de função/classe por nome).\n"
             "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
             "- NÃO use shell para criar, modificar ou apagar arquivos. Use file_writer para qualquer operação de escrita."
+            "- Ao usar python_executor, o código DEVE incluir print() para exibir resultados. Nunca passe expressões soltas como '2+2'."
         )
         plan_decision = self.orchestrator.context_manager.ask_model(
             plan_prompt,

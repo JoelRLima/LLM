@@ -33,6 +33,7 @@ Tool contract (every tool MUST return this exact JSON):
 - NUNCA mencione arquivos, funções, classes ou variáveis que você não leu explicitamente com as ferramentas.
 - Se precisar de informações de um arquivo, LEIA-O primeiro. Não deduza seu conteúdo.
 - Se você não tem certeza sobre um nome de função ou classe, NÃO invente. Indique que seria necessário ler o arquivo correspondente.
+- Ao usar python_executor, inclua SEMPRE os imports necessários no início do código (ex.: import math, import random, import statistics). Nunca use funções de bibliotecas sem importá-las primeiro.
 """
 
 ERROR_PATTERNS = [

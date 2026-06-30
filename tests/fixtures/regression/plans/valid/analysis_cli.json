@@ -1,0 +1,26 @@
+{
+    "schema_version": 1,
+    "task_id": "analysis_cli",
+    "description": "Analisa o arquivo cli.py usando code_analyzer + file_reader e retorna uma resposta com as funções encontradas.",
+    "expected_tools": [
+        "code_analyzer",
+        "file_reader"
+    ],
+    "expected_result": "success",
+    "plan": [
+        {
+            "tool": "code_analyzer",
+            "args": {
+                "target": "cli.py",
+                "mode": "file",
+                "compact": true
+            }
+        },
+        {
+            "tool": "file_reader",
+            "args": {
+                "file_path": "cli.py"
+            }
+        }
+    ]
+}

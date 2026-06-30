@@ -16,6 +16,7 @@ from agent.router import _is_clearly_trivial, route_objective
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
 from agent.workspace import WorkspaceManager
+from agent.watchdog import Watchdog
 from logger import logger
 from session import ChatSession
 
@@ -72,6 +73,7 @@ class Orchestrator:
         self.plan_executor = PlanExecutor(self)
         self.final_responder = FinalResponder(self)
         self.tool_executor = ToolExecutor(self)
+        self.watchdog = Watchdog()
 
         if skills:
             for s in skills:
@@ -232,6 +234,7 @@ class Orchestrator:
 
         try:
             self._reset_task_state(objective)
+            self._task_start_time = Watchdog.start_task()
             print(f"\n🤖 Analisando: \"{objective}\"")
             logger.info(f"Iniciando objetivo do agente: {objective}")
 

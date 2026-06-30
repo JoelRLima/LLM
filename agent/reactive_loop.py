@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict
 
 from agent.cost_guard import CostGuard
+from agent.watchdog import Watchdog
 from agent.parsers import stringify, validate_tool_args
 
 
@@ -29,6 +30,19 @@ class ReactiveLoop:
                     tool_history,
                     self.orchestrator.agent_state.last_result
                 )
+                self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
+                self.orchestrator.fail_task()
+                return answer
+
+            watchdog_reason = Watchdog.check_all(
+                self.orchestrator._task_start_time,
+                tool_history,
+                config,
+            )
+            if watchdog_reason:
+                event_data = Watchdog.build_watchdog_event(watchdog_reason, self.orchestrator._task_start_time)
+                self.orchestrator._emit("watchdog", event_data)
+                answer = Watchdog.build_watchdog_summary(tool_history, watchdog_reason)
                 self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
                 self.orchestrator.fail_task()
                 return answer

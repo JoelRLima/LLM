@@ -2,6 +2,7 @@ import hashlib
 from typing import Any, Dict, Optional
 
 from agent.cost_guard import CostGuard
+from agent.watchdog import Watchdog
 from agent.parsers import stringify, validate_tool_args
 
 
@@ -16,6 +17,9 @@ class PlanExecutor:
         for i, step in enumerate(self.orchestrator.agent_state.plan):
             self.orchestrator.agent_state.plan_step = i + 1
             limit_answer = self._check_cost_limits(i + 1)
+            watchdog_answer = self._check_watchdog()
+            if watchdog_answer:
+                return watchdog_answer
             if limit_answer:
                 return limit_answer
 
@@ -230,3 +234,24 @@ class PlanExecutor:
             self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
             return answer
         return None
+
+    def _check_watchdog(self) -> Optional[str]:
+        reason = Watchdog.check_all(
+            self.orchestrator._task_start_time,
+            self.orchestrator.agent_state.tool_history,
+            self.orchestrator.session.config,
+        )
+        if not reason:
+            return None
+
+        event_data = Watchdog.build_watchdog_event(reason, self.orchestrator._task_start_time)
+        self.orchestrator._emit("watchdog", event_data)
+
+        answer = Watchdog.build_watchdog_summary(
+            self.orchestrator.agent_state.tool_history, reason
+        )
+        self.orchestrator.agent_state.conversation_history.append(
+            {"user": self.orchestrator.agent_state.objective, "agent": answer}
+        )
+        self.orchestrator.fail_task()
+        return answer
