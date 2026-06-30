@@ -13,7 +13,7 @@ class ToolExecutor:
     def run_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name == "file_writer":
             file_path = args.get("file_path", "")
-            content = args.get("content", "")
+            content = args.get("content") or ""
             action = args.get("action", "write")
             if file_path == "analysis_notes.md" and action == "write" and content.strip() == "":
                 self.orchestrator._emit("hard_block", {"file": file_path, "reason": "tentativa de esvaziar analysis_notes.md"})

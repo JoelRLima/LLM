@@ -14,10 +14,13 @@ class WorkspaceManager:
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
         self.restore_points: List[Dict[str, str]] = []
+        self.created_files: List[str] = []
 
     def create_restore_point(self, plan: list) -> None:
         """
         Cria backups de todos os arquivos que o plano pretende modificar.
+        Arquivos que ainda não existem (serão criados pelo plano) são
+        registrados em `created_files` para que o rollback possa removê-los.
         """
         if not plan:
             return
@@ -31,7 +34,9 @@ class WorkspaceManager:
             args = step.get("args", {}) if isinstance(step, dict) else {}
             if tool in ("file_writer", "shell", "python_executor"):
                 file_path = args.get("file_path") or args.get("target") or ""
-                if file_path and os.path.exists(file_path):
+                if not file_path:
+                    continue
+                if os.path.exists(file_path):
                     backup_path = os.path.join(restore_dir, file_path.replace(os.sep, "_"))
                     try:
                         shutil.copy2(file_path, backup_path)
@@ -40,12 +45,18 @@ class WorkspaceManager:
                             print(f"[DEBUG] Checkpoint salvo para '{file_path}'")
                     except Exception as e:
                         logger.warning(f"Falha ao criar checkpoint para '{file_path}': {e}")
+                else:
+                    if file_path not in self.created_files:
+                        self.created_files.append(file_path)
+                        if self.verbose:
+                            print(f"[DEBUG] '{file_path}' marcado como novo (sem checkpoint, será removido em rollback).")
 
     def rollback(self) -> None:
         """
-        Restaura todos os arquivos a partir dos backups, na ordem inversa.
+        Restaura todos os arquivos a partir dos backups, na ordem inversa,
+        e remove arquivos que foram criados durante a tarefa que falhou.
         """
-        if not self.restore_points:
+        if not self.restore_points and not self.created_files:
             return
 
         if self.verbose:
@@ -60,7 +71,17 @@ class WorkspaceManager:
             except Exception as e:
                 logger.error(f"Falha ao restaurar '{entry['original']}': {e}")
 
+        for file_path in reversed(self.created_files):
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    if self.verbose:
+                        print(f"   🗑️  Removido (criado durante a tarefa): {file_path}")
+            except Exception as e:
+                logger.error(f"Falha ao remover arquivo criado '{file_path}': {e}")
+
         self.restore_points.clear()
+        self.created_files.clear()
 
     @staticmethod
     def show_diff(file_path: str, new_content: str) -> None:

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from typing import Any, Optional
 
@@ -88,9 +89,13 @@ class AutoCoder:
 
             test_code = self.generate_tests(current_code, file_path)
             if not test_code:
+                if attempt == 0:
+                    if self.orchestrator.verbose:
+                        print("   ⚠️ Não foi possível gerar testes, pulando.")
+                    return True
                 if self.orchestrator.verbose:
-                    print("   ⚠️ Não foi possível gerar testes, pulando.")
-                return True
+                    print("   ⚠️ Não foi possível gerar testes para validar a correção. Abortando ciclo.")
+                break
 
             test_file = None
             try:
@@ -100,7 +105,7 @@ class AutoCoder:
                     test_file = tmp.name
 
                 result = subprocess.run(
-                    ["python", test_file],
+                    [sys.executable, test_file],
                     capture_output=True, text=True, timeout=15,
                     cwd=os.path.dirname(os.path.abspath(file_path)) or "."
                 )

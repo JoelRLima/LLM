@@ -150,17 +150,13 @@ class PlanExecutor:
             generated = self.orchestrator._generate_content(tool, args, objective)
             if generated:
                 break
-        if not generated:
-            for msg in reversed(self.orchestrator.session.messages):
-                if msg["role"] == "assistant" and len(msg.get("content", "")) > 20:
-                    generated = self.orchestrator._sanitize_error(msg["content"])
-                    if len(generated) > 10:
-                        break
         if generated:
             args["content"] = generated
             return True
 
-        action = self.orchestrator._handle_step_failure(step_number, "Conteúdo não gerado para file_writer", tool, args)
+        action = self.orchestrator._handle_step_failure(
+            step_number, "Conteúdo não gerado para file_writer após 3 tentativas", tool, args
+        )
         if action == "continue":
             self.orchestrator._purge_stale_context()
             return False

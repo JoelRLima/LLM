@@ -41,15 +41,10 @@ class FileWriterSkill(BaseSkill):
 
     def _is_safe(self, requested: Path) -> tuple[bool, str]:
         """Verifica se o arquivo pode ser escrito com segurança."""
-        # Restrição de path traversal
-        if not str(requested).startswith(str(self.base_dir)):
-            return False, "Acesso fora do diretório do projeto não é permitido."
-
-        # Calcula caminho relativo para checar blocklist
         try:
             rel = requested.relative_to(self.base_dir)
         except ValueError:
-            return False, "Caminho inválido."
+            return False, "Acesso fora do diretório do projeto não é permitido."
 
         rel_str = str(rel).replace("\\", "/")
 
@@ -192,7 +187,20 @@ class FileWriterSkill(BaseSkill):
                     return {"ok": False, "done": True, "error": "Falta 'start_line' ou 'end_line' para 'delete_lines'."}
                 if not requested.exists():
                     return {"ok": False, "done": True, "error": f"Arquivo '{file_path}' não existe."}
+
                 lines = requested.read_text(encoding="utf-8").splitlines(keepends=True)
+                total_lines = len(lines)
+
+                if not isinstance(start, int) or not isinstance(end, int):
+                    return {"ok": False, "done": True, "error": "'start_line' e 'end_line' devem ser inteiros."}
+                if start < 1 or end < 1:
+                    return {"ok": False, "done": True, "error": "'start_line' e 'end_line' devem ser >= 1."}
+                if start > end:
+                    return {"ok": False, "done": True, "error": "'start_line' não pode ser maior que 'end_line'."}
+                if start > total_lines or end > total_lines:
+                    return {"ok": False, "done": True,
+                            "error": f"Intervalo {start}-{end} fora do arquivo (total de {total_lines} linhas)."}
+
                 new_lines = lines[:start - 1] + lines[end:]
                 requested.write_text("".join(new_lines), encoding="utf-8")
                 return {"ok": True, "done": True, "message": f"Linhas {start}-{end} removidas de '{file_path}'."}

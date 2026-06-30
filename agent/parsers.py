@@ -4,20 +4,17 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 
-def extract_json(text: str) -> Optional[dict]:
-    """Tenta extrair um objeto JSON de uma string."""
-    if not text:
-        return None
-    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text)
-    start = cleaned.find("{")
-    if start == -1:
-        return None
+def _find_balanced_json_end(text: str, start: int) -> Optional[int]:
+    """
+    A partir do índice de um '{' em `text`, encontra o índice do '}' que
+    fecha esse objeto, respeitando strings (e escapes dentro delas).
+    Retorna None se o objeto nunca fecha.
+    """
     balance = 0
     in_string = False
     escape = False
-    end = -1
-    for i in range(start, len(cleaned)):
-        c = cleaned[i]
+    for i in range(start, len(text)):
+        c = text[i]
         if escape:
             escape = False
             continue
@@ -33,9 +30,20 @@ def extract_json(text: str) -> Optional[dict]:
             elif c == '}':
                 balance -= 1
                 if balance == 0:
-                    end = i
-                    break
-    if end == -1:
+                    return i
+    return None
+
+
+def extract_json(text: str) -> Optional[dict]:
+    """Tenta extrair um objeto JSON de uma string."""
+    if not text:
+        return None
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text)
+    start = cleaned.find("{")
+    if start == -1:
+        return None
+    end = _find_balanced_json_end(cleaned, start)
+    if end is None:
         return None
     json_str = cleaned[start:end + 1]
     try:
@@ -141,16 +149,32 @@ def sanitize_error(error_message: str) -> str:
     return sanitized[:500]
 
 def extract_json_from_end(text: str) -> Optional[Dict]:
-    """Tenta extrair o último objeto JSON válido no texto."""
-    import re
-    # Procura por { ... } que seja um JSON válido
-    matches = list(re.finditer(r'\{.*?\}', text, re.DOTALL))
-    for match in reversed(matches):
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            continue
-    return None
+    """
+    Tenta extrair o último objeto JSON válido no texto, varrendo todas as
+    ocorrências de '{' e usando balanceamento real de chaves (respeitando
+    strings) para encontrar o fechamento correto de cada candidato.
+    """
+    if not text:
+        return None
+
+    last_valid = None
+    search_from = 0
+    while True:
+        start = text.find("{", search_from)
+        if start == -1:
+            break
+        end = _find_balanced_json_end(text, start)
+        if end is not None:
+            candidate = text[start:end + 1]
+            try:
+                last_valid = json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+            search_from = start + 1
+        else:
+            search_from = start + 1
+
+    return last_valid
 
 def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     """
