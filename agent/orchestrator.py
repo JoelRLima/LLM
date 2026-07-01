@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.auto_coder import AutoCoder
+from agent.cancellation import CancellationToken
 from agent.context_manager import ContextManager
 from agent.error_handler import ErrorHandler
 from agent.final_response import FinalResponder
@@ -69,6 +70,7 @@ class Orchestrator:
         self.verbose: bool = verbose
         self.active_skills: List[str] = []
         self._task_failed = False
+        self._cancelled = False
         self.checkpoint_file: str = checkpoint_file
 
         self.agent_state = AgentState()
@@ -289,62 +291,85 @@ class Orchestrator:
         original_msg_count = len(self.session.messages)
         tool_usage_count: Dict[str, int] = {}
         resumed = False
+        self._cancelled = False
 
         try:
-            if not objective:
-                # Nenhum objetivo novo foi informado: tenta retomar uma
-                # tarefa interrompida a partir do checkpoint em disco.
-                checkpoint_data = self._load_checkpoint()
-                if checkpoint_data:
-                    self.agent_state.from_checkpoint_dict(checkpoint_data)
-                    objective = self.agent_state.objective
-                    if objective:
-                        resumed = True
-                        print(f"\n♻️  Checkpoint encontrado. Retomando tarefa interrompida: \"{objective}\"")
-                        logger.info(f"Retomando tarefa a partir de checkpoint: {objective}")
-                    else:
-                        # Checkpoint sem objetivo utilizável: descarta.
-                        self._delete_checkpoint()
-
+            try:
                 if not objective:
-                    return "Nenhum objetivo foi fornecido e nenhum checkpoint válido foi encontrado."
+                    # Nenhum objetivo novo foi informado: tenta retomar uma
+                    # tarefa interrompida a partir do checkpoint em disco.
+                    checkpoint_data = self._load_checkpoint()
+                    if checkpoint_data:
+                        self.agent_state.from_checkpoint_dict(checkpoint_data)
+                        objective = self.agent_state.objective
+                        if objective:
+                            resumed = True
+                            print(f"\n♻️  Checkpoint encontrado. Retomando tarefa interrompida: \"{objective}\"")
+                            logger.info(f"Retomando tarefa a partir de checkpoint: {objective}")
+                        else:
+                            # Checkpoint sem objetivo utilizável: descarta.
+                            self._delete_checkpoint()
 
-            if resumed:
-                self._task_failed = False
-            else:
-                # Um novo objetivo foi fornecido: qualquer checkpoint antigo
-                # é ignorado e será substituído pelo progresso desta tarefa.
-                self._reset_task_state(objective)
+                    if not objective:
+                        return "Nenhum objetivo foi fornecido e nenhum checkpoint válido foi encontrado."
 
-            self._task_start_time = Watchdog.start_task()
-            print(f"\n🤖 Analisando: \"{objective}\"")
-            logger.info(f"Iniciando objetivo do agente: {objective}")
+                if resumed:
+                    self._task_failed = False
+                else:
+                    # Um novo objetivo foi fornecido: qualquer checkpoint antigo
+                    # é ignorado e será substituído pelo progresso desta tarefa.
+                    self._reset_task_state(objective)
 
-            if not resumed and _is_clearly_trivial(objective):
-                return self._answer_trivial(objective)
+                self._task_start_time = Watchdog.start_task()
+                print(f"\n🤖 Analisando: \"{objective}\"")
+                logger.info(f"Iniciando objetivo do agente: {objective}")
 
-            self._route_persona(objective)
-            self._save_checkpoint()
+                if not resumed and _is_clearly_trivial(objective):
+                    return self._answer_trivial(objective)
 
-            if resumed and self.agent_state.plan:
-                plan = self.agent_state.plan
-            else:
-                plan, blocked_answer = self.plan_builder.build_plan(objective)
-                if blocked_answer:
-                    self.agent_state.conversation_history.append({"user": objective, "agent": blocked_answer})
-                    return blocked_answer
-                if not plan:
+                # ---- Plano e roteamento ----
+                if resumed and self.agent_state.plan:
+                    # Retomada com plano já existente: não roteia nem gera plano.
+                    plan = self.agent_state.plan
+                    # Habilita todas as skills para não restringir o plano salvo.
+                    self.active_skills = list(self.skills.keys())
+                    # Reconstrói o prompt base para manter a formatação.
+                    self._cached_base_prompt = self.context_manager.build_base_system_prompt(
+                        getattr(self, "current_persona_prompt", ""),
+                        self._build_tools_description(compact=False),
+                    )
                     if self.verbose:
-                        print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
-                    return self._run_reactive(objective, tool_usage_count, original_msg_count)
-                self.agent_state.plan = plan
+                        print(f"[DEBUG] Retomando com plano existente ({len(plan)} passos): {plan}")
+                else:
+                    self._route_persona(objective)
+                    self._save_checkpoint()
+                    plan, blocked_answer = self.plan_builder.build_plan(objective)
+                    if blocked_answer:
+                        self.agent_state.conversation_history.append(
+                            {"user": objective, "agent": blocked_answer}
+                        )
+                        return blocked_answer
+                    if not plan:
+                        if self.verbose:
+                            print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
+                        return self._run_reactive(objective, tool_usage_count, original_msg_count)
+                    self.agent_state.plan = plan
+                    self._save_checkpoint()
+
+                # ---- Execução do plano ----
+                execution_answer = self.plan_executor.execute(objective, tool_usage_count)
+                if execution_answer:
+                    return execution_answer
+
+                return self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
+
+            except KeyboardInterrupt:
+                # Cancelamento cooperativo: interrompe a execução de forma
+                # limpa, preservando o progresso via checkpoint em disco
+                # para que a tarefa possa ser retomada posteriormente.
+                self._cancelled = True
                 self._save_checkpoint()
-
-            execution_answer = self.plan_executor.execute(objective, tool_usage_count)
-            if execution_answer:
-                return execution_answer
-
-            return self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
+                return "Tarefa cancelada pelo usuário. O progresso foi salvo e pode ser retomado posteriormente."
 
         finally:
             if self._task_failed:
@@ -357,5 +382,8 @@ class Orchestrator:
             self.context_manager.maybe_compress_context()
             self.save_memory_to_file("agent_memory.json")
             # Tarefa concluída (com sucesso ou falha): o checkpoint deixa de
-            # ser necessário e é removido.
-            self._delete_checkpoint()
+            # ser necessário e é removido. Se a tarefa foi cancelada pelo
+            # usuário (Ctrl+C), o checkpoint é preservado para permitir a
+            # retomada posterior.
+            if not getattr(self, "_cancelled", False):
+                self._delete_checkpoint()

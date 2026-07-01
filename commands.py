@@ -34,6 +34,7 @@ def exibir_menu() -> None:
     table.add_row("/memory, /memoria", "Mostra o estado da memória do agente")
     table.add_row("/events", "Mostra os eventos da última execução")
     table.add_row("/doctor, /diagnostico", "Executa o diagnóstico de saúde do agente.")
+    table.add_row("/retry, /retomar", "Retoma a tarefa interrompida (checkpoint)")
     table.add_row("/ls, /list", "Lista os arquivos do projeto (atalho)")
     table.add_row("/read <arquivo>", "Lê o arquivo diretamente (atalho)")
     table.add_row("/find <texto>", "Busca por texto nos arquivos (atalho)")
@@ -273,18 +274,24 @@ def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
         else:
             console.print("[red]Skill 'web_search' não disponível.[/red]")
         return True, False
+    
+    if cmd in ("/retry", "/retomar"):
+        console.print("[bold yellow]🔄 Verificando checkpoint...[/bold yellow]")
+        resposta = ctx.orchestrator.run(None, stream_callback=None)  # None para retomar
+        console.print(Panel(resposta, title="[bold blue]🤖 Agente[/bold blue]"))
+        ctx.session.add_assistant_message(resposta)
+        return True, False
 
     if ctx.modo_agente and not texto.startswith("/"):
         def on_agent_chunk(text: str) -> None:
             print(text, end="", flush=True)
 
         console.print("[bold blue]🤖 Agente:[/bold blue]")
-        try:
-            resposta = ctx.orchestrator.run(texto, stream_callback=on_agent_chunk)
-            print()  # quebra de linha após o fim do streaming
-        except KeyboardInterrupt:
-            console.print("\n[bold red]⚠️ Agente interrompido.[/bold red]")
-            return True, False
+        # O cancelamento (Ctrl+C) agora é tratado de forma cooperativa dentro
+        # de Orchestrator.run(), que salva o checkpoint e retorna uma
+        # mensagem informando o cancelamento, em vez de propagar a exceção.
+        resposta = ctx.orchestrator.run(texto, stream_callback=on_agent_chunk)
+        print()  # quebra de linha após o fim do streaming
 
         if ctx.modo_diagnostico >= 1:
             console.print(Panel(resposta, title="Resposta do Agente", border_style="blue"))
