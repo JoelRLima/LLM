@@ -7,6 +7,7 @@ from agent.error_handler import ErrorHandler
 from agent.model_client import ModelClient
 from agent.prompts import AGENT_SYSTEM_PROMPT
 from agent.state import AgentState
+from agent.semantic_memory import SemanticMemory
 from logger import logger
 from session import ChatSession
 
@@ -34,6 +35,7 @@ class ContextManager:
         self.verbose = verbose
         self._cached_project_context: Optional[str] = None
         self.model_client = ModelClient()
+        self.semantic = SemanticMemory(self.agent_state.memory)
 
     # ------------------------------------------------------------------
     # Métodos de contexto (inalterados)
@@ -190,6 +192,22 @@ class ContextManager:
                     hints.append(f"{fname} ({line_count} linhas)")
                 except Exception:
                     pass
+        try:
+            semantic_files = self.semantic.find_similar_files(objective, top_k=5)
+            for fname in semantic_files:
+                if fname in seen:
+                    continue
+                seen.add(fname)
+                path = os.path.join(os.getcwd(), fname)
+                if os.path.isfile(path):
+                    try:
+                        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                            line_count = sum(1 for _ in f)
+                        hints.append(f"{fname} ({line_count} linhas) [semântico]")
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # falha silenciosa
         if hints:
             return "\n".join(f"- {h}" for h in hints)
         return ""

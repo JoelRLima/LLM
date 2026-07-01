@@ -53,7 +53,13 @@ TOOL_DECISION_BUDGETS = {
 
 
 class Orchestrator:
-    def __init__(self, session: ChatSession, skills: Optional[List[Any]] = None, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        session: ChatSession,
+        skills: Optional[List[Any]] = None,
+        verbose: bool = False,
+        checkpoint_file: str = "agent_checkpoint.json",
+    ) -> None:
         self.session = session
         self.skills: Dict[str, Any] = {}
         self.max_steps: int = 15
@@ -63,6 +69,7 @@ class Orchestrator:
         self.verbose: bool = verbose
         self.active_skills: List[str] = []
         self._task_failed = False
+        self.checkpoint_file: str = checkpoint_file
 
         self.agent_state = AgentState()
         self.workspace = WorkspaceManager(verbose=self.verbose)
@@ -112,6 +119,51 @@ class Orchestrator:
     def load_memory_from_file(self, path: str = "agent_memory.json") -> str:
         return self.agent_state.memory.load_from_file(path)
 
+    def _save_checkpoint(self) -> None:
+        """Salva o estado atual da tarefa em disco para possibilitar retomada
+        após uma interrupção (Ctrl+C, queda de energia, etc.).
+
+        A escrita é feita em um arquivo temporário e depois renomeada
+        atomicamente (`os.replace`), evitando checkpoints corrompidos em caso
+        de interrupção durante a própria gravação. Falhas de gravação não
+        devem interromper a execução do agente.
+        """
+        try:
+            checkpoint_data = self.agent_state.to_checkpoint_dict()
+            tmp_path = f"{self.checkpoint_file}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(checkpoint_data, f, indent=2, ensure_ascii=False, default=str)
+            os.replace(tmp_path, self.checkpoint_file)
+        except Exception as e:
+            logger.warning(f"Falha ao salvar checkpoint: {e}")
+
+    def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
+        """Carrega o checkpoint salvo em disco, se existir e for válido.
+
+        Retorna `None` silenciosamente se o arquivo não existir ou estiver
+        corrompido/ilegível, garantindo que uma nova tarefa possa iniciar
+        normalmente sem que o checkpoint quebre a execução.
+        """
+        if not os.path.exists(self.checkpoint_file):
+            return None
+        try:
+            with open(self.checkpoint_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return None
+            return data
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as e:
+            logger.warning(f"Checkpoint corrompido ou ilegível, ignorando: {e}")
+            return None
+
+    def _delete_checkpoint(self) -> None:
+        """Remove o arquivo de checkpoint ao final da tarefa (sucesso ou falha)."""
+        try:
+            if os.path.exists(self.checkpoint_file):
+                os.remove(self.checkpoint_file)
+        except OSError as e:
+            logger.warning(f"Falha ao remover checkpoint: {e}")
+
     def _emit(self, event_type: str, data: Dict[str, Any] = None) -> None:
         event = {
             "type": event_type,
@@ -130,6 +182,11 @@ class Orchestrator:
                 "loop_detected": "🔄",
             }.get(event_type, "•")
             print(f"{emoji} [{event_type}] {data}")
+
+        # Checkpoint incremental: persiste o progresso assim que um passo
+        # da tarefa é concluído com sucesso, permitindo retomada posterior.
+        if event_type == "tool_end":
+            self._save_checkpoint()
 
     def _log_metric(self, entry: Dict[str, Any]) -> None:
         try:
@@ -228,35 +285,66 @@ class Orchestrator:
         self.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
 
-    def run(self, objective: str) -> str:
+    def run(self, objective: Optional[str] = None, stream_callback=None) -> str:
         original_msg_count = len(self.session.messages)
         tool_usage_count: Dict[str, int] = {}
+        resumed = False
 
         try:
-            self._reset_task_state(objective)
+            if not objective:
+                # Nenhum objetivo novo foi informado: tenta retomar uma
+                # tarefa interrompida a partir do checkpoint em disco.
+                checkpoint_data = self._load_checkpoint()
+                if checkpoint_data:
+                    self.agent_state.from_checkpoint_dict(checkpoint_data)
+                    objective = self.agent_state.objective
+                    if objective:
+                        resumed = True
+                        print(f"\n♻️  Checkpoint encontrado. Retomando tarefa interrompida: \"{objective}\"")
+                        logger.info(f"Retomando tarefa a partir de checkpoint: {objective}")
+                    else:
+                        # Checkpoint sem objetivo utilizável: descarta.
+                        self._delete_checkpoint()
+
+                if not objective:
+                    return "Nenhum objetivo foi fornecido e nenhum checkpoint válido foi encontrado."
+
+            if resumed:
+                self._task_failed = False
+            else:
+                # Um novo objetivo foi fornecido: qualquer checkpoint antigo
+                # é ignorado e será substituído pelo progresso desta tarefa.
+                self._reset_task_state(objective)
+
             self._task_start_time = Watchdog.start_task()
             print(f"\n🤖 Analisando: \"{objective}\"")
             logger.info(f"Iniciando objetivo do agente: {objective}")
 
-            if _is_clearly_trivial(objective):
+            if not resumed and _is_clearly_trivial(objective):
                 return self._answer_trivial(objective)
 
             self._route_persona(objective)
+            self._save_checkpoint()
 
-            plan, blocked_answer = self.plan_builder.build_plan(objective)
-            if blocked_answer:
-                self.agent_state.conversation_history.append({"user": objective, "agent": blocked_answer})
-                return blocked_answer
-            if not plan:
-                if self.verbose:
-                    print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
-                return self._run_reactive(objective, tool_usage_count, original_msg_count)
+            if resumed and self.agent_state.plan:
+                plan = self.agent_state.plan
+            else:
+                plan, blocked_answer = self.plan_builder.build_plan(objective)
+                if blocked_answer:
+                    self.agent_state.conversation_history.append({"user": objective, "agent": blocked_answer})
+                    return blocked_answer
+                if not plan:
+                    if self.verbose:
+                        print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
+                    return self._run_reactive(objective, tool_usage_count, original_msg_count)
+                self.agent_state.plan = plan
+                self._save_checkpoint()
 
             execution_answer = self.plan_executor.execute(objective, tool_usage_count)
             if execution_answer:
                 return execution_answer
 
-            return self.final_responder.build_final_answer(objective)
+            return self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
 
         finally:
             if self._task_failed:
@@ -268,3 +356,6 @@ class Orchestrator:
                 self.agent_state.conversation_history = self.agent_state.conversation_history[-self.agent_state.max_history_turns:]
             self.context_manager.maybe_compress_context()
             self.save_memory_to_file("agent_memory.json")
+            # Tarefa concluída (com sucesso ou falha): o checkpoint deixa de
+            # ser necessário e é removido.
+            self._delete_checkpoint()

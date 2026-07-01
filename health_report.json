@@ -1,0 +1,157 @@
+{
+  "summary": "⚠️ Foram encontrados 3 problema(s) (0 erro(s), 3 aviso(s)) em 8 verificação(ões).",
+  "total_checks": 8,
+  "ok": 5,
+  "warnings": 3,
+  "errors": 0,
+  "project_root": "C:\\Users\\JoelR\\Desktop\\LLM",
+  "checks": [
+    {
+      "name": "Versão do Python",
+      "status": "ok",
+      "message": "Python 3.14.3 atende ao mínimo exigido (>=3.10).",
+      "details": {
+        "version": "3.14.3"
+      }
+    },
+    {
+      "name": "Configuração (config.json)",
+      "status": "ok",
+      "message": "Arquivo de configuração válido e completo.",
+      "details": {
+        "path": "C:\\Users\\JoelR\\Desktop\\LLM\\config.json",
+        "missing_keys": [],
+        "present_keys": [
+          "api_url",
+          "model",
+          "temperature",
+          "max_tokens",
+          "timeout",
+          "max_task_steps",
+          "max_task_tokens",
+          "max_task_tool_calls",
+          "max_task_wall_seconds",
+          "max_repeated_no_progress",
+          "max_consecutive_same_error",
+          "default_system_prompt"
+        ],
+        "loaded_ok": true
+      }
+    },
+    {
+      "name": "Memória (agent_memory.json)",
+      "status": "ok",
+      "message": "Memória válida e com as seções esperadas.",
+      "details": {
+        "path": "C:\\Users\\JoelR\\Desktop\\LLM\\agent_memory.json",
+        "missing_sections": [],
+        "present_sections": [
+          "project_map",
+          "key_findings",
+          "files_index",
+          "todo",
+          "notes",
+          "analyzed_files",
+          "file_summaries",
+          "file_hashes"
+        ],
+        "backups": {
+          "dir_exists": true,
+          "total_backups": 5,
+          "valid_files": [
+            "agent_memory.json.20260630_211654.bak",
+            "agent_memory.json.20260630_211808.bak",
+            "agent_memory.json.20260630_211857.bak",
+            "agent_memory.json.20260630_211926.bak",
+            "agent_memory.json.20260630_212029.bak"
+          ],
+          "invalid_files": []
+        }
+      }
+    },
+    {
+      "name": "Hashes de arquivos",
+      "status": "warning",
+      "message": "1 hash(es) divergente(s) e 0 arquivo(s) ausente(s) de 1 registrados.",
+      "details": {
+        "matched": [],
+        "mismatched": [
+          {
+            "file": "config.py",
+            "expected": "bb1f279a07ea4415a41901b164e824ef4bb01125c1a745feddfc210aca176b77",
+            "actual": "f89d2d66d1c8cced43e6cc4f8151f579c2bef282fa76d27e2363321f2f706339"
+          }
+        ],
+        "missing_files": []
+      }
+    },
+    {
+      "name": "Diretórios órfãos",
+      "status": "warning",
+      "message": "'.temp_analysis/' existe e contém 12 item(ns) (possível lixo de análises antigas). 'memory_backups/restore/' existe com 62 entrada(s) — provavelmente um restore point de uma tarefa interrompida que não foi limpo.",
+      "details": {
+        "temp_analysis_exists": true,
+        "temp_analysis_file_count": 12,
+        "restore_dir_exists": true,
+        "restore_dir_entry_count": 62
+      }
+    },
+    {
+      "name": "Permissões de leitura/escrita",
+      "status": "ok",
+      "message": "Leitura e escrita funcionando normalmente nos diretórios verificados.",
+      "details": {
+        "project_root_writable": true,
+        "temp_analysis_writable": true,
+        "memory_backups_writable": true
+      }
+    },
+    {
+      "name": "Skills carregadas",
+      "status": "warning",
+      "message": "13 skill(s) carregada(s). Skill 'echo' respondeu, mas o contrato de retorno não indicou sucesso claro ('ok' != True).",
+      "details": {
+        "loaded_skill_names": [
+          "calculator",
+          "code_analyzer",
+          "directory_lister",
+          "echo",
+          "file_reader",
+          "file_writer",
+          "git_reader",
+          "grep",
+          "python_executor",
+          "session_memory",
+          "shell",
+          "summarize",
+          "web_search"
+        ],
+        "total_loaded": 13,
+        "missing_essential_skills": [],
+        "echo_test_result": {
+          "ok": false,
+          "done": true,
+          "error": "mensagem vazia",
+          "message": "Nenhuma mensagem fornecida."
+        }
+      }
+    },
+    {
+      "name": "Logs e métricas",
+      "status": "ok",
+      "message": "Tamanhos de log/métricas dentro do esperado (ou arquivos ausentes).",
+      "details": {
+        "agent.log": {
+          "exists": true,
+          "size_bytes": 303976,
+          "size_mb": 0.29
+        },
+        "agent_metrics.jsonl": {
+          "exists": true,
+          "size_bytes": 52792,
+          "size_mb": 0.05
+        }
+      }
+    }
+  ]
+}

@@ -166,6 +166,8 @@ def ask_llm_for_alternative(
             base_prompt=getattr(orchestrator, "_cached_base_prompt", None),
             log_metric_callback=orchestrator._log_metric if hasattr(orchestrator, "_log_metric") else None,
         )
+        if not isinstance(decision, dict):
+            return None
         if isinstance(decision, dict) and "tool" in decision:
             return ReplanAction(
                 steps=[{"tool": decision["tool"], "args": decision.get("args", {})}],
@@ -173,7 +175,8 @@ def ask_llm_for_alternative(
                 reason=f"LLM sugeriu '{decision['tool']}' após erro: {error_message[:150]}",
             )
     except Exception as e:
-        logger.warning(f"Replanner: falha ao consultar LLM: {e}")
+        import traceback
+        logger.warning(f"Replanner: falha ao consultar LLM: {e}\n{traceback.format_exc()}")
 
     return None
 

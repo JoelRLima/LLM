@@ -60,6 +60,8 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ```text
 .
 ├── agent
+│   ├── health_check.py
+│   ├── semantic_memory.py
 │   ├── __init__.py
 │   ├── auto_coder.py
 │   ├── context_manager.py
@@ -105,6 +107,9 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ├── refactor_orchestrator.py
 ├── requirements.txt
 ├── session.py
+├── benchmark.py
+├── benchmark_results.json
+├── health_report.json
 └── tests
     ├── __init__.py
     ├── test_config.py
@@ -137,6 +142,11 @@ Responsável por interpretar comandos iniciados por barra `/` na CLI. Oferece co
 * `/memory` ou `/memoria`: Exibe uma tabela com o estado da memória atual do agente.
 * `/events`: Mostra a telemetria passo a passo da última execução do agente.
 * `/remember`, `/forget`, `/clearmemory`, `/save_memory`, `/load_memory`: Gerenciam a persistência e limpeza da memória do agente.
+* `/doctor` ou `/diagnostico`: Executa o diagnóstico de saúde do agente (config, memória, skills, permissões).
+* `/ls` ou `/list`: Lista os arquivos do projeto (atalho, sem LLM).
+* `/read <arquivo>`: Lê o arquivo diretamente (atalho).
+* `/find <texto>`: Busca por texto nos arquivos (atalho).
+* `/search <consulta>`: Pesquisa na web (atalho).
 
 ### 3.3. [session.py](session.py)
 Encapsula o gerenciamento de sessões do chat e comunicação direta com a API do LLM (servidor compatível com OpenAI):
@@ -148,6 +158,7 @@ Encapsula o gerenciamento de sessões do chat e comunicação direta com a API d
 Carrega o arquivo `config.json` e realiza validações minuciosas de segurança e tipos de dados:
 * **Fallbacks:** Se uma chave não for encontrada ou tiver o tipo errado (ex.: `temperature` com string ou fora do intervalo [0.0, 2.0]), ele emite um aviso no logger e adota os valores padrões descritos no dicionário `DEFAULT_CONFIG`.
 * **Padrões de Prompt:** Define o comportamento padrão do assistente para pensar em inglês e responder em português brasileiro.
+* **Nova chave `validation`**: Valida a configuração de validação automática pós-modificação, com subcampos `enabled`, `ruff`, `mypy`, `pytest`, `pytest_dir` e `fail_triggers_replan`, todos com fallbacks seguros.
 
 ### 3.5. [logger.py](logger.py)
 Configura a infraestrutura de logging do sistema.
@@ -174,9 +185,22 @@ Arquivo de template da configuração. Copie-o para `config.json` e ajuste os va
 | `max_task_tokens` | `int` > 0 | `25000` | Orçamento total de tokens consumidos durante a execução de um objetivo. |
 | `max_task_tool_calls` | `int` > 0 | `40` | Número máximo de chamadas de ferramentas em um único objetivo. |
 | `default_system_prompt` | `string` | Prompt padrão (PT-BR) | Prompt de sistema usado na sessão de chat direta (fora do modo agente). |
+| `max_task_wall_seconds` | `int` > 0 | `300` | Tempo máximo de parede (em segundos) para uma tarefa antes do Watchdog abortar. |
+| `max_repeated_no_progress` | `int` > 0 | `3` | Número de repetições idênticas de uma ferramenta antes do Watchdog detectar loop. |
+| `max_consecutive_same_error` | `int` > 0 | `3` | Número de falhas consecutivas com o mesmo erro antes do Watchdog abortar. |
+| `validation` | `object` | `{...}` | Configuração de validação automática pós-modificação. Ver subcampos abaixo. |
+| `validation.enabled` | `bool` | `true` | Ativa/desativa a validação automática. |
+| `validation.ruff` | `bool` | `false` | Executa `ruff check` após cada `file_writer` em arquivos `.py`. |
+| `validation.mypy` | `bool` | `false` | Executa `mypy` após cada `file_writer` em arquivos `.py`. |
+| `validation.pytest` | `bool` | `false` | Executa `pytest` após cada `file_writer` em arquivos `.py`. |
+| `validation.pytest_dir` | `string` | `"tests/"` | Diretório onde o `pytest` buscará os testes. |
+| `validation.fail_triggers_replan` | `bool` | `false` | Se `true`, uma falha de validação aciona o replanejamento automático. |
 
 ### 3.9. [pyproject.toml](pyproject.toml) e [requirements.txt](requirements.txt)
 Configurações de ambiente. O arquivo `pyproject.toml` especifica as regras de lint do `ruff` (limite de 120 caracteres por linha, regras de import) e do verificador estático `mypy`. O arquivo `requirements.txt` lista pacotes necessários, incluindo `requests` para requisições HTTP, `pytest` para testes unitários, `rich` para formatação visual e `ddgs` para buscas web.
+
+### 3.10. [benchmark.py](benchmark.py) 🆕
+Script de benchmark headless para medir o desempenho do agente. Executa 4 tarefas fixas (listar arquivos, criar e executar hello.py, somar 1..10, resumir EstruturaProjeto.md) e coleta métricas de sucesso, passos e tempo. Resultados salvos em `benchmark_results.json`.
 
 ---
 
@@ -194,6 +218,8 @@ O coração da execução autônoma. Após a refatoração de modularidade, o `O
   5. Se o plano for gerado com sucesso, repassa ao `PlanExecutor`; caso contrário, adota o fallback de decisões interativas de passo a passo (`ReactiveLoop`).
   6. Emite eventos telemétricos de controle a cada início/fim de execução de ferramenta.
   7. Se houver falha crítica, executa o rollback das mudanças via `WorkspaceManager`.
+* **Streaming:** O método `run()` aceita um parâmetro opcional `stream_callback` que, se fornecido, é repassado ao `FinalResponder` para exibir a resposta final em tempo real.
+* **Checkpointing:** O `Orchestrator` persiste o estado da tarefa a cada passo concluído (`_save_checkpoint`) e pode retomar uma tarefa interrompida se nenhum novo objetivo for fornecido (`_load_checkpoint`). Ao final da tarefa (sucesso ou falha), o checkpoint é removido (`_delete_checkpoint`). O arquivo de checkpoint é configurável via `checkpoint_file` em `config.json`.
 
 ### 4.2. [state.py](agent/state.py)
 Define a estrutura de dados `AgentState` que encapsula o estado de execução global:
@@ -276,12 +302,13 @@ Controla o ecossistema local do espaço de trabalho:
 * **Pontos de Restauração (`create_restore_point`):** Copia os arquivos originais que serão alterados para a pasta técnica `memory_backups/restore/<timestamp>`.
 * **Rollback:** Se acionado, copia de volta os arquivos preservados e limpa a pasta de restore, devolvendo o projeto ao seu estado inicial limpo.
 * **Diff Visível (`show_diff`):** Utiliza o módulo padrão `difflib` para exibir uma saída comparativa clara em formato unificado no console.
-* **Lint Check (`lint_check`):** Roda compilação sintática nativa Python (`py_compile`) e, caso a ferramenta esteja instalada no ambiente, executa a verificação estática de estilo `flake8` com limite de 120 colunas.
+* **Lint Check (`lint_check`):** Roda compilação sintática nativa Python (`py_compile`) e, conforme configuração em `config.json` (`validation`), executa opcionalmente `ruff`, `mypy` e `pytest`. Se `fail_triggers_replan` for `true`, lança `ValidationFailedError` que aciona o replanejamento automático.
 
 ### 4.13. [final_response.py](agent/final_response.py)
 Compila a resposta definitiva do agente:
 * **Geração da Resposta:** Reúne o histórico de uso de ferramentas e as anotações geradas em `analysis_notes.md` para submeter um prompt final ao LLM sem o uso de ferramentas adicionais.
 * **Auditoria de Menções:** Examina a resposta em linguagem natural por meio de expressões regulares à procura de menções a caminhos de arquivos. Caso o texto mencione arquivos que o agente não leu de fato através de suas ferramentas, ele anexa um aviso no final da resposta alertando que sugestões sobre aqueles arquivos específicos podem ser imprecisas.
+* **Streaming na resposta final:** Se um callback `on_chunk` for fornecido pelo `Orchestrator`, a resposta final é gerada em streaming (token por token) em vez de esperar a geração completa. A CLI exibe o texto progressivamente no terminal.
 
 ### 4.14. [router.py](agent/router.py)
 Executa a triagem inteligente de prompts e ferramentas:
@@ -328,6 +355,19 @@ Implementa o replanejamento automático quando uma ferramenta falha repetidament
 * **`ask_llm_for_alternative(step, error, orchestrator) → Optional[ReplanAction]`:** último recurso — consulta o LLM para sugerir um passo alternativo, apenas se a heurística falhar e a `RetryPolicy` permitir.
 * **`replan(ctx, error_msg, orchestrator) → Optional[ReplanAction]`:** ponto de entrada único chamado por `PlanExecutor` e `ReactiveLoop`. Registra logs de cada replanejamento via `logger.info`.
 * **Integração:** `error_handler.py` retorna `"replan"` para erros recuperáveis; `plan_executor.py` usa loop `while` e injeta novos passos no plano; `reactive_loop.py` chama o replanner quando uma ferramenta falha.
+
+### 4.20. [semantic_memory.py](agent/semantic_memory.py) 🆕
+Camada de busca semântica sobre a memória do agente. Usa o modelo `all-MiniLM-L6-v2` (via `sentence-transformers`) para gerar embeddings dos resumos de arquivos armazenados em `AgentMemory.state['file_summaries']`.
+* **`SemanticMemory(memory, model_name)`**: Inicializa a camada com lazy loading do modelo.
+* **`build_index()`**: Constrói o índice vetorial a partir dos resumos existentes.
+* **`find_similar_files(query, top_k=5)`**: Retorna os arquivos mais relevantes semanticamente para uma consulta.
+* **Integração**: Chamado por `ContextManager.get_file_hints()` para enriquecer o prompt com arquivos relacionados ao objetivo, mesmo quando o nome do arquivo não é mencionado literalmente.
+
+### 4.21. [health_check.py](agent/health_check.py) 🆕
+Módulo de diagnóstico ("Doctor") do agente. Executável via `python -m agent.health_check` ou pelo comando `/doctor` na CLI.
+* Verifica: versão do Python, validade do `config.json`, integridade da memória e backups, hashes de arquivos, diretórios órfãos, permissões de leitura/escrita, carregamento de skills, e tamanho de logs/métricas.
+* Gera relatório visual no terminal e arquivo `health_report.json`.
+* **Comando CLI**: `/doctor` ou `/diagnostico` (integrado em `commands.py`).
 
 ---
 
@@ -408,3 +448,7 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Corrigir como o JSON de saída é parseado ou validado** | [agent/parsers.py](agent/parsers.py) | Ajuste a expressão regular de extração em `extract_json` ou expanda a validação de parâmetros das ferramentas em `validate_tool_args`. |
 | **Mudar o ciclo automático de teste e correção do código** | [agent/auto_coder.py](agent/auto_coder.py) (função `test_and_correct`) | Modifique o prompt de geração de testes, o comando de execução do subprocesso do arquivo temporário de testes ou o número de tentativas de correção automática. |
 | **Incluir novos comandos com barra na CLI** | [commands.py](commands.py) | Registre o comando na tabela da função `exibir_menu` e implemente a respectiva condicional na função `handle_command`. |
+| **Executar diagnóstico de saúde** | `python -m agent.health_check` ou `/doctor` na CLI | Verifica integridade do sistema e gera relatório. |
+| **Rodar benchmark** | `python benchmark.py` | Executa 4 tarefas padronizadas e mede desempenho. |
+| **Ajustar validação automática** | `config.json` → chave `validation` | Habilita/desabilita `ruff`, `mypy`, `pytest` e o replanejamento por falha de validação. |
+| **Consultar métricas** | `agent_metrics.jsonl` | Arquivo JSONL com timestamp, step_type, tool, tokens, duração e sucesso de cada chamada ao modelo. |

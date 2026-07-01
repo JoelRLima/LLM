@@ -4,11 +4,27 @@ import os
 import py_compile
 import shutil
 import subprocess
-from typing import Dict, List, Optional
+import sys
+from typing import Any, Dict, List, Optional
 
 from logger import logger
 
 MEMORY_BACKUP_DIR = "memory_backups"
+
+
+class ValidationFailedError(Exception):
+    """
+    Lançada pelo `WorkspaceManager.lint_check` quando uma ou mais verificações
+    de validação pós-modificação falham e a chave de configuração
+    `validation.fail_triggers_replan` está definida como `true`.
+
+    O `PlanExecutor` deve capturar esta exceção e acionar o fluxo de
+    replanejamento (`agent/replan.py`) em vez de simplesmente exibir o erro
+    no console.
+    """
+    pass
+
+
 
 class WorkspaceManager:
     def __init__(self, verbose: bool = False):
@@ -108,33 +124,153 @@ class WorkspaceManager:
             print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
 
     @staticmethod
+    def _load_validation_config() -> Dict[str, Any]:
+        """
+        Carrega a seção `validation` de `config.json` (via `config.carregar_config`),
+        aplicando um conjunto de padrões seguros caso o arquivo, a chave ou algum
+        subcampo estejam ausentes ou malformados. Isso garante que `lint_check`
+        nunca quebre por causa de um `config.json` incompleto.
+        """
+        default_validation: Dict[str, Any] = {
+            "enabled": True,
+            "ruff": False,
+            "mypy": False,
+            "pytest": False,
+            "pytest_dir": "tests/",
+            "fail_triggers_replan": False,
+        }
+
+        try:
+            from config import carregar_config
+            config = carregar_config()
+        except Exception as e:
+            logger.warning(
+                f"Não foi possível carregar 'config.json' para a validação pós-modificação "
+                f"({e}). Usando os padrões de validação."
+            )
+            return default_validation
+
+        validation_cfg = config.get("validation")
+        if not isinstance(validation_cfg, dict):
+            return default_validation
+
+        merged = dict(default_validation)
+        for chave in default_validation:
+            if chave in validation_cfg:
+                merged[chave] = validation_cfg[chave]
+        return merged
+
+    @staticmethod
+    def _run_ruff(file_path: str) -> Optional[str]:
+        """Executa `ruff check` sobre `file_path`. Retorna a mensagem de erro ou None."""
+        try:
+            result = subprocess.run(
+                ["ruff", "check", file_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                saida = (result.stdout + result.stderr).strip()
+                return f"Ruff: {saida}" if saida else "Ruff: verificação falhou (sem saída detalhada)."
+        except FileNotFoundError:
+            logger.warning("Ferramenta 'ruff' não está instalada; verificação ignorada.")
+        except subprocess.TimeoutExpired:
+            logger.warning("Verificação 'ruff' excedeu o tempo limite (10s); ignorada.")
+        except Exception as e:
+            logger.warning(f"Falha inesperada ao executar 'ruff': {e}")
+        return None
+
+    @staticmethod
+    def _run_mypy(file_path: str) -> Optional[str]:
+        """Executa `mypy --ignore-missing-imports` sobre `file_path`. Retorna erro ou None."""
+        try:
+            result = subprocess.run(
+                ["mypy", "--ignore-missing-imports", file_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                saida = (result.stdout + result.stderr).strip()
+                return f"Mypy: {saida}" if saida else "Mypy: verificação falhou (sem saída detalhada)."
+        except FileNotFoundError:
+            logger.warning("Ferramenta 'mypy' não está instalada; verificação ignorada.")
+        except subprocess.TimeoutExpired:
+            logger.warning("Verificação 'mypy' excedeu o tempo limite (10s); ignorada.")
+        except Exception as e:
+            logger.warning(f"Falha inesperada ao executar 'mypy': {e}")
+        return None
+
+    @staticmethod
+    def _run_pytest(pytest_dir: str) -> Optional[str]:
+        """Executa `pytest <pytest_dir>` como módulo (portável). Retorna erro ou None."""
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", pytest_dir],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                saida = (result.stdout + result.stderr).strip()
+                return f"Pytest: {saida}" if saida else "Pytest: verificação falhou (sem saída detalhada)."
+        except FileNotFoundError:
+            logger.warning("Ferramenta 'pytest' não está instalada; verificação ignorada.")
+        except subprocess.TimeoutExpired:
+            logger.warning("Verificação 'pytest' excedeu o tempo limite (10s); ignorada.")
+        except Exception as e:
+            logger.warning(f"Falha inesperada ao executar 'pytest': {e}")
+        return None
+
+    @staticmethod
     def lint_check(file_path: str) -> Optional[str]:
         """
-        Verifica a sintaxe e boas práticas de um arquivo Python.
-        Retorna mensagem de erro se houver problemas, ou None se estiver limpo.
+        Executa a validação automática pós-modificação de um arquivo Python.
+
+        Sempre roda a verificação sintática nativa (`py_compile`), que não é
+        configurável. Em seguida, de acordo com a seção `validation` de
+        `config.json`, executa opcionalmente `ruff`, `mypy` e `pytest`.
+
+        Retorna:
+            - `None` se `file_path` não for um arquivo `.py`.
+            - `""` (string vazia) se todas as verificações passarem.
+            - Uma string com os erros encontrados, caso alguma verificação falhe
+              e `validation.fail_triggers_replan` seja `false`.
+
+        Lança:
+            ValidationFailedError: se alguma verificação falhar e
+            `validation.fail_triggers_replan` for `true`. O `PlanExecutor` deve
+            capturar esta exceção para acionar o replanejamento.
         """
         if not file_path.endswith(".py"):
             return None
 
-        errors = []
+        errors: List[str] = []
 
-        # 1. Verificação de sintaxe (py_compile)
+        # 1. Verificação de sintaxe (obrigatória, não configurável)
         try:
             py_compile.compile(file_path, doraise=True)
         except py_compile.PyCompileError as e:
             errors.append(f"Sintaxe: {str(e)}")
 
-        # 2. Verificação de estilo com flake8 (opcional, se instalado)
-        try:
-            result = subprocess.run(
-                ["flake8", "--max-line-length=120", file_path],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.stdout.strip():
-                errors.append(f"Estilo: {result.stdout.strip()}")
-        except Exception:
-            pass  # flake8 não instalado ou falhou, ignora
+        validation_cfg = WorkspaceManager._load_validation_config()
 
-        if errors:
-            return "\n".join(errors)
-        return None
+        if validation_cfg.get("enabled", True):
+            if validation_cfg.get("ruff", False):
+                ruff_error = WorkspaceManager._run_ruff(file_path)
+                if ruff_error:
+                    errors.append(ruff_error)
+
+            if validation_cfg.get("mypy", False):
+                mypy_error = WorkspaceManager._run_mypy(file_path)
+                if mypy_error:
+                    errors.append(mypy_error)
+
+            if validation_cfg.get("pytest", False):
+                pytest_dir = validation_cfg.get("pytest_dir", "tests/")
+                pytest_error = WorkspaceManager._run_pytest(pytest_dir)
+                if pytest_error:
+                    errors.append(pytest_error)
+
+        if not errors:
+            return ""
+
+        if validation_cfg.get("fail_triggers_replan", False):
+            raise ValidationFailedError("\n".join(errors))
+
+        return "\n".join(errors)

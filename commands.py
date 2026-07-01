@@ -33,6 +33,11 @@ def exibir_menu() -> None:
     table.add_row("/debug", "Alterna modo diagnóstico")
     table.add_row("/memory, /memoria", "Mostra o estado da memória do agente")
     table.add_row("/events", "Mostra os eventos da última execução")
+    table.add_row("/doctor, /diagnostico", "Executa o diagnóstico de saúde do agente.")
+    table.add_row("/ls, /list", "Lista os arquivos do projeto (atalho)")
+    table.add_row("/read <arquivo>", "Lê o arquivo diretamente (atalho)")
+    table.add_row("/find <texto>", "Busca por texto nos arquivos (atalho)")
+    table.add_row("/search <consulta>", "Pesquisa na web (atalho)")
     table.add_row("/help, /ajuda", "Mostra esta ajuda")
     table.add_row("exit, sair", "Encerra o programa")
 
@@ -194,16 +199,94 @@ def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
         msg = ctx.orchestrator.load_memory_from_file(caminho)
         console.print(f"[bold green]📂 {msg}[/bold green]")
         return True, False
-
-    # Se modo agente ativo e a mensagem não for um comando conhecido (não começou com /)
-    if ctx.modo_agente and not texto.startswith("/"):
-        try:
-            resposta = ctx.orchestrator.run(texto)
-            console.print(Panel(resposta, title="[bold blue]🤖 Agente[/bold blue]"))
-            ctx.session.add_assistant_message(resposta)
-        except KeyboardInterrupt:
-            console.print("\n[bold red]⚠️ Agente interrompido.[/bold red]")
+    
+    if cmd in ("/doctor", "/diagnostico"):
+        from agent.health_check import run_health_check
+        run_health_check()
         return True, False
 
-    # Não processado (texto de chat normal sem modo agente ativo)
-    return False, False
+    if cmd in ("/ls", "/list"):
+        skill = ctx.orchestrator.skills.get("directory_lister")
+        if skill:
+            result = skill.execute({"path": "."})
+            if result.get("ok"):
+                data = result.get("data", [])
+                for item in data:
+                    tipo = item.get("type", "")
+                    nome = item.get("name", "")
+                    console.print(f"  {'📁' if tipo == 'dir' else '📄'} {nome}")
+                console.print(f"\n[dim]{len(data)} itens[/dim]")
+            else:
+                console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
+        else:
+            console.print("[red]Skill 'directory_lister' não disponível.[/red]")
+        return True, False
+
+    if cmd.startswith("/read"):
+        partes = texto.strip().split(maxsplit=1)
+        file_path = partes[1].strip() if len(partes) > 1 else ""
+        if not file_path:
+            console.print("[red]Uso: /read <arquivo>[/red]")
+            return True, False
+        skill = ctx.orchestrator.skills.get("file_reader")
+        if skill:
+            result = skill.execute({"file_path": file_path})
+            if result.get("ok"):
+                console.print(result.get("data", ""))
+            else:
+                console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
+        else:
+            console.print("[red]Skill 'file_reader' não disponível.[/red]")
+        return True, False
+
+    if cmd.startswith("/find"):
+        partes = texto.strip().split(maxsplit=1)
+        pattern = partes[1].strip() if len(partes) > 1 else ""
+        if not pattern:
+            console.print("[red]Uso: /find <texto>[/red]")
+            return True, False
+        skill = ctx.orchestrator.skills.get("grep")
+        if skill:
+            result = skill.execute({"pattern": pattern, "path": "."})
+            if result.get("ok"):
+                data = result.get("data", "")
+                console.print(data if data else "[yellow]Nenhuma ocorrência encontrada.[/yellow]")
+            else:
+                console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
+        else:
+            console.print("[red]Skill 'grep' não disponível.[/red]")
+        return True, False
+
+    if cmd.startswith("/search"):
+        partes = texto.strip().split(maxsplit=1)
+        query = partes[1].strip() if len(partes) > 1 else ""
+        if not query:
+            console.print("[red]Uso: /search <consulta>[/red]")
+            return True, False
+        skill = ctx.orchestrator.skills.get("web_search")
+        if skill:
+            result = skill.execute({"query": query})
+            if result.get("ok"):
+                console.print(result.get("data", ""))
+            else:
+                console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
+        else:
+            console.print("[red]Skill 'web_search' não disponível.[/red]")
+        return True, False
+
+    if ctx.modo_agente and not texto.startswith("/"):
+        def on_agent_chunk(text: str) -> None:
+            print(text, end="", flush=True)
+
+        console.print("[bold blue]🤖 Agente:[/bold blue]")
+        try:
+            resposta = ctx.orchestrator.run(texto, stream_callback=on_agent_chunk)
+            print()  # quebra de linha após o fim do streaming
+        except KeyboardInterrupt:
+            console.print("\n[bold red]⚠️ Agente interrompido.[/bold red]")
+            return True, False
+
+        if ctx.modo_diagnostico >= 1:
+            console.print(Panel(resposta, title="Resposta do Agente", border_style="blue"))
+        ctx.session.add_assistant_message(resposta)
+        return True, False

@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import Any
+from typing import Any, Callable, Optional
 
 from logger import logger
 
@@ -10,7 +10,7 @@ class FinalResponder:
     def __init__(self, orchestrator: Any):
         self.orchestrator = orchestrator
 
-    def build_final_answer(self, objective: str) -> str:
+    def build_final_answer(self, objective: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
         notes_content = ""
         if os.path.exists("analysis_notes.md"):
             try:
@@ -46,20 +46,26 @@ class FinalResponder:
         self.orchestrator.session.add_user_message(final_prompt)
         final_payload = self.orchestrator.session.build_payload()
         final_payload["max_tokens"] = 4096
-        final_payload["stream"] = False
 
         try:
-            final_response = self.orchestrator.session.send_non_streaming_request(final_payload)
+            if on_chunk is not None:
+                final_payload["stream"] = True
+                resp = self.orchestrator.session.send_request(final_payload, stream=True)
+                resp.raise_for_status()
+                resposta_completa = self.orchestrator.session.process_stream(resp, {"on_content_chunk": on_chunk})
+            else:
+                final_payload["stream"] = False
+                resposta_completa = self.orchestrator.session.send_non_streaming_request(final_payload)
         except Exception as e:
             logger.error(f"Erro na requisição final: {e}")
-            final_response = ""
+            resposta_completa = ""
 
         self.orchestrator.session.remove_last_user_message()
         if self.orchestrator.session.messages and self.orchestrator.session.messages[-1]["role"] == "assistant":
             self.orchestrator.session.messages.pop()
 
-        if isinstance(final_response, str) and final_response.strip():
-            answer = final_response.strip()
+        if isinstance(resposta_completa, str) and resposta_completa.strip():
+            answer = resposta_completa.strip()
             if answer.startswith("{"):
                 try:
                     parsed = json.loads(answer)
