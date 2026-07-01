@@ -524,7 +524,7 @@ O sistema possui testes automatizados implementados com a ferramenta `pytest`. O
 * **[test_grammar.py](tests/test_grammar.py):** Testa a infraestrutura de GBNF — inclusão do campo `grammar` no payload, seleção automática por `step_type`, override explícito, desabilitação via `grammar=None`, fallback em erro 400, cache de backend após fallback, e a flag `ENABLE_GBNF`.
 
 ---
-
+ 
 ## 7. Guia de Extensão e Solução de Problemas (Onde Alterar?)
 
 Se você precisar corrigir um problema ou implementar um aprimoramento no projeto, consulte esta tabela rápida para saber exatamente quais arquivos e regras do sistema devem ser modificados:
