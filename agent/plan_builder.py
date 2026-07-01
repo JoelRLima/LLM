@@ -1,7 +1,53 @@
 import os
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 from agent.parsers import validate_tool_args
+
+# Orientação estática injetada no prompt de planejamento: matriz de
+# decisão objetivo -> ferramenta, política de custo, prioridade de edição,
+# a regra de nunca gerar patch às cegas, e um checklist de autoavaliação
+# para o modelo revisar o próprio plano antes de respondê-lo.
+PLANNING_GUIDANCE = (
+    "\n\n**Matriz de decisão (objetivo → ferramenta preferida):**\n"
+    "| Objetivo | Ferramenta preferida |\n"
+    "|---|---|\n"
+    "| Encontrar arquivo | directory_lister |\n"
+    "| Encontrar texto | grep |\n"
+    "| Entender estrutura | code_analyzer |\n"
+    "| Ler conteúdo | file_reader |\n"
+    "| Editar trecho | file_writer (action='patch') |\n"
+    "| Editar função | file_writer (action='ast_patch') |\n"
+    "| Criar arquivo | file_writer (action='write') |\n"
+    "\n"
+    "**Política de custo — minimize, nesta ordem de prioridade:**\n"
+    "1. Chamadas ao modelo (LLM)\n"
+    "2. Chamadas de ferramentas\n"
+    "3. Escrita em disco\n"
+    "4. Leitura de arquivos\n"
+    "5. Tamanho do contexto\n"
+    "\n"
+    "**Prioridade de edição — da mais para a menos cirúrgica:**\n"
+    "1. ast_patch (substitui uma função/classe inteira pelo nome)\n"
+    "2. patch (substitui um trecho de texto exato)\n"
+    "3. append (adiciona conteúdo ao final do arquivo)\n"
+    "4. write (último recurso — sobrescreve o arquivo inteiro)\n"
+    "\n"
+    "**Regra crítica:** NUNCA gere um passo de file_writer com action='patch' ou "
+    "action='ast_patch' para um arquivo sem que exista, em algum passo anterior do "
+    "mesmo plano, um file_reader que leia esse arquivo. Editar às cegas produz "
+    "'old_content' que não corresponde ao conteúdo real do arquivo.\n"
+    "\n"
+    "**Checklist de autoavaliação (revise antes de responder):**\n"
+    "- [ ] Para cada objetivo do plano, escolhi a ferramenta de menor custo que o resolve "
+    "(ver matriz de decisão acima)?\n"
+    "- [ ] Evitei ler ou analisar o mesmo arquivo mais de uma vez sem necessidade?\n"
+    "- [ ] Toda edição (patch/ast_patch) tem um file_reader anterior lendo o mesmo arquivo?\n"
+    "- [ ] Usei a opção de edição mais cirúrgica possível (ast_patch > patch > append > write)?\n"
+    "- [ ] O plano tem o menor número de passos possível para atingir o objetivo com segurança?\n"
+    "- [ ] Se estou usando grep com expressão regular, o padrão é SIMPLES, bem escapado e balanceado (sem parênteses não fechados)?\n"
+    "- [ ] O plano tem o menor número de passos possível para atingir o objetivo com segurança?\n"
+)
 
 
 class PlanBuilder:
@@ -37,6 +83,7 @@ class PlanBuilder:
             '    {"tool": "file_reader", "args": {"file_path": "cli.py"}}\n'
             "  ]\n"
             "}\n"
+            f"{PLANNING_GUIDANCE}\n"
             "Regras:\n"
             "- Use APENAS ferramentas da lista acima.\n"
             "- Cada objeto do plano deve ter os campos 'tool' (string) e 'args' (objeto).\n"
@@ -45,6 +92,7 @@ class PlanBuilder:
             "- Informe apenas o file_path no file_reader; o sistema divide automaticamente se necessário.\n"
             "- NÃO especifique start_line ou end_line ao usar file_reader, a menos que queira um trecho específico.\n"
             "- NÃO inclua passos para deletar, apagar ou esvaziar arquivos."
+            "- NÃO inclua um passo 'final' de resposta. A resposta final de cada sub-objetivo será gerada automaticamente após a execução das ferramentas.\n"
             "- Para passos de file_writer, NÃO inclua o conteúdo no campo 'content'. Use 'content' como string vazia (\"\"). O sistema gerará o conteúdo automaticamente."
             "- Para alterar uma parte específica de um arquivo (ex.: uma linha, uma função), prefira usar file_writer com action='patch' (substituição exata de trecho) ou action='ast_patch' (substituição de função/classe por nome).\n"
             "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
@@ -57,9 +105,41 @@ class PlanBuilder:
             base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
         )
+
+        if self.orchestrator.verbose:
+            print(f"[DEBUG] plan_decision bruto: {plan_decision}")
+
         plan = plan_decision.get("plan")
         if not plan or not isinstance(plan, list):
-            return None, None
+            # Fallback: a resposta não tem o campo "plan". Tenta extrair um
+            # passo único a partir de campos soltos comuns (file_path, target).
+            tool = plan_decision.get("tool")
+            args = plan_decision.get("args", {})
+            if not isinstance(args, dict):
+                args = {}
+            if not tool:
+                if "file_path" in plan_decision:
+                    tool = "file_reader"
+                    args = plan_decision
+                elif "target" in plan_decision:
+                    tool = "code_analyzer"
+                    args = plan_decision
+            if tool:
+                plan = [{"tool": tool, "args": args}]
+                if self.orchestrator.verbose:
+                    print(f"[DEBUG] Plano extraído de resposta sem 'plan': {plan}")
+            else:
+                return None, None
+
+        if plan and isinstance(plan, list) and all(isinstance(s, str) for s in plan):
+            tool = plan_decision.get("tool")
+            args = plan_decision.get("args")
+            if isinstance(tool, str) and isinstance(args, dict):
+                plan = [{"tool": tool, "args": args}]
+                if self.orchestrator.verbose:
+                    print(f"[DEBUG] Plano corrigido (extraído de campos tool/args): {plan}")
+            else:
+                plan = []
 
         filtered_plan = []
         for step in plan:

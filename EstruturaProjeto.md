@@ -60,6 +60,13 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ```text
 .
 ├── agent
+│   ├── cancellation.py          ← NOVO
+│   ├── complexity.py            ← NOVO
+│   ├── hierarchical_executor.py ← NOVO
+│   ├── hierarchical_planner.py  ← NOVO
+│   ├── incremental_summarizer.py← NOVO
+│   ├── task_report.py           ← NOVO
+│   ├── task_tracker.py          ← NOVO
 │   ├── health_check.py
 │   ├── semantic_memory.py
 │   ├── __init__.py
@@ -110,6 +117,9 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ├── benchmark.py
 ├── benchmark_results.json
 ├── health_report.json
+├── task_tracker.json            ← NOVO (artefato de tracking)
+├── task_tracker.md              ← NOVO (artefato de tracking)
+├── reports/                     ← NOVO (relatórios de tarefa)
 └── tests
     ├── __init__.py
     ├── test_config.py
@@ -147,6 +157,7 @@ Responsável por interpretar comandos iniciados por barra `/` na CLI. Oferece co
 * `/read <arquivo>`: Lê o arquivo diretamente (atalho).
 * `/find <texto>`: Busca por texto nos arquivos (atalho).
 * `/search <consulta>`: Pesquisa na web (atalho).
+* `/retry` ou `/retomar`: Retoma a tarefa interrompida a partir do checkpoint salvo.
 
 ### 3.3. [session.py](session.py)
 Encapsula o gerenciamento de sessões do chat e comunicação direta com a API do LLM (servidor compatível com OpenAI):
@@ -195,6 +206,11 @@ Arquivo de template da configuração. Copie-o para `config.json` e ajuste os va
 | `validation.pytest` | `bool` | `false` | Executa `pytest` após cada `file_writer` em arquivos `.py`. |
 | `validation.pytest_dir` | `string` | `"tests/"` | Diretório onde o `pytest` buscará os testes. |
 | `validation.fail_triggers_replan` | `bool` | `false` | Se `true`, uma falha de validação aciona o replanejamento automático. |
+| `checkpoint_file` | `string` | `"agent_checkpoint.json"` | Caminho do arquivo de checkpoint para retomada de tarefas. |
+| `task_report` | `object` | `{...}` | Configuração do relatório de auditoria da tarefa. Ver subcampos abaixo. |
+| `task_report.enabled` | `bool` | `true` | Ativa/desativa a geração do relatório da tarefa. |
+| `task_report.format` | `string` | `"json"` | Formato do relatório (`"json"` ou `"markdown"`). |
+| `task_report.output_dir` | `string` | `"reports/"` | Diretório onde os relatórios serão salvos. |
 
 ### 3.9. [pyproject.toml](pyproject.toml) e [requirements.txt](requirements.txt)
 Configurações de ambiente. O arquivo `pyproject.toml` especifica as regras de lint do `ruff` (limite de 120 caracteres por linha, regras de import) e do verificador estático `mypy`. O arquivo `requirements.txt` lista pacotes necessários, incluindo `requests` para requisições HTTP, `pytest` para testes unitários, `rich` para formatação visual e `ddgs` para buscas web.
@@ -220,6 +236,9 @@ O coração da execução autônoma. Após a refatoração de modularidade, o `O
   7. Se houver falha crítica, executa o rollback das mudanças via `WorkspaceManager`.
 * **Streaming:** O método `run()` aceita um parâmetro opcional `stream_callback` que, se fornecido, é repassado ao `FinalResponder` para exibir a resposta final em tempo real.
 * **Checkpointing:** O `Orchestrator` persiste o estado da tarefa a cada passo concluído (`_save_checkpoint`) e pode retomar uma tarefa interrompida se nenhum novo objetivo for fornecido (`_load_checkpoint`). Ao final da tarefa (sucesso ou falha), o checkpoint é removido (`_delete_checkpoint`). O arquivo de checkpoint é configurável via `checkpoint_file` em `config.json`.
+* **Cancelamento cooperativo:** O método `run()` captura `KeyboardInterrupt` (Ctrl+C) e interrompe a execução de forma limpa, salvando o checkpoint e retornando uma mensagem amigável. O comando `/retry` permite retomar a tarefa posteriormente a partir do checkpoint.
+* **Planejamento hierárquico:** Para objetivos complexos (detectados por `complexity.py`), o `Orchestrator` delega a execução ao `HierarchicalPlanner` (geração de macroplano) e `HierarchicalExecutor` (execução de sub‑objetivos), com tracking via `TaskTracker` e sumarização incremental via `IncrementalSummarizer`. Se o macroplano não puder ser gerado, o fluxo linear é usado como fallback.
+* **Relatório da tarefa:** Ao final de cada execução, o `Orchestrator` gera um relatório estruturado de auditoria (`TaskReportBuilder`) com passos, métricas, erros e uma prévia da resposta final. Configurável via `task_report` em `config.json`.
 
 ### 4.2. [state.py](agent/state.py)
 Define a estrutura de dados `AgentState` que encapsula o estado de execução global:
@@ -277,6 +296,8 @@ Executa a sequência de passos definidos pelo `PlanBuilder`:
   * **Diferencial (Diff):** Antes de persistir qualquer escrita, invoca a impressão do diff no console para transparência visual.
 * **Cache Inteligente:** Se um arquivo a ser lido/analisado tiver o mesmo hash SHA256 do arquivo em cache na memória, o executor recupera o resumo do arquivo da memória instantaneamente, pulando a leitura direta.
 * **Ciclo Pós-Execução:** Invoca verificação de testes automatizados e linters para validar modificações.
+* **Dependência Explícita entre Passos:** Antes de executar cada passo, o executor analisa o plano e detecta dependências implícitas baseadas em arquivos (ex.: um `file_reader` que lê um arquivo gerado por um `file_writer` anterior). Se a dependência falhou, o passo atual é pulado automaticamente para evitar erros em cascata, com registro no histórico de ferramentas.
+* **Integração com Replanejamento:** Em caso de falha de um passo, o executor consulta o `ErrorHandler`; se a ação for `"replan"`, aciona o `Replanner` e os novos passos são injetados no plano (substituindo o passo que falhou), dando continuidade à execução.
 
 ### 4.9. [reactive_loop.py](agent/reactive_loop.py)
 Implementa o fluxo reativo antigo que atua como barreira de segurança secundária. Se o gerador de plano falhar, o loop reativo assume a liderança e decide passo a passo qual ferramenta chamar e com quais parâmetros, baseando-se no histórico recente de execuções. Também utiliza `CostGuard` para verificar limites de custo.
@@ -369,6 +390,50 @@ Módulo de diagnóstico ("Doctor") do agente. Executável via `python -m agent.h
 * Gera relatório visual no terminal e arquivo `health_report.json`.
 * **Comando CLI**: `/doctor` ou `/diagnostico` (integrado em `commands.py`).
 
+### 4.22. [cancellation.py](agent/cancellation.py) 🆕
+Utilitário simples de cancelamento cooperativo.
+* **`CancellationToken`**: Classe com flag `cancelled`, usada para sinalizar cancelamento de tarefas de forma programática. Pode ser expandida para cancelamento futuro (ex.: via botão em interface web).
+
+### 4.23. [complexity.py](agent/complexity.py) 🆕
+Detector de complexidade de objetivos. Decide se um objetivo deve ser tratado via planejamento hierárquico (MacroPlan) ou pelo fluxo linear padrão.
+* **`is_hierarchical(objective) -> bool`**: Calcula uma pontuação heurística baseada em palavras‑chave, estrutura do texto e comprimento. Retorna `True` se a pontuação atingir o limiar configurável `HIERARCHICAL_SCORE_THRESHOLD`.
+* **`compute_complexity_score(objective) -> float`**: Retorna a pontuação bruta para diagnóstico.
+
+### 4.24. [hierarchical_planner.py](agent/hierarchical_planner.py) 🆕
+Planejador hierárquico: decompõe um objetivo complexo em um `MacroPlan` (lista de `MacroStep`), usando o LLM.
+* **`Priority` (Enum)**: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+* **`MacroStep` (dataclass)**: `id`, `title`, `goal`, `priority`, `depends_on` (reservado para paralelismo futuro), `estimated_tools` (validados contra as ferramentas disponíveis).
+* **`MacroPlan` (dataclass)**: `objective`, `steps`, `schema_version`.
+* **`HierarchicalPlanner(ask_model, valid_tools)`**: Recebe uma função `ask_model` injetada e a lista de ferramentas válidas. O método `build_plan(objective)` retorna um `MacroPlan` ou `None` (fallback para fluxo linear). Desacoplado do `Orchestrator`.
+
+### 4.25. [hierarchical_executor.py](agent/hierarchical_executor.py) 🆕
+Executor de `MacroPlan`: orquestra a execução de cada `MacroStep` como uma mini‑tarefa independente.
+* Recebe por injeção: `plan_builder`, `plan_executor`, `final_responder`, `context_manager`, `session`, `tracker` e `summarizer`.
+* Para cada passo: gera e executa um micro‑plano, coleta resultados das ferramentas (sem chamar `FinalResponder`), atualiza o `TaskTracker` e alimenta o `IncrementalSummarizer`.
+* Ao final, chama o `FinalResponder` **uma única vez** para gerar a resposta consolidada.
+
+### 4.26. [incremental_summarizer.py](agent/incremental_summarizer.py) 🆕
+Acumulador/sumarizador incremental de resultados parciais durante execução hierárquica.
+* **`IncrementalSummarizer(summarize_fn, max_items, max_chars)`**: Recebe uma função de sumarização injetada. Acumula itens de texto e os condensa periodicamente em resumos para evitar explosão de contexto.
+* **`add(item)`**: Adiciona um resultado parcial.
+* **`force_flush()`**: Força a condensação de itens pendentes.
+* **`get_accumulated_content()`**: Retorna todo o conteúdo (resumos + itens recentes) para a consolidação final.
+
+### 4.27. [task_report.py](agent/task_report.py) 🆕
+Construtor do Relatório da Tarefa — registro de auditoria consolidado ao final de cada execução.
+* **`TaskReportBuilder(config)`**: Constrói um dicionário estruturado com `task_id`, `objective`, `success`, `steps`, `replan_events`, `metrics`, `errors` e `final_answer_preview`.
+* **`save_report(report, format, path)`**: Persiste o relatório em JSON (padrão) ou Markdown, com gravação atômica.
+* Totalmente desacoplado do `Orchestrator` — depende apenas do estado público de `AgentState` e métricas.
+
+### 4.28. [task_tracker.py](agent/task_tracker.py) 🆕
+Rastreador de progresso da execução hierárquica. Mantém um arquivo JSON estruturado (fonte de verdade) e renderiza um arquivo Markdown para leitura humana.
+* **`TaskTracker(json_path, md_path)`**: Inicializa os caminhos dos artefatos.
+* **`start(objective, steps, metadata)`**: Inicia o tracking com os passos do `MacroPlan`.
+* **`mark_running / mark_completed / mark_failed / mark_skipped(step_id)`**: Atualiza o status de cada passo.
+* **`finish_success / finish_failure(summary)`**: Finaliza o tracking global.
+* **Enums**: `StepStatus` (PENDING, RUNNING, COMPLETED, FAILED, SKIPPED) e `TaskStatus` (RUNNING, COMPLETED, FAILED).
+* Todas as gravações são atômicas e falhas de I/O nunca escapam para o chamador.
+
 ---
 
 ## 5. Mapeamento de Ferramentas (Skills) em `agent/skills/`
@@ -452,3 +517,7 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Rodar benchmark** | `python benchmark.py` | Executa 4 tarefas padronizadas e mede desempenho. |
 | **Ajustar validação automática** | `config.json` → chave `validation` | Habilita/desabilita `ruff`, `mypy`, `pytest` e o replanejamento por falha de validação. |
 | **Consultar métricas** | `agent_metrics.jsonl` | Arquivo JSONL com timestamp, step_type, tool, tokens, duração e sucesso de cada chamada ao modelo. |
+| **Ajustar sensibilidade do planejamento hierárquico** | `agent/complexity.py` | Altere `HIERARCHICAL_SCORE_THRESHOLD` ou as listas de palavras‑chave. |
+| **Configurar relatório da tarefa** | `config.json` → chave `task_report` | Altere `enabled`, `format` (`json`/`markdown`) ou `output_dir`. |
+| **Configurar checkpointing** | `config.json` → chave `checkpoint_file` | Altere o caminho do arquivo de checkpoint. |
+| **Retomar tarefa interrompida** | `/retry` na CLI | Restaura o estado a partir do checkpoint e continua a execução. |

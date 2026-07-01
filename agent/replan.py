@@ -23,6 +23,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from agent.plan_optimizer import PlanOptimizer
+from agent.plan_validator import PlanValidator
+from agent.tool_metadata import TOOL_METADATA
 from logger import logger
 
 
@@ -182,6 +185,68 @@ def ask_llm_for_alternative(
 
 
 # ---------------------------------------------------------------------------
+# Reaproveitamento de PlanValidator / PlanOptimizer para novos passos
+# ---------------------------------------------------------------------------
+
+def _validate_and_optimize_new_steps(action: Optional[ReplanAction], orchestrator: Any) -> Optional[ReplanAction]:
+    """Reaplica o mesmo pipeline de diagnóstico/otimização usado para o
+    plano original (PlanValidator -> PlanOptimizer -> PlanValidator) aos
+    passos recém-sugeridos pelo Replanner (heurística ou LLM), antes de
+    devolvê-los ao chamador (PlanExecutor ou Orchestrator).
+
+    Passos individualmente bloqueados pelo PlanValidator são descartados
+    (nunca é seguro injetar um passo com ferramenta inexistente/não
+    permitida, schema inválido, ou que esvaziaria 'analysis_notes.md').
+    Se nenhum passo sobreviver, retorna None — sinalizando ao chamador que
+    esta tentativa de replanejamento falhou e a próxima estratégia (ou o
+    abort) deve assumir.
+    """
+    if not action or not action.steps:
+        return action
+
+    skills = getattr(orchestrator, "skills", {}) or {}
+    active_skills = getattr(orchestrator, "active_skills", []) or []
+    validator = PlanValidator(skills, active_skills)
+
+    pre_report = validator.validate(action.steps)
+    for w in pre_report.warnings:
+        logger.info(f"[VALIDATOR] (replan) {w}")
+    for e in pre_report.errors:
+        logger.warning(f"[VALIDATOR] (replan) {e}")
+    for b in pre_report.blocked_steps:
+        logger.warning(f"[VALIDATOR] (replan) Passo sugerido {b.index + 1} descartado: {b.reason}")
+
+    blocked_indexes = {b.index for b in pre_report.blocked_steps}
+    surviving_steps = [s for idx, s in enumerate(action.steps) if idx not in blocked_indexes]
+    if not surviving_steps:
+        logger.warning("[VALIDATOR] (replan) Todos os passos sugeridos pelo replanner foram bloqueados.")
+        return None
+
+    optimizer = PlanOptimizer(TOOL_METADATA)
+    opt_report = optimizer.optimize(surviving_steps)
+    if opt_report.changed:
+        logger.info(
+            f"[OPTIMIZER] (replan) custo {opt_report.cost_before} → {opt_report.cost_after}, "
+            f"{len(opt_report.transformations)} otimização(ões), "
+            f"{opt_report.removed_duplicates} duplicata(s) removida(s)."
+        )
+
+    post_report = validator.validate(opt_report.optimized_steps)
+    for e in post_report.errors:
+        logger.warning(f"[VALIDATOR] (replan, pós-otimização) {e}")
+    post_blocked_indexes = {b.index for b in post_report.blocked_steps}
+    for b in post_report.blocked_steps:
+        logger.warning(f"[VALIDATOR] (replan, pós-otimização) Passo {b.index + 1} descartado: {b.reason}")
+
+    final_steps = [s for idx, s in enumerate(opt_report.optimized_steps) if idx not in post_blocked_indexes]
+    if not final_steps:
+        return None
+
+    action.steps = final_steps
+    return action
+
+
+# ---------------------------------------------------------------------------
 # Ponto de entrada único
 # ---------------------------------------------------------------------------
 
@@ -210,6 +275,11 @@ def replan(
     if retry_policy.allows_heuristic(ctx):
         action = try_heuristic(category, ctx.current_step.get("tool", ""), ctx.current_step.get("args", {}))
         if action is not None:
+            # Reaproveita PlanValidator + PlanOptimizer sobre os passos
+            # sugeridos, seguindo o mesmo pipeline usado para o plano
+            # original (ver Parte 5 da especificação).
+            action = _validate_and_optimize_new_steps(action, orchestrator)
+        if action is not None:
             ctx.heuristic_replans += 1
             logger.info(
                 f"[REPLAN] step={len(ctx.tool_history)+1} "
@@ -223,6 +293,8 @@ def replan(
     # LLM
     if retry_policy.allows_llm(ctx):
         action = ask_llm_for_alternative(ctx.current_step, error_message, orchestrator)
+        if action is not None:
+            action = _validate_and_optimize_new_steps(action, orchestrator)
         if action is not None:
             ctx.llm_replans += 1
             logger.info(

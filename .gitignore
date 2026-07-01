@@ -13,3 +13,7 @@ agent_metrics.jsonl
 .pytest_cache
 .ruff_cache
 benchmark_results.json
+health_report.json
+reports
+task_tracker.json
+task_tracker.md

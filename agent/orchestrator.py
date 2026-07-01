@@ -1,20 +1,31 @@
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.auto_coder import AutoCoder
 from agent.cancellation import CancellationToken
+from agent.complexity import is_hierarchical
 from agent.context_manager import ContextManager
 from agent.error_handler import ErrorHandler
 from agent.final_response import FinalResponder
+from agent.hierarchical_executor import HierarchicalExecutor
+from agent.hierarchical_planner import HierarchicalPlanner
+from agent.incremental_summarizer import IncrementalSummarizer
 from agent.plan_builder import PlanBuilder
 from agent.plan_executor import PlanExecutor
+from agent.plan_optimizer import PlanOptimizer
+from agent.plan_validator import PlanValidator
 from agent.reactive_loop import ReactiveLoop
+from agent.replan import ReplanContext, replan
+from agent.tool_metadata import TOOL_METADATA
 from agent.router import _is_clearly_trivial, route_objective
 from agent.state import AgentState
+from agent.task_report import TaskReportBuilder
+from agent.task_tracker import TaskTracker
 from agent.tool_executor import ToolExecutor
 from agent.workspace import WorkspaceManager
 from agent.watchdog import Watchdog
@@ -72,6 +83,11 @@ class Orchestrator:
         self._task_failed = False
         self._cancelled = False
         self.checkpoint_file: str = checkpoint_file
+        # Linha (no arquivo agent_metrics.jsonl) a partir da qual as
+        # métricas pertencem à tarefa atual. É recalculada no início de
+        # cada `run()`, servindo como "marca d'água" (reset) para que
+        # `_get_metrics_for_task` só retorne entradas desta execução.
+        self._metrics_start_line: int = 0
 
         self.agent_state = AgentState()
         self.workspace = WorkspaceManager(verbose=self.verbose)
@@ -197,6 +213,85 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Falha ao registrar métrica: {e}")
 
+    def _count_metrics_lines(self) -> int:
+        """Conta quantas linhas já existem em `agent_metrics.jsonl`.
+
+        Usado como marca d'água no início de uma tarefa para que
+        `_get_metrics_for_task` só considere entradas gravadas durante a
+        execução atual. Retorna 0 se o arquivo não existir ou não puder ser
+        lido.
+        """
+        if not os.path.exists(AGENT_METRICS_FILE):
+            return 0
+        try:
+            with open(AGENT_METRICS_FILE, "r", encoding="utf-8") as f:
+                return sum(1 for _ in f)
+        except OSError as e:
+            logger.warning(f"Falha ao contar linhas de métricas: {e}")
+            return 0
+
+    def _get_metrics_for_task(self) -> List[Dict[str, Any]]:
+        """Lê as entradas de `agent_metrics.jsonl` relativas à tarefa atual.
+
+        Retorna todas as entradas gravadas após o último reset de tarefa
+        (`self._metrics_start_line`), isto é, aquelas produzidas durante a
+        execução corrente de `run()`. Linhas malformadas (JSON inválido) são
+        ignoradas silenciosamente, garantindo leitura robusta mesmo diante
+        de gravações concorrentes ou truncadas.
+
+        Retorna lista vazia se o arquivo não existir.
+        """
+        if not os.path.exists(AGENT_METRICS_FILE):
+            return []
+
+        entries: List[Dict[str, Any]] = []
+        try:
+            with open(AGENT_METRICS_FILE, "r", encoding="utf-8") as f:
+                for index, line in enumerate(f):
+                    if index < self._metrics_start_line:
+                        continue
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        parsed = json.loads(line)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if isinstance(parsed, dict):
+                        entries.append(parsed)
+        except OSError as e:
+            logger.warning(f"Falha ao ler métricas da tarefa: {e}")
+            return []
+
+        return entries
+
+    def _generate_task_report(self, final_answer: str) -> None:
+        """Gera e persiste o Relatório da Tarefa ao final da execução.
+
+        Uma falha na geração/gravação do relatório nunca deve impedir a
+        conclusão da tarefa: todo o processo é protegido por try/except e
+        eventuais erros apenas são registrados em log.
+        """
+        try:
+            task_report_cfg = (self.session.config or {}).get("task_report", {}) or {}
+            if not task_report_cfg.get("enabled", True):
+                return
+
+            report_builder = TaskReportBuilder(self.session.config)
+            report = report_builder.build_report(
+                self.agent_state,
+                self._get_metrics_for_task(),
+                final_answer,
+            )
+            report_path = report_builder.save_report(
+                report,
+                format=task_report_cfg.get("format", "json"),
+            )
+            if self.verbose:
+                print(f"🗒️  Relatório da tarefa salvo em: {report_path}")
+        except Exception as e:
+            logger.warning(f"Falha ao gerar relatório da tarefa: {e}")
+
     def _is_task_solved(self) -> bool:
         if not self.agent_state.tool_history:
             return True
@@ -287,6 +382,205 @@ class Orchestrator:
         self.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
 
+    def _get_valid_tool_names(self) -> List[str]:
+        """Retorna os nomes de todas as ferramentas (skills) registradas.
+
+        Usado para validar `estimated_tools` ao gerar um `MacroPlan`
+        hierárquico, evitando que o planejador aceite ferramentas
+        inexistentes sugeridas pelo modelo.
+        """
+        return list(self.skills.keys())
+
+    def _replan_blocked_steps(
+        self, plan: List[Dict[str, Any]], objective: str, blocked_steps: List[Any]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Aciona o Replanner (agent.replan) para cada passo bloqueado pelo
+        PlanValidator, substituindo-o pelos passos que o Replanner sugerir.
+
+        O Replanner já reaplica PlanValidator + PlanOptimizer aos passos que
+        ele mesmo propõe (ver `agent/replan.py`), então os passos retornados
+        aqui já chegam diagnosticados e otimizados.
+
+        Se o Replanner não conseguir resolver um passo bloqueado, esse passo
+        é removido do plano (não é seguro executá-lo como está) e um aviso é
+        registrado em log. Retorna `None` se, ao final, o plano ficar vazio.
+        """
+        plan = list(plan)
+        # Substitui de trás para frente para não invalidar os índices dos
+        # demais passos bloqueados que ainda serão processados.
+        for blocked in sorted(blocked_steps, key=lambda b: b.index, reverse=True):
+            idx = blocked.index
+            if idx >= len(plan):
+                continue
+            step = plan[idx]
+            step = step if isinstance(step, dict) else {"tool": "", "args": {}}
+
+            ctx = ReplanContext(
+                task=objective,
+                current_step=step,
+                tool_history=self.agent_state.tool_history,
+                last_exception=blocked.reason,
+            )
+            action = replan(ctx, blocked.reason, self)
+
+            if action and action.steps:
+                plan[idx:idx + 1] = action.steps
+                logger.info(
+                    f"[VALIDATOR] Passo {idx + 1} bloqueado ('{blocked.reason}') "
+                    f"substituído por {len(action.steps)} passo(s) do replanner."
+                )
+            else:
+                logger.warning(
+                    f"[VALIDATOR] Passo {idx + 1} bloqueado ('{blocked.reason}') não pôde ser "
+                    f"resolvido pelo replanner e foi removido do plano."
+                )
+                del plan[idx]
+
+        if not plan:
+            return None
+        return plan
+
+    def _validate_and_optimize_plan(
+        self, plan: List[Dict[str, Any]], objective: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Executa o pipeline de diagnóstico e otimização sobre um plano
+        recém-gerado pelo PlanBuilder:
+
+            PlanValidator (diagnóstico) -> PlanOptimizer (transformações
+            seguras) -> PlanValidator (checagem pós-otimização)
+
+        Passos bloqueados em qualquer uma das duas validações são
+        encaminhados ao Replanner via `_replan_blocked_steps`. Retorna o
+        plano final pronto para execução, ou `None` se a tarefa deve ser
+        abortada (plano estruturalmente inválido, ou impossível de
+        recuperar via replanejamento).
+        """
+        validator = PlanValidator(self.skills, self.active_skills)
+
+        report = validator.validate(plan)
+        for w in report.warnings:
+            logger.info(f"[VALIDATOR] {w}")
+        for e in report.errors:
+            logger.warning(f"[VALIDATOR] {e}")
+
+        if not report.is_valid:
+            logger.warning(f"[VALIDATOR] Plano inválido, abortando tarefa: {report.errors}")
+            self._emit("hard_block", {"reason": "plano inválido", "errors": report.errors})
+            self.fail_task()
+            return None
+
+        if report.blocked_steps:
+            for b in report.blocked_steps:
+                logger.warning(f"[VALIDATOR] Passo {b.index + 1} bloqueado: {b.reason}")
+            plan = self._replan_blocked_steps(plan, objective, report.blocked_steps)
+            if plan is None:
+                self._emit("hard_block", {"reason": "replanejamento de passos bloqueados falhou"})
+                self.fail_task()
+                return None
+
+        optimizer = PlanOptimizer(TOOL_METADATA)
+        opt_report = optimizer.optimize(plan)
+        if opt_report.changed:
+            logger.info(
+                f"[OPTIMIZER] custo {opt_report.cost_before} → {opt_report.cost_after}, "
+                f"{len(opt_report.transformations)} otimização(ões), "
+                f"{opt_report.removed_duplicates} duplicata(s) removida(s)."
+            )
+            if self.verbose:
+                for t in opt_report.transformations:
+                    print(f"[DEBUG][OPTIMIZER] {t}")
+        optimized_plan = opt_report.optimized_steps
+
+        post_report = validator.validate(optimized_plan)
+        for w in post_report.warnings:
+            logger.info(f"[VALIDATOR] (pós-otimização) {w}")
+        for e in post_report.errors:
+            logger.warning(f"[VALIDATOR] (pós-otimização) {e}")
+
+        if not post_report.is_valid:
+            logger.warning(f"[VALIDATOR] Plano inválido após otimização, abortando tarefa: {post_report.errors}")
+            self._emit("hard_block", {"reason": "plano inválido pós-otimização", "errors": post_report.errors})
+            self.fail_task()
+            return None
+
+        if post_report.blocked_steps:
+            for b in post_report.blocked_steps:
+                logger.warning(f"[VALIDATOR] (pós-otimização) Passo {b.index + 1} bloqueado: {b.reason}")
+            optimized_plan = self._replan_blocked_steps(optimized_plan, objective, post_report.blocked_steps)
+            if optimized_plan is None:
+                self._emit("hard_block", {"reason": "replanejamento pós-otimização falhou"})
+                self.fail_task()
+                return None
+
+        return optimized_plan
+
+    def _run_hierarchical(self, objective: str, on_chunk=None) -> Optional[str]:
+        """Tenta resolver `objective` via planejamento hierárquico.
+
+        Gera um `MacroPlan` (decomposição em sub-objetivos), executa cada
+        sub-objetivo isoladamente através do `HierarchicalExecutor` e
+        consolida os resultados em uma única resposta final.
+
+        Retorna a resposta final consolidada em caso de sucesso, ou `None`
+        se o `MacroPlan` não puder ser gerado — nesse caso o chamador
+        (`run`) deve prosseguir com o fluxo linear normal como fallback.
+        """
+        valid_tools = self._get_valid_tool_names()
+
+        def _ask_model(prompt: str, step_type: str) -> Dict[str, Any]:
+            return self.context_manager.ask_model(
+                prompt,
+                step_type=step_type,
+                base_prompt=getattr(self, "_cached_base_prompt", None),
+                log_metric_callback=self._log_metric,
+            )
+
+        planner = HierarchicalPlanner(ask_model=_ask_model, valid_tools=valid_tools)
+
+        try:
+            macro_plan = planner.build_plan(objective)
+        except Exception as e:
+            logger.warning(f"Falha ao gerar MacroPlan, usando fallback linear: {e}")
+            self._emit("hierarchical_fallback", {"reason": str(e)})
+            return None
+
+        if not macro_plan or not macro_plan.steps:
+            if self.verbose:
+                print("[DEBUG] MacroPlan não gerado ou vazio, usando fallback linear.")
+            self._emit("hierarchical_fallback", {"reason": "macro_plan vazio ou não gerado"})
+            return None
+
+        planning_metadata = {
+            "model": (
+                getattr(self.context_manager, "model_name", None)
+                or getattr(self.context_manager, "model", None)
+                or "desconhecido"
+            ),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "prompt": objective,
+        }
+
+        tracker = TaskTracker()
+        tracker.start(objective, macro_plan.steps, planning_metadata)
+
+        summarizer = IncrementalSummarizer(summarize_fn=self._summarize_text)
+
+        executor = HierarchicalExecutor(
+            plan_builder=self.plan_builder,
+            plan_executor=self.plan_executor,
+            final_responder=self.final_responder,
+            context_manager=self.context_manager,
+            session=self.session,
+            tracker=tracker,
+            summarizer=summarizer,
+        )
+
+        tool_usage_count: Dict[str, int] = {}
+        self._emit("hierarchical_started", {"steps": len(macro_plan.steps)})
+        final_answer = executor.execute(macro_plan, self.agent_state, tool_usage_count, on_chunk=on_chunk)
+        self._emit("hierarchical_completed", {"steps": len(macro_plan.steps)})
+        return final_answer
+
     def run(self, objective: Optional[str] = None, stream_callback=None) -> str:
         original_msg_count = len(self.session.messages)
         tool_usage_count: Dict[str, int] = {}
@@ -321,6 +615,9 @@ class Orchestrator:
                     self._reset_task_state(objective)
 
                 self._task_start_time = Watchdog.start_task()
+                # Marca d'água das métricas: apenas entradas gravadas a
+                # partir daqui pertencem ao Relatório da Tarefa atual.
+                self._metrics_start_line = self._count_metrics_lines()
                 print(f"\n🤖 Analisando: \"{objective}\"")
                 logger.info(f"Iniciando objetivo do agente: {objective}")
 
@@ -328,6 +625,7 @@ class Orchestrator:
                     return self._answer_trivial(objective)
 
                 # ---- Plano e roteamento ----
+                hierarchical_answer: Optional[str] = None
                 if resumed and self.agent_state.plan:
                     # Retomada com plano já existente: não roteia nem gera plano.
                     plan = self.agent_state.plan
@@ -343,25 +641,63 @@ class Orchestrator:
                 else:
                     self._route_persona(objective)
                     self._save_checkpoint()
-                    plan, blocked_answer = self.plan_builder.build_plan(objective)
-                    if blocked_answer:
-                        self.agent_state.conversation_history.append(
-                            {"user": objective, "agent": blocked_answer}
-                        )
-                        return blocked_answer
-                    if not plan:
-                        if self.verbose:
-                            print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
-                        return self._run_reactive(objective, tool_usage_count, original_msg_count)
-                    self.agent_state.plan = plan
-                    self._save_checkpoint()
+
+                    # Objetivos complexos (muitos componentes, análise ampla)
+                    # são delegados ao planejamento hierárquico. Se este não
+                    # conseguir gerar um MacroPlan utilizável, o fluxo segue
+                    # normalmente pelo planejamento linear (fallback).
+                    if is_hierarchical(objective):
+                        hierarchical_answer = self._run_hierarchical(objective, on_chunk=stream_callback)
+                        if hierarchical_answer is None and self.verbose:
+                            print("[DEBUG] Planejamento hierárquico indisponível, seguindo fluxo linear.")
+
+                    if hierarchical_answer is None:
+                        plan, blocked_answer = self.plan_builder.build_plan(objective)
+                        if blocked_answer:
+                            self.agent_state.conversation_history.append(
+                                {"user": objective, "agent": blocked_answer}
+                            )
+                            return blocked_answer
+                        if not plan:
+                            if self.verbose:
+                                print("[DEBUG] Plano não gerado ou inválido, usando modo reativo.")
+                            return self._run_reactive(objective, tool_usage_count, original_msg_count)
+
+                        # ---- Pipeline de validação e otimização do plano ----
+                        # PlanValidator (diagnóstico) -> PlanOptimizer (seguro)
+                        # -> PlanValidator (pós-otimização). Passos bloqueados
+                        # acionam o Replanner; um plano estruturalmente
+                        # inválido aborta a tarefa.
+                        plan = self._validate_and_optimize_plan(plan, objective)
+                        if plan is None:
+                            abort_msg = (
+                                "Não foi possível validar um plano seguro para esta tarefa. "
+                                "A execução foi interrompida."
+                            )
+                            self.agent_state.conversation_history.append(
+                                {"user": objective, "agent": abort_msg}
+                            )
+                            return abort_msg
+
+                        self.agent_state.plan = plan
+                        self._save_checkpoint()
 
                 # ---- Execução do plano ----
-                execution_answer = self.plan_executor.execute(objective, tool_usage_count)
-                if execution_answer:
-                    return execution_answer
+                if hierarchical_answer is not None:
+                    final_answer = hierarchical_answer
+                else:
+                    execution_answer = self.plan_executor.execute(objective, tool_usage_count)
+                    if execution_answer:
+                        final_answer = execution_answer
+                    else:
+                        final_answer = self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
 
-                return self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
+                # Após obter a resposta final (e antes do `finally`), gera o
+                # Relatório da Tarefa. Falhas aqui nunca devem impedir a
+                # conclusão da tarefa (ver try/except em _generate_task_report).
+                self._generate_task_report(final_answer)
+
+                return final_answer
 
             except KeyboardInterrupt:
                 # Cancelamento cooperativo: interrompe a execução de forma

@@ -18,6 +18,12 @@ DEFAULT_VALIDATION: Dict[str, Any] = {
     "fail_triggers_replan": False
 }
 
+DEFAULT_TASK_REPORT: Dict[str, Any] = {
+    "enabled": True,
+    "format": "json",       # "json" ou "markdown"
+    "output_dir": "reports/"
+}
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "model": "default",
@@ -26,7 +32,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "timeout": 300,
     "default_system_prompt": DEFAULT_PROMPT,
     "validation": DEFAULT_VALIDATION,
-    "checkpoint_file": "agent_checkpoint.json"
+    "checkpoint_file": "agent_checkpoint.json",
+    "task_report": DEFAULT_TASK_REPORT
 }
 
 def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
@@ -105,5 +112,39 @@ def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
     )
 
     config["validation"] = validacao_raw
+
+    # --- Validação da seção "task_report" (relatório de auditoria da tarefa) ---
+    task_report_raw = config.get("task_report")
+    if not isinstance(task_report_raw, dict):
+        if "task_report" in config:
+            logger.warning("'task_report' deve ser um objeto (dict). Usando valores padrão.")
+        task_report_raw = {}
+        config["task_report"] = task_report_raw
+
+    validar_chave(
+        "enabled", bool,
+        fallback=DEFAULT_TASK_REPORT["enabled"],
+        alvo=task_report_raw, prefixo="task_report.",
+    )
+    validar_chave(
+        "format", str,
+        fallback=DEFAULT_TASK_REPORT["format"],
+        alvo=task_report_raw, prefixo="task_report.",
+    )
+    validar_chave(
+        "output_dir", str,
+        fallback=DEFAULT_TASK_REPORT["output_dir"],
+        alvo=task_report_raw, prefixo="task_report.",
+    )
+
+    formato_valido = task_report_raw.get("format")
+    if formato_valido not in ("json", "markdown"):
+        logger.warning(
+            f"'task_report.format' deve ser 'json' ou 'markdown'. "
+            f"Usando valor padrão: {DEFAULT_TASK_REPORT['format']}"
+        )
+        task_report_raw["format"] = DEFAULT_TASK_REPORT["format"]
+
+    config["task_report"] = task_report_raw
 
     return config

@@ -15,6 +15,12 @@ class PlanExecutor:
         result = None
         self.orchestrator.workspace.create_restore_point(self.orchestrator.agent_state.plan)
 
+        # Detecção automática de dependências entre passos, baseada em arquivos
+        # (ex.: um file_reader que lê um arquivo produzido por um file_writer
+        # anterior). Calculada aqui e recalculada (via _rebuild_dependency_map)
+        # sempre que o plano for alterado pelo replanner.
+        self._rebuild_dependency_map()
+
         i = 0
         while i < len(self.orchestrator.agent_state.plan):
             step = self.orchestrator.agent_state.plan[i]
@@ -29,6 +35,14 @@ class PlanExecutor:
             tool = step["tool"]
             args = step["args"] if isinstance(step["args"], dict) else {}
             file_path = args.get("target") or args.get("file_path") or ""
+
+            # Verifica dependências explícitas entre passos (ex.: um file_reader
+            # que depende de um file_writer anterior ter criado o arquivo com
+            # sucesso). Se alguma dependência falhou, pulamos este passo para
+            # evitar erros em cascata.
+            if not self._check_dependencies_ok(i):
+                i += 1
+                continue
 
             if not self._validate_step(i + 1, tool, args):
                 # Validação falhou – pode ter retornado "replan"
@@ -107,6 +121,105 @@ class PlanExecutor:
             return f"A tarefa não pôde ser concluída. Último erro: {error_msg}"
         return None
 
+    def _build_dependency_map(self, plan: list) -> Dict[int, list]:
+        """Detecta dependências implícitas entre passos, baseadas em arquivos.
+
+        Um passo B depende de um passo A se A produz (file_writer, campo
+        `file_path`) um arquivo que B posteriormente consome (file_reader ou
+        code_analyzer, campo `file_path` ou `target`). O tool `grep` usa
+        `path` para um diretório e é ignorado aqui, pois é um caso menos
+        crítico (não aponta para um arquivo específico produzido no plano).
+
+        Retorna um dicionário no formato:
+            {índice_do_passo_consumidor: [índices_dos_passos_produtores]}
+
+        Também popula `self._dependency_files`, um mapa auxiliar
+        {(consumidor, produtor): file_path} usado em `_check_dependencies_ok`
+        para localizar a entrada correspondente em `tool_history` mesmo que
+        os índices do plano tenham sido alterados por injeção/substituição
+        de passos feita pelo replanner.
+        """
+        dependencies: Dict[int, list] = {}
+        self._dependency_files: Dict[tuple, str] = {}
+
+        producers: Dict[str, int] = {}  # file_path -> índice do passo que o produz
+
+        for idx, step in enumerate(plan):
+            tool = step.get("tool")
+            args = step.get("args") if isinstance(step.get("args"), dict) else {}
+
+            if tool == "file_writer":
+                fp = args.get("file_path")
+                if fp:
+                    # Passo mais recente que escreve nesse arquivo "vence"
+                    # como produtor de referência para dependências futuras.
+                    producers[fp] = idx
+                continue
+
+            if tool in ("file_reader", "code_analyzer"):
+                fp = args.get("file_path") or args.get("target")
+                if fp and fp in producers:
+                    producer_idx = producers[fp]
+                    if producer_idx != idx:
+                        dependencies.setdefault(idx, []).append(producer_idx)
+                        self._dependency_files[(idx, producer_idx)] = fp
+
+            # tool == "grep": usa `path` (diretório), não tratado como
+            # dependência crítica de arquivo único — ignorado por design.
+
+        return dependencies
+
+    def _check_dependencies_ok(self, i: int) -> bool:
+        """Verifica se as dependências (baseadas em arquivo) do passo `i` já
+        foram concluídas com sucesso antes de executá-lo.
+
+        Para cada passo produtor do qual `i` depende, procura em
+        `tool_history` a entrada correspondente (por tool `file_writer` +
+        `file_path`, e não apenas por índice posicional, já que o plano pode
+        ter sido reordenado/modificado pelo replanner) e confere se o
+        resultado foi `ok: true`.
+
+        Se alguma dependência não foi satisfeita (falhou ou nunca chegou a
+        ser executada com sucesso), registra uma falha em `tool_history` e
+        retorna False, sinalizando ao chamador para pular o passo atual sem
+        executá-lo — evitando erros em cascata (ex.: ler um arquivo que o
+        file_writer correspondente falhou em criar).
+
+        # TODO (futuro): em vez de apenas pular o passo, poderíamos acionar
+        # o replanner aqui (via self._attempt_replan) para tentar recuperar
+        # a dependência falha antes de desistir do passo dependente. Por
+        # ora, mantemos o comportamento simples de pular e seguir adiante.
+        """
+        deps = getattr(self, "_step_dependencies", {}).get(i)
+        if not deps:
+            return True
+
+        plan = self.orchestrator.agent_state.plan
+        tool_history = self.orchestrator.agent_state.tool_history
+
+        for dep_idx in deps:
+            file_path = self._dependency_files.get((i, dep_idx))
+            dep_ok = False
+            for h in tool_history:
+                h_args = h.get("args") or {}
+                if h.get("tool") == "file_writer" and h_args.get("file_path") == file_path:
+                    # Considera a execução mais recente encontrada (caso o
+                    # replanner tenha reexecutado o passo produtor).
+                    dep_ok = bool(h.get("result", {}).get("ok"))
+
+            if not dep_ok:
+                if self.orchestrator.verbose:
+                    print(f"[DEBUG] Passo {i+1} depende do passo {dep_idx+1} que falhou. Pulando.")
+
+                step = plan[i] if i < len(plan) else {}
+                step_tool = step.get("tool", "unknown") if isinstance(step, dict) else "unknown"
+                step_args = step.get("args", {}) if isinstance(step, dict) else {}
+                error_result = {"ok": False, "error": f"Dependência falhou: passo {dep_idx+1}"}
+                self.orchestrator.agent_state.record_tool_result(step_tool, step_args, error_result)
+                return False
+
+        return True
+
     def _attempt_replan(self, step: Dict[str, Any], tool: str, args: Dict[str, Any],
                         objective: str, tool_usage_count: Dict[str, int]) -> Optional[list]:
         """Chama o replanner e retorna uma lista de novos passos, ou None."""
@@ -127,6 +240,10 @@ class PlanExecutor:
             self.orchestrator.agent_state.plan.insert(position + j, new_step)
         if self.orchestrator.verbose:
             print(f"[DEBUG] {len(new_steps)} passo(s) injetado(s) pelo replanner na posição {position}.")
+        # O plano mudou de tamanho/ordem: os índices usados no mapa de
+        # dependências ficam inválidos. Recalculamos o mapa a partir do
+        # plano atualizado para manter a detecção de dependências correta.
+        self._rebuild_dependency_map()
 
     def _replace_current_step(self, i: int, new_steps: list) -> None:
         """Remove o passo na posição i e insere os novos passos no lugar."""
@@ -135,6 +252,27 @@ class PlanExecutor:
             self.orchestrator.agent_state.plan.insert(i + j, step)
         if self.orchestrator.verbose:
             print(f"[DEBUG] Passo {i+1} substituído por {len(new_steps)} passo(s) do replanner.")
+        # Mesma justificativa de _inject_steps: substituir um passo desloca
+        # os índices de todos os passos seguintes, então o mapa de
+        # dependências (construído antes do loop) precisa ser refeito.
+        self._rebuild_dependency_map()
+
+    def _rebuild_dependency_map(self) -> None:
+        """Recalcula `self._step_dependencies` a partir do plano atual.
+
+        Deve ser chamado sempre que o plano for alterado em tamanho ou
+        ordem (injeção/substituição de passos pelo replanner), pois os
+        índices usados como chave/valor no mapa de dependências deixam de
+        corresponder aos passos originais após a mutação. A detecção em si
+        (`_build_dependency_map`) é barata — é uma simples varredura linear
+        do plano — então recalcular a cada mutação é seguro.
+
+        Como a detecção é baseada em `file_path` (e não em identidade de
+        objeto), passos já executados antes da mutação continuam sendo
+        corretamente localizados em `tool_history` por `_check_dependencies_ok`,
+        independentemente de seus novos índices.
+        """
+        self._step_dependencies = self._build_dependency_map(self.orchestrator.agent_state.plan)
 
     def _check_cost_limits(self, step_number: int) -> Optional[str]:
         estimated_tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
