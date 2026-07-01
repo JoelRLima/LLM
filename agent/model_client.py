@@ -17,6 +17,39 @@ FALLBACK_AGENT_MAX_TOKENS = 4096
 class ModelClient:
     """Cliente HTTP para comunicação com o modelo LLM."""
 
+    # None = suporte a GBNF ainda não testado neste processo/sessão.
+    # True/False = resultado já conhecido (evita novas tentativas de fallback).
+    _backend_supports_grammar: Optional[bool] = None
+
+    @staticmethod
+    def _is_grammar_unsupported_error(error: Exception) -> bool:
+        """
+        Verifica se a exceção capturada indica que o backend não suporta
+        o parâmetro `grammar` (GBNF) — e não um erro genérico (500,
+        timeout, falha de conexão, etc.).
+
+        Args:
+            error: exceção capturada ao enviar a requisição.
+
+        Returns:
+            True se a condição indicar claramente falta de suporte ao
+            parâmetro `grammar`.
+        """
+        response = getattr(error, "response", None)
+        if response is None:
+            return False
+
+        status_code = getattr(response, "status_code", None)
+        if status_code != 400:
+            return False
+
+        try:
+            body_text = response.text or ""
+        except Exception:
+            body_text = ""
+
+        return "grammar" in body_text.lower()
+
     @staticmethod
     def request(
         session,
@@ -24,6 +57,7 @@ class ModelClient:
         step_type: str = "tool_decision",
         log_metric_callback=None,
         verbose: bool = False,
+        grammar: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Envia uma requisição ao modelo e retorna a decisão parseada.
@@ -34,18 +68,52 @@ class ModelClient:
             step_type: tipo do passo (plan, final, tool_decision).
             log_metric_callback: função para registrar métricas.
             verbose: se True, imprime logs de depuração.
+            grammar: gramática GBNF a ser enviada (campo "grammar" do payload),
+                ou None para não usar gramática. Ignorada se o backend já
+                tiver sinalizado que não suporta o parâmetro.
 
         Returns:
             Dicionário com a decisão (action, tool, args, etc.) ou erro.
         """
         start_time = time.time()
 
+        # Monta o payload da primeira tentativa, incluindo a gramática
+        # apenas se ela foi fornecida e o backend ainda não sinalizou
+        # falta de suporte.
+        request_payload = dict(payload)
+        if grammar is not None and ModelClient._backend_supports_grammar is not False:
+            request_payload["grammar"] = grammar
+
+        # Log de diagnóstico
+        if verbose:
+            has_grammar = "grammar" in request_payload
+            print(f"[DEBUG] GBNF na requisição: {'SIM' if has_grammar else 'NÃO'} (step_type={step_type})")
+
         # Primeira tentativa
         try:
-            response = session.send_non_streaming_request(payload)
+            response = session.send_non_streaming_request(request_payload)
         except Exception as e:
-            logger.error(f"Erro na requisição ao modelo: {e}")
-            response = f"Erro na requisição: {e}"
+            if (
+                "grammar" in request_payload
+                and ModelClient._backend_supports_grammar is None
+                and ModelClient._is_grammar_unsupported_error(e)
+            ):
+                logger.warning(
+                    "[GRAMMAR] Backend does not support GBNF. Disabling for this session."
+                )
+                ModelClient._backend_supports_grammar = False
+
+                fallback_payload = dict(request_payload)
+                fallback_payload.pop("grammar", None)
+                try:
+                    response = session.send_non_streaming_request(fallback_payload)
+                    request_payload = fallback_payload
+                except Exception as e2:
+                    logger.error(f"Erro na requisição ao modelo: {e2}")
+                    response = f"Erro na requisição: {e2}"
+            else:
+                logger.error(f"Erro na requisição ao modelo: {e}")
+                response = f"Erro na requisição: {e}"
 
         if verbose:
             print(" ✓")

@@ -60,13 +60,17 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ```text
 .
 ├── agent
-│   ├── cancellation.py          ← NOVO
-│   ├── complexity.py            ← NOVO
-│   ├── hierarchical_executor.py ← NOVO
-│   ├── hierarchical_planner.py  ← NOVO
-│   ├── incremental_summarizer.py← NOVO
-│   ├── task_report.py           ← NOVO
-│   ├── task_tracker.py          ← NOVO
+│   ├── grammars.py             
+│   ├── plan_optimizer.py       
+│   ├── plan_validator.py       
+│   ├── tool_metadata.py        
+│   ├── cancellation.py         
+│   ├── complexity.py           
+│   ├── hierarchical_executor.py
+│   ├── hierarchical_planner.py
+│   ├── incremental_summarizer.py
+│   ├── task_report.py
+│   ├── task_tracker.py
 │   ├── health_check.py
 │   ├── semantic_memory.py
 │   ├── __init__.py
@@ -164,12 +168,14 @@ Encapsula o gerenciamento de sessões do chat e comunicação direta com a API d
 * **Payloads:** Monta dinamicamente a estrutura de requisições, injetando instruções de raciocínio no prompt de sistema (`[THINKING]`) e adicionando parâmetros de controle de templates como `enable_thinking`.
 * **Streaming e Streaming Parser (`process_stream`):** Analisa o protocolo de stream SSE (Server-Sent Events) retornado do endpoint `/v1/chat/completions`, extraindo e enviando trechos de texto em tempo real para os callbacks de pensamento (`reasoning_content`) e de resposta final (`content`).
 * **Função Auxiliar (`extrair_json`):** (Removida durante a refatoração — a lógica de extração de JSON está centralizada em `agent/parsers.py`).
+* **Suporte a GBNF:** O método `build_payload` aceita um parâmetro opcional `grammar` que, quando fornecido, inclui o campo `"grammar"` no payload da requisição, forçando o LLM a gerar saída no formato especificado.
 
 ### 3.4. [config.py](config.py)
 Carrega o arquivo `config.json` e realiza validações minuciosas de segurança e tipos de dados:
 * **Fallbacks:** Se uma chave não for encontrada ou tiver o tipo errado (ex.: `temperature` com string ou fora do intervalo [0.0, 2.0]), ele emite um aviso no logger e adota os valores padrões descritos no dicionário `DEFAULT_CONFIG`.
 * **Padrões de Prompt:** Define o comportamento padrão do assistente para pensar em inglês e responder em português brasileiro.
 * **Nova chave `validation`**: Valida a configuração de validação automática pós-modificação, com subcampos `enabled`, `ruff`, `mypy`, `pytest`, `pytest_dir` e `fail_triggers_replan`, todos com fallbacks seguros.
+* **Nova chave `ENABLE_GBNF`**: Ativa ou desativa globalmente o uso de gramáticas GBNF. Padrão: `true`.
 
 ### 3.5. [logger.py](logger.py)
 Configura a infraestrutura de logging do sistema.
@@ -211,6 +217,7 @@ Arquivo de template da configuração. Copie-o para `config.json` e ajuste os va
 | `task_report.enabled` | `bool` | `true` | Ativa/desativa a geração do relatório da tarefa. |
 | `task_report.format` | `string` | `"json"` | Formato do relatório (`"json"` ou `"markdown"`). |
 | `task_report.output_dir` | `string` | `"reports/"` | Diretório onde os relatórios serão salvos. |
+| `ENABLE_GBNF` | `bool` | `true` | Ativa/desativa o uso de gramáticas GBNF nas requisições ao LLM. |
 
 ### 3.9. [pyproject.toml](pyproject.toml) e [requirements.txt](requirements.txt)
 Configurações de ambiente. O arquivo `pyproject.toml` especifica as regras de lint do `ruff` (limite de 120 caracteres por linha, regras de import) e do verificador estático `mypy`. O arquivo `requirements.txt` lista pacotes necessários, incluindo `requests` para requisições HTTP, `pytest` para testes unitários, `rich` para formatação visual e `ddgs` para buscas web.
@@ -279,6 +286,7 @@ Administra a janela de contexto de tokens e otimiza o tráfego de dados para a A
 * **Compactação de Leituras (`build_compact_view`):** Quando o histórico atinge limites elevados, localiza leituras de arquivos passadas e as substitui por seus resumos técnicos extraídos da memória, poupando espaço útil no prompt.
 * **Mapeamento de Linhas (`get_file_hints`):** Busca menções a arquivos no objetivo do usuário para expor o total de linhas de cada arquivo, ajudando o modelo a decidir a paginação de leitura.
 * **Comunicação com o Modelo (`ask_model`):** Prepara o contexto completo (system prompt, histórico, memória) e delega a requisição HTTP ao `ModelClient`.
+* **Seleção automática de gramática:** O método `ask_model` aceita um parâmetro `grammar` que, por padrão (`AUTO_GRAMMAR`), seleciona automaticamente a gramática GBNF apropriada com base no `step_type`. Pode ser sobrescrito com uma string explícita ou desabilitado com `None`.
 
 ### 4.7. [plan_builder.py](agent/plan_builder.py)
 Interage com o modelo de linguagem especificamente para estruturar um plano de ações:
@@ -356,6 +364,7 @@ Cliente HTTP para comunicação com o modelo LLM. Extraído do `ContextManager` 
 * **`request(session, payload, step_type, log_metric_callback, verbose) -> dict`:** Envia uma requisição ao modelo, processa a resposta (incluindo retry com mais tokens em caso de truncamento), coleta métricas (timestamp, step_type, tool, budget, tokens, duração, sucesso) e retorna a decisão parseada.
 * **Fallback de tokens:** Utiliza `FALLBACK_AGENT_MAX_TOKENS = 4096` para o retry.
 * **Separação de responsabilidades:** O `ContextManager` não depende mais de `requests`, `time` ou `extract_json` para a comunicação com o modelo, facilitando a troca do backend de comunicação no futuro.
+* **Suporte a GBNF:** O método `request` aceita um parâmetro opcional `grammar`. Se fornecido e o backend suportar, o campo `"grammar"` é incluído no payload. Um fallback automático detecta backends incompatíveis (erro 400 com "grammar") e desabilita a funcionalidade para a sessão, com cache (`_backend_supports_grammar`) para evitar novas tentativas.
 
 ### 4.18. [watchdog.py](agent/watchdog.py) 🆕
 Monitora a execução de uma tarefa e decide quando abortar por segurança ou falta de progresso, sem nenhuma chamada adicional ao LLM. Atua como uma camada de proteção independente do `CostGuard` e dos hard blocks do `PlanExecutor`:
@@ -434,6 +443,31 @@ Rastreador de progresso da execução hierárquica. Mantém um arquivo JSON estr
 * **Enums**: `StepStatus` (PENDING, RUNNING, COMPLETED, FAILED, SKIPPED) e `TaskStatus` (RUNNING, COMPLETED, FAILED).
 * Todas as gravações são atômicas e falhas de I/O nunca escapam para o chamador.
 
+### 4.29. [grammars.py](agent/grammars.py) 🆕
+Infraestrutura de suporte a gramáticas GBNF (GGML BNF) para forçar o LLM a gerar JSON estruturalmente válido.
+* **Gramáticas por `step_type`**: define strings GBNF para `plan`, `macro_plan`, `tool_decision`, `final`, `summarize` e `replan`.
+* **Sentinela `AUTO_GRAMMAR`**: indica que a gramática deve ser escolhida automaticamente com base no `step_type`.
+* **`get_grammar(step_type) -> str | None`**: retorna a gramática apropriada, respeitando a flag `ENABLE_GBNF` de `config.py`.
+* **Integração**: usado por `ContextManager.ask_model()` para injetar o campo `grammar` no payload automaticamente. A validação semântica permanece como responsabilidade do `PlanValidator`.
+
+### 4.30. [tool_metadata.py](agent/tool_metadata.py) 🆕
+Metadados estáticos de custo e características das ferramentas, usados pelo `PlanValidator` e `PlanOptimizer`.
+* **`ToolMetadata` (dataclass)**: `cost`, `reads_disk`, `writes_disk`, `modifies_workspace`, `cacheable`, `side_effects`, `category` (READ, WRITE, EXECUTE, SEARCH, ANALYZE, NETWORK).
+* **`TOOL_METADATA`**: dicionário mapeando nome da ferramenta → `ToolMetadata` para todas as skills.
+* **`estimate_step_cost(tool, args) -> int`**: refina o custo para `file_reader` (parcial vs inteiro) e `file_writer` (por ação: patch, ast_patch, write).
+
+### 4.31. [plan_validator.py](agent/plan_validator.py) 🆕
+Validador de planos que apenas diagnostica, nunca modifica. Executado antes e depois do `PlanOptimizer`.
+* **`ValidationReport`**: `is_valid`, `errors`, `warnings`, `blocked_steps` (lista de `BlockedStep` com `index` e `reason`).
+* **Validações**: schema e ferramentas, esvaziamento de `analysis_notes.md`, patch sem leitura prévia (aviso), escritas consecutivas (aviso), dependências invertidas (bloqueio).
+* **Integração**: chamado pelo `Orchestrator` após a geração do plano e após a otimização. Passos bloqueados são encaminhados ao `Replanner`.
+
+### 4.32. [plan_optimizer.py](agent/plan_optimizer.py) 🆕
+Otimizador de planos que aplica apenas transformações comprovadamente equivalentes.
+* **`OptimizationReport`**: `optimized_steps`, `removed_duplicates`, `cost_before`, `cost_after`, `cost_details`, `transformations`, `changed`.
+* **Otimizações seguras**: remoção de duplicatas exatas (apenas ferramentas `cacheable`), reordenação de leituras/buscas/análises independentes (nunca move ferramentas com `side_effects=True`).
+* **Nunca** insere passos novos, converte ferramentas ou altera argumentos. Usa `ToolMetadata` para todas as decisões.
+
 ---
 
 ## 5. Mapeamento de Ferramentas (Skills) em `agent/skills/`
@@ -487,6 +521,7 @@ O sistema possui testes automatizados implementados com a ferramenta `pytest`. O
 * **[test_hello.py](tests/test_hello.py) e [test_temp.py](tests/test_temp.py):** Verificações e validações de infraestrutura de testes básicas.
 * **[test_orchestrator.py](tests/test_orchestrator.py):** Concentra a validação dos parsers do orquestrador. Testa exaustivamente a extração de JSONs embutidos em blocos de códigos markdown limpos ou misturados a textos explicativos, a validação de contratos estruturais de decisão (final vs tool) e o comportamento da higienização e classificação de erros nas respostas das ferramentas.
 * **[test_session.py](tests/test_session.py):** Foca nas funcionalidades de `ChatSession`, testando a manipulação do histórico de mensagens, injeção de parâmetros de raciocínio no prompt de sistema e montagem apropriada do payload de rede.
+* **[test_grammar.py](tests/test_grammar.py):** Testa a infraestrutura de GBNF — inclusão do campo `grammar` no payload, seleção automática por `step_type`, override explícito, desabilitação via `grammar=None`, fallback em erro 400, cache de backend após fallback, e a flag `ENABLE_GBNF`.
 
 ---
 
@@ -521,3 +556,6 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Configurar relatório da tarefa** | `config.json` → chave `task_report` | Altere `enabled`, `format` (`json`/`markdown`) ou `output_dir`. |
 | **Configurar checkpointing** | `config.json` → chave `checkpoint_file` | Altere o caminho do arquivo de checkpoint. |
 | **Retomar tarefa interrompida** | `/retry` na CLI | Restaura o estado a partir do checkpoint e continua a execução. |
+| **Ativar/desativar gramáticas GBNF** | `config.json` → chave `ENABLE_GBNF` | Altere para `false` para desabilitar globalmente. |
+| **Ajustar gramáticas GBNF** | `agent/grammars.py` | Edite as strings GBNF ou adicione novas entradas no dicionário `GRAMMARS`. |
+| **Ajustar metadados de ferramentas** | `agent/tool_metadata.py` | Altere custos, categorias ou flags de `side_effects`/`cacheable`. |

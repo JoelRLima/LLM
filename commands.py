@@ -126,6 +126,7 @@ def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
             set_debug_level(0)
             console.print("[bold green]🔧 Diagnóstico DESLIGADO.[/bold green]")
         ctx.orchestrator.verbose = (ctx.modo_diagnostico >= 1)
+        ctx.orchestrator.context_manager.verbose = ctx.orchestrator.verbose
         return True, False
 
     if cmd.startswith("/agent") or cmd.startswith("/agente"):

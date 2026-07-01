@@ -33,7 +33,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "default_system_prompt": DEFAULT_PROMPT,
     "validation": DEFAULT_VALIDATION,
     "checkpoint_file": "agent_checkpoint.json",
-    "task_report": DEFAULT_TASK_REPORT
+    "task_report": DEFAULT_TASK_REPORT,
+    "ENABLE_GBNF": True
 }
 
 def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
@@ -91,6 +92,7 @@ def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
     validar_chave("timeout", (int, float), min_val=1, fallback=DEFAULT_CONFIG["timeout"])
     validar_chave("default_system_prompt", str, fallback=DEFAULT_CONFIG["default_system_prompt"])
     validar_chave("checkpoint_file", str, fallback=DEFAULT_CONFIG["checkpoint_file"])
+    validar_chave("ENABLE_GBNF", bool, fallback=DEFAULT_CONFIG["ENABLE_GBNF"])
 
     # --- Validação da seção "validation" (validação automática pós-modificação) ---
     validacao_raw = config.get("validation")

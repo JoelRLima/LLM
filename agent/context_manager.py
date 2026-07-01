@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from agent.error_handler import ErrorHandler
+from agent.grammars import AUTO_GRAMMAR, AutoGrammar, get_grammar
 from agent.model_client import ModelClient
 from agent.prompts import AGENT_SYSTEM_PROMPT
 from agent.state import AgentState
@@ -305,10 +306,21 @@ class ContextManager:
         step_type: str = "tool_decision",
         base_prompt: str = None,
         log_metric_callback=None,
+        grammar: str | None | AutoGrammar = AUTO_GRAMMAR,
     ) -> Dict[str, Any]:
         """
         Prepara o contexto e delega a comunicação HTTP ao ModelClient.
+
+        Args:
+            grammar: gramática GBNF a usar. Por padrão (AUTO_GRAMMAR), a
+                gramática é escolhida automaticamente com base em
+                `step_type`. Passe uma string para sobrescrever, ou None
+                para desabilitar a gramática nesta chamada.
         """
+        if isinstance(grammar, AutoGrammar):
+            effective_grammar = get_grammar(step_type)
+        else:
+            effective_grammar = grammar
         original_messages = [m.copy() for m in self.session.messages]
         original_system_content = (
             self.session.messages[0]["content"] if self.session.messages else ""
@@ -365,6 +377,7 @@ class ContextManager:
                 step_type=step_type,
                 log_metric_callback=log_metric_callback,
                 verbose=self.verbose,
+                grammar=effective_grammar,
             )
 
             return decision

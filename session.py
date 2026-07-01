@@ -1,6 +1,6 @@
 import json
 import requests
-from typing import List, Dict, Callable, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from logger import logger
 
 class ChatSession:
@@ -83,7 +83,11 @@ class ChatSession:
 
     # ---- Construção de payloads ----
 
-    def build_payload(self, response_format: Optional[str] = None) -> Dict[str, Any]:
+    def build_payload(
+        self,
+        response_format: Optional[str] = None,
+        grammar: Optional[str] = None,
+    ) -> Dict[str, Any]:
         system_content = self.get_effective_system_prompt()
         if response_format:
             system_content += "\n\n" + response_format
@@ -102,6 +106,8 @@ class ChatSession:
                 "thinking_budget": self.thinking_budget if self.thinking_budget > 0 else 0
             }
         }
+        if grammar is not None:
+            payload["grammar"] = grammar
         return payload
 
     # ---- Envio de requisições ----
@@ -198,4 +204,3 @@ class ChatSession:
             callbacks["on_done"](ultimo_timings)
 
         return resposta_visivel.strip()
-
