@@ -43,6 +43,23 @@ class FinalResponder:
                 "Não use ferramentas. Apenas texto."
             )
 
+        # Se for uma análise de segurança, adiciona instruções de autocrítica e formato
+        if self._is_security_objective(objective):
+            final_prompt += (
+                "\n\n--- INSTRUÇÕES ADICIONAIS PARA AUDITORIA DE SEGURANÇA ---\n"
+                "1. Revise sua resposta e remova qualquer afirmação que não tenha "
+                "evidência direta no código lido. Corrija falsos positivos.\n"
+                "2. Garanta que o relatório final siga esta estrutura:\n"
+                "   ## Resumo Executivo\n"
+                "   ## Tabela de Achados\n"
+                "   | Título | Severidade | Confiança | Arquivo | Função | Linha |\n"
+                "   ## Detalhamento Técnico\n"
+                "   ## Fluxos de Exploração\n"
+                "   ## Limitações da Análise\n"
+                "3. Se o relatório não estiver nesse formato, reescreva-o agora.\n"
+                "4. Diferencie claramente fatos confirmados de hipóteses."
+            )
+
         self.orchestrator.session.add_user_message(final_prompt)
         final_payload = self.orchestrator.session.build_payload()
         final_payload["max_tokens"] = 4096
@@ -66,12 +83,6 @@ class FinalResponder:
 
         if isinstance(resposta_completa, str) and resposta_completa.strip():
             answer = resposta_completa.strip()
-            if answer.startswith("{"):
-                try:
-                    parsed = json.loads(answer)
-                    answer = parsed.get("answer", answer)
-                except Exception:
-                    pass
         else:
             answer = "Não foi possível gerar uma resposta final."
 
@@ -93,3 +104,13 @@ class FinalResponder:
 
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
+
+    def _is_security_objective(self, objective: str) -> bool:
+        """Detecta se o objetivo é uma análise de segurança."""
+        keywords = [
+            "segurança", "security", "auditoria", "audit", "vulnerabilidade",
+            "vulnerability", "owasp", "cwe", "exploit", "ameaça", "threat",
+            "command injection", "path traversal", "sandbox escape",
+            "hardcoded", "secret", "crypto", "race condition", "auditor"
+        ]
+        return any(kw in objective.lower() for kw in keywords)

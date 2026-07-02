@@ -206,6 +206,84 @@ class Orchestrator:
         if event_type == "tool_end":
             self._save_checkpoint()
 
+    def _is_security_objective(self, objective: str) -> bool:
+        """Detecta se o objetivo é uma análise de segurança."""
+        keywords = [
+            "segurança", "security", "auditoria", "audit", "vulnerabilidade",
+            "vulnerability", "owasp", "cwe", "exploit", "ameaça", "threat",
+            "command injection", "path traversal", "eval", "exec", "subprocess",
+            "sandbox", "hardcoded", "secret", "crypto", "race condition"
+        ]
+        return any(kw in objective.lower() for kw in keywords)
+
+    def _handle_security_analysis(self, objective: str, stream_callback=None) -> Optional[str]:
+        """
+        Realiza análise de segurança utilizando o code_analyzer (modo security)
+        e o SecurityScanner, depois envia os fatos estruturados ao LLM.
+        Retorna a resposta final ou None se não for possível prosseguir.
+        """
+        from agent.security_scanner import consolidate
+        import json
+
+        # 1. Identificar o arquivo alvo (usa a dica de arquivo do context_manager)
+        file_hints = self.context_manager.get_file_hints(objective)
+        target_file = None
+        if file_hints:
+            for line in file_hints.split("\n"):
+                if ".py" in line:
+                    target_file = line.strip("- ").split(" ")[0]
+                    break
+        if not target_file:
+            return None  # fallback para fluxo linear
+
+        # 2. Executar code_analyzer em modo security
+        skill = self.skills.get("code_analyzer")
+        if not skill:
+            return None
+
+        result = skill.execute({"target": target_file, "mode": "security"})
+        if not result.get("ok"):
+            return None
+
+        # 3. Consolidar achados
+        findings = consolidate(result.get("data", {}))
+        if not findings:
+            # Sem achados: leitura normal do arquivo e resposta padrão
+            self.agent_state.plan = [{"tool": "file_reader", "args": {"file_path": target_file}}]
+            self.plan_executor.execute(objective, {})
+            return self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
+
+        # 4. Priorizar top 10 achados
+        top_findings = sorted(findings, key=lambda f: f.metadata.get("default_priority", 0), reverse=True)[:10]
+
+        # 5. Montar prompt enxuto com os fatos
+        facts_json = json.dumps(
+            [{"id": f.pattern_id, "padrão": f.pattern, "arquivo": f.location,
+            "linha": f.start_line, "símbolo": f.symbol, "trecho": f.snippet,
+            "por_que": f.metadata.get("why_interesting", "")}
+            for f in top_findings],
+            indent=2, ensure_ascii=False
+        )
+
+        security_prompt = (
+            f"Você é um auditor de segurança. Analise os seguintes fatos extraídos "
+            f"do arquivo '{target_file}' e produza um relatório estruturado.\n\n"
+            f"**Fatos detectados:**\n{facts_json}\n\n"
+            f"**Objetivo original:** {objective}\n\n"
+            f"Para cada achado, confirme se é uma vulnerabilidade real, classifique "
+            f"a severidade e descreva o cenário de exploração."
+        )
+
+        # 6. Chamar o FinalResponder diretamente com o prompt enxuto
+        # (substitui a mensagem do usuário temporariamente)
+        original_user_msg = self.session.messages[-1]["content"] if self.session.messages else ""
+        self.session.messages[-1]["content"] = security_prompt
+        answer = self.final_responder.build_final_answer(objective, on_chunk=stream_callback)
+        self.session.messages[-1]["content"] = original_user_msg
+        return answer
+
+
+
     def _log_metric(self, entry: Dict[str, Any]) -> None:
         try:
             with open(AGENT_METRICS_FILE, "a", encoding="utf-8") as f:
@@ -652,6 +730,12 @@ class Orchestrator:
                             print("[DEBUG] Planejamento hierárquico indisponível, seguindo fluxo linear.")
 
                     if hierarchical_answer is None:
+                        if self._is_security_objective(objective):
+                            security_result = self._handle_security_analysis(objective, stream_callback)
+                            if security_result:
+                                final_answer = security_result
+                                self._generate_task_report(final_answer)
+                                return final_answer
                         plan, blocked_answer = self.plan_builder.build_plan(objective)
                         if blocked_answer:
                             self.agent_state.conversation_history.append(

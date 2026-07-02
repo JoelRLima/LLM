@@ -53,6 +53,64 @@ PLANNING_GUIDANCE = (
 class PlanBuilder:
     def __init__(self, orchestrator: Any):
         self.orchestrator = orchestrator
+    
+    def build_security_plan(self, objective: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+        """
+        Constrói um plano de segurança que primeiro executa o code_analyzer
+        no modo security, depois consolida os achados com o SecurityScanner,
+        e por fim chama o LLM apenas com os fatos estruturados.
+        """
+        import os
+        from agent.security_scanner import consolidate
+        import json
+
+        # Extrai o nome do arquivo alvo do objetivo
+        # (heurística simples: pega o primeiro .py mencionado)
+        file_hints = self.orchestrator.context_manager.get_file_hints(objective)
+        target_file = None
+        if file_hints:
+            # get_file_hints retorna algo como "- cli.py (200 linhas)"
+            for line in file_hints.split("\n"):
+                if ".py" in line:
+                    target_file = line.strip("- ").split(" ")[0]
+                    break
+
+        if not target_file:
+            # Fallback: plano normal
+            return self.build_plan(objective)
+
+        # 1. Executa code_analyzer no modo security
+        skill = self.orchestrator.skills.get("code_analyzer")
+        if not skill:
+            return self.build_plan(objective)
+
+        result = skill.execute({"target": target_file, "mode": "security"})
+        if not result.get("ok"):
+            return self.build_plan(objective)
+
+        # 2. Consolida os achados
+        findings = consolidate(result.get("data", {}))
+
+        if not findings:
+            # Sem achados: gera um plano simples de leitura
+            return [{"tool": "file_reader", "args": {"file_path": target_file}}], None
+
+        # 3. Prioriza os top 10 achados (contexto limitado)
+        top_findings = findings[:10]
+        facts_text = json.dumps(
+            [{"id": f.pattern_id, "pattern": f.pattern, "file": f.location,
+            "line": f.start_line, "symbol": f.symbol, "snippet": f.snippet,
+            "why": f.metadata.get("why_interesting", "")}
+            for f in top_findings],
+            indent=2, ensure_ascii=False
+        )
+
+        # 4. Cria um plano que primeiro lê o arquivo, depois chama o LLM
+        #    com os fatos estruturados como contexto
+        plan = [
+            {"tool": "file_reader", "args": {"file_path": target_file}},
+        ]
+        return plan, None
 
     def build_plan(self, objective: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         if os.path.exists("analysis_notes.md"):

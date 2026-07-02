@@ -60,6 +60,8 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ```text
 .
 ├── agent
+│   ├── security_patterns.py
+│   ├── security_scanner.py
 │   ├── grammars.py             
 │   ├── plan_optimizer.py       
 │   ├── plan_validator.py       
@@ -124,7 +126,8 @@ Abaixo está a representação estrutural das pastas e arquivos sob controle de 
 ├── task_tracker.json            ← NOVO (artefato de tracking)
 ├── task_tracker.md              ← NOVO (artefato de tracking)
 ├── reports/                     ← NOVO (relatórios de tarefa)
-└── tests
+├── tests
+│   ├── test_grammar.py          ← NOVO
     ├── __init__.py
     ├── test_config.py
     ├── test_hello.py
@@ -278,6 +281,7 @@ Armazena a constante de prompt de sistema global do agente (`AGENT_SYSTEM_PROMPT
 * O formato estrito de saída em JSON.
 * A necessidade de consultar informações e ler arquivos usando ferramentas adequadas em vez de deduzir seus conteúdos.
 * Regras para o uso de memória de sessão.
+* **Personas centralizadas**: Todas as personas (`CODER_PROMPT`, `RESEARCHER_PROMPT`, `GENERAL_PROMPT`, `SECURITY_AUDITOR_PROMPT`) são definidas como constantes neste módulo, permitindo manutenção centralizada.
 
 ### 4.6. [context_manager.py](agent/context_manager.py)
 Administra a janela de contexto de tokens e otimiza o tráfego de dados para a API. Após a refatoração (Fix 5), a comunicação HTTP foi extraída para `ModelClient`, permitindo que o `ContextManager` foque exclusivamente na preparação do contexto:
@@ -345,6 +349,7 @@ Executa a triagem inteligente de prompts e ferramentas:
 * Utiliza busca de palavras-chave para detectar listagens estritas (`general`), tarefas de código (`coder`) ou pesquisas web (`researcher`).
 * Se houver ambiguidade, submete o objetivo ao LLM sob o prompt `ROUTER_PROMPT` para obter a persona final em formato JSON.
 * Cada persona ativa um subset de ferramentas e injeta regras de comportamento específicas no prompt inicial.
+* **Nova persona `security_auditor`**: Detectada por palavras-chave (segurança, vulnerabilidade, auditoria, etc.) e também disponível via LLM Router. Utiliza ferramentas de leitura/análise sem `file_writer`.
 
 ### 4.15. [error_handler.py](agent/error_handler.py)
 Centraliza o tratamento, sanitização e logging de erros em todo o agente:
@@ -468,6 +473,18 @@ Otimizador de planos que aplica apenas transformações comprovadamente equivale
 * **Otimizações seguras**: remoção de duplicatas exatas (apenas ferramentas `cacheable`), reordenação de leituras/buscas/análises independentes (nunca move ferramentas com `side_effects=True`).
 * **Nunca** insere passos novos, converte ferramentas ou altera argumentos. Usa `ToolMetadata` para todas as decisões.
 
+### 4.33. [security_patterns.py](agent/security_patterns.py) 🆕
+Banco de dados de padrões de segurança. NÃO contém lógica — apenas metadados.
+* **`PATTERN_DATABASE`**: dicionário com 12 padrões (execução, desserialização, criptografia fraca, segredos, path traversal, injeção, misconfig).
+* Cada padrão possui: `pattern_id`, `pattern`, `family`, `cwe`, `owasp`, `why_interesting`, `default_priority`.
+* **`lookup(pattern_id) -> dict`**: retorna os metadados do padrão ou `{}` se não encontrado.
+
+### 4.34. [security_scanner.py](agent/security_scanner.py) 🆕
+Consolidador de fatos de segurança. NÃO usa LLM, NÃO executa ferramentas.
+* **`Finding` (dataclass)**: `pattern_id`, `pattern`, `location`, `start_line`, `end_line`, `symbol`, `snippet` (máx 120 chars), `detection_method`, `metadata`.
+* **`consolidate(code_analyzer_result, grep_results) -> List[Finding]`**: normaliza, trunca snippets, remove duplicatas e enriquece com metadados do `security_patterns.py`.
+* Nenhuma inferência de severidade ou risco — apenas fatos.
+
 ---
 
 ## 5. Mapeamento de Ferramentas (Skills) em `agent/skills/`
@@ -511,6 +528,8 @@ Toda skill **deve** herdar de `BaseSkill` e implementar os seguintes membros:
 | `session_memory` | `SessionMemorySkill` | Edita a memória do agente. | Facilita a leitura, inserção e deleção de dados na chave `key_findings` da memória. |
 | `calculator` | `CalculatorSkill` | Avalia expressões matemáticas. | Realiza cálculo seguro por parsing de AST de operadores simples e funções matemáticas da biblioteca padrão (`sqrt`, `sin`, `log`, etc.), sem usar `eval()` nativo. |
 | `echo` | `EchoSkill` | Repete o input fornecido. | Utilizado para teste básico de infraestrutura. |
+| `code_analyzer` | `CodeAnalyzerSkill` | Analisa arquivos Python e gera mapa estrutural com dependências de chamadas. | **Modos:** `file` (único arquivo), `directory` (diretório inteiro), `security` (extrai fatos observáveis via AST para análise de segurança). Suporta modo compacto para visão geral. **Modo `security`**: extrai imports classificados, fontes de entrada, chamadas perigosas, acesso a filesystem/rede/criptografia e call graph simples. Snippets truncados em 120 caracteres. Nenhuma decisão de vulnerabilidade é tomada — apenas fatos. |
+
 
 ---
 
@@ -559,3 +578,5 @@ Se você precisar corrigir um problema ou implementar um aprimoramento no projet
 | **Ativar/desativar gramáticas GBNF** | `config.json` → chave `ENABLE_GBNF` | Altere para `false` para desabilitar globalmente. |
 | **Ajustar gramáticas GBNF** | `agent/grammars.py` | Edite as strings GBNF ou adicione novas entradas no dicionário `GRAMMARS`. |
 | **Ajustar metadados de ferramentas** | `agent/tool_metadata.py` | Altere custos, categorias ou flags de `side_effects`/`cacheable`. |
+| **Adicionar novo padrão de segurança** | `agent/security_patterns.py` | Adicione uma entrada ao dicionário `PATTERN_DATABASE`. |
+| **Ajustar mapeamento de tipos para padrões** | `agent/security_scanner.py` | Altere o dicionário `_TYPE_TO_PATTERN`. |

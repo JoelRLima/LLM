@@ -3,6 +3,9 @@ import re
 from typing import Tuple, List
 from session import ChatSession
 from logger import logger
+from agent.prompts import (
+    CODER_PROMPT, RESEARCHER_PROMPT, GENERAL_PROMPT, SECURITY_AUDITOR_PROMPT
+)
 
 ROUTER_PROMPT = """You are a Router Agent.
 Your job is to analyze the user's objective and decide which Agent Persona is best suited for the task.
@@ -11,69 +14,12 @@ Available Personas:
 1. "coder": For writing, analyzing, modifying code, or reading the local file system / git repository.
 2. "researcher": For looking up information on the web, summarizing articles, or answering general knowledge questions that require web access.
 3. "general": For simple chat, math, or tasks that don't fit the above.
+4. "security_auditor": For security auditing, vulnerability analysis, threat modeling, and identifying insecure code patterns.
 
 You MUST respond ONLY with a JSON object containing the chosen persona. No extra text.
 Format:
 {"persona": "coder"}
 """
-
-PERSONA_PROMPTS = {
-    "coder": """You are an Expert Software Engineer Agent.
-
-**Core Rules for Code Analysis:**
-- When asked to analyze a specific file:
-  1. Use code_analyzer with mode='file' and compact=true to get the list of functions/classes.
-  2. Read the file content with file_reader (informe apenas o file_path).
-  3. For modifications, prefer file_writer with action='ast_patch' (functions/classes) or action='patch' (text lines).
-  4. Only use action='write' to create a new file or replace the entire content.
-
-- When asked to explore a directory: use code_analyzer with mode='directory' and compact=true.
-- NEVER use code_analyzer with include_code=true.
-- General coding: use python_executor, grep, git, session_memory.
-- Always respond in Portuguese (Brazil).
-""",
-
-    "researcher": """You are an Expert Researcher Agent.
-
-**Core Rules for Research:**
-- When asked to search the web:
-  1. Use web_search with appropriate search terms.
-  2. After receiving results, summarize the key findings in Portuguese.
-  3. Cite your sources when available.
-
-- When asked to summarize long texts:
-  - Use summarize to condense information.
-  - Present the summary in clear, structured Portuguese.
-
-- General knowledge questions:
-  - If you can answer from your training, do so directly.
-  - If you need current or external information, use web_search first.
-
-- Use session_memory to store research findings for later reference.""",
-
-    "general": """You are a General Assistant Agent.
-
-**Core Rules for General Interaction:**
-- For casual conversation, greetings, or simple questions:
-  - Respond directly in Portuguese in a friendly, helpful manner.
-  - Do NOT use any tools unless absolutely necessary.
-
-- For simple requests to list, show, or display files/directories:
-  - Use directory_lister to get the items.
-  - Present the list in a clean, readable format (ex.: bullet points or a simple table).
-  - Do NOT add analysis, suggestions, or extra commentary. Just show what was requested.
-
-- For simple math or conversions:
-  - If it's trivial, answer directly.
-  - If it requires computation, use python_executor. The code MUST use print() to display the result. Never pass expressions without print().
-
-- You have access to tools, but only use them when the user's request clearly requires them.
-- Keep responses natural and conversational.
-
-- **CRITICAL**: For ALL responses, including simple greetings, you MUST respond ONLY in JSON format. No extra text.
-  Format: {"action":"final","answer":"<your response in Portuguese>"}
-"""
-}
 
 TRIVIAL_GREETINGS = {
     "oi", "olá", "ola", "bom dia", "boa tarde", "boa noite",
@@ -95,14 +41,18 @@ def _is_clearly_trivial(objective: str) -> bool:
 
 def get_persona_config(persona: str) -> Tuple[str, List[str]]:
     if persona == "coder":
-        return (PERSONA_PROMPTS["coder"],
+        return (CODER_PROMPT,
                 ["file_reader", "file_writer", "shell", "directory_lister",
                  "code_analyzer", "grep", "python_executor", "git", "session_memory"])
     elif persona == "researcher":
-        return (PERSONA_PROMPTS["researcher"],
+        return (RESEARCHER_PROMPT,
                 ["web_search", "summarize", "session_memory"])
+    elif persona == "security_auditor":
+        return (SECURITY_AUDITOR_PROMPT,
+                ["file_reader", "code_analyzer", "grep", "directory_lister",
+                 "web_search", "summarize", "python_executor", "shell"])
     else:
-        return (PERSONA_PROMPTS["general"],
+        return (GENERAL_PROMPT,
                 ["session_memory", "summarize", "python_executor", "directory_lister",
                  "file_reader", "file_writer"])
 
@@ -119,6 +69,17 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
     if any(kw in obj_lower for kw in listagem_keywords) and not any(kw in obj_lower for kw in analise_keywords):
         logger.info("Router (listagem simples) → general")
         return get_persona_config("general")
+
+    # Segurança: palavras-chave de auditoria têm prioridade sobre as de código
+    security_keywords = [
+        "segurança", "security", "auditoria", "audit", "vulnerabilidade",
+        "vulnerability", "owasp", "cwe", "exploit", "ameaça", "threat",
+        "command injection", "path traversal", "sandbox escape",
+        "hardcoded", "secret", "crypto", "race condition"
+    ]
+    if any(kw in obj_lower for kw in security_keywords):
+        logger.info("Router (keyword) → security_auditor")
+        return get_persona_config("security_auditor")
 
     projeto_keywords = [
         "estrutura", "projeto", "arquivo", "diretório", "código", "repo",
@@ -166,7 +127,7 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
     session.messages[0]["content"] = original_prompt
     session.remove_last_user_message()
     
-    if persona not in ["coder", "researcher", "general"]:
+    if persona not in ["coder", "researcher", "general", "security_auditor"]:
         persona = "general"
         
     logger.info(f"Router (LLM) selecionou a persona: {persona}")

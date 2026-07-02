@@ -1,7 +1,16 @@
 import ast
 import os
+import sys
 from pathlib import Path
 from .base import BaseSkill
+
+_MAX_SNIPPET = 120
+
+try:
+    _STDLIB_MODULES = set(sys.stdlib_module_names)
+except AttributeError:
+    # Python < 3.10 fallback: lista curta dos módulos mais comuns.
+    _STDLIB_MODULES = set(sys.builtin_module_names)
 
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
@@ -18,8 +27,8 @@ class CodeAnalyzerSkill(BaseSkill):
             },
             "mode": {
                 "type": "string",
-                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro. Padrão: 'file'.",
-                "enum": ["file", "directory"]
+                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro, 'security' para extrair fatos observáveis relevantes para segurança. Padrão: 'file'.",
+                "enum": ["file", "directory", "security"]
             },
             "include_code": {
                 "type": "boolean",
@@ -52,8 +61,10 @@ class CodeAnalyzerSkill(BaseSkill):
             return self._analyze_file(requested, include_code, compact)
         elif mode == "directory":
             return self._analyze_directory(requested, include_code, compact)
+        elif mode == "security":
+            return self._analyze_security(requested)
         else:
-            return {"ok": False, "done": True, "error": "modo inválido", "message": "Use 'file' ou 'directory'."}
+            return {"ok": False, "done": True, "error": "modo inválido", "message": "Use 'file', 'directory' ou 'security'."}
 
     def _analyze_file(self, file_path: Path, include_code: bool = False, compact: bool = False) -> dict:
         if not file_path.is_file():
@@ -235,3 +246,261 @@ class CodeAnalyzerSkill(BaseSkill):
             response["message"] += f" e {len(dependencies)} módulos dependentes."
 
         return response
+
+    # ------------------------------------------------------------------
+    # Modo "security": apenas extração de fatos observáveis via AST.
+    # Nenhuma decisão de "isso é vulnerável" é tomada aqui.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _snippet(source_lines, lineno):
+        """Retorna a linha de código (ou vazio) truncada em _MAX_SNIPPET chars."""
+        if 1 <= lineno <= len(source_lines):
+            line = source_lines[lineno - 1].strip()
+        else:
+            line = ""
+        if len(line) > _MAX_SNIPPET:
+            line = line[:_MAX_SNIPPET - 3] + "..."
+        return line
+
+    @staticmethod
+    def _dotted_name(node):
+        """Reconstrói um nome pontuado (ex: 'os.path.join') a partir de um
+        nó ast.Attribute/ast.Name usado como alvo de chamada. Retorna None
+        se não for um formato reconhecido (ex: chamada de resultado de outra chamada)."""
+        parts = []
+        current = node
+        while isinstance(current, ast.Attribute):
+            parts.append(current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            parts.append(current.id)
+        else:
+            return None
+        return ".".join(reversed(parts))
+
+    def _analyze_security(self, file_path: Path) -> dict:
+        if not file_path.is_file():
+            return {"ok": False, "done": True, "error": "não é arquivo", "message": f"'{file_path}' não é um arquivo."}
+        if file_path.suffix != ".py":
+            return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py são analisados."}
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                source = f.read()
+            tree = ast.parse(source)
+        except SyntaxError as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "Erro de sintaxe no arquivo."}
+        except Exception as e:
+            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler/parsear o arquivo."}
+
+        source_lines = source.splitlines()
+
+        imports = {"standard": [], "third_party": [], "local": []}
+        decorators = []
+        user_controlled_sources = []
+        interesting_calls = []
+        filesystem_access = []
+        network_calls = []
+        crypto_usage = []
+        auth_usage = []
+        functions_defined = []
+        classes_defined = []
+
+        # --- Vocabulários de reconhecimento (apenas correspondência de nomes) ---
+        SOURCE_SYMBOLS = {
+            "request.args", "request.form", "request.json", "request.data",
+            "request.values", "request.cookies", "request.headers", "request.GET",
+            "request.POST", "request.files", "os.environ", "os.getenv",
+            "sys.argv", "input",
+        }
+        EXECUTION_SYMBOLS = {
+            "eval", "exec", "compile", "__import__",
+            "subprocess.run", "subprocess.call", "subprocess.Popen",
+            "subprocess.check_call", "subprocess.check_output",
+            "os.system", "os.popen", "os.execv", "os.execve",
+            "pickle.load", "pickle.loads", "yaml.load", "marshal.loads",
+        }
+        FS_SYMBOLS = {
+            "open", "os.remove", "os.unlink", "os.rename", "os.rmdir",
+            "shutil.rmtree", "shutil.copy", "shutil.move", "os.path.join",
+            "pathlib.Path",
+        }
+        NET_SYMBOLS = {
+            "requests.get", "requests.post", "requests.put", "requests.delete",
+            "requests.request", "urllib.request.urlopen", "urlopen",
+            "socket.socket", "http.client.HTTPConnection",
+        }
+        CRYPTO_SYMBOLS = {
+            "hashlib.md5", "hashlib.sha1", "hashlib.sha256", "hashlib.new",
+            "Crypto.Cipher.AES.new", "cryptography.fernet.Fernet",
+        }
+        AUTH_SYMBOLS = {
+            "jwt.encode", "jwt.decode", "bcrypt.hashpw", "bcrypt.checkpw",
+            "passlib.hash", "check_password_hash", "generate_password_hash",
+        }
+
+        for node in ast.walk(tree):
+            # --- imports ---
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    top = alias.name.split(".")[0]
+                    if top in _STDLIB_MODULES:
+                        imports["standard"].append(alias.name)
+                    else:
+                        imports["third_party"].append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if node.level and node.level > 0:
+                    for alias in node.names:
+                        imports["local"].append(f"{'.' * node.level}{module}.{alias.name}" if module else f"{'.' * node.level}{alias.name}")
+                else:
+                    top = module.split(".")[0] if module else ""
+                    for alias in node.names:
+                        full = f"{module}.{alias.name}" if module else alias.name
+                        if top in _STDLIB_MODULES:
+                            imports["standard"].append(full)
+                        else:
+                            imports["third_party"].append(full)
+
+            # --- functions / classes ---
+            elif isinstance(node, ast.FunctionDef):
+                functions_defined.append(node.name)
+            elif isinstance(node, ast.ClassDef):
+                classes_defined.append(node.name)
+
+            # --- decorators (funções e classes) ---
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                for dec in node.decorator_list:
+                    dec_target = dec.func if isinstance(dec, ast.Call) else dec
+                    dec_name = self._dotted_name(dec_target) if isinstance(dec_target, (ast.Attribute, ast.Name)) else None
+                    if dec_name is None and isinstance(dec_target, ast.Name):
+                        dec_name = dec_target.id
+                    decorators.append({
+                        "name": dec_name or "<desconhecido>",
+                        "line": dec.lineno,
+                        "snippet": self._snippet(source_lines, dec.lineno)
+                    })
+                    if dec_name and any(k in dec_name.lower() for k in ("login_required", "auth", "permission")):
+                        auth_usage.append({
+                            "type": "decorator",
+                            "line": dec.lineno,
+                            "symbol": dec_name,
+                            "snippet": self._snippet(source_lines, dec.lineno)
+                        })
+
+            # --- attribute-based sources (ex: request.args) sem chamada ---
+            if isinstance(node, ast.Attribute):
+                dotted = self._dotted_name(node)
+                if dotted in SOURCE_SYMBOLS:
+                    user_controlled_sources.append({
+                        "type": "attribute",
+                        "line": node.lineno,
+                        "symbol": dotted,
+                        "snippet": self._snippet(source_lines, node.lineno)
+                    })
+
+            # --- calls ---
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    symbol = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    symbol = self._dotted_name(node.func)
+                else:
+                    symbol = None
+
+                if symbol is None:
+                    continue
+
+                line = node.lineno
+                snip = self._snippet(source_lines, line)
+
+                if symbol in SOURCE_SYMBOLS:
+                    user_controlled_sources.append({
+                        "type": "call", "line": line, "symbol": symbol, "snippet": snip
+                    })
+                if symbol in EXECUTION_SYMBOLS:
+                    extra_args = {}
+                    for kw in node.keywords:
+                        if kw.arg == "shell" and isinstance(kw.value, ast.Constant):
+                            extra_args["shell"] = kw.value.value
+                        if kw.arg == "Loader" and isinstance(kw.value, ast.Attribute):
+                            extra_args["loader"] = self._dotted_name(kw.value)
+                    interesting_calls.append({
+                        "type": "execution", "line": line, "symbol": symbol,
+                        "snippet": snip, "extra_args": extra_args
+                    })
+                if symbol in FS_SYMBOLS:
+                    filesystem_access.append({
+                        "type": "filesystem", "line": line, "symbol": symbol, "snippet": snip
+                    })
+                if symbol in NET_SYMBOLS:
+                    network_calls.append({
+                        "type": "network", "line": line, "symbol": symbol, "snippet": snip
+                    })
+                if symbol in CRYPTO_SYMBOLS:
+                    crypto_usage.append({
+                        "type": "crypto", "line": line, "symbol": symbol, "snippet": snip
+                    })
+                if symbol in AUTH_SYMBOLS:
+                    auth_usage.append({
+                        "type": "call", "line": line, "symbol": symbol, "snippet": snip
+                    })
+
+        # --- call graph simples (nome -> nomes chamados), sem resolver imports ---
+        class _CallVisitor(ast.NodeVisitor):
+            def __init__(self):
+                self.current_function = None
+                self.calls = {}
+
+            def visit_FunctionDef(self, node):
+                old = self.current_function
+                self.current_function = node.name
+                self.calls.setdefault(self.current_function, [])
+                self.generic_visit(node)
+                self.current_function = old
+
+            def visit_Call(self, node):
+                if self.current_function:
+                    if isinstance(node.func, ast.Name):
+                        called = node.func.id
+                    elif isinstance(node.func, ast.Attribute):
+                        called = node.func.attr
+                    else:
+                        called = None
+                    if called:
+                        self.calls[self.current_function].append(called)
+                self.generic_visit(node)
+
+        call_visitor = _CallVisitor()
+        call_visitor.visit(tree)
+        calls = {fn: list(set(callees)) for fn, callees in call_visitor.calls.items()}
+
+        data = {
+            "file": str(file_path.relative_to(self.base_dir)),
+            "imports": imports,
+            "decorators": decorators,
+            "user_controlled_sources": user_controlled_sources,
+            "interesting_calls": interesting_calls,
+            "filesystem_access": filesystem_access,
+            "network_calls": network_calls,
+            "crypto_usage": crypto_usage,
+            "auth_usage": auth_usage,
+            "functions_defined": functions_defined,
+            "classes_defined": classes_defined,
+            "calls": calls,
+        }
+
+        total_facts = (
+            len(interesting_calls) + len(user_controlled_sources) +
+            len(filesystem_access) + len(network_calls) +
+            len(crypto_usage) + len(auth_usage)
+        )
+
+        return {
+            "ok": True,
+            "done": True,
+            "data": data,
+            "error": None,
+            "message": f"Extração de segurança concluída: {total_facts} fatos observáveis encontrados."
+        }
