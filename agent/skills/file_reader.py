@@ -36,6 +36,13 @@ class FileReaderSkill(BaseSkill):
 
         try:
             requested = (self.base_dir / file_path).resolve()
+
+            # Verifica se há uma versão editada no workspace
+            workspace_dir = os.path.join(self.base_dir, ".temp_analysis", "workspace")
+            workspace_copy = os.path.join(workspace_dir, str(requested.relative_to(self.base_dir)))
+            if os.path.exists(workspace_copy):
+                requested = workspace_copy  # Lê da versão editada, não da original
+
         except Exception as e:
             return self._error(str(e), f"Caminho inválido: {file_path}")
 
