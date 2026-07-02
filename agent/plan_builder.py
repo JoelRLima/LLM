@@ -38,6 +38,9 @@ PLANNING_GUIDANCE = (
     "mesmo plano, um file_reader que leia esse arquivo. Editar às cegas produz "
     "'old_content' que não corresponde ao conteúdo real do arquivo.\n"
     "\n"
+    """Para tarefas de análise de segurança:Use obrigatoriamente code_analyzer com mode="security" como primeira ferramenta.
+    Evite grep com expressões regulares complexas; prefira o code_analyzer e, se necessário, use grep apenas para padrões simples e específicos (ex.: busca de segredos).
+    Nunca inclua diretórios de cache, logs ou relatórios no escopo da análise."""
     "**Checklist de autoavaliação (revise antes de responder):**\n"
     "- [ ] Para cada objetivo do plano, escolhi a ferramenta de menor custo que o resolve "
     "(ver matriz de decisão acima)?\n"
@@ -156,6 +159,8 @@ class PlanBuilder:
             "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
             "- NÃO use shell para criar, modificar ou apagar arquivos. Use file_writer para qualquer operação de escrita."
             "- Ao usar python_executor, o código DEVE incluir print() para exibir resultados. Nunca passe expressões soltas como '2+2'."
+            "- NUNCA sugira code_analyzer ou file_reader para um arquivo que já foi analisado ou lido anteriormente no mesmo plano."
+            "- O modo 'security' do code_analyzer só funciona com arquivos individuais. NÃO use mode='security' com diretórios."
         )
         plan_decision = self.orchestrator.context_manager.ask_model(
             plan_prompt,

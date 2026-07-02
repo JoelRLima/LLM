@@ -285,6 +285,9 @@ class CodeAnalyzerSkill(BaseSkill):
         if file_path.suffix != ".py":
             return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py são analisados."}
 
+        if file_path.is_dir():
+            return {"ok": False, "done": True, "error": "não é arquivo", "message": "O modo 'security' só funciona com arquivos individuais, não diretórios."}
+
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()

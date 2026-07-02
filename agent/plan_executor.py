@@ -58,14 +58,6 @@ class PlanExecutor:
                 continue
 
             if self._is_hard_blocked(i + 1, tool, args, file_path, tool_usage_count):
-                action = self.orchestrator._handle_step_failure(
-                    i + 1, f"Hard block: '{tool}' em '{file_path}'", tool, args
-                )
-                if action == "replan":
-                    new_steps = self._attempt_replan(step, tool, args, objective, tool_usage_count)
-                    if new_steps:
-                        self._replace_current_step(i, new_steps)   # ✅ novo
-                        continue
                 i += 1
                 continue
 
@@ -321,6 +313,9 @@ class PlanExecutor:
             tool_usage_count[key] = tool_usage_count.get(key, 0) + 1
             if tool_usage_count[key] > 1:
                 hard_block_reason = "code_analyzer repetido"
+                # Marca o arquivo como totalmente lido para evitar que o LLM sugira novamente
+                tool_usage_count[f"fully_read_{file_path}"] = 1
+                tool_usage_count[f"fully_analyzed_{file_path}"] = 1
 
         if tool == "file_reader" and file_path:
             if "start_line" in args and "end_line" in args:
@@ -335,12 +330,8 @@ class PlanExecutor:
         if not hard_block_reason:
             return False
 
-        self.orchestrator._emit("hard_block", {"file": file_path, "reason": hard_block_reason})
-        action = self.orchestrator._handle_step_failure(step_number, f"Hard block: {hard_block_reason}", tool, args)
-        if action == "continue":
-            self.orchestrator._purge_stale_context()
-            return True
-        self.orchestrator.fail_task()
+        if self.orchestrator.verbose:
+            print(f"[DEBUG] Hard block silencioso: {hard_block_reason} em '{file_path}'")
         return True
 
     def _is_impossible_chunk(self, tool: str, args: Dict[str, Any], file_path: str) -> bool:
@@ -381,6 +372,10 @@ class PlanExecutor:
     def _try_cache(self, tool: str, args: Dict[str, Any], file_path: str):
         if tool not in ("code_analyzer", "file_reader") or not file_path:
             return False, None
+
+        if "start_line" in args or "end_line" in args:
+            return False, None
+
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 current_hash = hashlib.sha256(f.read().encode("utf-8")).hexdigest()
