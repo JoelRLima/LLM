@@ -65,7 +65,7 @@ class PlanExecutor:
                 i += 1
                 continue
 
-            if tool == "file_writer" and args.get("content") is None:
+            if tool == "file_writer" and not args.get("content"):
                 if not self._fill_generated_content(i + 1, tool, args, objective):
                     action = self.orchestrator._handle_step_failure(
                         i + 1, "Conteúdo não gerado para file_writer", tool, args

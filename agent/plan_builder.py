@@ -154,7 +154,7 @@ class PlanBuilder:
             "- NÃO especifique start_line ou end_line ao usar file_reader, a menos que queira um trecho específico.\n"
             "- NÃO inclua passos para deletar, apagar ou esvaziar arquivos."
             "- NÃO inclua um passo 'final' de resposta. A resposta final de cada sub-objetivo será gerada automaticamente após a execução das ferramentas.\n"
-            "- Para passos de file_writer, NÃO inclua o conteúdo no campo 'content'. Use 'content' como string vazia (\"\"). O sistema gerará o conteúdo automaticamente."
+            "- Para passos de file_writer, NÃO inclua o campo 'content'. O sistema gerará o conteúdo automaticamente quando o campo estiver ausente."
             "- Para alterar uma parte específica de um arquivo (ex.: uma linha, uma função), prefira usar file_writer com action='patch' (substituição exata de trecho) ou action='ast_patch' (substituição de função/classe por nome).\n"
             "- Só use action='write' quando precisar criar um arquivo novo ou substituir TODO o conteúdo."
             "- NÃO use shell para criar, modificar ou apagar arquivos. Use file_writer para qualquer operação de escrita."
