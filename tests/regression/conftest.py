@@ -10,16 +10,20 @@ Fornece:
 - load_all_valid_plans: carrega todos os planos da pasta valid/.
 """
 import json
-import os
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import patch
+from typing import Any, Dict, List
 
 import pytest
 
-from agent.orchestrator import Orchestrator
-from agent.model_client import ModelClient
-from session import ChatSession
+# Garante que o diretório raiz do projeto esteja no sys.path durante a coleta de testes.
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from agent.llm.model_client import ModelClient  # noqa: E402
+from agent.llm.session import ChatSession  # noqa: E402
+from agent.orchestrator import Orchestrator  # noqa: E402
 
 # Versão atual do schema dos fixtures. Deve ser incrementada sempre que
 # o formato do plano evoluir de forma incompatível.
@@ -55,6 +59,7 @@ class FakeModelClient:
         step_type: str = "tool_decision",
         log_metric_callback=None,
         verbose: bool = False,
+        grammar: Any = None,
     ) -> Dict[str, Any]:
         """
         Ignora o payload real e retorna a resposta pré-definida.
@@ -137,10 +142,21 @@ def agent(monkeypatch, fake_model: FakeModelClient) -> Orchestrator:
     session = ChatSession(config["default_system_prompt"], config)
 
     from agent.skills import load_all_skills
-    skills = load_all_skills()
+    skills = load_all_skills(model_gateway=session.gateway, config=config)
 
     # Patch permanente durante o teste
     monkeypatch.setattr(ModelClient, "request", fake_model.request)
+
+    def fake_send_non_streaming(self_session, payload: Dict[str, Any]) -> str:
+        sys_prompt = payload["messages"][0]["content"] if payload["messages"] else ""
+        if "persona" in sys_prompt.lower() or "router" in sys_prompt.lower():
+            return '{"persona": "coder", "reasoning": "fake router"}'
+
+        # Pega a resposta simulada para 'final'
+        resp = fake_model.request(self_session, payload, step_type="final")
+        return resp.get("answer", "")
+
+    monkeypatch.setattr(ChatSession, "send_non_streaming_request", fake_send_non_streaming)
 
     orchestrator = Orchestrator(session, skills, verbose=False)
     return orchestrator
@@ -163,7 +179,7 @@ def assert_agent_invariants(result: str, agent_state: Any) -> None:
 
     # Nenhuma ferramenta desconhecida
     known_tools = {
-        "file_reader", "file_writer", "code_analyzer", "directory_lister",
+        "file_reader", "file_writer", "code_analyzer", "code_task", "directory_lister",
         "grep", "python_executor", "shell", "git_reader", "web_search",
         "summarize", "session_memory", "calculator", "echo",
     }

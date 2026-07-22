@@ -1,6 +1,2 @@
-requests>=2.31.0
-pytest>=8.0.0
-rich>=13.0.0
-ddgs>=9.0.0
-ruff>=0.3.0
-mypy>=1.9.0
+# Instalação completa de desenvolvimento e memória semântica.
+.[dev,ml]

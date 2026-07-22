@@ -1,47 +1,49 @@
-import importlib
-import pkgutil
-import inspect
+"""API pública do catálogo de skills."""
+
 from pathlib import Path
-from typing import List, Any
-from .base import BaseSkill          # ← ESSA LINHA É OBRIGATÓRIA
-from logger import logger
+from typing import Any, List, cast
 
-SKILL_CONFIG = {
-    "FileReaderSkill": {"base_dir": "."},
-    "DirectoryListerSkill": {"base_dir": "."},
-    "GrepSkill": {"base_dir": "."},
-    "CodeAnalyzerSkill": {"base_dir": "."},
-    "SessionMemorySkill": {"orchestrator": None},
-    "SummarizeSkill": {"orchestrator": None},
-    "PythonExecutorSkill": {"timeout_seconds": 10},
-    "WebSearchSkill": {},
-    "GitSkill": {},
-    "FileWriterSkill": {"base_dir": "."},
-    "ShellSkill": {"base_dir": ".", "timeout": 30},
-}
+from agent.runtime.logging import logger
 
-def load_all_skills() -> List[Any]:
-    skills: List[Any] = []
-    package_path = Path(__file__).parent
+from .base import BaseSkill
+from .registry import SkillRegistry, build_builtin_registry
 
-    for _, module_name, _ in pkgutil.iter_modules([str(package_path)]):
-        if module_name in ("__init__", "base"):
-            continue
-        try:
-            module = importlib.import_module(f".{module_name}", package=__package__)
-        except Exception as e:
-            logger.warning(f"Erro ao carregar skill '{module_name}': {e}")
-            continue
 
-        for name, obj in inspect.getmembers(module, inspect.isclass):
-            if not issubclass(obj, BaseSkill) or obj is BaseSkill:
-                continue
-            kwargs = SKILL_CONFIG.get(name, {})
-            try:
-                skill_instance = obj(**kwargs)
-                skills.append(skill_instance)
-            except Exception as e:
-                logger.warning(f"Erro ao instanciar skill '{name}': {e}")
-                continue
+def load_skill_registry(
+    base_dir: str | Path = ".",
+    orchestrator: Any = None,
+    model_gateway: Any = None,
+    config: Any = None,
+) -> SkillRegistry:
+    """Constrói o registro embutido com dependências explícitas."""
 
-    return skills
+    try:
+        return build_builtin_registry(
+            base_dir=base_dir,
+            orchestrator=orchestrator,
+            model_gateway=model_gateway,
+            config=config,
+        )
+    except Exception as exc:
+        logger.error(f"Falha ao construir o registro de skills: {exc}")
+        raise
+
+
+def load_all_skills(
+    base_dir: str | Path = ".",
+    orchestrator: Any = None,
+    model_gateway: Any = None,
+    config: Any = None,
+) -> List[BaseSkill]:
+    """Fachada compatível; código novo deve preferir `load_skill_registry`."""
+
+    registry = load_skill_registry(
+        base_dir=base_dir,
+        orchestrator=orchestrator,
+        model_gateway=model_gateway,
+        config=config,
+    )
+    return [cast(BaseSkill, skill) for skill in registry.skills()]
+
+
+__all__ = ["BaseSkill", "SkillRegistry", "load_all_skills", "load_skill_registry"]

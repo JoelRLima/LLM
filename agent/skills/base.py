@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class BaseSkill(ABC):
     """Interface que toda skill deve implementar."""
 

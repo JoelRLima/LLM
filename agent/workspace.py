@@ -7,9 +7,10 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional
 
-from logger import logger
+from agent.runtime import paths
+from agent.runtime.logging import logger
 
-MEMORY_BACKUP_DIR = "memory_backups"
+RESTORE_POINTS_DIR = paths.RESTORE_POINTS_DIR
 
 
 class ValidationFailedError(Exception):
@@ -42,7 +43,7 @@ class WorkspaceManager:
             return
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        restore_dir = os.path.join(MEMORY_BACKUP_DIR, "restore", timestamp)
+        restore_dir = os.path.join(RESTORE_POINTS_DIR, timestamp)
         os.makedirs(restore_dir, exist_ok=True)
 
         for step in plan:
@@ -141,7 +142,7 @@ class WorkspaceManager:
         }
 
         try:
-            from config import carregar_config
+            from agent.runtime.config import carregar_config
             config = carregar_config()
         except Exception as e:
             logger.warning(
@@ -251,21 +252,14 @@ class WorkspaceManager:
         validation_cfg = WorkspaceManager._load_validation_config()
 
         if validation_cfg.get("enabled", True):
-            if validation_cfg.get("ruff", False):
-                ruff_error = WorkspaceManager._run_ruff(file_path)
-                if ruff_error:
-                    errors.append(ruff_error)
-
-            if validation_cfg.get("mypy", False):
-                mypy_error = WorkspaceManager._run_mypy(file_path)
-                if mypy_error:
-                    errors.append(mypy_error)
-
-            if validation_cfg.get("pytest", False):
-                pytest_dir = validation_cfg.get("pytest_dir", "tests/")
-                pytest_error = WorkspaceManager._run_pytest(pytest_dir)
-                if pytest_error:
-                    errors.append(pytest_error)
+            checks = (
+                ("ruff", lambda: WorkspaceManager._run_ruff(file_path)),
+                ("mypy", lambda: WorkspaceManager._run_mypy(file_path)),
+                ("pytest", lambda: WorkspaceManager._run_pytest(validation_cfg.get("pytest_dir", "tests/"))),
+            )
+            for name, check in checks:
+                if validation_cfg.get(name, False) and (error := check()):
+                    errors.append(error)
 
         if not errors:
             return ""

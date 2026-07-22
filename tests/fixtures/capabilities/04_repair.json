@@ -1,0 +1,17 @@
+{
+  "scenario_id": "repair_failing_test",
+  "capability": "repair",
+  "objective": "Corrija clamp para que os testes existentes passem.",
+  "initial_files": {
+    "limits.py": "def clamp(value, low, high):\n    return max(high, min(low, value))\n",
+    "tests/test_limits.py": "from limits import clamp\n\ndef test_clamp():\n    assert clamp(20, 0, 10) == 10\n"
+  },
+  "expectation": {
+    "success": true,
+    "files": [{"path": "limits.py", "contains": ["max(low", "min(high"]}],
+    "unchanged_files": ["tests/test_limits.py"],
+    "allowed_changed_files": ["limits.py"],
+    "answer_contains": ["validada"],
+    "max_steps": 10
+  }
+}

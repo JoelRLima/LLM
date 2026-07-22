@@ -1,14 +1,17 @@
 config.json
 .venv/
+*.egg-info/
+build/
+dist/
 __pycache__/
 *.pyc
+*.bak
 agent_memory.json
 agent.log
 .temp_analysis/
 analysis_notes.md
 memory_backups/
 agent_metrics.jsonl
-.github
 .agents
 .pytest_cache
 .ruff_cache
@@ -17,3 +20,7 @@ health_report.json
 reports
 task_tracker.json
 task_tracker.md
+runtime/
+.test_runtime/
+.pytest_tmp/
+.pytest_temp/

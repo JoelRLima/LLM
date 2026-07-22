@@ -4,11 +4,13 @@ Anteriormente, a verificação de custo (max_steps, max_tokens, max_tool_calls) 
 montagem da mensagem de interrupção estavam duplicadas em PlanExecutor e ReactiveLoop,
 com valores de fallback divergentes. Este módulo é a única fonte de verdade para essas regras.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-DEFAULT_MAX_TASK_STEPS = 20
-DEFAULT_MAX_TASK_TOKENS = 25000
-DEFAULT_MAX_TASK_TOOL_CALLS = 40
+from agent.runtime.config import DEFAULT_COST_WATCHDOG
+
+DEFAULT_MAX_TASK_STEPS = DEFAULT_COST_WATCHDOG["max_task_steps"]
+DEFAULT_MAX_TASK_TOKENS = DEFAULT_COST_WATCHDOG["max_task_tokens"]
+DEFAULT_MAX_TASK_TOOL_CALLS = DEFAULT_COST_WATCHDOG["max_task_tool_calls"]
 
 
 class CostGuard:
@@ -33,7 +35,7 @@ class CostGuard:
         max_tokens = config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
         max_tool_calls = config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
 
-        return (
+        return bool(
             plan_step > max_steps
             or estimated_tokens > max_tokens
             or len(tool_history) > max_tool_calls

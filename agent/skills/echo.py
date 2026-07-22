@@ -1,10 +1,13 @@
+from typing import Any
+
 from .base import BaseSkill
+
 
 class EchoSkill(BaseSkill):
     name = "echo"
     description = "Repete a mensagem fornecida, útil para testes."
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "message": {
                 "type": "string",
@@ -12,7 +15,7 @@ class EchoSkill(BaseSkill):
             }
         }
 
-    def execute(self, args: dict) -> dict:
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         message = args.get("message", "")
         if not message:
             return {

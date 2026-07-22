@@ -1,0 +1,2 @@
+# Compatibilidade para fluxos que ainda usam arquivos requirements.
+.

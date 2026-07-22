@@ -1,7 +1,9 @@
 import re
+from collections.abc import Callable
+from typing import Any
 
-from logger import logger
-from agent.replan import classify_error
+from agent.planning.replan import classify_error
+from agent.runtime.logging import logger
 
 
 class ErrorHandler:
@@ -46,9 +48,14 @@ class ErrorHandler:
         return sanitized[:500]
 
     @staticmethod
-    def handle_step_failure(step_index: int, reason: str,
-                           tool: str = "", args: dict = None,
-                           emit_callback=None, verbose: bool = False) -> str:
+    def handle_step_failure(
+        step_index: int,
+        reason: str,
+        tool: str = "",
+        args: dict[str, Any] | None = None,
+        emit_callback: Callable[[str, dict[str, Any]], None] | None = None,
+        verbose: bool = False,
+    ) -> str:
         """
         Trata falhas na execução de um passo.
         Sanitiza o erro, classifica e decide a ação.
@@ -73,7 +80,7 @@ class ErrorHandler:
         return "continue"
 
     @staticmethod
-    def purge_stale_context(session, verbose: bool = False) -> None:
+    def purge_stale_context(session: Any, verbose: bool = False) -> None:
         """
         Remove tentativas antigas da sessão, mantendo apenas:
         - O system prompt original

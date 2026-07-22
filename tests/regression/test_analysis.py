@@ -16,12 +16,12 @@ def test_analysis_cli_plan_structure():
 
 
 def test_analysis_cli_execution(agent, fake_model):
-    """Executa o plano de análise do cli.py e verifica invariantes e ferramentas."""
+    """Executa o plano de análise da CLI canônica e verifica invariantes e ferramentas."""
     # Carrega o plano e a resposta final
     plan_data = load_plan("analysis_cli")
     final_response = {
         "action": "final",
-        "answer": "O arquivo cli.py contém as funções: main, obter_status_think, on_raw_line, on_thinking_chunk, on_content_chunk, on_error, on_done."
+        "answer": "A CLI canônica contém as funções main e obter_status_think."
     }
 
     # Configura as respostas do fake
@@ -42,16 +42,16 @@ def test_analysis_cli_execution(agent, fake_model):
     # Verifica que o code_analyzer recebeu os argumentos corretos
     code_analyzer_call = agent.agent_state.tool_history[0]
     assert code_analyzer_call["tool"] == "code_analyzer"
-    assert code_analyzer_call["args"]["target"] == "cli.py"
+    assert code_analyzer_call["args"]["target"] == "agent/interfaces/cli/app.py"
     assert code_analyzer_call["args"]["mode"] == "file"
     assert code_analyzer_call["args"]["compact"] is True
 
     # Verifica que o file_reader recebeu o caminho correto
     file_reader_call = agent.agent_state.tool_history[1]
     assert file_reader_call["tool"] == "file_reader"
-    assert file_reader_call["args"]["file_path"] == "cli.py"
+    assert file_reader_call["args"]["file_path"] == "agent/interfaces/cli/app.py"
 
-    # A resposta final deve mencionar funções reais do cli.py
+    # A resposta final deve mencionar funções reais da implementação canônica.
     assert "main" in result.lower()
     assert "obter_status_think" in result.lower()
 

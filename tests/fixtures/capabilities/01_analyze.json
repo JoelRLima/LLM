@@ -1,0 +1,14 @@
+{
+  "scenario_id": "analyze_symbol",
+  "capability": "analyze",
+  "objective": "Analise service.py e identifique a responsabilidade de load_user com evidência.",
+  "initial_files": {
+    "service.py": "def load_user(user_id: int):\n    return {\"id\": user_id}\n"
+  },
+  "expectation": {
+    "success": true,
+    "unchanged_files": ["service.py"],
+    "answer_contains": ["load_user", "service.py"],
+    "max_steps": 5
+  }
+}

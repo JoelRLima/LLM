@@ -1,8 +1,12 @@
-from .base import BaseSkill
-from typing import Any, Dict
 from datetime import datetime
+from typing import Any, Dict
+
 from ddgs import DDGS
-from logger import logger
+
+from agent.runtime.logging import logger
+
+from .base import BaseSkill
+
 
 class WebSearchSkill(BaseSkill):
     name = "web_search"
@@ -18,9 +22,9 @@ class WebSearchSkill(BaseSkill):
         query = args.get("query")
         if not query:
             return {"ok": False, "done": False, "error": "Falta o argumento 'query'."}
-        
+
         max_results = args.get("max_results", 3)
-        
+
         # Cabeçalho com data/hora real — corrige a limitação do LLM de não saber a data atual
         now = datetime.now()
         header = (
@@ -28,20 +32,20 @@ class WebSearchSkill(BaseSkill):
             f"(Fuso horário local do sistema)\n\n"
             f"[RESULTADOS DA BUSCA por '{query}']:\n"
         )
-        
+
         try:
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=max_results))
-            
+
             if not results:
                 return {"ok": True, "done": True, "data": header + "Nenhum resultado encontrado para esta busca."}
-                
+
             formatted = []
             for r in results:
                 formatted.append(f"Title: {r.get('title')}\nLink: {r.get('href')}\nSnippet: {r.get('body')}\n---")
-                
+
             return {"ok": True, "done": True, "data": header + "\n".join(formatted)}
-            
+
         except Exception as e:
             logger.error(f"WebSearchSkill error: {e}", exc_info=True)
             # Mesmo se a busca falhar, retorna a data atual que já é útil

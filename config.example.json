@@ -4,11 +4,61 @@
     "temperature": 0.6,
     "max_tokens": 4096,
     "timeout": 300,
-    "max_task_steps": 20,
-    "max_task_tokens": 25000,
-    "max_task_tool_calls": 40,
-    "max_task_wall_seconds": 300,
+    "hardware_profile": "low_vram_8gb",
+    "max_model_concurrency": 1,
+    "max_io_concurrency": 2,
+    "max_process_concurrency": 1,
+    "max_model_calls": 20,
+    "default_model_profile": "local_8gb",
+    "model_profiles": {
+        "local_8gb": {
+            "provider": "openai_compatible",
+            "base_url": "http://127.0.0.1:8080/v1",
+            "model": "default",
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "timeout": 300,
+            "capabilities": {
+                "streaming": true,
+                "structured_output": "gbnf",
+                "reasoning": true,
+                "token_counting": true,
+                "tool_calls": false
+            },
+            "provider_options": {
+                "reasoning_mode": "chat_template_kwargs",
+                "tokenize_path": "/tokenize"
+            }
+        }
+    },
+    "max_task_steps": 30,
+    "max_task_tokens": 200000,
+    "max_task_tool_calls": 60,
+    "max_task_wall_seconds": 1800,
     "max_repeated_no_progress": 3,
     "max_consecutive_same_error": 3,
-    "default_system_prompt": "You are a helpful assistant."
+    "default_system_prompt": "You are a helpful assistant.",
+    "checkpoint_file": "runtime/agent_checkpoint.json",
+    "ENABLE_GBNF": true,
+    "auto_confirm": false,
+    "resume_retry_failed": false,
+    "resume_retry_skipped": false,
+    "validation": {
+        "enabled": true,
+        "ruff": false,
+        "mypy": false,
+        "pytest": false,
+        "pytest_dir": "tests/",
+        "fail_triggers_replan": false
+    },
+    "code_policy": {
+        "auto_apply_min_confidence": 0.85,
+        "max_auto_files": 2,
+        "require_target_alignment": true
+    },
+    "task_report": {
+        "enabled": true,
+        "format": "json",
+        "output_dir": "runtime/reports"
+    }
 }

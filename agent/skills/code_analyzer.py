@@ -1,509 +1,182 @@
-import ast
+"""Compatibility skill for file, directory, and security source analysis."""
+
+from __future__ import annotations
+
 import os
-import sys
 from pathlib import Path
+from typing import Any
+
+from agent.code.intelligence import CodeIntelligenceService
+
 from .base import BaseSkill
+from .python_security_analysis import analyze_security_file
+from .python_source_analysis import analyze_python_file
+from .safe_path import resolve_safe_path
+from .security_symbols import SECURITY_SYMBOL_REGISTRY, get_pattern_id_map
 
-_MAX_SNIPPET = 120
+__all__ = ["CodeAnalyzerSkill", "SECURITY_SYMBOL_REGISTRY", "get_pattern_id_map"]
 
-try:
-    _STDLIB_MODULES = set(sys.stdlib_module_names)
-except AttributeError:
-    # Python < 3.10 fallback: lista curta dos módulos mais comuns.
-    _STDLIB_MODULES = set(sys.builtin_module_names)
 
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
-    description = "Analisa arquivos Python e gera mapa estrutural com dependências de chamadas. Suporta modo compacto para visão geral."
+    description = (
+        "Analisa código com adapter de linguagem. Python recebe análise AST; "
+        "outras linguagens têm fallback textual explicitamente identificado."
+    )
 
-    def __init__(self, base_dir: str = "."):
+    def __init__(self, base_dir: str = ".") -> None:
         self.base_dir = Path(base_dir).resolve()
+        self.intelligence = CodeIntelligenceService(self.base_dir)
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
-            "target": {
-                "type": "string",
-                "description": "Caminho relativo do arquivo ou diretório a ser analisado."
-            },
+            "target": {"type": "string", "description": "Caminho relativo do arquivo ou diretório."},
             "mode": {
                 "type": "string",
-                "description": "'file' para um único arquivo, 'directory' para um diretório inteiro, 'security' para extrair fatos observáveis relevantes para segurança. Padrão: 'file'.",
-                "enum": ["file", "directory", "security"]
+                "description": "Modo file, directory ou security.",
+                "enum": ["file", "directory", "security"],
             },
-            "include_code": {
-                "type": "boolean",
-                "description": "Se true, inclui o código fonte completo de cada função/método. Padrão: false."
-            },
-            "compact": {
-                "type": "boolean",
-                "description": "Se true, retorna apenas nomes de classes e funções (sem detalhes, imports, docstrings). Ideal para visão geral de diretórios grandes. Padrão: false."
-            }
+            "include_code": {"type": "boolean", "description": "Inclui o código fonte completo."},
+            "compact": {"type": "boolean", "description": "Retorna somente a estrutura essencial."},
         }
 
-    def execute(self, args: dict) -> dict:
-        target = args.get("target", "")
-        mode = args.get("mode", "file")
-        include_code = args.get("include_code", False)
-        compact = args.get("compact", False)
+    @staticmethod
+    def _error(error: str, message: str) -> dict[str, Any]:
+        return {"ok": False, "done": True, "error": error, "message": message}
 
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        target = str(args.get("target", ""))
         if not target:
-            return {"ok": False, "done": True, "error": "alvo vazio", "message": "Nenhum caminho fornecido."}
-
-        try:
-            requested = (self.base_dir / target).resolve()
-        except Exception as e:
-            return {"ok": False, "done": True, "error": str(e), "message": f"Caminho inválido: {target}"}
-
-        if not str(requested).startswith(str(self.base_dir)):
-            return {"ok": False, "done": True, "error": "acesso negado", "message": f"Fora do diretório seguro: {target}"}
-
+            return self._error("alvo vazio", "Nenhum caminho fornecido.")
+        requested, error = resolve_safe_path(self.base_dir, target)
+        if error or requested is None:
+            message = error or "Caminho inválido."
+            return self._error(message, message)
+        mode = str(args.get("mode", "file"))
+        include_code = bool(args.get("include_code", False))
+        compact = bool(args.get("compact", False))
         if mode == "file":
             return self._analyze_file(requested, include_code, compact)
-        elif mode == "directory":
+        if mode == "directory":
             return self._analyze_directory(requested, include_code, compact)
-        elif mode == "security":
+        if mode == "security":
             return self._analyze_security(requested)
-        else:
-            return {"ok": False, "done": True, "error": "modo inválido", "message": "Use 'file', 'directory' ou 'security'."}
+        return self._error("modo inválido", "Use 'file', 'directory' ou 'security'.")
 
-    def _analyze_file(self, file_path: Path, include_code: bool = False, compact: bool = False) -> dict:
+    def _analyze_file(
+        self,
+        file_path: Path,
+        include_code: bool = False,
+        compact: bool = False,
+    ) -> dict[str, Any]:
         if not file_path.is_file():
-            return {"ok": False, "done": True, "error": "não é arquivo", "message": f"'{file_path}' não é um arquivo."}
+            return self._error("não é arquivo", f"'{file_path}' não é um arquivo.")
         if file_path.suffix != ".py":
-            return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py são analisados."}
-
+            return self._analyze_with_adapter(file_path)
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                source = f.read()
-            tree = ast.parse(source)
-        except SyntaxError as e:
-            return {"ok": False, "done": True, "error": str(e), "message": f"Erro de sintaxe no arquivo."}
-        except Exception as e:
-            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler/parsear o arquivo."}
-
-        # Modo compacto: apenas nomes de classes e funções
-        if compact:
-            functions = []
-            classes = []
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    functions.append(node.name)
-                elif isinstance(node, ast.ClassDef):
-                    methods = [item.name for item in node.body if isinstance(item, ast.FunctionDef)]
-                    classes.append({"name": node.name, "methods": methods})
-            return {
-                "ok": True,
-                "done": True,
-                "data": {
-                    "file": str(file_path.relative_to(self.base_dir)),
-                    "classes": classes,
-                    "functions": functions
-                },
-                "error": None,
-                "message": f"{len(functions)} funções, {len(classes)} classes (modo compacto)."
-            }
-
-        # Modo completo (código existente)
-        imports = []
-        functions = []
-        classes = []
-        calls = {}
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    imports.append(alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                for alias in node.names:
-                    imports.append(f"{module}.{alias.name}" if module else alias.name)
-            elif isinstance(node, ast.FunctionDef):
-                func_info = {
-                    "name": node.name,
-                    "line": node.lineno,
-                    "end_line": node.end_lineno,
-                    "args": [arg.arg for arg in node.args.args],
-                    "docstring": ast.get_docstring(node) or "",
-                    "calls": []
-                }
-                functions.append(func_info)
-            elif isinstance(node, ast.ClassDef):
-                methods = []
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef):
-                        methods.append({
-                            "name": item.name,
-                            "line": item.lineno,
-                            "end_line": item.end_lineno,
-                            "args": [arg.arg for arg in item.args.args],
-                            "docstring": ast.get_docstring(item) or ""
-                        })
-                classes.append({
-                    "name": node.name,
-                    "line": node.lineno,
-                    "end_line": node.end_lineno,
-                    "methods": methods,
-                    "docstring": ast.get_docstring(node) or ""
-                })
-
-        class CallVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.current_function = None
-                self.calls = {}
-
-            def visit_FunctionDef(self, node):
-                old = self.current_function
-                self.current_function = node.name
-                if self.current_function not in self.calls:
-                    self.calls[self.current_function] = []
-                self.generic_visit(node)
-                self.current_function = old
-
-            def visit_Call(self, node):
-                if self.current_function:
-                    if isinstance(node.func, ast.Name):
-                        called = node.func.id
-                    elif isinstance(node.func, ast.Attribute):
-                        called = node.func.attr
-                    else:
-                        called = None
-                    if called:
-                        self.calls[self.current_function].append(called)
-                self.generic_visit(node)
-
-        visitor = CallVisitor()
-        visitor.visit(tree)
-
-        for func in functions:
-            func["calls"] = list(set(visitor.calls.get(func["name"], [])))
-
-        if include_code:
-            source_lines = source.splitlines(keepends=True)
-            for func in functions:
-                if "end_line" in func:
-                    func["source"] = "".join(source_lines[func["line"]-1:func["end_line"]])
-            for cls in classes:
-                if "end_line" in cls:
-                    cls["source"] = "".join(source_lines[cls["line"]-1:cls["end_line"]])
-                for method in cls["methods"]:
-                    if "end_line" in method:
-                        method["source"] = "".join(source_lines[method["line"]-1:method["end_line"]])
-
-        return {
-            "ok": True,
-            "done": True,
-            "data": {
-                "file": str(file_path.relative_to(self.base_dir)),
-                "imports": imports,
-                "functions": functions,
-                "classes": classes,
-                "call_graph": visitor.calls
-            },
-            "error": None,
-            "message": f"Analisado: {len(functions)} funções, {len(classes)} classes, {len(imports)} imports."
-        }
-
-    def _analyze_directory(self, dir_path: Path, include_code: bool = False, compact: bool = False) -> dict:
-        if not dir_path.is_dir():
-            return {"ok": False, "done": True, "error": "não é diretório", "message": f"'{dir_path}' não é um diretório."}
-
-        project_map = {}
-        dependencies = {}
-        total_files = 0
-
-        for root, dirs, files in os.walk(dir_path):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "venv", "env", "node_modules", "build", "dist")]
-            
-            for file in files:
-                if file.endswith(".py"):
-                    file_path = Path(root) / file
-                    rel_path = str(file_path.relative_to(self.base_dir))
-                    result = self._analyze_file(file_path, include_code=include_code, compact=compact)
-                    if result["ok"]:
-                        project_map[rel_path] = result["data"]
-                        # Só coleta dependências se não for modo compacto (para manter leve)
-                        if not compact:
-                            for imp in result["data"].get("imports", []):
-                                base = imp.split(".")[0]
-                                if base not in dependencies:
-                                    dependencies[base] = []
-                                dependencies[base].append(rel_path)
-                        total_files += 1
-
-        response = {
-            "ok": True,
-            "done": True,
-            "data": {
-                "files": project_map,
-                "total_files": total_files
-            },
-            "error": None,
-            "message": f"Mapa gerado com {total_files} arquivos (modo {'compacto' if compact else 'completo'})."
-        }
-
-        if not compact:
-            response["data"]["dependencies"] = dependencies
-            response["message"] += f" e {len(dependencies)} módulos dependentes."
-
-        return response
-
-    # ------------------------------------------------------------------
-    # Modo "security": apenas extração de fatos observáveis via AST.
-    # Nenhuma decisão de "isso é vulnerável" é tomada aqui.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _snippet(source_lines, lineno):
-        """Retorna a linha de código (ou vazio) truncada em _MAX_SNIPPET chars."""
-        if 1 <= lineno <= len(source_lines):
-            line = source_lines[lineno - 1].strip()
-        else:
-            line = ""
-        if len(line) > _MAX_SNIPPET:
-            line = line[:_MAX_SNIPPET - 3] + "..."
-        return line
-
-    @staticmethod
-    def _dotted_name(node):
-        """Reconstrói um nome pontuado (ex: 'os.path.join') a partir de um
-        nó ast.Attribute/ast.Name usado como alvo de chamada. Retorna None
-        se não for um formato reconhecido (ex: chamada de resultado de outra chamada)."""
-        parts = []
-        current = node
-        while isinstance(current, ast.Attribute):
-            parts.append(current.attr)
-            current = current.value
-        if isinstance(current, ast.Name):
-            parts.append(current.id)
-        else:
-            return None
-        return ".".join(reversed(parts))
-
-    def _analyze_security(self, file_path: Path) -> dict:
-        if not file_path.is_file():
-            return {"ok": False, "done": True, "error": "não é arquivo", "message": f"'{file_path}' não é um arquivo."}
-        if file_path.suffix != ".py":
-            return {"ok": False, "done": True, "error": "tipo não suportado", "message": "Apenas arquivos .py são analisados."}
-
-        if file_path.is_dir():
-            return {"ok": False, "done": True, "error": "não é arquivo", "message": "O modo 'security' só funciona com arquivos individuais, não diretórios."}
-
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                source = f.read()
-            tree = ast.parse(source)
-        except SyntaxError as e:
-            return {"ok": False, "done": True, "error": str(e), "message": "Erro de sintaxe no arquivo."}
-        except Exception as e:
-            return {"ok": False, "done": True, "error": str(e), "message": "Erro ao ler/parsear o arquivo."}
-
-        source_lines = source.splitlines()
-
-        imports = {"standard": [], "third_party": [], "local": []}
-        decorators = []
-        user_controlled_sources = []
-        interesting_calls = []
-        filesystem_access = []
-        network_calls = []
-        crypto_usage = []
-        auth_usage = []
-        functions_defined = []
-        classes_defined = []
-
-        # --- Vocabulários de reconhecimento (apenas correspondência de nomes) ---
-        SOURCE_SYMBOLS = {
-            "request.args", "request.form", "request.json", "request.data",
-            "request.values", "request.cookies", "request.headers", "request.GET",
-            "request.POST", "request.files", "os.environ", "os.getenv",
-            "sys.argv", "input",
-        }
-        EXECUTION_SYMBOLS = {
-            "eval", "exec", "compile", "__import__",
-            "subprocess.run", "subprocess.call", "subprocess.Popen",
-            "subprocess.check_call", "subprocess.check_output",
-            "os.system", "os.popen", "os.execv", "os.execve",
-            "pickle.load", "pickle.loads", "yaml.load", "marshal.loads",
-        }
-        FS_SYMBOLS = {
-            "open", "os.remove", "os.unlink", "os.rename", "os.rmdir",
-            "shutil.rmtree", "shutil.copy", "shutil.move", "os.path.join",
-            "pathlib.Path",
-        }
-        NET_SYMBOLS = {
-            "requests.get", "requests.post", "requests.put", "requests.delete",
-            "requests.request", "urllib.request.urlopen", "urlopen",
-            "socket.socket", "http.client.HTTPConnection",
-        }
-        CRYPTO_SYMBOLS = {
-            "hashlib.md5", "hashlib.sha1", "hashlib.sha256", "hashlib.new",
-            "Crypto.Cipher.AES.new", "cryptography.fernet.Fernet",
-        }
-        AUTH_SYMBOLS = {
-            "jwt.encode", "jwt.decode", "bcrypt.hashpw", "bcrypt.checkpw",
-            "passlib.hash", "check_password_hash", "generate_password_hash",
-        }
-
-        for node in ast.walk(tree):
-            # --- imports ---
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    top = alias.name.split(".")[0]
-                    if top in _STDLIB_MODULES:
-                        imports["standard"].append(alias.name)
-                    else:
-                        imports["third_party"].append(alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                if node.level and node.level > 0:
-                    for alias in node.names:
-                        imports["local"].append(f"{'.' * node.level}{module}.{alias.name}" if module else f"{'.' * node.level}{alias.name}")
-                else:
-                    top = module.split(".")[0] if module else ""
-                    for alias in node.names:
-                        full = f"{module}.{alias.name}" if module else alias.name
-                        if top in _STDLIB_MODULES:
-                            imports["standard"].append(full)
-                        else:
-                            imports["third_party"].append(full)
-
-            # --- functions / classes ---
-            elif isinstance(node, ast.FunctionDef):
-                functions_defined.append(node.name)
-            elif isinstance(node, ast.ClassDef):
-                classes_defined.append(node.name)
-
-            # --- decorators (funções e classes) ---
-            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-                for dec in node.decorator_list:
-                    dec_target = dec.func if isinstance(dec, ast.Call) else dec
-                    dec_name = self._dotted_name(dec_target) if isinstance(dec_target, (ast.Attribute, ast.Name)) else None
-                    if dec_name is None and isinstance(dec_target, ast.Name):
-                        dec_name = dec_target.id
-                    decorators.append({
-                        "name": dec_name or "<desconhecido>",
-                        "line": dec.lineno,
-                        "snippet": self._snippet(source_lines, dec.lineno)
-                    })
-                    if dec_name and any(k in dec_name.lower() for k in ("login_required", "auth", "permission")):
-                        auth_usage.append({
-                            "type": "decorator",
-                            "line": dec.lineno,
-                            "symbol": dec_name,
-                            "snippet": self._snippet(source_lines, dec.lineno)
-                        })
-
-            # --- attribute-based sources (ex: request.args) sem chamada ---
-            if isinstance(node, ast.Attribute):
-                dotted = self._dotted_name(node)
-                if dotted in SOURCE_SYMBOLS:
-                    user_controlled_sources.append({
-                        "type": "attribute",
-                        "line": node.lineno,
-                        "symbol": dotted,
-                        "snippet": self._snippet(source_lines, node.lineno)
-                    })
-
-            # --- calls ---
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name):
-                    symbol = node.func.id
-                elif isinstance(node.func, ast.Attribute):
-                    symbol = self._dotted_name(node.func)
-                else:
-                    symbol = None
-
-                if symbol is None:
-                    continue
-
-                line = node.lineno
-                snip = self._snippet(source_lines, line)
-
-                if symbol in SOURCE_SYMBOLS:
-                    user_controlled_sources.append({
-                        "type": "call", "line": line, "symbol": symbol, "snippet": snip
-                    })
-                if symbol in EXECUTION_SYMBOLS:
-                    extra_args = {}
-                    for kw in node.keywords:
-                        if kw.arg == "shell" and isinstance(kw.value, ast.Constant):
-                            extra_args["shell"] = kw.value.value
-                        if kw.arg == "Loader" and isinstance(kw.value, ast.Attribute):
-                            extra_args["loader"] = self._dotted_name(kw.value)
-                    interesting_calls.append({
-                        "type": "execution", "line": line, "symbol": symbol,
-                        "snippet": snip, "extra_args": extra_args
-                    })
-                if symbol in FS_SYMBOLS:
-                    filesystem_access.append({
-                        "type": "filesystem", "line": line, "symbol": symbol, "snippet": snip
-                    })
-                if symbol in NET_SYMBOLS:
-                    network_calls.append({
-                        "type": "network", "line": line, "symbol": symbol, "snippet": snip
-                    })
-                if symbol in CRYPTO_SYMBOLS:
-                    crypto_usage.append({
-                        "type": "crypto", "line": line, "symbol": symbol, "snippet": snip
-                    })
-                if symbol in AUTH_SYMBOLS:
-                    auth_usage.append({
-                        "type": "call", "line": line, "symbol": symbol, "snippet": snip
-                    })
-
-        # --- call graph simples (nome -> nomes chamados), sem resolver imports ---
-        class _CallVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.current_function = None
-                self.calls = {}
-
-            def visit_FunctionDef(self, node):
-                old = self.current_function
-                self.current_function = node.name
-                self.calls.setdefault(self.current_function, [])
-                self.generic_visit(node)
-                self.current_function = old
-
-            def visit_Call(self, node):
-                if self.current_function:
-                    if isinstance(node.func, ast.Name):
-                        called = node.func.id
-                    elif isinstance(node.func, ast.Attribute):
-                        called = node.func.attr
-                    else:
-                        called = None
-                    if called:
-                        self.calls[self.current_function].append(called)
-                self.generic_visit(node)
-
-        call_visitor = _CallVisitor()
-        call_visitor.visit(tree)
-        calls = {fn: list(set(callees)) for fn, callees in call_visitor.calls.items()}
-
-        data = {
-            "file": str(file_path.relative_to(self.base_dir)),
-            "imports": imports,
-            "decorators": decorators,
-            "user_controlled_sources": user_controlled_sources,
-            "interesting_calls": interesting_calls,
-            "filesystem_access": filesystem_access,
-            "network_calls": network_calls,
-            "crypto_usage": crypto_usage,
-            "auth_usage": auth_usage,
-            "functions_defined": functions_defined,
-            "classes_defined": classes_defined,
-            "calls": calls,
-        }
-
-        total_facts = (
-            len(interesting_calls) + len(user_controlled_sources) +
-            len(filesystem_access) + len(network_calls) +
-            len(crypto_usage) + len(auth_usage)
-        )
-
+            data = analyze_python_file(
+                file_path,
+                self.base_dir,
+                include_code=include_code,
+                compact=compact,
+            )
+        except SyntaxError as exc:
+            return self._error(str(exc), "Erro de sintaxe no arquivo.")
+        except (OSError, ValueError) as exc:
+            return self._error(str(exc), "Erro ao ler/parsear o arquivo.")
+        functions = data["functions"]
+        classes = data["classes"]
+        imports = data.get("imports", [])
+        mode_label = " (modo compacto)" if compact else ""
         return {
             "ok": True,
             "done": True,
             "data": data,
             "error": None,
-            "message": f"Extração de segurança concluída: {total_facts} fatos observáveis encontrados."
+            "message": f"Analisado: {len(functions)} funções, {len(classes)} classes, {len(imports)} imports{mode_label}.",
+        }
+
+    def _analyze_with_adapter(self, file_path: Path) -> dict[str, Any]:
+        relative = file_path.relative_to(self.base_dir).as_posix()
+        try:
+            analysis = self.intelligence.analyze_file(relative)
+        except (OSError, ValueError) as exc:
+            return self._error(str(exc), "Não foi possível analisar o arquivo.")
+        return {
+            "ok": True,
+            "done": True,
+            "data": analysis.to_dict(),
+            "error": None,
+            "message": (
+                f"Análise {analysis.level.value} por adapter '{analysis.language}' "
+                f"(confiança {analysis.confidence:.2f})."
+            ),
+        }
+
+    def _analyze_directory(
+        self,
+        dir_path: Path,
+        include_code: bool = False,
+        compact: bool = False,
+    ) -> dict[str, Any]:
+        if not dir_path.is_dir():
+            return self._error("não é diretório", f"'{dir_path}' não é um diretório.")
+        project_map: dict[str, Any] = {}
+        dependencies: dict[str, list[str]] = {}
+        for file_path in self._python_files(dir_path):
+            relative = str(file_path.relative_to(self.base_dir))
+            result = self._analyze_file(file_path, include_code, compact)
+            if result.get("ok") is not True:
+                continue
+            project_map[relative] = result["data"]
+            if not compact:
+                self._collect_dependencies(result["data"], relative, dependencies)
+        data: dict[str, Any] = {"files": project_map, "total_files": len(project_map)}
+        if not compact:
+            data["dependencies"] = dependencies
+        return {
+            "ok": True,
+            "done": True,
+            "data": data,
+            "error": None,
+            "message": f"Mapa gerado com {len(project_map)} arquivos (modo {'compacto' if compact else 'completo'}).",
+        }
+
+    @staticmethod
+    def _python_files(directory: Path) -> list[Path]:
+        discovered: list[Path] = []
+        ignored = {"__pycache__", "venv", "env", "node_modules", "build", "dist"}
+        for root, directories, files in os.walk(directory):
+            directories[:] = [name for name in directories if not name.startswith(".") and name not in ignored]
+            discovered.extend(Path(root) / name for name in files if name.endswith(".py"))
+        return discovered
+
+    @staticmethod
+    def _collect_dependencies(data: Any, relative: str, dependencies: dict[str, list[str]]) -> None:
+        if not isinstance(data, dict):
+            return
+        imports = data.get("imports", [])
+        if not isinstance(imports, list):
+            return
+        for imported in imports:
+            base = str(imported).split(".")[0]
+            dependencies.setdefault(base, []).append(relative)
+
+    def _analyze_security(self, file_path: Path) -> dict[str, Any]:
+        if not file_path.is_file():
+            return self._error("não é arquivo", f"'{file_path}' não é um arquivo.")
+        if file_path.suffix != ".py":
+            return self._error("tipo não suportado", "Apenas arquivos .py são analisados.")
+        try:
+            data = analyze_security_file(file_path, self.base_dir)
+        except SyntaxError as exc:
+            return self._error(str(exc), "Erro de sintaxe no arquivo.")
+        except (OSError, ValueError) as exc:
+            return self._error(str(exc), "Erro ao ler/parsear o arquivo.")
+        return {
+            "ok": True,
+            "done": True,
+            "data": data,
+            "error": None,
+            "message": f"Extração de segurança concluída: {data['total_facts']} fatos observáveis encontrados.",
         }

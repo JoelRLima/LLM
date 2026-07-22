@@ -1,13 +1,16 @@
+from typing import Any
+
 from .base import BaseSkill
+
 
 class SummarizeSkill(BaseSkill):
     name = "summarize"
     description = "Resume um texto longo em poucas linhas, preservando informações essenciais (nomes de funções, classes, bugs, dependências)."
 
-    def __init__(self, orchestrator=None):
+    def __init__(self, orchestrator: Any = None) -> None:
         self.orchestrator = orchestrator
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "text": {
                 "type": "string",
@@ -19,7 +22,7 @@ class SummarizeSkill(BaseSkill):
             }
         }
 
-    def execute(self, args: dict) -> dict:
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         text = args.get("text", "")
         context = args.get("context", "")
 

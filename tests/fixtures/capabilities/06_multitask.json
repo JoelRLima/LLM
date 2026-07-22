@@ -1,0 +1,16 @@
+{
+  "scenario_id": "multitask_dependency",
+  "capability": "multitask",
+  "objective": "Analise api.py e model.py independentemente e produza summary.md usando os dois resultados.",
+  "initial_files": {
+    "api.py": "def get_user(user_id):\n    return user_id\n",
+    "model.py": "class User:\n    pass\n"
+  },
+  "expectation": {
+    "success": true,
+    "files": [{"path": "summary.md", "contains": ["api.py", "model.py"]}],
+    "unchanged_files": ["api.py", "model.py"],
+    "allowed_changed_files": ["summary.md"],
+    "max_steps": 10
+  }
+}

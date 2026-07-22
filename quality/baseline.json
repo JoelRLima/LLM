@@ -1,0 +1,10 @@
+{
+  "complexity": {
+    "max_complexity": 10,
+    "allowed": {}
+  },
+  "module_size": {
+    "max_lines": 300,
+    "allowed": {}
+  }
+}

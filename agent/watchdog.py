@@ -21,10 +21,11 @@ import time
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import stringify
+from agent.runtime.config import DEFAULT_COST_WATCHDOG
 
-DEFAULT_MAX_TASK_WALL_SECONDS = 300        # 5 minutos de parede por tarefa
-DEFAULT_MAX_REPEATED_NO_PROGRESS = 3       # mesma assinatura tool+args+result
-DEFAULT_MAX_CONSECUTIVE_SAME_ERROR = 3     # mesmo erro normalizado seguido
+DEFAULT_MAX_TASK_WALL_SECONDS = DEFAULT_COST_WATCHDOG["max_task_wall_seconds"]
+DEFAULT_MAX_REPEATED_NO_PROGRESS = DEFAULT_COST_WATCHDOG["max_repeated_no_progress"]
+DEFAULT_MAX_CONSECUTIVE_SAME_ERROR = DEFAULT_COST_WATCHDOG["max_consecutive_same_error"]
 
 
 class Watchdog:

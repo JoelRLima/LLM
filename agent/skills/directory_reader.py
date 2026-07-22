@@ -1,15 +1,19 @@
 import os
 from pathlib import Path
+from typing import Any
+
 from .base import BaseSkill
+from .safe_path import resolve_safe_path
+
 
 class DirectoryListerSkill(BaseSkill):
     name = "directory_lister"
     description = "Lista arquivos e pastas em um diretório dentro do diretório seguro."
 
-    def __init__(self, base_dir: str = "."):
+    def __init__(self, base_dir: str = ".") -> None:
         self.base_dir = Path(base_dir).resolve()
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "path": {
                 "type": "string",
@@ -17,7 +21,7 @@ class DirectoryListerSkill(BaseSkill):
             }
         }
 
-    def execute(self, args: dict) -> dict:
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         dir_path = args.get("path", ".")
         if not dir_path:
             return {
@@ -28,23 +32,14 @@ class DirectoryListerSkill(BaseSkill):
             }
 
         # Resolve caminho seguro
-        try:
-            requested = (self.base_dir / dir_path).resolve()
-        except Exception as e:
+        requested, error = resolve_safe_path(self.base_dir, dir_path)
+        if error or requested is None:
+            message = error or "Caminho inválido."
             return {
                 "ok": False,
                 "done": True,
-                "error": str(e),
-                "message": f"Caminho inválido: {dir_path}"
-            }
-
-        # Verifica se está dentro do diretório base
-        if not str(requested).startswith(str(self.base_dir)):
-            return {
-                "ok": False,
-                "done": True,
-                "error": "acesso negado",
-                "message": f"Acesso fora do diretório seguro: {dir_path}"
+                "error": message,
+                "message": message
             }
 
         if not requested.exists():
@@ -66,7 +61,7 @@ class DirectoryListerSkill(BaseSkill):
         try:
             items = os.listdir(requested)
             # Monta lista com tipo (arquivo/pasta)
-            listing = []
+            listing: list[dict[str, str]] = []
             for item in sorted(items):
                 full = requested / item
                 listing.append({

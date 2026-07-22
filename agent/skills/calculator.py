@@ -1,7 +1,11 @@
 import ast
-import operator
 import math
+import operator
+from collections.abc import Callable
+from typing import Any
+
 from .base import BaseSkill
+
 
 class CalculatorSkill(BaseSkill):
     name = "calculator"
@@ -52,7 +56,7 @@ class CalculatorSkill(BaseSkill):
         "degrees": math.degrees,
     }
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "expression": {
                 "type": "string",
@@ -68,50 +72,56 @@ class CalculatorSkill(BaseSkill):
         try:
             tree = ast.parse(expr.strip(), mode='eval')
         except SyntaxError as e:
-            raise ValueError(f"Erro de sintaxe: {e.msg} (posição {e.offset})")
+            raise ValueError(f"Erro de sintaxe: {e.msg} (posição {e.offset})") from e
 
-        def _eval(node):
-            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-                return float(node.value)
-            elif isinstance(node, ast.BinOp):
-                left = _eval(node.left)
-                right = _eval(node.right)
-                op_type = type(node.op)
-                if op_type in self._BINARY_OPS:
-                    return self._BINARY_OPS[op_type](left, right)
-                raise ValueError(f"Operador binário não permitido: {op_type.__name__}")
-            elif isinstance(node, ast.UnaryOp):
-                operand = _eval(node.operand)
-                op_type = type(node.op)
-                if op_type in self._UNARY_OPS:
-                    return self._UNARY_OPS[op_type](operand)
-                raise ValueError(f"Operador unário não permitido: {op_type.__name__}")
-            elif isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id in self._ALLOWED_FUNCTIONS:
-                    func = self._ALLOWED_FUNCTIONS[node.func.id]
-                    args = [_eval(arg) for arg in node.args]
-                    kwargs = {kw.arg: _eval(kw.value) for kw in node.keywords}
-                    try:
-                        return func(*args, **kwargs)
-                    except Exception as e:
-                        raise ValueError(f"Erro ao chamar {node.func.id}: {e}")
-                else:
-                    raise ValueError(f"Função não permitida: {getattr(node.func, 'id', 'desconhecida')}")
-            elif isinstance(node, ast.Name):
-                if node.id in self._ALLOWED_FUNCTIONS:
-                    val = self._ALLOWED_FUNCTIONS[node.id]
-                    if isinstance(val, (int, float)):
-                        return float(val)
-                raise ValueError(f"Nome não permitido: '{node.id}'")
-            else:
-                raise ValueError(f"Construção não suportada: {type(node).__name__}")
+        return round(self._eval_node(tree.body), 12)
 
-        result = _eval(tree.body)
-        if isinstance(result, float):
-            result = round(result, 12)  # Evita floats muito longos
-        return result
+    def _eval_node(self, node: ast.expr) -> float:
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.BinOp):
+            return self._eval_binary(node)
+        if isinstance(node, ast.UnaryOp):
+            return self._eval_unary(node)
+        if isinstance(node, ast.Call):
+            return self._eval_call(node)
+        if isinstance(node, ast.Name):
+            return self._eval_name(node)
+        raise ValueError(f"Construção não suportada: {type(node).__name__}")
 
-    def execute(self, args: dict) -> dict:
+    def _eval_binary(self, node: ast.BinOp) -> float:
+        operation: Callable[[float, float], Any] | None = self._BINARY_OPS.get(type(node.op))
+        if operation is None:
+            raise ValueError(f"Operador binário não permitido: {type(node.op).__name__}")
+        return float(operation(self._eval_node(node.left), self._eval_node(node.right)))
+
+    def _eval_unary(self, node: ast.UnaryOp) -> float:
+        value = self._eval_node(node.operand)
+        if isinstance(node.op, ast.UAdd):
+            return value
+        if isinstance(node.op, ast.USub):
+            return -value
+        raise ValueError(f"Operador unário não permitido: {type(node.op).__name__}")
+
+    def _eval_call(self, node: ast.Call) -> float:
+        name = node.func.id if isinstance(node.func, ast.Name) else ""
+        function = self._ALLOWED_FUNCTIONS.get(name)
+        if not callable(function):
+            raise ValueError(f"Função não permitida: {name or 'desconhecida'}")
+        args = [self._eval_node(arg) for arg in node.args]
+        kwargs = {keyword.arg: self._eval_node(keyword.value) for keyword in node.keywords if keyword.arg}
+        try:
+            return float(function(*args, **kwargs))
+        except Exception as exc:
+            raise ValueError(f"Erro ao chamar {name}: {exc}") from exc
+
+    def _eval_name(self, node: ast.Name) -> float:
+        value = self._ALLOWED_FUNCTIONS.get(node.id)
+        if isinstance(value, (int, float)):
+            return float(value)
+        raise ValueError(f"Nome não permitido: '{node.id}'")
+
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         """
         Executa o cálculo e retorna o contrato padrão:
         { ok, done, data, error, message }

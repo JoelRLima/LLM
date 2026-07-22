@@ -1,3 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-llm-agent"
+version = "0.1.0"
+description = "Agente local modular para desenvolvimento assistido por LLM."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ddgs>=9,<10",
+    "requests>=2.31,<3",
+    "rich>=13,<16",
+]
+
+[project.optional-dependencies]
+ml = [
+    "numpy>=1.26,<3",
+    "sentence-transformers>=3,<6",
+]
+dev = [
+    "mypy>=1.10,<3",
+    "pytest>=8,<10",
+    "ruff>=0.9,<1",
+]
+
+[project.scripts]
+llm-agent = "agent.interfaces.cli.app:main"
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"
@@ -10,5 +43,28 @@ ignore = ["E501"]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
 ignore_missing_imports = true
+no_site_packages = true
+follow_imports = "skip"
+exclude = ["^\\.venv/", "^\\.temp_analysis/", "^runtime/"]
+files = [
+    "agent",
+    "scripts",
+    "benchmark.py",
+    "cli.py",
+    "cli_chat.py",
+    "cli_streaming.py",
+    "commands.py",
+    "command_handlers.py",
+    "command_ui.py",
+    "config.py",
+    "config_validation.py",
+    "logger.py",
+    "paths.py",
+    "session.py",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

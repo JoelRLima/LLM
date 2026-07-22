@@ -1,0 +1,16 @@
+{
+  "scenario_id": "modify_preserve_api",
+  "capability": "modify",
+  "objective": "Faça normalize aceitar espaços sem alterar sua assinatura.",
+  "initial_files": {
+    "text.py": "def normalize(value: str) -> str:\n    return value.lower()\n",
+    "public_api.md": "normalize(value: str) -> str\n"
+  },
+  "expectation": {
+    "success": true,
+    "files": [{"path": "text.py", "contains": ["def normalize", "strip"]}],
+    "unchanged_files": ["public_api.md"],
+    "allowed_changed_files": ["text.py"],
+    "max_steps": 8
+  }
+}

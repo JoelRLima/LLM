@@ -6,7 +6,7 @@ import sys
 import tempfile
 from typing import Any, Optional
 
-from agent.parsers import sanitize_error
+from agent.error_handler import ErrorHandler
 
 
 class AutoCoder:
@@ -47,7 +47,7 @@ class AutoCoder:
             f"O seguinte código Python do arquivo '{file_path}' falhou nos testes:\n\n"
             f"```python\n{original_code[:4000]}\n```\n\n"
             f"Testes executados:\n```python\n{test_code[:2000]}\n```\n\n"
-            f"Erro reportado:\n{sanitize_error(error_msg)}\n\n"
+            f"Erro reportado:\n{ErrorHandler.sanitize_error(error_msg)}\n\n"
             "Corrija APENAS o código original para que os testes passem. "
             "Retorne APENAS o código corrigido completo (incluindo imports)."
         )
@@ -70,85 +70,98 @@ class AutoCoder:
         if not file_path.endswith(".py"):
             return True  # só testa arquivos Python
 
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                code = f.read()
-        except Exception:
+        code = self._read_code(file_path)
+        if code is None:
             return True
 
         if "def " not in code and "class " not in code:
             return True
 
-        max_attempts = 3
         current_code = code
-        test_code = None
-
-        for attempt in range(max_attempts):
+        for attempt in range(3):
             if self.orchestrator.verbose:
-                print(f"🧪 [TEST] Tentativa {attempt + 1}/{max_attempts} para '{file_path}'")
-
-            test_code = self.generate_tests(current_code, file_path)
-            if not test_code:
-                if attempt == 0:
-                    if self.orchestrator.verbose:
-                        print("   ⚠️ Não foi possível gerar testes, pulando.")
-                    return True
-                if self.orchestrator.verbose:
-                    print("   ⚠️ Não foi possível gerar testes para validar a correção. Abortando ciclo.")
+                print(f"🧪 [TEST] Tentativa {attempt + 1}/3 para '{file_path}'")
+            status, current_code = self._correction_attempt(file_path, current_code, attempt)
+            if status == "passed":
+                return True
+            if status == "skip":
+                return True
+            if status == "failed":
                 break
+        return self._mark_correction_failure()
 
-            test_file = None
-            try:
-                combined = f"{current_code}\n\n# --- TESTES ---\n{test_code}"
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
-                    tmp.write(combined)
-                    test_file = tmp.name
+    @staticmethod
+    def _read_code(file_path: str) -> Optional[str]:
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                return handle.read()
+        except OSError:
+            return None
 
-                result = subprocess.run(
-                    [sys.executable, test_file],
-                    capture_output=True, text=True, timeout=15,
-                    cwd=os.path.dirname(os.path.abspath(file_path)) or "."
-                )
-                output = result.stdout + result.stderr
+    @staticmethod
+    def _run_generated_tests(file_path: str, code: str, test_code: str) -> tuple[bool, str]:
+        test_file: str | None = None
+        try:
+            combined = f"{code}\n\n# --- TESTES ---\n{test_code}"
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as temporary:
+                temporary.write(combined)
+                test_file = temporary.name
+            result = subprocess.run(
+                [sys.executable, test_file],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=os.path.dirname(os.path.abspath(file_path)) or ".",
+            )
+            output = result.stdout + result.stderr
+            passed = result.returncode == 0 and "FAILED" not in output and "Error" not in output
+            return passed, output
+        finally:
+            if test_file and os.path.exists(test_file):
+                try:
+                    os.remove(test_file)
+                except OSError:
+                    pass
 
-                if result.returncode == 0 and "FAILED" not in output and "Error" not in output:
-                    if self.orchestrator.verbose:
-                        print(f"   ✅ Testes passaram na tentativa {attempt + 1}!")
-                    if attempt > 0:
-                        try:
-                            with open(file_path, 'w', encoding='utf-8') as f:
-                                f.write(current_code)
-                        except Exception:
-                            pass
-                    return True
+    def _correction_attempt(self, file_path: str, current_code: str, attempt: int) -> tuple[str, str]:
+        test_code = self.generate_tests(current_code, file_path)
+        if not test_code:
+            return ("skip" if attempt == 0 else "failed"), current_code
+        try:
+            passed, output = self._run_generated_tests(file_path, current_code, test_code)
+        except subprocess.TimeoutExpired:
+            return "retry", current_code
+        except OSError:
+            return "failed", current_code
+        if passed:
+            if attempt > 0:
+                self._save_code(file_path, current_code)
+            return "passed", current_code
+        if attempt >= 2:
+            return "failed", current_code
+        corrected = self.correct_code(current_code, file_path, test_code, output)
+        if not corrected:
+            return "failed", current_code
+        self.orchestrator.context_manager.purge_stale_context()
+        return "retry", corrected
 
-                if attempt < max_attempts - 1:
-                    corrected = self.correct_code(current_code, file_path, test_code, output)
-                    if corrected:
-                        current_code = corrected
-                        if self.orchestrator.verbose:
-                            print("   🔄 Código corrigido, retentando...")
-                        self.orchestrator.context_manager.purge_stale_context()
-                    else:
-                        if self.orchestrator.verbose:
-                            print("   ⚠️ Não foi possível corrigir o código.")
-                        break
+    @staticmethod
+    def _save_code(file_path: str, code: str) -> None:
+        try:
+            with open(file_path, "w", encoding="utf-8") as handle:
+                handle.write(code)
+        except OSError:
+            pass
 
-            except subprocess.TimeoutExpired:
-                if self.orchestrator.verbose:
-                    print("   ⏱️ Timeout na execução dos testes.")
-            except Exception as e:
-                if self.orchestrator.verbose:
-                    print(f"   ❌ Erro ao executar testes: {e}")
-            finally:
-                if test_file and os.path.exists(test_file):
-                    try:
-                        os.remove(test_file)
-                    except Exception:
-                        pass
-
+    def _mark_correction_failure(self) -> bool:
         self.orchestrator.fail_task()
-        self.orchestrator._emit("error", {"step": self.orchestrator.agent_state.plan_step, "error": "Ciclo teste-correção falhou após todas as tentativas"})
+        self.orchestrator._emit(
+            "error",
+            {
+                "step": self.orchestrator.agent_state.plan_step,
+                "error": "Ciclo teste-correção falhou após todas as tentativas",
+            },
+        )
         return False
 
     def generate_content(self, tool: str, args: dict, objective: str) -> Optional[str]:

@@ -1,0 +1,14 @@
+{
+  "scenario_id": "review_without_mutation",
+  "capability": "review",
+  "objective": "Revise service.py, aponte o risco de segurança e não altere arquivos.",
+  "initial_files": {
+    "service.py": "def load(expression):\n    return eval(expression)\n"
+  },
+  "expectation": {
+    "success": true,
+    "unchanged_files": ["service.py"],
+    "answer_contains": ["eval", "linha"],
+    "max_steps": 5
+  }
+}

@@ -1,6 +1,9 @@
-import os
 from pathlib import Path
+from typing import Any
+
 from .base import BaseSkill
+from .safe_path import resolve_safe_path
+
 
 class FileReaderSkill(BaseSkill):
     name = "file_reader"
@@ -9,11 +12,11 @@ class FileReaderSkill(BaseSkill):
         "Pode ler o arquivo inteiro (respeitando um limite de segurança) ou um intervalo de linhas específico."
     )
 
-    def __init__(self, base_dir: str = ".", max_chars: int = 5000):
+    def __init__(self, base_dir: str = ".", max_chars: int = 5000) -> None:
         self.base_dir = Path(base_dir).resolve()
         self.max_chars = max_chars
 
-    def get_schema(self):
+    def get_schema(self) -> dict[str, Any]:
         return {
             "file_path": {
                 "type": "string",
@@ -29,31 +32,35 @@ class FileReaderSkill(BaseSkill):
             }
         }
 
-    def execute(self, args: dict) -> dict:
-        file_path = args.get("file_path", "")
+    def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        file_path = str(args.get("file_path", ""))
         if not file_path:
             return self._error("caminho vazio", "Nenhum caminho de arquivo fornecido.")
 
-        try:
-            requested = (self.base_dir / file_path).resolve()
+        requested, error = resolve_safe_path(self.base_dir, file_path)
+        if error or requested is None:
+            return self._error("acesso negado", error or "Caminho inválido.")
 
-            # Verifica se há uma versão editada no workspace
-            workspace_dir = os.path.join(self.base_dir, ".temp_analysis", "workspace")
-            workspace_copy = os.path.join(workspace_dir, str(requested.relative_to(self.base_dir)))
-            if os.path.exists(workspace_copy):
-                requested = workspace_copy  # Lê da versão editada, não da original
-
-        except Exception as e:
-            return self._error(str(e), f"Caminho inválido: {file_path}")
-
-        if not str(requested).startswith(str(self.base_dir)):
-            return self._error("acesso negado", f"Acesso fora do diretório seguro: {file_path}")
+        requested = self._workspace_version(requested)
         if not requested.exists():
             return self._error("arquivo não encontrado", f"Arquivo '{file_path}' não existe.")
         if not requested.is_file():
             return self._error("não é um arquivo", f"'{file_path}' não é um arquivo regular.")
 
-        # Extensões permitidas para leitura
+        type_error = self._file_type_error(requested)
+        if type_error:
+            return type_error
+        return self._read_requested(requested, file_path, args)
+
+    def _workspace_version(self, requested: Path) -> Path:
+        try:
+            relative = requested.relative_to(self.base_dir)
+        except ValueError:
+            return requested
+        workspace_copy = self.base_dir / ".temp_analysis" / "workspace" / relative
+        return workspace_copy if workspace_copy.exists() else requested
+
+    def _file_type_error(self, requested: Path) -> dict[str, Any] | None:
         allowed_extensions = {
             ".txt", ".md", ".py", ".json", ".csv", ".log",
             ".yaml", ".yml", ".html", ".css", ".js", ".ts", ".tsx",
@@ -65,17 +72,18 @@ class FileReaderSkill(BaseSkill):
             "license", "notice", "authors", "changelog",
         }
 
-        ext = requested.suffix.lower()
-        name_lower = requested.name.lower()
+        extension = requested.suffix.lower()
+        name = requested.name.lower()
+        if extension in allowed_extensions or name in allowed_extensions or name in allowed_no_ext_names:
+            return None
+        return self._error("tipo não permitido", f"Extensão não permitida: '{extension or name}' para '{requested.name}'.")
 
-        is_allowed = (
-            ext in allowed_extensions
-            or name_lower in allowed_extensions
-            or name_lower in allowed_no_ext_names
-        )
-        if not is_allowed:
-            return self._error("tipo não permitido", f"Extensão não permitida: '{ext or name_lower}' para '{requested.name}'.")
-
+    def _read_requested(
+        self,
+        requested: Path,
+        file_path: str,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
         try:
             with open(requested, "r", encoding="utf-8") as f:
                 full_content = f.read()
@@ -87,18 +95,22 @@ class FileReaderSkill(BaseSkill):
             end_line = args.get("end_line")
 
             if start_line is not None or end_line is not None:
-                # Modo manual (intervalo de linhas)
                 return self._read_lines(lines, start_line, end_line, total_lines, total_chars)
-            else:
-                # Modo automático: chunking com resumo para arquivos grandes
-                return self._read_with_chunking_and_summary(requested, lines, total_lines, total_chars)
+            return self._read_with_chunking_and_summary(requested, lines, total_lines, total_chars)
 
         except UnicodeDecodeError:
             return self._error("encoding inválido", f"O arquivo '{file_path}' não parece ser texto UTF-8.")
         except Exception as e:
             return self._error(str(e), f"Erro ao ler arquivo '{file_path}'.")
 
-    def _read_lines(self, lines: list, start_line, end_line, total_lines: int, total_chars: int) -> dict:
+    def _read_lines(
+        self,
+        lines: list[str],
+        start_line: int | None,
+        end_line: int | None,
+        total_lines: int,
+        total_chars: int,
+    ) -> dict[str, Any]:
         """Leitura de um intervalo específico de linhas."""
         if start_line is None:
             start_line = 1
@@ -126,7 +138,13 @@ class FileReaderSkill(BaseSkill):
             "message": message
         }
 
-    def _read_with_chunking_and_summary(self, requested: Path, lines: list, total_lines: int, total_chars: int) -> dict:
+    def _read_with_chunking_and_summary(
+        self,
+        requested: Path,
+        lines: list[str],
+        total_lines: int,
+        total_chars: int,
+    ) -> dict[str, Any]:
         """
         Lê o arquivo completo em chunks automáticos.
         Se o arquivo for grande, gera um resumo e salva o conteúdo completo
@@ -198,55 +216,61 @@ class FileReaderSkill(BaseSkill):
         except Exception:
             return "[não foi possível salvar cópia temporária]"
 
-    def _generate_summary(self, requested: Path, lines: list, total_lines: int, total_chars: int, full_content: str) -> str:
+    def _generate_summary(
+        self,
+        requested: Path,
+        lines: list[str],
+        total_lines: int,
+        total_chars: int,
+        full_content: str,
+    ) -> str:
         """
         Gera um resumo estruturado do arquivo.
         Este método pode ser estendido para usar a skill `summarize` via LLM.
         Por enquanto, gera um resumo baseado na estrutura.
         """
-        # Extrai informações básicas
-        imports = []
-        functions = []
-        classes = []
-        in_multiline = False
-
-        for line in lines:
-            stripped = line.strip()
-            # Coleta imports
-            if stripped.startswith("import ") or stripped.startswith("from "):
-                imports.append(stripped)
-            # Coleta definições de função
-            elif stripped.startswith("def "):
-                func_name = stripped[4:].split("(")[0].strip()
-                functions.append(func_name)
-            # Coleta definições de classe
-            elif stripped.startswith("class "):
-                class_name = stripped[6:].split("(")[0].split(":")[0].strip()
-                classes.append(class_name)
-
+        imports, functions, classes = self._summary_symbols(lines)
         summary_lines = [
             f"=== Resumo do arquivo: {requested.name} ===",
             f"Total: {total_lines} linhas, {total_chars} caracteres.",
             f"Imports encontrados: {len(imports)}",
         ]
-        if imports:
-            summary_lines.append("Primeiros imports:")
-            for imp in imports[:10]:
-                summary_lines.append(f"  {imp}")
-        if functions:
-            summary_lines.append(f"Funções definidas ({len(functions)}):")
-            for func in functions[:20]:
-                summary_lines.append(f"  - {func}")
-        if classes:
-            summary_lines.append(f"Classes definidas ({len(classes)}):")
-            for cls in classes[:10]:
-                summary_lines.append(f"  - {cls}")
-
+        self._append_summary_group(summary_lines, "Primeiros imports:", imports, "  ", 10)
+        self._append_summary_group(summary_lines, f"Funções definidas ({len(functions)}):", functions, "  - ", 20)
+        self._append_summary_group(summary_lines, f"Classes definidas ({len(classes)}):", classes, "  - ", 10)
         summary_lines.append(
-            f"\nO conteúdo completo está disponível no arquivo temporário. "
-            f"Use file_reader com start_line/end_line para ler trechos específicos."
+            "\nO conteúdo completo está disponível no arquivo temporário. "
+            "Use file_reader com start_line/end_line para ler trechos específicos."
         )
         return "\n".join(summary_lines)
 
-    def _error(self, error: str, message: str) -> dict:
+    @staticmethod
+    def _summary_symbols(lines: list[str]) -> tuple[list[str], list[str], list[str]]:
+        imports: list[str] = []
+        functions: list[str] = []
+        classes: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                imports.append(stripped)
+            elif stripped.startswith("def "):
+                functions.append(stripped[4:].split("(")[0].strip())
+            elif stripped.startswith("class "):
+                classes.append(stripped[6:].split("(")[0].split(":")[0].strip())
+        return imports, functions, classes
+
+    @staticmethod
+    def _append_summary_group(
+        output: list[str],
+        title: str,
+        values: list[str],
+        prefix: str,
+        limit: int,
+    ) -> None:
+        if not values:
+            return
+        output.append(title)
+        output.extend(f"{prefix}{value}" for value in values[:limit])
+
+    def _error(self, error: str, message: str) -> dict[str, Any]:
         return {"ok": False, "done": True, "error": error, "message": message}
