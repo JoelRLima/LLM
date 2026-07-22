@@ -4,8 +4,8 @@
 
 - pytest: suíte completa passando;
 - Ruff: repositório limpo;
-- mypy: pacote `agent`, scripts e fachadas da raiz analisados, sem erros e sem
-  overrides por módulo;
+- mypy: pacote `agent`, scripts e fachadas da raiz analisados para Linux e
+  Windows, sem erros e sem overrides por módulo;
 - quality policy: zero exceções de complexidade/tamanho, fontes Python do projeto
   visíveis ao Git, limites arquiteturais, links locais válidos e textos em
   UTF-8 sem BOM;
@@ -17,7 +17,8 @@ Comandos:
 ```powershell
 .venv\Scripts\python.exe scripts\check_quality.py
 .venv\Scripts\python.exe -m ruff check .
-.venv\Scripts\python.exe -m mypy
+.venv\Scripts\python.exe -m mypy --platform linux
+.venv\Scripts\python.exe -m mypy --platform win32
 .venv\Scripts\python.exe -m pytest -q
 git diff --check
 ```

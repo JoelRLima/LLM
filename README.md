@@ -77,13 +77,14 @@ Use `/code help` para a sintaxe completa.
 ```bash
 python scripts/check_quality.py
 ruff check .
-mypy
+mypy --platform linux
+mypy --platform win32
 pytest -q
 ```
 
 Os gates são estritos para todo o código de produção: complexidade ciclomática
-máxima 10, módulos de até 300 linhas, Ruff limpo e mypy sem overrides por
-módulo. As listas de exceção em `quality/baseline.json` permanecem vazias,
+máxima 10, módulos de até 300 linhas, Ruff limpo e mypy para Linux e Windows,
+sem overrides por módulo. As listas de exceção em `quality/baseline.json` permanecem vazias,
 fontes Python do projeto não podem ser ocultadas por regras do `.gitignore`, e os
 arquivos textuais são validados como UTF-8 sem BOM.
 

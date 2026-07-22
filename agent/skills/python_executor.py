@@ -21,6 +21,7 @@ from .python_sandbox_runtime import (
 )
 
 MAX_OUTPUT_CHARS = 4000
+WINDOWS_NO_WINDOW = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 class PythonExecutorSkill(BaseSkill):
@@ -97,7 +98,7 @@ class PythonExecutorSkill(BaseSkill):
             "cwd": temp_dir,
         }
         if os.name == "nt":
-            return subprocess.run(command, creationflags=subprocess.CREATE_NO_WINDOW, **common)
+            return subprocess.run(command, creationflags=WINDOWS_NO_WINDOW, **common)
         get_effective_user = getattr(os, "geteuid", None)
         if os.name == "posix" and callable(get_effective_user) and get_effective_user() == 0:
             return subprocess.run(command, preexec_fn=self._drop_privileges, **common)

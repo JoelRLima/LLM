@@ -72,10 +72,14 @@ Execute antes de concluir:
 ```powershell
 .venv\Scripts\python.exe scripts\check_quality.py
 .venv\Scripts\python.exe -m ruff check .
-.venv\Scripts\python.exe -m mypy
+.venv\Scripts\python.exe -m mypy --platform linux
+.venv\Scripts\python.exe -m mypy --platform win32
 .venv\Scripts\python.exe -m pytest -q
 git diff --check
 ```
+
+As duas execuções do mypy são obrigatórias: elas validam APIs condicionais de
+Linux e Windows mesmo quando o desenvolvimento ocorre em apenas um dos sistemas.
 
 `scripts/check_quality.py` verifica:
 

@@ -36,7 +36,9 @@ jobs:
         run: python scripts/check_quality.py
 
       - name: Mypy
-        run: mypy
+        run: |
+          mypy --platform linux
+          mypy --platform win32
 
       - name: Pytest
         env:

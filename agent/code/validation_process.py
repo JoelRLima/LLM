@@ -12,6 +12,8 @@ from typing import Dict, Optional
 from agent.cancellation import CancellationToken
 from agent.runtime.context import ProcessConcurrencyGate
 
+WINDOWS_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+
 
 class ValidationStatus(str, Enum):
     PASSED = "passed"
@@ -100,7 +102,7 @@ class ProcessRunner:
                 list(command.argv), cwd=self._resolve_cwd(command.cwd), env=environment,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False,
                 start_new_session=os.name != "nt",
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+                creationflags=WINDOWS_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
         except FileNotFoundError as exc:
             return CommandResult(command.name, ValidationStatus.UNAVAILABLE, None, "", str(exc), time.monotonic() - started)
