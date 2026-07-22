@@ -81,8 +81,9 @@ git diff --check
 
 - complexidade ciclomática máxima 10 em todo o código de produção;
 - módulos com no máximo 300 linhas em todo o código de produção;
+- nenhum módulo Python do projeto oculto por regras do `.gitignore`;
 - direção de dependências nas camadas estáveis;
-- links locais da documentação.
+- links locais da documentação;
 - arquivos de texto em UTF-8 sem BOM.
 
 `quality/baseline.json` contém os limites e mantém as listas `allowed` vazias.

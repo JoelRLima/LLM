@@ -6,8 +6,9 @@
 - Ruff: repositório limpo;
 - mypy: pacote `agent`, scripts e fachadas da raiz analisados, sem erros e sem
   overrides por módulo;
-- quality policy: zero exceções de complexidade/tamanho, limites arquiteturais,
-  links locais válidos e textos em UTF-8 sem BOM;
+- quality policy: zero exceções de complexidade/tamanho, fontes Python do projeto
+  visíveis ao Git, limites arquiteturais, links locais válidos e textos em
+  UTF-8 sem BOM;
 - `git diff --check`: limpo; avisos de conversão LF/CRLF no Windows não são
   erros de whitespace.
 

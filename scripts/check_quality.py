@@ -22,6 +22,14 @@ IGNORED_PARTS = {
     ".venv",
     "build",
     "dist",
+}
+IGNORED_ROOT_PARTS = {
+    ".agents",
+    ".pytest_temp",
+    ".pytest_tmp",
+    ".temp_analysis",
+    ".test_runtime",
+    "memory_backups",
     "reports",
     "runtime",
 }
@@ -37,7 +45,12 @@ def _relative(path: Path) -> str:
 
 def _is_ignored(path: Path) -> bool:
     parts = path.relative_to(ROOT).parts
-    return bool(IGNORED_PARTS.intersection(parts)) or any(part.endswith(".egg-info") for part in parts)
+    ignored_at_root = bool(parts) and parts[0] in IGNORED_ROOT_PARTS
+    return (
+        ignored_at_root
+        or bool(IGNORED_PARTS.intersection(parts))
+        or any(part.endswith(".egg-info") for part in parts)
+    )
 
 
 def _load_baseline() -> dict[str, object]:
@@ -117,6 +130,12 @@ def _production_python_files() -> Iterable[Path]:
     yield from sorted(ROOT.glob("*.py"))
 
 
+def _repository_python_files() -> Iterable[Path]:
+    yield from _production_python_files()
+    yield from sorted((ROOT / "scripts").rglob("*.py"))
+    yield from sorted((ROOT / "tests").rglob("*.py"))
+
+
 def check_module_size(baseline: dict[str, object]) -> tuple[list[str], int]:
     config = baseline["module_size"]
     if not isinstance(config, dict):
@@ -130,6 +149,31 @@ def check_module_size(baseline: dict[str, object]) -> tuple[list[str], int]:
             current[_relative(path)] = line_count
     failures = _ratchet_failures(label="tamanho de modulo", current=current, allowed=allowed)
     return failures, len(current)
+
+
+def check_source_visibility() -> tuple[list[str], int]:
+    """Reject Git ignore rules that hide repository Python modules."""
+    sources = list(_repository_python_files())
+    relative_sources = [_relative(path) for path in sources]
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--stdin"],
+            cwd=ROOT,
+            input="\n".join(relative_sources),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return [f"versionamento: git check-ignore nao executou: {exc}"], len(sources)
+
+    if result.returncode not in {0, 1}:
+        detail = result.stderr.strip() or result.stdout.strip()
+        return [f"versionamento: git check-ignore falhou: {detail}"], len(sources)
+
+    ignored = sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+    failures = [f"versionamento: fonte Python ignorada pelo Git: {path}" for path in ignored]
+    return failures, len(sources)
 
 
 def _resolve_import(current_module: str, is_package: bool, node: ast.ImportFrom) -> str:
@@ -287,6 +331,7 @@ def run_checks() -> tuple[list[str], dict[str, int]]:
     for name, check in (
         ("complexity_debt", lambda: check_complexity(baseline)),
         ("oversized_modules", lambda: check_module_size(baseline)),
+        ("visible_source_files", check_source_visibility),
         ("architecture_modules", check_architecture),
         ("local_doc_links", check_markdown_links),
         ("utf8_text_files", check_text_encoding),

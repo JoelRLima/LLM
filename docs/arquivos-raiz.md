@@ -150,7 +150,8 @@ com `disallow_untyped_defs` e sem overrides por módulo.
 
 `CONTRIBUTING.md` define responsabilidades, direção de dependências, tipagem,
 testes e a definição de pronto. `scripts/check_quality.py` aplica limites de
-complexidade e tamanho, fronteiras arquiteturais e validação de links locais.
+complexidade e tamanho, impede fontes Python ocultas pelo `.gitignore`,
+verifica fronteiras arquiteturais, links locais e encoding UTF-8 sem BOM.
 `quality/baseline.json` registra os limites globais e mantém vazias as listas de
 exceção. O mesmo gate roda em `.github/workflows/ci.yml`.
 

@@ -1,7 +1,10 @@
 from scripts.check_quality import (
+    ROOT,
+    _is_ignored,
     _ratchet_failures,
     check_architecture,
     check_markdown_links,
+    check_source_visibility,
     check_text_encoding,
 )
 
@@ -40,6 +43,18 @@ def test_repository_respects_stable_architecture_boundaries() -> None:
     failures, checked_modules = check_architecture()
 
     assert checked_modules > 0
+    assert failures == []
+
+
+def test_runtime_source_is_not_treated_as_generated_runtime_data() -> None:
+    assert _is_ignored(ROOT / "runtime" / "agent.log")
+    assert not _is_ignored(ROOT / "agent" / "runtime" / "config.py")
+
+
+def test_repository_python_sources_are_visible_to_git() -> None:
+    failures, checked_files = check_source_visibility()
+
+    assert checked_files > 0
     assert failures == []
 
 
