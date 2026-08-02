@@ -230,7 +230,7 @@ class AppPaths:
 
     @property
     def extensions_catalog_file(self) -> Path:
-        """Versioned global catalog, not consumed by runtime bootstrap yet."""
+        """Versioned global catalog consumed by extension-aware bootstrap."""
         return self.extensions_dir / "catalog.json"
 
     @property

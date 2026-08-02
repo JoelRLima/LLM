@@ -15,7 +15,12 @@ from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLockError
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.extension_registry import ExtensionRegistry
+from agent.skills import load_skill_registry
+from agent.tools.builtin_adapter import BuiltinToolAdapter
+from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+from agent.tools.extension_catalog_service import ExtensionCatalogService
+from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 from tests.support.offline_scenarios import OfflineLegacyGateway
 
 
@@ -54,7 +59,7 @@ def test_application_runs_trivial_task_with_explicit_workspace(tmp_path: Path) -
     assert application.workspace_paths.memory_db_file.exists()
 
 
-def test_application_loads_registered_extension_from_canonical_registry(tmp_path: Path) -> None:
+def test_application_loads_ready_extension_from_catalog_and_workspace(tmp_path: Path) -> None:
     paths = _initialized_paths(tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -71,9 +76,12 @@ def test_application_loads_registered_extension_from_canonical_registry(tmp_path
         }),
         encoding="utf-8",
     )
-    ExtensionRegistry(paths.extensions_registry_file).add(
-        id="demo.extension", manifest_path=manifest
-    )
+    catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
+    catalog.add(manifest)
+    workspace_id = WorkspaceContext.create(workspace).workspace_id
+    workspace_extensions = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
+    workspace_extensions.enable("demo.extension")
+    workspace_extensions.grant("demo.extension", "read")
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
@@ -81,6 +89,128 @@ def test_application_loads_registered_extension_from_canonical_registry(tmp_path
         configure_logging=False,
     ) as application:
         assert "demo_tool" in application.tool_registry.names()
+
+
+def test_extension_aware_bootstrap_does_not_start_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = tmp_path / "extension" / "manifest.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "id": "demo.extension",
+                "version": "1.0.0",
+                "protocol_version": "1.0",
+                "transport": "stdio",
+                "entrypoint": ["${python}", "${extension_dir}/demo.py"],
+                "timeout_seconds": 5,
+                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
+    catalog.add(manifest)
+    workspace_id = WorkspaceContext.create(workspace).workspace_id
+    workspace_extensions = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
+    workspace_extensions.enable("demo.extension")
+    workspace_extensions.grant("demo.extension", "read")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("bootstrap iniciou processo externo")
+
+    monkeypatch.setattr("subprocess.Popen", forbidden)
+    monkeypatch.setattr("subprocess.run", forbidden)
+    monkeypatch.setattr("os.system", forbidden)
+    monkeypatch.setattr("asyncio.create_subprocess_exec", forbidden)
+    monkeypatch.setattr("asyncio.create_subprocess_shell", forbidden)
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ) as application:
+        assert "echo" in application.tool_registry.names()
+        assert "demo_tool" in application.tool_registry.names()
+        adapter = application.tool_registry._descriptors_cache["demo_tool"][0]
+        assert adapter.cwd == workspace.resolve()
+        assert application.tool_registry.frozen is True
+
+
+def test_extension_bootstrap_acceptance_drift_replace_and_workspace_isolation(tmp_path: Path) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace_a = tmp_path / "workspace-a"
+    workspace_b = tmp_path / "workspace-b"
+    workspace_a.mkdir()
+    workspace_b.mkdir()
+    manifest = tmp_path / "extension" / "manifest.json"
+    manifest.parent.mkdir()
+
+    def write_manifest(path: Path, tool_name: str, version: str) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "id": "demo.extension",
+                    "version": version,
+                    "protocol_version": "1.0",
+                    "transport": "stdio",
+                    "entrypoint": ["${python}", "${extension_dir}/demo.py"],
+                    "timeout_seconds": 5,
+                    "tools": [{"name": tool_name, "schema": {}, "capabilities": ["read"]}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_manifest(manifest, "demo_tool", "1.0.0")
+    catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
+    added = catalog.add(manifest)
+    workspace_id_a = WorkspaceContext.create(workspace_a).workspace_id
+    workspace_id_b = WorkspaceContext.create(workspace_b).workspace_id
+    service_a = WorkspaceExtensionService.for_workspace(paths, workspace_id_a, catalog)
+    service_a.enable("demo.extension")
+    service_a.grant("demo.extension", "read")
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace_a,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ) as application_a:
+        old_names = application_a.tool_registry.names()
+        assert "demo_tool" in old_names
+        assert "echo" in old_names
+
+    application_b = ApplicationExtensionBootstrap(
+        paths, workspace_id_b, workspace_b
+    ).build(BuiltinToolAdapter(load_skill_registry(base_dir=workspace_b)))
+    assert "demo_tool" not in application_b.registry.names()
+    assert "echo" in application_b.registry.names()
+
+    write_manifest(manifest, "changed_tool", "1.0.1")
+    drift = ApplicationExtensionBootstrap(
+        paths, workspace_id_a, workspace_a
+    ).build(BuiltinToolAdapter(load_skill_registry(base_dir=workspace_a)))
+    assert "changed_tool" not in drift.registry.names()
+    assert drift.materialization.bindings == ()
+    assert application_a.tool_registry.names() == old_names
+
+    replacement = tmp_path / "extension" / "replacement.json"
+    write_manifest(replacement, "replacement_tool", "2.0.0")
+    catalog.replace(
+        "demo.extension",
+        replacement,
+        expected_fingerprint=added.entry.manifest_sha256,
+    )
+    replaced = ApplicationExtensionBootstrap(
+        paths, workspace_id_a, workspace_a
+    ).build(BuiltinToolAdapter(load_skill_registry(base_dir=workspace_a)))
+    assert "replacement_tool" in replaced.registry.names()
+    assert "demo_tool" not in replaced.registry.names()
 
 
 def test_resume_restores_persona_and_capabilities(tmp_path: Path) -> None:

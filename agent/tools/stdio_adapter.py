@@ -5,9 +5,19 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
-from agent.tools.contracts import ToolAdapter, ToolDescriptor, ToolError, ToolInvocation, ToolResult, ToolStatus
+from agent.tools.contracts import (
+    FrozenJsonObject,
+    ToolAdapter,
+    ToolDescriptor,
+    ToolError,
+    ToolInvocation,
+    ToolResult,
+    ToolStatus,
+    freeze_json_like,
+    thaw_json_like,
+)
 from agent.tools.extension_manifest_parser import (
     SUPPORTED_PROTOCOL as _SUPPORTED_PROTOCOL,
 )
@@ -37,6 +47,17 @@ class ExtensionManifest:
     tools: Tuple[Dict[str, Any], ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True, slots=True)
+class _ManifestSnapshot:
+    id: str
+    version: str
+    protocol_version: str
+    transport: str
+    entrypoint: Tuple[str, ...]
+    timeout_seconds: int
+    tools: Tuple[FrozenJsonObject, ...]
+
+
 def load_extension_manifest(path: str | Path) -> ExtensionManifest:
     manifest_path = Path(path).expanduser().resolve()
     try:
@@ -62,12 +83,55 @@ def load_extension_manifest(path: str | Path) -> ExtensionManifest:
 class StdioToolAdapter(ToolAdapter):
     """Executes a stdio-based tool extension as a subprocess."""
 
+    _manifest_snapshot: _ManifestSnapshot
+    _cwd: Path | None
+    __slots__ = ("_manifest_snapshot", "_cwd")
+
     def __init__(self, manifest: ExtensionManifest, *, cwd: str | Path | None = None) -> None:
-        self.manifest = manifest
-        self.cwd = Path(cwd).expanduser().resolve() if cwd is not None else None
+        copied_tools = tuple(freeze_json_like(tool) for tool in manifest.tools)
+        if not all(isinstance(tool, FrozenJsonObject) for tool in copied_tools):
+            raise TypeError("tools do adapter devem ser objetos JSON")
+        snapshot = _ManifestSnapshot(
+            id=manifest.id,
+            version=manifest.version,
+            protocol_version=manifest.protocol_version,
+            transport=manifest.transport,
+            entrypoint=tuple(manifest.entrypoint),
+            timeout_seconds=manifest.timeout_seconds,
+            tools=copied_tools,
+        )
+        object.__setattr__(self, "_manifest_snapshot", snapshot)
+        object.__setattr__(
+            self,
+            "_cwd",
+            Path(cwd).expanduser().resolve() if cwd is not None else None,
+        )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        del value
+        raise AttributeError(f"configuração do adapter é somente leitura: {name}")
+
+    @property
+    def manifest(self) -> ExtensionManifest:
+        snapshot = self._manifest_snapshot
+        return ExtensionManifest(
+            id=snapshot.id,
+            version=snapshot.version,
+            protocol_version=snapshot.protocol_version,
+            transport=snapshot.transport,
+            entrypoint=snapshot.entrypoint,
+            timeout_seconds=snapshot.timeout_seconds,
+            tools=tuple(thaw_json_like(tool) for tool in snapshot.tools),
+        )
+
+    @property
+    def cwd(self) -> Path | None:
+        return self._cwd
 
     def descriptors(self) -> Tuple[ToolDescriptor, ...]:
-        return tuple(self._descriptor_from_tool(tool) for tool in self.manifest.tools)
+        return tuple(
+            self._descriptor_from_tool(tool) for tool in self._manifest_snapshot.tools
+        )
 
     def invoke(self, invocation: ToolInvocation) -> ToolResult:
         descriptor = self._descriptor_for(invocation.tool_name)
@@ -91,9 +155,9 @@ class StdioToolAdapter(ToolAdapter):
 
     def _run_process(self, payload: dict[str, Any], invocation_id: str) -> Any:
         outcome = run_stdio_process(
-            entrypoint=self.manifest.entrypoint,
-            cwd=self.cwd,
-            timeout_seconds=self.manifest.timeout_seconds,
+            entrypoint=self._manifest_snapshot.entrypoint,
+            cwd=self._cwd,
+            timeout_seconds=self._manifest_snapshot.timeout_seconds,
             payload=payload,
             stdout_limit=MAX_OUTPUT_BYTES,
             stderr_limit=MAX_STDERR_BYTES,
@@ -153,7 +217,7 @@ class StdioToolAdapter(ToolAdapter):
     def _failure_by_id(invocation_id: str, status: ToolStatus, code: str, detail: str, message: str) -> ToolResult:
         return ToolResult(invocation_id=invocation_id, status=status, error=ToolError(code, detail), message=message)
 
-    def _descriptor_from_tool(self, tool: Dict[str, Any]) -> ToolDescriptor:
+    def _descriptor_from_tool(self, tool: Mapping[str, Any]) -> ToolDescriptor:
         name = tool.get("name")
         if not isinstance(name, str) or not name.strip():
             raise ValueError("Tool name invalido")
@@ -161,10 +225,10 @@ class StdioToolAdapter(ToolAdapter):
         if not isinstance(description, str):
             raise ValueError(f"Descricao invalida para tool '{name}'")
         schema = tool.get("schema", {})
-        if not isinstance(schema, dict):
+        if not isinstance(schema, Mapping):
             raise ValueError(f"Schema invalido para tool '{name}'")
         capabilities = tool.get("capabilities", [])
-        if not isinstance(capabilities, list) or any(
+        if not isinstance(capabilities, (list, tuple)) or any(
             not isinstance(capability, str) or not capability.strip()
             for capability in capabilities
         ):
@@ -172,20 +236,20 @@ class StdioToolAdapter(ToolAdapter):
         cost = tool.get("cost", 5)
         if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
             raise ValueError(f"Custo invalido para tool '{name}'")
-        timeout = self.manifest.timeout_seconds
+        timeout = self._manifest_snapshot.timeout_seconds
         if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
             raise ValueError("timeout_seconds invalido")
         return ToolDescriptor(
             name=name,
             description=description,
-            schema=schema,
+            schema=dict(schema),
             capabilities=frozenset(capabilities),
             cost=cost,
             timeout_seconds=timeout,
             category="EXECUTE",
-            adapter_id=self.manifest.id,
-            source_version=self.manifest.version,
-            protocol_version=self.manifest.protocol_version,
+            adapter_id=self._manifest_snapshot.id,
+            source_version=self._manifest_snapshot.version,
+            protocol_version=self._manifest_snapshot.protocol_version,
             supports_cancellation=False,
         )
 

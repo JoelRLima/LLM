@@ -125,6 +125,95 @@ print(
 )
 """
 
+EXTENSION_BOOTSTRAP_PROBE_SOURCE = """\
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+import agent
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
+from agent.runtime.workspace_context import WorkspaceContext
+from agent.tools.contracts import ToolAdapter, ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from agent.tools.extension_catalog_service import ExtensionCatalogService
+from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+
+
+app_home = Path(sys.argv[1]).resolve()
+workspace = Path(sys.argv[2]).resolve()
+checkout = Path(sys.argv[3]).resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+extension_dir = workspace.parent / "extension-source"
+extension_dir.mkdir(parents=True, exist_ok=True)
+manifest = extension_dir / "manifest.json"
+manifest.write_text(
+    json.dumps(
+        {
+            "id": "wheel.extension",
+            "version": "1.0.0",
+            "protocol_version": "1.0",
+            "transport": "stdio",
+            "entrypoint": ["${python}", "${extension_dir}/tool.py"],
+            "timeout_seconds": 5,
+            "tools": [{"name": "wheel_tool", "schema": {}, "capabilities": ["read"]}],
+        }
+    ),
+    encoding="utf-8",
+)
+paths = AppPaths.discover(app_home, env={})
+ConfigRepository(paths).initialize()
+catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
+catalog.add(manifest)
+workspace_id = WorkspaceContext.create(workspace).workspace_id
+service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
+service.enable("wheel.extension")
+service.grant("wheel.extension", "read")
+process_calls = []
+
+
+class BuiltinProbeAdapter(ToolAdapter):
+    def descriptors(self) -> tuple[ToolDescriptor, ...]:
+        return (ToolDescriptor("echo", "builtin", schema={}),)
+
+    def invoke(self, invocation: ToolInvocation) -> ToolResult:
+        return ToolResult(invocation_id=invocation.invocation_id, status=ToolStatus.SUCCEEDED)
+
+
+def forbidden(name):
+    def fail(*args, **kwargs):
+        process_calls.append(name)
+        raise AssertionError(name)
+    return fail
+
+
+with patch.object(subprocess, "Popen", forbidden("Popen")), \
+     patch.object(subprocess, "run", forbidden("run")), \
+     patch.object(os, "system", forbidden("system")), \
+     patch.object(asyncio, "create_subprocess_exec", forbidden("create_subprocess_exec")), \
+     patch.object(asyncio, "create_subprocess_shell", forbidden("create_subprocess_shell")):
+    result = ApplicationExtensionBootstrap(paths, workspace_id, workspace).build(
+        BuiltinProbeAdapter()
+    )
+    adapter = result.registry._descriptors_cache["wheel_tool"][0]
+    payload = {
+        "tool": "wheel_tool",
+        "cwd_ok": adapter.cwd == workspace,
+        "builtins": "echo" in result.registry.names(),
+        "process_calls": process_calls,
+        "checkout_import": checkout in Path(agent.__file__).resolve().parents,
+    }
+
+print(json.dumps(payload, sort_keys=True))
+"""
+
 
 class VerificationError(RuntimeError):
     """Raised when the installed artifact violates a distribution invariant."""
@@ -456,6 +545,41 @@ def _verify_installed_probe(
         )
 
 
+def _verify_extension_aware_bootstrap(
+    venv_python: Path,
+    app_home: Path,
+    workspace: Path,
+    project_root: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    result = _run(
+        "installed-extension-aware-bootstrap",
+        (
+            str(venv_python),
+            "-I",
+            "-c",
+            EXTENSION_BOOTSTRAP_PROBE_SOURCE,
+            str(app_home),
+            str(workspace),
+            str(project_root),
+        ),
+        cwd=cwd,
+        environment=environment,
+    )
+    payload = parse_json_output(result)
+    if payload.get("tool") != "wheel_tool":
+        raise VerificationError("Wheel nÃ£o publicou o descriptor da extension.")
+    if payload.get("cwd_ok") is not True:
+        raise VerificationError("Adapter instalado recebeu cwd incorreto.")
+    if payload.get("builtins") is not True:
+        raise VerificationError("Bootstrap instalado perdeu builtins.")
+    if payload.get("process_calls") != []:
+        raise VerificationError("Bootstrap instalado iniciou subprocesso.")
+    if payload.get("checkout_import") is not False:
+        raise VerificationError("Bootstrap instalado importou o checkout.")
+
+
 def _verify_version(result: CommandResult) -> None:
     if not re.search(r"\b\d+\.\d+\.\d+\b", result.stdout):
         raise VerificationError(f"--version não informou versão semântica: {result.stdout!r}")
@@ -545,6 +669,14 @@ def verify_installed_package(
             sentinel,
             app_home / "probe-scratch",
             probe_script,
+            runtime_environment,
+        )
+        _verify_extension_aware_bootstrap(
+            venv_python,
+            temp / "extension-app-home",
+            temp / "extension-workspace",
+            project_root,
+            external_cwd,
             runtime_environment,
         )
         _verify_import_origin(

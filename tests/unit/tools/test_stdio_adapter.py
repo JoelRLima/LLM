@@ -239,6 +239,40 @@ def test_load_extension_manifest_and_build_descriptors(tmp_path: Path) -> None:
     assert descriptors[0].capabilities == frozenset({"read"})
 
 
+def test_stdio_manifest_is_rebuilt_and_private_configuration_is_preserved(
+    tmp_path: Path,
+) -> None:
+    original_tools = ({"name": "echo_tool", "schema": {"nested": {"items": [1]}}},)
+    original_entrypoint = ["python", "demo.py"]
+    manifest = ExtensionManifest(
+        id="demo.extension",
+        version="1.0.0",
+        protocol_version="1.0",
+        transport="stdio",
+        entrypoint=original_entrypoint,
+        timeout_seconds=5,
+        tools=original_tools,
+    )
+    adapter = StdioToolAdapter(manifest, cwd=tmp_path)
+    original_tools[0]["schema"]["nested"]["items"].append(2)
+    original_entrypoint[0] = "changed"
+
+    first = adapter.manifest
+    second = adapter.manifest
+    assert first is not second
+    dict.__setitem__(first.tools[0], "name", "changed")
+    dict.__setitem__(first.tools[0]["schema"]["nested"], "injected", True)
+    del first.tools[0]["schema"]["nested"]["items"]
+    assert second.tools[0]["name"] == "echo_tool"
+    assert second.tools[0]["schema"] == {"nested": {"items": [1]}}
+    assert adapter.manifest.tools[0]["schema"] == {"nested": {"items": [1]}}
+    assert adapter.cwd == tmp_path.resolve()
+    with pytest.raises(AttributeError):
+        adapter.cwd = tmp_path / "other"
+    with pytest.raises(AttributeError):
+        adapter.manifest = manifest
+
+
 def test_stdio_adapter_invokes_external_process_and_returns_result(tmp_path: Path) -> None:
     script = tmp_path / "echo.py"
     script.write_text(

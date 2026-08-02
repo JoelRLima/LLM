@@ -21,8 +21,11 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._adapters: List[ToolAdapter] = []
         self._descriptors_cache: Dict[str, Tuple[ToolAdapter, ToolDescriptor]] = {}
+        self._frozen = False
 
     def register_adapter(self, adapter: ToolAdapter) -> None:
+        if self._frozen:
+            raise RuntimeError("ToolRegistry congelado após o bootstrap")
         descriptors = tuple(adapter.descriptors())
         if not descriptors:
             return
@@ -38,6 +41,15 @@ class ToolRegistry:
             self._validate_descriptor(descriptor)
         self._adapters.append(adapter)
         self._refresh()
+
+    def freeze(self) -> None:
+        """Freeze the published snapshot after bootstrap composition."""
+
+        self._frozen = True
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
 
     @staticmethod
     def _validate_descriptor(descriptor: ToolDescriptor) -> None:

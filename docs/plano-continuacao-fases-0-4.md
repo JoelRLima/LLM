@@ -222,7 +222,21 @@ Gate 2.2a: concluído, validado e publicado
 Gate 2.2b–2.2f: concluído e validado
 Gate 2.2: concluído, validado e publicado
 Gate 2.3: concluído, validado e publicado
-Gate 2.4: não iniciado
+Gate 2.4: concluído, validado e publicado
+Gate 2.5: concluído, validado e publicado
+Gate 2.6: não iniciado
+Gate 2.7: não iniciado
+Gate 2.8: não iniciado
+Gate 2.9: não iniciado
+
+Decomposição restante do Gate 2:
+
+- 2.4 materialização runtime;
+- 2.5 composição do registry e bootstrap;
+- 2.6 descoberta pelos planners;
+- 2.7 autorização e invocação pelo gateway;
+- 2.8 administração e diagnóstico;
+- 2.9 acceptance final instalado.
 
 ## C30 — Retomada segura
 

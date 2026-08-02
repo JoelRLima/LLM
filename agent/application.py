@@ -18,7 +18,9 @@ from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.logging import setup_logger, teardown_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
 from agent.runtime.workspace_context import WorkspaceContext
-from agent.skills import load_skill_registry, load_tool_registry
+from agent.skills import load_skill_registry
+from agent.tools.builtin_adapter import BuiltinToolAdapter
+from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
@@ -69,6 +71,7 @@ class AgentApplication:
         owns_logging: bool,
         tool_registry: ToolRegistry,
         tool_invocation_gateway: ToolInvocationGateway,
+        bootstrap_diagnostics: tuple[object, ...] = (),
     ) -> None:
         self.paths = paths
         self.workspace = workspace
@@ -80,6 +83,7 @@ class AgentApplication:
         self.approval_policy = approval_policy
         self.tool_registry = tool_registry
         self.tool_invocation_gateway = tool_invocation_gateway
+        self.bootstrap_diagnostics = tuple(bootstrap_diagnostics)
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
@@ -130,15 +134,12 @@ class AgentApplication:
                 config=config,
                 approval_policy=selected_approval,
             )
-            tool_registry = load_tool_registry(
-                base_dir=workspace_context.root,
-                scratch_dir=workspace_paths.scratch_dir,
-                model_gateway=session.gateway,
-                config=config,
-                approval_policy=selected_approval,
-                extensions_state_path=app_paths.extensions_registry_file,
-                skill_registry=skill_registry,
-            )
+            extension_bootstrap = ApplicationExtensionBootstrap(
+                app_paths,
+                workspace_context.workspace_id,
+                workspace_context.root,
+            ).build(BuiltinToolAdapter(skill_registry))
+            tool_registry = extension_bootstrap.registry
             orchestrator = Orchestrator(
                 session,
                 skill_registry=skill_registry,
@@ -173,6 +174,7 @@ class AgentApplication:
                 owns_logging=logging_acquired,
                 tool_registry=tool_registry,
                 tool_invocation_gateway=tool_invocation_gateway,
+                bootstrap_diagnostics=extension_bootstrap.diagnostics,
             )
             return app
 

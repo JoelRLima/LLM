@@ -133,3 +133,11 @@ def test_site_packages_snapshot_precedes_all_runtime_probes() -> None:
     import_probe = source.index("_verify_import_origin(")
 
     assert snapshot < dependencies < installed_probe < import_probe
+
+
+def test_installed_gate_includes_extension_aware_bootstrap_probe() -> None:
+    source = inspect.getsource(verify_installed_package)
+
+    assert "_verify_extension_aware_bootstrap(" in source
+    assert "extension-workspace" in source
+    assert "extension-app-home" in source
