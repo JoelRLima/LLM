@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.auto_coder import AutoCoder
@@ -10,6 +11,7 @@ from agent.final_response import FinalResponder
 from agent.llm.context_manager import ContextManager
 from agent.llm.router import is_security_objective, route_objective
 from agent.llm.session import ChatSession
+from agent.memory.memory import AgentMemory
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
 from agent.orchestration.operations import OrchestratorOperations
 from agent.orchestration.security_service import SecurityAnalysisService
@@ -21,12 +23,16 @@ from agent.planning.plan_executor import PlanExecutor
 from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
+from agent.runtime.paths import WorkspacePaths
+from agent.skills.policy import builtin_skills_for_persona, persona_allowed_capabilities
+from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
+from agent.tools.invocation_gateway import ToolInvocationGateway
+from agent.tools.legacy_invoker import LegacyToolInvoker
+from agent.tools.tool_registry import ToolRegistry
 from agent.watchdog import Watchdog
 from agent.workspace import WorkspaceManager
-
-AGENT_METRICS_FILE = paths.METRICS_FILE
 
 
 class Orchestrator(OrchestratorOperations):
@@ -36,28 +42,64 @@ class Orchestrator(OrchestratorOperations):
         self,
         session: ChatSession,
         skills: Optional[List[Any]] = None,
+        skill_registry: SkillRegistry | None = None,
         verbose: bool = False,
-        checkpoint_file: str = paths.CHECKPOINT_FILE,
+        checkpoint_file: str | None = None,
+        *,
+        metrics_file: str | None = None,
+        workspace_root: str | Path = ".",
+        workspace_paths: WorkspacePaths | None = None,
+        tool_registry: ToolRegistry | None = None,
+        tool_invocation_gateway: ToolInvocationGateway | None = None,
     ) -> None:
         self.session = session
+        self.workspace_root = Path(workspace_root).expanduser().resolve()
+        self.workspace_paths = workspace_paths
+        self.analysis_notes_file = (
+            workspace_paths.scratch_dir / "analysis_notes.md"
+            if workspace_paths is not None
+            else Path("analysis_notes.md")
+        )
         self.skills: Dict[str, Any] = {}
+        self.tool_registry = tool_registry
+        self.tool_invocation_gateway = tool_invocation_gateway
+        self.legacy_tool_invoker = LegacyToolInvoker(self) if tool_registry is None else None
         self.max_steps = 15
         self.max_total_actions = 20
         self.max_early_final_attempts = 3
         self.max_loop_repetitions = 3
         self.verbose = verbose
         self.active_skills: List[str] = []
+        self.allowed_capabilities: frozenset[str] = frozenset()
         self._task_failed = False
         self._cancelled = False
         self._task_start_time = 0.0
         self._metrics_start_line = 0
         self.cancellation_token = CancellationToken()
-        self.checkpoint_file = checkpoint_file
-        self.checkpoint_manager = CheckpointManager(checkpoint_file)
-        self.metrics_recorder = MetricsRecorder(AGENT_METRICS_FILE)
-        self.agent_state = AgentState()
+        self.checkpoint_file = str(
+            checkpoint_file
+            or (workspace_paths.checkpoint_file if workspace_paths else paths.CHECKPOINT_FILE)
+        )
+        selected_metrics = str(
+            metrics_file
+            or (workspace_paths.metrics_file if workspace_paths else paths.METRICS_FILE)
+        )
+        self.memory_file = str(
+            workspace_paths.memory_file if workspace_paths else paths.MEMORY_FILE
+        )
+        memory = AgentMemory(
+            db_path=workspace_paths.memory_db_file if workspace_paths else None,
+            default_file=self.memory_file,
+            backup_dir=workspace_paths.memory_backup_dir if workspace_paths else None,
+        )
+        if workspace_paths is not None:
+            memory.initialize()
+        self.checkpoint_manager = CheckpointManager(self.checkpoint_file)
+        self.metrics_recorder = MetricsRecorder(selected_metrics)
+        self.agent_state = AgentState(memory=memory)
         self.subsystems = AgentSubsystems(self)
-        for skill in skills or []:
+        selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
+        for skill in selected_skills:
             self.register_skill(skill)
 
     @property
@@ -100,6 +142,19 @@ class Orchestrator(OrchestratorOperations):
     def execution_gateway(self) -> ExecutionGateway:
         return self.subsystems.execution_gateway
 
+    def resolve_user_path(self, file_path: str | Path) -> Path:
+        """Resolve a user file through the standalone workspace boundary.
+
+        Direct ``Orchestrator`` consumers without ``WorkspacePaths`` retain the
+        legacy relative-path behavior.  The standalone composition always
+        supplies ``WorkspacePaths`` and therefore confines the result to the
+        injected workspace.
+        """
+
+        if self.workspace_paths is None:
+            return Path(file_path)
+        return self.workspace.resolve_path(file_path)
+
     def _reset_task_state(self, objective: str) -> None:
         self.agent_state.objective = objective
         self.agent_state.reset_execution()
@@ -116,15 +171,38 @@ class Orchestrator(OrchestratorOperations):
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
             print("Consultando roteador de persona...", end="", flush=True)
-        persona_prompt, allowed_skills = route_objective(objective, self.session)
+        persona_prompt, _, persona = route_objective(objective, self.session)
         self.current_persona_prompt = persona_prompt
-        self.active_skills = allowed_skills
+        self.current_persona = persona
+        self.agent_state.persona = persona
+        self.agent_state.persona_prompt = persona_prompt
+        registry = getattr(self, "tool_registry", None)
+        self.active_skills = builtin_skills_for_persona(persona, registry=registry)
+        self.allowed_capabilities = persona_allowed_capabilities(persona)
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             persona_prompt,
             self._build_tools_description(compact=False),
         )
         if self.verbose:
-            print(f" concluído ({len(allowed_skills)} skills permitidas)")
+            print(f" concluído ({len(self.active_skills)} skills permitidas)")
+
+    def _restore_persona_from_state(self) -> None:
+        persona = getattr(self.agent_state, "persona", None)
+        persona_prompt = getattr(self.agent_state, "persona_prompt", None)
+        if persona is None:
+            objective = self.agent_state.objective
+            if objective:
+                self._route_persona(objective)
+            return
+        self.current_persona = persona
+        self.current_persona_prompt = persona_prompt or ""
+        registry = getattr(self, "tool_registry", None)
+        self.active_skills = builtin_skills_for_persona(persona, registry=registry)
+        self.allowed_capabilities = persona_allowed_capabilities(persona)
+        self._cached_base_prompt = self.context_manager.build_base_system_prompt(
+            self.current_persona_prompt,
+            self._build_tools_description(compact=False),
+        )
 
     def _answer_trivial(self, objective: str) -> str:
         normalized = objective.strip().lower().rstrip("!?.")

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import validate_tool_args
+from agent.tools.invocation_gateway import ToolInvocationGateway
 
 
 @dataclass(frozen=True)
@@ -46,9 +47,17 @@ class PlanValidator:
     Não possui efeitos colaterais e nunca altera o plano recebido.
     """
 
-    def __init__(self, skills: Dict[str, Any], active_skills: Optional[List[str]] = None):
+    def __init__(
+        self,
+        skills: Dict[str, Any],
+        active_skills: Optional[List[str]] = None,
+        allowed_capabilities: Optional[frozenset[str]] = None,
+        tool_registry: Any = None,
+    ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
+        self.allowed_capabilities = allowed_capabilities
+        self.tool_registry = tool_registry
 
     def validate(self, plan: Optional[List[Dict[str, Any]]]) -> ValidationReport:
         """Executa todas as checagens sobre `plan` e retorna um
@@ -96,26 +105,50 @@ class PlanValidator:
         """Valida, para cada passo: formato mínimo, existência da
         ferramenta, permissão (active_skills) e schema de argumentos."""
         for idx, step in enumerate(plan):
-            if not isinstance(step, dict) or "tool" not in step:
-                blocked.append(BlockedStep(idx, "Passo malformado: falta o campo 'tool'."))
-                continue
+            problem = self._validate_step_schema(step)
+            if problem:
+                blocked.append(BlockedStep(idx, problem))
 
-            tool = step.get("tool")
-            args = step.get("args", {})
-            if not isinstance(args, dict):
-                args = {}
+    def _validate_step_schema(self, step: Any) -> str | None:
+        if not isinstance(step, dict) or "tool" not in step:
+            return "Passo malformado: falta o campo 'tool'."
+        tool = step.get("tool")
+        tool_name = str(tool)
+        args = step.get("args", {})
+        args = args if isinstance(args, dict) else {}
+        descriptor = self._descriptor(tool_name)
+        if tool not in self.skills and descriptor is None:
+            return f"Ferramenta '{tool}' não existe."
+        if self.active_skills and tool not in self.active_skills and descriptor is None:
+            return f"Ferramenta '{tool}' não está permitida para esta tarefa."
+        if descriptor is not None:
+            capability_error = self._capability_error(tool_name, descriptor)
+            if capability_error:
+                return capability_error
+            try:
+                ToolInvocationGateway._validate_arguments(descriptor, args)
+                return None
+            except ValueError as exc:
+                return f"Schema inválido para '{tool}': {exc}"
+        valid, error = validate_tool_args(tool_name, args, self.skills)
+        return None if valid else f"Schema inválido para '{tool}': {error or ''}"
 
-            if tool not in self.skills:
-                blocked.append(BlockedStep(idx, f"Ferramenta '{tool}' não existe."))
-                continue
+    def _descriptor(self, tool_name: str) -> Any:
+        if self.tool_registry is None:
+            return None
+        try:
+            return self.tool_registry.descriptor(tool_name)
+        except KeyError:
+            return None
 
-            if self.active_skills and tool not in self.active_skills:
-                blocked.append(BlockedStep(idx, f"Ferramenta '{tool}' não está permitida para esta tarefa."))
-                continue
-
-            valid, error_msg = validate_tool_args(tool, args, self.skills)
-            if not valid:
-                blocked.append(BlockedStep(idx, f"Schema inválido para '{tool}': {error_msg}"))
+    def _capability_error(self, tool_name: str, descriptor: Any) -> str | None:
+        if self.allowed_capabilities is None:
+            return None
+        capabilities: frozenset[str] = getattr(descriptor, "capabilities", frozenset())
+        missing = capabilities - self.allowed_capabilities
+        if not missing:
+            return None
+        return f"Ferramenta '{tool_name}' requer capacidades não autorizadas: {', '.join(sorted(missing))}"
 
     def _validate_analysis_notes(self, plan: List[Dict[str, Any]], blocked: List[BlockedStep]) -> None:
         """Bloqueia passos que esvaziariam ou apagariam 'analysis_notes.md'."""

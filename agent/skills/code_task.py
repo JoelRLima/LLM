@@ -6,6 +6,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agent.approval import (
+    ApprovalDecision,
+    ApprovalPort,
+    ApprovalRequest,
+    AutoApprove,
+    RequireExplicitApproval,
+)
 from agent.code.application import (
     CodeRequest,
     CodingApplicationService,
@@ -17,10 +24,28 @@ from agent.llm.contracts import ModelGateway
 from agent.skills.base import BaseSkill
 
 
-class _ConfiguredApprover:
-    def approve(self, preview: ChangePreview, assessment: ProposalAssessment) -> bool:
-        del preview, assessment
-        return True
+class _PolicyApprover:
+    requires_explicit_approval = True
+
+    def __init__(self, policy: ApprovalPort) -> None:
+        self.policy = policy
+
+    def approve(
+        self,
+        preview: ChangePreview,
+        assessment: ProposalAssessment,
+    ) -> ApprovalDecision:
+        return self.policy.request(
+            ApprovalRequest(
+                action="apply_changeset",
+                resource=", ".join(preview.affected_files),
+                prompt=f"Aplicar ChangeSet em {len(preview.affected_files)} arquivo(s)?",
+                metadata={
+                    "confidence": assessment.confidence,
+                    "reasons": assessment.reasons,
+                },
+            )
+        )
 
 
 class CodeTaskSkill(BaseSkill):
@@ -35,10 +60,16 @@ class CodeTaskSkill(BaseSkill):
         base_dir: str = ".",
         model_gateway: Optional[ModelGateway] = None,
         config: Optional[Dict[str, Any]] = None,
+        approval_policy: ApprovalPort | None = None,
     ) -> None:
         self.base_dir = Path(base_dir).resolve()
         self.model_gateway = model_gateway
         self.config = config or {}
+        self.approval_policy = approval_policy or (
+            AutoApprove()
+            if self.config.get("auto_confirm") is True
+            else RequireExplicitApproval()
+        )
 
     def get_schema(self) -> dict:
         return {
@@ -94,13 +125,14 @@ class CodeTaskSkill(BaseSkill):
                     graph=graph if isinstance(graph, dict) else None,
                     template=str(args["template"]) if isinstance(args.get("template"), str) else None,
                 ),
-                approver=_ConfiguredApprover() if self.config.get("auto_confirm") else None,
+                approver=_PolicyApprover(self.approval_policy),
             )
         except Exception as exc:
             return {"ok": False, "done": True, "error": str(exc), "message": str(exc)}
         return {
             "ok": result.status.value == "succeeded",
             "done": True,
+            "status": result.status.value,
             "data": self._result_dict(result),
             "error": result.error,
             "message": result.summary,

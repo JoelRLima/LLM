@@ -21,7 +21,8 @@ necessidade.
 
 Os limites de contexto, saída, concorrência e reparo vêm de
 `agent/runtime/hardware.py`; o orçamento de 20 chamadas vem de `config.py`.
-`config.json` pode sobrescrever limites operacionais, mas
+O arquivo exibido por `llm-agent config path` pode sobrescrever limites
+operacionais, mas
 `max_model_concurrency: 1` é o valor recomendado para essa placa.
 
 ## Instalação
@@ -29,7 +30,8 @@ Os limites de contexto, saída, concorrência e reparo vêm de
 Para o runtime leve:
 
 ```bash
-pip install -e .
+pip install .
+llm-agent config init
 ```
 
 Para desenvolvimento:

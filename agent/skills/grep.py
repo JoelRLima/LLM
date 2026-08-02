@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BaseSkill
-from .safe_path import resolve_safe_path
+from .safe_path import resolve_confined_file, resolve_safe_path
 
 
 class GrepSkill(BaseSkill):
@@ -84,19 +84,34 @@ class GrepSkill(BaseSkill):
             "message": f"{len(results)} correspondências encontradas (total: {len(results)}).",
         }
 
-    @staticmethod
-    def _collect_files(requested: Path, recursive: bool, exclude_dirs: set[str]) -> list[Path]:
+    def _collect_files(
+        self,
+        requested: Path,
+        recursive: bool,
+        exclude_dirs: set[str],
+    ) -> list[Path]:
         if requested.is_file():
-            return [requested]
-        if not requested.is_dir():
-            return []
-        if not recursive:
-            return [path for path in requested.iterdir() if path.is_file()]
-        discovered: list[Path] = []
-        for root, directories, files in os.walk(requested):
-            directories[:] = [name for name in directories if name not in exclude_dirs and not name.startswith(".")]
-            discovered.extend(Path(root) / name for name in files)
-        return discovered
+            candidates = [requested]
+        elif not requested.is_dir():
+            candidates = []
+        elif not recursive:
+            candidates = [
+                path for path in requested.iterdir() if path.is_file()
+            ]
+        else:
+            candidates = []
+            for root, directories, files in os.walk(requested):
+                directories[:] = [
+                    name
+                    for name in directories
+                    if name not in exclude_dirs and not name.startswith(".")
+                ]
+                candidates.extend(Path(root) / name for name in files)
+        confined = (
+            resolve_confined_file(self.base_dir, path)
+            for path in candidates
+        )
+        return [path for path in confined if path is not None]
 
     @staticmethod
     def _is_searchable(path: Path, exclude_files: set[str]) -> bool:

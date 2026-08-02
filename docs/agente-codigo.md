@@ -156,15 +156,26 @@ conteúdo muito grande e quantidade de arquivos acima do limite. Os defaults sã
 ```
 
 Abaixo do limiar, a transação permanece somente em stage e retorna `blocked`
-com diff, score e motivos. A CLI mostra a prévia e pede confirmação. A skill só
-aprova automaticamente se `auto_confirm` estiver explicitamente habilitado.
+com diff, score e motivos. A CLI interativa mostra a prévia e pede confirmação.
+Na composição standalone, `ApprovalPort` é a fonte de autoridade: headless
+bloqueia por padrão e `llm-agent run --yes` aprova apenas aquela execução.
+`auto_confirm` permanece somente para consumidores legados que constroem a
+skill diretamente.
 
 ## Validação
 
-`ProcessRunner` executa arrays de argumentos com `shell=False`, cwd restrito ao
-projeto, timeout, cancelamento e limite de saída. Ele não instala pacotes.
-O runtime de subprocessos fica em `validation_process.py`; descoberta e
-seleção de validators permanecem em `validation.py`.
+`ProcessRunner` executa arrays de argumentos com `shell=False`, stdin fechado,
+cwd restrito ao projeto, timeout, cancelamento e limite de saída. Antes de
+iniciar, ele revalida cwd e argumentos declarados como paths, remove overrides
+herdados de Python, pytest e coverage e desabilita bytecode, user site e
+autoload de plugins do pytest. Ele não instala pacotes.
+
+`path_safety.py` é a fronteira canônica de paths do domínio. Descoberta,
+contexto, review, policy, transação e validação voltam a resolver os recursos
+imediatamente antes do I/O; symlinks ou junctions que escapem da raiz são
+recusados. O runtime de subprocessos fica em `validation_process.py`;
+descoberta e seleção de validators permanecem em `validation.py`, e os comandos
+Python embutidos ficam em `validation_python.py`.
 
 Status possíveis:
 
@@ -174,10 +185,14 @@ Status possíveis:
 - `cancelled`;
 - `timed_out`.
 
-O provider Python executa `py_compile` para arquivos alterados e, quando
-solicitado, pytest nas raízes de teste descobertas. Outros ecossistemas devem
+O provider Python usa `compile()` em processo isolado (`-I -B`) para os arquivos
+alterados, sem produzir `.pyc`. Quando solicitado, executa pytest apenas nas
+raízes descobertas, com configuração temporária interna, cache desligado e
+plugins externos não carregados automaticamente. Outros ecossistemas devem
 adicionar um `ValidationProvider`; o core não deve ganhar condicionais por nome
-de ferramenta.
+de ferramenta. Um provider customizado é código confiável e precisa declarar
+em `CommandSpec.workspace_arg_indices` todos os argumentos que representam
+paths do workspace.
 
 ## Workflows
 
@@ -230,8 +245,10 @@ do modelo não pode promover o estado da tarefa nem dispensar confirmação.
 /code template analyze_then_modify <arquivo...> -- <objetivo>
 ```
 
-`--yes` é uma aprovação explícita de propostas de baixa confiança. Caminhos com
-espaços devem usar aspas; prefira `/` como separador para portabilidade.
+`/code ... --yes` é uma aprovação explícita da proposta desse comando
+interativo. Para uma tarefa headless, a forma correspondente é
+`llm-agent run --yes ...`. Caminhos com espaços devem usar aspas; prefira `/`
+como separador para portabilidade.
 
 Análise e review funcionam mesmo sem provider configurado. As ações que propõem
 mudanças consomem o orçamento compartilhado de chamadas e falham explicitamente
@@ -250,11 +267,12 @@ Argumentos principais:
 }
 ```
 
-A skill recebe `ModelGateway` e configuração na composição da CLI. Ela não
-recebe `Orchestrator`. CLI e skill compartilham `CodingApplicationService`, que
-é a entrada única para construir contexto, policy, workflow e scheduler. A
-action `template` cria grafos determinísticos; `multitask` aceita um `TaskGraph`
-manual, ambos documentados em `multitarefa.md`.
+A skill recebe `ModelGateway`, configuração e `ApprovalPort` na composição da
+aplicação. Ela não recebe `Orchestrator`. CLI e skill compartilham
+`CodingApplicationService`, que é a entrada única para construir contexto,
+policy, workflow e scheduler. A action `template` cria grafos determinísticos;
+`multitask` aceita um `TaskGraph` manual, ambos documentados em
+`multitarefa.md`.
 
 ## Como adicionar um adapter de linguagem
 

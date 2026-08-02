@@ -15,7 +15,8 @@ devem permanecer nos domínios correspondentes.
 
 `SkillRegistry` importa, instancia e rejeita nome duplicado ou divergência entre
 o nome da implementação e o descritor. `load_all_skills()` compõe o registro e
-permite injetar `Orchestrator`, `ModelGateway`, configuração e raiz do projeto.
+permite injetar `Orchestrator`, `ModelGateway`, configuração, `ApprovalPort`,
+raiz do projeto e scratch externo ao workspace.
 
 `agent/planning/tool_metadata.py` deriva a visão exigida pelo planejador legado.
 Não cadastre custo ou efeito em um segundo mapa.
@@ -117,26 +118,39 @@ Exemplo:
 
 Sem gateway injetado, ações que exigem modelo falham explicitamente; análise e
 review continuam disponíveis. Propostas de baixa confiança retornam `blocked`
-sem escrever, exceto quando `auto_confirm: true` concede aprovação explícita.
-O campo externo `ok` só é verdadeiro para `succeeded`; `unverified` permanece
-visível em `data.status` e nunca é promovido a sucesso.
+sem escrever. Na aplicação standalone, a autorização vem do `ApprovalPort`:
+chat pode perguntar, headless bloqueia e `run --yes` aprova somente aquela
+execução. `auto_confirm: true` é compatibilidade para construção direta e
+legada da skill. O campo externo `ok` só é verdadeiro para `succeeded`;
+`unverified` permanece visível em `data.status` e nunca é promovido a sucesso.
 
 ## Segurança das skills existentes
 
 - resolução de caminho compartilhada usa `safe_path.resolve_safe_path()`;
+- varreduras de `grep` e `code_analyzer` resolvem cada arquivo descoberto e
+  descartam symlinks que apontem para fora da raiz;
 - `file_writer` valida a requisição e delega backup, diff, confirmação e
   escrita a `file_writer_runtime.py`;
-- `shell` usa `shlex.split`, `shell=False`, timeout e allowlist;
+- `shell` usa `shlex.split`, `shell=False`, timeout, allowlist e validação dos
+  argumentos que representam paths; `pytest`, `mypy` e `ruff` também consultam
+  `ApprovalPort` antes da execução;
+- `process_paths.py`, `process_safety.py` e `process_environment.py` isolam,
+  respectivamente, paths, efeitos/allowlist e sanitização do ambiente usados
+  por `shell` e `git_reader`;
 - `python_executor` coordena quatro responsabilidades isoladas:
   `python_source_analysis.py` extrai propriedades sintáticas,
   `python_security_analysis.py` detecta construções inseguras,
   `python_sandbox_policy.py` decide a permissão e
   `python_sandbox_runtime.py` executa o subprocesso efêmero;
 - `git_reader` não faz commit, checkout, push ou escrita;
+- `session_memory` só reporta sucesso depois do commit SQLite;
 - instalação de pacotes não é concedida às personas atuais.
 
 Essas defesas não equivalem a uma sandbox de sistema operacional para código
-hostil.
+hostil. Em particular, um validator como `pytest` executa código do próprio
+projeto; confinamento de argumentos impede escapes diretos, mas não transforma
+o processo em isolamento forte. A capability `process` deve ser tratada como
+autoridade relevante.
 
 ## Como adicionar uma skill
 

@@ -13,6 +13,9 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | saída estruturada | [`structured_output.py`](../agent/llm/structured_output.py) | fallback deve continuar validando schema em runtime |
 | compressão de contexto | [`context_manager.py`](../agent/llm/context_manager.py) | respeite o perfil de hardware e use o gateway para tokens |
 | perfil de hardware | [`hardware.py`](../agent/runtime/hardware.py) e [`config.py`](../agent/runtime/config.py) | para 8 GB, mantenha concorrência de modelo em 1 |
+| composição da aplicação | [`application.py`](../agent/application.py) | interfaces reutilizam esta raiz; não montam runtime paralelo |
+| autoridade de escrita | [`approval.py`](../agent/approval.py) | injete `ApprovalPort`; domínio e modo headless nunca consultam stdin |
+| workspace | [`workspace_context.py`](../agent/runtime/workspace_context.py) | receba a raiz explicitamente e injete-a em consumidores |
 | nova linguagem | [`agent/code/languages/`](../agent/code/languages/) | implemente o adapter e declare limitações reais |
 | descoberta do projeto | [`discovery.py`](../agent/code/discovery.py) | não execute scripts de manifests durante descoberta |
 | análise/índice | [`intelligence.py`](../agent/code/intelligence.py) | retorne diagnósticos, não exceções globais por arquivo inválido |
@@ -21,6 +24,7 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | risco/confirmação | [`policy.py`](../agent/code/policy.py) | score explicável antes do commit; confirmação não substitui validação |
 | classificação de falha | [`diagnostics.py`](../agent/code/diagnostics.py) | heurística determinística antes de qualquer retry por modelo |
 | validator | [`validation.py`](../agent/code/validation.py) | `shell=False`, timeout, cancelamento; não instale pacotes |
+| nova extension stdio | [`examples/extensions/demo_extension/`](../examples/extensions/demo_extension/) e [`agent/tools/stdio_adapter.py`](../agent/tools/stdio_adapter.py) | protocolo `1.0`; toda resposta deve ecoar o `invocation_id` recebido |
 | workflow de código | [`workflows.py`](../agent/code/workflows.py) | componha serviços e retorne `TaskResult` |
 | entrada CLI/skill | [`application.py`](../agent/code/application.py) | mantenha uma entrada única independente de UI e planner |
 | comando explícito | [`commands.py`](../agent/code/commands.py) | parser puro; não execute efeitos nem importe CLI |
@@ -33,8 +37,8 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | dependências/multitarefa | [`task_graph.py`](../agent/planning/task_graph.py) e [`task_scheduler.py`](../agent/planning/task_scheduler.py) | preserve DAG, isolamento, recursos e determinismo |
 | retry/replan legado | [`replan.py`](../agent/planning/replan.py) | heurística segura antes de modelo |
 | segurança estática | [`security_patterns.py`](../agent/security/security_patterns.py) | mantenha o registro canônico de padrões |
-| caminhos gerados | [`paths.py`](../agent/runtime/paths.py) | não espalhe literals de `runtime/` |
-| configuração | [`config.py`](../agent/runtime/config.py) | valide tipo, faixa e fallback |
+| caminhos gerados | [`paths.py`](../agent/runtime/paths.py) | escolha escopo global ou de workspace; não use literals de `runtime/` |
+| configuração | [`config_repository.py`](../agent/runtime/config_repository.py), [`config_schema.py`](../agent/runtime/config_schema.py) e [`config_effective.py`](../agent/runtime/config_effective.py) | versione, valide, materialize o perfil e mantenha paths internos fora do schema |
 
 ## Adicionar um provider
 
@@ -47,6 +51,43 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 6. Documente configurações e diferenças reais do backend.
 
 Não selecione comportamento pelo nome do modelo.
+
+## Implementar uma extension stdio
+
+O manifest deve declarar `id`, `version`, `protocol_version: "1.0"`,
+`transport: "stdio"`, um `entrypoint` como lista de strings, `tools` como lista
+não vazia com nomes únicos e `timeout_seconds` inteiro entre 1 e 3600. Tipos
+inválidos não são convertidos silenciosamente.
+Campos não documentados no objeto raiz ou nas declarações de tools são
+rejeitados. Campos internos de `schema` seguem JSON Schema e não são tratados
+como campos do manifest.
+
+Para cada invocação, leia o único request JSONL de stdin e escreva exatamente
+uma linha JSON não vazia em stdout; linhas vazias adicionais são ignoradas. A resposta deve conter o mesmo
+`invocation_id` não vazio recebido no request e um `status` `succeeded` ou
+`failed`; JSON inválido,
+stdout extra, ID ausente/divergente e status desconhecido são erros de
+protocolo. Envie logs e diagnósticos para stderr.
+
+Exit code diferente de zero é falha de processo e não pode ser mascarado por
+uma resposta JSON aparentemente válida.
+
+O adapter drena stdout e stderr concorrentemente. Cada stream tem limite de
+1 MiB durante a produção; `MAX_STDERR_BYTES` é independente, e conteúdo
+volumoso ou artifacts não devem ser enviados por stderr. stderr é apenas
+diagnóstico e não faz parte do resultado. Timeout ou excesso de saída solicita
+o encerramento da árvore do processo; falhas de terminação, Job Object e
+drenagem são observáveis como `CLEANUP_ERROR`. Falha isolada na remoção do
+status privado é apenas diagnóstico bounded e não substitui o resultado.
+No Windows, um launcher interno bloqueado é associado ao Job Object antes de
+receber autorização para iniciar a extension. Falha de criação ou associação
+impede a execução da extension; não há fallback para execução direta. A
+extension continua recebendo exatamente o protocolo público `1.0`, sem
+qualquer mudança no manifest ou no código das extensions. POSIX continua
+iniciando a extension diretamente. O launcher é um detalhe interno, não é
+registrado como tool e não é uma sandbox de sistema operacional. Respostas
+tardias são descartadas. O subprocesso recebe apenas o ambiente operacional
+mínimo.
 
 ## Adicionar uma linguagem
 
@@ -65,9 +106,13 @@ O fallback textual continua obrigatório para extensões não suportadas.
 2. Delegue a lógica a um caso de uso testável.
 3. Adicione o `SkillSpec` ao catálogo.
 4. Declare capacidades e efeitos de forma conservadora.
-5. Use injeção de dependência para gateway, contexto ou configuração.
-6. Teste `SkillRegistry`, autorização da persona e contrato de resultado.
-7. Atualize [`skills.md`](skills.md).
+5. Receba workspace/scratch explicitamente; nunca aceite que argumentos escapem
+   dessa raiz, mesmo quando um subprocesso usa `cwd` seguro.
+6. Para qualquer efeito, receba `ApprovalPort`; não use `input()` no domínio.
+7. Use injeção de dependência para gateway, contexto ou configuração.
+8. Teste `SkillRegistry`, autorização da persona, confinamento e contrato de
+   resultado.
+9. Atualize [`skills.md`](skills.md).
 
 Não há `SKILL_CONFIG`; `tool_metadata.py` é derivado do catálogo.
 
@@ -83,6 +128,8 @@ Um workflow deve:
 - preferir `edit` localizado com `base_hash` e `expected_text` a `modify`
   integral;
 - submeter a prévia à política de confiança antes do commit;
+- consultar a autoridade injetada antes de qualquer commit, mesmo quando a
+  política de confiança permitir auto-apply;
 - classificar falhas antes de oferecer contexto a uma tentativa de reparo;
 - devolver `succeeded`, `failed`, `cancelled`, `blocked` ou `unverified` com
   semântica exata;
@@ -112,12 +159,15 @@ grafo.
 
 Ao adicionar uma chave:
 
-1. defina um fallback seguro em `DEFAULT_CONFIG` ou seção correspondente;
-2. valide tipo e intervalo em `carregar_config()`;
+1. defina um fallback seguro em `agent/resources/default_config.json`;
+2. inclua a chave na validação estrita de `config_schema.py`;
 3. exponha a chave em `config.example.json`;
-4. teste ausência, tipo inválido, limite inválido e valor válido;
+4. teste ausência, chave desconhecida, tipo inválido, limite e valor válido;
 5. documente comportamento e migração em [`arquivos-raiz.md`](arquivos-raiz.md);
 6. passe o valor pelo contexto/contrato, sem leitura global espalhada.
+
+Paths de checkpoint, relatório, memória, cache e outros detalhes internos
+pertencem a `AppPaths`/`WorkspacePaths`, não ao arquivo de preferência.
 
 ## Gates antes de concluir
 
@@ -126,6 +176,7 @@ Ao adicionar uma chave:
 .venv\Scripts\python.exe -m ruff check .
 .venv\Scripts\python.exe -m mypy
 .venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts\verify_installed_package.py
 git diff --check
 ```
 

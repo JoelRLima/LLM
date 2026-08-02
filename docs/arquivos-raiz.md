@@ -6,9 +6,10 @@ de empacotamento e documentação. Implementações novas pertencem ao pacote
 
 ## `cli.py`
 
-Fachada executável de `agent.interfaces.cli.app`. O módulo canônico carrega a configuração, cria `ChatSession`,
-registra as skills pelo catálogo, injeta `ModelGateway` e configuração nas
-skills que precisam deles, conecta o `Orchestrator` e inicia o loop interativo.
+Fachada executável de `agent.interfaces.cli.app`. O módulo canônico adapta chat,
+execução headless, diagnóstico e manutenção de configuração/estado para
+`AgentApplication`; não recompõe sessão e orquestrador por conta própria.
+`--help`, `--version` e `config path` não inicializam recursos.
 
 ## `commands.py`
 
@@ -29,10 +30,20 @@ delegam payload, transporte e SSE ao adapter de provider.
 Código novo deve depender de `agent.llm.contracts.ModelGateway`, e não de
 `ChatSession` ou de objetos `requests.Response`.
 
-## `config.py`, `agent/runtime/config.py` e `config.example.json`
+## `config.py`, `agent/runtime/config_repository.py` e `config.example.json`
 
-`config.py` é um alias. O `carregar_config()` canônico valida tipos, intervalos e fallbacks seguros. A configuração
-atual aceita perfis de modelo e preserva as chaves legadas.
+`config.py` e `agent/runtime/config.py` são fachadas legadas.
+`ConfigRepository` é a fronteira standalone: carrega o default empacotado,
+exige `schema_version`, rejeita chaves desconhecidas e versões futuras, e
+aplica a precedência CLI, ambiente allowlisted, arquivo e default.
+`config_effective.py` materializa no perfil selecionado os overrides explícitos
+de endpoint, modelo, temperatura, tokens, timeout e GBNF; assim doctor,
+`ChatSession` e provider observam a mesma configuração efetiva.
+
+`llm-agent config init` cria o arquivo de maneira atômica; `path` apenas mostra
+o destino; `validate` resolve e valida; `migrate --from` copia uma origem
+explícita sem removê-la. `config.example.json` documenta o schema, mas não
+precisa ser copiado para o workspace.
 
 ### Modelo e hardware
 
@@ -77,9 +88,9 @@ perfil interno `legacy`.
 | `resume_retry_failed` | `false` |
 | `resume_retry_skipped` | `false` |
 
-`checkpoint_file` aponta por padrão para
-`runtime/agent_checkpoint.json`. Estados concluídos não voltam a executar;
-retry de estados terminais é opt-in.
+`checkpoint_file` não é preferência persistida no schema standalone. A
+aplicação injeta o checkpoint correspondente ao workspace. Estados concluídos
+não voltam a executar; retry de estados terminais é opt-in.
 
 ### Validação legada pós-escrita
 
@@ -96,38 +107,47 @@ Os workflows de `agent/code` usam `ProjectValidator` e resultados normalizados.
 | `code_policy.require_target_alignment` | booleano | `true` | Penaliza paths não declarados nos targets. |
 
 O score é calculado localmente a partir da estrutura do ChangeSet. Essa seção
-não concede sucesso nem ignora validators. `auto_confirm` aprova prompts de
-baixa confiança em execução headless e deve continuar `false` no uso manual.
+não concede sucesso nem ignora validators. Na aplicação standalone, a
+autoridade vem de `ApprovalPort`: chat pergunta ao usuário, headless bloqueia e
+`run --yes` aprova somente a execução corrente.
 
 ### Outros campos
 
 - `default_system_prompt`: prompt da conversa direta;
-- `auto_confirm`: aprova confirmações de escrita das skills e propostas
-  `code_task` de baixa confiança em execução headless; mantenha `false` em uso
-  manual;
-- `task_report`: habilitação, formato e diretório dos relatórios da tarefa.
+- `auto_confirm`: compatibilidade para consumidores que constroem skills
+  diretamente; não substitui a autoridade explícita da aplicação standalone e
+  deve permanecer `false` em uso manual;
+- `task_report`: habilitação e formato; o diretório é definido pelos paths do
+  workspace.
 
 ## `paths.py` e `agent/runtime/paths.py`
 
-O arquivo da raiz é um alias. O módulo canônico é a fonte única dos caminhos de runtime: log, memória JSON/SQLite, backup de
-memória, checkpoint, métricas, relatórios, histórico, benchmark, health report
-e restore points. `AGENT_RUNTIME_DIR` permite trocar a raiz em testes ou
-instâncias isoladas.
+O arquivo da raiz é um alias. `AppPaths` separa configuração, dados, estado,
+cache e logs sem efeitos no construtor. `WorkspacePaths` particiona memória,
+checkpoint, métricas, relatórios, artifacts, histórico, benchmark, restore
+points e scratch pelo identificador estável do workspace.
 
-`.temp_analysis/` não faz parte desse runtime: é relativo ao repositório que as
-skills antigas estão editando.
+`LLM_AGENT_HOME` fixa uma raiz portátil. Sem ele, Windows usa
+`APPDATA`/`LOCALAPPDATA` e Unix usa XDG. `AGENT_RUNTIME_DIR` permanece somente
+como compatibilidade. O scratch standalone fica no cache da aplicação;
+`.temp_analysis/` é fallback das skills antigas.
 
 ## `logger.py` e `agent/runtime/logging.py`
 
-O arquivo da raiz é um alias. O módulo canônico configura log em arquivo e console. Garante a criação de `runtime/` antes do
-handler de arquivo.
+O arquivo da raiz é um alias. Importar o módulo canônico não abre arquivo.
+`AgentApplication` chama `setup_logger()` após resolver os paths, e
+`teardown_logger()` libera o lease no lifecycle. Instâncias compatíveis
+compartilham handlers por contagem de referências; destinos simultâneos
+incompatíveis são rejeitados.
 
 ## `benchmark.py`
 
-Fachada de `scripts.benchmark`, que executa o fluxo completo contra o backend configurado, mede duração/passos e
-grava `runtime/benchmark_results.json`. É um teste de integração com modelo
-real, não uma avaliação hermética. As tarefas de benchmark podem criar os
-arquivos de exercício que declaram.
+Fachada de `scripts.benchmark`, que executa o fluxo completo contra o backend
+configurado, mede duração/passos e grava o resultado no estado do workspace. É
+um teste de integração com modelo real, não uma avaliação hermética. As tarefas
+de benchmark podem criar os arquivos de exercício que declaram. Timeout é
+cooperativo: o benchmark solicita cancelamento e aguarda a chamada em voo
+terminar antes de liberar a aplicação.
 
 ## Dependências
 

@@ -6,6 +6,12 @@ import pytest
 from agent.code.changes import changeset_from_dict
 from agent.code.commands import CodeCommandError, parse_code_command
 from agent.code.context_selection import ContextSelector
+from agent.code.contracts import (
+    AnalysisLevel,
+    CodeAnalysis,
+    ProjectProfile,
+    RepositoryIndex,
+)
 from agent.code.diagnostics import FailureCategory, FailureClassifier
 from agent.code.intelligence import CodeIntelligenceService
 from agent.code.policy import ChangeApprovalPolicy, change_policy_from_config
@@ -51,6 +57,51 @@ def test_context_selection_expands_explicit_directory(tmp_path: Path):
     assert {item.path for item in root_selected.files} == {"pkg/a.py", "pkg/b.py"}
 
 
+def test_context_selection_rejects_untrusted_index_path_outside_workspace(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-context-sentinel.py"
+    secret = "CONTEXT_SENTINEL_MUST_NOT_BE_READ"
+    outside.write_text(f"{secret} = True\n", encoding="utf-8")
+    analysis = CodeAnalysis(
+        file_path=str(outside),
+        language="python",
+        level=AnalysisLevel.TEXTUAL,
+        confidence=0.1,
+        content_hash="untrusted",
+    )
+    index = RepositoryIndex(
+        ProjectProfile(
+            root=str(tmp_path),
+            vcs=None,
+            languages={"python": 1},
+            manifests=(),
+            source_roots=(),
+            test_roots=(),
+            scanned_files=1,
+        ),
+        (analysis,),
+    )
+
+    class UntrustedIntelligence:
+        @staticmethod
+        def index_repository() -> RepositoryIndex:
+            return index
+
+    selector = ContextSelector(tmp_path, UntrustedIntelligence())  # type: ignore[arg-type]
+    selected = selector.select("Leia CONTEXT_SENTINEL", [str(outside)])
+
+    assert selected.files == ()
+    assert secret not in selected.text
+    with pytest.raises(ValueError, match="fora do workspace"):
+        selector._read_excerpt(
+            str(outside),
+            analysis,
+            frozenset({"context_sentinel"}),
+            1000,
+        )
+
+
 def test_change_policy_distinguishes_safe_edit_from_full_rewrite(tmp_path: Path):
     original = "value = 0\n"
     (tmp_path / "module.py").write_text(original, encoding="utf-8")
@@ -87,6 +138,32 @@ def test_change_policy_distinguishes_safe_edit_from_full_rewrite(tmp_path: Path)
 
     root_target = policy.assess(tmp_path, risky, ["."])
     assert not any("targets" in reason for reason in root_target.reasons)
+
+
+def test_change_policy_fails_closed_for_external_paths(tmp_path: Path):
+    outside = tmp_path.parent / f"{tmp_path.name}-policy-sentinel.py"
+    outside.write_text("VALUE = 1\n", encoding="utf-8")
+    escaped = changeset_from_dict(
+        {
+            "changes": [
+                {
+                    "path": str(outside),
+                    "kind": "modify",
+                    "content": "VALUE = 2\n",
+                }
+            ]
+        }
+    )
+
+    assessment = ChangeApprovalPolicy().assess(
+        tmp_path,
+        escaped,
+        [str(outside)],
+    )
+
+    assert assessment.requires_confirmation is True
+    assert assessment.confidence == 0.0
+    assert any("fora do workspace" in reason for reason in assessment.reasons)
 
 
 def test_failure_classifier_prevents_retry_after_permission_error():

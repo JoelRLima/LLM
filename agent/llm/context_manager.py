@@ -1,6 +1,6 @@
 import datetime as dt
-import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.error_handler import ErrorHandler
@@ -37,10 +37,12 @@ class ContextManager:
         session: ChatSession,
         agent_state: AgentState,
         verbose: bool = False,
+        workspace_root: str | Path = ".",
     ):
         self.session = session
         self.agent_state = agent_state
         self.verbose = verbose
+        self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.hardware_profile = resolve_hardware_profile(self.session.config)
         self._cached_project_context: Optional[str] = None
         self.model_client = ModelClient()
@@ -53,7 +55,7 @@ class ContextManager:
     def get_project_context(self) -> str:
         if self._cached_project_context is not None:
             return self._cached_project_context
-        self._cached_project_context = discover_project_context(os.getcwd())
+        self._cached_project_context = discover_project_context(self.workspace_root)
         return self._cached_project_context
 
     def estimate_conversation_tokens(self) -> int:
@@ -73,7 +75,7 @@ class ContextManager:
         )
 
     def get_file_hints(self, objective: str) -> str:
-        return get_file_hints(objective, self.semantic)
+        return get_file_hints(objective, self.semantic, self.workspace_root)
 
     def check_prompt_size(self, context_limit: int = 8192) -> None:
         system_content = self.session.messages[0]["content"]

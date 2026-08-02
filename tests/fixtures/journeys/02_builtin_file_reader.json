@@ -1,0 +1,23 @@
+{
+  "scenario_id": "builtin_file_reader",
+  "capability": "skill",
+  "objective": "Leia notes.txt.",
+  "initial_files": {
+    "notes.txt": "alpha\nbeta\n"
+  },
+  "expectation": {
+    "success": true,
+    "unchanged_files": ["notes.txt"],
+    "answer_contains": ["alpha", "beta"],
+    "max_steps": 1
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "builtin_skill",
+      "skill": "file_reader",
+      "args": {
+        "file_path": "notes.txt"
+      }
+    }
+  }
+}

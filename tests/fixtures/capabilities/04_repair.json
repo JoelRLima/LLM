@@ -11,7 +11,30 @@
     "files": [{"path": "limits.py", "contains": ["max(low", "min(high"]}],
     "unchanged_files": ["tests/test_limits.py"],
     "allowed_changed_files": ["limits.py"],
-    "answer_contains": ["validada"],
+    "answer_contains": ["validado"],
     "max_steps": 10
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "code_task",
+      "skill": "code_task",
+      "args": {
+        "action": "repair",
+        "targets": ["limits.py"],
+        "include_tests": true
+      },
+      "model_responses": [
+        {
+          "changes": [
+            {
+              "path": "limits.py",
+              "kind": "modify",
+              "content": "def clamp(value, low, high):\n    return max(low, min(high, value))\n"
+            }
+          ]
+        }
+      ],
+      "expected_model_calls": 1
+    }
   }
 }

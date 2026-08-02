@@ -1,5 +1,7 @@
 from typing import Any
 
+from agent.memory.memory import MemoryDatabaseError
+
 from .base import BaseSkill
 
 
@@ -26,6 +28,38 @@ class SessionMemorySkill(BaseSkill):
             }
         }
 
+    @staticmethod
+    def _database_failure(
+        exc: MemoryDatabaseError,
+        message: str,
+    ) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "done": True,
+            "error": str(exc),
+            "message": message,
+        }
+
+    def _set(self, key: str, value: str) -> dict[str, Any]:
+        try:
+            self.orchestrator.remember(key, value, section="key_findings")
+        except MemoryDatabaseError as exc:
+            return self._database_failure(
+                exc,
+                "Não foi possível persistir a memória.",
+            )
+        return {"ok": True, "done": True, "message": f"Memorizado: {key}"}
+
+    def _delete(self, key: str) -> dict[str, Any]:
+        try:
+            self.orchestrator.forget(key)
+        except MemoryDatabaseError as exc:
+            return self._database_failure(
+                exc,
+                "Não foi possível remover a memória.",
+            )
+        return {"ok": True, "done": True, "message": f"Removido: {key}"}
+
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         if not self.orchestrator:
             return {"ok": False, "done": True, "error": "Sem orquestrador vinculado."}
@@ -40,8 +74,7 @@ class SessionMemorySkill(BaseSkill):
         if action == "set":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            self.orchestrator.remember(key, value, section="key_findings")
-            return {"ok": True, "done": True, "message": f"Memorizado: {key}"}
+            return self._set(key, value)
         elif action == "get":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
@@ -53,7 +86,6 @@ class SessionMemorySkill(BaseSkill):
         elif action == "delete":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            self.orchestrator.forget(key)
-            return {"ok": True, "done": True, "message": f"Removido: {key}"}
+            return self._delete(key)
         else:
             return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}

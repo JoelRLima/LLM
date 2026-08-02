@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from agent.interfaces.cli.command_handlers import (
     agent_command,
@@ -30,6 +31,11 @@ from agent.interfaces.cli.ui import ConsoleChangeApprover, exibir_menu
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
 
+if TYPE_CHECKING:
+    from agent.application import AgentApplication
+    from agent.runtime.paths import AppPaths, WorkspacePaths
+    from agent.runtime.workspace_context import WorkspaceContext
+
 __all__ = ["CommandContext", "ConsoleChangeApprover", "exibir_menu", "handle_command"]
 
 
@@ -39,10 +45,21 @@ class CommandContext:
         session: ChatSession,
         orchestrator: Orchestrator,
         config: Optional[Dict[str, Any]] = None,
+        *,
+        application: AgentApplication | None = None,
+        app_paths: AppPaths | None = None,
+        workspace: WorkspaceContext | None = None,
+        workspace_paths: WorkspacePaths | None = None,
+        config_path: str | Path | None = None,
     ) -> None:
         self.session = session
         self.orchestrator = orchestrator
         self.config = config or session.config
+        self.application = application
+        self.app_paths = app_paths
+        self.workspace = workspace
+        self.workspace_paths = workspace_paths
+        self.config_path = config_path
         self.modo_diagnostico = 0
         self.modo_agente = True
 

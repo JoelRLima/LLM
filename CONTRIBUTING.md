@@ -22,6 +22,10 @@ todo o código de produção; não há módulos ou funções dispensados dos lim
    falhas diferentes em um `False` ou em texto genérico.
 6. **Compatibilidade consciente:** fachadas legadas podem delegar ao fluxo novo,
    mas regras novas não devem ser duplicadas nelas.
+7. **Autoridade e escopo explícitos:** toda operação recebe seu workspace e,
+   quando produz efeito, uma porta de aprovação. `cwd`, confiança do modelo,
+   configuração legada ou interação implícita com stdin não concedem
+   autoridade.
 
 ## Organização e nomes
 
@@ -57,6 +61,9 @@ caso de uso relevante, considere:
 - limites, timeout e cancelamento;
 - efeitos reais em filesystem ou artefatos;
 - ausência de efeitos em análise e review;
+- negação de paths absolutos, `..`, symlinks e argumentos de subprocesso que
+  escapem do workspace;
+- ausência de stdin no modo headless e bloqueio de escrita sem autoridade;
 - rollback e consistência após falha;
 - implementação alternativa de uma porta, quando houver;
 - restrições do perfil `low_vram_8gb` para operações de modelo.
@@ -75,11 +82,14 @@ Execute antes de concluir:
 .venv\Scripts\python.exe -m mypy --platform linux
 .venv\Scripts\python.exe -m mypy --platform win32
 .venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts\verify_installed_package.py
 git diff --check
 ```
 
 As duas execuções do mypy são obrigatórias: elas validam APIs condicionais de
 Linux e Windows mesmo quando o desenvolvimento ocorre em apenas um dos sistemas.
+O último comando constrói e instala o wheel em ambiente limpo; o modo
+`--offline-diagnostic` não substitui esse critério de aceitação.
 
 `scripts/check_quality.py` verifica:
 

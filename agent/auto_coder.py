@@ -4,14 +4,27 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Optional
 
 from agent.error_handler import ErrorHandler
 
 
 class AutoCoder:
-    def __init__(self, orchestrator: Any):
+    def __init__(
+        self,
+        orchestrator: Any,
+        *,
+        path_resolver: Callable[[str | Path], Path] | None = None,
+    ):
         self.orchestrator = orchestrator
+        self._path_resolver = path_resolver
+
+    def _resolve_user_path(self, file_path: str | Path) -> Path:
+        if self._path_resolver is None:
+            return Path(file_path)
+        return self._path_resolver(file_path)
 
     def generate_tests(self, code: str, file_path: str) -> Optional[str]:
         """
@@ -70,7 +83,8 @@ class AutoCoder:
         if not file_path.endswith(".py"):
             return True  # só testa arquivos Python
 
-        code = self._read_code(file_path)
+        target_path = self._resolve_user_path(file_path)
+        code = self._read_code(target_path)
         if code is None:
             return True
 
@@ -81,7 +95,12 @@ class AutoCoder:
         for attempt in range(3):
             if self.orchestrator.verbose:
                 print(f"🧪 [TEST] Tentativa {attempt + 1}/3 para '{file_path}'")
-            status, current_code = self._correction_attempt(file_path, current_code, attempt)
+            status, current_code = self._correction_attempt(
+                file_path,
+                target_path,
+                current_code,
+                attempt,
+            )
             if status == "passed":
                 return True
             if status == "skip":
@@ -91,15 +110,19 @@ class AutoCoder:
         return self._mark_correction_failure()
 
     @staticmethod
-    def _read_code(file_path: str) -> Optional[str]:
+    def _read_code(file_path: Path) -> Optional[str]:
         try:
-            with open(file_path, "r", encoding="utf-8") as handle:
+            with file_path.open("r", encoding="utf-8") as handle:
                 return handle.read()
         except OSError:
             return None
 
     @staticmethod
-    def _run_generated_tests(file_path: str, code: str, test_code: str) -> tuple[bool, str]:
+    def _run_generated_tests(
+        file_path: Path,
+        code: str,
+        test_code: str,
+    ) -> tuple[bool, str]:
         test_file: str | None = None
         try:
             combined = f"{code}\n\n# --- TESTES ---\n{test_code}"
@@ -111,7 +134,7 @@ class AutoCoder:
                 capture_output=True,
                 text=True,
                 timeout=15,
-                cwd=os.path.dirname(os.path.abspath(file_path)) or ".",
+                cwd=file_path.parent,
             )
             output = result.stdout + result.stderr
             passed = result.returncode == 0 and "FAILED" not in output and "Error" not in output
@@ -123,19 +146,29 @@ class AutoCoder:
                 except OSError:
                     pass
 
-    def _correction_attempt(self, file_path: str, current_code: str, attempt: int) -> tuple[str, str]:
+    def _correction_attempt(
+        self,
+        file_path: str,
+        target_path: Path,
+        current_code: str,
+        attempt: int,
+    ) -> tuple[str, str]:
         test_code = self.generate_tests(current_code, file_path)
         if not test_code:
             return ("skip" if attempt == 0 else "failed"), current_code
         try:
-            passed, output = self._run_generated_tests(file_path, current_code, test_code)
+            passed, output = self._run_generated_tests(
+                target_path,
+                current_code,
+                test_code,
+            )
         except subprocess.TimeoutExpired:
             return "retry", current_code
         except OSError:
             return "failed", current_code
         if passed:
             if attempt > 0:
-                self._save_code(file_path, current_code)
+                self._save_code(target_path, current_code)
             return "passed", current_code
         if attempt >= 2:
             return "failed", current_code
@@ -146,9 +179,9 @@ class AutoCoder:
         return "retry", corrected
 
     @staticmethod
-    def _save_code(file_path: str, code: str) -> None:
+    def _save_code(file_path: Path, code: str) -> None:
         try:
-            with open(file_path, "w", encoding="utf-8") as handle:
+            with file_path.open("w", encoding="utf-8") as handle:
                 handle.write(code)
         except OSError:
             pass

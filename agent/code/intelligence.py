@@ -8,6 +8,7 @@ from typing import Dict, Optional
 from agent.code.contracts import CodeAnalysis, Diagnostic, RepositoryIndex, Symbol
 from agent.code.discovery import LANGUAGE_BY_EXTENSION, ProjectDiscovery
 from agent.code.languages import LanguageRegistry, default_language_registry
+from agent.code.path_safety import resolve_workspace_path
 
 
 class CodeIntelligenceService:
@@ -25,14 +26,16 @@ class CodeIntelligenceService:
         self._cache: Dict[str, CodeAnalysis] = {}
 
     def _resolve(self, relative_path: str) -> Path:
-        path = (self.root / relative_path).resolve()
         try:
-            path.relative_to(self.root)
+            return resolve_workspace_path(
+                self.root,
+                relative_path,
+                require_file=True,
+            )
         except ValueError as exc:
-            raise ValueError(f"Arquivo fora da raiz do projeto: {relative_path}") from exc
-        if not path.is_file():
-            raise FileNotFoundError(relative_path)
-        return path
+            raise ValueError(
+                f"Arquivo fora da raiz do projeto: {relative_path}"
+            ) from exc
 
     def analyze_file(self, relative_path: str) -> CodeAnalysis:
         path = self._resolve(relative_path)

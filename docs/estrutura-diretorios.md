@@ -6,6 +6,8 @@ gerados foram omitidos.
 ```text
 LLM/
 ├── agent/
+│   ├── application.py              # composição/lifecycle independente de UI
+│   ├── approval.py                 # porta e decisões de consentimento
 │   ├── code/                       # domínio de engenharia de código
 │   │   ├── languages/              # adapters Python e textual genérico
 │   │   ├── changes.py              # fachada pública do ChangeSet
@@ -20,16 +22,23 @@ LLM/
 │   │   ├── discovery.py            # descoberta do projeto
 │   │   ├── intelligence.py         # análise e índice incremental
 │   │   ├── multitask.py            # workflows em TaskGraph
+│   │   ├── path_safety.py          # confinamento canônico do domínio
 │   │   ├── policy.py               # confiança e confirmação de proposta
 │   │   ├── task_templates.py       # grafos determinísticos de código
 │   │   ├── validation.py           # perfis e agregação de validação
+│   │   ├── validation_python.py    # comandos Python embutidos
 │   │   ├── validation_process.py   # subprocesso limitado/cancelável
 │   │   ├── workflow_proposal.py    # proposta estruturada via modelo
 │   │   ├── workflow_application.py # aprovação, commit e rollback
 │   │   └── workflows.py            # fachada dos casos de uso
 │   ├── evaluation/                 # cenários e oráculos herméticos
 │   ├── interfaces/
-│   │   └── cli/                     # app, comandos, handlers e apresentação
+│   │   └── cli/
+│   │       ├── app.py              # parsing e dispatch
+│   │       ├── bootstrap.py        # composição chat/headless
+│   │       ├── approval.py         # consentimento interativo
+│   │       ├── maintenance.py      # doctor e configuração/estado
+│   │       └── ...                 # comandos, handlers e apresentação
 │   ├── llm/
 │   │   ├── providers/              # adapters de protocolo/modelo
 │   │   ├── contracts.py            # ModelGateway e contratos normalizados
@@ -40,7 +49,11 @@ LLM/
 │   │   ├── router.py
 │   │   ├── session.py              # histórico e gateway da sessão
 │   │   └── structured_output.py
-│   ├── memory/                     # memória persistente e opcional semântica
+│   ├── memory/
+│   │   ├── memory.py               # estado persistente e SQLite
+│   │   ├── json_persistence.py     # promoção JSON atômica
+│   │   ├── prompt_context.py       # projeção enxuta para prompts
+│   │   └── semantic_memory.py      # camada semântica opcional
 │   ├── orchestration/              # ciclo da tarefa e composição do facade
 │   ├── planning/
 │   │   ├── execution_gateway.py
@@ -58,8 +71,20 @@ LLM/
 │   │   ├── task_scheduler.py        # concorrência limitada
 │   │   └── ...                      # fallback, replan, complexidade, metadata
 │   ├── reporting/                  # builders separados de renderização
-│   ├── health/                     # checks de estado, runtime e relatório
-│   ├── runtime/                    # contexto, config, logging, paths e perfis
+│   ├── health/
+│   │   ├── standalone.py           # composição/renderização do doctor
+│   │   ├── standalone_checks.py    # checks sem bootstrap do agente
+│   │   └── state_integrity.py      # integridade read-only da memória
+│   ├── resources/                  # defaults empacotados no wheel
+│   ├── runtime/
+│   │   ├── config_effective.py     # overrides no perfil selecionado
+│   │   ├── config_repository.py    # init/load/migrate versionados
+│   │   ├── config_schema.py        # schema estrito da configuração
+│   │   ├── paths.py                # AppPaths e WorkspacePaths
+│   │   ├── workspace_context.py    # raiz explícita e identidade estável
+│   │   ├── state_migration.py      # migração conservadora do legado
+│   │   ├── instance_lock.py        # exclusão por workspace
+│   │   └── ...                     # contexto, logging e perfis
 │   ├── security/                   # scanner e padrões
 │   ├── skills/
 │   │   ├── catalog.py               # fonte canônica dos descritores
@@ -67,6 +92,9 @@ LLM/
 │   │   ├── registry.py              # construção e validação
 │   │   ├── policy.py                # capacidades por persona
 │   │   ├── code_task.py             # fachada dos workflows novos
+│   │   ├── process_environment.py   # ambiente reduzido de subprocessos
+│   │   ├── process_paths.py         # parsing e confinamento de argumentos
+│   │   ├── process_safety.py        # allowlist e efeitos de comandos
 │   │   └── ...                      # skills locais existentes
 │   ├── checkpoint_manager.py
 │   ├── contracts.py
@@ -81,16 +109,20 @@ LLM/
 ├── scripts/
 │   ├── benchmark.py                 # benchmark com backend real
 │   ├── check_quality.py             # limites, arquitetura, links e encoding
-│   └── clean_runtime.py             # limpeza dry-run e arquivo de estado antigo
-├── runtime/                         # artifacts gerados em execução
+│   ├── clean_runtime.py             # limpeza dry-run do estado antigo
+│   └── verify_installed_package.py  # aceitação black-box do wheel
 ├── tests/
 │   ├── fixtures/capabilities/       # cenários de capacidade
+│   ├── fixtures/journeys/           # jornadas executáveis da plataforma
 │   ├── fixtures/regression/         # planos de regressão
 │   ├── unit/
 │   │   ├── code/
+│   │   ├── interfaces/
 │   │   ├── llm/
+│   │   ├── orchestration/
 │   │   ├── planning/
 │   │   ├── runtime/
+│   │   ├── scripts/
 │   │   └── skills/
 │   ├── integration/                # composição e capacidades ponta a ponta
 │   ├── policy/                     # gates do próprio repositório
@@ -123,24 +155,29 @@ LLM/
 - coordenação de dependências pertence a `agent/planning/`;
 - configuração efetiva, cancelamento, eventos e limites pertencem a
   `agent/runtime/`;
-- artefatos produzidos em execução pertencem a `runtime/` e não à raiz.
+- configuração, dados, estado, cache e logs pertencem aos paths da aplicação;
+- memória, checkpoint, scratch e artifacts são particionados pelo workspace.
 
-`.temp_analysis/` é uma exceção intencional: representa o workspace temporário
-das skills antigas no projeto que está sendo analisado. Já `runtime/` guarda
-estado do próprio agente, como logs, memória, checkpoints, métricas, relatórios
-e pontos de restauração.
+`runtime/` e `.temp_analysis/` na raiz são localizações legadas. Código novo
+usa `AppPaths`/`WorkspacePaths`; o scratch fica no cache da aplicação. Dados
+legados só são importados com migração explícita.
 
 ## Fontes de verdade
 
 | Assunto | Fonte |
 | :--- | :--- |
 | provider/modelo | `agent/llm/contracts.py` e `agent/llm/providers/` |
-| hardware e limites | `agent/runtime/hardware.py` e `agent/runtime/config.py` |
+| composição e lifecycle | `agent/application.py` |
+| consentimento local | `agent/approval.py` e adapters em `agent/interfaces/cli/` |
+| configuração versionada | `agent/runtime/config_repository.py`, `agent/runtime/config_schema.py`, `agent/runtime/config_effective.py` e `agent/resources/default_config.json` |
+| hardware e limites | `agent/runtime/hardware.py` e configuração validada |
 | skills | `agent/skills/catalog.py` |
 | capacidades por persona | `agent/skills/policy.py` |
 | contratos de código | `agent/code/contracts.py` |
 | tarefas e dependências | `agent/planning/task_graph.py` |
-| caminhos de runtime | `agent/runtime/paths.py` |
+| paths e workspace | `agent/runtime/paths.py` e `agent/runtime/workspace_context.py` |
+| diagnóstico standalone | `agent/health/standalone.py` |
+| persistência JSON de memória | `agent/memory/json_persistence.py` |
 | interfaces de terminal | `agent/interfaces/cli/` |
 | compatibilidade temporária | `docs/legado.md` |
 | padrões de contribuição | `CONTRIBUTING.md` |

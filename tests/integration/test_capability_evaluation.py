@@ -46,7 +46,7 @@ def test_evaluator_checks_real_files_and_answer(tmp_path: Path):
         (tests / "test_math_utils.py").write_text("def test_add():\n    assert True\n", encoding="utf-8")
 
     report = CapabilityEvaluator(
-        ScriptedExecutor(generate, answer="Implementação validada", steps=4)
+        ScriptedExecutor(generate, answer="ChangeSet validado", steps=4)
     ).evaluate(scenario, tmp_path)
 
     assert report.passed is True

@@ -1,0 +1,17 @@
+{
+  "scenario_id": "chat_stream_roundtrip",
+  "capability": "chat",
+  "objective": "Responda de forma curta.",
+  "initial_files": {},
+  "expectation": {
+    "success": true,
+    "answer_contains": ["resposta offline"],
+    "max_steps": 1
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "chat",
+      "response": "Esta é uma resposta offline."
+    }
+  }
+}

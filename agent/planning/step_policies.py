@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
+from pathlib import Path
 from typing import Dict, Optional
 
 from agent.contracts import ToolArgs, ToolResult
@@ -12,8 +14,20 @@ from agent.planning.step_contracts import ExecutionContext
 class StepPolicies:
     """Validation, deduplication, cache and post-processing policies for a step."""
 
-    def __init__(self, context: ExecutionContext) -> None:
+    def __init__(
+        self,
+        context: ExecutionContext,
+        *,
+        path_resolver: Callable[[str | Path], Path] | None = None,
+    ) -> None:
         self.context = context
+        candidate = path_resolver or getattr(context, "resolve_user_path", None)
+        self._path_resolver = candidate if callable(candidate) else None
+
+    def _resolve_user_path(self, file_path: str | Path) -> Path:
+        if self._path_resolver is None:
+            return Path(file_path)
+        return self._path_resolver(file_path)
 
     def validate(self, step_number: int, tool: str, args: ToolArgs) -> bool:
         valid, error = validate_tool_args(tool, args, self.context.skills)
@@ -98,23 +112,22 @@ class StepPolicies:
         self.context.agent_state.record_tool_result(tool, args, result, step_id=step_id)
         return True, result
 
-    @staticmethod
-    def _file_hash(file_path: str) -> str | None:
+    def _file_hash(self, file_path: str) -> str | None:
         try:
-            with open(file_path, "r", encoding="utf-8") as source:
+            with self._resolve_user_path(file_path).open(
+                "r",
+                encoding="utf-8",
+            ) as source:
                 return hashlib.sha256(source.read().encode("utf-8")).hexdigest()
-        except OSError:
+        except (OSError, ValueError):
             return None
 
     def post_process(
         self, step_number: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> bool:
+        del objective
         if tool == "file_writer" and result.get("ok") and file_path.endswith(".py"):
-            if not self.context._test_and_correct(file_path, objective):
-                self.context.fail_task()
-                self.context._emit("error", {"step": step_number, "error": "Ciclo teste-correção falhou"})
-                return False
             lint_error = self.context.workspace.lint_check(file_path)
             if lint_error:
                 self.context._emit("warning", {"step": step_number, "warning": f"Problemas de lint em '{file_path}':\n{lint_error}"})

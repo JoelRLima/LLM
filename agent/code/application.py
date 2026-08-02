@@ -84,7 +84,19 @@ class CodingApplicationService:
 
     @staticmethod
     def _graph_result(graph_result: Any) -> TaskResult:
-        status = TaskStatus.SUCCEEDED if graph_result.succeeded else TaskStatus.FAILED
+        states = {state.value for state in graph_result.states.values()}
+        if graph_result.succeeded:
+            status = TaskStatus.SUCCEEDED
+        elif "failed" in states:
+            status = TaskStatus.FAILED
+        elif "blocked" in states:
+            status = TaskStatus.BLOCKED
+        elif "unverified" in states:
+            status = TaskStatus.UNVERIFIED
+        elif "cancelled" in states:
+            status = TaskStatus.CANCELLED
+        else:
+            status = TaskStatus.FAILED
         return TaskResult(
             status,
             summary=(

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from agent.approval import RequireExplicitApproval
 from agent.skills import load_all_skills, load_skill_registry
 from agent.skills.descriptor import SkillCapability, SkillDescriptor, SkillSpec
 from agent.skills.policy import CapabilityPolicy, builtin_skills_for_persona
@@ -24,9 +25,20 @@ def test_builtin_registry_is_canonical_and_uses_actual_skill_names(tmp_path: Pat
 
     assert "git_reader" in registry.names()
     assert "git" not in registry.names()
+    assert registry.descriptor("git_reader").spec.timeout_seconds == 20
+    assert registry.skill("git_reader").timeout == 20
     assert registry.descriptor("file_writer").spec.cost == 8
     assert SkillCapability.WRITE in registry.descriptor("file_writer").spec.capabilities
     assert set(skill.name for skill in load_all_skills(base_dir=tmp_path)) == set(registry.names())
+
+
+def test_registry_injects_approval_policy_into_shell(tmp_path: Path):
+    policy = RequireExplicitApproval()
+
+    registry = load_skill_registry(base_dir=tmp_path, approval_policy=policy)
+    shell = registry.skill("shell")
+
+    assert shell.approval_policy is policy
 
 
 def test_registry_rejects_duplicates_and_spec_name_mismatch():

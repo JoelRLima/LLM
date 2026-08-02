@@ -17,7 +17,7 @@ from agent.memory.memory import AgentMemory
 class AgentState:
     """Estado completo e unificado do agente."""
 
-    def __init__(self) -> None:
+    def __init__(self, memory: AgentMemory | None = None) -> None:
         # Dados da execução atual
         self.objective: Optional[str] = None
         self.plan: List[PlanStep] = []
@@ -28,9 +28,11 @@ class AgentState:
         self.last_tool: Optional[str] = None
         self.last_args: Optional[ToolArgs] = None
         self.tool_history: List[ToolHistoryEntry] = []
+        self.persona: Optional[str] = None
+        self.persona_prompt: Optional[str] = None
 
         # Componentes de memória e histórico
-        self.memory = AgentMemory()
+        self.memory = memory or AgentMemory()
         self.events: List[AgentEvent] = []
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history_turns: int = 6
@@ -140,6 +142,12 @@ class AgentState:
     def mark_step_skipped(self, index: int, reason: str = "") -> None:
         self._mark_step_terminal(index, StepStatus.SKIPPED, reason)
 
+    def mark_step_blocked(self, index: int, reason: str = "") -> None:
+        self._mark_step_terminal(index, StepStatus.BLOCKED, reason)
+
+    def mark_step_unverified(self, index: int, reason: str = "") -> None:
+        self._mark_step_terminal(index, StepStatus.UNVERIFIED, reason)
+
     def _mark_step_terminal(self, index: int, status: StepStatus, error: str = "") -> None:
         step_id = self.get_step_id(index)
         record = self.step_records[step_id]
@@ -193,6 +201,8 @@ class AgentState:
             "events": self.events,
             "conversation_history": self.conversation_history,
             "memory_state": memory_state,
+            "persona": self.persona,
+            "persona_prompt": self.persona_prompt,
         }
 
         # Round-trip via json para sanitizar tipos não serializáveis
@@ -233,6 +243,8 @@ class AgentState:
         self.tool_history = data.get("tool_history", self.tool_history) or []
         self.events = data.get("events", self.events) or []
         self.conversation_history = data.get("conversation_history", self.conversation_history) or []
+        self.persona = data.get("persona", self.persona)
+        self.persona_prompt = data.get("persona_prompt", self.persona_prompt)
 
         memory_state = data.get("memory_state")
         if memory_state is not None and hasattr(self.memory, "state"):

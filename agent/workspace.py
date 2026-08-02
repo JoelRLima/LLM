@@ -1,270 +1,229 @@
+from __future__ import annotations
+
+import ast
 import datetime
 import difflib
-import os
-import py_compile
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.runtime import paths
 from agent.runtime.logging import logger
 
 RESTORE_POINTS_DIR = paths.RESTORE_POINTS_DIR
+DEFAULT_VALIDATION_CONFIG: Dict[str, Any] = {
+    "enabled": True,
+    "ruff": False,
+    "mypy": False,
+    "pytest": False,
+    "pytest_dir": "tests/",
+    "fail_triggers_replan": False,
+}
 
 
 class ValidationFailedError(Exception):
-    """
-    Lançada pelo `WorkspaceManager.lint_check` quando uma ou mais verificações
-    de validação pós-modificação falham e a chave de configuração
-    `validation.fail_triggers_replan` está definida como `true`.
-
-    O `PlanExecutor` deve capturar esta exceção e acionar o fluxo de
-    replanejamento (`agent/replan.py`) em vez de simplesmente exibir o erro
-    no console.
-    """
-    pass
-
+    """Indica que uma validação configurada falhou após uma modificação."""
 
 
 class WorkspaceManager:
-    def __init__(self, verbose: bool = False):
+    def __init__(
+        self,
+        verbose: bool = False,
+        workspace_root: str | Path = ".",
+        restore_points_dir: str | Path | None = RESTORE_POINTS_DIR,
+        validation_config: Mapping[str, Any] | None = None,
+    ) -> None:
         self.verbose = verbose
+        self.workspace_root = Path(workspace_root).expanduser().resolve()
+        effective_restore_dir = (
+            RESTORE_POINTS_DIR if restore_points_dir is None else restore_points_dir
+        )
+        self.restore_points_dir = Path(effective_restore_dir).expanduser().resolve()
+        self.validation_config = self._normalize_validation_config(validation_config)
         self.restore_points: List[Dict[str, str]] = []
         self.created_files: List[str] = []
 
+    @staticmethod
+    def _normalize_validation_config(
+        validation_config: Mapping[str, Any] | None,
+    ) -> Dict[str, Any]:
+        normalized = dict(DEFAULT_VALIDATION_CONFIG)
+        if validation_config is None:
+            return normalized
+        for key, fallback in DEFAULT_VALIDATION_CONFIG.items():
+            value = validation_config.get(key, fallback)
+            if isinstance(fallback, bool):
+                normalized[key] = value if isinstance(value, bool) else fallback
+            elif isinstance(value, str):
+                normalized[key] = value
+        return normalized
+
+    def resolve_path(self, file_path: str | Path) -> Path:
+        raw = Path(file_path).expanduser()
+        candidate = raw.resolve() if raw.is_absolute() else (self.workspace_root / raw).resolve()
+        try:
+            candidate.relative_to(self.workspace_root)
+        except ValueError as exc:
+            raise ValueError(f"Caminho fora do workspace: {file_path}") from exc
+        return candidate
+
     def create_restore_point(self, plan: list) -> None:
-        """
-        Cria backups de todos os arquivos que o plano pretende modificar.
-        Arquivos que ainda não existem (serão criados pelo plano) são
-        registrados em `created_files` para que o rollback possa removê-los.
-        """
         if not plan:
             return
-
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        restore_dir = os.path.join(RESTORE_POINTS_DIR, timestamp)
-        os.makedirs(restore_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        restore_dir = self.restore_points_dir / timestamp
 
         for step in plan:
             tool = step.get("tool", "") if isinstance(step, dict) else ""
             args = step.get("args", {}) if isinstance(step, dict) else {}
-            if tool in ("file_writer", "shell", "python_executor"):
-                file_path = args.get("file_path") or args.get("target") or ""
-                if not file_path:
-                    continue
-                if os.path.exists(file_path):
-                    backup_path = os.path.join(restore_dir, file_path.replace(os.sep, "_"))
-                    try:
-                        shutil.copy2(file_path, backup_path)
-                        self.restore_points.append({"original": file_path, "backup": backup_path})
-                        if self.verbose:
-                            print(f"[DEBUG] Checkpoint salvo para '{file_path}'")
-                    except Exception as e:
-                        logger.warning(f"Falha ao criar checkpoint para '{file_path}': {e}")
-                else:
-                    if file_path not in self.created_files:
-                        self.created_files.append(file_path)
-                        if self.verbose:
-                            print(f"[DEBUG] '{file_path}' marcado como novo (sem checkpoint, será removido em rollback).")
+            if tool not in {"file_writer", "shell", "python_executor"}:
+                continue
+            raw_path = args.get("file_path") or args.get("target") or ""
+            if not raw_path:
+                continue
+            target = self.resolve_path(str(raw_path))
+            if target.exists():
+                self._backup_file(target, restore_dir)
+            else:
+                target_text = str(target)
+                if target_text not in self.created_files:
+                    self.created_files.append(target_text)
+                    if self.verbose:
+                        print(f"[DEBUG] '{target}' marcado como novo.")
+
+    def _backup_file(self, target: Path, restore_dir: Path) -> None:
+        relative = target.relative_to(self.workspace_root)
+        backup = restore_dir / relative
+        try:
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target, backup)
+            self.restore_points.append({"original": str(target), "backup": str(backup)})
+            if self.verbose:
+                print(f"[DEBUG] Checkpoint salvo para '{target}'")
+        except OSError as exc:
+            logger.warning("Falha ao criar checkpoint para '%s': %s", target, exc)
 
     def rollback(self) -> None:
-        """
-        Restaura todos os arquivos a partir dos backups, na ordem inversa,
-        e remove arquivos que foram criados durante a tarefa que falhou.
-        """
         if not self.restore_points and not self.created_files:
             return
-
         if self.verbose:
             print("⏪ [ROLLBACK] Restaurando arquivos ao estado original...")
 
         for entry in reversed(self.restore_points):
+            original = self.resolve_path(entry["original"])
+            backup = Path(entry["backup"])
             try:
-                shutil.copy2(entry["backup"], entry["original"])
-                os.remove(entry["backup"])
-                if self.verbose:
-                    print(f"   ✅ Restaurado: {entry['original']}")
-            except Exception as e:
-                logger.error(f"Falha ao restaurar '{entry['original']}': {e}")
+                shutil.copy2(backup, original)
+                backup.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.error("Falha ao restaurar '%s': %s", original, exc)
 
         for file_path in reversed(self.created_files):
+            target = self.resolve_path(file_path)
             try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    if self.verbose:
-                        print(f"   🗑️  Removido (criado durante a tarefa): {file_path}")
-            except Exception as e:
-                logger.error(f"Falha ao remover arquivo criado '{file_path}': {e}")
+                target.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.error("Falha ao remover arquivo criado '%s': %s", target, exc)
 
         self.restore_points.clear()
         self.created_files.clear()
 
-    @staticmethod
-    def show_diff(file_path: str, new_content: str) -> None:
-        """
-        Exibe a diferença entre o arquivo original e o novo conteúdo usando difflib.
-        """
+    def show_diff(self, file_path: str, new_content: str) -> None:
+        target = self.resolve_path(file_path)
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                original = f.read()
-        except Exception:
+            original = target.read_text(encoding="utf-8")
+        except OSError:
             original = ""
-
         diff = difflib.unified_diff(
             original.splitlines(keepends=True),
             new_content.splitlines(keepends=True),
             fromfile=file_path,
             tofile=f"{file_path} (proposto)",
         )
-        diff_text = ''.join(diff)
+        diff_text = "".join(diff)
         if diff_text.strip():
             print(f"\n📝 [DIFF] Mudanças propostas para '{file_path}':")
             print(diff_text)
         else:
             print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
 
-    @staticmethod
-    def _load_validation_config() -> Dict[str, Any]:
-        """
-        Carrega a seção `validation` de `config.json` (via `config.carregar_config`),
-        aplicando um conjunto de padrões seguros caso o arquivo, a chave ou algum
-        subcampo estejam ausentes ou malformados. Isso garante que `lint_check`
-        nunca quebre por causa de um `config.json` incompleto.
-        """
-        default_validation: Dict[str, Any] = {
-            "enabled": True,
-            "ruff": False,
-            "mypy": False,
-            "pytest": False,
-            "pytest_dir": "tests/",
-            "fail_triggers_replan": False,
-        }
+    def _run_ruff(self, file_path: Path) -> Optional[str]:
+        return self._run_validation_command(
+            ["ruff", "check", str(file_path)],
+            "Ruff",
+            "Ferramenta 'ruff' não está instalada; verificação ignorada.",
+        )
 
-        try:
-            from agent.runtime.config import carregar_config
-            config = carregar_config()
-        except Exception as e:
-            logger.warning(
-                f"Não foi possível carregar 'config.json' para a validação pós-modificação "
-                f"({e}). Usando os padrões de validação."
-            )
-            return default_validation
+    def _run_mypy(self, file_path: Path) -> Optional[str]:
+        return self._run_validation_command(
+            ["mypy", "--ignore-missing-imports", str(file_path)],
+            "Mypy",
+            "Ferramenta 'mypy' não está instalada; verificação ignorada.",
+        )
 
-        validation_cfg = config.get("validation")
-        if not isinstance(validation_cfg, dict):
-            return default_validation
+    def _run_pytest(self, pytest_dir: str) -> Optional[str]:
+        target = self.resolve_path(pytest_dir)
+        return self._run_validation_command(
+            [sys.executable, "-m", "pytest", str(target)],
+            "Pytest",
+            "Ferramenta 'pytest' não está instalada; verificação ignorada.",
+        )
 
-        merged = dict(default_validation)
-        for chave in default_validation:
-            if chave in validation_cfg:
-                merged[chave] = validation_cfg[chave]
-        return merged
-
-    @staticmethod
-    def _run_ruff(file_path: str) -> Optional[str]:
-        """Executa `ruff check` sobre `file_path`. Retorna a mensagem de erro ou None."""
+    def _run_validation_command(
+        self,
+        command: list[str],
+        label: str,
+        unavailable_message: str,
+    ) -> Optional[str]:
         try:
             result = subprocess.run(
-                ["ruff", "check", file_path],
-                capture_output=True, text=True, timeout=10,
+                command,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self.workspace_root,
             )
             if result.returncode != 0:
-                saida = (result.stdout + result.stderr).strip()
-                return f"Ruff: {saida}" if saida else "Ruff: verificação falhou (sem saída detalhada)."
+                output = (result.stdout + result.stderr).strip()
+                return f"{label}: {output}" if output else f"{label}: verificação falhou."
         except FileNotFoundError:
-            logger.warning("Ferramenta 'ruff' não está instalada; verificação ignorada.")
+            logger.warning(unavailable_message)
         except subprocess.TimeoutExpired:
-            logger.warning("Verificação 'ruff' excedeu o tempo limite (10s); ignorada.")
-        except Exception as e:
-            logger.warning(f"Falha inesperada ao executar 'ruff': {e}")
+            logger.warning("Verificação '%s' excedeu o tempo limite (10s); ignorada.", label)
+        except OSError as exc:
+            logger.warning("Falha inesperada ao executar '%s': %s", label, exc)
         return None
 
-    @staticmethod
-    def _run_mypy(file_path: str) -> Optional[str]:
-        """Executa `mypy --ignore-missing-imports` sobre `file_path`. Retorna erro ou None."""
-        try:
-            result = subprocess.run(
-                ["mypy", "--ignore-missing-imports", file_path],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode != 0:
-                saida = (result.stdout + result.stderr).strip()
-                return f"Mypy: {saida}" if saida else "Mypy: verificação falhou (sem saída detalhada)."
-        except FileNotFoundError:
-            logger.warning("Ferramenta 'mypy' não está instalada; verificação ignorada.")
-        except subprocess.TimeoutExpired:
-            logger.warning("Verificação 'mypy' excedeu o tempo limite (10s); ignorada.")
-        except Exception as e:
-            logger.warning(f"Falha inesperada ao executar 'mypy': {e}")
-        return None
-
-    @staticmethod
-    def _run_pytest(pytest_dir: str) -> Optional[str]:
-        """Executa `pytest <pytest_dir>` como módulo (portável). Retorna erro ou None."""
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pytest", pytest_dir],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode != 0:
-                saida = (result.stdout + result.stderr).strip()
-                return f"Pytest: {saida}" if saida else "Pytest: verificação falhou (sem saída detalhada)."
-        except FileNotFoundError:
-            logger.warning("Ferramenta 'pytest' não está instalada; verificação ignorada.")
-        except subprocess.TimeoutExpired:
-            logger.warning("Verificação 'pytest' excedeu o tempo limite (10s); ignorada.")
-        except Exception as e:
-            logger.warning(f"Falha inesperada ao executar 'pytest': {e}")
-        return None
-
-    @staticmethod
-    def lint_check(file_path: str) -> Optional[str]:
-        """
-        Executa a validação automática pós-modificação de um arquivo Python.
-
-        Sempre roda a verificação sintática nativa (`py_compile`), que não é
-        configurável. Em seguida, de acordo com a seção `validation` de
-        `config.json`, executa opcionalmente `ruff`, `mypy` e `pytest`.
-
-        Retorna:
-            - `None` se `file_path` não for um arquivo `.py`.
-            - `""` (string vazia) se todas as verificações passarem.
-            - Uma string com os erros encontrados, caso alguma verificação falhe
-              e `validation.fail_triggers_replan` seja `false`.
-
-        Lança:
-            ValidationFailedError: se alguma verificação falhar e
-            `validation.fail_triggers_replan` for `true`. O `PlanExecutor` deve
-            capturar esta exceção para acionar o replanejamento.
-        """
-        if not file_path.endswith(".py"):
+    def lint_check(self, file_path: str) -> Optional[str]:
+        target = self.resolve_path(file_path)
+        if target.suffix != ".py":
             return None
 
         errors: List[str] = []
-
-        # 1. Verificação de sintaxe (obrigatória, não configurável)
         try:
-            py_compile.compile(file_path, doraise=True)
-        except py_compile.PyCompileError as e:
-            errors.append(f"Sintaxe: {str(e)}")
+            ast.parse(target.read_text(encoding="utf-8"), filename=str(target))
+        except (SyntaxError, UnicodeError) as exc:
+            errors.append(f"Sintaxe: {exc}")
 
-        validation_cfg = WorkspaceManager._load_validation_config()
-
-        if validation_cfg.get("enabled", True):
+        if self.validation_config.get("enabled", True):
             checks = (
-                ("ruff", lambda: WorkspaceManager._run_ruff(file_path)),
-                ("mypy", lambda: WorkspaceManager._run_mypy(file_path)),
-                ("pytest", lambda: WorkspaceManager._run_pytest(validation_cfg.get("pytest_dir", "tests/"))),
+                ("ruff", lambda: self._run_ruff(target)),
+                ("mypy", lambda: self._run_mypy(target)),
+                (
+                    "pytest",
+                    lambda: self._run_pytest(str(self.validation_config["pytest_dir"])),
+                ),
             )
             for name, check in checks:
-                if validation_cfg.get(name, False) and (error := check()):
+                if self.validation_config.get(name, False) and (error := check()):
                     errors.append(error)
 
         if not errors:
             return ""
-
-        if validation_cfg.get("fail_triggers_replan", False):
-            raise ValidationFailedError("\n".join(errors))
-
-        return "\n".join(errors)
+        message = "\n".join(errors)
+        if self.validation_config.get("fail_triggers_replan", False):
+            raise ValidationFailedError(message)
+        return message

@@ -48,3 +48,14 @@ def resolve_safe_path(base_dir: Path, relative_path: str) -> Tuple[Optional[Path
         return None, f"Acesso fora do diretório seguro: {relative_path}"
 
     return requested, None
+
+
+def resolve_confined_file(base_dir: Path, candidate: Path) -> Optional[Path]:
+    """Resolve um item descoberto e descarta symlinks que escapem da raiz."""
+
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(base_dir)
+    except (OSError, ValueError):
+        return None
+    return resolved if resolved.is_file() else None

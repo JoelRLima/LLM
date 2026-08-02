@@ -3,9 +3,11 @@ from __future__ import annotations
 import ast
 import hashlib
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict
 
+from agent.approval import ApprovalPort, AutoApprove, RequireExplicitApproval
 from agent.runtime.logging import logger
 
 from .base import BaseSkill
@@ -20,16 +22,6 @@ AGENT_CORE_DIR = "agent/"
 AGENT_EDIT_ALLOWLIST: set[str] = set()
 
 
-def _is_auto_confirm() -> bool:
-    """Lê a preferência headless; falhas mantêm o padrão interativo seguro."""
-    try:
-        from agent.runtime.config import carregar_config
-        config = carregar_config()
-    except Exception:
-        return False
-    return bool(config.get("auto_confirm", False))
-
-
 class FileWriterSkill(BaseSkill):
     name = "file_writer"
     description = (
@@ -37,19 +29,46 @@ class FileWriterSkill(BaseSkill):
         "remoção de linhas ou substituição de símbolo Python."
     )
 
-    def __init__(self, base_dir: str = ".") -> None:
-        self.base_dir = Path(base_dir).resolve()
+    def __init__(
+        self,
+        base_dir: str | Path = ".",
+        *,
+        scratch_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+        auto_confirm: bool | None = None,
+        approval_policy: ApprovalPort | None = None,
+    ) -> None:
+        self.base_dir = Path(base_dir).expanduser().resolve()
+        self.scratch_dir = (
+            Path(scratch_dir).expanduser().resolve()
+            if scratch_dir is not None
+            else self.base_dir / ".temp_analysis"
+        )
+        configured_auto_confirm = (config or {}).get("auto_confirm", False)
+        self.auto_confirm = (
+            auto_confirm is True
+            if auto_confirm is not None
+            else configured_auto_confirm is True
+        )
+        self.approval_policy = approval_policy or (
+            AutoApprove() if self.auto_confirm else RequireExplicitApproval()
+        )
+
+    def _is_auto_confirm(self) -> bool:
+        return self.auto_confirm
 
     def _get_workspace_path(self, original_path: Path) -> str:
         relative = original_path.relative_to(self.base_dir)
-        workspace = self.base_dir / ".temp_analysis" / "workspace" / relative
+        workspace = self.scratch_dir / "workspace" / relative
         workspace.parent.mkdir(parents=True, exist_ok=True)
         return str(workspace)
 
     def _invalidate_cache(self, file_path: str) -> None:
         try:
-            cached = self.base_dir / ".temp_analysis" / file_path
-            workspace = Path(self._get_workspace_path(self.base_dir / file_path))
+            original = (self.base_dir / file_path).resolve()
+            relative = original.relative_to(self.base_dir)
+            cached = self.scratch_dir / relative
+            workspace = self.scratch_dir / "workspace" / relative
             for candidate in (cached, workspace):
                 if candidate.exists():
                     candidate.unlink()
@@ -126,7 +145,11 @@ class FileWriterSkill(BaseSkill):
             safe, reason = self._is_safe(requested)
             if not safe:
                 return {"ok": False, "done": True, "error": f"Escrita bloqueada: {reason}"}
-            denied = confirm_protected_edit(str(file_path), requested, _is_auto_confirm)
+            denied = confirm_protected_edit(
+                str(file_path),
+                requested,
+                self.approval_policy,
+            )
             if denied is not None:
                 return denied
             workspace, error = prepare_workspace(requested, self._get_workspace_path(requested))
@@ -135,7 +158,13 @@ class FileWriterSkill(BaseSkill):
             operation_error = apply_edit(str(args.get("action", "write")), workspace, args, self._ast_patch)
             if operation_error is not None:
                 return operation_error
-            return review_and_commit(requested, workspace, str(file_path), _is_auto_confirm, self._invalidate_cache)
+            return review_and_commit(
+                requested,
+                workspace,
+                str(file_path),
+                self.approval_policy,
+                self._invalidate_cache,
+            )
         except Exception as exc:
             logger.error("FileWriterSkill error: %s", exc, exc_info=True)
             return {"ok": False, "done": True, "error": f"Erro ao escrever arquivo: {exc}"}

@@ -12,5 +12,27 @@
     "unchanged_files": ["public_api.md"],
     "allowed_changed_files": ["text.py"],
     "max_steps": 8
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "code_task",
+      "skill": "code_task",
+      "args": {
+        "action": "modify",
+        "targets": ["text.py"]
+      },
+      "model_responses": [
+        {
+          "changes": [
+            {
+              "path": "text.py",
+              "kind": "modify",
+              "content": "def normalize(value: str) -> str:\n    return value.strip().lower()\n"
+            }
+          ]
+        }
+      ],
+      "expected_model_calls": 1
+    }
   }
 }

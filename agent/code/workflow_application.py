@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Optional, Sequence
 
+from agent.approval import ApprovalDecision
 from agent.code.changes import ChangeSet, ChangeSetError, ChangeSetTransaction
 from agent.code.discovery import ProjectDiscovery
 from agent.code.policy import ChangeApprover
@@ -58,15 +59,28 @@ def _artifact(preview: Any, assessment: Any, *, applied: bool, validation: str |
 
 
 def _approval_result(preview: Any, assessment: Any, artifact: Artifact, approver: Any) -> TaskResult | None:
-    if not assessment.requires_confirmation:
+    explicit_authority_required = (
+        approver is not None
+        and getattr(approver, "requires_explicit_approval", False) is True
+    )
+    if not assessment.requires_confirmation and not explicit_authority_required:
         return None
     if approver is None:
         return TaskResult(
             TaskStatus.BLOCKED, summary="ChangeSet de baixa confiança aguarda confirmação.",
             artifacts=(artifact,), error="confirmation_required", metadata={"assessment": asdict(assessment)},
         )
-    if approver.approve(preview, assessment):
+    decision = approver.approve(preview, assessment)
+    if decision is True or decision is ApprovalDecision.APPROVED:
         return None
+    if decision is ApprovalDecision.REQUIRED:
+        return TaskResult(
+            TaskStatus.BLOCKED,
+            summary="ChangeSet aguarda confirmação explícita.",
+            artifacts=(artifact,),
+            error="confirmation_required",
+            metadata={"assessment": asdict(assessment)},
+        )
     return TaskResult(
         TaskStatus.CANCELLED, summary="ChangeSet rejeitado pelo usuário.",
         artifacts=(artifact,), error="approval_rejected", metadata={"assessment": asdict(assessment)},

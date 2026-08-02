@@ -30,7 +30,19 @@ class HierarchicalExecutionService:
         if not macro_plan or not macro_plan.steps:
             self.orchestrator._emit("hierarchical_fallback", {"reason": "macro_plan vazio ou não gerado"})
             return None
-        tracker = TaskTracker(json_path=paths.TASK_TRACKER_JSON, markdown_path=paths.TASK_TRACKER_MD)
+        workspace_paths = self.orchestrator.workspace_paths
+        tracker = TaskTracker(
+            json_path=str(
+                workspace_paths.task_tracker_json
+                if workspace_paths is not None
+                else paths.TASK_TRACKER_JSON
+            ),
+            markdown_path=str(
+                workspace_paths.task_tracker_markdown
+                if workspace_paths is not None
+                else paths.TASK_TRACKER_MD
+            ),
+        )
         tracker.start(objective, macro_plan.steps, self._metadata(objective))
         executor = HierarchicalExecutor(
             plan_builder=self.orchestrator.plan_builder,

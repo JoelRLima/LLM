@@ -8,7 +8,10 @@ análise e roadmap não fazem parte da documentação versionada.
 
 O projeto é um agente local de desenvolvimento com:
 
+- aplicação instalável com composição e ciclo de vida independentes da UI;
 - CLI conversacional e modo agente;
+- execução headless com resultado estruturado;
+- configuração versionada e estado isolado por workspace;
 - planejamento linear, hierárquico e por grafo de tarefas;
 - ferramentas locais com catálogo, capacidades e política de acesso;
 - análise, revisão, geração, alteração, reparo e refatoração de código;
@@ -31,9 +34,11 @@ OpenAI-compatible.
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e .
+pip install .
 pip install -e ".[dev]"
-Copy-Item config.example.json config.json
+llm-agent config init
+llm-agent config path
+llm-agent doctor
 llm-agent
 ```
 
@@ -47,14 +52,25 @@ O extra `ml` contém a camada opcional de memória semântica. O runtime de
 código não precisa dela. Os arquivos `requirements-*.txt` permanecem como
 fachadas de instalação e `requirements.lock` preserva o ambiente congelado.
 
-Antes de executar, ajuste `model_profiles.local_8gb.base_url` e `model` em
-`config.json`. As chaves legadas `api_url`, `model`, `temperature`,
+Antes de executar, ajuste `model_profiles.local_8gb.base_url` e `model` no
+arquivo exibido por `llm-agent config path`. As chaves legadas `api_url`,
+`model`, `temperature`,
 `max_tokens`, `timeout` e `ENABLE_GBNF` continuam válidas durante a migração.
+
+`llm-agent run --workspace <diretório> --json <objetivo>` oferece a fronteira
+headless. Ela não consulta stdin: uma ação sem autoridade retorna `blocked`;
+`run --yes` aprova os efeitos que pedirem consentimento somente naquela
+execução. `--home <diretório>` fixa todos os dados da aplicação sob uma raiz
+portátil. Configuração ou estado do antigo checkout só são copiados pelos
+comandos explícitos `config migrate` e `state migrate`; a origem é preservada.
 
 ## 3. Arquitetura em camadas
 
 ```text
-CLI / Commands
+CLI / modo headless
+      |
+      v
+AgentApplication
       |
       +-- Orchestrator e execução legada
       |      +-- ExecutionGateway -> PlanExecutor -> StepExecutor
@@ -112,14 +128,38 @@ Contém o entry point, loop interativo, comandos, handlers, streaming e
 apresentação. Essa camada adapta terminal e input humano aos casos de uso; o
 domínio não a importa. Os arquivos homônimos da raiz são aliases temporários.
 
+### `agent/application.py`
+
+É a raiz de composição independente de UI. Resolve um workspace explícito,
+recebe `AppPaths` e configuração, adquire o lock daquele workspace e injeta
+paths em memória, reporting, skills e orquestração. `run()` devolve
+`AgentRunResult` com status terminal real; `close()` persiste o necessário e
+libera recursos de forma idempotente. Execução e encerramento são serializados
+enquanto stdout e logging legados ainda são recursos globais. CLI, benchmark e
+futuras interfaces devem reutilizar essa fronteira.
+
+### `agent/approval.py`
+
+Define `ApprovalPort` e as decisões `approved`, `rejected` e `required`.
+`RequireExplicitApproval` é o padrão headless; `AutoApprove` só deve ser
+injetado por uma autoridade explícita, como `run --yes`. Interação de terminal
+pertence exclusivamente ao adapter da CLI.
+
 ### `agent/runtime/`
 
 - `hardware.py`: perfis imutáveis de hardware;
 - `context.py`: `TaskExecutionContext`, limites, cancelamento compartilhado,
   gate de modelo, eventos, métricas, `Artifact` e `TaskResult`.
-- `config.py` e `config_validation.py`: carregamento e normalização da
-  configuração;
-- `paths.py` e `logging.py`: caminhos de artefatos e logging centralizados.
+- `config_repository.py`, `config_schema.py` e `config_effective.py`:
+  configuração versionada, precedência explícita, materialização do perfil,
+  validação estrita e migração atômica;
+- `paths.py`: separação entre configuração, dados, estado, cache, logs e
+  partições por workspace;
+- `workspace_context.py`: raiz absoluta, identidade estável e confinamento;
+- `state_migration.py`: cópia explícita, bloqueada, transacional e conservadora
+  do runtime legado;
+- `instance_lock.py` e `logging.py`: exclusão por workspace e lifecycle de log
+  com leases contabilizados.
 
 Contextos filhos têm identificação e permissões próprias, mas compartilham o
 token de cancelamento e o limite global de chamadas ao modelo.
@@ -135,9 +175,13 @@ token de cancelamento e o limite global de chamadas ao modelo.
 - `commands.py`: parser determinístico e sem efeitos de `/code`;
 - `context_selection.py`: ranking por target, diretório, nome, símbolo e import;
 - `diagnostics.py`: classificação de falhas antes do reparo;
+- `path_safety.py`: normalização canônica e confinamento de caminhos do domínio;
 - `policy.py`: confiança, motivos e necessidade de confirmação;
 - `task_templates.py`: grafos determinísticos para operações recorrentes;
-- `validation.py`: execução de validadores com timeout e cancelamento;
+- `validation.py`: preflight de paths, perfis e agregação dos resultados;
+- `validation_python.py`: comandos Python nativos, sem gerar bytecode;
+- `validation_process.py`: subprocessos limitados, canceláveis e com ambiente
+  reduzido;
 - `workflows.py`: analyze, review, generate, modify, repair e refactor;
 - `multitask.py`: adaptação desses workflows a nós de `TaskGraph`.
 
@@ -170,6 +214,11 @@ timeout e categoria. `SkillRegistry` instancia e valida as implementações.
 `policy.py` concede capacidades a personas. `tool_metadata.py` é somente uma
 fachada derivada para consumidores legados.
 
+Skills apoiadas em subprocessos compartilham `process_paths.py`,
+`process_safety.py` e `process_environment.py`: esses módulos separam parsing
+de argumentos, política do comando e ambiente reduzido, sem misturar essas
+responsabilidades com apresentação ou execução.
+
 A skill `code_task` expõe:
 
 - `analyze` e `review`, determinísticos e sem modelo;
@@ -184,9 +233,11 @@ persona como fonte de verdade.
 ### Memória, segurança e reporting
 
 - `agent/memory/`: memória persistente e camada semântica opcional;
+- `agent/memory/json_persistence.py`: persistência JSON atômica, com `fsync`,
+  promoção por `os.replace` e preservação do arquivo anterior em falhas;
 - `agent/security/`: padrões e scanner estático;
 - `agent/reporting/`: métricas, relatórios, tracking e resumos incrementais;
-- `agent/runtime/paths.py`: caminhos de todos os artefatos de runtime.
+- `agent/runtime/paths.py`: paths globais e paths isolados por workspace.
 
 ## 5. Fluxos funcionais
 
@@ -205,7 +256,7 @@ CodeRequest explícito ou code_task
         -> saída estruturada validada
         -> ChangeSet proposto
         -> verificação de path/base_hash/expected_text
-        -> diff + ChangeApprovalPolicy
+        -> diff + ChangeApprovalPolicy + ApprovalPort
         -> commit ou blocked aguardando confirmação
         -> validação do projeto
         -> succeeded | unverified | rollback + failed
@@ -341,6 +392,7 @@ O gate local é:
 .venv\Scripts\python.exe -m ruff check .
 .venv\Scripts\python.exe -m mypy
 .venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts\verify_installed_package.py
 git diff --check
 ```
 
@@ -350,6 +402,11 @@ links locais válidos e arquivos de texto em UTF-8 sem BOM.
 `quality/baseline.json` não contém exceções. O mypy
 descobre todo o pacote `agent` e não usa overrides por módulo, portanto código
 novo não fica fora da análise por acidente.
+
+O gate final constrói e instala o wheel com dependências em um venv limpo,
+executa a CLI fora do checkout e comprova análise real e confinamento de paths.
+`--offline-diagnostic` é apenas um diagnóstico mais fraco e não é usado como
+critério de aceitação.
 
 Convenções de responsabilidade, contratos, testes e definição de pronto estão
 no [guia de contribuição](CONTRIBUTING.md).
@@ -371,6 +428,17 @@ Garantias implementadas:
 - rollback das mudanças descritas no `ChangeSet` após falha de validação;
 - saída estruturada validada antes de virar alteração;
 - dependências e conflitos de recurso verificados antes da multitarefa;
+- configuração inválida falha antes da criação de estado da aplicação;
+- memória JSON/SQLite corrompida falha no bootstrap e também é detectada pelo
+  doctor somente leitura;
+- estado, memória, relatórios, scratch e locks são particionados por workspace;
+- migração de estado usa lock, preflight e rollback dos destinos promovidos;
+- headless não lê stdin e preserva `blocked`, `unverified` e `cancelled`;
+- descoberta, contexto, transações e validators do domínio de código
+  revalidam caminhos e recusam symlinks ou junctions incompatíveis com o
+  workspace;
+- subprocessos de validação fecham stdin, removem overrides herdados de
+  Python/pytest e desabilitam caches evitáveis;
 - compatibilidade com configuração e executor legados coberta por testes.
 
 Limitações explícitas:
@@ -382,11 +450,18 @@ Limitações explícitas:
 - a sandbox de Python é defesa em profundidade, não isolamento de sistema
   operacional para código hostil;
 - locks do scheduler são locais ao processo;
+- o lock da aplicação é conservador: após término abrupto, um lock abandonado
+  exige inspeção e remoção manual;
+- autorização unificada de extensões externas ainda pertence a uma fase futura;
 - a qualidade da geração ainda depende do modelo escolhido.
 
 ## 11. Documentação relacionada
 
 - [README](README.md): instalação e visão geral;
+- [visão da plataforma standalone](docs/plataforma-standalone.md);
+- [operação standalone](docs/operacao-standalone.md);
+- [ADR de visão](docs/adr/0002-visao-do-assistente-standalone.md);
+- [ADR de bootstrap](docs/adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md);
 - [guia de contribuição](CONTRIBUTING.md): padrões e gates de qualidade;
 - [índice técnico](docs/README.md);
 - [providers](docs/modelos-providers.md);

@@ -10,5 +10,16 @@
     "unchanged_files": ["service.py"],
     "answer_contains": ["eval", "linha"],
     "max_steps": 5
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "code_task",
+      "skill": "code_task",
+      "args": {
+        "action": "review",
+        "targets": ["service.py"]
+      },
+      "expected_model_calls": 0
+    }
   }
 }

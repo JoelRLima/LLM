@@ -7,6 +7,8 @@ from typing import Any, Dict
 from agent.llm.contracts import LegacyPayloadGateway
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 
+SUPPORTED_MODEL_PROVIDERS = frozenset({"openai_compatible"})
+
 
 def resolve_model_profile(config: Dict[str, Any]) -> Dict[str, Any]:
     profiles = config.get("model_profiles")
@@ -44,3 +46,10 @@ def create_model_gateway(config: Dict[str, Any]) -> LegacyPayloadGateway:
     if provider == "openai_compatible":
         return OpenAICompatibleGateway(profile)
     raise ValueError(f"Provider de modelo não suportado: {provider}")
+
+
+__all__ = [
+    "SUPPORTED_MODEL_PROVIDERS",
+    "create_model_gateway",
+    "resolve_model_profile",
+]

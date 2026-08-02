@@ -76,13 +76,15 @@ class StepExecutor:
             self.context.workspace.show_diff(file_path, str(args["content"]))
         if cache_hit:
             return cached or {}
-        self.context._emit("tool_start", {"tool": tool, "args": args})
+        if not getattr(self.context, "tool_invocation_gateway", None):
+            self.context._emit("tool_start", {"tool": tool, "args": args})
         try:
             result = self.context._run_tool(tool, args)
         except ToolNotFoundError as exc:
             self.context._emit("error", {"step": index + 1, "error": str(exc)})
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, error=str(exc))
-        self.context._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
+        if not getattr(self.context, "tool_invocation_gateway", None):
+            self.context._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
         self.context._maybe_summarize_and_store(tool, args, result)
         return result
 
@@ -90,6 +92,21 @@ class StepExecutor:
         self, index: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> StepExecutionOutcome:
+        status = str(result.get("status") or "")
+        if status == "blocked":
+            return self.finish_blocked(index, result)
+        if status == "unverified":
+            return self.finish_unverified(index, result)
+        if status == "cancelled":
+            reason = str(result.get("error") or "operação cancelada")
+            self.context.agent_state.mark_step_skipped(index, reason)
+            self._emit_terminal("step_cancelled", index, reason)
+            return StepExecutionOutcome(
+                StepOutcomeKind.CANCELLED,
+                result=result,
+                error=reason,
+                final_answer=str(result.get("message") or "Operação cancelada."),
+            )
         if not result.get("ok"):
             return self._finish_tool_failure(index, tool, args, result)
         if not self.policies.post_process(index + 1, tool, args, result, file_path, objective, usage):
@@ -128,6 +145,28 @@ class StepExecutor:
         self.context.agent_state.mark_step_skipped(index, reason)
         self._emit_terminal("step_skipped", index, reason)
         return StepExecutionOutcome(StepOutcomeKind.SKIPPED, error=reason)
+
+    def finish_blocked(self, index: int, result: ToolResult) -> StepExecutionOutcome:
+        reason = str(result.get("error") or "confirmação necessária")
+        self.context.agent_state.mark_step_blocked(index, reason)
+        self._emit_terminal("step_blocked", index, reason)
+        return StepExecutionOutcome(
+            StepOutcomeKind.BLOCKED,
+            result=result,
+            error=reason,
+            final_answer=str(result.get("message") or "A execução aguarda aprovação."),
+        )
+
+    def finish_unverified(self, index: int, result: ToolResult) -> StepExecutionOutcome:
+        reason = str(result.get("error") or "resultado sem validação disponível")
+        self.context.agent_state.mark_step_unverified(index, reason)
+        self._emit_terminal("step_unverified", index, reason)
+        return StepExecutionOutcome(
+            StepOutcomeKind.UNVERIFIED,
+            result=result,
+            error=reason,
+            final_answer=str(result.get("message") or "A execução não pôde ser verificada."),
+        )
 
     def _emit_terminal(self, event_type: str, index: int, reason: str = "") -> None:
         data = {"step": index + 1, "step_id": self.context.agent_state.get_step_id(index)}

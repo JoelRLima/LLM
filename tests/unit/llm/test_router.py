@@ -26,14 +26,16 @@ def test_is_clearly_trivial_matches_greetings():
 
 def test_route_objective_trivial_uses_general():
     sess = DummySession()
-    persona_prompt, skills = router.route_objective("Oi", sess)
+    persona_prompt, skills, persona = router.route_objective("Oi", sess)
+    assert persona == "general"
     assert "general" in persona_prompt.lower() or "general" in skills
 
 
 def test_route_objective_fallbacks_to_llm_when_not_trivial(monkeypatch):
     sess = DummySession()
 
-    persona_prompt, skills = router.route_objective("Crie um teste", sess)
+    persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)
+    assert persona == "coder"
     assert isinstance(persona_prompt, str)
     assert isinstance(skills, list)
     assert "file_reader" in skills or "code_analyzer" in skills
@@ -45,5 +47,6 @@ def test_route_objective_handles_invalid_llm_response(monkeypatch):
             return "não é json"
 
     sess = BrokenSession()
-    persona_prompt, skills = router.route_objective("Crie um teste", sess)
+    persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)
+    assert persona == "general"
     assert "general" in persona_prompt.lower() or "general" in skills

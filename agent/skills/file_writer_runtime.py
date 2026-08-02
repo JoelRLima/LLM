@@ -6,6 +6,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable
 
+from agent.approval import ApprovalDecision, ApprovalPort, ApprovalRequest
+
 Result = dict[str, Any]
 AstPatcher = Callable[[Path, str, str, str | None], Result]
 
@@ -20,13 +22,45 @@ def prepare_workspace(requested: Path, workspace_path: str) -> tuple[Path | None
     return target, None
 
 
-def confirm_protected_edit(file_path: str, requested: Path, auto_confirm: Callable[[], bool]) -> Result | None:
+def _approval_denied(decision: ApprovalDecision, *, message: str) -> Result | None:
+    if decision is ApprovalDecision.APPROVED:
+        return None
+    if decision is ApprovalDecision.REQUIRED:
+        return {
+            "ok": False,
+            "done": False,
+            "status": "blocked",
+            "error": "confirmation_required",
+            "message": message,
+        }
+    return {
+        "ok": False,
+        "done": False,
+        "status": "cancelled",
+        "error": "approval_rejected",
+        "message": "Modificação rejeitada pelo usuário.",
+    }
+
+
+def confirm_protected_edit(
+    file_path: str,
+    requested: Path,
+    approval: ApprovalPort,
+) -> Result | None:
     in_agent = "agent" in str(requested).replace("\\", "/").split("/")
-    if not in_agent or auto_confirm():
+    if not in_agent:
         return None
-    if input(f"\nModificar '{file_path}'? (s/N): ").strip().lower() in ("s", "sim"):
-        return None
-    return {"ok": False, "done": False, "error": "bloqueado pelo usuário", "message": "Modificação cancelada pelo usuário."}
+    decision = approval.request(
+        ApprovalRequest(
+            action="protected_edit",
+            resource=file_path,
+            prompt=f"Modificar o arquivo protegido '{file_path}'?",
+        )
+    )
+    return _approval_denied(
+        decision,
+        message="A modificação do arquivo protegido aguarda confirmação.",
+    )
 
 
 def _write(target: Path, args: dict[str, Any]) -> Result | None:
@@ -95,15 +129,25 @@ def review_and_commit(
     requested: Path,
     workspace: Path,
     file_path: str,
-    auto_confirm: Callable[[], bool],
+    approval: ApprovalPort,
     invalidate: Callable[[str], None],
 ) -> Result:
     original = requested.read_text(encoding="utf-8") if requested.exists() else ""
     proposed = workspace.read_text(encoding="utf-8")
     _show_diff(original, proposed, file_path)
-    apply_change = auto_confirm() or input(f"\nAplicar mudanças em '{file_path}'? (s/N): ").strip().lower() in ("s", "sim")
-    if not apply_change:
-        return {"ok": True, "done": True, "message": "Mudanças mantidas no workspace. Arquivo original não foi alterado."}
+    decision = approval.request(
+        ApprovalRequest(
+            action="apply_change",
+            resource=file_path,
+            prompt=f"Aplicar mudanças em '{file_path}'?",
+        )
+    )
+    denied = _approval_denied(
+        decision,
+        message="Mudanças preparadas, mas a escrita aguarda confirmação.",
+    )
+    if denied is not None:
+        return denied
     temporary = Path(str(requested) + ".tmp")
     temporary.write_text(proposed, encoding="utf-8")
     os.replace(temporary, requested)

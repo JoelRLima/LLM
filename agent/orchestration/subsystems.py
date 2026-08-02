@@ -31,17 +31,37 @@ class AgentSubsystems:
 
     @property
     def workspace(self) -> WorkspaceManager:
-        return self._get("workspace", lambda: WorkspaceManager(verbose=self.orchestrator.verbose))
+        paths = self.orchestrator.workspace_paths
+        return self._get(
+            "workspace",
+            lambda: WorkspaceManager(
+                verbose=self.orchestrator.verbose,
+                workspace_root=self.orchestrator.workspace_root,
+                restore_points_dir=(
+                    paths.restore_points_dir if paths is not None else None
+                ),
+                validation_config=self.orchestrator.session.config.get("validation"),
+            ),
+        )
 
     @property
     def context_manager(self) -> ContextManager:
         return self._get("context_manager", lambda: ContextManager(
-            self.orchestrator.session, self.orchestrator.agent_state, verbose=self.orchestrator.verbose
+            self.orchestrator.session,
+            self.orchestrator.agent_state,
+            verbose=self.orchestrator.verbose,
+            workspace_root=self.orchestrator.workspace_root,
         ))
 
     @property
     def auto_coder(self) -> AutoCoder:
-        return self._get("auto_coder", lambda: AutoCoder(self.orchestrator))
+        return self._get(
+            "auto_coder",
+            lambda: AutoCoder(
+                self.orchestrator,
+                path_resolver=self.orchestrator.resolve_user_path,
+            ),
+        )
 
     @property
     def reactive_loop(self) -> ReactiveLoop:
@@ -49,7 +69,13 @@ class AgentSubsystems:
 
     @property
     def plan_builder(self) -> PlanBuilder:
-        return self._get("plan_builder", lambda: PlanBuilder(self.orchestrator))
+        return self._get(
+            "plan_builder",
+            lambda: PlanBuilder(
+                self.orchestrator,
+                analysis_notes_file=self.orchestrator.analysis_notes_file,
+            ),
+        )
 
     @property
     def plan_executor(self) -> PlanExecutor:
@@ -57,11 +83,23 @@ class AgentSubsystems:
 
     @property
     def final_responder(self) -> FinalResponder:
-        return self._get("final_responder", lambda: FinalResponder(self.orchestrator))
+        return self._get(
+            "final_responder",
+            lambda: FinalResponder(
+                self.orchestrator,
+                analysis_notes_file=self.orchestrator.analysis_notes_file,
+            ),
+        )
 
     @property
     def tool_executor(self) -> ToolExecutor:
-        return self._get("tool_executor", lambda: ToolExecutor(self.orchestrator))
+        return self._get(
+            "tool_executor",
+            lambda: ToolExecutor(
+                self.orchestrator,
+                path_resolver=self.orchestrator.resolve_user_path,
+            ),
+        )
 
     @property
     def watchdog(self) -> Watchdog:

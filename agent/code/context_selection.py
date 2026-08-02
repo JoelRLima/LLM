@@ -10,6 +10,7 @@ from typing import Dict, Sequence
 
 from agent.code.contracts import CodeAnalysis, RepositoryIndex
 from agent.code.intelligence import CodeIntelligenceService
+from agent.code.path_safety import resolve_workspace_path
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _STOPWORDS = frozenset(
@@ -93,11 +94,35 @@ class ContextSelector:
             normalized_target = self._normalize_target(target)
             self._add_score(scores, reasons, normalized_target, 100, "target explícito")
 
-        by_path = {analysis.file_path: analysis for analysis in index.analyses}
+        by_path = self._contained_by_path(index)
         self._score_containment(explicit_targets, by_path, scores, reasons)
         self._score_mentions(terms, by_path, scores, reasons)
         self._score_imports(explicit_targets, by_path, scores, reasons)
         return scores, reasons
+
+    def _contained_by_path(
+        self,
+        index: RepositoryIndex,
+    ) -> Dict[str, CodeAnalysis]:
+        contained: Dict[str, CodeAnalysis] = {}
+        for analysis in index.analyses:
+            try:
+                resolve_workspace_path(
+                    self.root,
+                    analysis.file_path,
+                    require_file=True,
+                )
+            except (OSError, ValueError):
+                continue
+            contained[analysis.file_path] = analysis
+        return contained
+
+    def _read_bytes(self, path: str) -> bytes:
+        return resolve_workspace_path(
+            self.root,
+            path,
+            require_file=True,
+        ).read_bytes()
 
     @staticmethod
     def _add_score(
@@ -180,7 +205,7 @@ class ContextSelector:
         # read_bytes preserva CRLF/LF exatamente como o ChangeSetTransaction.
         # Assim, expected_text produzido a partir deste contexto também é uma
         # precondição válida no Windows.
-        source = (self.root / path).read_bytes().decode("utf-8", errors="replace")
+        source = self._read_bytes(path).decode("utf-8", errors="replace")
         if len(source) <= max_chars:
             return source, False
         lines = source.splitlines(keepends=True)
@@ -208,7 +233,7 @@ class ContextSelector:
     ) -> SelectedContext:
         index = self.intelligence.index_repository()
         scores, reasons = self._score(objective, explicit_targets, index)
-        by_path = {analysis.file_path: analysis for analysis in index.analyses}
+        by_path = self._contained_by_path(index)
         ranked = sorted(scores, key=lambda path: (-scores[path], path))[: self.max_files]
         terms = self._terms(objective)
         chunks: list[str] = []
@@ -217,12 +242,19 @@ class ContextSelector:
         remaining = max(1000, max_chars)
         for position, path in enumerate(ranked):
             analysis = by_path.get(path)
-            candidate = (self.root / path).resolve()
-            if analysis is None or not candidate.is_file():
+            if analysis is None:
                 continue
-            per_file = max(800, remaining // max(1, len(ranked) - position))
-            excerpt, file_truncated = self._read_excerpt(path, analysis, terms, per_file)
-            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            try:
+                per_file = max(800, remaining // max(1, len(ranked) - position))
+                excerpt, file_truncated = self._read_excerpt(
+                    path,
+                    analysis,
+                    terms,
+                    per_file,
+                )
+                digest = hashlib.sha256(self._read_bytes(path)).hexdigest()
+            except (OSError, ValueError):
+                continue
             reason_values = tuple(sorted(reasons.get(path, {"seleção determinística"})))
             header = (
                 f"\n--- {path} ---\n"

@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from agent.parsers import validate_tool_args
@@ -15,8 +15,14 @@ Evite leituras repetidas, caches/logs no escopo e passos que apaguem conteúdo.
 
 
 class PlanBuilder:
-    def __init__(self, orchestrator: Any):
+    def __init__(
+        self,
+        orchestrator: Any,
+        *,
+        analysis_notes_file: str | Path = "analysis_notes.md",
+    ):
         self.orchestrator = orchestrator
+        self.analysis_notes_file = Path(analysis_notes_file)
 
     def build_plan(self, objective: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         self._clear_analysis_notes()
@@ -43,12 +49,11 @@ class PlanBuilder:
             print(f"[DEBUG] Plano canônico com {len(canonical)} passos: {canonical}")
         return canonical, None
 
-    @staticmethod
-    def _clear_analysis_notes() -> None:
-        if not os.path.exists("analysis_notes.md"):
+    def _clear_analysis_notes(self) -> None:
+        if not self.analysis_notes_file.exists():
             return
         try:
-            with open("analysis_notes.md", "w", encoding="utf-8") as stream:
+            with self.analysis_notes_file.open("w", encoding="utf-8") as stream:
                 stream.write("")
         except OSError:
             pass

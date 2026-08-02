@@ -1,0 +1,23 @@
+{
+  "id": "demo.extension",
+  "version": "1.0.0",
+  "protocol_version": "1.0",
+  "transport": "stdio",
+  "entrypoint": ["python", "demo_extension.py"],
+  "timeout_seconds": 5,
+  "tools": [
+    {
+      "name": "demo_tool",
+      "description": "Ferramenta de demonstração para validar extensões stdio.",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "text": {"type": "string"}
+        },
+        "required": ["text"]
+      },
+      "capabilities": ["read"],
+      "cost": 1
+    }
+  ]
+}

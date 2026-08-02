@@ -1,58 +1,64 @@
-"""Benchmark headless do fluxo completo do LLM Agent.
+"""Benchmark real e headless do fluxo completo do assistente.
 
-O script carrega ``config.json``, cria ``ChatSession`` e ``Orchestrator`` pelo
-mesmo catálogo de skills usado na CLI e executa tarefas fixas com timeout de
-120 segundos. A saída vai para o terminal e para
-``runtime/benchmark_results.json``.
-
-Este benchmark usa o backend de modelo configurado e pode modificar somente os
-arquivos de exercício descritos nas tarefas. Ele não substitui os cenários
-herméticos de ``agent/evaluation``. Como ``Orchestrator.run`` ainda retorna uma
-string, o sucesso é inferido do resultado público da última ferramenta; timeout
-ou exceção sempre contam como falha.
+O benchmark usa o backend configurado e executa tarefas reais no workspace
+explícito. Ele não substitui os cenários herméticos de ``agent.evaluation``.
+Configuração, estado, logs e resultado são resolvidos pelo mesmo composition
+root usado pelas demais interfaces standalone.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Dict, List
-
-from agent.llm.session import ChatSession
-from agent.runtime import paths
-from agent.runtime.config import carregar_config
+from pathlib import Path
+from typing import Any, Sequence
 
 TASK_TIMEOUT_SECONDS = 120
-RESULTS_FILE = paths.BENCHMARK_RESULTS_FILE
-
-def _load_config() -> Dict[str, Any]:
-    """Load configuration through the canonical runtime service."""
-    return carregar_config()
-
-
-def _wire_skill_orchestrator_refs(orchestrator: Any) -> None:
-    """Garante que skills que dependem de uma referência ao Orchestrator
-    (ex.: SessionMemorySkill, SummarizeSkill) a recebam, mesmo fora da CLI.
-    Ver premissa 3 no docstring do módulo.
-    """
-    for skill in orchestrator.skills.values():
-        if hasattr(skill, "orchestrator"):
-            try:
-                skill.orchestrator = orchestrator
-            except Exception:
-                pass
+BENCHMARK_TASKS = (
+    "Liste todos os arquivos do projeto.",
+    "Crie um arquivo hello.py que imprime 'Hello, world!'.",
+    "Execute o arquivo hello.py com python_executor.",
+    "Calcule a soma de 1 a 10 usando python_executor.",
+    "Leia o arquivo EstruturaProjeto.md e faça um resumo de 3 linhas.",
+)
 
 
-def _determine_success(orchestrator: Any, errored: bool, timed_out: bool) -> bool:
-    if errored or timed_out:
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="benchmark",
+        description="Executa o benchmark real do assistente no workspace selecionado.",
+    )
+    parser.add_argument("--workspace", default=Path.cwd(), metavar="DIR", help="workspace das tarefas")
+    parser.add_argument("--home", metavar="DIR", help="diretório-base dos dados da aplicação")
+    parser.add_argument("--config", metavar="ARQUIVO", help="arquivo de configuração explícito")
+    parser.add_argument("--profile", metavar="NOME", help="perfil de modelo configurado")
+    return parser
+
+
+def _create_application(args: argparse.Namespace) -> Any:
+    from agent.application import AgentApplication
+    from agent.runtime.paths import AppPaths
+
+    return AgentApplication.create(
+        workspace=Path(args.workspace).expanduser(),
+        paths=AppPaths.discover(app_home=args.home),
+        config_path=args.config,
+        profile=args.profile,
+    )
+
+
+def _determine_success(application: Any, application_succeeded: bool, errored: bool, timed_out: bool) -> bool:
+    if errored or timed_out or not application_succeeded:
         return False
 
+    orchestrator = application.orchestrator
     tool_history = list(getattr(orchestrator.agent_state, "tool_history", []) or [])
     if not tool_history:
-        # Nenhuma ferramenta foi necessária (ex.: resposta trivial) -> nada falhou.
         return True
 
     last_result = getattr(orchestrator.agent_state, "last_result", None)
@@ -61,36 +67,47 @@ def _determine_success(orchestrator: Any, errored: bool, timed_out: bool) -> boo
     return False
 
 
-def run_task(orchestrator: Any, objective: str) -> Dict[str, Any]:
-    """Executa uma única tarefa no Orchestrator, com timeout de
-    TASK_TIMEOUT_SECONDS segundos, e coleta as métricas públicas
-    disponíveis em agent_state.
-    """
+def run_task(
+    application: Any,
+    objective: str,
+    *,
+    timeout_seconds: int = TASK_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Executa uma tarefa pela fronteira pública e coleta métricas disponíveis."""
+
     errored = False
     timed_out = False
     error_message = ""
     answer = ""
+    application_succeeded = False
 
     start = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(orchestrator.run, objective)
-        try:
-            answer = future.result(timeout=TASK_TIMEOUT_SECONDS)
-        except FutureTimeoutError:
-            timed_out = True
-            error_message = f"Timeout: tarefa excedeu {TASK_TIMEOUT_SECONDS}s."
-            # A thread continua rodando em segundo plano (não há API pública
-            # para cancelar o Orchestrator no meio da execução); o resultado
-            # tardio, se houver, será simplesmente descartado.
-        except Exception as e:  # noqa: BLE001 - queremos capturar qualquer falha do agente
-            errored = True
-            error_message = f"{type(e).__name__}: {e}"
-            if orchestrator.verbose:
-                traceback.print_exc()
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(application.run, objective)
+    try:
+        result = future.result(timeout=timeout_seconds)
+        answer = result.answer
+        application_succeeded = result.success
+        error_message = result.error or ""
+    except FutureTimeoutError:
+        timed_out = True
+        error_message = f"Timeout: tarefa excedeu {timeout_seconds}s."
+        application.cancel()
+    except Exception as exc:  # noqa: BLE001 - qualquer falha invalida a medição
+        errored = True
+        error_message = f"{type(exc).__name__}: {exc}"
+        if getattr(application.orchestrator, "verbose", False):
+            traceback.print_exc()
+    finally:
+        # Threads Python não podem ser terminadas com segurança. Após solicitar
+        # cancelamento cooperativo, aguardamos a execução em voo encerrar antes
+        # de reutilizar ou fechar os recursos da aplicação.
+        pool.shutdown(wait=True, cancel_futures=timed_out)
     elapsed = time.perf_counter() - start
 
+    orchestrator = application.orchestrator
     steps = len(getattr(orchestrator.agent_state, "tool_history", []) or [])
-    success = _determine_success(orchestrator, errored, timed_out)
+    success = _determine_success(application, application_succeeded, errored, timed_out)
 
     return {
         "objective": objective,
@@ -104,96 +121,104 @@ def run_task(orchestrator: Any, objective: str) -> Dict[str, Any]:
     }
 
 
-def print_table(results: List[Dict[str, Any]]) -> None:
+def print_table(results: list[dict[str, Any]]) -> None:
     headers = ["#", "Tarefa", "Sucesso", "Passos", "Tempo (s)"]
     col_widths = [3, 60, 9, 8, 10]
 
-    def fmt_row(cells: List[str]) -> str:
-        return " | ".join(c.ljust(w) for c, w in zip(cells, col_widths, strict=False))
+    def fmt_row(cells: list[str]) -> str:
+        return " | ".join(cell.ljust(width) for cell, width in zip(cells, col_widths, strict=False))
 
-    sep = "-+-".join("-" * w for w in col_widths)
+    separator = "-+-".join("-" * width for width in col_widths)
 
     print("\n=== Benchmark do LLM Agent ===\n")
     print(fmt_row(headers))
-    print(sep)
-    for i, r in enumerate(results, start=1):
-        objetivo_curto = (r["objective"][:57] + "...") if len(r["objective"]) > 60 else r["objective"]
-        print(fmt_row([
-            str(i),
-            objetivo_curto,
-            "SIM" if r["success"] else "NAO",
-            str(r["steps"]),
-            f'{r["elapsed_seconds"]:.2f}',
-        ]))
-    print(sep)
+    print(separator)
+    for index, result in enumerate(results, start=1):
+        objective = result["objective"]
+        short_objective = (objective[:57] + "...") if len(objective) > 60 else objective
+        print(
+            fmt_row(
+                [
+                    str(index),
+                    short_objective,
+                    "SIM" if result["success"] else "NAO",
+                    str(result["steps"]),
+                    f"{result['elapsed_seconds']:.2f}",
+                ]
+            )
+        )
+    print(separator)
 
     total = len(results)
-    successes = sum(1 for r in results if r["success"])
-    total_time = sum(r["elapsed_seconds"] for r in results)
+    successes = sum(1 for result in results if result["success"])
+    total_time = sum(result["elapsed_seconds"] for result in results)
     print(f"\nResumo: {successes}/{total} tarefas bem-sucedidas | Tempo total: {total_time:.2f}s\n")
 
 
-def main() -> None:
-    try:
-        config = _load_config()
-    except FileNotFoundError:
-        print(
-            "ERRO: config.json não encontrado na raiz do projeto.\n"
-            "Copie config.example.json para config.json antes de rodar o benchmark "
-            "(veja a seção 0 de EstruturaProjeto.md)."
-        )
-        return
+def _report(results: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "task_timeout_seconds": TASK_TIMEOUT_SECONDS,
+        "results": results,
+        "summary": {
+            "total_tasks": len(results),
+            "successful_tasks": sum(1 for result in results if result["success"]),
+            "total_elapsed_seconds": round(
+                sum(result["elapsed_seconds"] for result in results),
+                3,
+            ),
+        },
+    }
 
-    from agent.orchestrator import Orchestrator
-    from agent.skills import load_all_skills
-    system_prompt = config.get(
-        "default_system_prompt",
-        "Você é um assistente útil. Pense em inglês e responda em português brasileiro.",
-    )
-    session = ChatSession(system_prompt, config)
 
-    skills = load_all_skills(model_gateway=session.gateway, config=config)
-
-    orchestrator = Orchestrator(session, skills=skills)
-    orchestrator.verbose = False
-    _wire_skill_orchestrator_refs(orchestrator)
-
-    tasks = [
-        "Liste todos os arquivos do projeto.",
-        "Crie um arquivo hello.py que imprime 'Hello, world!'.",
-        "Execute o arquivo hello.py com python_executor.",
-        "Calcule a soma de 1 a 10 usando python_executor.",
-        "Leia o arquivo EstruturaProjeto.md e faça um resumo de 3 linhas.",
-    ]
-
-    results: List[Dict[str, Any]] = []
+def run_benchmark(
+    application: Any,
+    *,
+    tasks: Sequence[str] = BENCHMARK_TASKS,
+) -> Path:
+    results: list[dict[str, Any]] = []
     for objective in tasks:
         print(f"\n>>> Executando: {objective}")
-        result = run_task(orchestrator, objective)
+        result = run_task(application, objective)
         status = "OK" if result["success"] else "FALHOU"
         print(f"<<< {status} | passos={result['steps']} | tempo={result['elapsed_seconds']}s")
         results.append(result)
+        if result["timed_out"]:
+            print("Benchmark interrompido após timeout; a aplicação não será reutilizada.")
+            break
 
     print_table(results)
+    results_file = Path(application.workspace_paths.benchmark_results_file)
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    results_file.write_text(
+        json.dumps(_report(results), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Resultados gravados em {results_file}")
+    return results_file
 
-    paths.ensure_runtime_dir()
-    with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "task_timeout_seconds": TASK_TIMEOUT_SECONDS,
-                "results": results,
-                "summary": {
-                    "total_tasks": len(results),
-                    "successful_tasks": sum(1 for r in results if r["success"]),
-                    "total_elapsed_seconds": round(sum(r["elapsed_seconds"] for r in results), 3),
-                },
-            },
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
-    print(f"Resultados gravados em {RESULTS_FILE}")
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    application = None
+    try:
+        application = _create_application(args)
+        run_benchmark(application)
+        return 0
+    except (FileNotFoundError, NotADirectoryError, PermissionError, ValueError) as exc:
+        print(f"ERRO: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:
+        from agent.runtime.config_errors import ConfigError
+
+        if isinstance(exc, ConfigError):
+            print(f"ERRO: {exc}", file=sys.stderr)
+            return 2
+        print(f"ERRO: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if application is not None:
+            application.close()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

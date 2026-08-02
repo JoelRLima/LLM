@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, cast
 from agent.contracts import AgentEvent, EventData, ToolArgs, ToolResult
 from agent.error_handler import ErrorHandler
 from agent.reporting.task_report import TaskReportBuilder
-from agent.runtime import paths
 from agent.runtime.logging import logger
 
 
@@ -58,11 +57,23 @@ class OrchestratorOperations:
         self.agent_state.memory.clear()
         self.agent_state.events.clear()
 
-    def save_memory_to_file(self, path: str = paths.MEMORY_FILE) -> str:
-        return str(self.agent_state.memory.save_to_file(path))
+    memory_file: str
 
-    def load_memory_from_file(self, path: str = paths.MEMORY_FILE) -> str:
-        return str(self.agent_state.memory.load_from_file(path))
+    def save_memory_to_file(self, path: str | None = None) -> str:
+        return str(self.agent_state.memory.save_to_file(path or self.memory_file))
+
+    def _persist_memory_to_file(self, path: str | None = None) -> None:
+        """Persiste memória sem converter falhas em uma falsa resposta de sucesso."""
+
+        self.agent_state.memory.persist_to_file(path or self.memory_file)
+
+    def load_memory_from_file(self, path: str | None = None) -> str:
+        return str(self.agent_state.memory.load_from_file(path or self.memory_file))
+
+    def _restore_memory_from_file(self, path: str | None = None) -> None:
+        """Restaura memória no bootstrap sem ocultar corrupção ou falha de I/O."""
+
+        self.agent_state.memory.restore_from_file(path or self.memory_file)
 
     def _save_checkpoint(self) -> None:
         self.checkpoint_manager.save(self.agent_state)

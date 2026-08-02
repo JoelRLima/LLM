@@ -11,6 +11,7 @@ from agent.code.changes import ChangeSet, ChangeSetError
 from agent.code.context_selection import ContextSelector
 from agent.code.diagnostics import FailureClassifier
 from agent.code.intelligence import CodeIntelligenceService
+from agent.code.path_safety import resolve_workspace_path
 from agent.code.policy import ChangeApprovalPolicy, ChangeApprover
 from agent.code.validation import ProjectValidator
 from agent.code.workflow_application import apply_changes as apply_change_set
@@ -68,14 +69,40 @@ class CodingWorkflowService:
         return summary, payload, tuple(self._diagnostic_dict(item) for item in index.diagnostics)
 
     def review(self, targets: Sequence[str]) -> TaskResult:
-        before = {path: (self.root / path).read_bytes() for path in targets}
+        try:
+            resolved_targets = {
+                path: resolve_workspace_path(
+                    self.root,
+                    path,
+                    require_file=True,
+                )
+                for path in targets
+            }
+            before = {
+                path: resolved.read_bytes()
+                for path, resolved in resolved_targets.items()
+            }
+        except (OSError, ValueError) as exc:
+            return TaskResult(TaskStatus.FAILED, error=str(exc))
         diagnostics: list[Dict[str, Any]] = []
         for target in targets:
             result = self.analyze(target)
             if result.status == TaskStatus.FAILED:
                 return result
             diagnostics.extend(result.diagnostics)
-        mutated = [path for path, content in before.items() if (self.root / path).read_bytes() != content]
+        try:
+            mutated = [
+                path
+                for path, content in before.items()
+                if resolve_workspace_path(
+                    self.root,
+                    path,
+                    require_file=True,
+                ).read_bytes()
+                != content
+            ]
+        except (OSError, ValueError) as exc:
+            return TaskResult(TaskStatus.FAILED, error=str(exc))
         if mutated:
             return TaskResult(TaskStatus.FAILED, error=f"Review modificou arquivos indevidamente: {', '.join(mutated)}")
         return TaskResult(TaskStatus.SUCCEEDED, summary=f"Revisão concluída com {len(diagnostics)} diagnóstico(s).", diagnostics=tuple(diagnostics))

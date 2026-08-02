@@ -20,6 +20,7 @@ from agent.code.change_models import (
     content_hash,
 )
 from agent.code.change_parsing import apply_text_edits
+from agent.code.path_safety import resolve_workspace_path
 
 
 class ChangeSetTransaction:
@@ -36,12 +37,22 @@ class ChangeSetTransaction:
         self._preview: Optional[ChangePreview] = None
 
     def _resolve(self, relative: str) -> Path:
-        candidate = (self.root / relative).resolve()
         try:
-            candidate.relative_to(self.root)
+            return resolve_workspace_path(self.root, relative)
         except ValueError as exc:
             raise ChangeSetError(f"Caminho fora do projeto: {relative}") from exc
-        return candidate
+
+    def _assert_current_path(self, path: Path) -> None:
+        try:
+            current = resolve_workspace_path(self.root, path)
+        except ValueError as exc:
+            raise ChangeConflictError(
+                f"Caminho saiu do projeto após o stage: {path}"
+            ) from exc
+        if current != path:
+            raise ChangeConflictError(
+                f"Caminho mudou após o stage: {path}"
+            )
 
     @staticmethod
     def _reserve(path: Path, label: str, reserved: Dict[Path, str]) -> None:
@@ -50,6 +61,7 @@ class ChangeSetTransaction:
         reserved[path] = label
 
     def _backup_source(self, change: FileChange, path: Path) -> bytes | None:
+        self._assert_current_path(path)
         exists = path.is_file()
         if change.kind == ChangeKind.CREATE and exists:
             raise ChangeConflictError(f"Arquivo já existe: {change.path}")
@@ -64,6 +76,7 @@ class ChangeSetTransaction:
     def _stage_move(self, change: FileChange, reserved: Dict[Path, str], affected: list[str]) -> None:
         assert change.destination_path is not None
         destination = self._resolve(change.destination_path)
+        self._assert_current_path(destination)
         self._reserve(destination, change.destination_path, reserved)
         if destination.exists():
             raise ChangeConflictError(f"Destino já existe: {change.destination_path}")
@@ -119,9 +132,10 @@ class ChangeSetTransaction:
         self._preview = ChangePreview(self.change_set.change_set_id, tuple(affected), "".join(diffs))
         return self._preview
 
-    @staticmethod
-    def _atomic_write(path: Path, content: bytes) -> None:
+    def _atomic_write(self, path: Path, content: bytes) -> None:
+        self._assert_current_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self._assert_current_path(path)
         descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
         try:
             with os.fdopen(descriptor, "wb") as handle:
@@ -136,17 +150,21 @@ class ChangeSetTransaction:
     def _validate_staged_snapshot(self) -> None:
         for change in self.change_set.changes:
             path = self._paths[change.path]
+            self._assert_current_path(path)
             expected = self._backups[path]
             changed = path.exists() if expected is None else not path.is_file() or path.read_bytes() != expected
             if changed:
                 raise ChangeConflictError(f"Arquivo mudou após o stage: {change.path}")
             if change.kind == ChangeKind.MOVE:
                 assert change.destination_path is not None
-                if self._paths[change.destination_path].exists():
+                destination = self._paths[change.destination_path]
+                self._assert_current_path(destination)
+                if destination.exists():
                     raise ChangeConflictError(f"Destino mudou após o stage: {change.destination_path}")
 
     def _apply_change(self, change: FileChange) -> None:
         path = self._paths[change.path]
+        self._assert_current_path(path)
         if change.kind in {ChangeKind.CREATE, ChangeKind.MODIFY, ChangeKind.EDIT}:
             self._atomic_write(path, self._staged_content[path])
             self._applied_paths.add(path)
@@ -156,7 +174,9 @@ class ChangeSetTransaction:
         else:
             assert change.destination_path is not None
             destination = self._paths[change.destination_path]
+            self._assert_current_path(destination)
             destination.parent.mkdir(parents=True, exist_ok=True)
+            self._assert_current_path(destination)
             os.replace(path, destination)
             self._applied_paths.update({path, destination})
 
@@ -171,7 +191,13 @@ class ChangeSetTransaction:
                 self._apply_change(change)
             self.change_set = replace(self.change_set, state=ChangeSetState.COMMITTED)
         except Exception as exc:
-            self.rollback()
+            try:
+                self.rollback()
+            except ChangeSetError as rollback_error:
+                raise ChangeSetError(
+                    f"Falha ao aplicar ChangeSet: {exc}; rollback incompleto: "
+                    f"{rollback_error}"
+                ) from exc
             raise ChangeSetError(f"Falha ao aplicar ChangeSet: {exc}") from exc
 
     def mark_validated(self) -> None:
@@ -183,6 +209,7 @@ class ChangeSetTransaction:
         for path, content in reversed(tuple(self._backups.items())):
             if path not in self._applied_paths:
                 continue
+            self._assert_current_path(path)
             if content is None and path.exists():
                 path.unlink()
             elif content is not None:

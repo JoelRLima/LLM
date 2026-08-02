@@ -13,12 +13,25 @@ class SecurityAnalysisService:
 
     def run(self, objective: str, on_chunk: Callable[[str], None] | None = None) -> str | None:
         target = self._target_file(objective)
-        skill = self.orchestrator.skills.get("code_analyzer")
-        if not target or not skill:
+        if not target:
             return None
-        result = skill.execute({"target": target, "mode": "security"})
+        gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
+        if gateway is not None:
+            res = gateway.run(
+                "code_analyzer",
+                {"target": target, "mode": "security"},
+                active_skills=getattr(self.orchestrator, "active_skills", None),
+                allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
+            )
+            result = res.to_legacy_dict()
+        else:
+            legacy_invoker = getattr(self.orchestrator, "legacy_tool_invoker", None)
+            if legacy_invoker is None:
+                return None
+            result = legacy_invoker.invoke("code_analyzer", {"target": target, "mode": "security"}, record_result=False)
         if not result.get("ok"):
             return None
+
         findings = consolidate(result.get("data", {}))
         if not findings:
             return self._answer_without_findings(target, objective, on_chunk)

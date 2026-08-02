@@ -4,6 +4,26 @@
 
 ---
 
+## [application.py](../../agent/application.py)
+
+`AgentApplication` é a raiz de composição independente de UI. Recebe workspace,
+paths, configuração e, opcionalmente, um gateway de modelo; constrói sessão,
+skills e `Orchestrator`; e possui lock, logging e persistência. A configuração
+é carregada e validada antes de qualquer diretório ou lock ser criado. `run()`
+retorna `AgentRunResult` com `succeeded`, `failed`, `cancelled`, `blocked` ou
+`unverified`; somente o primeiro tem `success: true`. `close()` é idempotente.
+Execução e encerramento são serializados enquanto stdout e logging legados
+ainda são recursos de processo. CLI, modo headless e benchmark usam essa mesma
+fronteira.
+
+## [approval.py](../../agent/approval.py)
+
+Define a porta de autoridade usada por skills e workflows com efeito.
+`RequireExplicitApproval` bloqueia sem consultar stdin, `AutoApprove` representa
+uma concessão explícita do chamador e a CLI interativa implementa seu próprio
+adapter. A autoridade é consultada antes de qualquer escrita do `code_task`,
+mesmo quando a proposta possui confiança suficiente para auto-apply.
+
 ## 4.1. [orchestrator.py](../../agent/orchestrator.py)
 O coração da execução autônoma. Após a refatoração de modularidade, o `Orchestrator` atua como um coordenador central que instancia e conecta os subcomponentes especializados:
 
@@ -33,7 +53,7 @@ unidades testáveis, sem criar um segundo ponto de entrada para o agente.
 * **Métricas:** Delegado ao `MetricsRecorder` (`agent/reporting/metrics_recorder.py`), também extraído do `Orchestrator`.
 * **Cancelamento cooperativo:** O método `run()` captura `KeyboardInterrupt` (Ctrl+C) e interrompe a execução de forma limpa, salvando o checkpoint e retornando uma mensagem amigável. O comando `/retry` permite retomar a tarefa posteriormente a partir do checkpoint.
 * **Planejamento hierárquico:** Para objetivos complexos (detectados por `complexity.py`), o `Orchestrator` delega a execução ao `HierarchicalPlanner` (geração de macroplano) e `HierarchicalExecutor` (execução de sub‑objetivos, também via `ExecutionGateway` — ver 4.25), com tracking via `TaskTracker` e sumarização incremental via `IncrementalSummarizer`. Se o macroplano não puder ser gerado, o fluxo linear é usado como fallback.
-* **Relatório da tarefa:** Ao final de cada execução, o `Orchestrator` gera um relatório estruturado de auditoria (`TaskReportBuilder`) com passos, métricas, erros, eventos de replanejamento e uma prévia da resposta final. Configurável via `task_report` em `config.json`.
+* **Relatório da tarefa:** Ao final de cada execução, o `Orchestrator` gera um relatório estruturado de auditoria (`TaskReportBuilder`) com passos, métricas, erros, eventos de replanejamento e uma prévia da resposta final. Habilitação e formato vêm de `task_report`; o diretório vem de `WorkspacePaths`.
 
 ---
 
@@ -103,10 +123,11 @@ Responsável por disparar a execução de cada skill cadastrada:
 
 ## 4.12. [workspace.py](../../agent/workspace.py)
 Controla o ecossistema local do espaço de trabalho:
-* **Pontos de Restauração (`create_restore_point`):** Copia os arquivos originais que serão alterados para a pasta técnica `runtime/restore_points/<timestamp>` (caminho de `paths.py`). Antes, esta pasta se chamava `memory_backups/restore/`, reaproveitando por coincidência o mesmo nome usado por `memory.py` para backups de memória — dois conceitos diferentes que compartilhavam nome. Agora `runtime/restore_points/` (rollback de arquivos) e `runtime/memory_backups/` (backup de memória) são diretórios distintos.
+* **Raiz explícita:** Recebe o workspace validado pela composição; subprocessos usam esse path como `cwd` e operações de arquivo são confinadas a ele.
+* **Pontos de Restauração (`create_restore_point`):** Copia os arquivos originais para o diretório de restore do workspace, fora da árvore editada. Backups de memória e restore points são responsabilidades e paths distintos.
 * **Rollback:** Se acionado, copia de volta os arquivos preservados e limpa a pasta de restore, devolvendo o projeto ao seu estado inicial limpo.
 * **Diff Visível (`show_diff`):** Utiliza o módulo padrão `difflib` para exibir uma saída comparativa clara em formato unificado no console.
-* **Lint Check (`lint_check`):** Roda compilação sintática nativa Python (`py_compile`) e, conforme configuração em `config.json` (`validation`), executa opcionalmente `ruff`, `mypy` e `pytest`. Se `fail_triggers_replan` for `true`, lança `ValidationFailedError` que aciona o replanejamento automático.
+* **Lint Check (`lint_check`):** Roda compilação sintática nativa Python (`py_compile`) e, conforme a seção efetiva `validation`, executa opcionalmente `ruff`, `mypy` e `pytest`. Se `fail_triggers_replan` for `true`, lança `ValidationFailedError` que aciona o replanejamento automático.
 
 ---
 
@@ -148,12 +169,14 @@ Monitora a execução de uma tarefa e decide quando abortar por segurança ou fa
 
 ## 4.21. [health_check.py](../../agent/health_check.py) 🆕
 Módulo de diagnóstico ("Doctor") do agente. Executável via `python -m agent.health_check` ou pelo comando `/doctor` na CLI.
-* `health_check.py` é a fachada compatível; as verificações ficam em `agent/health/`.
-* `state_checks.py` valida configuração, memória, hashes e diretórios; `runtime_checks.py` valida Python, permissões, skills e artefatos de runtime; `reporting.py` renderiza e persiste o relatório; `core.py` orquestra essas etapas.
-* Verifica: versão do Python, validade do `config.json`, integridade da memória e backups, hashes de arquivos, diretórios órfãos, permissões de leitura/escrita, carregamento de skills, e tamanho de logs/métricas.
-* Gera relatório visual no terminal e arquivo `runtime/health_report.json`.
-* **Comando CLI**: `/doctor` ou `/diagnostico` (integrado em `commands.py`).
-* **Caminhos centralizados:** importa de [`agent/runtime/paths.py`](../../agent/runtime/paths.py) os caminhos de runtime usados também por [`workspace.py`](../../agent/workspace.py), evitando definições paralelas para memória, logs e pontos de restauração.
+* `health_check.py` é a fachada; o caminho standalone fica em `agent/health/standalone.py` e `standalone_checks.py`.
+* Verifica offline: versão do pacote/Python, paths externos à instalação, schema
+  de configuração, workspace, estado/logs, integridade read-only da memória
+  JSON/SQLite e completude do perfil/backend.
+* Não constrói modelo, skills ou `Orchestrator`, e marca conectividade como `not_checked`.
+* Só grava relatório quando solicitado, sempre em `AppPaths.health_report_file`.
+* **Comandos CLI:** `llm-agent doctor`, `/doctor` ou `/diagnostico`; todos recebem os paths e workspace do contexto.
+* Checks históricos de memória, hashes e skills continuam disponíveis pela fachada para compatibilidade.
 
 ---
 

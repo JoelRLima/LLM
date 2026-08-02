@@ -18,6 +18,18 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _symlink_or_skip(
+    link: Path,
+    target: Path,
+    *,
+    target_is_directory: bool = False,
+) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"Symlinks indisponíveis neste ambiente: {exc}")
+
+
 def test_changeset_applies_multiple_files_and_can_rollback(tmp_path: Path):
     original = "value = 1\n"
     (tmp_path / "existing.py").write_bytes(original.encode("utf-8"))
@@ -206,3 +218,79 @@ def test_commit_rechecks_snapshot_without_overwriting_external_change(tmp_path: 
         transaction.commit()
 
     assert path.read_bytes() == external
+
+
+def test_changeset_rejects_external_file_and_directory_symlinks(
+    tmp_path: Path,
+) -> None:
+    outside_file = tmp_path.parent / f"{tmp_path.name}-changeset-sentinel.py"
+    outside_directory = tmp_path.parent / f"{tmp_path.name}-changeset-output"
+    original = "SENTINEL = 1\n"
+    outside_file.write_text(original, encoding="utf-8")
+    outside_directory.mkdir()
+    _symlink_or_skip(tmp_path / "linked.py", outside_file)
+    _symlink_or_skip(
+        tmp_path / "linked-dir",
+        outside_directory,
+        target_is_directory=True,
+    )
+
+    linked_file_change = ChangeSet(
+        objective="escape por arquivo",
+        changes=(
+            FileChange(
+                "linked.py",
+                ChangeKind.MODIFY,
+                "SENTINEL = 2\n",
+                _hash(original),
+            ),
+        ),
+    )
+    linked_directory_change = ChangeSet(
+        objective="escape por diretório",
+        changes=(
+            FileChange(
+                "linked-dir/created.py",
+                ChangeKind.CREATE,
+                "ESCAPED = True\n",
+            ),
+        ),
+    )
+
+    with pytest.raises(Exception, match="fora do projeto"):
+        ChangeSetTransaction(tmp_path, linked_file_change).prepare()
+    with pytest.raises(Exception, match="fora do projeto"):
+        ChangeSetTransaction(tmp_path, linked_directory_change).prepare()
+
+    assert outside_file.read_text(encoding="utf-8") == original
+    assert not (outside_directory / "created.py").exists()
+
+
+def test_changeset_rechecks_parent_symlink_immediately_before_commit(
+    tmp_path: Path,
+) -> None:
+    parent = tmp_path / "slot"
+    outside = tmp_path.parent / f"{tmp_path.name}-race-output"
+    parent.mkdir()
+    outside.mkdir()
+    transaction = ChangeSetTransaction(
+        tmp_path,
+        ChangeSet(
+            objective="criar com precondição de confinamento",
+            changes=(
+                FileChange(
+                    "slot/created.py",
+                    ChangeKind.CREATE,
+                    "VALUE = 1\n",
+                ),
+            ),
+        ),
+    )
+    transaction.prepare()
+    parent.rmdir()
+    _symlink_or_skip(parent, outside, target_is_directory=True)
+
+    with pytest.raises(ChangeConflictError, match="saiu do projeto"):
+        transaction.commit()
+
+    assert not (outside / "created.py").exists()

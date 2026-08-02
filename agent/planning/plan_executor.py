@@ -59,7 +59,12 @@ class PlanExecutor:
         if len(batch) > 1:
             return self._execute_parallel_read_batch(batch, objective, usage)
         outcome = self.step_executor.execute(index, objective, usage)
-        if outcome.kind in (StepOutcomeKind.FINAL, StepOutcomeKind.CANCELLED):
+        if outcome.kind in (
+            StepOutcomeKind.FINAL,
+            StepOutcomeKind.CANCELLED,
+            StepOutcomeKind.BLOCKED,
+            StepOutcomeKind.UNVERIFIED,
+        ):
             return StepLoopResult(index, outcome.result, outcome.final_answer, True)
         if outcome.kind is StepOutcomeKind.REPLAN:
             return self._handle_replan(index, step, tool, objective, outcome.error, outcome.result)
@@ -113,7 +118,8 @@ class PlanExecutor:
                 if cache_hit and cache_result is not None:
                     cached[index] = cache_result
                 else:
-                    self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
+                    if not getattr(self.orchestrator, "tool_invocation_gateway", None):
+                        self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
                     futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, False)] = index
             for future in concurrent.futures.as_completed(futures):
                 results[futures[future]] = self._future_result(future)
@@ -154,9 +160,11 @@ class PlanExecutor:
         tool, args, file_path = self._step_data(index)
         result = cached.get(index) or results.get(index, {"ok": False, "done": False, "data": None, "error": "Falha desconhecida"})
         if index not in cached:
-            self.orchestrator._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
+            if not getattr(self.orchestrator, "tool_invocation_gateway", None):
+                self.orchestrator._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
             self.orchestrator._maybe_summarize_and_store(tool, args, result)
-            state.record_tool_result(tool, args, result, step_id=state.get_step_id(index))
+            if not getattr(self.orchestrator, "tool_invocation_gateway", None):
+                state.record_tool_result(tool, args, result, step_id=state.get_step_id(index))
         return self.step_executor.finalize_result(index, tool, args, result, file_path, objective, usage), result
 
     def _step_data(self, index: int) -> tuple[str, ToolArgs, str]:

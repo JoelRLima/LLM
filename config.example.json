@@ -1,8 +1,10 @@
 {
+    "schema_version": 1,
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",
     "model": "default",
     "temperature": 0.6,
     "max_tokens": 4096,
+    "agent_max_tokens": null,
     "timeout": 300,
     "hardware_profile": "low_vram_8gb",
     "max_model_concurrency": 1,
@@ -38,7 +40,6 @@
     "max_repeated_no_progress": 3,
     "max_consecutive_same_error": 3,
     "default_system_prompt": "You are a helpful assistant.",
-    "checkpoint_file": "runtime/agent_checkpoint.json",
     "ENABLE_GBNF": true,
     "auto_confirm": false,
     "resume_retry_failed": false,
@@ -58,7 +59,6 @@
     },
     "task_report": {
         "enabled": true,
-        "format": "json",
-        "output_dir": "runtime/reports"
+        "format": "json"
     }
 }

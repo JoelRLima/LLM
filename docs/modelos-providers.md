@@ -99,6 +99,20 @@ arrays e propriedades adicionais usadas pelos contratos internos.
 Se o servidor não oferecer GBNF, configure `structured_output` como
 `json_prompt`. Não anuncie uma capacidade que o endpoint não implementa.
 
+## Configuração efetiva
+
+`ConfigRepository` aplica, em ordem crescente de precedência, o default
+empacotado, o arquivo do usuário, variáveis de ambiente allowlisted e
+overrides explícitos da CLI. Depois da validação,
+`agent/runtime/config_effective.py` materializa `api_url`, `model`,
+`temperature`, `max_tokens`, `timeout` e `ENABLE_GBNF` no perfil selecionado.
+Com isso, doctor, sessão e factory observam o mesmo backend efetivo; um override
+não fica perdido nas chaves legadas quando `default_model_profile` está ativo.
+
+`--profile NOME` seleciona o perfil para `run`, chat, `config validate` e
+doctor. Provider desconhecido falha explicitamente antes da construção do
+gateway.
+
 ## Compatibilidade legada
 
 As chaves `api_url`, `model`, `temperature`, `max_tokens`, `timeout` e

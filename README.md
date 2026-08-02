@@ -1,12 +1,13 @@
 # Contexto e Estrutura do Projeto: LLM Agent
 
-> **Atualizado após a implementação do roadmap de código e multitarefa.**
+> **Atualizado após as fases 0 e 1 da evolução standalone.**
 > O projeto preserva o núcleo das fases 0–3 (`ExecutionGateway`,
 > `PlanExecutor`, `StepExecutor`, checkpoint v2) e adiciona: gateway de modelo
 > independente de provider, perfis de hardware, catálogo canônico de skills,
 > domínio de engenharia de código, `ChangeSet` transacional, validação
 > cancelável, comandos `/code` sem planner, seleção determinística de contexto,
-> política de confiança e `TaskGraph` com templates executáveis.
+> política de confiança, `TaskGraph` com templates executáveis e uma aplicação
+> instalável com configuração e estado separados por workspace.
 
 Este documento apresenta a arquitetura e o uso do **LLM Agent**. O projeto é um
 agente local de desenvolvimento com CLI, planejamento linear/hierárquico,
@@ -28,34 +29,79 @@ modelo por vez, até duas operações de I/O concorrentes, uma validação de pr
 por vez e saídas padrão de 2048 tokens. O perfil core não instala a stack de ML.
 
 ### Instalação
+
 ```bash
 # 1. Clone o repositório e entre na pasta
 git clone <url-do-repo>
 cd LLM
 
-# 2. Instalação recomendada para 8 GB (sem stack de ML)
-pip install -e .
+# 2. Instalação leve recomendada para 8 GB (sem stack de ML)
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install .
 
 # Ambiente de desenvolvimento e CI
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 
 # Opcional: memória semântica/stack de ML
-# pip install -e ".[ml]"
+# python -m pip install ".[ml]"
 
-# 3. Crie o arquivo de configuração a partir do exemplo
-copy config.example.json config.json   # Windows
-# cp config.example.json config.json   # Linux/macOS
+# 3. Crie a configuração versionada no diretório da aplicação
+llm-agent config init
+llm-agent config path
 
-# 4. Edite model_profiles.local_8gb com o endpoint e o nome do modelo
+# 4. Edite no path exibido o endpoint e o nome do modelo em
+# model_profiles.local_8gb
 # (veja docs/modelos-providers.md e docs/perfil-hardware.md)
 ```
 
 ### Execução
+
 ```bash
-llm-agent
+llm-agent doctor
+# Opcional: persistir o diagnóstico no estado da aplicação
+llm-agent doctor --write-report
+llm-agent chat
 # Compatibilidade: python cli.py
+
+# Uma tarefa headless, com workspace explícito
+llm-agent run --workspace C:\caminho\do\projeto "Analise este repositório"
+
+# Saída adequada a automação
+llm-agent run --workspace C:\caminho\do\projeto --json "Resuma o projeto"
+
+# Autoridade explícita para efeitos que pedirem consentimento nesta execução
+llm-agent run --workspace C:\caminho\do\projeto --yes "Aplique a alteração"
 ```
-O terminal interativo será iniciado. Digite sua pergunta ou objetivo diretamente. Use `/agent <objetivo>` para acionar o modo agente de forma explícita.
+
+Sem subcomando, `llm-agent` também abre o chat. O workspace padrão é o
+diretório atual, mas automações devem passá-lo explicitamente. `--home DIR`
+define uma raiz portátil para configuração, dados, estado, cache e logs; sem
+esse override, a aplicação usa os diretórios do usuário apropriados ao sistema
+operacional. Nada é gravado no pacote instalado.
+
+O diagnóstico é offline: valida instalação, paths, schema, workspace, perfil e
+integridade da memória persistente, mas não constrói o modelo nem testa o
+endpoint. Sem `--write-report`, ele também não persiste arquivos. Digite sua
+pergunta ou objetivo diretamente no chat e use `/agent <objetivo>` para acionar
+o modo agente.
+
+Execuções headless nunca solicitam entrada pelo terminal. Quando um efeito
+exige consentimento, o resultado é `blocked`, com `success: false`, e a ação não
+é executada. Isso abrange escrita de arquivos e validadores de subprocesso.
+`llm-agent run --yes` concede essa autoridade apenas à execução atual;
+validações ausentes ainda resultam em `unverified`, nunca em sucesso artificial.
+
+Configurações e estados antigos não são adotados silenciosamente:
+
+```bash
+llm-agent config migrate --from C:\caminho\config.json
+llm-agent state migrate --workspace C:\caminho\do\projeto --from C:\caminho\runtime
+```
+
+As migrações preservam a origem, são idempotentes para conteúdo igual e falham
+em conflitos.
 
 Para tarefas de código conhecidas, prefira os comandos explícitos. Eles não
 pedem ao modelo que escolha skill nem monte um plano:
@@ -69,9 +115,11 @@ pedem ao modelo que escolha skill nem monte um plano:
 /code template analyze_then_modify agent/code/workflows.py -- Simplifique o fluxo
 ```
 
-Propostas de menor confiança exibem o diff e pedem confirmação. `--yes` aprova
-essa confirmação explicitamente; não transforma validação ausente em sucesso.
-Use `/code help` para a sintaxe completa.
+No chat, propostas de menor confiança exibem o diff e pedem confirmação;
+`/code ... --yes` aprova a proposta daquele comando. No modo headless,
+`llm-agent run --yes ...` concede a aprovação à execução atual. Nenhuma das
+opções transforma validação ausente em sucesso. Use `/code help` para a sintaxe
+completa.
 
 ### Executar os testes
 ```bash
@@ -80,6 +128,8 @@ ruff check .
 mypy --platform linux
 mypy --platform win32
 pytest -q
+# Aceitação completa: usa build PEP 517 isolado e instala dependências
+python scripts/verify_installed_package.py
 ```
 
 Os gates são estritos para todo o código de produção: complexidade ciclomática
@@ -88,10 +138,17 @@ sem overrides por módulo. As listas de exceção em `quality/baseline.json` per
 fontes Python do projeto não podem ser ocultadas por regras do `.gitignore`, e os
 arquivos textuais são validados como UTF-8 sem BOM.
 
-Para revisar artefatos antigos sem apagá-los, execute
+O último gate constrói um wheel, instala-o com suas dependências em um ambiente
+limpo e exercita CLI, análise real e confinamento de paths fora do checkout.
+Ele requer acesso a um índice ou wheelhouse. Em desenvolvimento, é possível
+reutilizar somente as ferramentas de build já instaladas com
+`--no-build-isolation`. O modo `--offline-diagnostic` também reutiliza pacotes
+do ambiente e instala o wheel sem dependências; por isso é um diagnóstico mais
+fraco e não substitui o gate de aceitação.
+
+Para revisar um `runtime/` legado deste repositório sem apagá-lo, execute
 `python scripts/clean_runtime.py`. O comando faz apenas dry-run; `--apply`
-arquiva estado persistente em `runtime/archive/` antes de remover caches
-allowlisted.
+arquiva estado persistente antes de remover caches allowlisted.
 
 ---
 
@@ -102,13 +159,16 @@ tarefa, segurança, execução hierárquica e composição preguiçosa, além de
 de uso modulares. A direção das dependências é explícita:
 
 ```text
-CLI / Orchestrator
+CLI / modo headless
         |
-        +--> planning: ExecutionGateway / TaskGraph / Scheduler
-        +--> code: discovery / intelligence / ChangeSet / validation / workflows
+        v
+AgentApplication
+        |
+        +--> Orchestrator / planning / TaskGraph
+        +--> code: discovery / intelligence / ChangeSet / validation
         +--> skills: registry / descriptors / capability policy
         +--> llm: ModelGateway --> provider adapter
-        +--> runtime: context / limits / cancellation / artifacts
+        +--> runtime: config / workspace / paths / lifecycle / artifacts
 ```
 
 O fluxo de processamento de um objetivo do usuário segue estas etapas:
@@ -155,6 +215,12 @@ v1 são rejeitados por segurança, pois não contêm estado confiável por passo
 O restante da documentação técnica está em `docs/`. Veja o [índice completo](docs/README.md):
 
 * [Guia de contribuição e qualidade](CONTRIBUTING.md)
+* [Visão da plataforma standalone](docs/plataforma-standalone.md)
+* [Operação standalone](docs/operacao-standalone.md)
+* [ADR: visão do assistente standalone](docs/adr/0002-visao-do-assistente-standalone.md)
+* [ADR: bootstrap e ciclo de vida](docs/adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md)
+* [ADR: invocation ID no protocolo stdio 1.0](docs/adr/0004-invocation-id-protocolo-stdio-1-0.md)
+* [ADR: launcher interno para contenção stdio no Windows](docs/adr/0005-launcher-interno-contencao-stdio-windows.md)
 * [Árvore de Diretórios do Projeto](docs/estrutura-diretorios.md)
 * [Detalhamento dos Arquivos da Raiz (Root Files)](docs/arquivos-raiz.md)
 * [Mapeamento de Ferramentas (Skills) em `agent/skills/`](docs/skills.md)

@@ -45,19 +45,21 @@ def clear_history(_: str, ctx: Any) -> None:
     console.print("[bold green]Histórico limpo![/bold green]")
 
 
-def _history_path(prompt: str) -> str:
-    entered = console.input(f"[bold cyan]{prompt} (Enter para '{paths.CHAT_HISTORY_FILE}'):[/bold cyan] ").strip()
-    return str(entered or paths.CHAT_HISTORY_FILE)
+def _history_path(prompt: str, ctx: Any) -> str:
+    workspace_paths = getattr(ctx, "workspace_paths", None)
+    default = workspace_paths.chat_history_file if workspace_paths is not None else paths.CHAT_HISTORY_FILE
+    entered = console.input(f"[bold cyan]{prompt} (Enter para '{default}'):[/bold cyan] ").strip()
+    return str(entered or default)
 
 
 def save_history(_: str, ctx: Any) -> None:
-    path = _history_path("Caminho do arquivo")
+    path = _history_path("Caminho do arquivo", ctx)
     success, error = ctx.session.save_to_file(path)
     console.print(f"[bold green]Histórico salvo em '{path}'.[/bold green]" if success else f"[bold red]Erro ao salvar: {error}[/bold red]")
 
 
 def load_history(_: str, ctx: Any) -> None:
-    path = _history_path("Caminho do arquivo")
+    path = _history_path("Caminho do arquivo", ctx)
     success, error = ctx.session.load_from_file(path)
     console.print(f"[bold green]Histórico carregado de '{path}'.[/bold green]" if success else f"[bold red]Erro ao carregar: {error}[/bold red]")
 
@@ -107,7 +109,9 @@ def code_command(text: str, ctx: Any) -> None:
         template=parsed.template,
     )
     service_context = build_code_context(ctx.config, ctx.session.gateway)
-    result = CodingApplicationService(".", service_context, ctx.config).execute(
+    workspace = getattr(ctx, "workspace", None)
+    base_dir = workspace.root if workspace is not None else "."
+    result = CodingApplicationService(base_dir, service_context, ctx.config).execute(
         request, approver=ConsoleChangeApprover(parsed.assume_yes)
     )
     render_code_result(result)
@@ -151,30 +155,52 @@ def clear_memory(_: str, ctx: Any) -> None:
     console.print("[bold green]Memória da sessão limpa.[/bold green]")
 
 
-def _memory_path() -> str:
-    entered = console.input(f"[bold cyan]Caminho (Enter para '{paths.MEMORY_FILE}'):[/bold cyan] ").strip()
-    return str(entered or paths.MEMORY_FILE)
+def _memory_path(ctx: Any) -> str:
+    workspace_paths = getattr(ctx, "workspace_paths", None)
+    default = workspace_paths.memory_file if workspace_paths is not None else paths.MEMORY_FILE
+    entered = console.input(f"[bold cyan]Caminho (Enter para '{default}'):[/bold cyan] ").strip()
+    return str(entered or default)
 
 
 def save_memory(_: str, ctx: Any) -> None:
-    console.print(f"[bold green]{ctx.orchestrator.save_memory_to_file(_memory_path())}[/bold green]")
+    console.print(f"[bold green]{ctx.orchestrator.save_memory_to_file(_memory_path(ctx))}[/bold green]")
 
 
 def load_memory(_: str, ctx: Any) -> None:
-    console.print(f"[bold green]{ctx.orchestrator.load_memory_from_file(_memory_path())}[/bold green]")
+    console.print(f"[bold green]{ctx.orchestrator.load_memory_from_file(_memory_path(ctx))}[/bold green]")
 
 
-def doctor(_: str, __: Any) -> None:
+def doctor(text: str, ctx: Any) -> None:
     from agent.health_check import run_health_check
-    run_health_check()
+
+    run_health_check(
+        write_report="--write-report" in text.split(),
+        verbose=True,
+        app_paths=getattr(ctx, "app_paths", None),
+        workspace=getattr(ctx, "workspace", None),
+        config_path=getattr(ctx, "config_path", None),
+        profile=getattr(ctx, "config", {}).get("default_model_profile"),
+    )
 
 
 def _skill_result(ctx: Any, name: str, args: dict[str, Any], *, empty: str = "") -> None:
-    skill = ctx.orchestrator.skills.get(name)
-    if not skill:
+    gateway = getattr(ctx.orchestrator, "tool_invocation_gateway", None)
+    if gateway is not None:
+        result = gateway.run(
+            name,
+            args,
+            active_skills=getattr(ctx.orchestrator, "active_skills", None),
+            allowed_capabilities=getattr(ctx.orchestrator, "allowed_capabilities", None),
+        ).to_legacy_dict()
+    else:
+        legacy_invoker = getattr(ctx.orchestrator, "legacy_tool_invoker", None)
+        if legacy_invoker is None:
+            console.print(f"[red]Skill '{name}' não disponível.[/red]")
+            return
+        result = legacy_invoker.invoke(name, args, record_result=False)
+    if result.get("status") == "unavailable":
         console.print(f"[red]Skill '{name}' não disponível.[/red]")
         return
-    result = skill.execute(args)
     if not result.get("ok"):
         console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
         return

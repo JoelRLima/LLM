@@ -1,5 +1,5 @@
-import os
 import re
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from agent.llm.router import is_security_objective
@@ -7,8 +7,14 @@ from agent.runtime.logging import logger
 
 
 class FinalResponder:
-    def __init__(self, orchestrator: Any):
+    def __init__(
+        self,
+        orchestrator: Any,
+        *,
+        analysis_notes_file: str | Path = "analysis_notes.md",
+    ):
         self.orchestrator = orchestrator
+        self.analysis_notes_file = Path(analysis_notes_file)
 
     def build_final_answer(self, objective: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
         notes_content = self._read_notes()
@@ -20,13 +26,12 @@ class FinalResponder:
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
 
-    @staticmethod
-    def _read_notes() -> str:
-        if os.path.exists("analysis_notes.md"):
+    def _read_notes(self) -> str:
+        if self.analysis_notes_file.exists():
             try:
-                with open("analysis_notes.md", "r", encoding="utf-8") as handle:
+                with self.analysis_notes_file.open("r", encoding="utf-8") as handle:
                     return handle.read(4000)
-            except Exception:
+            except (OSError, UnicodeError):
                 pass
         return ""
 

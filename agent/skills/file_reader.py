@@ -12,8 +12,18 @@ class FileReaderSkill(BaseSkill):
         "Pode ler o arquivo inteiro (respeitando um limite de segurança) ou um intervalo de linhas específico."
     )
 
-    def __init__(self, base_dir: str = ".", max_chars: int = 5000) -> None:
-        self.base_dir = Path(base_dir).resolve()
+    def __init__(
+        self,
+        base_dir: str | Path = ".",
+        max_chars: int = 5000,
+        scratch_dir: str | Path | None = None,
+    ) -> None:
+        self.base_dir = Path(base_dir).expanduser().resolve()
+        self.scratch_dir = (
+            Path(scratch_dir).expanduser().resolve()
+            if scratch_dir is not None
+            else self.base_dir / ".temp_analysis"
+        )
         self.max_chars = max_chars
 
     def get_schema(self) -> dict[str, Any]:
@@ -57,7 +67,7 @@ class FileReaderSkill(BaseSkill):
             relative = requested.relative_to(self.base_dir)
         except ValueError:
             return requested
-        workspace_copy = self.base_dir / ".temp_analysis" / "workspace" / relative
+        workspace_copy = self.scratch_dir / "workspace" / relative
         return workspace_copy if workspace_copy.exists() else requested
 
     def _file_type_error(self, requested: Path) -> dict[str, Any] | None:
@@ -206,15 +216,17 @@ class FileReaderSkill(BaseSkill):
 
     def _save_temp_copy(self, requested: Path, content: str) -> str:
         """Salva uma cópia temporária do conteúdo em disco."""
-        temp_dir = self.base_dir / ".temp_analysis"
-        temp_dir.mkdir(exist_ok=True)
-        temp_path = temp_dir / requested.name
+        self.scratch_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = self.scratch_dir / requested.name
         try:
             with open(temp_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            return str(temp_path.relative_to(self.base_dir))
         except Exception:
             return "[não foi possível salvar cópia temporária]"
+        try:
+            return str(temp_path.relative_to(self.base_dir))
+        except ValueError:
+            return str(temp_path)
 
     def _generate_summary(
         self,

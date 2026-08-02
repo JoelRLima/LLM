@@ -57,9 +57,11 @@ def _instantiate(spec: SkillSpec, overrides: Dict[str, Any]) -> SkillLike:
 def build_builtin_registry(
     *,
     base_dir: str | Path = ".",
+    scratch_dir: str | Path | None = None,
     orchestrator: Any = None,
     model_gateway: Any = None,
     config: Optional[Dict[str, Any]] = None,
+    approval_policy: Any = None,
     specs: Iterable[SkillSpec] = BUILTIN_SKILL_SPECS,
 ) -> SkillRegistry:
     registry = SkillRegistry()
@@ -67,12 +69,18 @@ def build_builtin_registry(
         overrides: Dict[str, Any] = {}
         if "base_dir" in spec.kwargs:
             overrides["base_dir"] = str(base_dir)
+        if "scratch_dir" in spec.kwargs:
+            overrides["scratch_dir"] = (
+                str(scratch_dir) if scratch_dir is not None else None
+            )
         if "orchestrator" in spec.kwargs:
             overrides["orchestrator"] = orchestrator
         if "model_gateway" in spec.kwargs:
             overrides["model_gateway"] = model_gateway
         if "config" in spec.kwargs:
             overrides["config"] = config or {}
+        if "approval_policy" in spec.kwargs:
+            overrides["approval_policy"] = approval_policy
         skill = _instantiate(spec, overrides)
         registry.register(SkillDescriptor(spec=spec, skill=skill))
     return registry

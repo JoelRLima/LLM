@@ -77,6 +77,8 @@ def _validate_and_optimize_new_steps(
     validator = PlanValidator(
         getattr(orchestrator, "skills", {}) or {},
         getattr(orchestrator, "active_skills", []) or [],
+        getattr(orchestrator, "allowed_capabilities", None),
+        getattr(orchestrator, "tool_registry", None),
     )
     surviving = _surviving_steps(action.steps, validator, "replan")
     if not surviving:

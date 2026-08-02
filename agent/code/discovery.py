@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
 from agent.code.contracts import ProjectProfile
+from agent.code.path_safety import (
+    WorkspacePathError,
+    is_link_like,
+    resolve_workspace_path,
+)
 
 IGNORED_DIRECTORIES = frozenset(
     {
@@ -61,15 +67,44 @@ class ProjectDiscovery:
 
     def iter_files(self) -> Iterable[Path]:
         count = 0
-        for path in sorted(self.root.rglob("*")):
-            if any(part in IGNORED_DIRECTORIES for part in path.relative_to(self.root).parts):
-                continue
-            if not path.is_file():
-                continue
-            yield path
-            count += 1
-            if count >= self.max_files:
-                return
+        for current, directory_names, file_names in os.walk(
+            self.root,
+            topdown=True,
+            followlinks=False,
+        ):
+            current_path = Path(current)
+            safe_directories: list[str] = []
+            for name in sorted(directory_names):
+                path = current_path / name
+                if name in IGNORED_DIRECTORIES or is_link_like(path):
+                    continue
+                try:
+                    resolve_workspace_path(
+                        self.root,
+                        path,
+                        require_directory=True,
+                    )
+                except (OSError, WorkspacePathError):
+                    continue
+                safe_directories.append(name)
+            directory_names[:] = safe_directories
+
+            for name in sorted(file_names):
+                path = current_path / name
+                if is_link_like(path):
+                    continue
+                try:
+                    resolved = resolve_workspace_path(
+                        self.root,
+                        path,
+                        require_file=True,
+                    )
+                except (OSError, WorkspacePathError):
+                    continue
+                yield resolved
+                count += 1
+                if count >= self.max_files:
+                    return
 
     def discover(self) -> ProjectProfile:
         languages: Counter[str] = Counter()
@@ -92,7 +127,12 @@ class ProjectDiscovery:
                 test_roots.add(relative.parts[0])
 
         truncated = scanned >= self.max_files
-        vcs = "git" if (self.root / ".git").exists() else None
+        git_metadata = self.root / ".git"
+        vcs = (
+            "git"
+            if not is_link_like(git_metadata) and git_metadata.exists()
+            else None
+        )
         return ProjectProfile(
             root=str(self.root),
             vcs=vcs,

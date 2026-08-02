@@ -11,7 +11,7 @@ from agent.code.intelligence import CodeIntelligenceService
 from .base import BaseSkill
 from .python_security_analysis import analyze_security_file
 from .python_source_analysis import analyze_python_file
-from .safe_path import resolve_safe_path
+from .safe_path import resolve_confined_file, resolve_safe_path
 from .security_symbols import SECURITY_SYMBOL_REGISTRY, get_pattern_id_map
 
 __all__ = ["CodeAnalyzerSkill", "SECURITY_SYMBOL_REGISTRY", "get_pattern_id_map"]
@@ -142,13 +142,20 @@ class CodeAnalyzerSkill(BaseSkill):
             "message": f"Mapa gerado com {len(project_map)} arquivos (modo {'compacto' if compact else 'completo'}).",
         }
 
-    @staticmethod
-    def _python_files(directory: Path) -> list[Path]:
+    def _python_files(self, directory: Path) -> list[Path]:
         discovered: list[Path] = []
         ignored = {"__pycache__", "venv", "env", "node_modules", "build", "dist"}
         for root, directories, files in os.walk(directory):
             directories[:] = [name for name in directories if not name.startswith(".") and name not in ignored]
-            discovered.extend(Path(root) / name for name in files if name.endswith(".py"))
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                candidate = resolve_confined_file(
+                    self.base_dir,
+                    Path(root) / name,
+                )
+                if candidate is not None:
+                    discovered.append(candidate)
         return discovered
 
     @staticmethod

@@ -12,5 +12,69 @@
     "unchanged_files": ["api.py", "model.py"],
     "allowed_changed_files": ["summary.md"],
     "max_steps": 10
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "code_task",
+      "skill": "code_task",
+      "args": {
+        "action": "multitask",
+        "graph": {
+          "nodes": [
+            {
+              "id": "analyze_api",
+              "objective": "Analise api.py",
+              "capabilities": ["read", "analyze"],
+              "resources": [{"name": "api.py", "mode": "read"}],
+              "metadata": {
+                "action": "analyze",
+                "targets": ["api.py"]
+              }
+            },
+            {
+              "id": "analyze_model",
+              "objective": "Analise model.py",
+              "capabilities": ["read", "analyze"],
+              "resources": [{"name": "model.py", "mode": "read"}],
+              "metadata": {
+                "action": "analyze",
+                "targets": ["model.py"]
+              }
+            },
+            {
+              "id": "write_summary",
+              "objective": "Produza summary.md com os dois resultados",
+              "depends_on": ["analyze_api", "analyze_model"],
+              "capabilities": ["read", "write", "process"],
+              "resources": [
+                {"name": "model", "mode": "write"},
+                {"name": "summary.md", "mode": "write"}
+              ],
+              "metadata": {
+                "action": "generate",
+                "targets": ["api.py", "model.py"]
+              }
+            }
+          ]
+        }
+      },
+      "model_responses": [
+        {
+          "changes": [
+            {
+              "path": "api.py",
+              "kind": "modify",
+              "content": "def get_user(user_id):\r\n    return user_id\r\n"
+            },
+            {
+              "path": "summary.md",
+              "kind": "create",
+              "content": "# Resumo\n\napi.py expõe get_user.\nmodel.py define User.\n"
+            }
+          ]
+        }
+      ],
+      "expected_model_calls": 1
+    }
   }
 }

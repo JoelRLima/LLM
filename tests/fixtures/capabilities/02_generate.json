@@ -10,7 +10,34 @@
       {"path": "tests/test_math_utils.py", "contains": ["test_add"]}
     ],
     "allowed_changed_files": ["math_utils.py", "tests/test_math_utils.py"],
-    "answer_contains": ["validada"],
+    "answer_contains": ["validado"],
     "max_steps": 8
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "code_task",
+      "skill": "code_task",
+      "args": {
+        "action": "generate",
+        "include_tests": true
+      },
+      "model_responses": [
+        {
+          "changes": [
+            {
+              "path": "math_utils.py",
+              "kind": "create",
+              "content": "def add(a: int, b: int) -> int:\n    return a + b\n"
+            },
+            {
+              "path": "tests/test_math_utils.py",
+              "kind": "create",
+              "content": "from math_utils import add\n\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+            }
+          ]
+        }
+      ],
+      "expected_model_calls": 1
+    }
   }
 }

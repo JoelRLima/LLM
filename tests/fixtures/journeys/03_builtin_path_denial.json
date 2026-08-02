@@ -1,0 +1,20 @@
+{
+  "scenario_id": "builtin_path_denial",
+  "capability": "skill_security",
+  "objective": "Tente ler fora do workspace.",
+  "initial_files": {},
+  "expectation": {
+    "success": false,
+    "answer_contains": ["acesso"],
+    "max_steps": 1
+  },
+  "metadata": {
+    "execution": {
+      "entrypoint": "builtin_skill",
+      "skill": "file_reader",
+      "args": {
+        "file_path": "../outside.txt"
+      }
+    }
+  }
+}

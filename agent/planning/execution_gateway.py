@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, cast
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_validator import BlockedStep, PlanValidator
 from agent.planning.replan import ReplanContext, replan
-from agent.planning.tool_metadata import TOOL_METADATA
 from agent.runtime.logging import logger
 
 
@@ -43,7 +42,12 @@ class ExecutionGateway:
     def validate_and_optimize_plan(
         self, plan: List[Dict[str, Any]], objective: str
     ) -> Optional[List[Dict[str, Any]]]:
-        validator = PlanValidator(self.orchestrator.skills, self.orchestrator.active_skills)
+        validator = PlanValidator(
+            self.orchestrator.skills,
+            self.orchestrator.active_skills,
+            getattr(self.orchestrator, "allowed_capabilities", None),
+            getattr(self.orchestrator, "tool_registry", None),
+        )
         report = validator.validate(plan)
         self._log_validation(report)
         if not report.is_valid:
@@ -96,8 +100,12 @@ class ExecutionGateway:
         return recovered
 
     def _optimize(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        report = PlanOptimizer(TOOL_METADATA).optimize(plan)
+        from agent.planning.tool_metadata import build_metadata_dict
+        registry = getattr(self.orchestrator, "tool_registry", None)
+        metadata = build_metadata_dict(registry)
+        report = PlanOptimizer(metadata).optimize(plan)
         if report.changed:
+
             logger.info(
                 "[GATEWAY][OPTIMIZER] custo %s -> %s; %s transformações; %s duplicatas removidas",
                 report.cost_before,
@@ -115,15 +123,16 @@ class ExecutionGateway:
     ) -> Optional[List[Dict[str, Any]]]:
         updated = list(plan)
         for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
-            self._replace_blocked_step(updated, objective, blocked)
+            if not self._replace_blocked_step(updated, objective, blocked):
+                return None
         return updated or None
 
     def _replace_blocked_step(
         self, plan: List[Dict[str, Any]], objective: str, blocked: BlockedStep
-    ) -> None:
+    ) -> bool:
         index = blocked.index
         if index >= len(plan):
-            return
+            return False
         step = plan[index] if isinstance(plan[index], dict) else {"tool": "", "args": {}}
         context = ReplanContext(
             task=objective,
@@ -141,6 +150,7 @@ class ExecutionGateway:
         if action and action.steps:
             plan[index : index + 1] = action.steps
             logger.info("Passo %s substituído por %s passo(s).", index + 1, len(action.steps))
+            return True
         else:
-            logger.warning("Passo %s bloqueado foi removido do plano.", index + 1)
-            del plan[index]
+            logger.warning("Passo %s permanece bloqueado: nenhuma substituição válida.", index + 1)
+            return False

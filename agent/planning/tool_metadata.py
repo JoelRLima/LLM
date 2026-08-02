@@ -39,7 +39,7 @@ a ferramentas semelhantes — ajuste livremente se o custo real observado em
 produção divergir.
 """
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from agent.skills.catalog import BUILTIN_SKILL_SPECS
 from agent.skills.descriptor import SkillCapability
@@ -111,7 +111,22 @@ _DEFAULT_UNKNOWN_TOOL_METADATA = ToolMetadata(
 )
 
 
+def build_metadata_dict(registry: Any = None) -> Dict[str, ToolMetadata]:
+    """Retorna o dicionário de ToolMetadata dinâmico a partir de um ToolRegistry.
+
+    Se registry for None ou não possuir metadata_dict(), retorna TOOL_METADATA estático.
+    """
+    if registry is not None and hasattr(registry, "metadata_dict") and callable(registry.metadata_dict):
+        dynamic = registry.metadata_dict()
+        if dynamic:
+            if "git" not in dynamic and "git_reader" in dynamic:
+                dynamic["git"] = dynamic["git_reader"]
+            return cast(Dict[str, ToolMetadata], dynamic)
+    return dict(TOOL_METADATA)
+
+
 def get_tool_metadata(tool: str) -> ToolMetadata:
+
     """Retorna o `ToolMetadata` de `tool`.
 
     Se a ferramenta não estiver catalogada em `TOOL_METADATA` (ex.: uma

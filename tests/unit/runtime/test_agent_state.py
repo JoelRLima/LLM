@@ -50,6 +50,20 @@ def test_checkpoint_resume_requeues_running_but_preserves_completed(monkeypatch)
     assert restored.next_pending_index() == 1
 
 
+def test_checkpoint_preserves_persona_and_prompt(monkeypatch):
+    state = _state(monkeypatch)
+    state.objective = "continuar"
+    state.persona = "coder"
+    state.persona_prompt = "You are a coder persona"
+    checkpoint = state.to_checkpoint_dict()
+
+    restored = _state(monkeypatch)
+    restored.from_checkpoint_dict(checkpoint)
+
+    assert restored.persona == "coder"
+    assert restored.persona_prompt == "You are a coder persona"
+
+
 def test_replan_replaces_step_and_its_execution_record(monkeypatch):
     state = _state(monkeypatch)
     state.set_plan([{"tool": "missing", "args": {}}])

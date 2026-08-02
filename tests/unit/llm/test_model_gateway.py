@@ -12,6 +12,8 @@ from agent.llm.contracts import (
 )
 from agent.llm.providers.factory import create_model_gateway, resolve_model_profile
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
 
 
 def _request(**overrides):
@@ -58,6 +60,29 @@ def test_factory_uses_selected_model_profile():
     assert gateway.api_url == "http://localhost:8080/v1/chat/completions"
     assert gateway.model == "tiny"
     assert gateway.capabilities.streaming is False
+
+
+def test_factory_receives_effective_environment_overrides(tmp_path):
+    paths = AppPaths.discover(app_home=tmp_path / "home", env={})
+    repository = ConfigRepository(paths)
+    repository.initialize()
+    config = repository.load_legacy(
+        environment={
+            "LLM_AGENT_API_URL": "http://override.example/v1/chat/completions",
+            "LLM_AGENT_MODEL": "override-model",
+            "LLM_AGENT_TEMPERATURE": "0.35",
+            "LLM_AGENT_MAX_TOKENS": "777",
+            "LLM_AGENT_TIMEOUT": "42",
+        }
+    )
+
+    gateway = create_model_gateway(config)
+
+    assert gateway.api_url == "http://override.example/v1/chat/completions"
+    assert gateway.model == "override-model"
+    assert gateway.timeout == 42
+    assert gateway.profile["temperature"] == 0.35
+    assert gateway.profile["max_tokens"] == 777
 
 
 def test_provider_specific_fields_are_added_only_by_adapter():

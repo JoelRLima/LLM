@@ -13,8 +13,10 @@ class PlanStep(TypedDict, total=False):
 
 
 class ToolResult(TypedDict, total=False):
+    invocation_id: str
     ok: bool
     done: bool
+    status: str
     data: Any
     error: Optional[str]
     message: Optional[str]
@@ -64,3 +66,5 @@ class CheckpointData(TypedDict, total=False):
     events: List[AgentEvent]
     conversation_history: List[Dict[str, str]]
     memory_state: Dict[str, Any]
+    persona: Optional[str]
+    persona_prompt: Optional[str]

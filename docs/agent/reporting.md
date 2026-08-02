@@ -34,6 +34,6 @@ Rastreador de progresso da execução hierárquica. Mantém um arquivo JSON estr
 
 ## 4.37. [metrics_recorder.py](../../agent/reporting/metrics_recorder.py) 🆕
 `MetricsRecorder` — extraído do `Orchestrator` (mais um pedaço de responsabilidade que estava acumulada nele).
-* **`log_metric(entry)`**: adiciona uma entrada JSON ao final de `runtime/agent_metrics.jsonl`.
+* **`log_metric(entry)`**: adiciona uma entrada JSONL ao path injetado pela composição; no caminho standalone ele pertence ao estado do workspace.
 * **`count_lines() -> int`**: conta linhas existentes — usado como marca d'água no início de uma tarefa.
 * **`get_entries_since(start_line) -> List[dict]`**: lê apenas as entradas gravadas após a marca d'água, ou seja, as produzidas durante a tarefa atual.

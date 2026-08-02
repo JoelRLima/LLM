@@ -86,10 +86,13 @@ def check_skills() -> CheckResult:
     status = STATUS_ERROR if missing else STATUS_OK
     if missing:
         messages.append("Essenciais ausentes: " + ", ".join(missing))
+    # Exceção de arquitetura documentada: o health check executa uma sonda interna
+    # de fumaça direta da classe de infraestrutura antes da montagem da aplicação.
     echo = next((skill for skill in loaded if getattr(skill, "name", None) == "echo"), None)
     if echo is not None:
         try:
             result = echo.execute({"message": "health_check_ping"})
+
             details["echo_test_result"] = result
             if not isinstance(result, dict) or result.get("ok") is not True:
                 status = STATUS_WARNING if status == STATUS_OK else status

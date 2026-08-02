@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any, Dict, List
 
 
@@ -35,14 +36,15 @@ def build_compact_view(
     return compact
 
 
-def discover_project_context(root: str) -> str:
+def discover_project_context(root: str | os.PathLike[str]) -> str:
+    resolved_root = Path(root).expanduser().resolve()
     try:
         result = subprocess.run(
             ["git", "ls-files", "--others", "--cached", "--exclude-standard"],
             capture_output=True,
             text=True,
             timeout=5,
-            cwd=root,
+            cwd=resolved_root,
         )
     except (OSError, subprocess.SubprocessError):
         result = None
@@ -52,9 +54,9 @@ def discover_project_context(root: str) -> str:
         return f"\n\n--- CONTEXTO DO PROJETO ---\nArquivos rastreados pelo Git ({len(files)} arquivos):\n{file_list}\n"
     try:
         entries = [
-            f"  {item}{'/' if os.path.isdir(os.path.join(root, item)) else ''}"
-            for item in sorted(os.listdir(root))
-            if not item.startswith(".") and item != "__pycache__"
+            f"  {item.name}{'/' if item.is_dir() else ''}"
+            for item in sorted(resolved_root.iterdir(), key=lambda entry: entry.name)
+            if not item.name.startswith(".") and item.name != "__pycache__"
         ]
     except OSError:
         return ""
@@ -91,12 +93,20 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
         print(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary) // 4} tokens.")
 
 
-def _line_hint(filename: str, semantic: bool = False) -> str | None:
-    path = os.path.join(os.getcwd(), filename)
-    if not os.path.isfile(path):
+def _line_hint(
+    root: Path,
+    filename: str,
+    semantic: bool = False,
+) -> str | None:
+    path = (root / filename).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    if not path.is_file():
         return None
     try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+        with path.open("r", encoding="utf-8", errors="ignore") as handle:
             line_count = sum(1 for _ in handle)
     except OSError:
         return None
@@ -104,12 +114,17 @@ def _line_hint(filename: str, semantic: bool = False) -> str | None:
     return f"{filename} ({line_count} linhas){suffix}"
 
 
-def get_file_hints(objective: str, semantic_memory: Any) -> str:
+def get_file_hints(
+    objective: str,
+    semantic_memory: Any,
+    root: str | os.PathLike[str] = ".",
+) -> str:
+    workspace_root = Path(root).expanduser().resolve()
     candidates = re.findall(r"\b[\w\-.]+\.(?:py|md|txt|json|yaml|yml|toml|cfg)\b", objective)
     hints: list[str] = []
     seen: set[str] = set()
     for filename in candidates:
-        if filename not in seen and (hint := _line_hint(filename)):
+        if filename not in seen and (hint := _line_hint(workspace_root, filename)):
             seen.add(filename)
             hints.append(hint)
     try:
@@ -117,7 +132,9 @@ def get_file_hints(objective: str, semantic_memory: Any) -> str:
     except Exception:
         semantic_files = []
     for filename in semantic_files:
-        if filename not in seen and (hint := _line_hint(filename, semantic=True)):
+        if filename not in seen and (
+            hint := _line_hint(workspace_root, filename, semantic=True)
+        ):
             seen.add(filename)
             hints.append(hint)
     return "\n".join(f"- {hint}" for hint in hints)

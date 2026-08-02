@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import sys
-import traceback
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict
 
+from agent.health.contracts import (
+    STATUS_ERROR,
+    STATUS_ICON,
+    STATUS_OK,
+    STATUS_WARNING,
+    CheckResult,
+    safe_check,
+)
 from agent.runtime import paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -23,34 +28,29 @@ EXPECTED_MEMORY_SECTIONS = ["project_map", "files_index", "todo", "notes", "anal
 ESSENTIAL_SKILLS = ["file_reader", "file_writer", "python_executor", "grep", "directory_lister"]
 LOG_SIZE_WARNING_BYTES = 10 * 1024 * 1024
 
-STATUS_OK = "ok"
-STATUS_WARNING = "warning"
-STATUS_ERROR = "error"
-STATUS_ICON = {STATUS_OK: "OK", STATUS_WARNING: "AVISO", STATUS_ERROR: "ERRO"}
-
-
-@dataclass
-class CheckResult:
-    name: str
-    status: str = STATUS_OK
-    message: str = ""
-    details: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
+__all__ = [
+    "CONFIG_PATH",
+    "ESSENTIAL_SKILLS",
+    "EXPECTED_MEMORY_SECTIONS",
+    "HEALTH_REPORT_PATH",
+    "LOG_FILE",
+    "LOG_SIZE_WARNING_BYTES",
+    "MEMORY_BACKUP_DIR",
+    "MEMORY_PATH",
+    "MEMORY_RESTORE_DIR",
+    "PROJECT_ROOT",
+    "REQUIRED_CONFIG_KEYS",
+    "STATUS_ERROR",
+    "STATUS_ICON",
+    "STATUS_OK",
+    "STATUS_WARNING",
+    "TEMP_ANALYSIS_DIR",
+    "CheckResult",
+    "ensure_sys_path",
+    "safe_check",
+]
 
 def ensure_sys_path() -> None:
     root = str(PROJECT_ROOT)
     if root not in sys.path:
         sys.path.insert(0, root)
-
-
-def safe_check(name: str, function: Callable[[], object]) -> CheckResult:
-    try:
-        result = function()
-        if isinstance(result, CheckResult):
-            return result
-        return CheckResult(name, STATUS_WARNING, "Verificação não retornou CheckResult.", {"raw_result": str(result)})
-    except Exception as exc:
-        return CheckResult(name, STATUS_ERROR, f"Falha inesperada: {exc}", {"traceback": traceback.format_exc()})

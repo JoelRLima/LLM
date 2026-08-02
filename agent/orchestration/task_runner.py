@@ -97,11 +97,7 @@ class TaskRunner:
         return self._execute_plan(plan, inputs.objective, usage, on_chunk)
 
     def _resume_plan(self) -> List[Dict[str, Any]]:
-        self.orchestrator.active_skills = list(self.orchestrator.skills)
-        self.orchestrator._cached_base_prompt = self.orchestrator.context_manager.build_base_system_prompt(
-            getattr(self.orchestrator, "current_persona_prompt", ""),
-            self.orchestrator._build_tools_description(compact=False),
-        )
+        self.orchestrator._restore_persona_from_state()
         return [dict(step) for step in self.orchestrator.agent_state.plan]
 
     def _try_hierarchical(
@@ -147,6 +143,11 @@ class TaskRunner:
         maximum = orchestrator.agent_state.max_history_turns
         orchestrator.agent_state.conversation_history = orchestrator.agent_state.conversation_history[-maximum:]
         orchestrator.context_manager.maybe_compress_context()
-        orchestrator.save_memory_to_file()
+        try:
+            orchestrator._persist_memory_to_file()
+        except Exception:
+            orchestrator._task_failed = True
+            logger.exception("Falha ao persistir memória ao finalizar a tarefa.")
+            raise
         if not orchestrator._cancelled:
             orchestrator._delete_checkpoint()

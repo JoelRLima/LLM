@@ -10,9 +10,28 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from agent.cancellation import CancellationToken
+from agent.code.path_safety import resolve_workspace_path
 from agent.runtime.context import ProcessConcurrencyGate
 
 WINDOWS_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+UNSAFE_VALIDATION_ENV = frozenset(
+    {
+        "COVERAGE_PROCESS_START",
+        "COVERAGE_RCFILE",
+        "PYTHONBREAKPOINT",
+        "PYTHONEXECUTABLE",
+        "PYTHONHOME",
+        "PYTHONINSPECT",
+        "PYTHONPATH",
+        "PYTHONPLATLIBDIR",
+        "PYTHONPYCACHEPREFIX",
+        "PYTHONSTARTUP",
+        "PYTHONUSERBASE",
+        "PYTHONWARNINGS",
+        "PYTEST_ADDOPTS",
+        "PYTEST_PLUGINS",
+    }
+)
 
 
 class ValidationStatus(str, Enum):
@@ -30,6 +49,7 @@ class CommandSpec:
     cwd: str = "."
     timeout_seconds: float = 30
     env: Dict[str, str] = field(default_factory=dict)
+    workspace_arg_indices: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -53,12 +73,22 @@ class ProcessRunner:
         self.process_gate = process_gate or ProcessConcurrencyGate(1)
 
     def _resolve_cwd(self, relative: str) -> Path:
-        cwd = (self.root / relative).resolve()
         try:
-            cwd.relative_to(self.root)
+            return resolve_workspace_path(
+                self.root,
+                relative,
+                require_directory=True,
+            )
         except ValueError as exc:
             raise ValueError(f"Diretório de comando fora do projeto: {relative}") from exc
-        return cwd
+
+    def _validate_workspace_arguments(self, command: CommandSpec) -> None:
+        for index in command.workspace_arg_indices:
+            if index < 0 or index >= len(command.argv):
+                raise ValueError(
+                    f"Índice de argumento de workspace inválido: {index}"
+                )
+            resolve_workspace_path(self.root, command.argv[index])
 
     @staticmethod
     def _terminate(process: subprocess.Popen[str]) -> None:
@@ -97,15 +127,36 @@ class ProcessRunner:
     def _start(self, command: CommandSpec, started: float) -> subprocess.Popen[str] | CommandResult:
         environment = os.environ.copy()
         environment.update(command.env)
+        for variable in UNSAFE_VALIDATION_ENV:
+            environment.pop(variable, None)
+        environment.update(
+            {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            }
+        )
         try:
+            self._validate_workspace_arguments(command)
+            cwd = self._resolve_cwd(command.cwd)
             return subprocess.Popen(
-                list(command.argv), cwd=self._resolve_cwd(command.cwd), env=environment,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False,
+                list(command.argv), cwd=cwd, env=environment,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True, shell=False,
                 start_new_session=os.name != "nt",
                 creationflags=WINDOWS_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
         except FileNotFoundError as exc:
             return CommandResult(command.name, ValidationStatus.UNAVAILABLE, None, "", str(exc), time.monotonic() - started)
+        except (NotADirectoryError, ValueError) as exc:
+            return CommandResult(
+                command.name,
+                ValidationStatus.FAILED,
+                None,
+                "",
+                str(exc),
+                time.monotonic() - started,
+            )
 
     def _wait(
         self, process: subprocess.Popen[str], timeout: float, started: float

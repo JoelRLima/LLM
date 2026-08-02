@@ -44,3 +44,6 @@ jobs:
         env:
           AGENT_RUNTIME_DIR: ${{ runner.temp }}/llm-agent-runtime
         run: pytest -q
+
+      - name: Installed wheel acceptance gate
+        run: python scripts/verify_installed_package.py

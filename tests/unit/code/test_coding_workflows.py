@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from agent.approval import AutoApprove, RequireExplicitApproval
 from agent.cancellation import CancellationToken
 from agent.code.workflows import CodingWorkflowService
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
@@ -62,6 +63,27 @@ def test_analyze_and_review_do_not_call_model_or_mutate(tmp_path: Path):
     assert gateway.calls == []
 
 
+def test_review_rejects_external_target_before_reading_it(
+    tmp_path: Path,
+    monkeypatch,
+):
+    outside = tmp_path.parent / f"{tmp_path.name}-review-sentinel.py"
+    outside.write_text("SENTINEL = True\n", encoding="utf-8")
+    original_read_bytes = Path.read_bytes
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        if path.resolve() == outside.resolve():
+            raise AssertionError("review tentou ler a sentinela externa")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+
+    result = _service(tmp_path, FakeGateway()).review([str(outside)])
+
+    assert result.status == TaskStatus.FAILED
+    assert "fora do workspace" in (result.error or "")
+
+
 def test_generate_uses_changeset_and_real_syntax_validation(tmp_path: Path):
     gateway = FakeGateway(
         [_changes({"path": "math_utils.py", "kind": "create", "content": "def add(a, b):\n    return a + b\n"})]
@@ -73,6 +95,77 @@ def test_generate_uses_changeset_and_real_syntax_validation(tmp_path: Path):
     assert (tmp_path / "math_utils.py").exists()
     assert result.artifacts[0].metadata["validation"] == "passed"
     assert len(gateway.calls) == 1
+
+
+def test_code_task_blocks_high_confidence_write_without_explicit_authority(
+    tmp_path: Path,
+    monkeypatch,
+):
+    gateway = FakeGateway(
+        [
+            _changes(
+                {
+                    "path": "safe_create.py",
+                    "kind": "create",
+                    "content": "VALUE = 1\n",
+                }
+            )
+        ]
+    )
+    skill = CodeTaskSkill(
+        str(tmp_path),
+        model_gateway=gateway,
+        approval_policy=RequireExplicitApproval(),
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("headless não pode acessar stdin")
+        ),
+    )
+
+    result = skill.execute(
+        {
+            "action": "generate",
+            "objective": "Crie safe_create.py",
+        }
+    )
+
+    assert result["status"] == "blocked"
+    assert result["error"] == "confirmation_required"
+    assert result["data"]["artifacts"][0]["metadata"]["requires_confirmation"] is False
+    assert result["data"]["artifacts"][0]["metadata"]["applied"] is False
+    assert not (tmp_path / "safe_create.py").exists()
+
+
+def test_code_task_auto_approval_applies_high_confidence_write(tmp_path: Path):
+    gateway = FakeGateway(
+        [
+            _changes(
+                {
+                    "path": "approved_create.py",
+                    "kind": "create",
+                    "content": "VALUE = 2\n",
+                }
+            )
+        ]
+    )
+    skill = CodeTaskSkill(
+        str(tmp_path),
+        model_gateway=gateway,
+        approval_policy=AutoApprove(),
+    )
+
+    result = skill.execute(
+        {
+            "action": "generate",
+            "objective": "Crie approved_create.py",
+        }
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["ok"] is True
+    assert (tmp_path / "approved_create.py").read_text(encoding="utf-8") == "VALUE = 2\n"
 
 
 def test_failed_validation_rolls_back_generated_file(tmp_path: Path):

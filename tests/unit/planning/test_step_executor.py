@@ -6,6 +6,7 @@ from agent.cancellation import CancellationToken
 from agent.execution_state import StepStatus
 from agent.planning.plan_executor import PlanExecutor
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from agent.planning.step_policies import StepPolicies
 from agent.state import AgentState
 
 
@@ -101,6 +102,22 @@ class _Context:
 
     def fail_task(self):
         self.failed = True
+
+
+def test_writer_post_process_does_not_run_implicit_model_correction(monkeypatch):
+    state = _state(monkeypatch)
+    context = _Context(state)
+
+    def forbidden_correction(*args, **kwargs):
+        raise AssertionError("correção implícita não deve ocorrer")
+
+    context._test_and_correct = forbidden_correction
+    result = {"ok": True, "done": True, "status": "succeeded", "data": None}
+
+    assert StepPolicies(context).post_process(
+        1, "file_writer", {"file_path": "sample.py"}, result, "sample.py", "corrigir", {}
+    ) is True
+    assert context.failed is False
 
 
 def _state(monkeypatch):
@@ -248,3 +265,49 @@ def test_cancellation_in_flight_finishes_current_step_and_preserves_next(monkeyp
     assert context.calls == ["em voo"]
     assert state.get_step_status(0) is StepStatus.COMPLETED
     assert state.get_step_status(1) is StepStatus.PENDING
+
+
+def test_approval_block_stops_plan_without_replan_or_success(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "echo", "args": {"text": "escrita"}},
+            {"tool": "echo", "args": {"text": "não executar"}},
+        ]
+    )
+    context = _Context(state)
+    context.run_tool_impl = lambda _tool, _args: {
+        "ok": False,
+        "done": False,
+        "status": "blocked",
+        "error": "confirmation_required",
+        "message": "A escrita aguarda confirmação.",
+    }
+
+    answer = PlanExecutor(context).execute("alterar arquivo", {})
+
+    assert answer == "A escrita aguarda confirmação."
+    assert context.calls == ["escrita"]
+    assert context.failed is False
+    assert state.get_step_status(0) is StepStatus.BLOCKED
+    assert state.get_step_status(1) is StepStatus.PENDING
+    assert [event for event, _ in context.events if event == "step_blocked"] == [
+        "step_blocked"
+    ]
+
+
+def test_unverified_tool_result_is_not_completed(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan([{"tool": "echo", "args": {"text": "validar"}}])
+    context = _Context(state)
+    context.run_tool_impl = lambda _tool, _args: {
+        "ok": False,
+        "done": False,
+        "status": "unverified",
+        "message": "Validação indisponível.",
+    }
+
+    answer = PlanExecutor(context).execute("validar alteração", {})
+
+    assert answer == "Validação indisponível."
+    assert state.get_step_status(0) is StepStatus.UNVERIFIED

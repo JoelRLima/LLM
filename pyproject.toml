@@ -31,6 +31,9 @@ llm-agent = "agent.interfaces.cli.app:main"
 [tool.setuptools.packages.find]
 include = ["agent*"]
 
+[tool.setuptools.package-data]
+"agent.resources" = ["*.json"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

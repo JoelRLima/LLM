@@ -24,3 +24,6 @@ __pycache__/
 /.test_runtime/
 /.pytest_tmp/
 /.pytest_temp/
+/%TEMP%/
+/.tmp/
+/tmp_pytest/

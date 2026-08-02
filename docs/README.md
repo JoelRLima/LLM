@@ -17,14 +17,26 @@ e para os padrões de código, o [guia de contribuição](../CONTRIBUTING.md).
 | [agente-codigo.md](agente-codigo.md) | Descoberta, análise, ChangeSet, validação e workflows |
 | [multitarefa.md](multitarefa.md) | TaskGraph, isolamento, checkpoint e scheduler de recursos |
 | [legado.md](legado.md) | Fachadas compatíveis, consumidores e condições de retirada |
+| [plataforma-standalone.md](plataforma-standalone.md) | Arquitetura-alvo, invariantes e jornadas do assistente standalone |
+| [operacao-standalone.md](operacao-standalone.md) | Instalação, CLI, paths, configuração, aprovação, migração, lifecycle e gate do wheel |
+| [plano-conclusao-fases-0-4.md](plano-conclusao-fases-0-4.md) | Runbook executável, tarefas, dependências e critérios para concluir as fases 0–4 |
+| [plano-continuacao-fases-0-4.md](plano-continuacao-fases-0-4.md) | Continuação focada somente nas pendências confirmadas das fases 0–4 |
 | [adr/0001-limites-do-pacote.md](adr/0001-limites-do-pacote.md) | Decisão sobre pacote, interfaces e aliases da raiz |
-| [adr/0001-limites-do-pacote.md](adr/0001-limites-do-pacote.md) | Decisão sobre pacote, interfaces e aliases da raiz |
+| [adr/0002-visao-do-assistente-standalone.md](adr/0002-visao-do-assistente-standalone.md) | Visão, vocabulário, trust model, fronteiras e definição verificável da v1 |
+| [adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md](adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md) | Decisão sobre composição, paths, configuração, workspace, migração e ciclo de vida standalone |
+| [adr/0004-invocation-id-protocolo-stdio-1-0.md](adr/0004-invocation-id-protocolo-stdio-1-0.md) | `invocation_id` obrigatório no protocolo stdio 1.0, framing e respostas tardias |
+| [adr/0005-launcher-interno-contencao-stdio-windows.md](adr/0005-launcher-interno-contencao-stdio-windows.md) | launcher interno Windows-only, associação ao Job antes da extension e status privado |
 | [agent/core.md](agent/core.md) | Arquivos de `agent/` |
 | [agent/llm.md](agent/llm.md) | Arquivos de `agent/llm` |
 | [agent/memory.md](agent/memory.md) | Arquivos de `agent/memory` |
 | [agent/planning.md](agent/planning.md) | Arquivos de `agent/planning` |
 | [agent/reporting.md](agent/reporting.md) | Arquivos de `agent/reporting` |
 | [agent/security.md](agent/security.md) | Arquivos de `agent/security` |
+| [agent/orchestration.md](agent/orchestration.md) | Arquivos de `agent/orchestration` |
+| [agent/tools.md](agent/tools.md) | Arquivos de `agent/tools` |
+| [agent/runtime.md](agent/runtime.md) | Arquivos de `agent/runtime` |
+| [agent/evaluation.md](agent/evaluation.md) | Arquivos de `agent/evaluation` |
+| [agent/health.md](agent/health.md) | Arquivos de `agent/health` |
 
 ---
 

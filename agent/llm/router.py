@@ -68,21 +68,24 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
     else:
         return GENERAL_PROMPT, builtin_skills_for_persona("general")
 
-def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str]]:
+def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str], str]:
     if _is_clearly_trivial(objective):
         logger.info("Router (trivial) → general")
-        return get_persona_config("general")
+        prompt, skills = get_persona_config("general")
+        return prompt, skills, "general"
 
     # Listagem simples: se o usuário só quer listar/mostrar/exibir arquivos, sem análise
     obj_lower = objective.lower()
     if any(keyword in obj_lower for keyword in ["liste", "listar", "mostrar", "mostre", "exibir", "exiba", "ls", "dir"]):
         logger.info("Router (heuristic) → general")
-        return get_persona_config("general")
+        prompt, skills = get_persona_config("general")
+        return prompt, skills, "general"
 
     # Segurança: palavras-chave de auditoria têm prioridade sobre as de código
     if is_security_objective(objective):
         logger.info("Router (keyword) → security_auditor")
-        return get_persona_config("security_auditor")
+        prompt, skills = get_persona_config("security_auditor")
+        return prompt, skills, "security_auditor"
 
     original_prompt = session.messages[0]["content"]
     session.messages[0]["content"] = ROUTER_PROMPT
@@ -115,4 +118,5 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         persona = "general"
 
     logger.info(f"Router (LLM) selecionou a persona: {persona}")
-    return get_persona_config(persona)
+    prompt, skills = get_persona_config(persona)
+    return prompt, skills, persona
