@@ -490,7 +490,7 @@ Evidência: PASS — `rg -n "\.execute\(" agent/interfaces agent/orchestration a
 
 ### P4-04 — Endurecer manifest e protocolo stdio
 
-- [ ] Concluída
+- [x] Concluída — Gate 1 validado no CI multiplataforma
 - Dependências: P4-01.
 - Arquivos permitidos: stdio adapter, contracts, example extension e testes.
 
@@ -509,7 +509,9 @@ Ações:
 8. Truncar stderr apenas para diagnóstico; nunca misturá-lo ao resultado.
 9. Incluir extension ID, versão e versão do protocolo no trace.
 
-Evidência: pendente.
+Evidência: PASS — protocolo stdio, manifest estrito, limites, cleanup,
+launcher Windows e conformance aprovados no CI Windows/Ubuntu em Python 3.10
+e 3.12.
 
 ### P4-05 — Implementar timeout e cancelamento reais
 
@@ -887,7 +889,11 @@ Implementadas e evidenciadas: P0-01, P0-02, P1-01, P1-02, P2-01, P2-02,
 P3-01, P3-02, P3-03, P3-04, P4-01, P4-02, P4-03, P4-05, P4-06, P5-01,
 P5-02, P5-03 e P6-02.
 
-Ainda pendentes: P2-03, P2-04, P4-04, P5-04, P5-05, P6-01, P7-01, P7-02,
+Ainda pendentes: P2-03, P2-04, P5-04, P5-05, P6-01, P7-01, P7-02,
 P8-01, P9-01, P10-01 e P10-02. Esses itens não devem ser marcados como
 concluídos apenas porque os gates estáticos passaram; eles exigem as jornadas
 e invariantes descritos nas próprias tarefas.
+
+Gate 1: concluído e validado no CI multiplataforma
+Gate 2.1: implementado e aprovado localmente
+Gate 2.2: não iniciado

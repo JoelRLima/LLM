@@ -166,7 +166,7 @@ conformance em `tests/unit/tools/test_stdio_adapter.py`.
 
 ### C20-02 — Implementar framing, limites e manifest da versão escolhida
 
-- [ ] Aberta — blockers restantes
+- [x] Concluída — Gate 1 validado no CI multiplataforma
 - Dependências: C20-01.
 - Arquivos permitidos: `agent/tools/stdio_adapter.py`, helpers stdio/processo
   (`agent/tools/stdio_process.py`, `agent/tools/process_tree.py`), contratos,
@@ -210,14 +210,15 @@ Validação:
 .venv\Scripts\python.exe -m pytest -q tests\unit\tools\test_stdio_adapter.py tests\unit\tools\test_stdio_launcher.py tests\unit\tools\test_stdio_extension_example.py tests\unit\tools\test_extension_registry.py
 ```
 
-Evidência local: PASS — a suíte focada pós-patch de adapter, launcher, extension
-de exemplo e registry obteve 100 passed e 1 skip; o baseline pré-patch era 455
-passed e 16 skips. A suíte integral atual obteve 479 passed e 16 skips no
-ambiente virtual canônico. Permanecem pendentes o CI Windows, o CI Ubuntu em
-Python 3.10 e 3.12 e o acceptance gate do ambiente do CI; o acceptance local
-do wheel passou e é registrado somente como evidência local.
+Evidência: PASS — suíte local do adapter, launcher, extension de exemplo e
+registry; suíte integral; CI Windows/Ubuntu em Python 3.10/3.12 e acceptance do
+ambiente do CI aprovados.
 
-Status operacional: `C20-02: ABERTO — READY_FOR_CI`.
+Status operacional: `C20-02: CONCLUÍDO — Gate 1 validado no CI multiplataforma`.
+
+Gate 1: concluído e validado no CI multiplataforma
+Gate 2.1: implementado e aprovado localmente
+Gate 2.2: não iniciado
 
 ## C30 — Retomada segura
 
