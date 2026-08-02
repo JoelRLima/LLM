@@ -895,5 +895,6 @@ concluídos apenas porque os gates estáticos passaram; eles exigem as jornadas
 e invariantes descritos nas próprias tarefas.
 
 Gate 1: concluído e validado no CI multiplataforma
-Gate 2.1: implementado e aprovado localmente
-Gate 2.2: não iniciado
+Gate 2.1: concluído, validado e publicado
+Gate 2.2a: concluído, validado e publicado
+Gate 2.2b–2.2f: não iniciados
