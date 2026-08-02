@@ -59,3 +59,12 @@ def test_legacy_runtime_override_is_absolute(tmp_path: Path) -> None:
 
     assert paths.state_dir.is_absolute()
     assert paths.state_dir == (tmp_path / "runtime").resolve()
+
+
+def test_global_extension_catalog_paths_are_adjacent_to_legacy_registry(tmp_path: Path) -> None:
+    paths = AppPaths.discover(tmp_path / "home", env={})
+
+    assert paths.extensions_registry_file == paths.extensions_dir / "registry.json"
+    assert paths.extensions_catalog_file == paths.extensions_dir / "catalog.json"
+    assert paths.extensions_catalog_lock_file == paths.extensions_dir / "catalog.json.lock"
+    assert not paths.extensions_dir.exists()

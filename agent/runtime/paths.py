@@ -216,6 +216,16 @@ class AppPaths:
         """Canonical registry shared by CLI maintenance and bootstrap."""
         return self.extensions_dir / "registry.json"
 
+    @property
+    def extensions_catalog_file(self) -> Path:
+        """Versioned global catalog, not consumed by runtime bootstrap yet."""
+        return self.extensions_dir / "catalog.json"
+
+    @property
+    def extensions_catalog_lock_file(self) -> Path:
+        """Cross-process writer lock adjacent to the versioned catalog."""
+        return self.extensions_dir / "catalog.json.lock"
+
     def for_workspace(self, workspace_id: str) -> WorkspacePaths:
         if not workspace_id or any(char in workspace_id for char in ("/", "\\", "..")):
             raise ValueError("workspace_id inválido.")

@@ -219,7 +219,9 @@ Status operacional: `C20-02: CONCLUÍDO — Gate 1 validado no CI multiplataform
 Gate 1: concluído e validado no CI multiplataforma
 Gate 2.1: concluído, validado e publicado
 Gate 2.2a: concluído, validado e publicado
-Gate 2.2b–2.2f: não iniciados
+Gate 2.2b–2.2f: concluído e validado
+Gate 2.2: concluído, validado e publicado
+Gate 2.3: não iniciado
 
 ## C30 — Retomada segura
 
