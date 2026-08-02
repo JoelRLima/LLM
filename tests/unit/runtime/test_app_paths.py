@@ -68,3 +68,20 @@ def test_global_extension_catalog_paths_are_adjacent_to_legacy_registry(tmp_path
     assert paths.extensions_catalog_file == paths.extensions_dir / "catalog.json"
     assert paths.extensions_catalog_lock_file == paths.extensions_dir / "catalog.json.lock"
     assert not paths.extensions_dir.exists()
+
+
+def test_workspace_extension_configuration_and_lock_are_isolated(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    app_paths = AppPaths.discover(tmp_path / "home", env={})
+    first = app_paths.for_workspace(WorkspaceContext.create(first_root).workspace_id)
+    second = app_paths.for_workspace(WorkspaceContext.create(second_root).workspace_id)
+
+    assert first.workspace_extensions_file == first.extensions_file
+    assert first.workspace_extensions_lock_file.parent == first.workspace_extensions_file.parent
+    assert first.workspace_extensions_lock_file.name == "extensions.json.lock"
+    assert first.workspace_extensions_file != second.workspace_extensions_file
+    assert first.workspace_extensions_lock_file != second.workspace_extensions_lock_file
+    assert not first.workspace_extensions_file.exists()

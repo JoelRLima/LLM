@@ -11,7 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 CATALOG_SCHEMA_VERSION = 1
 WORKSPACE_SCHEMA_VERSION = 1
@@ -131,11 +131,18 @@ def _normalize_capabilities(capabilities: Iterable[str]) -> tuple[str, ...]:
         values = tuple(capabilities)
     except TypeError as exc:
         raise TypeError("granted_capabilities deve ser iterável") from exc
-    if any(not isinstance(value, str) or not value.strip() for value in values):
+    if any(type(value) is not str or not value.strip() for value in values):
         raise ValueError("granted_capabilities não pode conter valores vazios")
     if len(values) != len(set(values)):
         raise ValueError("granted_capabilities contém duplicata")
     return tuple(sorted(values))
+
+
+def validate_capability_id(capability: str) -> str:
+    """Validate an extensible capability identifier without imposing a registry."""
+
+    normalized = _normalize_capabilities((capability,))
+    return cast(str, normalized[0])
 
 
 @dataclass(frozen=True)
@@ -144,6 +151,7 @@ class WorkspaceExtensionSelection:
 
     extension_id: str
     granted_capabilities: tuple[str, ...] = field(default_factory=tuple)
+    enabled: bool = True
 
     def __post_init__(self) -> None:
         validate_extension_id(self.extension_id)
@@ -152,6 +160,8 @@ class WorkspaceExtensionSelection:
             "granted_capabilities",
             _normalize_capabilities(self.granted_capabilities),
         )
+        if type(self.enabled) is not bool:
+            raise TypeError("enabled deve ser booleano")
 
 
 @dataclass(frozen=True)
@@ -180,22 +190,54 @@ class WorkspaceExtensionsState:
         )
 
     def enable(self, selection: WorkspaceExtensionSelection) -> "WorkspaceExtensionsState":
-        """Return a new state, preserving idempotency and rejecting replacement."""
+        """Enable a selection while preserving its existing grants."""
 
         existing = self.get(selection.extension_id)
         if existing is not None:
-            if existing == selection:
-                return self
-            raise ValueError(
-                f"extension_id já habilitado com grants diferentes: {selection.extension_id}"
+            if existing.enabled:
+                if existing == selection:
+                    return self
+                raise ValueError(
+                    f"extension_id já habilitado com grants diferentes: {selection.extension_id}"
+                )
+            enabled = WorkspaceExtensionSelection(
+                selection.extension_id,
+                existing.granted_capabilities,
+                True,
             )
-        return WorkspaceExtensionsState(self.selections + (selection,))
+            if existing == enabled:
+                return self
+            return WorkspaceExtensionsState(
+                tuple(enabled if item.extension_id == selection.extension_id else item for item in self.selections)
+            )
+        return WorkspaceExtensionsState(
+            self.selections
+            + (WorkspaceExtensionSelection(selection.extension_id, selection.granted_capabilities, True),)
+        )
+
+    def disable(self, extension_id: str) -> "WorkspaceExtensionsState":
+        """Disable a configured extension without revoking grants."""
+
+        existing = self.get(extension_id)
+        if existing is None or not existing.enabled:
+            return self
+        disabled = WorkspaceExtensionSelection(
+            extension_id,
+            existing.granted_capabilities,
+            False,
+        )
+        return WorkspaceExtensionsState(
+            tuple(disabled if item.extension_id == extension_id else item for item in self.selections)
+        )
 
     def is_enabled(self, extension_id: str) -> bool:
-        return self.get(extension_id) is not None
+        selection = self.get(extension_id)
+        return selection is not None and selection.enabled
 
     def enabled_ids(self) -> tuple[str, ...]:
-        return tuple(selection.extension_id for selection in self.selections)
+        return tuple(
+            selection.extension_id for selection in self.selections if selection.enabled
+        )
 
     def orphaned_ids(self, catalog: ExtensionCatalog) -> tuple[str, ...]:
         """Return enabled IDs absent from the supplied catalog without removing them."""
@@ -215,6 +257,7 @@ __all__ = [
     "WorkspaceExtensionSelection",
     "WorkspaceExtensionsState",
     "fingerprint_for_bytes",
+    "validate_capability_id",
     "validate_extension_id",
     "validate_manifest_fingerprint",
     "validate_schema_version",

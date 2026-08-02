@@ -221,7 +221,8 @@ Gate 2.1: concluído, validado e publicado
 Gate 2.2a: concluído, validado e publicado
 Gate 2.2b–2.2f: concluído e validado
 Gate 2.2: concluído, validado e publicado
-Gate 2.3: não iniciado
+Gate 2.3: concluído, validado e publicado
+Gate 2.4: não iniciado
 
 ## C30 — Retomada segura
 

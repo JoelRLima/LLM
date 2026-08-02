@@ -25,7 +25,11 @@ from agent.tools.extension_catalog_errors import (
 )
 from agent.tools.extension_catalog_lock import ExtensionCatalogLock
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_catalog_validation import validate_catalog_document
+from agent.tools.extension_catalog_validation import (
+    ManifestObservation,
+    observe_catalog_document,
+    validate_catalog_document,
+)
 from agent.tools.extension_manifest_parser import (
     ManifestParseError,
     ManifestProtocolError,
@@ -252,6 +256,11 @@ class ExtensionCatalogService:
 
     def validate(self) -> tuple[CatalogDiagnostic, ...]:
         return validate_catalog_document(self.storage.load(), self.host_flavor)
+
+    def observe(self) -> tuple[tuple[ManifestObservation, CatalogDiagnostic], ...]:
+        """Return one safe manifest observation per catalog entry."""
+
+        return observe_catalog_document(self.storage.load(), self.host_flavor)
 
 
 __all__ = [

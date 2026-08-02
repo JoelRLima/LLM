@@ -100,6 +100,18 @@ class WorkspacePaths:
         """Durable enabled-extension registry for this workspace."""
         return self.data_dir / "extensions.json"
 
+    @property
+    def workspace_extensions_file(self) -> Path:
+        """Versioned extension intent and grants for this workspace."""
+        return self.extensions_file
+
+    @property
+    def workspace_extensions_lock_file(self) -> Path:
+        """Cross-process lock adjacent to the workspace extension document."""
+        return self.workspace_extensions_file.with_name(
+            f"{self.workspace_extensions_file.name}.lock"
+        )
+
     def ensure_directories(self) -> None:
         """Create writable workspace storage after bootstrap validation."""
 
@@ -231,9 +243,9 @@ class AppPaths:
             raise ValueError("workspace_id inválido.")
         return WorkspacePaths(
             workspace_id=workspace_id,
-            data_dir=self.data_dir / "workspaces" / workspace_id,
-            state_dir=self.state_dir / "workspaces" / workspace_id,
-            cache_dir=self.cache_dir / "workspaces" / workspace_id,
+            data_dir=(self.data_dir / "workspaces" / workspace_id).resolve(),
+            state_dir=(self.state_dir / "workspaces" / workspace_id).resolve(),
+            cache_dir=(self.cache_dir / "workspaces" / workspace_id).resolve(),
         )
 
     def ensure_base_directories(self) -> None:

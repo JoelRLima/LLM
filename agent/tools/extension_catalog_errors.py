@@ -9,6 +9,70 @@ class ExtensionCatalogError(RuntimeError):
     """Base error for catalog operations."""
 
 
+class WorkspaceExtensionError(ExtensionCatalogError):
+    """Base error for workspace-local extension configuration."""
+
+
+class WorkspaceCodecError(WorkspaceExtensionError):
+    """Workspace configuration bytes are invalid."""
+
+
+class WorkspaceSchemaError(WorkspaceCodecError):
+    """Workspace configuration shape or field types are invalid."""
+
+
+class WorkspaceVersionError(WorkspaceSchemaError):
+    """Workspace configuration schema version is unsupported."""
+
+
+class WorkspaceStorageError(WorkspaceExtensionError):
+    """Workspace configuration could not be read or atomically written."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        secondary_errors: tuple[BaseException, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.secondary_errors = tuple(secondary_errors)
+
+    def add_secondary_error(self, error: BaseException) -> None:
+        self.secondary_errors = (*self.secondary_errors, error)
+
+
+class WorkspaceConfigurationCorruptError(WorkspaceStorageError):
+    """A present workspace configuration is unreadable or invalid."""
+
+
+class WorkspaceExtensionNotConfiguredError(WorkspaceExtensionError):
+    """An administrative grant operation needs an existing configuration."""
+
+
+class WorkspaceExtensionMissingError(WorkspaceExtensionError):
+    """An extension is not present in the global catalog."""
+
+
+class WorkspaceManifestBlockedError(WorkspaceExtensionError):
+    """The current manifest is missing, changed, invalid, or incompatible."""
+
+
+class WorkspaceCapabilityInvalidError(WorkspaceExtensionError):
+    """A capability identifier is syntactically invalid."""
+
+
+class WorkspaceCapabilityNotDeclaredError(WorkspaceExtensionError):
+    """A capability is not declared by the current manifest."""
+
+
+class WorkspaceConfigurationConflictError(WorkspaceExtensionError):
+    """A workspace configuration mutation conflicts with current state."""
+
+
+class WorkspacePathError(WorkspaceExtensionError):
+    """Workspace paths are relative, contradictory, or not canonical."""
+
+
 class CatalogCodecError(ExtensionCatalogError):
     """The persisted document cannot be decoded or encoded."""
 
@@ -131,4 +195,17 @@ __all__ = [
     "CatalogSchemaError",
     "CatalogStorageError",
     "ExtensionCatalogError",
+    "WorkspaceCapabilityInvalidError",
+    "WorkspaceCapabilityNotDeclaredError",
+    "WorkspaceCodecError",
+    "WorkspaceConfigurationConflictError",
+    "WorkspaceConfigurationCorruptError",
+    "WorkspaceExtensionError",
+    "WorkspaceExtensionMissingError",
+    "WorkspaceExtensionNotConfiguredError",
+    "WorkspaceManifestBlockedError",
+    "WorkspacePathError",
+    "WorkspaceSchemaError",
+    "WorkspaceStorageError",
+    "WorkspaceVersionError",
 ]
