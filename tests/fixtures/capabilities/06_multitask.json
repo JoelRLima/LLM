@@ -4,12 +4,13 @@
   "objective": "Analise api.py e model.py independentemente e produza summary.md usando os dois resultados.",
   "initial_files": {
     "api.py": "def get_user(user_id):\n    return user_id\n",
-    "model.py": "class User:\n    pass\n"
+    "model.py": "class User:\n    pass\n",
+    "tests/test_summary.py": "from pathlib import Path\n\n\ndef test_summary_mentions_analyzed_modules() -> None:\n    content = Path(\"summary.md\").read_text(encoding=\"utf-8\")\n\n    assert \"api.py\" in content\n    assert \"model.py\" in content\n"
   },
   "expectation": {
     "success": true,
     "files": [{"path": "summary.md", "contains": ["api.py", "model.py"]}],
-    "unchanged_files": ["api.py", "model.py"],
+    "unchanged_files": ["api.py", "model.py", "tests/test_summary.py"],
     "allowed_changed_files": ["summary.md"],
     "max_steps": 10
   },
@@ -52,7 +53,8 @@
               ],
               "metadata": {
                 "action": "generate",
-                "targets": ["api.py", "model.py"]
+                "targets": ["api.py", "model.py"],
+                "include_tests": true
               }
             }
           ]
@@ -61,11 +63,6 @@
       "model_responses": [
         {
           "changes": [
-            {
-              "path": "api.py",
-              "kind": "modify",
-              "content": "def get_user(user_id):\r\n    return user_id\r\n"
-            },
             {
               "path": "summary.md",
               "kind": "create",

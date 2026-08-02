@@ -67,7 +67,8 @@ def _wait_for_windows_handle(kernel32: Any, handle: Any, timeout_ms: int) -> int
 def ctypes_get_last_error() -> int:
     import ctypes
 
-    return ctypes.get_last_error()
+    get_last_error = getattr(ctypes, "get_last_error", None)
+    return get_last_error() if get_last_error is not None else 0
 
 
 def _open_windows_process_handle(pid: int) -> tuple[Any, Any]:
