@@ -237,5 +237,10 @@ def test_workspace_bootstrap_isolated_and_old_snapshot_is_immutable(tmp_path: Pa
 
     assert "demo_tool" in first.registry.names()
     assert "demo_tool" not in second.registry.names()
+    assert first.authority is not None
+    assert first.registry.runtime_identity is first.authority.runtime_identity
+    assert first.authority.extension_grants["demo.extension"] == frozenset({"read"})
+    assert second.authority is not None
+    assert second.authority.extension_grants == {}
     first_service.disable("demo.extension")
     assert "demo_tool" in first.registry.names()

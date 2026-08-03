@@ -19,6 +19,7 @@ from agent.runtime.logging import setup_logger, teardown_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
+from agent.tools.authority import ApplicationAuthoritySnapshot
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.invocation_gateway import ToolInvocationGateway
@@ -72,6 +73,7 @@ class AgentApplication:
         tool_registry: ToolRegistry,
         tool_invocation_gateway: ToolInvocationGateway,
         bootstrap_diagnostics: tuple[object, ...] = (),
+        application_authority: ApplicationAuthoritySnapshot | None = None,
     ) -> None:
         self.paths = paths
         self.workspace = workspace
@@ -84,6 +86,7 @@ class AgentApplication:
         self.tool_registry = tool_registry
         self.tool_invocation_gateway = tool_invocation_gateway
         self.bootstrap_diagnostics = tuple(bootstrap_diagnostics)
+        self.application_authority = application_authority
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
@@ -175,6 +178,7 @@ class AgentApplication:
                 tool_registry=tool_registry,
                 tool_invocation_gateway=tool_invocation_gateway,
                 bootstrap_diagnostics=extension_bootstrap.diagnostics,
+                application_authority=extension_bootstrap.authority,
             )
             return app
 

@@ -11,6 +11,7 @@ from agent.tools.contracts import (
     ToolDescriptor,
     ToolError,
     ToolInvocation,
+    ToolOriginKind,
     ToolResult,
     ToolStatus,
 )
@@ -35,6 +36,7 @@ class BuiltinToolAdapter(ToolAdapter):
             cacheable=spec.cacheable,
             idempotent=spec.idempotent,
             category=spec.category,
+            origin_kind=ToolOriginKind.BUILTIN,
             adapter_id="builtin",
             source_version="1",
         )

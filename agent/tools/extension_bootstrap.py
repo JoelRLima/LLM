@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent.runtime.paths import AppPaths
+from agent.tools.authority import ApplicationAuthoritySnapshot
 from agent.tools.contracts import ToolAdapter
 from agent.tools.extension_catalog_errors import (
     CatalogCodecError,
@@ -22,6 +23,7 @@ from agent.tools.extension_runtime import (
     ExtensionRuntimeMaterialization,
     ExtensionRuntimeMaterializer,
 )
+from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.workspace_extensions_resolver import resolve_workspace_extensions
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
@@ -34,6 +36,7 @@ class ExtensionBootstrapResult:
     registry: ToolRegistry
     materialization: ExtensionRuntimeMaterialization
     diagnostics: tuple[ExtensionRuntimeDiagnostic, ...] = ()
+    authority: ApplicationAuthoritySnapshot | None = None
 
 
 class WorkspaceToolRegistryComposer:
@@ -43,8 +46,10 @@ class WorkspaceToolRegistryComposer:
         self,
         builtin_adapter: ToolAdapter,
         materialization: ExtensionRuntimeMaterialization,
+        *,
+        runtime_identity: RuntimeSnapshotIdentity | None = None,
     ) -> ExtensionBootstrapResult:
-        registry = ToolRegistry()
+        registry = ToolRegistry(runtime_identity=runtime_identity)
         registry.register_adapter(builtin_adapter)
         builtin_names = set(registry.names())
         bindings = tuple(sorted(materialization.bindings, key=lambda item: item.extension_id))
@@ -121,6 +126,7 @@ class ApplicationExtensionBootstrap:
 
     def build(self, builtin_adapter: ToolAdapter) -> ExtensionBootstrapResult:
         empty = ExtensionRuntimeMaterialization()
+        runtime_identity = RuntimeSnapshotIdentity.create(self.workspace_id)
         catalog = ExtensionCatalogService(ExtensionCatalogStorage(self.app_paths.extensions_catalog_file))
         try:
             catalog_document = catalog.storage.load()
@@ -133,16 +139,18 @@ class ApplicationExtensionBootstrap:
             state = workspace_service.load()
             resolved = resolve_workspace_extensions(state, catalog_document, observations)
         except (CatalogCodecError, CatalogCorruptError):
-            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_CATALOG_CORRUPT")
+            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_CATALOG_CORRUPT", runtime_identity)
         except CatalogStorageError:
-            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_CATALOG_UNAVAILABLE")
+            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_CATALOG_UNAVAILABLE", runtime_identity)
         except WorkspaceStorageError:
-            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_WORKSPACE_CORRUPT")
+            return self._degraded(builtin_adapter, empty, "EXTENSION_BOOTSTRAP_WORKSPACE_CORRUPT", runtime_identity)
 
         materialization = ExtensionRuntimeMaterializer(
             self.workspace_root, host_flavor=catalog.host_flavor
         ).materialize(resolved)
-        composition = WorkspaceToolRegistryComposer().compose(builtin_adapter, materialization)
+        composition = WorkspaceToolRegistryComposer().compose(
+            builtin_adapter, materialization, runtime_identity=runtime_identity
+        )
         resolution_diagnostics = tuple(
             ExtensionRuntimeDiagnostic(
                 extension_id=entry.extension_id,
@@ -158,13 +166,20 @@ class ApplicationExtensionBootstrap:
             registry=composition.registry,
             materialization=composition.materialization,
             diagnostics=(*resolution_diagnostics, *composition.diagnostics),
+            authority=ApplicationAuthoritySnapshot.from_resolved(
+                self.workspace_id,
+                resolved,
+                runtime_identity=runtime_identity,
+                provenance="application_extension_bootstrap",
+            ),
         )
 
-    @staticmethod
     def _degraded(
+        self,
         builtin_adapter: ToolAdapter,
         materialization: ExtensionRuntimeMaterialization,
         code: str,
+        runtime_identity: RuntimeSnapshotIdentity,
     ) -> ExtensionBootstrapResult:
         diagnostic = ExtensionRuntimeDiagnostic(
             extension_id=None,
@@ -172,11 +187,18 @@ class ApplicationExtensionBootstrap:
             severity="error",
             safe_message="O subsistema de extensions não pôde ser carregado; builtins preservados.",
         )
-        result = WorkspaceToolRegistryComposer().compose(builtin_adapter, materialization)
+        result = WorkspaceToolRegistryComposer().compose(
+            builtin_adapter, materialization, runtime_identity=runtime_identity
+        )
         return ExtensionBootstrapResult(
             registry=result.registry,
             materialization=materialization,
             diagnostics=(diagnostic, *result.diagnostics),
+            authority=ApplicationAuthoritySnapshot(
+                runtime_identity=runtime_identity,
+                extension_grants={},
+                provenance="application_extension_bootstrap_degraded",
+            ),
         )
 
 

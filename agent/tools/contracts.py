@@ -9,6 +9,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Iterator, Mapping, Optional, Protocol, Tuple
 
+from agent.tools.extension_state import validate_extension_id
+from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnapshotIdentity
+
+RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
+
 
 @dataclass(frozen=True, slots=True)
 class FrozenJsonObject(MappingABC[str, Any]):
@@ -113,6 +118,13 @@ class ToolStatus(str, Enum):
     UNVERIFIED = "unverified"
 
 
+class ToolOriginKind(str, Enum):
+    """Trusted classification of the runtime origin of a tool."""
+
+    BUILTIN = "builtin"
+    EXTENSION = "extension"
+
+
 @dataclass(frozen=True)
 class ToolDescriptor:
     """Independent canonical metadata describing an invocable tool."""
@@ -130,9 +142,28 @@ class ToolDescriptor:
     source_version: str = "1"
     protocol_version: str = "1.0"
     supports_cancellation: bool = False
+    origin_kind: ToolOriginKind = field(default=ToolOriginKind.BUILTIN, kw_only=True)
+    extension_id: Optional[str] = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "schema", freeze_json_like(self.schema))
+        if isinstance(self.capabilities, str):
+            raise TypeError("capabilities deve ser uma coleção de strings")
+        try:
+            capabilities = frozenset(self.capabilities)
+        except TypeError as exc:
+            raise TypeError("capabilities deve ser uma coleção de strings") from exc
+        if any(type(value) is not str or not value.strip() for value in capabilities):
+            raise ValueError("capabilities contém valor inválido")
+        object.__setattr__(self, "capabilities", capabilities)
+        if not isinstance(self.origin_kind, ToolOriginKind):
+            object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
+        if self.origin_kind is ToolOriginKind.EXTENSION:
+            if not isinstance(self.extension_id, str) or not self.extension_id.strip():
+                raise ValueError("Tool de extension requer extension_id")
+            validate_extension_id(self.extension_id)
+        elif self.extension_id is not None:
+            raise ValueError("Tool builtin não pode conter extension_id")
 
     def __getattribute__(self, name: str) -> Any:
         if name == "schema":
@@ -150,6 +181,34 @@ class ToolInvocation:
     invocation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     task_id: Optional[str] = None
     workspace: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolInvocationRequest:
+    """Validated invocation boundary prepared before gateway integration."""
+
+    invocation_id: str
+    tool_name: str
+    arguments: Mapping[str, Any] = field(default_factory=dict)
+    timeout_seconds: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.invocation_id, str) or not self.invocation_id.strip():
+            raise ValueError("invocation_id deve ser uma string não vazia")
+        if not isinstance(self.tool_name, str) or not self.tool_name.strip():
+            raise ValueError("tool_name deve ser uma string não vazia")
+        if not isinstance(self.arguments, Mapping):
+            raise TypeError("arguments deve ser um mapping")
+        object.__setattr__(self, "arguments", freeze_json_like(dict(self.arguments)))
+        if self.timeout_seconds is not None and (
+            type(self.timeout_seconds) is not int or self.timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds deve ser um inteiro positivo")
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "arguments":
+            return thaw_json_like(object.__getattribute__(self, "arguments"))
+        return object.__getattribute__(self, name)
 
 
 @dataclass(frozen=True)

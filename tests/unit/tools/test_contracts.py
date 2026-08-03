@@ -1,9 +1,53 @@
+import pytest
+
 from agent.tools.contracts import (
     ToolDescriptor,
     ToolError,
+    ToolOriginKind,
     ToolResult,
     ToolStatus,
 )
+
+
+def test_tool_descriptor_preserves_historical_positional_fields() -> None:
+    descriptor = ToolDescriptor(
+        "x", "description", {}, frozenset(), 5, None, False, False, "EXECUTE", "adapter"
+    )
+    assert descriptor.adapter_id == "adapter"
+    assert descriptor.origin_kind is ToolOriginKind.BUILTIN
+    assert descriptor.extension_id is None
+
+
+def test_tool_descriptor_new_origin_fields_are_keyword_only() -> None:
+    descriptor = ToolDescriptor(
+        "x",
+        "description",
+        origin_kind=ToolOriginKind.EXTENSION,
+        extension_id="canonical.extension",
+        adapter_id="canonical.extension",
+    )
+    assert descriptor.origin_kind is ToolOriginKind.EXTENSION
+    assert descriptor.extension_id == "canonical.extension"
+
+
+@pytest.mark.parametrize("extension_id", ["", " ", "../escape", "UPPER", " space "])
+def test_tool_descriptor_rejects_noncanonical_extension_id(extension_id: str) -> None:
+    with pytest.raises(ValueError):
+        ToolDescriptor(
+            "x",
+            "description",
+            origin_kind=ToolOriginKind.EXTENSION,
+            extension_id=extension_id,
+            adapter_id="extension",
+        )
+
+
+def test_tool_descriptor_copies_capabilities_to_frozenset() -> None:
+    capabilities = {"read"}
+    descriptor = ToolDescriptor("x", "description", capabilities=capabilities)
+    capabilities.add("write")
+    assert descriptor.capabilities == frozenset({"read"})
+    assert type(descriptor.capabilities) is frozenset
 
 
 def test_tool_status_values() -> None:

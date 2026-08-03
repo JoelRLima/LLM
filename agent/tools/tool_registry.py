@@ -13,15 +13,23 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
+from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
 class ToolRegistry:
     """Central registry aggregating tool adapters and resolving invocations."""
 
-    def __init__(self) -> None:
+    def __init__(self, runtime_identity: RuntimeSnapshotIdentity | None = None) -> None:
         self._adapters: List[ToolAdapter] = []
         self._descriptors_cache: Dict[str, Tuple[ToolAdapter, ToolDescriptor]] = {}
         self._frozen = False
+        self._runtime_identity = runtime_identity
+
+    @property
+    def runtime_identity(self) -> RuntimeSnapshotIdentity | None:
+        """Read-only identity of the runtime snapshot, when bound."""
+
+        return self._runtime_identity
 
     def register_adapter(self, adapter: ToolAdapter) -> None:
         if self._frozen:
