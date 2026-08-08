@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import AgentEvent, EventData, ToolArgs, ToolResult
 from agent.error_handler import ErrorHandler
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.logging import logger
 
@@ -35,7 +36,23 @@ class OrchestratorOperations:
     def unregister_skill(self, name: str) -> None:
         self.skills.pop(name, None)
 
-    def _build_tools_description(self, compact: bool = False) -> str:
+    def _build_tools_description(
+        self,
+        compact: bool = False,
+        *,
+        planner_kind: str | None = None,
+    ) -> str:
+        planning_view = cast(
+            PlanningPresentationSnapshot | None,
+            getattr(self, "get_planning_view", lambda _kind: None)(
+                planner_kind or ("linear" if not compact else "reactive")
+            ),
+        )
+        if planning_view is not None:
+            context_limit = int(
+                getattr(getattr(self.session, "hardware_profile", None), "context_limit", 8_192)
+            )
+            return planning_view.render(compact=compact, context_limit=context_limit)
         descriptions = []
         for skill in self.skills.values():
             if self.active_skills and skill.name not in self.active_skills:

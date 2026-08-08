@@ -4,6 +4,7 @@ from typing import Any, Dict, cast
 from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
 from agent.parsers import stringify
+from agent.planning.plan_builder import build_planner_tools_description
 from agent.watchdog import Watchdog
 
 
@@ -48,7 +49,9 @@ class ReactiveLoop:
         return answer
 
     def _build_prompt(self, objective: str) -> str:
-        tools = self.orchestrator._build_tools_description(compact=True)
+        tools = build_planner_tools_description(
+            self.orchestrator, planner_kind="reactive", compact=True
+        )
         history = "".join(self._history_line(action) for action in self.orchestrator.agent_state.tool_history[-3:])
         return (
             f"Objetivo: {objective}\nFerramentas disponíveis:\n{tools}\n\n{history}"

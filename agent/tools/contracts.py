@@ -146,7 +146,11 @@ class ToolDescriptor:
     extension_id: Optional[str] = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "schema", freeze_json_like(self.schema))
+        try:
+            frozen_schema = freeze_json_like(self.schema)
+        except RecursionError as exc:
+            raise ValueError("schema excede a profundidade estrutural") from exc
+        object.__setattr__(self, "schema", frozen_schema)
         if isinstance(self.capabilities, str):
             raise TypeError("capabilities deve ser uma coleção de strings")
         try:

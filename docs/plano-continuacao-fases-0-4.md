@@ -225,8 +225,8 @@ Gate 2.3: concluído, validado e publicado
 Gate 2.4: concluído, validado e publicado
 Gate 2.5: concluído, validado e publicado
 Gate 2.6a: concluído, validado e publicado
-Gate 2.6b: não iniciado
-Gate 2.6c: não iniciado
+Gate 2.6b: aprovado localmente, pendente de consolidacao
+Gate 2.6c: patch final implementado e autoauditado, pendente de consolidacao
 Gate 2.6: não concluído
 Gate 2.7a: concluído, validado e publicado
 Gate 2.7b: não iniciado

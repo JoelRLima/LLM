@@ -35,9 +35,14 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from agent.planning.planning_context import PlanningContextSnapshot
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.tool_metadata import TOOL_METADATA, ToolMetadata, estimate_step_cost, get_tool_metadata
 
 _MOVABLE_CATEGORIES = {"READ", "SEARCH", "ANALYZE"}
+
+class PlanningOptimizationError(ValueError):
+    """Raised when a canonical planning plan references unknown metadata."""
 
 
 @dataclass(frozen=True)
@@ -64,8 +69,28 @@ class PlanOptimizer:
     """Otimiza planos aplicando transformações equivalentes e seguras,
     guiadas por `ToolMetadata`."""
 
-    def __init__(self, tool_metadata: Optional[Dict[str, ToolMetadata]] = None):
+    def __init__(
+        self,
+        tool_metadata: Optional[Dict[str, ToolMetadata]] = None,
+        *,
+        planning_context: PlanningContextSnapshot | None = None,
+        presented_names: frozenset[str] | None = None,
+        planning_view: PlanningPresentationSnapshot | None = None,
+    ):
         self.tool_metadata = tool_metadata if tool_metadata is not None else TOOL_METADATA
+        self.planning_context = planning_context
+        if planning_context is not None:
+            if planning_view is not None:
+                if planning_view.planning_context_id != planning_context.snapshot_id:
+                    raise PlanningOptimizationError("planning context e view divergem")
+                if planning_view.runtime_identity != planning_context.runtime_identity:
+                    raise PlanningOptimizationError("runtime identity do context e view diverge")
+                if presented_names is not None and frozenset(presented_names) != planning_view.presented_names:
+                    raise PlanningOptimizationError("presented_names diverge da view canonica")
+                self.tool_metadata = planning_view.metadata_dict()
+            else:
+                names = planning_context.eligible_names if presented_names is None else presented_names
+                self.tool_metadata = planning_context.present("optimizer", names).metadata_dict()
 
     # ------------------------------------------------------------------
     # Ponto de entrada público
@@ -109,6 +134,13 @@ class PlanOptimizer:
     # ------------------------------------------------------------------
 
     def _meta(self, tool: str) -> ToolMetadata:
+        if self.planning_context is not None:
+            metadata = self.tool_metadata.get(tool)
+            if metadata is None:
+                raise PlanningOptimizationError(
+                    f"ferramenta '{tool}' ausente da view canÃ´nica de planning"
+                )
+            return metadata
         return self.tool_metadata.get(tool) or get_tool_metadata(tool)
 
     def _cost_details(self, plan: List[Dict[str, Any]]) -> List[ToolCost]:
@@ -118,8 +150,13 @@ class PlanOptimizer:
                 continue
             tool = step.get("tool", "")
             args = step.get("args", {}) if isinstance(step.get("args"), dict) else {}
-            details.append(ToolCost(tool=tool, cost=estimate_step_cost(tool, args)))
+            details.append(ToolCost(tool=tool, cost=self._estimate_cost(tool, args)))
         return details
+
+    def _estimate_cost(self, tool: str, args: Dict[str, Any]) -> int:
+        if self.planning_context is None:
+            return estimate_step_cost(tool, args)
+        return self._meta(tool).cost
 
     @staticmethod
     def _total_cost(details: List[ToolCost]) -> int:

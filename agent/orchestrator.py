@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from agent.auto_coder import AutoCoder
 from agent.cancellation import CancellationToken
@@ -20,6 +20,8 @@ from agent.orchestration.task_runner import TaskRunner
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_builder import PlanBuilder
 from agent.planning.plan_executor import PlanExecutor
+from agent.planning.planning_context import PlanningContextSnapshot, build_planning_context
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
@@ -28,6 +30,7 @@ from agent.skills.policy import builtin_skills_for_persona, persona_allowed_capa
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
+from agent.tools.authority import ApplicationAuthoritySnapshot
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.legacy_invoker import LegacyToolInvoker
 from agent.tools.tool_registry import ToolRegistry
@@ -51,6 +54,7 @@ class Orchestrator(OrchestratorOperations):
         workspace_paths: WorkspacePaths | None = None,
         tool_registry: ToolRegistry | None = None,
         tool_invocation_gateway: ToolInvocationGateway | None = None,
+        application_authority: ApplicationAuthoritySnapshot | None = None,
     ) -> None:
         self.session = session
         self.workspace_root = Path(workspace_root).expanduser().resolve()
@@ -63,6 +67,8 @@ class Orchestrator(OrchestratorOperations):
         self.skills: Dict[str, Any] = {}
         self.tool_registry = tool_registry
         self.tool_invocation_gateway = tool_invocation_gateway
+        self.application_authority = application_authority
+        self._planning_context: PlanningContextSnapshot | None = None
         self.legacy_tool_invoker = LegacyToolInvoker(self) if tool_registry is None else None
         self.max_steps = 15
         self.max_total_actions = 20
@@ -116,15 +122,15 @@ class Orchestrator(OrchestratorOperations):
 
     @property
     def reactive_loop(self) -> ReactiveLoop:
-        return self.subsystems.reactive_loop
+        return cast(ReactiveLoop, self.subsystems.reactive_loop)
 
     @property
     def plan_builder(self) -> PlanBuilder:
-        return self.subsystems.plan_builder
+        return cast(PlanBuilder, self.subsystems.plan_builder)
 
     @property
     def plan_executor(self) -> PlanExecutor:
-        return self.subsystems.plan_executor
+        return cast(PlanExecutor, self.subsystems.plan_executor)
 
     @property
     def final_responder(self) -> FinalResponder:
@@ -140,7 +146,7 @@ class Orchestrator(OrchestratorOperations):
 
     @property
     def execution_gateway(self) -> ExecutionGateway:
-        return self.subsystems.execution_gateway
+        return cast(ExecutionGateway, self.subsystems.execution_gateway)
 
     def resolve_user_path(self, file_path: str | Path) -> Path:
         """Resolve a user file through the standalone workspace boundary.
@@ -153,7 +159,7 @@ class Orchestrator(OrchestratorOperations):
 
         if self.workspace_paths is None:
             return Path(file_path)
-        return self.workspace.resolve_path(file_path)
+        return cast(Path, self.workspace.resolve_path(file_path))
 
     def _reset_task_state(self, objective: str) -> None:
         self.agent_state.objective = objective
@@ -165,6 +171,7 @@ class Orchestrator(OrchestratorOperations):
         self.agent_state.events.clear()
         self.context_manager._cached_project_context = None
         self.workspace.restore_points.clear()
+        self._planning_context = None
         self._task_failed = False
         self.cancellation_token.reset()
 
@@ -179,6 +186,7 @@ class Orchestrator(OrchestratorOperations):
         registry = getattr(self, "tool_registry", None)
         self.active_skills = builtin_skills_for_persona(persona, registry=registry)
         self.allowed_capabilities = persona_allowed_capabilities(persona)
+        self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             persona_prompt,
             self._build_tools_description(compact=False),
@@ -199,6 +207,7 @@ class Orchestrator(OrchestratorOperations):
         registry = getattr(self, "tool_registry", None)
         self.active_skills = builtin_skills_for_persona(persona, registry=registry)
         self.allowed_capabilities = persona_allowed_capabilities(persona)
+        self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             self.current_persona_prompt,
             self._build_tools_description(compact=False),
@@ -222,7 +231,42 @@ class Orchestrator(OrchestratorOperations):
         return answer
 
     def _get_valid_tool_names(self) -> List[str]:
+        view = self.get_planning_view("linear")
+        if view is not None:
+            return sorted(view.presented_names)
         return list(self.skills)
+
+    @property
+    def planning_context(self) -> PlanningContextSnapshot | None:
+        """Contexto semântico criado uma vez para a tarefa atual."""
+
+        return self._planning_context
+
+    def _create_planning_context(self) -> None:
+        """Capture one planning snapshot; production has no task authority yet."""
+
+        if self.tool_registry is None or self.application_authority is None:
+            self._planning_context = None
+            return
+        self._planning_context = build_planning_context(
+            self.tool_registry,
+            self.application_authority,
+            None,
+            self.allowed_capabilities,
+        )
+
+    def get_planning_view(self, planner_kind: str) -> PlanningPresentationSnapshot | None:
+        """Derive a planner view without rebuilding or consulting runtime sources."""
+
+        if self._planning_context is None:
+            return None
+        visible = (
+            frozenset(self.active_skills)
+            if self.active_skills
+            else self._planning_context.eligible_names
+        )
+        visible &= self._planning_context.eligible_names
+        return self._planning_context.present(planner_kind, visible)
 
     @staticmethod
     def _is_security_objective(objective: str) -> bool:
@@ -231,16 +275,16 @@ class Orchestrator(OrchestratorOperations):
     def _handle_security_analysis(
         self, objective: str, stream_callback: Callable[[str], None] | None = None
     ) -> Optional[str]:
-        return SecurityAnalysisService(self).run(objective, stream_callback)
+        return cast(Optional[str], SecurityAnalysisService(self).run(objective, stream_callback))
 
     def _run_hierarchical(
         self, objective: str, on_chunk: Callable[[str], None] | None = None
     ) -> Optional[str]:
-        return HierarchicalExecutionService(self).run(objective, on_chunk)
+        return cast(Optional[str], HierarchicalExecutionService(self).run(objective, on_chunk))
 
     def run(
         self,
         objective: Optional[str] = None,
         stream_callback: Callable[[str], None] | None = None,
     ) -> str:
-        return TaskRunner(self).run(objective, stream_callback)
+        return cast(str, TaskRunner(self).run(objective, stream_callback))

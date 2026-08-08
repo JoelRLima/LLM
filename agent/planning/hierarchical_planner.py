@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_graph import task_graph_from_macro_plan
 from agent.runtime.logging import logger
 
@@ -78,9 +79,14 @@ class HierarchicalPlanner:
         self,
         ask_model: Callable[[str, str], Dict[str, Any]],
         valid_tools: List[str],
+        *,
+        planning_view: PlanningPresentationSnapshot | None = None,
     ) -> None:
         self.ask_model = ask_model
-        self.valid_tools: Set[str] = set(valid_tools or [])
+        self.planning_view = planning_view
+        self.valid_tools: Set[str] = set(
+            planning_view.presented_names if planning_view is not None else (valid_tools or [])
+        )
 
     def build_plan(self, objective: str) -> Optional[MacroPlan]:
         """Solicita ao modelo um `MacroPlan` para `objective` e o valida.
@@ -157,6 +163,9 @@ class HierarchicalPlanner:
         )
 
         estimated_tools_raw = raw.get("estimated_tools", [])
+        if self.planning_view is not None and isinstance(estimated_tools_raw, list):
+            if any(not isinstance(tool, str) or tool not in self.valid_tools for tool in estimated_tools_raw):
+                return None
         estimated_tools = (
             [t for t in estimated_tools_raw if isinstance(t, str) and t in self.valid_tools]
             if isinstance(estimated_tools_raw, list)
@@ -175,6 +184,8 @@ class HierarchicalPlanner:
     def _build_prompt(self, objective: str) -> str:
         """Monta o prompt enviado ao modelo para gerar o MacroPlan."""
         tools_list = ", ".join(sorted(self.valid_tools)) or "(nenhuma ferramenta disponível)"
+        if self.planning_view is not None:
+            tools_list = self.planning_view.render(compact=True)
         return (
             f"Objetivo complexo: {objective}\n\n"
             f"Ferramentas disponíveis: {tools_list}\n\n"

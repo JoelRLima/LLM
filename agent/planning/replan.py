@@ -5,6 +5,11 @@ from typing import Any, Dict, Optional
 
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_validator import PlanValidator
+from agent.planning.planning_context import (
+    PlanningContextError,
+    PlanningContextSnapshot,
+)
+from agent.planning.presentation import PlanningPresentationSnapshot, validate_planning_view_binding
 from agent.planning.replan_models import (
     ErrorCategory,
     ReplanAction,
@@ -70,25 +75,60 @@ def ask_llm_for_alternative(
 
 
 def _validate_and_optimize_new_steps(
-    action: Optional[ReplanAction], orchestrator: Any
+    action: Optional[ReplanAction],
+    orchestrator: Any,
+    planning_context: PlanningContextSnapshot | None = None,
+    planning_view: PlanningPresentationSnapshot | None = None,
 ) -> Optional[ReplanAction]:
     if not action or not action.steps:
         return action
+    explicit_context = planning_context is not None
+    context = planning_context or getattr(orchestrator, "planning_context", None)
+    presentation = planning_view
+    if context is None and presentation is not None:
+        raise PlanningContextError("planning view sem contexto canônico")
+    if context is not None and presentation is not None:
+        validate_planning_view_binding(context, presentation, "linear")
+    elif explicit_context:
+        raise PlanningContextError("contexto explícito exige view correlacionada")
+    elif context is not None:
+        presentation = _planning_view(orchestrator, context)
     validator = PlanValidator(
         getattr(orchestrator, "skills", {}) or {},
         getattr(orchestrator, "active_skills", []) or [],
         getattr(orchestrator, "allowed_capabilities", None),
         getattr(orchestrator, "tool_registry", None),
+        planning_context=context,
+        presented_names=presentation.presented_names if presentation is not None else None,
+        planning_view=presentation,
     )
     surviving = _surviving_steps(action.steps, validator, "replan")
     if not surviving:
         return None
-    optimized = PlanOptimizer(TOOL_METADATA).optimize(surviving).optimized_steps
+    if context is None:
+        optimized = PlanOptimizer(TOOL_METADATA).optimize(surviving).optimized_steps
+    else:
+        optimized = PlanOptimizer(
+            planning_context=context,
+            presented_names=presentation.presented_names if presentation is not None else None,
+            planning_view=presentation,
+        ).optimize(surviving).optimized_steps
     final_steps = _surviving_steps(optimized, validator, "replan pós-otimização")
     if not final_steps:
         return None
     action.steps = final_steps
     return action
+
+
+def _planning_view(
+    orchestrator: Any,
+    context: PlanningContextSnapshot | None,
+) -> PlanningPresentationSnapshot | None:
+    if context is None:
+        return None
+    active = frozenset(getattr(orchestrator, "active_skills", ()) or ())
+    visible = active & context.eligible_names if active else context.eligible_names
+    return context.present("linear", visible)
 
 
 def _surviving_steps(steps: list[Dict[str, Any]], validator: PlanValidator, phase: str) -> list[Dict[str, Any]]:
@@ -115,19 +155,26 @@ def _log_action(context: ReplanContext, category: ErrorCategory, action: ReplanA
 def replan(
     ctx: ReplanContext, error_message: str, orchestrator: Any,
     retry_policy: RetryPolicy | None = None,
+    *,
+    planning_context: PlanningContextSnapshot | None = None,
+    planning_view: PlanningPresentationSnapshot | None = None,
 ) -> Optional[ReplanAction]:
     policy = retry_policy or RetryPolicy()
     category = classify_error(error_message)
     if policy.allows_heuristic(ctx):
         action = try_heuristic(category, ctx.current_step.get("tool", ""), ctx.current_step.get("args", {}))
-        action = _validate_and_optimize_new_steps(action, orchestrator)
+        action = _validate_and_optimize_new_steps(
+            action, orchestrator, planning_context, planning_view
+        )
         if action is not None:
             ctx.heuristic_replans += 1
             _log_action(ctx, category, action)
             return action
     if policy.allows_llm(ctx):
         action = ask_llm_for_alternative(ctx.current_step, error_message, orchestrator)
-        action = _validate_and_optimize_new_steps(action, orchestrator)
+        action = _validate_and_optimize_new_steps(
+            action, orchestrator, planning_context, planning_view
+        )
         if action is not None:
             ctx.llm_replans += 1
             _log_action(ctx, category, action)

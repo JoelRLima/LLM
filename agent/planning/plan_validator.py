@@ -20,7 +20,13 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import validate_tool_args
-from agent.tools.invocation_gateway import ToolInvocationGateway
+from agent.planning.planning_context import (
+    PlanningContextError,
+    PlanningContextSnapshot,
+    PlanningTool,
+    validate_planning_tool_arguments,
+)
+from agent.planning.presentation import PlanningPresentationSnapshot
 
 
 @dataclass(frozen=True)
@@ -53,11 +59,30 @@ class PlanValidator:
         active_skills: Optional[List[str]] = None,
         allowed_capabilities: Optional[frozenset[str]] = None,
         tool_registry: Any = None,
+        *,
+        planning_context: PlanningContextSnapshot | None = None,
+        presented_names: frozenset[str] | None = None,
+        planning_view: PlanningPresentationSnapshot | None = None,
     ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
         self.allowed_capabilities = allowed_capabilities
         self.tool_registry = tool_registry
+        self.planning_context = planning_context
+        self.planning_view = planning_view
+        if planning_context is not None and planning_view is not None:
+            if planning_view.planning_context_id != planning_context.snapshot_id:
+                raise PlanningContextError("planning context e view divergem")
+            if planning_view.runtime_identity != planning_context.runtime_identity:
+                raise PlanningContextError("runtime identity do context e view diverge")
+            if presented_names is not None and frozenset(presented_names) != planning_view.presented_names:
+                raise PlanningContextError("presented_names diverge da view canonica")
+            presented_names = planning_view.presented_names
+        self.presented_names = (
+            frozenset(presented_names)
+            if presented_names is not None
+            else (planning_context.eligible_names if planning_context is not None else None)
+        )
 
     def validate(self, plan: Optional[List[Dict[str, Any]]]) -> ValidationReport:
         """Executa todas as checagens sobre `plan` e retorna um
@@ -116,6 +141,8 @@ class PlanValidator:
         tool_name = str(tool)
         args = step.get("args", {})
         args = args if isinstance(args, dict) else {}
+        if self.planning_context is not None:
+            return self._validate_context_step(tool_name, args)
         descriptor = self._descriptor(tool_name)
         if tool not in self.skills and descriptor is None:
             return f"Ferramenta '{tool}' não existe."
@@ -126,12 +153,24 @@ class PlanValidator:
             if capability_error:
                 return capability_error
             try:
-                ToolInvocationGateway._validate_arguments(descriptor, args)
+                validate_planning_tool_arguments(descriptor, args)
                 return None
             except ValueError as exc:
                 return f"Schema inválido para '{tool}': {exc}"
         valid, error = validate_tool_args(tool_name, args, self.skills)
         return None if valid else f"Schema inválido para '{tool}': {error or ''}"
+
+    def _validate_context_step(self, tool_name: str, args: Dict[str, Any]) -> str | None:
+        if self.presented_names is not None and tool_name not in self.presented_names:
+            return f"Ferramenta '{tool_name}' não foi apresentada neste contexto."
+        planning_tool = self._planning_tool(tool_name)
+        if planning_tool is None:
+            return f"Ferramenta '{tool_name}' não existe no contexto de planning."
+        try:
+            validate_planning_tool_arguments(planning_tool, args)
+        except ValueError as exc:
+            return f"Schema inválido para '{tool_name}': {exc}"
+        return self._capability_error(tool_name, planning_tool)
 
     def _descriptor(self, tool_name: str) -> Any:
         if self.tool_registry is None:
@@ -141,11 +180,31 @@ class PlanValidator:
         except KeyError:
             return None
 
-    def _capability_error(self, tool_name: str, descriptor: Any) -> str | None:
-        if self.allowed_capabilities is None:
+    def _planning_tool(self, tool_name: str) -> PlanningTool | None:
+        if self.planning_context is None:
             return None
-        capabilities: frozenset[str] = getattr(descriptor, "capabilities", frozenset())
-        missing = capabilities - self.allowed_capabilities
+        return next(
+            (tool for tool in self.planning_context.tools if tool.name == tool_name),
+            None,
+        )
+
+    def _capability_error(self, tool_name: str, descriptor: Any) -> str | None:
+        if isinstance(descriptor, PlanningTool):
+            capabilities = descriptor.required_capabilities
+            allowed = (
+                self.planning_context.allowed_capabilities
+                if self.planning_context is not None and self.planning_context.allowed_capabilities is not None
+                else self.allowed_capabilities
+            )
+        elif self.planning_context is None:
+            capabilities = frozenset(getattr(descriptor, "capabilities", frozenset()))
+            allowed = self.allowed_capabilities
+        else:
+            capabilities = frozenset()
+            allowed = self.allowed_capabilities
+        if allowed is None:
+            return None
+        missing = capabilities - allowed
         if not missing:
             return None
         return f"Ferramenta '{tool_name}' requer capacidades não autorizadas: {', '.join(sorted(missing))}"

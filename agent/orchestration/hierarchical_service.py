@@ -17,9 +17,11 @@ class HierarchicalExecutionService:
         self.orchestrator = orchestrator
 
     def run(self, objective: str, on_chunk: Callable[[str], None] | None = None) -> str | None:
+        planning_view = getattr(self.orchestrator, "get_planning_view", lambda _kind: None)("hierarchical")
         planner = HierarchicalPlanner(
             ask_model=self._ask_model,
-            valid_tools=list(self.orchestrator.skills),
+            valid_tools=list(planning_view.presented_names) if planning_view is not None else list(self.orchestrator.skills),
+            planning_view=planning_view,
         )
         try:
             macro_plan = planner.build_plan(objective)

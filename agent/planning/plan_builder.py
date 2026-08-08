@@ -1,7 +1,9 @@
+import inspect
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from agent.parsers import validate_tool_args
+from agent.planning.planning_context import validate_planning_tool_arguments
 
 PLANNING_GUIDANCE = """
 Escolha a ferramenta de menor custo que resolva cada passo:
@@ -12,6 +14,27 @@ Nunca use patch/ast_patch sem um file_reader anterior para o mesmo arquivo.
 Em análises de segurança, comece com code_analyzer mode='security' em um arquivo.
 Evite leituras repetidas, caches/logs no escopo e passos que apaguem conteúdo.
 """
+
+
+def build_planner_tools_description(orchestrator: Any, *, planner_kind: str, compact: bool) -> str:
+    """Call the planner catalog contract without catching runtime TypeError."""
+
+    builder = orchestrator._build_tools_description
+    try:
+        signature = inspect.signature(builder)
+    except (TypeError, ValueError) as exc:
+        if getattr(orchestrator, "planning_context", None) is not None:
+            raise TypeError("canonical planner catalog signature is unavailable") from exc
+        return cast(str, builder(compact=compact))
+    supports_kind = "planner_kind" in signature.parameters or any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if supports_kind:
+        return cast(str, builder(compact=compact, planner_kind=planner_kind))
+    if getattr(orchestrator, "planning_context", None) is not None:
+        raise TypeError("canonical planner catalog requires planner_kind")
+    return cast(str, builder(compact=compact))
 
 
 class PlanBuilder:
@@ -61,7 +84,9 @@ class PlanBuilder:
     def _build_prompt(self, objective: str) -> str:
         hints = self.orchestrator.context_manager.get_file_hints(objective)
         hint_block = f"\nTamanhos conhecidos:\n{hints}\n" if hints else ""
-        tools = self.orchestrator._build_tools_description(compact=True)
+        tools = build_planner_tools_description(
+            self.orchestrator, planner_kind="linear", compact=True
+        )
         return f"""Objetivo: {objective}{hint_block}
 Ferramentas disponíveis:
 {tools}
@@ -110,11 +135,24 @@ Não use shell para escrever e não inclua um passo final sem ferramenta.
         if not isinstance(raw_step, dict):
             return None
         tool, args = raw_step.get("tool", ""), raw_step.get("args", {})
-        valid, error = validate_tool_args(tool, args, self.orchestrator.skills)
-        if not valid:
-            if self.orchestrator.verbose:
-                print(f"[DEBUG] Passo removido por schema inválido: {raw_step} -> {error}")
-            return None
+        planning_view = getattr(self.orchestrator, "get_planning_view", lambda _kind: None)("linear")
+        if planning_view is not None:
+            planning_tool = next(
+                (item for item in planning_view.tools if item.name == tool),
+                None,
+            )
+            if planning_tool is None:
+                return None
+            try:
+                validate_planning_tool_arguments(planning_tool, args)
+            except ValueError:
+                return None
+        else:
+            valid, error = validate_tool_args(tool, args, self.orchestrator.skills)
+            if not valid:
+                if self.orchestrator.verbose:
+                    print(f"[DEBUG] Passo removido por schema inválido: {raw_step} -> {error}")
+                return None
         normalized_args = args if isinstance(args, dict) else {}
         empties_notes = tool == "file_writer" and "analysis_notes.md" in str(normalized_args.get("file_path", "")) and not str(normalized_args.get("content", "")).strip()
         return None if empties_notes else {"tool": tool, "args": normalized_args}

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from agent.planning.reactive_loop import ReactiveLoop
 
 
@@ -73,3 +75,15 @@ def test_reactive_loop_executes_tool_through_full_gateway(monkeypatch):
     plan, objective, _ = orchestrator.execution_gateway.calls[0]
     assert plan == [{"tool": "echo", "args": {"text": "oi"}}]
     assert objective == "responda"
+
+
+def test_reactive_renderer_type_error_does_not_fallback_to_legacy() -> None:
+    orchestrator = _Orchestrator()
+
+    def broken_renderer(*, compact=False, planner_kind=None):
+        del compact, planner_kind
+        raise TypeError("erro interno")
+
+    orchestrator._build_tools_description = broken_renderer
+    with pytest.raises(TypeError, match="erro interno"):
+        ReactiveLoop(orchestrator)._build_prompt("responda")

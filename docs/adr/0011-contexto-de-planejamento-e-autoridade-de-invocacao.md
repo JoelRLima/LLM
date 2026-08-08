@@ -32,6 +32,9 @@ snapshot único por aplicação/tarefa.
 - `PlanningContextSnapshot` é uma projeção profunda e imutável dos descriptors
   do `ToolRegistry`. As tools elegíveis são um subconjunto do registry e
   `eligible_names` corresponde exatamente às tools projetadas.
+- O snapshot preserva diretamente a `RuntimeSnapshotIdentity` do registry,
+  incluindo `workspace_id`; views de planning carregam a mesma identidade e
+  só podem ser consumidas junto do contexto que as originou.
 - A origem é tipada como `builtin` ou `extension`. Tools de extension carregam
   `extension_id` canônico; planning models não carregam adapter, comando, path
   ou manifest.
@@ -54,6 +57,13 @@ a projeção deve falhar fechado ou produzir diagnóstico tipado.
 Descrições e schemas externos são armazenados apenas como dados copiados. O
 framing textual, provenance visível, budgets de contexto e proteção contra
 prompt injection serão tratados no Gate 2.6b.
+
+## Aditivo apos o Gate 2.6b/2.6c
+
+O framing textual, provenance visivel, budgets de contexto e protecao contra
+prompt injection foram especificados no ADR 0012. A implementacao local dos
+Gates 2.6b e 2.6c permanece pendente de auditoria; os Gates 2.6 e 2.7 ainda
+nao estao concluidos.
 
 ## Fora deste ADR
 

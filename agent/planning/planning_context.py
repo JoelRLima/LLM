@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, cast
 from uuid import uuid4
 
+from agent.planning.schema_safety import (
+    MAX_SCHEMA_DEPTH,
+    PlanningSchemaError,
+    validate_planning_schema_shape,
+    validate_schema_depth,
+)
 from agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
@@ -20,6 +26,9 @@ from agent.tools.contracts import (
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
+if TYPE_CHECKING:
+    from agent.planning.presentation import PlanningPresentationSnapshot
+
 
 class PlanningContextError(ValueError):
     """Raised when a descriptor or authority snapshot is structurally incoherent."""
@@ -33,13 +42,28 @@ class PlanningTool:
     required_capabilities: frozenset[str] = field(default_factory=frozenset)
     origin_kind: ToolOriginKind = ToolOriginKind.BUILTIN
     extension_id: str | None = None
+    category: str = "EXECUTE"
+    cost: int = 5
+    timeout_seconds: int | None = None
+    cacheable: bool = False
+    idempotent: bool = False
+    supports_cancellation: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
             raise PlanningContextError("PlanningTool requer nome")
         if not isinstance(self.description, str):
             raise PlanningContextError("PlanningTool requer descrição textual")
-        object.__setattr__(self, "input_schema", freeze_json_like(dict(self.input_schema)))
+        try:
+            validate_schema_depth(self.input_schema)
+            validate_planning_schema_shape(self.input_schema)
+        except PlanningSchemaError as exc:
+            raise PlanningContextError(str(exc)) from exc
+        try:
+            frozen_schema = freeze_json_like(dict(self.input_schema))
+        except RecursionError as exc:
+            raise PlanningContextError("schema de planning excede a profundidade maxima") from exc
+        object.__setattr__(self, "input_schema", frozen_schema)
         object.__setattr__(self, "required_capabilities", frozenset(self.required_capabilities))
         if not isinstance(self.origin_kind, ToolOriginKind):
             object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
@@ -59,6 +83,47 @@ class PlanningTool:
         return object.__getattribute__(self, name)
 
 
+def validate_planning_tool_arguments(descriptor: Any, args: Mapping[str, Any]) -> None:
+    """Validate JSON arguments against canonical planning metadata.
+
+    This is deliberately a pure planning check; it does not invoke a gateway,
+    request approval, emit events, or touch an adapter.
+    """
+
+    schema = getattr(descriptor, "input_schema", None)
+    if schema is None:
+        schema = getattr(descriptor, "schema", None)
+    if schema is None:
+        return
+    try:
+        validate_planning_schema_shape(schema)
+    except PlanningSchemaError:
+        raise
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be a JSON object")
+    properties = schema.get("properties") or {}
+    required = schema.get("required") or []
+    required_values = required if isinstance(required, list) else [required]
+    for key in required_values:
+        if key not in args:
+            raise ValueError(f"missing required argument: {key}")
+    for key, value in args.items():
+        prop_schema = properties.get(key)
+        if not isinstance(prop_schema, Mapping):
+            continue
+        expected_type = prop_schema.get("type")
+        valid_types = {
+            "string": isinstance(value, str),
+            "integer": isinstance(value, int) and not isinstance(value, bool),
+            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+            "boolean": isinstance(value, bool),
+            "object": isinstance(value, dict),
+            "array": isinstance(value, list),
+        }
+        if expected_type in valid_types and not valid_types[expected_type]:
+            raise ValueError(f"argument '{key}' must be a {expected_type}")
+
+
 @dataclass(frozen=True, slots=True)
 class PlanningContextSnapshot:
     snapshot_id: str = field(default_factory=lambda: str(uuid4()))
@@ -66,6 +131,8 @@ class PlanningContextSnapshot:
     authority_identity: str = ""
     tools: tuple[PlanningTool, ...] = ()
     eligible_names: frozenset[str] = field(default_factory=frozenset)
+    runtime_identity: RuntimeSnapshotIdentity | None = None
+    allowed_capabilities: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.snapshot_id, str) or not self.snapshot_id.strip():
@@ -74,6 +141,12 @@ class PlanningContextSnapshot:
             raise ValueError("registry_identity inválida")
         if not isinstance(self.authority_identity, str) or not self.authority_identity.strip():
             raise ValueError("authority_identity inválida")
+        if not isinstance(self.runtime_identity, RuntimeSnapshotIdentity):
+            raise PlanningContextError("planning snapshot requer runtime identity")
+        if self.runtime_identity.snapshot_id != self.registry_identity:
+            raise PlanningContextError("runtime identity diverge da identidade do registry")
+        if self.allowed_capabilities is not None:
+            object.__setattr__(self, "allowed_capabilities", frozenset(self.allowed_capabilities))
         tools = tuple(sorted(self.tools, key=lambda item: item.name))
         names = frozenset(self.eligible_names)
         if len({tool.name for tool in tools}) != len(tools):
@@ -82,6 +155,34 @@ class PlanningContextSnapshot:
             raise ValueError("eligible_names deve corresponder exatamente às tools")
         object.__setattr__(self, "tools", tools)
         object.__setattr__(self, "eligible_names", names)
+
+    def present(
+        self,
+        planner_kind: str,
+        visible_names: Iterable[str] | None = None,
+    ) -> "PlanningPresentationSnapshot":
+        """Create a deterministic planner view without accessing runtime objects."""
+
+        from agent.planning.presentation import PlanningPresentationSnapshot
+
+        names = self.eligible_names if visible_names is None else frozenset(visible_names)
+        if not names.issubset(self.eligible_names):
+            raise PlanningContextError("visibilidade de planning excede as tools elegíveis")
+        tools = tuple(tool for tool in self.tools if tool.name in names)
+        return PlanningPresentationSnapshot(
+            planning_context_id=self.snapshot_id,
+            planner_kind=planner_kind,
+            tools=tools,
+            presented_names=frozenset(tool.name for tool in tools),
+            runtime_identity=self.runtime_identity,
+        )
+
+    @property
+    def workspace_id(self) -> str:
+        identity = self.runtime_identity
+        if identity is None:
+            raise PlanningContextError("planning snapshot sem runtime identity")
+        return cast(str, identity.workspace_id)
 
 
 def build_planning_context(
@@ -103,11 +204,18 @@ def build_planning_context(
         if planning_tool is not None
     ]
     projected.sort(key=lambda item: item.name)
+    context_capabilities = (
+        effective.allowed_capabilities
+        if effective is not None
+        else (frozenset(persona_restrictions) if persona_restrictions is not None else None)
+    )
     return PlanningContextSnapshot(
         registry_identity=registry_identity.snapshot_id,
         authority_identity=application_authority.snapshot_id,
         tools=tuple(projected),
         eligible_names=frozenset(tool.name for tool in projected),
+        runtime_identity=registry_identity,
+        allowed_capabilities=context_capabilities,
     )
 
 
@@ -119,6 +227,12 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         required_capabilities=frozenset(descriptor.capabilities),
         origin_kind=descriptor.origin_kind,
         extension_id=descriptor.extension_id,
+        category=descriptor.category,
+        cost=descriptor.cost,
+        timeout_seconds=descriptor.timeout_seconds,
+        cacheable=descriptor.cacheable,
+        idempotent=descriptor.idempotent,
+        supports_cancellation=descriptor.supports_cancellation,
     )
 
 
@@ -177,7 +291,9 @@ def _eligible_extension(
 
 __all__ = [
     "PlanningContextError",
+    "MAX_SCHEMA_DEPTH",
     "PlanningContextSnapshot",
     "PlanningTool",
     "build_planning_context",
+    "validate_planning_tool_arguments",
 ]

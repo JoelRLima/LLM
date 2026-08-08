@@ -150,6 +150,7 @@ class AgentApplication:
                 verbose=False,
                 workspace_root=workspace_context.root,
                 workspace_paths=workspace_paths,
+                application_authority=extension_bootstrap.authority,
             )
             tool_invocation_gateway = ToolInvocationGateway(
                 tool_registry,
