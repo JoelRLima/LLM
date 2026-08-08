@@ -65,6 +65,12 @@ prompt injection foram especificados no ADR 0012. A implementacao local dos
 Gates 2.6b e 2.6c permanece pendente de auditoria; os Gates 2.6 e 2.7 ainda
 nao estao concluidos.
 
+## Integração posterior do Gate 2.7b
+
+O ADR 0013 atualiza a integração operacional do gateway, authority, approval e
+lifecycle. As afirmações históricas desta decisão sobre a ausência de integração
+permanecem válidas apenas para o baseline anterior ao Gate 2.7b.
+
 ## Fora deste ADR
 
 Status dos subgates: Gate 2.6a e Gate 2.7a foram concluídos, validados e

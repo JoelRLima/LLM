@@ -112,6 +112,7 @@ class TaskAuthoritySnapshot:
     allowed_capabilities: frozenset[str] = field(default_factory=frozenset)
     policy_source: str | None = None
     snapshot_id: str = field(default_factory=lambda: str(uuid4()))
+    runtime_identity: RuntimeSnapshotIdentity | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_capabilities", _capabilities(self.allowed_capabilities))
@@ -119,6 +120,12 @@ class TaskAuthoritySnapshot:
             raise ValueError("snapshot_id deve ser uma string não vazia")
         if self.policy_source is not None and not isinstance(self.policy_source, str):
             raise TypeError("policy_source inválido")
+
+
+        if self.runtime_identity is not None and not isinstance(
+            self.runtime_identity, RuntimeSnapshotIdentity
+        ):
+            raise TypeError("runtime_identity invÃ¡lida")
 
 
 @dataclass(frozen=True, slots=True)

@@ -195,8 +195,13 @@ class ToolInvocationRequest:
     tool_name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
     timeout_seconds: Optional[int] = None
+    task_id: Optional[str] = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
+        if self.invocation_id is not None and type(self.invocation_id) is not str:
+            raise TypeError("invocation_id deve usar str exata")
+        if self.tool_name is not None and type(self.tool_name) is not str:
+            raise TypeError("tool_name deve usar str exata")
         if not isinstance(self.invocation_id, str) or not self.invocation_id.strip():
             raise ValueError("invocation_id deve ser uma string não vazia")
         if not isinstance(self.tool_name, str) or not self.tool_name.strip():
@@ -208,12 +213,15 @@ class ToolInvocationRequest:
             type(self.timeout_seconds) is not int or self.timeout_seconds <= 0
         ):
             raise ValueError("timeout_seconds deve ser um inteiro positivo")
+        if self.task_id is not None and (
+            not isinstance(self.task_id, str) or not self.task_id.strip()
+        ):
+            raise ValueError("task_id deve ser uma string nÃ£o vazia")
 
     def __getattribute__(self, name: str) -> Any:
         if name == "arguments":
             return thaw_json_like(object.__getattribute__(self, "arguments"))
         return object.__getattribute__(self, name)
-
 
 @dataclass(frozen=True)
 class AuthorizationContext:

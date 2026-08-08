@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable
 
 from agent.skills.catalog import BUILTIN_SKILL_SPECS
 from agent.skills.descriptor import SkillCapability, SkillDescriptor
+from agent.tools.contracts import ToolOriginKind
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,8 @@ def builtin_skills_for_persona(persona: str, registry: Any = None) -> list[str]:
     if registry is not None and hasattr(registry, "descriptors") and callable(registry.descriptors):
         results: list[str] = []
         for desc in registry.descriptors():
+            if getattr(desc, "origin_kind", ToolOriginKind.BUILTIN) is not ToolOriginKind.BUILTIN:
+                continue
             caps = {c.value if hasattr(c, "value") else str(c) for c in desc.capabilities}
             if caps.issubset(allowed_values):
                 results.append(desc.name)

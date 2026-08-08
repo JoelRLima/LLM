@@ -26,6 +26,9 @@ e para os padrões de código, o [guia de contribuição](../CONTRIBUTING.md).
 | [adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md](adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md) | Decisão sobre composição, paths, configuração, workspace, migração e ciclo de vida standalone |
 | [adr/0004-invocation-id-protocolo-stdio-1-0.md](adr/0004-invocation-id-protocolo-stdio-1-0.md) | `invocation_id` obrigatório no protocolo stdio 1.0, framing e respostas tardias |
 | [adr/0005-launcher-interno-contencao-stdio-windows.md](adr/0005-launcher-interno-contencao-stdio-windows.md) | launcher interno Windows-only, associação ao Job antes da extension e status privado |
+| [adr/0013-fronteira-canonica-authority-approval-invocacao.md](adr/0013-fronteira-canonica-authority-approval-invocacao.md) | fronteira canÃ´nica de authority, approval e lifecycle de invocation |
+| [gate-2.7b-authority-invocation.md](gate-2.7b-authority-invocation.md) | authority, approval e lifecycle de invocation |
+| [gate-2.7b-self-review.md](gate-2.7b-self-review.md) | implementacao, autoauditoria e evidencias do Gate 2.7b |
 | [agent/core.md](agent/core.md) | Arquivos de `agent/` |
 | [agent/llm.md](agent/llm.md) | Arquivos de `agent/llm` |
 | [agent/memory.md](agent/memory.md) | Arquivos de `agent/memory` |

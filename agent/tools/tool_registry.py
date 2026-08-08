@@ -96,6 +96,24 @@ class ToolRegistry:
                 ),
                 message=f"Ferramenta indisponível: {invocation.tool_name}",
             )
+        adapter, descriptor = self._descriptors_cache[invocation.tool_name]
+        if descriptor.origin_kind.value == "extension":
+            return ToolResult(
+                invocation_id=invocation.invocation_id,
+                status=ToolStatus.PERMISSION_DENIED,
+                error=ToolError(
+                    "AUTHORITY_REQUIRED",
+                    "Extensions sÃ³ podem ser executadas pela fronteira canÃ´nica de invocaÃ§Ã£o.",
+                ),
+                message="ExecuÃ§Ã£o de extension fora do gateway canÃ´nico.",
+            )
+        return adapter.invoke(invocation)
+
+    def _invoke_from_gateway(self, invocation: ToolInvocation) -> ToolResult:
+        """Invoke after the gateway has completed the canonical checks."""
+
+        if invocation.tool_name not in self._descriptors_cache:
+            return self.invoke(invocation)
         adapter, _ = self._descriptors_cache[invocation.tool_name]
         return adapter.invoke(invocation)
 

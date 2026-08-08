@@ -7,18 +7,28 @@ from typing import Any, Callable, Dict, Optional
 
 from agent.approval import ApprovalDecision, ApprovalPort, ApprovalRequest, RequireExplicitApproval
 from agent.runtime.logging import logger
+from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     AuthorizationContext,
-    ToolError,
+    ToolDescriptor,
     ToolInvocation,
+    ToolInvocationRequest,
     ToolResult,
     ToolStatus,
+)
+from agent.tools.invocation_support import (
+    check_authority,
+    denial,
+    prepare_request,
+    validate_arguments,
+    validate_binding,
+    validate_result,
 )
 from agent.tools.tool_registry import ToolRegistry
 
 
 class ToolInvocationGateway:
-    """Controls authorization, schema validation, timeout and telemetry for tool execution."""
+    """Canonical boundary for request, authority, approval and adapter calls."""
 
     def __init__(
         self,
@@ -27,16 +37,20 @@ class ToolInvocationGateway:
         event_emitter: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         state_recorder: Optional[Callable[[str, Dict[str, Any], ToolResult], None]] = None,
         approval_port: ApprovalPort | None = None,
+        application_authority: ApplicationAuthoritySnapshot | None = None,
+        task_authority: TaskAuthoritySnapshot | None = None,
     ) -> None:
         self.registry = registry
         self.event_emitter = event_emitter
         self.state_recorder = state_recorder
         self.approval_port = approval_port or RequireExplicitApproval()
+        self.application_authority = application_authority
+        self.task_authority = task_authority
 
     def run(
         self,
-        tool_name: str,
-        args: Dict[str, Any],
+        tool_name: str | ToolInvocationRequest,
+        args: Dict[str, Any] | None = None,
         *,
         active_skills: Optional[list[str]] = None,
         allowed_capabilities: Optional[frozenset[str]] = None,
@@ -45,224 +59,151 @@ class ToolInvocationGateway:
         task_id: Optional[str] = None,
         authorization_context: AuthorizationContext | None = None,
     ) -> ToolResult:
-        invocation = ToolInvocation(tool_name=tool_name, args=args, task_id=task_id)
-
-        # 1. Verification of tool existence in registry
-        try:
-            descriptor = self.registry.descriptor(tool_name)
-        except KeyError:
-            result = ToolResult(
-                invocation_id=invocation.invocation_id,
-                status=ToolStatus.UNAVAILABLE,
-                error=ToolError("TOOL_NOT_FOUND", f"Ferramenta '{tool_name}' não registrada."),
-                message=f"Tool '{tool_name}' não foi encontrada no ToolRegistry.",
-            )
-            self._record(tool_name, args, result, record_result)
-            return result
-
-        # 2. Authorization check (active skills filter)
-        if active_skills is not None and tool_name not in active_skills:
-            allowed = ", ".join(sorted(active_skills)) if active_skills else "nenhuma"
-            result = ToolResult(
-                invocation_id=invocation.invocation_id,
-                status=ToolStatus.PERMISSION_DENIED,
-                error=ToolError(
-                    "PERMISSION_DENIED",
-                    f"Tool '{tool_name}' não está permitida para esta persona. Permitidas: {allowed}",
-                ),
-                message=f"Invocação de '{tool_name}' bloqueada por política de autorização.",
-            )
-            self._record(tool_name, args, result, record_result)
-            return result
-
-        if authorization_context is not None:
-            granted = authorization_context.effective_capabilities()
-            missing = descriptor.capabilities - granted
-            if missing:
-                result = ToolResult(
-                    invocation_id=invocation.invocation_id,
-                    status=ToolStatus.PERMISSION_DENIED,
-                    error=ToolError(
-                        "PERMISSION_DENIED",
-                        f"Tool '{tool_name}' requer capacidades não concedidas: {', '.join(sorted(missing))}",
-                    ),
-                    message="Invocação bloqueada pela interseção de grants.",
+        """Validate and execute one request; historical calls remain wrappers."""
+        request, request_error = prepare_request(tool_name, args, timeout_seconds, task_id)
+        if request_error is not None:
+            self._emit_denial(request_error, record_result, tool_name if isinstance(tool_name, str) else "unknown", args or {})
+            return request_error
+        assert request is not None
+        invocation = ToolInvocation(
+            tool_name=request.tool_name,
+            args=dict(request.arguments),
+            invocation_id=request.invocation_id,
+            task_id=request.task_id,
+            workspace=(
+                self.application_authority.workspace_id
+                if self.application_authority is not None
+                else (
+                    self.registry.runtime_identity.workspace_id
+                    if self.registry.runtime_identity is not None
+                    else None
                 )
-                self._record(tool_name, args, result, record_result)
-                return result
-
-        # 2b. Authorization check by capabilities
-        if allowed_capabilities is not None:
-            descriptor_capabilities: frozenset[str] = getattr(
-                descriptor, "capabilities", frozenset()
-            )
-            if not descriptor_capabilities.issubset(allowed_capabilities):
-                result = ToolResult(
-                    invocation_id=invocation.invocation_id,
-                    status=ToolStatus.PERMISSION_DENIED,
-                    error=ToolError(
-                        "PERMISSION_DENIED",
-                        f"Tool '{tool_name}' requer capacidades não autorizadas: {', '.join(sorted(descriptor_capabilities - allowed_capabilities))}",
-                    ),
-                    message=f"Invocação de '{tool_name}' bloqueada por capacidades insuficientes.",
-                )
-                self._record(tool_name, args, result, record_result)
-                return result
-
-        approval_result = self._check_effect_approval(invocation, descriptor)
-        if approval_result is not None:
-            self._record(tool_name, args, approval_result, record_result)
-            return approval_result
-
-        # 3. Schema validation before invocation
-        try:
-            self._validate_arguments(descriptor, args)
-        except ValueError as exc:
-            result = ToolResult(
-                invocation_id=invocation.invocation_id,
-                status=ToolStatus.PROTOCOL_ERROR,
-                error=ToolError("INVALID_ARGUMENTS", str(exc)),
-                message=f"Argumentos inválidos para '{tool_name}': {exc}",
-            )
-            self._record(tool_name, args, result, record_result)
-            return result
-
-        # 4. Timeout selection (parameter override > descriptor default)
-        effective_timeout = timeout_seconds if timeout_seconds is not None else descriptor.timeout_seconds
-
-        # 5. Telemetry start event
-        self._emit("tool_start", {"tool": tool_name, "args": args, "invocation_id": invocation.invocation_id})
-        logger.info(f"[GATEWAY] Invocando tool '{tool_name}' (id: {invocation.invocation_id})")
-
-        # 6. Invocation with optional timeout
-        if effective_timeout and effective_timeout > 0:
-            result = self._invoke_with_timeout(invocation, effective_timeout)
-        else:
-            result = self.registry.invoke(invocation)
-
-        # 7. Telemetry end event
-        self._emit(
-            "tool_end",
-            {
-                "tool": tool_name,
-                "invocation_id": invocation.invocation_id,
-                "status": result.status.value,
-                "ok": result.ok,
-            },
+            ),
         )
-
-        # 8. Record result in state
-        self._record(tool_name, args, result, record_result)
+        descriptor, authorization_error = self._authorize(
+            invocation,
+            active_skills,
+            allowed_capabilities,
+            authorization_context,
+        )
+        if authorization_error is not None:
+            self._emit_denial(authorization_error, record_result, invocation.tool_name, invocation.args)
+            return authorization_error
+        assert descriptor is not None
+        self._emit("tool_start", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
+        logger.info("[GATEWAY] Invocando tool '%s' (id: %s)", invocation.tool_name, invocation.invocation_id)
+        timeout = request.timeout_seconds if request.timeout_seconds is not None else descriptor.timeout_seconds
+        result = self._execute(invocation, timeout)
+        result = validate_result(invocation, result)
+        self._emit("tool_end", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id, "status": result.status.value, "ok": result.ok})
+        self._record(invocation.tool_name, invocation.args, result, record_result)
         return result
 
-    @staticmethod
-    def _validate_arguments(descriptor: Any, args: Dict[str, Any]) -> None:
-        schema = getattr(descriptor, "schema", None)
-        if not schema:
-            return
-        if not isinstance(args, dict):
-            raise ValueError("arguments must be a JSON object")
+    def invoke(self, request: ToolInvocationRequest, **kwargs: Any) -> ToolResult:
+        """Explicit name for callers that already own a canonical request."""
+        return self.run(request, **kwargs)
 
-        properties = schema.get("properties") or {}
-        required = schema.get("required") or []
-        if not isinstance(required, list):
-            required = [required]
+    def _authorize(
+        self,
+        invocation: ToolInvocation,
+        active_skills: list[str] | None,
+        allowed_capabilities: frozenset[str] | None,
+        authorization_context: AuthorizationContext | None,
+    ) -> tuple[ToolDescriptor | None, ToolResult | None]:
+        try:
+            descriptor = self.registry.descriptor(invocation.tool_name)
+        except KeyError:
+            return None, denial(invocation, ToolStatus.UNAVAILABLE, "TOOL_NOT_FOUND", "Ferramenta nao registrada.")
+        binding_error = validate_binding(self.registry, self.application_authority, descriptor, invocation)
+        if binding_error is not None:
+            return None, binding_error
+        if active_skills is not None and invocation.tool_name not in active_skills:
+            return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Tool bloqueada pela visibilidade de planning.")
+        authority_error = check_authority(descriptor, self.application_authority, self.task_authority, invocation)
+        if authority_error is not None:
+            return None, authority_error
+        if authorization_context is not None and descriptor.capabilities - authorization_context.effective_capabilities():
+            return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Capabilities nao concedidas.")
+        if allowed_capabilities is not None and descriptor.capabilities - frozenset(allowed_capabilities):
+            return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Capabilities nao autorizadas.")
+        try:
+            validate_arguments(descriptor, invocation.args)
+        except (TypeError, ValueError, AttributeError) as exc:
+            return None, denial(invocation, ToolStatus.PROTOCOL_ERROR, "INVALID_ARGUMENTS", str(exc))
+        approval_result = self._check_effect_approval(invocation, descriptor)
+        if approval_result is not None:
+            return None, approval_result
+        return descriptor, None
 
-        for key in required:
-            if key not in args:
-                raise ValueError(f"missing required argument: {key}")
-
-        for key, value in args.items():
-            prop_schema = properties.get(key)
-            if not prop_schema:
-                continue
-            ToolInvocationGateway._validate_property(key, value, prop_schema)
-
-    @staticmethod
-    def _validate_property(key: str, value: Any, schema: Any) -> None:
-        expected_type = schema.get("type")
-        valid_types = {
-            "string": isinstance(value, str),
-            "integer": isinstance(value, int) and not isinstance(value, bool),
-            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-            "boolean": isinstance(value, bool),
-            "object": isinstance(value, dict),
-            "array": isinstance(value, list),
-        }
-        if expected_type in valid_types and not valid_types[expected_type]:
-            raise ValueError(f"argument '{key}' must be a {expected_type}")
-
-    def _check_effect_approval(self, invocation: ToolInvocation, descriptor: Any) -> ToolResult | None:
-        effects = frozenset({"write", "process", "network", "package_install"})
-        requested = effects & getattr(descriptor, "capabilities", frozenset())
+    def _check_effect_approval(self, invocation: ToolInvocation, descriptor: ToolDescriptor) -> ToolResult | None:
+        effects = frozenset({"write", "vcs_write", "process", "network", "package_install"})
+        requested = effects & descriptor.capabilities
         if not requested:
             return None
-        decision = self.approval_port.request(
-            ApprovalRequest(
-                action=invocation.tool_name,
-                resource=str(invocation.args.get("file_path") or invocation.args.get("target") or "workspace"),
-                prompt=f"Autorizar efeitos {', '.join(sorted(requested))} para {invocation.tool_name}?",
-                metadata={"task_id": invocation.task_id, "capabilities": sorted(requested)},
+        self._emit("approval_requested", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
+        try:
+            decision = self.approval_port.request(
+                ApprovalRequest(
+                    action=invocation.tool_name,
+                    resource=str(invocation.args.get("file_path") or invocation.args.get("target") or "workspace"),
+                    prompt=f"Autorizar efeitos {', '.join(sorted(requested))} para {invocation.tool_name}?",
+                    metadata={"task_id": invocation.task_id, "invocation_id": invocation.invocation_id, "capabilities": sorted(requested)},
+                )
             )
-        )
+        except Exception as exc:
+            logger.warning("[GATEWAY] Approval provider failed: %s", type(exc).__name__)
+            return denial(invocation, ToolStatus.FAILED, "APPROVAL_FAILED", "Approval provider failed.")
         if decision is ApprovalDecision.APPROVED:
+            self._emit("approval_approved", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
             return None
         status = ToolStatus.BLOCKED if decision is ApprovalDecision.REQUIRED else ToolStatus.PERMISSION_DENIED
-        code = "APPROVAL_REQUIRED" if status is ToolStatus.BLOCKED else "PERMISSION_DENIED"
-        return ToolResult(
-            invocation_id=invocation.invocation_id,
-            status=status,
-            error=ToolError(code, "A aprovação necessária não foi concedida."),
-            message="A execução aguarda aprovação." if status is ToolStatus.BLOCKED else "Efeito negado pela política.",
-        )
+        code = "APPROVAL_REQUIRED" if status is ToolStatus.BLOCKED else "APPROVAL_DENIED"
+        return denial(invocation, status, code, "A aprovacao necessaria nao foi concedida.")
+
+    def _execute(self, invocation: ToolInvocation, timeout_seconds: int | None) -> ToolResult:
+        if timeout_seconds and timeout_seconds > 0:
+            return self._invoke_with_timeout(invocation, timeout_seconds)
+        try:
+            return self.registry._invoke_from_gateway(invocation)
+        except Exception as exc:
+            logger.warning("[GATEWAY] Adapter failed: %s", type(exc).__name__)
+            return denial(invocation, ToolStatus.FAILED, "ADAPTER_FAILED", "Adapter invocation failed.")
 
     def _invoke_with_timeout(self, invocation: ToolInvocation, timeout_seconds: int) -> ToolResult:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(self.registry.invoke, invocation)
+        future = executor.submit(self.registry._invoke_from_gateway, invocation)
         try:
-            return future.result(timeout=float(timeout_seconds))
+            result = future.result(timeout=float(timeout_seconds))
+            return validate_result(invocation, result)
         except concurrent.futures.TimeoutError:
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
-            logger.warning(
-                f"[GATEWAY] Tool '{invocation.tool_name}' excedeu o timeout de {timeout_seconds}s"
-            )
-            return ToolResult(
-                invocation_id=invocation.invocation_id,
-                status=ToolStatus.TIMED_OUT,
-                error=ToolError(
-                    "TIMEOUT",
-                    f"Execução da ferramenta '{invocation.tool_name}' excedeu o limite de {timeout_seconds}s.",
-                ),
-                message=f"Timeout na execução de {invocation.tool_name}.",
-            )
+            logger.warning("[GATEWAY] Tool '%s' excedeu o timeout de %ss", invocation.tool_name, timeout_seconds)
+            return denial(invocation, ToolStatus.TIMED_OUT, "TIMEOUT", "Execucao excedeu o limite.")
         except Exception as exc:
             executor.shutdown(wait=True, cancel_futures=True)
-            return ToolResult(
-                invocation_id=invocation.invocation_id,
-                status=ToolStatus.FAILED,
-                error=ToolError("EXECUTION_ERROR", str(exc)),
-                message=f"Exceção durante a execução de {invocation.tool_name}: {exc}",
-            )
+            logger.warning("[GATEWAY] Adapter failed: %s", type(exc).__name__)
+            return denial(invocation, ToolStatus.FAILED, "ADAPTER_FAILED", "Adapter invocation failed.")
         else:
             executor.shutdown(wait=True, cancel_futures=True)
+
+    def _emit_denial(self, result: ToolResult, record_result: bool, tool_name: str, args: Dict[str, Any]) -> None:
+        self._emit("tool_denied", {"invocation_id": result.invocation_id, "status": result.status.value, "reason": result.error.code if result.error else "DENIED"})
+        self._record(tool_name, args, result, record_result)
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         if self.event_emitter is not None:
             try:
                 self.event_emitter(event_type, data)
             except Exception as exc:
-                logger.warning(f"[GATEWAY] Erro ao emitir evento '{event_type}': {exc}")
+                logger.warning("[GATEWAY] Erro ao emitir evento '%s': %s", event_type, type(exc).__name__)
 
-    def _record(
-        self,
-        tool_name: str,
-        args: Dict[str, Any],
-        result: ToolResult,
-        record_result: bool,
-    ) -> None:
+    def _record(self, tool_name: str, args: Dict[str, Any], result: ToolResult, record_result: bool) -> None:
         if record_result and self.state_recorder is not None:
             try:
                 self.state_recorder(tool_name, args, result)
             except Exception as exc:
-                logger.warning(f"[GATEWAY] Erro ao registrar resultado no estado: {exc}")
+                logger.warning("[GATEWAY] Erro ao registrar resultado no estado: %s", type(exc).__name__)
+
+
+__all__ = ["ToolInvocationGateway"]

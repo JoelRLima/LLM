@@ -19,7 +19,7 @@ from agent.runtime.logging import setup_logger, teardown_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
-from agent.tools.authority import ApplicationAuthoritySnapshot
+from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.invocation_gateway import ToolInvocationGateway
@@ -74,6 +74,7 @@ class AgentApplication:
         tool_invocation_gateway: ToolInvocationGateway,
         bootstrap_diagnostics: tuple[object, ...] = (),
         application_authority: ApplicationAuthoritySnapshot | None = None,
+        task_authority: TaskAuthoritySnapshot | None = None,
     ) -> None:
         self.paths = paths
         self.workspace = workspace
@@ -87,6 +88,7 @@ class AgentApplication:
         self.tool_invocation_gateway = tool_invocation_gateway
         self.bootstrap_diagnostics = tuple(bootstrap_diagnostics)
         self.application_authority = application_authority
+        self.task_authority = task_authority
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
@@ -102,6 +104,7 @@ class AgentApplication:
         overrides: Mapping[str, Any] | None = None,
         gateway: LegacyPayloadGateway | None = None,
         approval_policy: ApprovalPort | None = None,
+        task_authority: TaskAuthoritySnapshot | None = None,
         configure_logging: bool = True,
         debug_mode: int = 0,
     ) -> "AgentApplication":
@@ -151,9 +154,12 @@ class AgentApplication:
                 workspace_root=workspace_context.root,
                 workspace_paths=workspace_paths,
                 application_authority=extension_bootstrap.authority,
+                task_authority=task_authority,
             )
             tool_invocation_gateway = ToolInvocationGateway(
                 tool_registry,
+                application_authority=extension_bootstrap.authority,
+                task_authority=task_authority,
                 approval_port=selected_approval,
                 event_emitter=orchestrator._emit,
                 state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
@@ -180,6 +186,7 @@ class AgentApplication:
                 tool_invocation_gateway=tool_invocation_gateway,
                 bootstrap_diagnostics=extension_bootstrap.diagnostics,
                 application_authority=extension_bootstrap.authority,
+                task_authority=task_authority,
             )
             return app
 

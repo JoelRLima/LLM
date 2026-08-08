@@ -30,7 +30,7 @@ from agent.skills.policy import builtin_skills_for_persona, persona_allowed_capa
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
-from agent.tools.authority import ApplicationAuthoritySnapshot
+from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.legacy_invoker import LegacyToolInvoker
 from agent.tools.tool_registry import ToolRegistry
@@ -55,6 +55,7 @@ class Orchestrator(OrchestratorOperations):
         tool_registry: ToolRegistry | None = None,
         tool_invocation_gateway: ToolInvocationGateway | None = None,
         application_authority: ApplicationAuthoritySnapshot | None = None,
+        task_authority: TaskAuthoritySnapshot | None = None,
     ) -> None:
         self.session = session
         self.workspace_root = Path(workspace_root).expanduser().resolve()
@@ -68,6 +69,7 @@ class Orchestrator(OrchestratorOperations):
         self.tool_registry = tool_registry
         self.tool_invocation_gateway = tool_invocation_gateway
         self.application_authority = application_authority
+        self.task_authority = task_authority
         self._planning_context: PlanningContextSnapshot | None = None
         self.legacy_tool_invoker = LegacyToolInvoker(self) if tool_registry is None else None
         self.max_steps = 15
@@ -251,7 +253,7 @@ class Orchestrator(OrchestratorOperations):
         self._planning_context = build_planning_context(
             self.tool_registry,
             self.application_authority,
-            None,
+            self.task_authority,
             self.allowed_capabilities,
         )
 
