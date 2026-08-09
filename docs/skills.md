@@ -155,16 +155,18 @@ autoridade relevante.
 ### Closure do Marco 1: ShellSkill reduzida
 
 Na closure atual, `shell` e um **restricted validation/read-only command
-runner**. A superficie model-actionable exata e `ruff check`, metadados de
-historico local via `git log` e `tree` quando o executavel existe. Para `git log`,
-os unicos argumentos aceitos sao nenhum, `-N`, `-n N` ou `--max-count[=]N` ate
-o limite operacional. `git status` e `git diff` foram reduzidos
+runner**. A superficie model-actionable exata e `ruff check` com caminhos do
+workspace, metadados de historico local via `git log` e `tree` quando o executavel
+existe. Para `git log`, os unicos argumentos aceitos sao nenhum, `-N`, `-n N` ou
+`--max-count[=]N`, com digitos ASCII e `1 <= N <= 1000`; `-nN` anexado nao faz
+parte da superficie. `git status` e `git diff` foram reduzidos
 da superficie model-actionable para nao expor filtros de conteudo configurados
 no workspace. `pytest`, `mypy` e
 os aliases `echo`, `type`, `dir` e `ls` nao fazem parte da allowlist.
 
-Ruff e executado com `--isolated --no-cache --no-fix`; configuracao explicita,
-mutacao e `tree -o` sao rejeitados. O `git log` usa formato fixo e sem patch,
+Ruff e executado com `--isolated --no-cache --no-fix` e uma allowlist positiva de
+opcoes; configuracao explicita, mutacao (inclusive `--add-noqa`, `--add-ignore`,
+`--fix`, `-o` e `-w`) e `tree -o` sao rejeitados. O `git log` usa formato fixo e sem patch,
 desabilita pager, fsmonitor, untracked cache, merge remerging, lazy fetch e
 verificacao de assinaturas; flags de diff, remerge, assinatura, formato,
 pathspec e helpers sao rejeitadas antes do processo. O nome allowlisted e resolvido
@@ -192,3 +194,19 @@ validacao de path nao limita efeitos transitivos de um programa.
 Testes principais: `tests/unit/skills/test_skill_registry.py`, `tests/unit/llm/test_router.py`,
 `tests/unit/skills/test_shell.py`, `tests/unit/skills/test_python_executor.py` e
 `tests/unit/code/test_coding_workflows.py`.
+
+#### Superfície efetiva pós-auditoria
+
+`ruff check` aceita apenas caminhos do workspace e as opções estruturais
+`--isolated`, `--no-cache` e `--no-fix`; modos de escrita como `--fix`,
+`--add-noqa`, `--add-ignore`, `-o` e `-w` são rejeitados antes do processo.
+`git log` aceita somente nenhum contador, `-N`, `-n N` ou `--max-count N`/
+`--max-count=N`, com dígitos ASCII e `1..1000`; `-nN` anexado e pathspecs não
+fazem parte do contrato.
+
+No caminho paralelo legado, o finalizador do `PlanExecutor` é o único owner de
+records da batch, incluindo cache e exceções. Cada slot recebe `step_id`,
+`invocation_id` e posição lógica antes do dispatch; siblings são finalizados
+antes de REPLAN, summarização ocorre depois do record e o primeiro terminal por
+ordem lógica projeta o estado externo. O budget é pré-verificado e o watchdog
+ignora IDs efêmeros.

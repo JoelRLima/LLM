@@ -184,3 +184,13 @@ filhos isolados e usa o scheduler concorrente.
 - `tests/unit/runtime/test_runtime_context.py`;
 - `tests/unit/code/test_coding_workflows.py`.
 - `tests/unit/code/test_code_assistance.py`.
+
+### Nota sobre o executor paralelo legado
+
+No `PlanExecutor` paralelo legado, a ordenacao logica da batch e preservada
+independentemente da ordem de completion. Cache e execucao viva compartilham o
+mesmo finalizer e cada registro inclui `step_id`, `invocation_id` e slot logico;
+summarizacao e posterior ao registro. Um terminal (blocked, cancelled ou
+unverified) projeta o estado externo pela ordem do plano, siblings sao assentados
+antes de REPLAN e o limite de chamadas e aplicado antes do dispatch. O watchdog
+nao trata IDs efemeros como progresso.

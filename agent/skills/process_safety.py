@@ -58,7 +58,7 @@ def _command_name(tokens: Sequence[str]) -> str:
     return Path(tokens[0]).name.casefold() if tokens else ""
 
 
-_MAX_COUNT_RE = re.compile(r"^\d+$")
+_MAX_COUNT_RE = re.compile(r"^[0-9]+$")
 MAX_LOCAL_HISTORY_COUNT = 1000
 
 
@@ -72,7 +72,7 @@ def local_history_arguments(tokens: Sequence[str]) -> tuple[str, ...] | None:
         return (
             bool(_MAX_COUNT_RE.fullmatch(value))
             and len(value) <= len(str(MAX_LOCAL_HISTORY_COUNT))
-            and int(value) <= MAX_LOCAL_HISTORY_COUNT
+            and 1 <= int(value) <= MAX_LOCAL_HISTORY_COUNT
         )
 
     extras = list(tokens[2:])
@@ -80,10 +80,8 @@ def local_history_arguments(tokens: Sequence[str]) -> tuple[str, ...] | None:
         return ()
     if len(extras) == 1:
         token = extras[0].casefold()
-        if token.startswith("-") and bounded(token[1:]):
+        if token.startswith("-") and not token.startswith("-n") and bounded(token[1:]):
             return ("--max-count", token[1:])
-        if token.startswith("-n") and bounded(token[2:]):
-            return ("--max-count", token[2:])
         if token.startswith("--max-count=") and bounded(token.split("=", 1)[1]):
             return ("--max-count", token.split("=", 1)[1])
         return None
@@ -179,16 +177,16 @@ def git_read_only_error(tokens: Sequence[str]) -> str | None:
 
 def unsafe_command_error(tokens: Sequence[str]) -> str | None:
     command = _command_name(tokens)
-    lowered = {token.casefold().split("=", 1)[0] for token in tokens[1:]}
     if command == "git":
         return git_read_only_error(tokens)
     if command == "ruff":
         if len(tokens) < 2 or tokens[1].casefold() != "check":
             return "Only 'ruff check' is available in read-only mode."
-        if lowered & {"--fix", "--fix-only", "--output-file", "--watch"}:
-            return "Ruff mutation/watch modes are not allowed by ShellSkill."
-        if "--config" in lowered:
+        if any(token.casefold() == "--config" for token in tokens[2:]):
             return "Explicit Ruff configuration is not allowed; validation is isolated."
+        allowed_options = {"--isolated", "--no-cache", "--no-fix"}
+        if any(token.casefold() not in allowed_options for token in tokens[2:] if token.startswith("-")):
+            return "Ruff mutation/watch modes are not allowed by ShellSkill."
     if command == "tree" and any(
         token.casefold() == "-o" or token.casefold().startswith("-o")
         for token in tokens[1:]

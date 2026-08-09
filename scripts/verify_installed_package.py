@@ -80,6 +80,9 @@ escape_attempts = {
     "git_diff": git_reader.execute({"command": "diff"}),
     "git_remerge": git_reader.execute({"command": "log", "args": "--remerge-diff -1"}),
     "shell_remerge": shell.execute({"command": "git log --remerge-diff -1"}),
+    "shell_ruff_add_noqa": shell.execute({"command": "ruff check --add-noqa sample.py"}),
+    "shell_ruff_add_ignore": shell.execute({"command": "ruff check --add-ignore sample.py"}),
+    "shell_ruff_fix": shell.execute({"command": "ruff check --fix sample.py"}),
 }
 secret = sentinel_before.decode("utf-8")
 
@@ -560,6 +563,9 @@ def _verify_installed_probe(
         "git_status",
         "shell_diff",
         "shell_remerge",
+        "shell_ruff_add_ignore",
+        "shell_ruff_add_noqa",
+        "shell_ruff_fix",
         "shell_status",
         "shell_write",
     ]:

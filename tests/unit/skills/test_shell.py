@@ -90,6 +90,11 @@ def test_shell_rejects_external_reads_without_exposing_sentinel(
         "tree -o outside.txt .",
         "ruff format .",
         "ruff check --fix .",
+        "ruff check --add-noqa .",
+        "ruff check --add-ignore .",
+        "ruff check -o out.txt .",
+        "ruff check -oout.txt .",
+        "ruff check -w .",
         "ruff check --output-file outside.txt .",
         "git diff --output outside.txt",
     ],
@@ -104,6 +109,21 @@ def test_shell_rejects_mutation_or_external_output(
         {"command": command}
     )
     assert result["ok"] is False
+
+
+@pytest.mark.parametrize("flag", ["--add-noqa", "--add-ignore", "--fix", "-o out.txt"])
+def test_ruff_mutation_attempt_keeps_workspace_unchanged(tmp_path: Path, flag: str) -> None:
+    sample = tmp_path / "sample.py"
+    sample.write_text("import os\n", encoding="utf-8")
+    before = sample.read_bytes()
+
+    result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
+        {"command": f"ruff check {flag} sample.py"}
+    )
+
+    assert result["ok"] is False
+    assert sample.read_bytes() == before
+    assert not (tmp_path / "out.txt").exists()
 
 
 def test_shell_rejects_symlink_that_resolves_outside_workspace(

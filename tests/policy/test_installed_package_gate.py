@@ -153,3 +153,6 @@ def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
     assert source.index("_prepare_local_history_workspace(") < source.index(
         "workspace_before = snapshot_tree(workspace)"
     )
+    assert '"shell_ruff_add_noqa"' in INSTALLED_PROBE_SOURCE
+    assert '"shell_ruff_add_ignore"' in INSTALLED_PROBE_SOURCE
+    assert '"shell_ruff_fix"' in INSTALLED_PROBE_SOURCE

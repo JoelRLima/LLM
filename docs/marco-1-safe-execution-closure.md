@@ -54,8 +54,8 @@ O nome factual da capability é **restricted validation/read-only command
 runner**. A allowlist model-actionable exata é:
 
 ```text
-ruff check [args...]
-git log | git log -N | git log -n N | git log --max-count[=]N
+ruff check [workspace paths]
+git log | git log -N | git log -n N | git log --max-count[=]N  # N=1..1000 ASCII
 tree [args...]            # somente quando o executável existir
 ```
 
@@ -117,6 +117,14 @@ G4 process-tree safety                 = corrigida e validada no Windows/POSIX
 G5 shell boundary                     = capability reduzida e factual
 G6 claims <= evidence                 = revisado
 ```
+
+O contrato efetivo de `ruff check` e somente validacao com caminhos do workspace
+e opcoes estruturais isoladas; flags de escrita, output, watch e configuracao
+explicita sao rejeitadas. Para `git log`, o contador usa digitos ASCII, `1..1000`,
+nas formas `-N`, `-n N`, `--max-count N` e `--max-count=N`; `-nN` anexado e
+rejeitado. A correlacao paralela inclui `step_id`, `invocation_id` e slot logico;
+o finalizer registra cache e execucoes exatamente uma vez antes de sumarizacao
+e assenta todos os siblings antes de REPLAN.
 
 Timeout/cancelamento POSIX, cleanup de descendentes após a saída do pai e
 ausência de efeito tardio são exercitados no gate focal Linux do CI Ubuntu.

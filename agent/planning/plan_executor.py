@@ -1,11 +1,19 @@
 import concurrent.futures
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import ToolArgs, ToolResult
-from agent.cost_guard import CostGuard
+from agent.cost_guard import DEFAULT_MAX_TASK_TOOL_CALLS, CostGuard
+from agent.planning.parallel_contracts import (
+    ParallelInvocation,
+    correlate_parallel_result,
+    future_parallel_result,
+)
+from agent.planning.parallel_finalizer import finalize_parallel_index
 from agent.planning.replan import ReplanContext, replan
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from agent.tools.contracts import ToolInvocationRequest
 from agent.watchdog import Watchdog
 
 
@@ -99,53 +107,70 @@ class PlanExecutor:
     def _execute_parallel_read_batch(
         self, batch_indices: List[int], objective: str, usage: Dict[str, int]
     ) -> StepLoopResult:
-        cached, results = self._run_parallel_tools(batch_indices)
-        return self._finalize_parallel(batch_indices, cached, results, objective, usage)
+        remaining = self._remaining_tool_call_budget()
+        if remaining <= 0:
+            answer = self._check_cost_limits(batch_indices[0] + 1)
+            return StepLoopResult(batch_indices[0], answer=answer, stop=True)
+        dispatch_indices = batch_indices[:remaining]
+        cached, results, correlations = self._run_parallel_tools(dispatch_indices)
+        return self._finalize_parallel(
+            dispatch_indices, cached, results, correlations, objective, usage
+        )
 
     def _run_parallel_tools(
         self, indices: List[int]
-    ) -> tuple[Dict[int, ToolResult], Dict[int, ToolResult]]:
+    ) -> tuple[Dict[int, ToolResult], Dict[int, ToolResult], Dict[int, ParallelInvocation]]:
         state = self.orchestrator.agent_state
         cached: Dict[int, ToolResult] = {}
         results: Dict[int, ToolResult] = {}
+        correlations: Dict[int, ParallelInvocation] = {}
         futures: Dict[concurrent.futures.Future[ToolResult], int] = {}
         workers = min(int(self.orchestrator.session.config.get("max_io_concurrency", 2)), len(indices))
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             for index in indices:
                 tool, args, file_path = self._step_data(index)
+                invocation_id = str(uuid.uuid4())
+                correlation = ParallelInvocation(
+                    index=index,
+                    step_id=state.get_step_id(index),
+                    invocation_id=invocation_id,
+                    request=ToolInvocationRequest(invocation_id, tool, args),
+                )
+                correlations[index] = correlation
                 state.mark_step_running(index)
-                cache_hit, cache_result = self.step_executor.try_cache(tool, args, file_path, state.get_step_id(index))
+                cache_hit, cache_result = self.step_executor.try_cache(
+                    tool, args, file_path, correlation.step_id, record_result=False
+                )
                 if cache_hit and cache_result is not None:
-                    cached[index] = cache_result
+                    cached[index] = correlate_parallel_result(cache_result, correlation)
                 else:
                     if not getattr(self.orchestrator, "tool_invocation_gateway", None):
                         self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
-                    futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, False)] = index
+                    runner = getattr(self.orchestrator.tool_executor, "run_tool_invocation", None)
+                    if callable(runner):
+                        future = executor.submit(runner, correlation.request, False)
+                    else:
+                        future = executor.submit(
+                            self.orchestrator.tool_executor.run_tool, tool, args, False
+                        )
+                    futures[future] = index
             for future in concurrent.futures.as_completed(futures):
-                results[futures[future]] = self._future_result(future)
-        return cached, results
-
-    @staticmethod
-    def _future_result(future: concurrent.futures.Future[ToolResult]) -> ToolResult:
-        try:
-            return future.result()
-        except Exception as exc:
-            return {
-                "ok": False,
-                "done": False,
-                "status": "failed",
-                "data": None,
-                "error": str(exc),
-            }
+                index = futures[future]
+                results[index] = future_parallel_result(future, correlations[index])
+        return cached, results, correlations
 
     def _finalize_parallel(
         self, indices: List[int], cached: Dict[int, ToolResult], results: Dict[int, ToolResult],
+        correlations: Dict[int, ParallelInvocation],
         objective: str, usage: Dict[str, int],
     ) -> StepLoopResult:
         last_result: Optional[ToolResult] = None
         terminal: tuple[int, StepLoopResult] | None = None
+        replan_request: tuple[int, Dict[str, Any], str, ToolArgs, ToolResult, str] | None = None
         for index in indices:
-            outcome, result = self._finalize_parallel_index(index, cached, results, objective, usage)
+            outcome, result = finalize_parallel_index(
+                self, index, cached, results, correlations, objective, usage
+            )
             last_result = result
             if outcome.kind in (
                 StepOutcomeKind.FINAL,
@@ -160,28 +185,27 @@ class PlanExecutor:
             if outcome.kind is StepOutcomeKind.REPLAN:
                 step = self.orchestrator.agent_state.plan[index]
                 tool, args, _ = self._step_data(index)
-                replacements = self._attempt_replan(step, tool, args, objective)
-                if replacements:
-                    self._replace_current_step(index, replacements)
-                    return StepLoopResult(index, result)
-                self.step_executor.finish_failed(index, outcome.error)
+                replan_request = (index, step, tool, args, result, outcome.error)
         if terminal is not None:
-            return terminal[1]
+            terminal_index, terminal_result = terminal
+            terminal_tool, terminal_args, _ = self._step_data(terminal_index)
+            self.orchestrator.agent_state.project_last_result(
+                terminal_tool, terminal_args, terminal_result.result or {}
+            )
+            return terminal_result
+        if replan_request is not None:
+            index, step, tool, args, result, error = replan_request
+            replacements = self._attempt_replan(
+                step, tool, args, objective, last_result=result, last_error=error
+            )
+            if replacements:
+                self._replace_current_step(index, replacements)
+                return StepLoopResult(index, result)
+            self.step_executor.finish_failed(index, error, result)
+            return StepLoopResult(
+                index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True
+            )
         return StepLoopResult(indices[-1] + 1, last_result)
-
-    def _finalize_parallel_index(
-        self, index: int, cached: Dict[int, ToolResult], results: Dict[int, ToolResult],
-        objective: str, usage: Dict[str, int],
-    ) -> tuple[Any, ToolResult]:
-        state = self.orchestrator.agent_state
-        tool, args, file_path = self._step_data(index)
-        result = cached.get(index) or results.get(index, {"ok": False, "done": False, "data": None, "error": "Falha desconhecida"})
-        if index not in cached:
-            if not getattr(self.orchestrator, "tool_invocation_gateway", None):
-                self.orchestrator._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
-            self.orchestrator._maybe_summarize_and_store(tool, args, result)
-            state.record_tool_result(tool, args, result, step_id=state.get_step_id(index))
-        return self.step_executor.finalize_result(index, tool, args, result, file_path, objective, usage), result
 
     def _step_data(self, index: int) -> tuple[str, ToolArgs, str]:
         step = self.orchestrator.agent_state.plan[index]
@@ -219,11 +243,21 @@ class PlanExecutor:
         matching = [item for item in self.orchestrator.agent_state.tool_history if item.get("tool") == "file_writer" and (item.get("args") or {}).get("file_path") == file_path]
         return bool(matching and matching[-1].get("result", {}).get("ok"))
 
-    def _attempt_replan(self, step: Dict[str, Any], tool: str, args: ToolArgs, objective: str) -> Optional[List[Dict[str, Any]]]:
+    def _attempt_replan(
+        self, step: Dict[str, Any], tool: str, args: ToolArgs, objective: str,
+        *, last_result: Optional[ToolResult] = None, last_error: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
         del tool, args
         state = self.orchestrator.agent_state
-        context = ReplanContext(task=objective, current_step=step, tool_history=state.tool_history, last_exception=state.last_result.get("error") if state.last_result else None, last_tool_result=state.last_result)
-        error = state.last_result.get("error", "") if state.last_result else ""
+        selected_result = last_result if last_result is not None else state.last_result
+        error = str(last_error if last_error is not None else (selected_result.get("error", "") if selected_result else ""))
+        context = ReplanContext(
+            task=objective,
+            current_step=step,
+            tool_history=state.tool_history,
+            last_exception=error,
+            last_tool_result=cast(Dict[str, Any], selected_result) if selected_result else None,
+        )
         action = replan(context, error, self.orchestrator)
         return action.steps if action else None
 
@@ -244,6 +278,12 @@ class PlanExecutor:
         state.add_conversation_turn(str(state.objective), answer)
         self.orchestrator.fail_task()
         return answer
+
+    def _remaining_tool_call_budget(self) -> int:
+        configured = self.orchestrator.session.config.get(
+            "max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS,
+        )
+        return max(0, int(configured) - len(self.orchestrator.agent_state.tool_history))
 
     def _check_watchdog(self) -> Optional[str]:
         state = self.orchestrator.agent_state

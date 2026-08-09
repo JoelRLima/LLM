@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+from pathlib import Path
 from typing import Any
 
 _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
@@ -12,6 +13,29 @@ _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
 _WINDOWS_TASKKILL_TIMEOUT_SECONDS = 2
 _PROCESS_WAIT_TIMEOUT_SECONDS = 1
 _POSIX_TERM_GRACE_SECONDS = 0.5
+
+
+def _trusted_taskkill_path() -> str | None:
+    """Return the canonical Windows taskkill executable, never a bare name."""
+
+    if os.name != "nt":
+        return None
+    system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
+    if not system_root:
+        return None
+    root = Path(system_root)
+    if not root.is_absolute():
+        return None
+    candidate = root / "System32" / "taskkill.exe"
+    try:
+        canonical_root = root.resolve()
+        resolved = candidate.resolve(strict=True)
+        system32 = (canonical_root / "System32").resolve()
+        if not resolved.is_file() or str(resolved.parent).casefold() != str(system32).casefold():
+            return None
+        return str(resolved)
+    except (OSError, ValueError):
+        return None
 
 
 def process_group_id(process: subprocess.Popen[Any]) -> int | None:
@@ -195,9 +219,12 @@ def _terminate_windows_process(
     job_terminated = terminate_windows_job(windows_job)
     taskkill_failed = False
     if not job_terminated or process.poll() is None:
+        taskkill = _trusted_taskkill_path()
         try:
+            if taskkill is None:
+                raise FileNotFoundError("taskkill.exe confiavel indisponivel")
             completed = subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                [taskkill, "/PID", str(process.pid), "/T", "/F"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

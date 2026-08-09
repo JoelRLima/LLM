@@ -7,7 +7,7 @@
 ## 4.33. [security_patterns.py](../../agent/security/security_patterns.py) 🆕
 Banco de dados de padrões de segurança. NÃO contém lógica — apenas metadados.
 * **`PATTERN_DATABASE`**: dicionário com 12 padrões (execução, desserialização, criptografia fraca, segredos, path traversal, injeção, misconfig).
-* Cada padrão possui: `pattern_id`, `pattern`, `family`, `cwe`, `owasp`, `why_interesting`, `default_priority`.
+* As chaves `PY001`–`PY012` são os `pattern_id`; os valores possuem `pattern`, `family`, `cwe`, `owasp`, `why_interesting` e `default_priority`.
 * **`lookup(pattern_id) -> dict`**: retorna os metadados do padrão ou `{}` se não encontrado.
 
 ---
@@ -22,5 +22,5 @@ Consolidador de fatos de segurança. NÃO usa LLM, NÃO executa ferramentas.
 * A fronteira é deliberada: os helpers internos do Agent podem preparar e
   consolidar evidências, enquanto um futuro `ScannerCore` externo permanece
   outro projeto e não é uma dependência deste repositório.
-* **`_TYPE_TO_PATTERN` unificado:** antes, este dicionário (símbolo → `pattern_id`) era mantido manualmente em sincronia com os conjuntos de símbolos declarados em `code_analyzer.py` (`agent/skills/code_analyzer.py`) — um símbolo novo adicionado só em um dos dois lugares caía silenciosamente em `"PY999"` (desconhecido), sem erro nem aviso. Agora é derivado em tempo de importação a partir de um único registro (`code_analyzer.SECURITY_SYMBOL_REGISTRY`), via `get_pattern_id_map()`.
-* **Bug de import corrigido pela reorganização de pastas:** este módulo importa `get_pattern_id_map` de `code_analyzer.py`, que é uma **skill** (vive em `agent/skills/code_analyzer.py`), não um módulo central de `agent/`. O import `from agent.code_analyzer import ...` só passou a falhar de fato quando a estrutura de pastas real foi criada (antes, com tudo solto numa pasta só, o Python nunca chegava a resolver esse caminho da forma correta). Corrigido para `from agent.skills.code_analyzer import get_pattern_id_map`.
+* **`_TYPE_TO_PATTERN` unificado:** este dicionário (símbolo → `pattern_id`) é derivado em tempo de importação do registro canônico `agent.skills.security_symbols.SECURITY_SYMBOL_REGISTRY`, via `get_pattern_id_map()`. `code_analyzer.py` apenas o reexporta para compatibilidade.
+* `security_scanner.py` importa `get_pattern_id_map` diretamente de `agent.skills.security_symbols`. As chaves `PY001`–`PY012` são IDs de findings; os diagnósticos AST `PYSEC001`–`PYSEC003` são códigos distintos.

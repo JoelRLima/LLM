@@ -57,8 +57,23 @@ class Watchdog:
     @staticmethod
     def _signature(tool: str, args: Dict[str, Any], result: Dict[str, Any]) -> str:
         """Assinatura estável de (ferramenta, args, resultado) para detectar repetição exata."""
-        raw = f"{tool}|{stringify(args)}|{stringify(result)}"
+        raw = f"{tool}|{stringify(Watchdog._without_ephemeral_ids(args))}|{stringify(Watchdog._without_ephemeral_ids(result))}"
         return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+    @staticmethod
+    def _without_ephemeral_ids(value: Any) -> Any:
+        """Remove correlation-only identifiers while retaining result semantics."""
+        if isinstance(value, dict):
+            return {
+                key: Watchdog._without_ephemeral_ids(item)
+                for key, item in value.items()
+                if key not in {"invocation_id", "attempt_id"}
+            }
+        if isinstance(value, list):
+            return [Watchdog._without_ephemeral_ids(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(Watchdog._without_ephemeral_ids(item) for item in value)
+        return value
 
     @staticmethod
     def check_no_progress_loop(tool_history: List[Dict[str, Any]], config: Dict[str, Any]) -> Optional[str]:

@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -7,6 +8,7 @@ from agent.contracts import ToolArgs, ToolResult
 from agent.parsers import stringify
 from agent.planning.errors import ToolNotFoundError
 from agent.runtime.logging import logger
+from agent.tools.contracts import ToolInvocationRequest
 
 
 class ToolExecutor:
@@ -27,6 +29,13 @@ class ToolExecutor:
     def run_tool(
         self, tool_name: str, args: ToolArgs, record_result: bool = True
     ) -> ToolResult:
+        request = ToolInvocationRequest(str(uuid.uuid4()), tool_name, args)
+        return self.run_tool_invocation(request, record_result=record_result)
+
+    def run_tool_invocation(
+        self, request: ToolInvocationRequest, record_result: bool = True
+    ) -> ToolResult:
+        """Run a pre-correlated request without replacing its invocation ID."""
         gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
         if gateway is None:
             # The legacy invoker remains available to explicit low-level/admin
@@ -36,6 +45,8 @@ class ToolExecutor:
                 "ToolInvocationGateway nao foi configurado para o runtime standalone."
             )
 
+        tool_name = request.tool_name
+        args = request.arguments
         if hasattr(self.orchestrator, "skills") and tool_name not in self.orchestrator.skills:
             try:
                 gateway.registry.descriptor(tool_name)
@@ -46,9 +57,8 @@ class ToolExecutor:
 
         print(f"Usando {tool_name}...", end="", flush=True)
         logger.info("Executando tool %s com args %s", tool_name, args)
-        raw_res = gateway.run(
-            tool_name,
-            args,
+        raw_res = gateway.invoke(
+            request,
             active_skills=self.orchestrator.active_skills or None,
             allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
             record_result=record_result,

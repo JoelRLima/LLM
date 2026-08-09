@@ -43,6 +43,7 @@ class AgentState:
         args: ToolArgs,
         result: ToolResult,
         step_id: Optional[str] = None,
+        logical_slot: Optional[int] = None,
     ) -> None:
         """Registra o resultado de uma execução de ferramenta no estado global.
 
@@ -52,14 +53,25 @@ class AgentState:
         self.last_tool = tool_name
         self.last_args = args
         self.last_result = result
-        self.tool_history.append(
-            {
+        entry: ToolHistoryEntry = {
                 "step_id": step_id or self.current_step_id,
                 "tool": tool_name,
                 "args": args,
                 "result": result,
             }
-        )
+        if result.get("invocation_id") is not None:
+            entry["invocation_id"] = str(result["invocation_id"])
+        if result.get("status") is not None:
+            entry["status"] = str(result["status"])
+        if logical_slot is not None:
+            entry["logical_slot"] = logical_slot
+        self.tool_history.append(entry)
+
+    def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
+        """Project a canonical terminal result without appending history again."""
+        self.last_tool = tool_name
+        self.last_args = args
+        self.last_result = result
 
     @staticmethod
     def _new_step_id() -> str:

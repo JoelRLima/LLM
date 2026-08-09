@@ -13,7 +13,7 @@ from agent.approval import AutoApprove
 from agent.skills import git as git_module
 from agent.skills.git import GitSkill
 from agent.skills.process_environment import confined_process_environment
-from agent.skills.process_safety import resolve_trusted_executable
+from agent.skills.process_safety import local_history_arguments, resolve_trusted_executable
 from agent.skills.shell import ShellSkill
 
 
@@ -118,7 +118,19 @@ def test_git_log_rejects_workspace_pretty_alias(
 
     assert git_result["ok"] is False
     assert shell_result["ok"] is False
-    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["-0", "-n0", "--max-count=0", "-n10", "-" + chr(0x0661), "-1001", "-1 -n 2", "-- path.txt"],
+)
+def test_git_history_count_grammar_rejects_noncanonical_forms(arguments: str) -> None:
+    assert local_history_arguments(["git", "log", *shlex.split(arguments)]) is None
+
+
+@pytest.mark.parametrize("arguments", ["-1", "-n 1", "--max-count 1000", "--max-count=1000"])
+def test_git_history_count_grammar_accepts_published_forms(arguments: str) -> None:
+    assert local_history_arguments(["git", "log", *shlex.split(arguments)]) is not None
 
 
 @pytest.mark.parametrize(

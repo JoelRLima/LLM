@@ -25,6 +25,9 @@ class ToolResult(TypedDict, total=False):
 
 class ToolHistoryEntry(TypedDict, total=False):
     step_id: Optional[str]
+    invocation_id: str
+    status: str
+    logical_slot: int
     tool: str
     args: ToolArgs
     result: ToolResult

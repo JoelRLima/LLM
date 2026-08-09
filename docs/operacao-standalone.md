@@ -197,16 +197,23 @@ acessar uma sentinela externa falham sem expor seu conteúdo.
 
 Isso não é uma sandbox forte: `pytest`, por exemplo, executa código do projeto,
 que continua sujeito às permissões do processo do usuário. A fase 1 fecha
-escapes diretos de argumento; isolamento de processo e autorização unificada
-por capability permanecem trabalho posterior.
+escapes diretos de argumento; isolamento de processo permanece uma limitação
+deliberada, enquanto a autorização unificada por capability já está aplicada
+no gateway.
 
 ### Estado da capability de comandos no Marco 1
 
+Nota de estado atual: a autorizacao unificada por capability nao e trabalho
+futuro; ela ja e aplicada pelo `ToolInvocationGateway`, com grants de
+aplicacao, tarefa, persona e ferramenta. Approval permanece uma camada de
+efeito separada e nao substitui essa verificacao.
+
 A `ShellSkill` model-actionable nao e um shell arbitrario. Ela aceita somente
-`ruff check`, metadados de historico local via `git log` e `tree` quando
+`ruff check` com caminhos do workspace, metadados de historico local via `git log` e `tree` quando
 disponivel, com `shell=False`, ambiente explicito, paths validados e streams
 bounded. Em `git log`, o modelo so pode informar nenhum max-count, `-N`, `-n N`
-ou `--max-count[=]N`. `git status` e `git diff` foram
+ou `--max-count[=]N` com digitos ASCII de 1 a 1000; `-nN` anexado e rejeitado.
+`git status` e `git diff` foram
 reduzidos da superficie model-actionable para evitar a execucao transitiva de
 filtros de conteudo configurados no workspace.
 `pytest` e `mypy` foram removidos da allowlist porque podem executar codigo
@@ -247,3 +254,11 @@ Além da CLI, o gate instalado executa review real de código, verifica um
 diagnóstico `PYSEC001`, tenta escapar do workspace por file reader, shell e Git,
 e compara sentinelas, o workspace, o diretório de execução e `site-packages`
 antes/depois.
+
+Estado atual: a autorizacao unificada por capability ja e aplicada pelo
+ToolInvocationGateway, combinando grants de aplicacao, tarefa, persona e
+ferramenta. Approval continua sendo uma camada separada de efeito; a frase
+historica sobre essa autorizacao ser trabalho futuro nao descreve o runtime
+atual. O runner paralelo tambem preserva correlacao por `step_id` e
+`invocation_id`, registra cache no finalizer e nao deixa REPLAN abandonar
+siblings iniciados.

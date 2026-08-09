@@ -38,7 +38,7 @@ class CostGuard:
         return bool(
             plan_step > max_steps
             or estimated_tokens > max_tokens
-            or len(tool_history) > max_tool_calls
+            or len(tool_history) >= max_tool_calls
         )
 
     @staticmethod

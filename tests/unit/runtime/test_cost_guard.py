@@ -16,6 +16,7 @@ def test_check_limits_uses_config_values() -> None:
     }
 
     assert CostGuard.check_limits(1, [], 0, config) is False
+    assert CostGuard.check_limits(1, [{"tool": "x"}, {"tool": "y"}], 0, config) is True
     assert CostGuard.check_limits(6, [], 0, config) is True
     assert CostGuard.check_limits(1, [], 101, config) is True
     assert CostGuard.check_limits(1, [{"tool": "x"}, {"tool": "y"}, {"tool": "z"}], 0, config) is True

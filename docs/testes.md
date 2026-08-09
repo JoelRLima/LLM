@@ -2,7 +2,16 @@
 
 ## Baseline atual
 
-- pytest: suíte completa passando;
+Nota factual: resultados dependem da versao de Python e do sistema operacional.
+A matriz CI suportada possui celulas historicamente vermelhas conhecidas em
+testes de storage/lock/manifesto; os gates focalizados (Ruff, qualidade, mypy,
+lifecycle POSIX e acceptance quando alcancado) devem ser reportados
+separadamente. Este documento nao usa uma execucao local isolada para declarar
+a suite universalmente verde.
+
+- pytest: executar na matriz suportada; o CI mantém células históricas vermelhas
+  conhecidas em storage/lock/manifesto, enquanto o host local deve registrar a
+  versão do Python e o sistema operacional;
 - Ruff: repositório limpo;
 - mypy: pacote `agent`, scripts e fachadas da raiz analisados para Linux e
   Windows, sem erros e sem overrides por módulo;
@@ -46,7 +55,9 @@ diretório. Um probe externo carrega o catálogo empacotado, executa uma revisã
 real que precisa detectar `PYSEC001`, valida metadados locais com `git log`,
 rejeita remerge e tenta escapar do workspace com o leitor de arquivos,
 `ShellSkill` e `GitSkill`. O regression test POSIX cobre adicionalmente
-promisor/lazy-fetch; o acceptance instalado não simula um remote helper.
+promisor/lazy-fetch por regressão raw e rejeição da superfície reduzida; o
+acceptance instalado não simula um remote helper nem uma leitura permitida de
+objeto promissor ausente.
 Origens de dependências e snapshots do
 diretório atual, workspace, sentinela externa e `site-packages` — capturado
 antes de qualquer import de runtime — comprovam que a execução usa o artefato

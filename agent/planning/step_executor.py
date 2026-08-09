@@ -187,8 +187,13 @@ class StepExecutor:
             self.context.fail_task()
         return False
 
-    def try_cache(self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None) -> tuple[bool, Optional[ToolResult]]:
-        return self.policies.try_cache(tool, args, file_path, step_id)
+    def try_cache(
+        self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None,
+        *, record_result: bool = True,
+    ) -> tuple[bool, Optional[ToolResult]]:
+        return self.policies.try_cache(
+            tool, args, file_path, step_id, record_result=record_result
+        )
 
     def maybe_finish_edit(self, objective: str) -> Optional[str]:
         terms = ("mudar", "mude", "alterar", "altere", "corrigir", "corrija", "substituir", "substitua", "editar", "edite", "ajustar", "ajuste")

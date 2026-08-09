@@ -284,6 +284,9 @@ def test_parallel_gateway_exception_is_recorded_with_immutable_step_ids(monkeypa
     assert len(state.tool_history) == 2
     assert {entry["step_id"] for entry in state.tool_history} == set(expected_ids)
     assert all(entry["result"]["status"] == "failed" for entry in state.tool_history)
+    assert all(entry["result"].get("invocation_id") for entry in state.tool_history)
+    assert all(entry.get("status") == "failed" for entry in state.tool_history)
+    assert all(entry.get("invocation_id") for entry in state.tool_history)
     assert [state.get_step_status(index) for index in range(2)] == [
         StepStatus.FAILED,
         StepStatus.FAILED,
@@ -407,6 +410,122 @@ def test_cancellation_in_flight_finishes_current_step_and_preserves_next(monkeyp
     assert context.calls == ["em voo"]
     assert state.get_step_status(0) is StepStatus.COMPLETED
     assert state.get_step_status(1) is StepStatus.PENDING
+
+
+def test_parallel_cache_and_live_results_share_the_finalizer_owner(monkeypatch, tmp_path):
+    state = _state(monkeypatch)
+    source = tmp_path / "cached.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    state.memory.state = {
+        "file_hashes": {"cached.py": __import__("hashlib").sha256(source.read_bytes()).hexdigest()},
+        "file_summaries": {"cached.py": "cached summary"},
+    }
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "cached.py"}},
+            {"tool": "file_reader", "args": {"file_path": "live.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.resolve_user_path = lambda path: source if path == "cached.py" else tmp_path / path
+    context.run_tool_impl = lambda _tool, args: {"ok": True, "done": True, "data": args["file_path"]}
+
+    PlanExecutor(context).execute("ler", {})
+
+    assert len(state.tool_history) == 2
+    assert [entry["step_id"] for entry in state.tool_history] == [
+        state.get_step_id(0), state.get_step_id(1)
+    ]
+    assert [entry["logical_slot"] for entry in state.tool_history] == [0, 1]
+    assert all(entry["result"].get("invocation_id") for entry in state.tool_history)
+    assert all(entry.get("invocation_id") == entry["result"]["invocation_id"] for entry in state.tool_history)
+    assert all(entry.get("status") == entry["result"]["status"] for entry in state.tool_history)
+
+
+def test_parallel_recording_survives_summarization_failure(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    context = _Context(state)
+    context._maybe_summarize_and_store = lambda *_args: (_ for _ in ()).throw(RuntimeError("summary"))
+
+    PlanExecutor(context).execute("ler", {})
+
+    assert len(state.tool_history) == 2
+    assert all(state.get_step_status(index) is StepStatus.COMPLETED for index in range(2))
+    assert any(event == "warning" for event, _ in context.events)
+
+
+def test_parallel_terminal_projection_cannot_be_overwritten_by_success(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "blocked.py"}},
+            {"tool": "file_reader", "args": {"file_path": "success.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+
+    def mixed(_tool, args, _record_result):
+        if args["file_path"] == "blocked.py":
+            return {"ok": False, "done": True, "status": "blocked", "error": "approval", "message": "blocked"}
+        return {"ok": True, "done": True, "status": "succeeded", "data": "ok"}
+
+    context.tool_executor.run_tool = mixed
+    answer = PlanExecutor(context).execute("ler", {})
+
+    assert answer == "blocked"
+    assert state.last_result["status"] == "blocked"
+
+
+def test_parallel_budget_is_checked_before_dispatch(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.session.config["max_task_tool_calls"] = 1
+    PlanExecutor(context).execute("ler", {})
+
+    assert len(context.calls) == 1
+    assert len(state.tool_history) == 1
+
+
+def test_parallel_replan_settles_sibling_before_replacing_step(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "replan.py"}},
+            {"tool": "file_reader", "args": {"file_path": "sibling.py"}},
+        ]
+    )
+    context = _Context(state)
+    context._handle_step_failure = lambda *_args, **_kwargs: "replan"
+    context.tool_invocation_gateway = object()
+
+    def read(_tool, args, _record_result):
+        if args["file_path"] == "replan.py":
+            return {"ok": False, "done": True, "status": "failed", "error": "retry"}
+        return {"ok": True, "done": True, "status": "succeeded", "data": "sibling"}
+
+    context.tool_executor.run_tool = read
+    executor = PlanExecutor(context)
+    executor._attempt_replan = lambda *_args, **_kwargs: [
+        {"tool": "echo", "args": {"text": "replacement"}}
+    ]
+
+    executor.execute("ler", {})
+
+    assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
+    assert len(state.tool_history) >= 3
 
 
 def test_approval_block_stops_plan_without_replan_or_success(monkeypatch):

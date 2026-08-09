@@ -95,7 +95,8 @@ class StepPolicies:
         return None
 
     def try_cache(
-        self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None
+        self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None,
+        *, record_result: bool = True,
     ) -> tuple[bool, Optional[ToolResult]]:
         if tool not in ("code_analyzer", "file_reader") or not file_path or "start_line" in args or "end_line" in args:
             return False, None
@@ -106,10 +107,14 @@ class StepPolicies:
         summary = memory.get("file_summaries", {}).get(file_path, "")
         if not summary:
             return False, None
-        result: ToolResult = {"ok": True, "done": True, "data": summary, "message": f"Usando cache de {file_path}."}
+        result: ToolResult = {
+            "ok": True, "done": True, "status": "succeeded", "data": summary,
+            "message": f"Usando cache de {file_path}.",
+        }
         self.context._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
-        self.context._emit("tool_end", {"tool": tool, "ok": True})
-        self.context.agent_state.record_tool_result(tool, args, result, step_id=step_id)
+        if record_result:
+            self.context._emit("tool_end", {"tool": tool, "ok": True})
+            self.context.agent_state.record_tool_result(tool, args, result, step_id=step_id)
         return True, result
 
     def _file_hash(self, file_path: str) -> str | None:

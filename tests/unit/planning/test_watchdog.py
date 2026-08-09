@@ -94,6 +94,22 @@ def test_no_progress_loop_detectado(config: dict, tool_history_repeated_fail: li
     assert "Loop sem progresso" in result
 
 
+def test_no_progress_ignores_ephemeral_invocation_ids(config: dict) -> None:
+    history = [
+        {"tool": "file_reader", "args": {"file_path": "x"}, "result": {"ok": True, "status": "succeeded", "data": "same", "invocation_id": f"id-{index}"}}
+        for index in range(3)
+    ]
+    assert Watchdog.check_no_progress_loop(history, config) is not None
+
+
+def test_no_progress_keeps_semantic_result_differences(config: dict) -> None:
+    history = [
+        {"tool": "file_reader", "args": {"file_path": "x"}, "result": {"ok": True, "data": value, "invocation_id": f"id-{index}"}}
+        for index, value in enumerate(("one", "two", "three"))
+    ]
+    assert Watchdog.check_no_progress_loop(history, config) is None
+
+
 def test_no_progress_loop_historico_insuficiente(config: dict) -> None:
     history = [
         {"tool": "a", "args": {}, "result": {"ok": False, "error": "x"}},
