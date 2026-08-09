@@ -10,6 +10,7 @@ from scripts.verify_installed_package import (
     CommandResult,
     VerificationError,
     _run,
+    _validate_slice_a_payload,
     installation_mode,
     installed_cli_commands,
     parse_json_output,
@@ -156,3 +157,21 @@ def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
     assert '"shell_ruff_add_noqa"' in INSTALLED_PROBE_SOURCE
     assert '"shell_ruff_add_ignore"' in INSTALLED_PROBE_SOURCE
     assert '"shell_ruff_fix"' in INSTALLED_PROBE_SOURCE
+
+
+def test_installed_probe_covers_slice_a_journey_and_measurement() -> None:
+    assert "AgentApplication.create" in INSTALLED_PROBE_SOURCE
+    assert "run_slice_a_journeys" in INSTALLED_PROBE_SOURCE
+    for marker in ("SLICE_A1", "SLICE_A2", "SLICE_A3", "a4_no_tool"):
+        assert marker in INSTALLED_PROBE_SOURCE
+    for field in (
+        "task_id",
+        "duration_ms",
+        "invocation_id",
+        "terminal_outcome",
+        "output_chars",
+        "truncated",
+    ):
+        assert field in INSTALLED_PROBE_SOURCE
+    source = inspect.getsource(_validate_slice_a_payload)
+    assert 'payload.get("slice_a")' in source

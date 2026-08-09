@@ -91,10 +91,20 @@ class TaskReportBuilder:
     def _build_step(self, index: int, entry: Dict[str, Any]) -> Dict[str, Any]:
         raw_result = entry.get("result")
         if isinstance(raw_result, dict):
+            data = raw_result.get("data", raw_result)
+            metadata = raw_result.get("metadata")
+            output_text = self._truncate(data)
             result = {
                 "ok": bool(raw_result.get("ok")),
                 "error": self._truncate(raw_result.get("error") or ""),
-                "data_summary": self._truncate(raw_result.get("data", raw_result)),
+                "data_summary": output_text,
+                "status": str(raw_result.get("status") or ""),
+                "output_chars": len(output_text),
+                "truncated": bool(
+                    metadata.get("truncated", False)
+                    if isinstance(metadata, dict)
+                    else raw_result.get("truncated", False)
+                ),
             }
             cache_hit = raw_result.get("cache_hit")
         else:
@@ -104,7 +114,17 @@ class TaskReportBuilder:
                 "data_summary": self._truncate(raw_result),
             }
             cache_hit = None
-        step: Dict[str, Any] = {"index": index, "tool": entry.get("tool"), "args": entry.get("args") or {}, "result": result}
+        step: Dict[str, Any] = {
+            "index": index,
+            "tool": entry.get("tool"),
+            "args": entry.get("args") or {},
+            "result": result,
+        }
+        invocation_id = entry.get("invocation_id") or (
+            raw_result.get("invocation_id") if isinstance(raw_result, dict) else None
+        )
+        if invocation_id:
+            step["invocation_id"] = str(invocation_id)
         if cache_hit is not None:
             step["cache_hit"] = bool(cache_hit)
         return step

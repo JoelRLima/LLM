@@ -34,9 +34,14 @@ import json
 import os
 import shlex
 import sys
+import time
 from pathlib import Path
 
 from agent.skills import load_skill_registry
+from agent.application import AgentApplication
+from agent.llm.contracts import ProviderCapabilities
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
 
 
 workspace = Path(sys.argv[1]).resolve()
@@ -45,6 +50,127 @@ scratch_dir = Path(sys.argv[3]).resolve()
 sample = workspace / "sample.py"
 sentinel_before = sentinel.read_bytes()
 sample_before = sample.read_bytes()
+
+
+class DeterministicJourneyGateway:
+    # Small model contract used only by the installed Slice A probe.
+
+    provider_name = "installed-slice-a-fixture"
+    model = "installed-slice-a-fixture"
+    profile = {"temperature": 0.0, "max_tokens": 256}
+    capabilities = ProviderCapabilities(streaming=False)
+
+    def __init__(self, objective):
+        self.objective = objective
+        self.calls = []
+
+    def build_payload(self, request):
+        return {
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in request.messages
+            ],
+            "stream": request.stream,
+        }
+
+    def complete_payload(self, payload):
+        messages = payload.get("messages", [])
+        self.calls.append(payload)
+        system = str(messages[0].get("content", "")) if messages else ""
+        prompt = str(messages[-1].get("content", "")) if messages else ""
+        if "You are a Router Agent" in system:
+            return '{"persona": "coder"}'
+        if "Crie um plano sequencial" in prompt:
+            if "SLICE_A1" in self.objective:
+                return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
+            if "SLICE_A2" in self.objective:
+                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2_EVIDENCE","path":"."}}]}'
+            return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
+        if "Resultados das ferramentas executadas:" in prompt:
+            if "SLICE_A1_EVIDENCE" in prompt:
+                return "A leitura encontrou SLICE_A1_EVIDENCE no arquivo permitido."
+            if "SLICE_A2_EVIDENCE" in prompt:
+                return "A busca encontrou SLICE_A2_EVIDENCE no workspace."
+            if "acesso negado" in prompt.casefold() or "fora" in prompt.casefold():
+                return "NÃ£o foi possÃ­vel ler o caminho externo: acesso negado."
+            return "A tarefa foi concluÃ­da com a evidÃªncia retornada pela ferramenta."
+        return '{"persona": "coder"}'
+
+    def send_payload(self, payload, stream):
+        del stream
+        return self.complete_payload(payload)
+
+    def consume_stream(self, response, callbacks):
+        text = str(response)
+        callbacks["on_content_chunk"](text)
+        callbacks["on_done"]({})
+        return text
+
+    def count_tokens(self, text):
+        return max(1, len(text) // 4)
+
+
+def project_measurement(name, objective, started_at, application, result):
+    history = list(application.orchestrator.agent_state.tool_history)
+    entry = history[-1] if history else {}
+    raw = entry.get("result") if isinstance(entry, dict) else {}
+    raw = raw if isinstance(raw, dict) else {}
+    data = raw.get("data")
+    metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    output = json.dumps(data, ensure_ascii=False, default=str) if data is not None else ""
+    error = str(raw.get("error") or result.error or "")[:500]
+    denied = "acesso negado" in error.casefold()
+    outcome = "SUCCESS" if result.status == "succeeded" else ("DENIED" if denied else result.status.upper())
+    return {
+        "task_id": f"installed-slice-a:{name}",
+        "objective": objective,
+        "duration_ms": int((time.monotonic() - started_at) * 1000),
+        "tools": [entry.get("tool")] if entry.get("tool") else [],
+        "invocation_id": entry.get("invocation_id") or raw.get("invocation_id"),
+        "terminal_outcome": outcome,
+        "error": error,
+        "output_chars": int(metadata.get("total_chars", len(output))),
+        "truncated": bool(metadata.get("truncated", False)),
+        "tool_history_count": len(history),
+    }
+
+
+def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
+    paths = AppPaths.discover(app_home, env={})
+    ConfigRepository(paths).initialize()
+    scenarios = (
+        ("a1_read", "SLICE_A1: leia o arquivo permitido e informe a evidÃªncia.", True),
+        ("a2_search", "SLICE_A2: busque a evidÃªncia no workspace e informe o resultado.", True),
+        ("a3_denied", "SLICE_A3: leia o caminho fora do workspace e informe o resultado.", True),
+        ("a4_no_tool", "oi", False),
+    )
+    measurements = []
+    for name, objective, uses_model in scenarios:
+        started_at = time.monotonic()
+        gateway = DeterministicJourneyGateway(objective)
+        with AgentApplication.create(
+            paths=paths,
+            workspace=workspace,
+            gateway=gateway,
+            configure_logging=False,
+        ) as application:
+            result = application.run(objective)
+            measurement = project_measurement(name, objective, started_at, application, result)
+            measurement["answer"] = result.answer[:500]
+            measurement["model_calls"] = len(gateway.calls)
+            measurement["status"] = result.status
+            if uses_model and name == "a4_no_tool":
+                raise AssertionError("cenÃ¡rio no-tool nÃ£o deveria usar modelo")
+            if name == "a4_no_tool" and measurement["tools"]:
+                raise AssertionError("cenÃ¡rio no-tool invocou ferramenta")
+            if name == "a3_denied" and measurement["terminal_outcome"] != "DENIED":
+                raise AssertionError(f"denial instalada nÃ£o observÃ¡vel: {measurement!r}")
+            if name in {"a1_read", "a2_search"} and not any(
+                marker in result.answer for marker in ("SLICE_A1_EVIDENCE", "SLICE_A2_EVIDENCE")
+            ):
+                raise AssertionError(f"resposta nÃ£o consumiu evidÃªncia: {result.answer!r}")
+            measurements.append(measurement)
+    return measurements
 
 registry = load_skill_registry(
     base_dir=workspace,
@@ -103,14 +229,29 @@ for name, result in history_results.items():
 if sentinel.read_bytes() != sentinel_before or sample.read_bytes() != sample_before:
     raise SystemExit("installed probe mutated its workspace or sentinel")
 
+outside = workspace.parent / "outside.txt"
+slice_measurements = run_slice_a_journeys(
+    workspace.parent / "slice-a-app-home",
+    workspace,
+    scratch_dir,
+    outside,
+)
+if len(slice_measurements) != 4:
+    raise SystemExit(f"installed Slice A produziu mediÃ§Ã£o incompleta: {slice_measurements!r}")
+if any(item.get("invocation_id") is None for item in slice_measurements[:3]):
+    raise SystemExit(f"installed Slice A perdeu invocation_id: {slice_measurements!r}")
+if slice_measurements[3].get("tools"):
+    raise SystemExit(f"installed Slice A no-tool invocou ferramenta: {slice_measurements[3]!r}")
 print(
     json.dumps(
         {
             "diagnostic_codes": codes,
             "escape_denied": True,
             "process_escape_denied": sorted(escape_attempts),
+            "slice_a": slice_measurements,
             "status": "ok",
         },
+        ensure_ascii=False,
         sort_keys=True,
     )
 )
@@ -572,6 +713,31 @@ def _verify_installed_probe(
         raise VerificationError(
             "Probe instalado não confirmou confinamento de ShellSkill/GitSkill."
         )
+    _validate_slice_a_payload(payload)
+
+
+def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
+    slice_a = payload.get("slice_a")
+    expected_ids = [
+        "installed-slice-a:a1_read",
+        "installed-slice-a:a2_search",
+        "installed-slice-a:a3_denied",
+        "installed-slice-a:a4_no_tool",
+    ]
+    if not isinstance(slice_a, list) or len(slice_a) != 4:
+        raise VerificationError("Probe instalado nÃ£o executou os quatro cenÃ¡rios Slice A.")
+    if [item.get("task_id") for item in slice_a] != expected_ids:
+        raise VerificationError("Probe instalado nÃ£o executou os quatro cenÃ¡rios Slice A.")
+    if [item.get("terminal_outcome") for item in slice_a[:2]] != ["SUCCESS", "SUCCESS"]:
+        raise VerificationError("Slice A read/search instalada nÃ£o produziu sucesso.")
+    if slice_a[2].get("terminal_outcome") != "DENIED":
+        raise VerificationError("Slice A nÃ£o observou denial de path externo.")
+    if bool(slice_a[3].get("tools")) or bool(slice_a[3].get("model_calls")):
+        raise VerificationError("Slice A no-tool executou modelo/tool indevidamente.")
+    if not all(item.get("invocation_id") for item in slice_a[:3]):
+        raise VerificationError("Slice A perdeu invocation_id em ferramenta executada.")
+    if not all("duration_ms" in item and "output_chars" in item for item in slice_a):
+        raise VerificationError("Slice A nÃ£o produziu measurement mÃ­nimo.")
 
 
 def _verify_extension_aware_bootstrap(
@@ -654,6 +820,15 @@ def verify_installed_package(
         external_cwd.mkdir()
         workspace.mkdir()
         sentinel = external_cwd / "sentinel.txt"
+        (workspace / "notes.txt").write_text(
+            "SLICE_A1_EVIDENCE: nota permitida.\n", encoding="utf-8"
+        )
+        (workspace / "facts.md").write_text(
+            "SLICE_A2_EVIDENCE: dado encontrado.\n", encoding="utf-8"
+        )
+        (temp / "outside.txt").write_text(
+            "outside-secret-must-not-be-read\n", encoding="utf-8"
+        )
         probe_script = external_cwd / "installed_probe.py"
         sample = workspace / "sample.py"
         sentinel.write_text("outside-workspace-sentinel\n", encoding="utf-8")
