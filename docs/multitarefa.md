@@ -127,6 +127,12 @@ Cada nó recebe `TaskExecutionContext.child()` com:
 Resultados são `TaskResult` imutáveis. A agregação segue a ordem determinística
 do batch, não a ordem em que futures terminam.
 
+No caminho paralelo legado do `PlanExecutor`, o mesmo princípio vale para
+`tool_history`: o gateway mantém authority/approval/enforcement, e o finalizer
+registra cada resultado exatamente uma vez usando o `step_id` capturado do
+plano. Sucesso, falha, exceção inesperada, cancelamento, bloqueio e resultado
+unverified não dependem de `current_step_id` global nem perdem o registro.
+
 ## Concorrência e recursos
 
 O scheduler monta batches dos nós prontos:

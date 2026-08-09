@@ -64,10 +64,17 @@ checkpoint imediatamente.
 - `AgentState`: fonte de verdade das transições e serialização.
 - `CheckpointManager`: I/O atômico e versionamento do checkpoint.
 
+No lote paralelo de leituras, o gateway continua sendo o owner de enforcement,
+mas o `PlanExecutor` é o owner único do recording final. Cada resultado é
+associado ao `step_id` capturado antes da concorrência e registrado uma única
+vez, inclusive falhas inesperadas, cancelamentos, bloqueios e resultados
+unverified. A ordem de recording é a ordem determinística do plano, não a
+ordem de conclusão dos futures.
+
 ## Limitações remanescentes
 
 - resultados de ferramentas e eventos ainda são dicionários livres;
-- o lote paralelo compartilha telemetria e memória mutável, embora a transição
-  terminal seja serializada depois da coleta dos futures;
+- o lote paralelo compartilha o estado da tarefa, mas a coleta dos futures e o
+  recording terminal são serializados pelo `PlanExecutor` antes dos consumers;
 - checkpoints de schema v1 são rejeitados, sem migração automática;
 - cancelamento é cooperativo e não encerra uma ferramenta já bloqueada.

@@ -17,5 +17,10 @@ Consolidador de fatos de segurança. NÃO usa LLM, NÃO executa ferramentas.
 * **`Finding` (dataclass)**: `pattern_id`, `pattern`, `location`, `start_line`, `end_line`, `symbol`, `snippet` (máx 120 chars), `detection_method`, `metadata`.
 * **`consolidate(code_analyzer_result, grep_results) -> List[Finding]`**: normaliza, trunca snippets, remove duplicatas e enriquece com metadados do `security_patterns.py`.
 * Nenhuma inferência de severidade ou risco — apenas fatos.
+* Este módulo normaliza findings já produzidos por skills internas; não é um
+  detector científico completo nem o `ScannerCore` do TCC externo.
+* A fronteira é deliberada: os helpers internos do Agent podem preparar e
+  consolidar evidências, enquanto um futuro `ScannerCore` externo permanece
+  outro projeto e não é uma dependência deste repositório.
 * **`_TYPE_TO_PATTERN` unificado:** antes, este dicionário (símbolo → `pattern_id`) era mantido manualmente em sincronia com os conjuntos de símbolos declarados em `code_analyzer.py` (`agent/skills/code_analyzer.py`) — um símbolo novo adicionado só em um dos dois lugares caía silenciosamente em `"PY999"` (desconhecido), sem erro nem aviso. Agora é derivado em tempo de importação a partir de um único registro (`code_analyzer.SECURITY_SYMBOL_REGISTRY`), via `get_pattern_id_map()`.
 * **Bug de import corrigido pela reorganização de pastas:** este módulo importa `get_pattern_id_map` de `code_analyzer.py`, que é uma **skill** (vive em `agent/skills/code_analyzer.py`), não um módulo central de `agent/`. O import `from agent.code_analyzer import ...` só passou a falhar de fato quando a estrutura de pastas real foi criada (antes, com tudo solto numa pasta só, o Python nunca chegava a resolver esse caminho da forma correta). Corrigido para `from agent.skills.code_analyzer import get_pattern_id_map`.

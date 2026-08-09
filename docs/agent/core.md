@@ -66,7 +66,7 @@ Define a estrutura de dados `AgentState` que encapsula o estado de execução gl
 * `memory`: Instância de `AgentMemory` contendo a memória de longo prazo da sessão.
 * `events`: Fila de telemetria de passos.
 * `conversation_history`: Histórico de turnos anteriores de conversa.
-* **`record_tool_result(tool_name, args, result)`:** (Adicionado na refatoração) Centraliza a mutação de estado após cada execução de ferramenta, atualizando `last_tool`, `last_args`, `last_result` e `tool_history` de forma atômica.
+* **`record_tool_result(tool_name, args, result, step_id=None)`:** (Adicionado na refatoração) Centraliza a mutação de estado após cada execução de ferramenta, atualizando `last_tool`, `last_args`, `last_result` e `tool_history` de forma atômica. Execuções concorrentes devem fornecer o `step_id` capturado; não usam `current_step_id` global como identidade.
 * **Estado explícito por passo:** cada item recebe `_step_id` estável e um `StepExecutionRecord` com status, tentativas e último erro.
 * **Retomada seletiva:** `running` volta a `pending`; `completed` não é repetido; retry de `failed` e `skipped` é opt-in por configuração.
 * **Mutações encapsuladas:** criação, inserção, substituição e transições do plano passam pelos métodos de `AgentState`.

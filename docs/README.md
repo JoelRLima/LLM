@@ -4,6 +4,36 @@
 para a visão canônica das responsabilidades, [EstruturaProjeto.md](../EstruturaProjeto.md),
 e para os padrões de código, o [guia de contribuição](../CONTRIBUTING.md).
 
+## Como ler o estado atual
+
+Para entender o runtime atual, siga esta ordem:
+
+1. [plataforma-standalone.md](plataforma-standalone.md) — escopo e jornadas do assistente;
+2. [arquitetura-execucao.md](arquitetura-execucao.md) — gateway, planner, estado e retomada;
+3. [skills.md](skills.md) — capabilities realmente model-actionable;
+4. [marco-1-safe-execution-closure.md](marco-1-safe-execution-closure.md) — garantias e limites de execução;
+5. [testes.md](testes.md) — evidências locais e gates de qualidade.
+
+### Matriz de capabilities
+
+| Capability | Estado atual |
+| :--- | :--- |
+| gateway canônico de tools | IMPLEMENTADO |
+| authority, capabilities e approval | IMPLEMENTADO |
+| extensions stdio 1.0 | IMPLEMENTADO |
+| ShellSkill restrita | IMPLEMENTADO |
+| metadados de histórico Git local | IMPLEMENTADO |
+| `git status` e `git diff` model-actionable | REDUZIDO AWAY |
+| shell arbitrário | NÃO FORNECIDO |
+| execução paralela local | IMPLEMENTADO |
+| sandbox forte de filesystem/rede | NÃO FORNECIDA |
+
+Os relatórios e planos `phase_0_4_implementation_report.md`,
+`plano-conclusao-fases-0-4.md` e `plano-continuacao-fases-0-4.md` são históricos
+ou runbooks de fases anteriores; não substituem os documentos de estado acima.
+ADRs preservam decisões no contexto em que foram tomadas e não devem ser
+reescritos retroativamente.
+
 | Documento | Conteúdo |
 | :--- | :--- |
 | [estrutura-diretorios.md](estrutura-diretorios.md) | Árvore de Diretórios do Projeto |

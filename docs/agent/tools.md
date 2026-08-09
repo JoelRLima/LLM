@@ -63,6 +63,12 @@ Ele separa três responsabilidades:
 - Registra resultados no estado via `state_recorder` opcional.
 - Falhas de emissão ou registro não interrompem a execução do gateway.
 
+No lote paralelo de leituras do `PlanExecutor`, o gateway continua aplicando
+authority, capabilities, approval e lifecycle, mas recebe `record_result=False`;
+o finalizer paralelo é o owner único do recording, usando o `step_id` capturado
+por invocação. Isso evita duplicatas, perda de falhas inesperadas e atribuição
+ao passo errado por `current_step_id` mutável.
+
 ## Protocolo stdio e correlação de invocações
 
 O transport stdio usa a versão de protocolo atual `1.0`. Nesta fase de

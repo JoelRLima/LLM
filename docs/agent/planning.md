@@ -40,6 +40,13 @@ Coordena a sequência de passos já validada pelo `ExecutionGateway`. Desde as f
 * **Responsabilidade atual:** coordena dependências, lote paralelo de leituras, limites, cancelamento e substituição de passos por replan.
 * **Retomada:** usa os IDs e estados do `AgentState`; passos concluídos não voltam a executar.
 
+No lote paralelo, o `ToolInvocationGateway` continua sendo a fronteira de
+authority, capabilities, approval e lifecycle. O `PlanExecutor` passa
+`record_result=False` ao gateway e finaliza cada future uma única vez,
+registrando explicitamente o `step_id` capturado antes da concorrência. Isso
+mantém sucesso, falha, exceção inesperada, cancelamento, bloqueio e resultado
+unverified com identidade imutável e sem depender de `current_step_id` global.
+
 ### 4.8.1. [step_executor.py](../../agent/planning/step_executor.py)
 
 Executa e finaliza exatamente um passo. Valida schema/permissões, consulta
