@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Any, Optional, Sequence
+from uuid import uuid4
 
 from agent.approval import ApprovalDecision
 from agent.code.changes import ChangeSet, ChangeSetError, ChangeSetTransaction
@@ -29,11 +30,18 @@ def apply_changes(
         transaction.commit()
     except ChangeSetError as exc:
         return TaskResult(TaskStatus.FAILED, artifacts=(artifact,), error=str(exc))
+    validation_invocation_id = str(uuid4())
     report = service.validator.validate(
         ProjectDiscovery(service.root).discover(), preview.affected_files, include_tests=include_tests
     )
     diagnostics = tuple(service._diagnostic_dict(item) for item in report.diagnostics)
-    artifact = _artifact(preview, assessment, applied=True, validation=report.status.value)
+    artifact = _artifact(
+        preview,
+        assessment,
+        applied=True,
+        validation=report.status.value,
+        validation_invocation_id=validation_invocation_id,
+    )
     if report.status == ValidationStatus.PASSED:
         transaction.mark_validated()
         return TaskResult(TaskStatus.SUCCEEDED, summary=f"ChangeSet aplicado e validado em {len(preview.affected_files)} arquivo(s).", artifacts=(artifact,), diagnostics=diagnostics)
@@ -44,7 +52,14 @@ def apply_changes(
     return TaskResult(status, summary="Validação falhou; alterações revertidas.", artifacts=(artifact,), diagnostics=diagnostics, error=f"validation:{report.status.value}")
 
 
-def _artifact(preview: Any, assessment: Any, *, applied: bool, validation: str | None = None) -> Artifact:
+def _artifact(
+    preview: Any,
+    assessment: Any,
+    *,
+    applied: bool,
+    validation: str | None = None,
+    validation_invocation_id: str | None = None,
+) -> Artifact:
     metadata = {
         "change_set_id": preview.change_set_id,
         "affected_files": preview.affected_files,
@@ -55,6 +70,8 @@ def _artifact(preview: Any, assessment: Any, *, applied: bool, validation: str |
     }
     if validation is not None:
         metadata["validation"] = validation
+    if validation_invocation_id is not None:
+        metadata["validation_invocation_id"] = validation_invocation_id
     return Artifact("changeset", content=preview.diff, metadata=metadata)
 
 

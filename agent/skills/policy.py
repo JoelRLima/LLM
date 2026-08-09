@@ -9,6 +9,12 @@ from agent.skills.catalog import BUILTIN_SKILL_SPECS
 from agent.skills.descriptor import SkillCapability, SkillDescriptor
 from agent.tools.contracts import ToolOriginKind
 
+# ``file_writer`` remains registered for explicit low-level/admin callers, but
+# is not a model-actionable planner tool. Supported product modifications go
+# through ``code_task`` so ChangeSet approval and ProjectValidator cannot be
+# bypassed by a direct write plan.
+MODEL_ACTIONABLE_EXCLUDED = frozenset({"file_writer"})
+
 
 @dataclass(frozen=True)
 class CapabilityPolicy:
@@ -59,6 +65,8 @@ def builtin_skills_for_persona(persona: str, registry: Any = None) -> list[str]:
     if registry is not None and hasattr(registry, "descriptors") and callable(registry.descriptors):
         results: list[str] = []
         for desc in registry.descriptors():
+            if desc.name in MODEL_ACTIONABLE_EXCLUDED:
+                continue
             if getattr(desc, "origin_kind", ToolOriginKind.BUILTIN) is not ToolOriginKind.BUILTIN:
                 continue
             caps = {c.value if hasattr(c, "value") else str(c) for c in desc.capabilities}
@@ -69,6 +77,7 @@ def builtin_skills_for_persona(persona: str, registry: Any = None) -> list[str]:
     return [
         spec.name
         for spec in BUILTIN_SKILL_SPECS
+        if spec.name not in MODEL_ACTIONABLE_EXCLUDED
         if spec.capabilities.issubset(allowed)
     ]
 

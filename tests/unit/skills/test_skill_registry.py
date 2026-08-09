@@ -70,9 +70,12 @@ def test_capability_policy_denies_ungranted_side_effects(tmp_path: Path):
 
 
 def test_persona_tools_are_derived_from_capabilities():
+    coder = builtin_skills_for_persona("coder")
     researcher = builtin_skills_for_persona("researcher")
     security = builtin_skills_for_persona("security_auditor")
 
+    assert "code_task" in coder
+    assert "file_writer" not in coder
     assert {"web_search", "summarize", "session_memory"}.issubset(researcher)
     assert "file_writer" not in researcher
     assert "file_writer" not in security

@@ -8,9 +8,8 @@ from agent.planning.planning_context import validate_planning_tool_arguments
 PLANNING_GUIDANCE = """
 Escolha a ferramenta de menor custo que resolva cada passo:
 - localizar: directory_lister; buscar texto: grep; entender código: code_analyzer;
-- ler: file_reader; editar: file_writer; executar Python: python_executor.
-Prefira edições cirúrgicas na ordem ast_patch, patch, append e write.
-Nunca use patch/ast_patch sem um file_reader anterior para o mesmo arquivo.
+- ler: file_reader; modificar/validar: code_task; executar Python: python_executor.
+Para modificações, use code_task action='modify' ou action='repair'.
 Em análises de segurança, comece com code_analyzer mode='security' em um arquivo.
 Evite leituras repetidas, caches/logs no escopo e passos que apaguem conteúdo.
 """
@@ -63,6 +62,17 @@ class PlanBuilder:
         filtered = self._filter_plan(plan)
         if not filtered:
             self.orchestrator._emit("hard_block", {"reason": "plano vazio após filtros"})
+            self.orchestrator.agent_state.project_last_result(
+                "planner",
+                {},
+                {
+                    "ok": False,
+                    "done": True,
+                    "status": "blocked",
+                    "error": "plan_blocked",
+                    "message": "Plano bloqueado pelas politicas de seguranca.",
+                },
+            )
             self.orchestrator.fail_task()
             return [], "Não foi possível executar esta ação; ela foi bloqueada pelas políticas de segurança."
         self.orchestrator.agent_state.set_plan(filtered)

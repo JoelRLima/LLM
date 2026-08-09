@@ -11,6 +11,7 @@ from scripts.verify_installed_package import (
     VerificationError,
     _run,
     _validate_slice_a_payload,
+    _validate_slice_b_payload,
     _validate_slice_c_payload,
     installation_mode,
     installed_cli_commands,
@@ -185,3 +186,12 @@ def test_installed_probe_covers_slice_c_journey_and_reuses_measurement() -> None
     assert 'project_measurement(name, objective, started_at, application, result, family="c")' in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_c_payload)
     assert 'payload.get("slice_c")' in source
+
+
+def test_installed_probe_covers_slice_b_modify_validate_journey() -> None:
+    assert "run_modify_journeys" in INSTALLED_PROBE_SOURCE
+    for marker in ("SLICE_B1", "SLICE_B2", "SLICE_B3", "SLICE_B4", "code_task", "file_writer"):
+        assert marker in INSTALLED_PROBE_SOURCE
+    source = inspect.getsource(_validate_slice_b_payload)
+    assert 'payload.get("slice_b")' in source
+    assert "validation_invocation_id" in INSTALLED_PROBE_SOURCE
