@@ -356,6 +356,15 @@ def test_git_skill_rejects_workspace_indirection_to_external_identity(
     if git is None:
         pytest.skip("git confiavel nao disponivel no host")
     subprocess.run([git, "init", "-q"], cwd=workspace, check=True)
+    subprocess.run([git, "config", "user.name", "Provenance Test"], cwd=workspace, check=True)
+    subprocess.run(
+        [git, "config", "user.email", "provenance@example.invalid"],
+        cwd=workspace,
+        check=True,
+    )
+    (workspace / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run([git, "add", "tracked.txt"], cwd=workspace, check=True)
+    subprocess.run([git, "commit", "-qm", "initial"], cwd=workspace, check=True)
     bin_dir = workspace / "bin"
     bin_dir.mkdir()
     link = bin_dir / ("git.exe" if os.name == "nt" else "git")
