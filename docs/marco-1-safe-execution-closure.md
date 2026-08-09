@@ -78,8 +78,11 @@ symlinks.
 e modos mutantes são rejeitados. Git mantém somente status/log/diff, desabilita
 pager, fsmonitor, untracked cache, diff externo, textconv e verificação de
 assinaturas. Flags e formatos que solicitam verificadores de assinatura são
-rejeitados. `tree -o` é rejeitado. Approval continua sendo uma policy de
-produto para efeitos; não é tratada como boundary técnica.
+rejeitados; a superfície model-actionable de `git log` não aceita seleção de
+`--pretty`/`--format` e força o built-in `--pretty=medium`, sem depender de
+`format.pretty` ou aliases `pretty.*` do workspace. `tree -o` é rejeitado.
+Approval continua sendo uma policy de produto para efeitos; não é tratada como
+boundary técnica.
 
 O nome allowlisted não é uma garantia sobre qualquer binário com esse nome.
 Cada runner resolve o caminho absoluto/canônico a partir de entradas absolutas

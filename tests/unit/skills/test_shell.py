@@ -436,7 +436,11 @@ def test_shell_rejects_workspace_executable_shadow_in_real_runner(
     "command",
     [
         "git log --show-signature",
-        *[f"git log --pretty=format:{marker}" for marker in ("%G?", "%GS", "%GK", "%GF", "%GP", "%GT", "%GG")],
+        *[
+            f"git log {option}=format:{marker}"
+            for option in ("--pretty", "--format")
+            for marker in ("%G?", "%GS", "%GK", "%GF", "%GP", "%GT", "%GG")
+        ],
     ],
 )
 def test_shell_rejects_signature_verification_before_execution(

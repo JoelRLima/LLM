@@ -164,7 +164,10 @@ mutacao e `tree -o` sao rejeitados. Git recebe overrides para desabilitar pager,
 fsmonitor, untracked cache, diff externo, textconv e verificacao de assinaturas;
 flags e formatos de assinatura sao rejeitados. O nome allowlisted e resolvido
 para um executavel absoluto/canonico fora do workspace; se so houver um
-`ruff` dentro do workspace, ele fica indisponivel. O runner usa `shell=False`,
+`ruff` dentro do workspace, ele fica indisponivel. `git log` usa o formato
+built-in fixo `--pretty=medium` e rejeita selecao model-actionable de
+`--pretty`/`--format`, portanto nao depende de `format.pretty` ou aliases
+`pretty.*` do workspace. O runner usa `shell=False`,
 ambiente construido por allowlist e limites independentes de stdout/stderr.
 Isso nao fornece sandbox de filesystem, rede, TOCTOU ou preempcao universal;
 validacao de path nao limita efeitos transitivos de um programa.

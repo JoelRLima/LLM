@@ -211,7 +211,9 @@ rede; ambiente filtrado e validacao de paths nao garantem isolamento transitivo.
 Os nomes permitidos nao selecionam qualquer binario: Git, Ruff e tree so sao
 executados quando um caminho absoluto/canonico confiavel fora do workspace pode
 ser resolvido. Uma instalacao local de Ruff dentro do workspace pode, portanto,
-ficar indisponivel.
+ficar indisponivel. Em `git log`, o runtime fixa `--pretty=medium` e rejeita
+formatos selecionados pelo modelo, evitando dependencia de `format.pretty` e
+aliases `pretty.*` do repositorio.
 
 ## Verificação do artefato
 

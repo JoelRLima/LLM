@@ -23,7 +23,6 @@ _TWO_TOKEN_ALLOWED = {
     for command in ALLOWED_SHELL_COMMANDS
     if " " in command
 }
-_SIGNATURE_FORMAT_MARKERS = ("%G?", "%GS", "%GK", "%GF", "%GP", "%GT", "%GG")
 
 
 def split_command(command: str) -> list[str] | None:
@@ -108,29 +107,14 @@ def resolve_trusted_executable(
     return None
 
 
-def _signature_format_error(value: str) -> str | None:
-    if any(marker in value for marker in _SIGNATURE_FORMAT_MARKERS):
-        return "Formatos de assinatura nao sao permitidos em modo somente leitura."
-    return None
-
-
 def _git_token_error(token: str) -> str | None:
     option = token.casefold().split("=", 1)[0]
     if option == "--show-signature":
         return "Verificacao de assinatura nao e permitida em modo somente leitura."
-    if option in {"--format", "--pretty"} and "=" in token:
-        return _signature_format_error(token.split("=", 1)[1])
+    if option in {"--format", "--pretty"}:
+        return "Selecao de formato/assinatura nao e permitida em modo somente leitura."
     if token.casefold().startswith("-c"):
         return "Configuracao inline nao permitida em modo somente leitura."
-    return None
-
-
-def _separated_signature_error(tokens: Sequence[str]) -> str | None:
-    for index, token in enumerate(tokens[1:-1], start=1):
-        if token.casefold() in {"--format", "--pretty"}:
-            error = _signature_format_error(tokens[index + 1])
-            if error is not None:
-                return error
     return None
 
 
@@ -153,7 +137,7 @@ def git_read_only_error(tokens: Sequence[str]) -> str | None:
         option = token.casefold().split("=", 1)[0]
         if option in forbidden:
             return f"Git option nao permitida em modo somente leitura: {forbidden[option]}."
-    return _separated_signature_error(tokens)
+    return None
 
 
 def unsafe_command_error(tokens: Sequence[str]) -> str | None:
@@ -201,6 +185,13 @@ def hardened_command(tokens: Sequence[str]) -> tuple[str, ...]:
         ]
         if tokens[1].casefold() in {"diff", "log"}:
             hardened[9:9] = ["--no-ext-diff", "--no-textconv"]
+        if tokens[1].casefold() == "log":
+            separator = len(hardened)
+            try:
+                separator = hardened.index("--", 9)
+            except ValueError:
+                pass
+            hardened[separator:separator] = ["--pretty=medium"]
         return tuple(hardened)
     if command == "ruff" and len(tokens) > 1 and tokens[1].casefold() == "check":
         hardened = list(tokens)
