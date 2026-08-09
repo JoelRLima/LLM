@@ -530,7 +530,13 @@ def _verify_installed_probe(
     if not isinstance(codes, list) or "PYSEC001" not in codes:
         raise VerificationError("Probe instalado não confirmou análise de código real.")
     process_guards = payload.get("process_escape_denied")
-    if process_guards != ["git_diff", "git_status", "shell_diff", "shell_status"]:
+    if process_guards != [
+        "git_diff",
+        "git_status",
+        "shell_diff",
+        "shell_status",
+        "shell_write",
+    ]:
         raise VerificationError(
             "Probe instalado não confirmou confinamento de ShellSkill/GitSkill."
         )
