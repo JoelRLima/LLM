@@ -27,7 +27,7 @@ from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
 from agent.runtime.paths import WorkspacePaths
-from agent.skills.policy import builtin_skills_for_persona, persona_allowed_capabilities
+from agent.skills.policy import builtin_skills_for_persona, include_eligible_extensions, persona_allowed_capabilities
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
@@ -253,8 +253,6 @@ class Orchestrator(OrchestratorOperations):
         return self._planning_context
 
     def _create_planning_context(self) -> None:
-        """Capture one planning snapshot; production has no task authority yet."""
-
         if self.tool_registry is None or self.application_authority is None:
             self._planning_context = None
             return
@@ -264,6 +262,7 @@ class Orchestrator(OrchestratorOperations):
             self.task_authority,
             self.allowed_capabilities,
         )
+        include_eligible_extensions(self.active_skills, self.skills, self._planning_context, self.tool_registry)
 
     def get_planning_view(self, planner_kind: str) -> PlanningPresentationSnapshot | None:
         """Derive a planner view without rebuilding or consulting runtime sources."""

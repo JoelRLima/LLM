@@ -192,7 +192,8 @@ def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, A
     if not skill:
         return True, None  # ferramenta desconhecida, deixa executar e falhar depois
 
-    schema = skill.get_schema()
+    schema_provider = getattr(skill, "get_schema", None)
+    schema = schema_provider() if callable(schema_provider) else getattr(skill, "schema", {})
     if not schema or not isinstance(schema, dict):
         return True, None  # sem schema, não valida
 

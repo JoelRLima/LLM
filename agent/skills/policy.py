@@ -82,6 +82,22 @@ def builtin_skills_for_persona(persona: str, registry: Any = None) -> list[str]:
     ]
 
 
+def include_eligible_extensions(active: list[str], skills: dict[str, Any], context: Any, registry: Any) -> None:
+    """Bridge eligible extension descriptors into legacy step validation."""
+    if context is None or registry is None:
+        return
+    for tool in context.tools:
+        if getattr(getattr(tool, "origin_kind", None), "value", None) != "extension":
+            continue
+        if tool.name not in active:
+            active.append(tool.name)
+        if tool.name not in skills:
+            try:
+                skills[tool.name] = registry.descriptor(tool.name)
+            except KeyError:
+                pass
+
+
 def persona_allowed_capabilities(persona: str) -> frozenset[str]:
     allowed = PERSONA_CAPABILITIES.get(persona, PERSONA_CAPABILITIES["general"])
     return frozenset(c.value if hasattr(c, "value") else str(c) for c in allowed)

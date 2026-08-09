@@ -43,6 +43,12 @@ from agent.application import AgentApplication
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
+from agent.runtime.workspace_context import WorkspaceContext
+from agent.tools.authority import TaskAuthoritySnapshot
+from agent.tools.extension_catalog_service import ExtensionCatalogService
+from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 
 
 workspace = Path(sys.argv[1]).resolve()
@@ -94,6 +100,9 @@ class DeterministicJourneyGateway:
                 return '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"%s","targets":["sample.py"]}}]}' % self.objective
             if "SLICE_B3" in self.objective:
                 return '{"plan":[{"tool":"file_writer","args":{"action":"write","file_path":"sample.py","content":"bypass\\n"}}]}'
+            if "SLICE_D1" in self.objective or "SLICE_D3" in self.objective or "SLICE_D4" in self.objective:
+                marker = "D1_EXTERNAL_EVIDENCE" if "SLICE_D1" in self.objective else ("D3_AUTHORITY_DENIED" if "SLICE_D3" in self.objective else "D4_EXTERNAL_FAILURE")
+                return '{"plan":[{"tool":"demo_tool","args":{"text":"%s"}}]}' % marker
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
         if "Objetivo de engenharia:" in prompt and "SLICE_B" in self.objective:
             if "SLICE_B1" in self.objective:
@@ -119,6 +128,12 @@ class DeterministicJourneyGateway:
                 return "A modificaÃ§Ã£o nÃ£o foi validada: o validator real falhou e o arquivo foi revertido."
             if "SLICE_B4" in self.objective:
                 return "A modificaÃ§Ã£o fora da autoridade foi recusada sem alterar o workspace."
+            if "D1_EXTERNAL_EVIDENCE" in prompt:
+                return "A extensao externa confirmou D1_EXTERNAL_EVIDENCE pelo protocolo stdio real."
+            if "RUNTIME_MISMATCH" in prompt or "TASK_AUTHORITY" in prompt or "autoridade" in prompt.casefold():
+                return "A extensao foi descoberta, mas o gateway recusou a invocacao por autoridade insuficiente."
+            if "D4_EXTERNAL_FAILURE" in prompt or "TOOL_ERROR" in prompt:
+                return "A extensao externa falhou; a resposta nao foi considerada sucesso."
             if "acesso negado" in prompt.casefold() or "fora" in prompt.casefold():
                 return "NÃ£o foi possÃ­vel ler o caminho externo: acesso negado."
             return "A tarefa foi concluÃ­da com a evidÃªncia retornada pela ferramenta."
@@ -328,6 +343,79 @@ def run_modify_journeys(app_home, workspace):
                     raise AssertionError(f"B4 alterou alvo fora da autoridade: {measurement!r}")
     return measurements
 
+
+def run_extension_journeys(base_dir):
+    extension_dir = base_dir / "external-stdio-extension"
+    extension_dir.mkdir(parents=True, exist_ok=True)
+    marker = extension_dir / "spawned.txt"
+    manifest = extension_dir / "manifest.json"
+    marker_literal = repr(str(marker))
+    (extension_dir / "tool.py").write_text(
+        "import json\\n"
+        "from pathlib import Path\\n"
+        "payload = json.loads(__import__('sys').stdin.read())\\n"
+        f"Path({marker_literal}).write_text('spawned', encoding='utf-8')\\n"
+        "text = payload.get('args', {}).get('text', '')\\n"
+        "if text == 'D4_EXTERNAL_FAILURE':\\n"
+        "    response = {'invocation_id': payload.get('invocation_id'), 'status': 'failed', 'message': 'D4_EXTERNAL_FAILURE'}\\n"
+        "else:\\n"
+        "    response = {'invocation_id': payload.get('invocation_id'), 'status': 'succeeded', 'message': f'externo: {text}', 'data': {'echo': text}}\\n"
+        "print(json.dumps(response), flush=True)\\n",
+        encoding="utf-8",
+    )
+    manifest.write_text(json.dumps({
+        "id": "installed.demo.extension",
+        "version": "1.0.0",
+        "protocol_version": "1.0",
+        "transport": "stdio",
+        "entrypoint": ["${python}", "${extension_dir}/tool.py"],
+        "timeout_seconds": 5,
+        "tools": [{
+            "name": "demo_tool",
+            "description": "Extensao externa stdio deterministica.",
+            "schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+            "capabilities": ["read"],
+        }],
+    }), encoding="utf-8")
+    measurements = []
+    scenarios = (
+        ("d1_success", "SLICE_D1: use a extensao externa e informe D1_EXTERNAL_EVIDENCE.", TaskAuthoritySnapshot(frozenset({"read"}))),
+        ("d3_denied", "SLICE_D3: use a extensao externa sem autoridade suficiente.", TaskAuthoritySnapshot(frozenset({"read"}), runtime_identity=RuntimeSnapshotIdentity("wrong-runtime", "workspace"))),
+        ("d4_failure", "SLICE_D4: use a extensao externa e reporte D4_EXTERNAL_FAILURE.", TaskAuthoritySnapshot(frozenset({"read"}))),
+    )
+    for name, objective, authority in scenarios:
+        scenario_home = base_dir / f"app-{name}"
+        scenario_workspace = base_dir / f"workspace-{name}"
+        scenario_home.mkdir(parents=True, exist_ok=True)
+        scenario_workspace.mkdir(parents=True, exist_ok=True)
+        paths = AppPaths.discover(scenario_home, env={})
+        ConfigRepository(paths).initialize()
+        catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
+        catalog.add(manifest)
+        workspace_id = WorkspaceContext.create(scenario_workspace).workspace_id
+        service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
+        service.enable("installed.demo.extension")
+        service.grant("installed.demo.extension", "read")
+        marker.unlink(missing_ok=True)
+        started_at = time.monotonic()
+        gateway = DeterministicJourneyGateway(objective)
+        with AgentApplication.create(paths=paths, workspace=scenario_workspace, gateway=gateway, task_authority=authority, configure_logging=False) as application:
+            application.orchestrator._route_persona(objective)
+            planning_view = application.orchestrator.get_planning_view("linear")
+            if planning_view is None or "demo_tool" not in planning_view.presented_names:
+                raise AssertionError(f"extension nao ficou visivel pelo planner: names={application.tool_registry.names()!r}, diagnostics={application.bootstrap_diagnostics!r}, view={planning_view!r}")
+            result = application.run(objective)
+            measurement = project_measurement(name, objective, started_at, application, result, family="d")
+            measurement.update({"answer": result.answer[:500], "model_calls": len(gateway.calls), "status": result.status, "spawned": marker.is_file()})
+            measurements.append(measurement)
+            if name == "d1_success" and (result.status != "succeeded" or "D1_EXTERNAL_EVIDENCE" not in result.answer or not marker.is_file()):
+                raise AssertionError(f"D1 nao consumiu processo externo: {measurement!r}")
+            if name == "d3_denied" and (marker.exists() or result.status == "succeeded" or not result.answer):
+                raise AssertionError(f"D3 nao negou antes do spawn: {measurement!r}")
+            if name == "d4_failure" and (result.status == "succeeded" or not marker.is_file() or not result.answer):
+                raise AssertionError(f"D4 nao preservou failure externo: {measurement!r}")
+    return measurements
+
 registry = load_skill_registry(
     base_dir=workspace,
     scratch_dir=scratch_dir,
@@ -427,6 +515,9 @@ if modify_measurements[2].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B3 manteve bypass: {modify_measurements!r}")
 if modify_measurements[3].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B4 alterou alvo negado: {modify_measurements!r}")
+extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
+if len(extension_measurements) != 3:
+    raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
 print(
     json.dumps(
         {
@@ -436,6 +527,7 @@ print(
             "slice_a": slice_measurements,
             "slice_c": shell_measurements,
             "slice_b": modify_measurements,
+            "slice_d": extension_measurements,
             "status": "ok",
         },
         ensure_ascii=False,
@@ -903,6 +995,7 @@ def _verify_installed_probe(
     _validate_slice_a_payload(payload)
     _validate_slice_c_payload(payload)
     _validate_slice_b_payload(payload)
+    _validate_slice_d_payload(payload)
 
 
 def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
@@ -984,6 +1077,28 @@ def _validate_slice_b_invocations(item: Mapping[str, Any]) -> None:
         raise VerificationError(f"Slice B nÃ£o projetou modification+validation: {item!r}")
     if invocations[0].get("invocation_id") == invocations[1].get("invocation_id"):
         raise VerificationError("Slice B reutilizou invocation_id entre modificaÃ§Ã£o e validaÃ§Ã£o.")
+
+
+def _validate_slice_d_payload(payload: Mapping[str, Any]) -> None:
+    extension = payload.get("slice_d")
+    expected_ids = [
+        "installed-slice-d:d1_success",
+        "installed-slice-d:d3_denied",
+        "installed-slice-d:d4_failure",
+    ]
+    if not isinstance(extension, list) or [item.get("task_id") for item in extension] != expected_ids:
+        raise VerificationError("Probe instalado nao executou os cenarios Slice D.")
+    success, denied, failure = extension
+    if success.get("terminal_outcome") != "SUCCESS" or not success.get("spawned") or "D1_EXTERNAL_EVIDENCE" not in str(success.get("answer", "")):
+        raise VerificationError("Slice D D1 nao provou processo externo e consumo pelo modelo.")
+    if denied.get("terminal_outcome") == "SUCCESS" or denied.get("spawned") or not denied.get("answer"):
+        raise VerificationError("Slice D D3 nao negou antes do efeito externo.")
+    if failure.get("terminal_outcome") == "SUCCESS" or not failure.get("spawned") or not failure.get("answer"):
+        raise VerificationError("Slice D D4 publicou sucesso indevido.")
+    if not all(item.get("invocation_id") for item in extension):
+        raise VerificationError("Slice D perdeu invocation_id externo.")
+    if not all("duration_ms" in item and "output_chars" in item for item in extension):
+        raise VerificationError("Slice D nao reutilizou measurement minimo.")
 
 
 def _verify_extension_aware_bootstrap(
