@@ -37,6 +37,7 @@ import sys
 import time
 from pathlib import Path
 
+from agent.approval import AutoApprove
 from agent.skills import load_skill_registry
 from agent.application import AgentApplication
 from agent.llm.contracts import ProviderCapabilities
@@ -85,12 +86,22 @@ class DeterministicJourneyGateway:
                 return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
             if "SLICE_A2" in self.objective:
                 return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2_EVIDENCE","path":"."}}]}'
+            if "SLICE_C1" in self.objective or "SLICE_C3" in self.objective:
+                return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
+            if "SLICE_C2" in self.objective:
+                return '{"plan":[{"tool":"shell","args":{"command":"git status"}}]}'
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
         if "Resultados das ferramentas executadas:" in prompt:
             if "SLICE_A1_EVIDENCE" in prompt:
                 return "A leitura encontrou SLICE_A1_EVIDENCE no arquivo permitido."
             if "SLICE_A2_EVIDENCE" in prompt:
                 return "A busca encontrou SLICE_A2_EVIDENCE no workspace."
+            if "initial" in prompt:
+                history_line = next(
+                    (line.strip() for line in prompt.splitlines() if "initial" in line),
+                    "initial",
+                )
+                return f"O histórico real do repositório confirma: {history_line}"
             if "acesso negado" in prompt.casefold() or "fora" in prompt.casefold():
                 return "NÃ£o foi possÃ­vel ler o caminho externo: acesso negado."
             return "A tarefa foi concluÃ­da com a evidÃªncia retornada pela ferramenta."
@@ -110,7 +121,7 @@ class DeterministicJourneyGateway:
         return max(1, len(text) // 4)
 
 
-def project_measurement(name, objective, started_at, application, result):
+def project_measurement(name, objective, started_at, application, result, family="a"):
     history = list(application.orchestrator.agent_state.tool_history)
     entry = history[-1] if history else {}
     raw = entry.get("result") if isinstance(entry, dict) else {}
@@ -122,7 +133,7 @@ def project_measurement(name, objective, started_at, application, result):
     denied = "acesso negado" in error.casefold()
     outcome = "SUCCESS" if result.status == "succeeded" else ("DENIED" if denied else result.status.upper())
     return {
-        "task_id": f"installed-slice-a:{name}",
+        "task_id": f"installed-slice-{family}:{name}",
         "objective": objective,
         "duration_ms": int((time.monotonic() - started_at) * 1000),
         "tools": [entry.get("tool")] if entry.get("tool") else [],
@@ -170,6 +181,50 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             ):
                 raise AssertionError(f"resposta nÃ£o consumiu evidÃªncia: {result.answer!r}")
             measurements.append(measurement)
+    return measurements
+
+
+def run_shell_journeys(app_home, workspace, failure_workspace):
+    scenarios = (
+        ("c1_history", "SLICE_C1: inspecione o histórico recente do repositório.", workspace),
+        ("c2_unsupported", "SLICE_C2: execute git status para mostrar o estado do repositório.", workspace),
+        ("c3_failure", "SLICE_C3: inspecione o histórico local.", failure_workspace),
+    )
+    measurements = []
+    for name, objective, scenario_workspace in scenarios:
+        started_at = time.monotonic()
+        gateway = DeterministicJourneyGateway(objective)
+        scenario_paths = AppPaths.discover(app_home / name, env={})
+        ConfigRepository(scenario_paths).initialize()
+        with AgentApplication.create(
+            paths=scenario_paths,
+            workspace=scenario_workspace,
+            gateway=gateway,
+            approval_policy=AutoApprove(),
+            configure_logging=False,
+        ) as application:
+            result = application.run(objective)
+            measurement = project_measurement(name, objective, started_at, application, result, family="c")
+            measurement["answer"] = result.answer[:500]
+            measurement["model_calls"] = len(gateway.calls)
+            measurement["status"] = result.status
+            measurements.append(measurement)
+            history = application.orchestrator.agent_state.tool_history
+            if not history:
+                if name == "c2_unsupported" and result.status != "failed":
+                    raise AssertionError(f"capability removida sem resposta coerente: {measurement!r}")
+                if name == "c2_unsupported" and "bloqueada" not in result.answer.casefold():
+                    raise AssertionError(f"request unsupported não foi bloqueado: {measurement!r}")
+                continue
+            history_result = history[-1]["result"]
+            if name == "c1_history":
+                if result.status != "succeeded" or "initial" not in result.answer:
+                    raise AssertionError(f"histórico instalado não consumido: {measurement!r}")
+            elif name == "c2_unsupported":
+                if history_result.get("ok") is not False or "permitido" not in str(history_result.get("error", "")).casefold():
+                    raise AssertionError(f"capability removida executada: {measurement!r}")
+            elif result.status == "succeeded" or not result.answer:
+                raise AssertionError(f"failure de shell não foi observado: {measurement!r}")
     return measurements
 
 registry = load_skill_registry(
@@ -242,6 +297,21 @@ if any(item.get("invocation_id") is None for item in slice_measurements[:3]):
     raise SystemExit(f"installed Slice A perdeu invocation_id: {slice_measurements!r}")
 if slice_measurements[3].get("tools"):
     raise SystemExit(f"installed Slice A no-tool invocou ferramenta: {slice_measurements[3]!r}")
+failure_workspace = workspace.parent / "shell-failure-workspace"
+failure_workspace.mkdir(parents=True, exist_ok=True)
+shell_measurements = run_shell_journeys(
+    workspace.parent / "slice-c-app-home",
+    workspace,
+    failure_workspace,
+)
+if len(shell_measurements) != 3:
+    raise SystemExit(f"installed Slice C produziu mediÃ§Ã£o incompleta: {shell_measurements!r}")
+if not shell_measurements[0].get("invocation_id") or shell_measurements[0].get("terminal_outcome") != "SUCCESS":
+    raise SystemExit(f"installed Slice C C1 falhou: {shell_measurements!r}")
+if shell_measurements[1].get("terminal_outcome") == "SUCCESS":
+    raise SystemExit(f"installed Slice C C2 executou capability removida: {shell_measurements!r}")
+if shell_measurements[2].get("terminal_outcome") == "SUCCESS":
+    raise SystemExit(f"installed Slice C C3 não reportou failure: {shell_measurements!r}")
 print(
     json.dumps(
         {
@@ -249,6 +319,7 @@ print(
             "escape_denied": True,
             "process_escape_denied": sorted(escape_attempts),
             "slice_a": slice_measurements,
+            "slice_c": shell_measurements,
             "status": "ok",
         },
         ensure_ascii=False,
@@ -714,6 +785,7 @@ def _verify_installed_probe(
             "Probe instalado não confirmou confinamento de ShellSkill/GitSkill."
         )
     _validate_slice_a_payload(payload)
+    _validate_slice_c_payload(payload)
 
 
 def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
@@ -738,6 +810,29 @@ def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
         raise VerificationError("Slice A perdeu invocation_id em ferramenta executada.")
     if not all("duration_ms" in item and "output_chars" in item for item in slice_a):
         raise VerificationError("Slice A nÃ£o produziu measurement mÃ­nimo.")
+
+
+def _validate_slice_c_payload(payload: Mapping[str, Any]) -> None:
+    shell = payload.get("slice_c")
+    expected_ids = [
+        "installed-slice-c:c1_history",
+        "installed-slice-c:c2_unsupported",
+        "installed-slice-c:c3_failure",
+    ]
+    if not isinstance(shell, list) or len(shell) != 3:
+        raise VerificationError("Probe instalado nÃ£o executou os cenÃ¡rios Slice C.")
+    if [item.get("task_id") for item in shell] != expected_ids:
+        raise VerificationError("Probe instalado nÃ£o preservou a identidade dos cenÃ¡rios Slice C.")
+    if shell[0].get("terminal_outcome") != "SUCCESS" or "initial" not in str(shell[0].get("answer", "")):
+        raise VerificationError("Slice C C1 nÃ£o consumiu o histórico real.")
+    if shell[1].get("terminal_outcome") == "SUCCESS":
+        raise VerificationError("Slice C C2 executou capability removida.")
+    if shell[2].get("terminal_outcome") == "SUCCESS":
+        raise VerificationError("Slice C C3 nÃ£o preservou failure.")
+    if not shell[0].get("invocation_id") or not shell[2].get("invocation_id"):
+        raise VerificationError(f"Slice C perdeu invocation_id: {shell!r}")
+    if not all("duration_ms" in item and "output_chars" in item for item in shell):
+        raise VerificationError("Slice C nÃ£o reutilizou measurement mÃ­nimo.")
 
 
 def _verify_extension_aware_bootstrap(
