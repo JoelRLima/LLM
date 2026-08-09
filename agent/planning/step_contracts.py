@@ -24,6 +24,7 @@ class StepExecutionOutcome:
     result: Optional[ToolResult] = None
     error: str = ""
     final_answer: Optional[str] = None
+    decisive: bool = False
 
 
 class MemoryPort(Protocol):

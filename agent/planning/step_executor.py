@@ -54,6 +54,7 @@ class StepExecutor:
             return None if self.policies.validate(index + 1, tool, args) else self.finish_failed(index, "passo inválido")
         except ToolNotFoundError as exc:
             self.context._emit("error", {"step": index + 1, "error": str(exc)})
+            self.finish_failed(index, str(exc))
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, error=str(exc))
 
     def _ensure_writer_content(
@@ -65,6 +66,7 @@ class StepExecutor:
             return None
         action = self.context._handle_step_failure(index + 1, "Conteúdo não gerado para file_writer", tool, args)
         if action == "replan":
+            self.finish_failed(index, "conteúdo não gerado")
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, error="conteúdo não gerado")
         return self.finish_failed(index, "conteúdo não gerado")
 
@@ -82,6 +84,7 @@ class StepExecutor:
             result = self.context._run_tool(tool, args)
         except ToolNotFoundError as exc:
             self.context._emit("error", {"step": index + 1, "error": str(exc)})
+            self.finish_failed(index, str(exc))
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, error=str(exc))
         if not getattr(self.context, "tool_invocation_gateway", None):
             self.context._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
@@ -122,24 +125,31 @@ class StepExecutor:
         error = str(result.get("error") or "falha da ferramenta")
         action = self.context._handle_step_failure(index + 1, f"Tool '{tool}' falhou: {error}", tool, args)
         if action == "replan":
+            self.finish_failed(index, error, result)
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, result=result, error=error)
         if action == "continue":
             self.context._purge_stale_context()
         else:
             self.context.fail_task()
-        return self.finish_failed(index, error, result)
+        return self.finish_failed(index, error, result, decisive=action != "continue")
 
     def _finish_post_process_failure(self, index: int, tool: str, args: ToolArgs, result: ToolResult) -> StepExecutionOutcome:
         error = str(result.get("error") or "falha no pós-processamento")
         action = self.context._handle_step_failure(index + 1, f"Tool '{tool}' falhou: {error}", tool, args)
         if action == "replan":
+            self.finish_failed(index, error, result)
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, result=result, error=error)
-        return self.finish_failed(index, error, result)
+        return self.finish_failed(index, error, result, decisive=action != "continue")
 
-    def finish_failed(self, index: int, error: str, result: Optional[ToolResult] = None) -> StepExecutionOutcome:
+    def finish_failed(
+        self, index: int, error: str, result: Optional[ToolResult] = None,
+        *, decisive: bool = False,
+    ) -> StepExecutionOutcome:
         self.context.agent_state.mark_step_failed(index, error)
         self._emit_terminal("step_failed", index, error)
-        return StepExecutionOutcome(StepOutcomeKind.FAILED, result=result, error=error)
+        return StepExecutionOutcome(
+            StepOutcomeKind.FAILED, result=result, error=error, decisive=decisive
+        )
 
     def finish_skipped(self, index: int, reason: str) -> StepExecutionOutcome:
         self.context.agent_state.mark_step_skipped(index, reason)

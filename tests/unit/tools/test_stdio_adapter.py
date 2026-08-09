@@ -856,6 +856,71 @@ def test_stdio_adapter_does_not_leave_reader_threads(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups are unavailable on Windows")
+def test_stdio_adapter_success_terminates_detached_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _require_pidfd()
+    ready_path = tmp_path / "success-child-ready.txt"
+    pid_path = tmp_path / "success-child.pid"
+    allow_path = tmp_path / "success-allow.txt"
+    late_path = tmp_path / "success-child-late.txt"
+    adapter = _adapter_for_script(
+        tmp_path,
+        f"""
+        import json
+        import os
+        import pathlib
+        import subprocess
+        import sys
+        import time
+
+        payload = json.loads(sys.stdin.readline())
+        child = (
+            "import os,pathlib,time\\n"
+            f"pid=pathlib.Path(r'{pid_path.as_posix()}')\\n"
+            f"ready=pathlib.Path(r'{ready_path.as_posix()}')\\n"
+            f"allow=pathlib.Path(r'{allow_path.as_posix()}')\\n"
+            f"late=pathlib.Path(r'{late_path.as_posix()}')\\n"
+            "pid.write_text(str(os.getpid()))\\n"
+            "ready.write_text('ready')\\n"
+            "os.close(0); os.close(1); os.close(2)\\n"
+            "deadline=time.monotonic()+60\\n"
+            "while not allow.exists() and time.monotonic()<deadline: time.sleep(0.01)\\n"
+            "if allow.exists(): late.write_text('late')"
+        )
+        subprocess.Popen([sys.executable, '-c', child])
+        deadline = time.monotonic() + 5
+        while not pathlib.Path(r'{ready_path.as_posix()}').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        print(json.dumps({{"invocation_id": payload["invocation_id"], "status": "succeeded"}}))
+        """,
+    )
+    original_monitor = stdio_process_module._monitor_process
+    pidfd: int | None = None
+
+    def monitor_after_ready(*args: Any, **kwargs: Any) -> object:
+        nonlocal pidfd
+        assert _wait_for_path(ready_path)
+        assert _wait_for_path(pid_path)
+        pidfd = os.pidfd_open(_read_test_pid(pid_path), 0)  # type: ignore[attr-defined]
+        return original_monitor(*args, **kwargs)
+
+    monkeypatch.setattr(stdio_process_module, "_monitor_process", monitor_after_ready)
+    try:
+        result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
+        assert result.status == ToolStatus.SUCCEEDED
+        assert pidfd is not None
+        assert _wait_for_pidfd(pidfd, 1000)
+        allow_path.write_text("allow", encoding="utf-8")
+        assert not _wait_for_path(late_path, 1)
+        assert not late_path.exists()
+    finally:
+        allow_path.write_text("allow", encoding="utf-8")
+        if pidfd is not None:
+            _cleanup_pidfd(pidfd)
+
+
 def test_stdio_adapter_terminates_descendant_before_probe_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

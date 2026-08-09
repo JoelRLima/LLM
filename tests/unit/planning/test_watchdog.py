@@ -110,6 +110,44 @@ def test_no_progress_keeps_semantic_result_differences(config: dict) -> None:
     assert Watchdog.check_no_progress_loop(history, config) is None
 
 
+def test_signature_is_invariant_to_mapping_insertion_order() -> None:
+    first = Watchdog._signature(
+        "file_reader",
+        {"file_path": "x", "options": {"b": 2, "a": 1}},
+        {"ok": True, "data": {"z": 3, "a": 1}},
+    )
+    second = Watchdog._signature(
+        "file_reader",
+        {"options": {"a": 1, "b": 2}, "file_path": "x"},
+        {"data": {"a": 1, "z": 3}, "ok": True},
+    )
+    assert first == second
+
+
+def test_signature_strips_only_framework_ids_at_result_root() -> None:
+    first = Watchdog._signature(
+        "file_reader", {"file_path": "x"},
+        {"ok": True, "invocation_id": "one", "attempt_id": "a", "data": {"value": 1}},
+    )
+    second = Watchdog._signature(
+        "file_reader", {"file_path": "x"},
+        {"ok": True, "invocation_id": "two", "attempt_id": "b", "data": {"value": 1}},
+    )
+    assert first == second
+
+
+def test_signature_preserves_nested_payload_ids_and_argument_semantics() -> None:
+    first = Watchdog._signature(
+        "file_reader", {"payload": {"invocation_id": "one"}},
+        {"ok": True, "data": {"invocation_id": "one"}},
+    )
+    second = Watchdog._signature(
+        "file_reader", {"payload": {"invocation_id": "two"}},
+        {"ok": True, "data": {"invocation_id": "two"}},
+    )
+    assert first != second
+
+
 def test_no_progress_loop_historico_insuficiente(config: dict) -> None:
     history = [
         {"tool": "a", "args": {}, "result": {"ok": False, "error": "x"}},

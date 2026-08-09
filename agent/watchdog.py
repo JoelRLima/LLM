@@ -17,6 +17,7 @@ tarefa, sem nenhuma chamada adicional ao LLM:
 passo, do mesmo jeito que já chamam `CostGuard.check_limits(...)`.
 """
 import hashlib
+import json
 import time
 from typing import Any, Dict, List, Optional
 
@@ -57,22 +58,26 @@ class Watchdog:
     @staticmethod
     def _signature(tool: str, args: Dict[str, Any], result: Dict[str, Any]) -> str:
         """Assinatura estável de (ferramenta, args, resultado) para detectar repetição exata."""
-        raw = f"{tool}|{stringify(Watchdog._without_ephemeral_ids(args))}|{stringify(Watchdog._without_ephemeral_ids(result))}"
+        # Arguments are tool payload; only root result metadata is ephemeral.
+        normalized_result = Watchdog._without_ephemeral_ids(result)
+        raw = json.dumps(
+            {"tool": tool, "args": args, "result": normalized_result},
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
         return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
 
     @staticmethod
     def _without_ephemeral_ids(value: Any) -> Any:
-        """Remove correlation-only identifiers while retaining result semantics."""
+        """Remove only root framework IDs; nested tool data is semantic."""
         if isinstance(value, dict):
             return {
-                key: Watchdog._without_ephemeral_ids(item)
+                key: item
                 for key, item in value.items()
                 if key not in {"invocation_id", "attempt_id"}
             }
-        if isinstance(value, list):
-            return [Watchdog._without_ephemeral_ids(item) for item in value]
-        if isinstance(value, tuple):
-            return tuple(Watchdog._without_ephemeral_ids(item) for item in value)
         return value
 
     @staticmethod

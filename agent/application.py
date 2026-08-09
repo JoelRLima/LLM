@@ -227,7 +227,10 @@ class AgentApplication:
 
         last_result = self.orchestrator.agent_state.last_result or {}
         tool_status = str(last_result.get("status") or "")
-        if tool_status in {"blocked", "unverified", "cancelled"}:
+        if tool_status in {
+            "blocked", "unverified", "cancelled", "failed", "timed_out",
+            "permission_denied", "protocol_error", "unavailable",
+        }:
             status = tool_status
         elif self.orchestrator._cancelled:
             status = "cancelled"

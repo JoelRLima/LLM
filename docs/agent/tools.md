@@ -102,9 +102,12 @@ uma resposta JSON tenha sido escrita. Com exit code zero, `status` ausente
 mantém o default de sucesso já existente; valores desconhecidos são erro de
 protocolo.
 
-Ao atingir timeout, limite ou erro de processo, o adapter solicita o
+Ao atingir timeout, limite, erro de processo ou sucesso, o adapter solicita o
 encerramento da árvore da extension (SIGTERM e depois SIGKILL no grupo POSIX;
-Job Object no Windows), fecha os pipes e aguarda as threads de drenagem. Falhas
+Job Object no Windows), fecha os pipes e aguarda as threads de drenagem. A invocacao
+nao deixa descendentes de background sobrevivendo ao retorno. No Windows, o
+fallback `taskkill.exe` usa o diretÃ³rio de sistema obtido do Win32, nunca
+`SystemRoot`/`WINDIR` herdado. Falhas
 de terminação, Job Object e drenagem são retornadas como `CLEANUP_ERROR`, nunca
 ocultadas por `daemon=True`; falha isolada ao remover o status privado fica
 registrada em diagnóstico bounded sem substituir o resultado principal.

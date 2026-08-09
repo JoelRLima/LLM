@@ -11,6 +11,7 @@ import pytest
 
 from agent.approval import AutoApprove
 from agent.skills import git as git_module
+from agent.skills import shell as shell_module
 from agent.skills.git import GitSkill
 from agent.skills.process_environment import confined_process_environment
 from agent.skills.process_safety import local_history_arguments, resolve_trusted_executable
@@ -118,6 +119,43 @@ def test_git_log_rejects_workspace_pretty_alias(
 
     assert git_result["ok"] is False
     assert shell_result["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["--MAX-COUNT=1", "--Max-Count=1", "-N 1", "-N1", "-n1"],
+)
+def test_git_log_rejects_case_and_alias_variants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: str
+) -> None:
+    def forbidden_run(*args, **kwargs):
+        raise AssertionError(f"Git nao deveria executar: {args!r} {kwargs!r}")
+
+    monkeypatch.setattr(git_module, "run_bounded_process", forbidden_run)
+    monkeypatch.setattr(shell_module, "_run_bounded_process", forbidden_run)
+    git_result = GitSkill(base_dir=tmp_path).execute(
+        {"command": "log", "args": arguments}
+    )
+    shell_result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
+        {"command": f"git log {arguments}"}
+    )
+    assert git_result["ok"] is False
+    assert shell_result["ok"] is False
+
+
+@pytest.mark.parametrize("command", ["GIT LOG -1", "git LOG -1"])
+def test_git_log_rejects_case_variant_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    def forbidden_run(*args, **kwargs):
+        raise AssertionError(f"Git nao deveria executar: {args!r} {kwargs!r}")
+
+    monkeypatch.setattr(git_module, "run_bounded_process", forbidden_run)
+    monkeypatch.setattr(shell_module, "_run_bounded_process", forbidden_run)
+    result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
+        {"command": command}
+    )
+    assert result["ok"] is False
 
 
 @pytest.mark.parametrize(

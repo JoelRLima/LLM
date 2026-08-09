@@ -143,3 +143,7 @@ Otimizador de planos que aplica apenas transformações comprovadamente equivale
 * **`ExecutionResult` (dataclass)**: `aborted` (bool), `final_answer` (resposta pronta se abortado ou se a execução já gerou uma resposta direta), `validated_plan` (o plano final que foi/seria executado).
 * **Emite telemetria `"replan"`:** ao acionar o replanejador para um passo bloqueado; [`task_report.py`](../../agent/reporting/task_report.py) inclui esses eventos no relatório.
 * **Conectado em:** `orchestrator.run()` (caminho linear — a validação prévia deixou de estar duplicada no `Orchestrator`), `hierarchical_executor._execute_step()` (caminho hierárquico), `reactive_loop.run_reactive()` (caminho reativo, validação por passo).
+Em batches paralelas, o resultado individual continua semantico e nao e
+convertido; a policy sequencial decide CONTINUE ou disposition decisiva por
+slot. O agregado externo e projetado pela primeira disposition decisiva em
+ordem logica, nunca pelo ultimo future ou registro fisicamente inserido.

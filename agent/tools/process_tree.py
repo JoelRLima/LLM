@@ -20,22 +20,45 @@ def _trusted_taskkill_path() -> str | None:
 
     if os.name != "nt":
         return None
-    system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
-    if not system_root:
+    system_directory = _windows_system_directory()
+    if not system_directory:
         return None
-    root = Path(system_root)
-    if not root.is_absolute():
-        return None
-    candidate = root / "System32" / "taskkill.exe"
+    system32 = Path(system_directory)
+    candidate = system32 / "taskkill.exe"
     try:
-        canonical_root = root.resolve()
         resolved = candidate.resolve(strict=True)
-        system32 = (canonical_root / "System32").resolve()
         if not resolved.is_file() or str(resolved.parent).casefold() != str(system32).casefold():
             return None
         return str(resolved)
     except (OSError, ValueError):
         return None
+
+
+def _windows_system_directory() -> str | None:
+    """Read the system directory from Win32, never from inherited env vars."""
+
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        get_system_directory = kernel32.GetSystemDirectoryW
+        get_system_directory.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+        get_system_directory.restype = wintypes.UINT
+        size = 260
+        while size <= 32768:
+            buffer = ctypes.create_unicode_buffer(size)
+            length = int(get_system_directory(buffer, size))
+            if length == 0:
+                return None
+            if length < size - 1:
+                return buffer.value
+            size *= 2
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    return None
 
 
 def process_group_id(process: subprocess.Popen[Any]) -> int | None:

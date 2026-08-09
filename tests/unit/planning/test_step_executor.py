@@ -572,3 +572,161 @@ def test_unverified_tool_result_is_not_completed(monkeypatch):
 
     assert answer == "Validação indisponível."
     assert state.get_step_status(0) is StepStatus.UNVERIFIED
+def _run_parallel_pair_for_projection(
+    monkeypatch, left: dict, right: dict, *, replan_paths: set[str] | None = None,
+    later_slot_completes_first: bool = True,
+):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "a.py"}},
+            {"tool": "file_reader", "args": {"file_path": "b.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+    replan_paths = replan_paths or set()
+    first_done = threading.Event()
+
+    def run_tool(_tool, args, _record_result):
+        path = args["file_path"]
+        if later_slot_completes_first:
+            if path == "a.py":
+                assert first_done.wait(timeout=2)
+            else:
+                first_done.set()
+        else:
+            if path == "b.py":
+                assert first_done.wait(timeout=2)
+            else:
+                first_done.set()
+        result = dict(left if path == "a.py" else right)
+        result.setdefault("data", path)
+        return result
+
+    context.tool_executor.run_tool = run_tool
+    context._handle_step_failure = lambda _step, _reason, _tool, args: (
+        "replan" if args.get("file_path") in replan_paths else "continue"
+    )
+    executor = PlanExecutor(context)
+    executor._attempt_replan = lambda *_args, **_kwargs: None
+    answer = executor.execute("ler", {})
+    return state, context, executor, answer
+
+
+@pytest.mark.parametrize("later_slot_completes_first", [True, False])
+def test_parallel_multiple_replans_choose_first_logical_slot_and_settle_all(
+    monkeypatch, later_slot_completes_first
+):
+    state, _context, executor, _answer = _run_parallel_pair_for_projection(
+        monkeypatch,
+        {"ok": False, "done": True, "status": "failed", "error": "retry-a"},
+        {"ok": False, "done": True, "status": "failed", "error": "retry-b"},
+        replan_paths={"a.py", "b.py"},
+        later_slot_completes_first=later_slot_completes_first,
+    )
+    assert executor.last_projection is not None
+    assert executor.last_projection.logical_slot == 0
+    assert executor.last_projection.outcome.kind is StepOutcomeKind.REPLAN
+    assert [state.get_step_status(i) for i in range(2)] == [
+        StepStatus.FAILED,
+        StepStatus.FAILED,
+    ]
+    assert len(state.tool_history) == 2
+    assert all(entry["invocation_id"] for entry in state.tool_history)
+    assert all(entry["logical_slot"] == i for i, entry in enumerate(state.tool_history))
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "replan_paths", "expected_kind"),
+    [
+        (
+            {"ok": False, "done": True, "status": "failed", "error": "retry"},
+            {"ok": False, "done": True, "status": "blocked", "error": "approval", "message": "blocked"},
+            {"a.py"}, StepOutcomeKind.REPLAN,
+        ),
+        (
+            {"ok": False, "done": True, "status": "blocked", "error": "approval", "message": "blocked"},
+            {"ok": False, "done": True, "status": "failed", "error": "retry"},
+            {"b.py"}, StepOutcomeKind.BLOCKED,
+        ),
+        (
+            {"ok": False, "done": True, "status": "failed", "error": "retry"},
+            {"ok": False, "done": True, "status": "cancelled", "error": "cancelled", "message": "cancelled"},
+            {"a.py"}, StepOutcomeKind.REPLAN,
+        ),
+        (
+            {"ok": False, "done": True, "status": "failed", "error": "retry"},
+            {"ok": False, "done": True, "status": "failed", "error": "fatal"},
+            {"a.py"}, StepOutcomeKind.REPLAN,
+        ),
+    ],
+)
+@pytest.mark.parametrize("later_slot_completes_first", [True, False])
+def test_parallel_replan_and_terminal_use_first_decisive_logical_slot(
+    monkeypatch, left, right, replan_paths, expected_kind, later_slot_completes_first
+):
+    state, _context, executor, _answer = _run_parallel_pair_for_projection(
+        monkeypatch, left, right, replan_paths=replan_paths,
+        later_slot_completes_first=later_slot_completes_first,
+    )
+    assert executor.last_projection is not None
+    assert executor.last_projection.outcome.kind is expected_kind
+    assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
+    assert len(state.tool_history) == 2
+    assert {entry["logical_slot"] for entry in state.tool_history} == {0, 1}
+
+
+@pytest.mark.parametrize("terminal_status", ["blocked", "cancelled", "unverified"])
+@pytest.mark.parametrize("later_slot_completes_first", [True, False])
+def test_parallel_terminal_plus_success_projects_terminal_result(
+    monkeypatch, terminal_status, later_slot_completes_first
+):
+    terminal = {
+        "ok": False, "done": True, "status": terminal_status,
+        "error": terminal_status, "message": terminal_status,
+    }
+    state, _context, executor, _answer = _run_parallel_pair_for_projection(
+        monkeypatch, terminal, {"ok": True, "done": True, "status": "succeeded"},
+        later_slot_completes_first=later_slot_completes_first,
+    )
+    assert executor.last_projection is not None
+    assert executor.last_projection.outcome.kind in {
+        StepOutcomeKind.BLOCKED, StepOutcomeKind.CANCELLED, StepOutcomeKind.UNVERIFIED
+    }
+    assert state.last_result["status"] == terminal_status
+    assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
+
+
+@pytest.mark.parametrize("failure_status", ["failed", "timed_out", "permission_denied"])
+@pytest.mark.parametrize("later_slot_completes_first", [True, False])
+def test_parallel_continue_failure_matches_sequential_order(
+    monkeypatch, failure_status, later_slot_completes_first
+):
+    failure = {"ok": False, "done": True, "status": failure_status, "error": failure_status}
+    state, _context, executor, _answer = _run_parallel_pair_for_projection(
+        monkeypatch, failure, {"ok": True, "done": True, "status": "succeeded"},
+        later_slot_completes_first=later_slot_completes_first,
+    )
+    assert executor.last_projection is not None
+    assert executor.last_projection.logical_slot == 1
+    assert executor.last_projection.result["status"] == "succeeded"
+    assert state.last_result["status"] == "succeeded"
+    assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
+
+
+@pytest.mark.parametrize("later_slot_completes_first", [True, False])
+def test_parallel_success_then_continue_failure_projects_logical_failure(
+    monkeypatch, later_slot_completes_first
+):
+    state, _context, executor, _answer = _run_parallel_pair_for_projection(
+        monkeypatch,
+        {"ok": True, "done": True, "status": "succeeded"},
+        {"ok": False, "done": True, "status": "failed", "error": "continue"},
+        later_slot_completes_first=later_slot_completes_first,
+    )
+    assert executor.last_projection is not None
+    assert executor.last_projection.logical_slot == 1
+    assert executor.last_projection.result["status"] == "failed"
+    assert state.last_result["status"] == "failed"
+    assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())

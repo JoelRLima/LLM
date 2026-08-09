@@ -211,7 +211,7 @@ efeito separada e nao substitui essa verificacao.
 A `ShellSkill` model-actionable nao e um shell arbitrario. Ela aceita somente
 `ruff check` com caminhos do workspace, metadados de historico local via `git log` e `tree` quando
 disponivel, com `shell=False`, ambiente explicito, paths validados e streams
-bounded. Em `git log`, o modelo so pode informar nenhum max-count, `-N`, `-n N`
+bounded. Em `git log`, o modelo so pode informar as formas lowercase exatas sem max-count, `-N`, `-n N`
 ou `--max-count[=]N` com digitos ASCII de 1 a 1000; `-nN` anexado e rejeitado.
 `git status` e `git diff` foram
 reduzidos da superficie model-actionable para evitar a execucao transitiva de

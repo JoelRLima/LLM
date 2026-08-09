@@ -274,9 +274,9 @@ def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_
             cleanup_failure = _cleanup(context, terminate_tree=True)
             return ProcessOutcome(failure=cleanup_failure or reader_failure)
         outcome = _build_outcome(context, stdout_limit, stderr_limit)
-        cleanup_failure = _cleanup(
-            context, terminate_tree=outcome.failure is not None
-        )
+        # A successful response still owns the whole launcher process group.
+        # Closing pipes is insufficient when a descendant redirected them.
+        cleanup_failure = _cleanup(context, terminate_tree=True)
         if cleanup_failure is not None:
             return ProcessOutcome(failure=cleanup_failure)
         return outcome

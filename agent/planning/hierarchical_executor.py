@@ -14,6 +14,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
+from agent.planning.step_contracts import StepOutcomeKind
 from agent.planning.task_graph import task_graph_from_macro_plan, topological_nodes
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
 from agent.reporting.task_tracker import TaskTracker
@@ -197,7 +198,9 @@ class HierarchicalExecutor:
                     agent_state.set_plan(gateway_result.validated_plan)
                     step_results = list(agent_state.tool_history[tool_history_start:])
                     self.tracker.record_tool_call(len(step_results))
-                    success = self._determine_step_success(step_results)
+                    success = self._determine_step_success(
+                        step_results, getattr(self.plan_executor, "last_projection", None)
+                    )
                     summary_text = self._summarize_step_results(step_results)
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao executar sub-objetivo '{step.id}': {e}")
@@ -239,7 +242,9 @@ class HierarchicalExecutor:
             logger.warning(f"HierarchicalExecutor: falha ao restaurar contexto da sessão: {e}")
 
     @staticmethod
-    def _determine_step_success(step_results: List[Dict[str, Any]]) -> bool:
+    def _determine_step_success(
+        step_results: List[Dict[str, Any]], projection: Any = None
+    ) -> bool:
         """Decide se um passo foi bem-sucedido a partir dos resultados coletados.
 
         Um passo sem nenhum resultado de ferramenta é considerado falho
@@ -247,6 +252,11 @@ class HierarchicalExecutor:
         booleano `ok`, ele é usado diretamente; caso contrário, assume-se
         sucesso (a ferramenta rodou sem lançar exceção).
         """
+        if projection is not None and getattr(projection, "result", None) is not None:
+            result_ok = bool(projection.result.get("ok"))
+            if getattr(getattr(projection, "outcome", None), "kind", None) is StepOutcomeKind.FINAL:
+                return result_ok
+            return result_ok and not projection.decisive
         if not step_results:
             return False
         last_entry = step_results[-1]

@@ -36,7 +36,9 @@ class TaskReportBuilder:
         return {
             "task_id": self._generate_task_id(),
             "objective": getattr(agent_state, "objective", None),
-            "success": self._determine_success(steps, answer),
+            "success": self._determine_success(
+                steps, answer, getattr(agent_state, "last_result", None)
+            ),
             "start_time": start,
             "end_time": end,
             "steps": steps,
@@ -125,7 +127,11 @@ class TaskReportBuilder:
         return [step["result"]["error"] for step in steps if not step["result"].get("ok") and step["result"].get("error")]
 
     @staticmethod
-    def _determine_success(steps: List[Dict[str, Any]], final_answer: str) -> bool:
+    def _determine_success(
+        steps: List[Dict[str, Any]], final_answer: str, projected_result: Any = None
+    ) -> bool:
+        if isinstance(projected_result, dict) and "ok" in projected_result:
+            return bool(projected_result.get("ok"))
         return bool((steps and steps[-1].get("result", {}).get("ok")) or final_answer.strip())
 
     @staticmethod

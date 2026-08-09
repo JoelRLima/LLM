@@ -65,7 +65,7 @@ MAX_LOCAL_HISTORY_COUNT = 1000
 def local_history_arguments(tokens: Sequence[str]) -> tuple[str, ...] | None:
     """Parse the small positive argument set supported by model-actionable Git."""
 
-    if len(tokens) < 2 or tokens[0].casefold() != "git" or tokens[1].casefold() != "log":
+    if len(tokens) < 2 or tokens[0] != "git" or tokens[1] != "log":
         return None
 
     def bounded(value: str) -> bool:
@@ -79,13 +79,13 @@ def local_history_arguments(tokens: Sequence[str]) -> tuple[str, ...] | None:
     if not extras:
         return ()
     if len(extras) == 1:
-        token = extras[0].casefold()
-        if token.startswith("-") and not token.startswith("-n") and bounded(token[1:]):
+        token = extras[0]
+        if len(token) > 1 and token[0] == "-" and bounded(token[1:]):
             return ("--max-count", token[1:])
         if token.startswith("--max-count=") and bounded(token.split("=", 1)[1]):
             return ("--max-count", token.split("=", 1)[1])
         return None
-    if len(extras) == 2 and extras[0].casefold() in {"-n", "--max-count"}:
+    if len(extras) == 2 and extras[0] in {"-n", "--max-count"}:
         return (
             ("--max-count", extras[1])
             if bounded(extras[1])

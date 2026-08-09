@@ -12,6 +12,11 @@ from agent.planning.parallel_contracts import (
 )
 from agent.planning.parallel_finalizer import finalize_parallel_index
 from agent.planning.replan import ReplanContext, replan
+from agent.planning.semantic_projection import (
+    SemanticProjection,
+    project_outcomes,
+    projection_for_outcome,
+)
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.tools.contracts import ToolInvocationRequest
 from agent.watchdog import Watchdog
@@ -33,9 +38,11 @@ class PlanExecutor:
         self.step_executor = step_executor or StepExecutor(orchestrator)
         self._step_dependencies: Dict[int, List[int]] = {}
         self._dependency_files: Dict[tuple[int, int], str] = {}
+        self.last_projection: Optional[SemanticProjection] = None
 
     def execute(self, objective: str, tool_usage_count: Dict[str, int]) -> Optional[str]:
         state = self.orchestrator.agent_state
+        self.last_projection = None
         last_result: Optional[ToolResult] = None
         self.orchestrator.workspace.create_restore_point(state.plan)
         self._rebuild_dependency_map()
@@ -67,6 +74,7 @@ class PlanExecutor:
         if len(batch) > 1:
             return self._execute_parallel_read_batch(batch, objective, usage)
         outcome = self.step_executor.execute(index, objective, usage)
+        self.last_projection = projection_for_outcome(index, outcome)
         if outcome.kind in (
             StepOutcomeKind.FINAL,
             StepOutcomeKind.CANCELLED,
@@ -88,7 +96,6 @@ class PlanExecutor:
         if replacements:
             self._replace_current_step(index, replacements)
             return StepLoopResult(index, result)
-        self.step_executor.finish_failed(index, error)
         return StepLoopResult(index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True)
 
     def _collect_parallel_read_batch(self, start_index: int) -> List[int]:
@@ -164,48 +171,40 @@ class PlanExecutor:
         correlations: Dict[int, ParallelInvocation],
         objective: str, usage: Dict[str, int],
     ) -> StepLoopResult:
-        last_result: Optional[ToolResult] = None
-        terminal: tuple[int, StepLoopResult] | None = None
-        replan_request: tuple[int, Dict[str, Any], str, ToolArgs, ToolResult, str] | None = None
+        finalized: list[tuple[int, Any, ToolResult]] = []
         for index in indices:
             outcome, result = finalize_parallel_index(
                 self, index, cached, results, correlations, objective, usage
             )
-            last_result = result
-            if outcome.kind in (
-                StepOutcomeKind.FINAL,
-                StepOutcomeKind.CANCELLED,
-                StepOutcomeKind.BLOCKED,
-                StepOutcomeKind.UNVERIFIED,
-            ) and terminal is None:
-                terminal = (
-                    index,
-                    StepLoopResult(index + 1, result, outcome.final_answer, True),
-                )
-            if outcome.kind is StepOutcomeKind.REPLAN:
-                step = self.orchestrator.agent_state.plan[index]
-                tool, args, _ = self._step_data(index)
-                replan_request = (index, step, tool, args, result, outcome.error)
-        if terminal is not None:
-            terminal_index, terminal_result = terminal
-            terminal_tool, terminal_args, _ = self._step_data(terminal_index)
-            self.orchestrator.agent_state.project_last_result(
-                terminal_tool, terminal_args, terminal_result.result or {}
-            )
-            return terminal_result
-        if replan_request is not None:
-            index, step, tool, args, result, error = replan_request
+            finalized.append((index, outcome, result))
+        projection = project_outcomes(finalized)
+        if projection is None:
+            return StepLoopResult(indices[-1] + 1)
+        self.last_projection = projection
+        projection_tool, projection_args, _ = self._step_data(projection.logical_slot)
+        self.orchestrator.agent_state.project_last_result(
+            projection_tool, projection_args, projection.result
+        )
+        if projection.outcome.kind is StepOutcomeKind.REPLAN:
+            index = projection.logical_slot
+            step = self.orchestrator.agent_state.plan[index]
+            tool, args, _ = self._step_data(index)
+            result, error = projection.result, projection.outcome.error
             replacements = self._attempt_replan(
                 step, tool, args, objective, last_result=result, last_error=error
             )
             if replacements:
                 self._replace_current_step(index, replacements)
                 return StepLoopResult(index, result)
-            self.step_executor.finish_failed(index, error, result)
             return StepLoopResult(
                 index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True
             )
-        return StepLoopResult(indices[-1] + 1, last_result)
+        return StepLoopResult(
+            projection.logical_slot + 1,
+            projection.result,
+            projection.outcome.final_answer,
+            projection.decisive,
+        )
 
     def _step_data(self, index: int) -> tuple[str, ToolArgs, str]:
         step = self.orchestrator.agent_state.plan[index]

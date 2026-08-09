@@ -193,4 +193,8 @@ mesmo finalizer e cada registro inclui `step_id`, `invocation_id` e slot logico;
 summarizacao e posterior ao registro. Um terminal (blocked, cancelled ou
 unverified) projeta o estado externo pela ordem do plano, siblings sao assentados
 antes de REPLAN e o limite de chamadas e aplicado antes do dispatch. O watchdog
-nao trata IDs efemeros como progresso.
+nao trata IDs efemeros como progresso: a serializacao e canonica para mappings,
+e somente IDs do envelope de resultado sao removidos; campos homonimos dentro
+de payloads continuam semanticos.
+Completion order fisica nao define o resultado: a policy sequencial e aplicada
+por slot e a primeira disposition decisiva por ordem logica projeta o agregado.

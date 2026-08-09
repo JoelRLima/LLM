@@ -55,7 +55,7 @@ runner**. A allowlist model-actionable exata é:
 
 ```text
 ruff check [workspace paths]
-git log | git log -N | git log -n N | git log --max-count[=]N  # N=1..1000 ASCII
+git log | git log -N | git log -n N | git log --max-count[=]N  # lowercase exact forms; N=1..1000 ASCII
 tree [args...]            # somente quando o executável existir
 ```
 
@@ -135,3 +135,6 @@ sistema operacional ou preempção universal.
 Ficam para trabalho posterior a migração de callers legados/low-level, uma
 distinção entre invocação lógica e tentativa de retry, isolamento técnico de
 rede e qualquer sandbox forte. Nenhum desses itens é iniciado neste marco.
+Em batches paralelas, a completion order fisica nao define o resultado. Cada
+slot usa a disposition da policy sequencial; a primeira disposition decisiva
+por ordem logica projeta o agregado, e REPLAN perdedor permanece factual.

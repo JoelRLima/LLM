@@ -157,8 +157,8 @@ autoridade relevante.
 Na closure atual, `shell` e um **restricted validation/read-only command
 runner**. A superficie model-actionable exata e `ruff check` com caminhos do
 workspace, metadados de historico local via `git log` e `tree` quando o executavel
-existe. Para `git log`, os unicos argumentos aceitos sao nenhum, `-N`, `-n N` ou
-`--max-count[=]N`, com digitos ASCII e `1 <= N <= 1000`; `-nN` anexado nao faz
+existe. Para `git log`, os unicos argumentos aceitos sao as formas minúsculas e exatas
+nenhum contador, `-N`, `-n N` ou `--max-count[=]N`, com digitos ASCII e `1 <= N <= 1000`; `-nN` anexado nao faz
 parte da superficie. `git status` e `git diff` foram reduzidos
 da superficie model-actionable para nao expor filtros de conteudo configurados
 no workspace. `pytest`, `mypy` e
@@ -200,7 +200,7 @@ Testes principais: `tests/unit/skills/test_skill_registry.py`, `tests/unit/llm/t
 `ruff check` aceita apenas caminhos do workspace e as opções estruturais
 `--isolated`, `--no-cache` e `--no-fix`; modos de escrita como `--fix`,
 `--add-noqa`, `--add-ignore`, `-o` e `-w` são rejeitados antes do processo.
-`git log` aceita somente nenhum contador, `-N`, `-n N` ou `--max-count N`/
+`git log` aceita somente as formas minúsculas e exatas sem contador, `-N`, `-n N` ou `--max-count N`/
 `--max-count=N`, com dígitos ASCII e `1..1000`; `-nN` anexado e pathspecs não
 fazem parte do contrato.
 
@@ -210,3 +210,6 @@ records da batch, incluindo cache e exceções. Cada slot recebe `step_id`,
 antes de REPLAN, summarização ocorre depois do record e o primeiro terminal por
 ordem lógica projeta o estado externo. O budget é pré-verificado e o watchdog
 ignora IDs efêmeros.
+Parallel physical completion order does not define the semantic outcome: each
+slot uses the sequential disposition policy and the first decisive logical
+slot projects the aggregate. Losing REPLAN proposals remain factual records.
