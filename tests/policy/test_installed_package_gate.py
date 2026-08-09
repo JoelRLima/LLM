@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.verify_installed_package import (
+    INSTALLED_PROBE_SOURCE,
     CommandResult,
     VerificationError,
     _run,
@@ -141,3 +142,14 @@ def test_installed_gate_includes_extension_aware_bootstrap_probe() -> None:
     assert "_verify_extension_aware_bootstrap(" in source
     assert "extension-workspace" in source
     assert "extension-app-home" in source
+
+
+def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
+    assert '"git_log_one": git_reader.execute' in INSTALLED_PROBE_SOURCE
+    assert '"shell_log": shell.execute' in INSTALLED_PROBE_SOURCE
+    assert '"git_remerge": git_reader.execute' in INSTALLED_PROBE_SOURCE
+    assert '"shell_remerge": shell.execute' in INSTALLED_PROBE_SOURCE
+    source = inspect.getsource(verify_installed_package)
+    assert source.index("_prepare_local_history_workspace(") < source.index(
+        "workspace_before = snapshot_tree(workspace)"
+    )

@@ -55,7 +55,7 @@ runner**. A allowlist model-actionable exata é:
 
 ```text
 ruff check [args...]
-git log [args...]
+git log | git log -N | git log -n N | git log --max-count[=]N
 tree [args...]            # somente quando o executável existir
 ```
 
@@ -75,14 +75,22 @@ rejeitados. Paths explícitos são resolvidos contra o workspace, incluindo
 symlinks.
 
 `ruff` é forçado a `check --isolated --no-cache --no-fix`; configuração explícita
-e modos mutantes são rejeitados. Git mantém somente `log`, desabilita
-pager, fsmonitor, untracked cache, diff externo, textconv e verificação de
-assinaturas. Flags e formatos que solicitam verificadores de assinatura são
-rejeitados; a superfície model-actionable de `git log` não aceita seleção de
-`--pretty`/`--format` e força o built-in `--pretty=medium`, sem depender de
+e modos mutantes são rejeitados. Git mantém somente metadados de histórico local
+por `log`, com runner bounded, `--no-patch`, `--no-lazy-fetch` e
+`GIT_NO_LAZY_FETCH=1`; merge remerging, diff/patch, pathspec, assinatura,
+formato e helpers são rejeitados antes do processo. A superfície
+model-actionable de `git log` não aceita seleção de `--pretty`/`--format` e
+força o built-in `--pretty=medium`, sem depender de
 `format.pretty` ou aliases `pretty.*` do workspace. `tree -o` é rejeitado.
 Approval continua sendo uma policy de produto para efeitos; não é tratada como
 boundary técnica.
+
+Atualização de escopo: `git log` nesta superfície significa somente metadados
+de commits locais. O runtime fixa `--pretty=medium`, `--no-patch`,
+`--no-lazy-fetch` e `GIT_NO_LAZY_FETCH=1`; somente max-count simples é aceito.
+Diff/patch, remerge, pathspec, assinatura, formato e helpers são rejeitados
+antes do processo. A acceptance instalada cobre log simples e a rejeição de
+remerge; o regression test POSIX cobre promisor/lazy-fetch.
 
 O nome allowlisted não é uma garantia sobre qualquer binário com esse nome.
 Cada runner resolve o caminho absoluto/canônico a partir de entradas absolutas

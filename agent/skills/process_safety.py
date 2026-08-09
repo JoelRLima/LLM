@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -55,6 +56,44 @@ def is_shell_command_allowed(tokens: Sequence[str]) -> bool:
 
 def _command_name(tokens: Sequence[str]) -> str:
     return Path(tokens[0]).name.casefold() if tokens else ""
+
+
+_MAX_COUNT_RE = re.compile(r"^\d+$")
+MAX_LOCAL_HISTORY_COUNT = 1000
+
+
+def local_history_arguments(tokens: Sequence[str]) -> tuple[str, ...] | None:
+    """Parse the small positive argument set supported by model-actionable Git."""
+
+    if len(tokens) < 2 or tokens[0].casefold() != "git" or tokens[1].casefold() != "log":
+        return None
+
+    def bounded(value: str) -> bool:
+        return (
+            bool(_MAX_COUNT_RE.fullmatch(value))
+            and len(value) <= len(str(MAX_LOCAL_HISTORY_COUNT))
+            and int(value) <= MAX_LOCAL_HISTORY_COUNT
+        )
+
+    extras = list(tokens[2:])
+    if not extras:
+        return ()
+    if len(extras) == 1:
+        token = extras[0].casefold()
+        if token.startswith("-") and bounded(token[1:]):
+            return ("--max-count", token[1:])
+        if token.startswith("-n") and bounded(token[2:]):
+            return ("--max-count", token[2:])
+        if token.startswith("--max-count=") and bounded(token.split("=", 1)[1]):
+            return ("--max-count", token.split("=", 1)[1])
+        return None
+    if len(extras) == 2 and extras[0].casefold() in {"-n", "--max-count"}:
+        return (
+            ("--max-count", extras[1])
+            if bounded(extras[1])
+            else None
+        )
+    return None
 
 
 def _path_traverses_workspace(candidate: Path, workspace_root: Path) -> bool:
@@ -130,39 +169,11 @@ def resolve_trusted_executable(
     return None
 
 
-def _git_token_error(token: str) -> str | None:
-    option = token.casefold().split("=", 1)[0]
-    if option == "--show-signature":
-        return "Verificacao de assinatura nao e permitida em modo somente leitura."
-    if option in {"--format", "--pretty"}:
-        return "Selecao de formato/assinatura nao e permitida em modo somente leitura."
-    if token.casefold().startswith("-c"):
-        return "Configuracao inline nao permitida em modo somente leitura."
-    return None
-
-
 def git_read_only_error(tokens: Sequence[str]) -> str | None:
-    """Keep GitSkill and ShellSkill on the same read-only Git surface."""
+    """Keep GitSkill and ShellSkill on the same local-history-only surface."""
 
-    if len(tokens) < 2 or tokens[1].casefold() != "log":
-        return "Somente 'git log' está disponível na superfície model-actionable."
-
-    forbidden = {
-        "--ext-diff": "external diff",
-        "--output": "output writes",
-        "--textconv": "external text conversion",
-        "-c": "inline configuration",
-        "--config-env": "external configuration",
-        "--exec-path": "executable path override",
-        "--upload-pack": "external upload-pack",
-    }
-    for token in tokens[1:]:
-        token_error = _git_token_error(token)
-        if token_error is not None:
-            return token_error
-        option = token.casefold().split("=", 1)[0]
-        if option in forbidden:
-            return f"Git option nao permitida em modo somente leitura: {forbidden[option]}."
+    if local_history_arguments(tokens) is None:
+        return "Somente 'git log' local com max-count opcional esta disponivel na superficie model-actionable."
     return None
 
 
@@ -197,6 +208,9 @@ def hardened_command(tokens: Sequence[str]) -> tuple[str, ...]:
 
     command = _command_name(tokens)
     if command == "git" and len(tokens) > 1:
+        history_args = local_history_arguments(tokens)
+        if tokens[1].casefold() == "log" and history_args is None:
+            return tuple(tokens)
         hardened = [
             "git",
             "-c",
@@ -205,19 +219,15 @@ def hardened_command(tokens: Sequence[str]) -> tuple[str, ...]:
             "core.untrackedCache=false",
             "-c",
             "log.showSignature=false",
+            "-c",
+            "log.diffMerges=off",
+            "--no-lazy-fetch",
             "--no-pager",
             tokens[1],
-            *tokens[2:],
+            "--no-patch",
+            "--pretty=medium",
+            *(history_args or ()),
         ]
-        if tokens[1].casefold() in {"diff", "log"}:
-            hardened[9:9] = ["--no-ext-diff", "--no-textconv"]
-        if tokens[1].casefold() == "log":
-            separator = len(hardened)
-            try:
-                separator = hardened.index("--", 9)
-            except ValueError:
-                pass
-            hardened[separator:separator] = ["--pretty=medium"]
         return tuple(hardened)
     if command == "ruff" and len(tokens) > 1 and tokens[1].casefold() == "check":
         hardened = list(tokens)

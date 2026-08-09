@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from threading import Event
 from typing import Any, Dict
 
 from agent.runtime.logging import logger
@@ -11,14 +12,14 @@ from .process_paths import workspace_argument_error
 from .process_safety import (
     git_read_only_error,
     hardened_command,
-    resolve_trusted_executable,
     split_command,
 )
+from .shell_process import ShellProcessError, run_bounded_process
 
 
 class GitSkill(BaseSkill):
     name = "git_reader"
-    description = "Executa somente git log para inspecionar o histórico do repositório."
+    description = "Consulta somente metadados do historico Git local."
 
     def __init__(
         self,
@@ -34,7 +35,7 @@ class GitSkill(BaseSkill):
     def get_schema(self) -> Dict[str, Any]:
         return {
             "command": "string (somente 'log' permitido)",
-            "args": "string (argumentos extras opcionais, ex: '--oneline -n 5' para o log)"
+            "args": "string (opcional: -N, -n N ou --max-count[=]N)"
         }
 
     def execute(self, args: Dict[str, Any]) -> Any:
@@ -43,6 +44,19 @@ class GitSkill(BaseSkill):
             return error
         assert full_cmd is not None
         return self._run(full_cmd)
+
+    def execute_with_context(
+        self,
+        args: Dict[str, Any],
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Event | None = None,
+    ) -> Any:
+        full_cmd, error = self._validated_command(args)
+        if error is not None:
+            return error
+        assert full_cmd is not None
+        return self._run(full_cmd, cancellation_token, cancellation_event)
 
     def _validated_command(
         self,
@@ -80,34 +94,33 @@ class GitSkill(BaseSkill):
             return None, {"ok": False, "done": False, "error": path_error}
         return full_cmd, None
 
-    def _run(self, full_cmd: list[str]) -> dict[str, Any]:
+    def _run(
+        self,
+        full_cmd: list[str],
+        cancellation_token: Any | None = None,
+        cancellation_event: Event | None = None,
+    ) -> dict[str, Any]:
         try:
             environment = confined_process_environment(self.workspace)
-            executable = resolve_trusted_executable(
-                "git", environment, self.workspace.root
-            )
-            if executable is None:
-                return {
-                    "ok": False,
-                    "done": False,
-                    "error": "O git confiavel nao foi encontrado fora do workspace.",
-                }
-            command = list(hardened_command(full_cmd))
-            command[0] = executable
-            result = subprocess.run(
-                command,
-                shell=False,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                check=False,
+            result = run_bounded_process(
+                list(hardened_command(full_cmd)),
+                workspace=self.workspace.root,
+                environment=environment,
                 timeout=self.timeout,
-                cwd=self.workspace.root,
-                env=environment,
+                cancellation_token=cancellation_token,
+                cancellation_event=cancellation_event,
             )
             return self._format_result(result)
         except FileNotFoundError:
             return {"ok": False, "done": False, "error": "O git não está instalado ou não foi encontrado no PATH."}
+        except ShellProcessError as exc:
+            return {
+                "ok": False,
+                "done": False,
+                "status": exc.status,
+                "error": exc.detail,
+                "message": exc.detail,
+            }
         except subprocess.TimeoutExpired:
             return {
                 "ok": False,

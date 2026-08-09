@@ -43,8 +43,11 @@ O gate do pacote instalado constrói o wheel sem depender do checkout, instala-o
 com suas dependências declaradas em um venv limpo e executa `--version`,
 `config init`, `doctor --json` e uma tarefa headless a partir de outro
 diretório. Um probe externo carrega o catálogo empacotado, executa uma revisão
-real que precisa detectar `PYSEC001` e tenta escapar do workspace com o leitor
-de arquivos, `ShellSkill` e `GitSkill`. Origens de dependências e snapshots do
+real que precisa detectar `PYSEC001`, valida metadados locais com `git log`,
+rejeita remerge e tenta escapar do workspace com o leitor de arquivos,
+`ShellSkill` e `GitSkill`. O regression test POSIX cobre adicionalmente
+promisor/lazy-fetch; o acceptance instalado não simula um remote helper.
+Origens de dependências e snapshots do
 diretório atual, workspace, sentinela externa e `site-packages` — capturado
 antes de qualquer import de runtime — comprovam que a execução usa o artefato
 instalado sem produzir escrita indevida.

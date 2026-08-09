@@ -70,6 +70,7 @@ def confined_process_environment(
     environment["GIT_ATTR_NOSYSTEM"] = "1"
     environment["GIT_CONFIG_NOSYSTEM"] = "1"
     environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment["GIT_NO_LAZY_FETCH"] = "1"
     environment["GIT_PAGER"] = "cat"
     environment["PAGER"] = "cat"
     environment["PYTHONNOUSERSITE"] = "1"

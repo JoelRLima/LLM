@@ -121,6 +121,159 @@ def test_git_log_rejects_workspace_pretty_alias(
     assert not sentinel.exists()
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        "-p -1",
+        "--patch -1",
+        "--remerge-diff -1",
+        "--diff-merges=remerge -1",
+        "--stat -1",
+        "--pretty=oneline",
+        "-- HEAD",
+    ],
+)
+def test_model_actionable_git_history_is_positive_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: str
+) -> None:
+    monkeypatch.setattr(
+        "agent.skills.git.run_bounded_process",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Git nao deveria executar argumento fora da allowlist")
+        ),
+    )
+    monkeypatch.setattr(
+        "agent.skills.shell._run_bounded_process",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Git nao deveria executar argumento fora da allowlist")
+        ),
+    )
+
+    git_result = GitSkill(base_dir=tmp_path).execute(
+        {"command": "log", "args": arguments}
+    )
+    shell_result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
+        {"command": f"git log {arguments}"}
+    )
+
+    assert git_result["ok"] is False
+    assert shell_result["ok"] is False
+
+
+def test_git_log_remerge_driver_is_rejected_before_execution(tmp_path: Path) -> None:
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git necessario para o probe de merge driver")
+    repo = tmp_path / "merge-repo"
+    repo.mkdir()
+    sentinel = tmp_path / "merge-driver-ran"
+
+    def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [git, *args], cwd=repo, text=True, capture_output=True, check=check
+        )
+
+    run_git("init", "-q")
+    run_git("config", "user.name", "Merge Driver Test")
+    run_git("config", "user.email", "merge@example.invalid")
+    (repo / "value.txt").write_text("base\n", encoding="utf-8")
+    run_git("add", "value.txt")
+    run_git("commit", "-qm", "base")
+    run_git("checkout", "-qb", "side")
+    (repo / "value.txt").write_text("side\n", encoding="utf-8")
+    run_git("commit", "-qam", "side")
+    run_git("checkout", "-qb", "mainline", "HEAD~1")
+    (repo / "value.txt").write_text("main\n", encoding="utf-8")
+    (repo / ".gitattributes").write_text("value.txt merge=sentinel\n", encoding="utf-8")
+    run_git("add", "value.txt", ".gitattributes")
+    run_git("commit", "-qm", "mainline")
+    helper = tmp_path / "merge_driver.py"
+    helper.write_text(
+        "import pathlib, shutil, sys\n"
+        f"pathlib.Path({str(sentinel)!r}).write_text('hit', encoding='utf-8')\n"
+        "shutil.copyfile(sys.argv[1], sys.argv[2])\n",
+        encoding="utf-8",
+    )
+    driver = f'"{sys.executable}" "{helper}" %O %A %B %L'
+    run_git("config", "merge.sentinel.driver", driver)
+    run_git("merge", "--no-ff", "side", "-m", "merge")
+    sentinel.unlink(missing_ok=True)
+
+    unsafe = run_git("log", "--remerge-diff", "-1", check=False)
+    assert unsafe.returncode == 0
+    assert sentinel.exists()
+    sentinel.unlink()
+
+    git_result = GitSkill(base_dir=repo).execute(
+        {"command": "log", "args": "--remerge-diff -1"}
+    )
+    shell_result = ShellSkill(base_dir=repo, approval_policy=AutoApprove()).execute(
+        {"command": "git log --remerge-diff -1"}
+    )
+    assert git_result["ok"] is False
+    assert shell_result["ok"] is False
+    assert not sentinel.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="remote helper probe uses POSIX executable lookup")
+def test_git_log_disables_promisor_lazy_fetch_and_remote_helper(tmp_path: Path) -> None:
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git necessario para o probe de promisor")
+    repo = tmp_path / "promisor-repo"
+    repo.mkdir()
+    sentinel = tmp_path / "remote-helper-ran"
+    helper_dir = tmp_path / "helpers"
+    helper_dir.mkdir()
+    helper = helper_dir / "git-remote-sentinel"
+    helper.write_text(
+        f"#!/bin/sh\nprintf hit > {shlex.quote(str(sentinel))}\nexit 1\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join((str(helper_dir), env.get("PATH", "")))
+
+    def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [git, *args], cwd=repo, text=True, capture_output=True, check=check, env=env
+        )
+
+    run_git("init", "-q")
+    run_git("config", "user.name", "Promisor Test")
+    run_git("config", "user.email", "promisor@example.invalid")
+    (repo / "payload.txt").write_text("payload\n", encoding="utf-8")
+    run_git("add", "payload.txt")
+    run_git("commit", "-qm", "payload")
+    blob = run_git("rev-parse", "HEAD:payload.txt").stdout.strip()
+    blob_path = repo / ".git" / "objects" / blob[:2] / blob[2:]
+    assert blob_path.exists()
+    blob_path.unlink()
+    run_git("remote", "add", "origin", "sentinel::origin")
+    run_git("config", "remote.origin.promisor", "true")
+    run_git("config", "remote.origin.partialclonefilter", "blob:none")
+
+    unsafe = run_git("log", "-p", "-1", check=False)
+    assert unsafe.returncode != 0
+    assert sentinel.exists()
+    sentinel.unlink()
+
+    safe = subprocess.run(
+        [git, "--no-lazy-fetch", "log", "-p", "-1"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    assert safe.returncode != 0
+    assert not sentinel.exists()
+
+    result = GitSkill(base_dir=repo).execute({"command": "log", "args": "-p -1"})
+    assert result["ok"] is False
+    assert not sentinel.exists()
+
+
 def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
     captured = {}
     sentinel = tmp_path.parent / "git-trace.txt"
@@ -133,14 +286,12 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="clean\n", stderr="")
 
-    monkeypatch.setattr("agent.skills.git.subprocess.run", fake_run)
+    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
     skill = GitSkill(base_dir=tmp_path)
 
     result = skill.execute({"command": "log"})
 
     assert result["ok"] is True
-    assert Path(captured["command"][0]).is_absolute()
-    assert not Path(captured["command"][0]).resolve().is_relative_to(tmp_path.resolve())
     assert captured["command"][1:] == [
         "-c",
         "core.fsmonitor=false",
@@ -148,19 +299,20 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
         "core.untrackedCache=false",
         "-c",
         "log.showSignature=false",
+        "-c",
+        "log.diffMerges=off",
+        "--no-lazy-fetch",
         "--no-pager",
         "log",
-        "--no-ext-diff",
-        "--no-textconv",
+        "--no-patch",
         "--pretty=medium",
     ]
-    assert captured["shell"] is False
-    assert captured["stdin"] is subprocess.DEVNULL
     assert captured["timeout"] == 20
-    assert Path(captured["cwd"]) == tmp_path.resolve()
-    environment = captured["env"]
+    assert Path(captured["workspace"]) == tmp_path.resolve()
+    environment = captured["environment"]
     assert isinstance(environment, dict)
     assert environment["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert environment["GIT_NO_LAZY_FETCH"] == "1"
     assert "GIT_TRACE" not in environment
     assert "GIT_TRACE2_PERF" not in environment
     assert sentinel.read_text(encoding="utf-8") == "preservar\n"
@@ -199,7 +351,7 @@ def test_git_skill_rejects_external_reads_without_exposing_sentinel(
 
     assert result["ok"] is False
     if command == "log":
-        assert "workspace" in result["error"].casefold()
+        assert "max-count" in result["error"].casefold()
     else:
         assert "log" in result["error"].casefold()
     assert secret not in json.dumps(result, ensure_ascii=False)
@@ -252,7 +404,7 @@ def test_git_skill_accepts_log_and_disables_extension_hooks(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
     result = GitSkill(base_dir=tmp_path).execute(
         {
             "command": "log",
@@ -261,8 +413,6 @@ def test_git_skill_accepts_log_and_disables_extension_hooks(
     )
 
     assert result["ok"] is True
-    assert Path(captured["command"][0]).is_absolute()
-    assert not Path(captured["command"][0]).resolve().is_relative_to(tmp_path.resolve())
     assert captured["command"][1:] == [
         "-c",
         "core.fsmonitor=false",
@@ -270,16 +420,44 @@ def test_git_skill_accepts_log_and_disables_extension_hooks(
         "core.untrackedCache=false",
         "-c",
         "log.showSignature=false",
+        "-c",
+        "log.diffMerges=off",
+        "--no-lazy-fetch",
         "--no-pager",
         "log",
-        "--no-ext-diff",
-        "--no-textconv",
-        "-1",
+        "--no-patch",
         "--pretty=medium",
+        "--max-count",
+        "1",
     ]
-    environment = captured["env"]
+    environment = captured["environment"]
     assert isinstance(environment, dict)
     assert environment["HOME"] == str(tmp_path.resolve())
+
+
+def test_git_skill_reuses_bounded_runner_with_cancellation_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
+    token = object()
+    event = object()
+    result = GitSkill(base_dir=tmp_path).execute_with_context(
+        {"command": "log", "args": "-1"},
+        cancellation_token=token,
+        cancellation_event=event,
+    )
+
+    assert result["ok"] is True
+    assert captured["cancellation_token"] is token
+    assert captured["cancellation_event"] is event
+    assert captured["timeout"] == 20
 
 
 @pytest.mark.parametrize(
@@ -301,7 +479,7 @@ def test_git_skill_rejects_signature_verification_before_execution(
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("git nao deveria executar")))
     result = GitSkill(base_dir=tmp_path).execute({"command": "log", "args": arguments})
     assert result["ok"] is False
-    assert "assinatura" in result["error"].casefold()
+    assert "max-count" in result["error"].casefold()
 
 
 def test_git_skill_rejects_workspace_shadow_with_real_process(
@@ -329,19 +507,8 @@ def test_git_skill_rejects_workspace_shadow_with_real_process(
     trusted = resolve_trusted_executable("git", test_environment(skill.workspace), workspace)
     if trusted is None:
         pytest.skip("git confiavel nao disponivel no host")
-    captured: dict[str, object] = {}
-    original_run = git_module.subprocess.run
-
-    def capture_run(command, **kwargs):
-        captured["command"] = command
-        return original_run(command, **kwargs)
-
-    monkeypatch.setattr(git_module.subprocess, "run", capture_run)
     result = skill.execute({"command": "log"})
 
-    command = captured["command"]
-    assert Path(command[0]).is_absolute()
-    assert not Path(command[0]).resolve().is_relative_to(workspace.resolve())
     assert not sentinel.exists()
     assert result["error"] != "Exit code 42"
 

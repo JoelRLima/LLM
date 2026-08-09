@@ -120,7 +120,7 @@ class PlanExecutor:
                 else:
                     if not getattr(self.orchestrator, "tool_invocation_gateway", None):
                         self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
-                    futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, True)] = index
+                    futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, False)] = index
             for future in concurrent.futures.as_completed(futures):
                 results[futures[future]] = self._future_result(future)
         return cached, results
@@ -130,18 +130,33 @@ class PlanExecutor:
         try:
             return future.result()
         except Exception as exc:
-            return {"ok": False, "done": False, "data": None, "error": str(exc)}
+            return {
+                "ok": False,
+                "done": False,
+                "status": "failed",
+                "data": None,
+                "error": str(exc),
+            }
 
     def _finalize_parallel(
         self, indices: List[int], cached: Dict[int, ToolResult], results: Dict[int, ToolResult],
         objective: str, usage: Dict[str, int],
     ) -> StepLoopResult:
         last_result: Optional[ToolResult] = None
+        terminal: tuple[int, StepLoopResult] | None = None
         for index in indices:
             outcome, result = self._finalize_parallel_index(index, cached, results, objective, usage)
             last_result = result
-            if outcome.kind is StepOutcomeKind.FINAL:
-                return StepLoopResult(indices[-1] + 1, result, outcome.final_answer, True)
+            if outcome.kind in (
+                StepOutcomeKind.FINAL,
+                StepOutcomeKind.CANCELLED,
+                StepOutcomeKind.BLOCKED,
+                StepOutcomeKind.UNVERIFIED,
+            ) and terminal is None:
+                terminal = (
+                    index,
+                    StepLoopResult(index + 1, result, outcome.final_answer, True),
+                )
             if outcome.kind is StepOutcomeKind.REPLAN:
                 step = self.orchestrator.agent_state.plan[index]
                 tool, args, _ = self._step_data(index)
@@ -150,6 +165,8 @@ class PlanExecutor:
                     self._replace_current_step(index, replacements)
                     return StepLoopResult(index, result)
                 self.step_executor.finish_failed(index, outcome.error)
+        if terminal is not None:
+            return terminal[1]
         return StepLoopResult(indices[-1] + 1, last_result)
 
     def _finalize_parallel_index(
@@ -163,8 +180,7 @@ class PlanExecutor:
             if not getattr(self.orchestrator, "tool_invocation_gateway", None):
                 self.orchestrator._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
             self.orchestrator._maybe_summarize_and_store(tool, args, result)
-            if not getattr(self.orchestrator, "tool_invocation_gateway", None):
-                state.record_tool_result(tool, args, result, step_id=state.get_step_id(index))
+            state.record_tool_result(tool, args, result, step_id=state.get_step_id(index))
         return self.step_executor.finalize_result(index, tool, args, result, file_path, objective, usage), result
 
     def _step_data(self, index: int) -> tuple[str, ToolArgs, str]:

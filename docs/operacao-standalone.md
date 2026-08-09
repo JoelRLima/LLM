@@ -203,8 +203,10 @@ por capability permanecem trabalho posterior.
 ### Estado da capability de comandos no Marco 1
 
 A `ShellSkill` model-actionable nao e um shell arbitrario. Ela aceita somente
-`ruff check`, `git log` e `tree` quando disponivel, com `shell=False`, ambiente
-explicito, paths validados e streams bounded. `git status` e `git diff` foram
+`ruff check`, metadados de historico local via `git log` e `tree` quando
+disponivel, com `shell=False`, ambiente explicito, paths validados e streams
+bounded. Em `git log`, o modelo so pode informar nenhum max-count, `-N`, `-n N`
+ou `--max-count[=]N`. `git status` e `git diff` foram
 reduzidos da superficie model-actionable para evitar a execucao transitiva de
 filtros de conteudo configurados no workspace.
 `pytest` e `mypy` foram removidos da allowlist porque podem executar codigo
@@ -215,9 +217,11 @@ executados quando um caminho absoluto/canonico confiavel fora do workspace pode
 ser resolvido, sem candidato textual ou destino final controlado pelo
 workspace. Symlinks, junctions e cadeias equivalentes locais nao podem trocar a
 identidade efetivamente executada. Uma instalacao local de Ruff dentro do
-workspace pode, portanto, ficar indisponivel. Em `git log`, o runtime fixa `--pretty=medium` e rejeita
-formatos selecionados pelo modelo, evitando dependencia de `format.pretty` e
-aliases `pretty.*` do repositorio.
+workspace pode, portanto, ficar indisponivel. Em `git log`, o runtime fixa
+`--pretty=medium` e `--no-patch`, desabilita lazy fetch e merge remerging e
+rejeita formatos, flags de diff, pathspecs, assinatura e helpers selecionados
+pelo modelo, evitando dependencia de `format.pretty` e aliases `pretty.*` do
+repositorio.
 
 ## Verificação do artefato
 

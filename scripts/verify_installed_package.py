@@ -65,6 +65,11 @@ escape_path = os.path.relpath(sentinel, workspace)
 denied = registry.skill("file_reader").execute({"file_path": escape_path})
 shell = registry.skill("shell")
 git_reader = registry.skill("git_reader")
+history_results = {
+    "git_log": git_reader.execute({"command": "log"}),
+    "git_log_one": git_reader.execute({"command": "log", "args": "-1"}),
+    "shell_log": shell.execute({"command": "git log -1"}),
+}
 escape_attempts = {
     "shell_status": shell.execute({"command": "git status"}),
     "shell_diff": shell.execute({"command": "git diff"}),
@@ -73,6 +78,8 @@ escape_attempts = {
     ),
     "git_status": git_reader.execute({"command": "status"}),
     "git_diff": git_reader.execute({"command": "diff"}),
+    "git_remerge": git_reader.execute({"command": "log", "args": "--remerge-diff -1"}),
+    "shell_remerge": shell.execute({"command": "git log --remerge-diff -1"}),
 }
 secret = sentinel_before.decode("utf-8")
 
@@ -87,6 +94,9 @@ for name, result in escape_attempts.items():
         raise SystemExit(f"installed {name} escaped the workspace: {result!r}")
     if secret in json.dumps(result, ensure_ascii=False):
         raise SystemExit(f"installed {name} exposed the external sentinel")
+for name, result in history_results.items():
+    if result.get("ok") is not True:
+        raise SystemExit(f"installed {name} failed: {result!r}")
 if sentinel.read_bytes() != sentinel_before or sample.read_bytes() != sample_before:
     raise SystemExit("installed probe mutated its workspace or sentinel")
 
@@ -409,6 +419,20 @@ def _build_wheel(
     return wheels[0]
 
 
+def _prepare_local_history_workspace(workspace: Path, sample: Path) -> None:
+    for name, command in (
+        ("installed-git-init", ("git", "init", "-q")),
+        ("installed-git-user", ("git", "config", "user.name", "Installed Gate")),
+        (
+            "installed-git-email",
+            ("git", "config", "user.email", "installed-gate@example.invalid"),
+        ),
+        ("installed-git-add", ("git", "add", sample.name)),
+        ("installed-git-commit", ("git", "commit", "-qm", "initial")),
+    ):
+        _run(name, command, cwd=workspace)
+
+
 def _install_wheel(
     wheel: Path,
     environment_dir: Path,
@@ -532,8 +556,10 @@ def _verify_installed_probe(
     process_guards = payload.get("process_escape_denied")
     if process_guards != [
         "git_diff",
+        "git_remerge",
         "git_status",
         "shell_diff",
+        "shell_remerge",
         "shell_status",
         "shell_write",
     ]:
@@ -631,6 +657,7 @@ def verify_installed_package(
             "    return eval(expression)\n",
             encoding="utf-8",
         )
+        _prepare_local_history_workspace(workspace, sample)
 
         wheel = _build_wheel(
             project_root,

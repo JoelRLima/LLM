@@ -81,7 +81,7 @@ malformado, mas não elimina a responsabilidade da skill de cumprir o contrato.
 | `echo` | infraestrutura/teste | nenhuma |
 | `file_reader` | leitura paginada e integração com workspace legado | read |
 | `file_writer` | escrita no workspace legado com confirmação | read, write |
-| `git_reader` | somente `log` sob boundary fixa | read, process, vcs_read |
+| `git_reader` | metadados de histórico Git local | read, process, vcs_read |
 | `grep` | busca textual restrita à raiz | read |
 | `python_executor` | execução Python em workspace efêmero com defesas | process |
 | `session_memory` | leitura/escrita de achados da memória | memory |
@@ -155,21 +155,24 @@ autoridade relevante.
 ### Closure do Marco 1: ShellSkill reduzida
 
 Na closure atual, `shell` e um **restricted validation/read-only command
-runner**. A superficie model-actionable exata e `ruff check`, `git log` e
-`tree` quando o executavel existe. `git status` e `git diff` foram reduzidos
+runner**. A superficie model-actionable exata e `ruff check`, metadados de
+historico local via `git log` e `tree` quando o executavel existe. Para `git log`,
+os unicos argumentos aceitos sao nenhum, `-N`, `-n N` ou `--max-count[=]N` ate
+o limite operacional. `git status` e `git diff` foram reduzidos
 da superficie model-actionable para nao expor filtros de conteudo configurados
 no workspace. `pytest`, `mypy` e
 os aliases `echo`, `type`, `dir` e `ls` nao fazem parte da allowlist.
 
 Ruff e executado com `--isolated --no-cache --no-fix`; configuracao explicita,
-mutacao e `tree -o` sao rejeitados. O `git log` recebe overrides para desabilitar pager,
-fsmonitor, untracked cache, diff externo, textconv e verificacao de assinaturas;
-flags e formatos de assinatura sao rejeitados. O nome allowlisted e resolvido
+mutacao e `tree -o` sao rejeitados. O `git log` usa formato fixo e sem patch,
+desabilita pager, fsmonitor, untracked cache, merge remerging, lazy fetch e
+verificacao de assinaturas; flags de diff, remerge, assinatura, formato,
+pathspec e helpers sao rejeitadas antes do processo. O nome allowlisted e resolvido
 para um executavel absoluto/canonico fora do workspace; nem o candidato textual
 nem o destino final podem ser controlados pelo workspace. Symlinks, junctions e
 cadeias equivalentes locais nao substituem a identidade executada. Se so houver
 um `ruff` dentro do workspace, ele fica indisponivel. `git log` usa o formato
-built-in fixo `--pretty=medium` e rejeita selecao model-actionable de
+built-in fixo `--pretty=medium` e `--no-patch`, e rejeita selecao model-actionable de
 `--pretty`/`--format`, portanto nao depende de `format.pretty` ou aliases
 `pretty.*` do workspace. O runner usa `shell=False`,
 ambiente construido por allowlist e limites independentes de stdout/stderr.

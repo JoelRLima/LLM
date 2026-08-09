@@ -149,8 +149,8 @@ def test_shell_runs_normal_git_read_only_command_with_sanitized_environment(
     assert result["ok"] is True
     assert captured["command"] == [
         "git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
-        "-c", "log.showSignature=false",
-        "--no-pager", "log", "--no-ext-diff", "--no-textconv", "--pretty=medium",
+        "-c", "log.showSignature=false", "-c", "log.diffMerges=off",
+        "--no-lazy-fetch", "--no-pager", "log", "--no-patch", "--pretty=medium",
     ]
     environment = captured["environment"]
     assert isinstance(environment, dict)
@@ -519,7 +519,7 @@ def test_shell_rejects_signature_verification_before_execution(
         {"command": command}
     )
     assert result["ok"] is False
-    assert "assinatura" in result["error"].casefold() or "signature" in result["error"].casefold()
+    assert "max-count" in result["error"].casefold()
 
 
 def _assert_process_terminated(process: subprocess.Popen[object]) -> None:

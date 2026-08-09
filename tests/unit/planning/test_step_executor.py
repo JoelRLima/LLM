@@ -2,6 +2,8 @@ import concurrent.futures
 import threading
 from types import SimpleNamespace
 
+import pytest
+
 from agent.cancellation import CancellationToken
 from agent.execution_state import StepStatus
 from agent.planning.plan_executor import PlanExecutor
@@ -259,6 +261,119 @@ def test_parallel_batch_records_gateway_results_for_runtime_guards(monkeypatch):
         "one.py",
         "two.py",
     }
+
+
+def test_parallel_gateway_exception_is_recorded_with_immutable_step_ids(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    expected_ids = [state.get_step_id(0), state.get_step_id(1)]
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+
+    def explode(_tool, _args, _record_result):
+        raise RuntimeError("gateway inesperado")
+
+    context.tool_executor.run_tool = explode
+    PlanExecutor(context).execute("ler arquivos", {})
+
+    assert len(state.tool_history) == 2
+    assert {entry["step_id"] for entry in state.tool_history} == set(expected_ids)
+    assert all(entry["result"]["status"] == "failed" for entry in state.tool_history)
+    assert [state.get_step_status(index) for index in range(2)] == [
+        StepStatus.FAILED,
+        StepStatus.FAILED,
+    ]
+
+
+def test_parallel_gateway_records_completion_to_the_captured_step(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    expected = {
+        "one.py": state.get_step_id(0),
+        "two.py": state.get_step_id(1),
+    }
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+    barrier = threading.Barrier(2)
+    completion_order: list[str] = []
+    completion_lock = threading.Lock()
+    two_completed = threading.Event()
+
+    def read(tool_name, args, _record_result):
+        barrier.wait(timeout=2)
+        file_path = args["file_path"]
+        if file_path == "one.py":
+            assert two_completed.wait(timeout=2)
+        else:
+            with completion_lock:
+                completion_order.append(file_path)
+            two_completed.set()
+            return {"ok": True, "done": True, "data": file_path}
+        with completion_lock:
+            completion_order.append(file_path)
+        return {"ok": True, "done": True, "data": args["file_path"]}
+
+    context.tool_executor.run_tool = read
+    PlanExecutor(context).execute("ler arquivos", {})
+
+    assert len(state.tool_history) == 2
+    assert {
+        entry["args"]["file_path"]: entry["step_id"]
+        for entry in state.tool_history
+    } == expected
+    assert completion_order == ["two.py", "one.py"]
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_step_status"),
+    [
+        ("cancelled", StepStatus.SKIPPED),
+        ("blocked", StepStatus.BLOCKED),
+        ("unverified", StepStatus.UNVERIFIED),
+    ],
+)
+def test_parallel_terminal_statuses_match_sequential_semantics(
+    monkeypatch, status, expected_step_status
+):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+
+    def terminal_result(_tool, args, _record_result):
+        return {
+            "ok": False,
+            "done": False,
+            "status": status,
+            "error": status,
+            "message": f"{status} message",
+            "data": args["file_path"],
+        }
+
+    context.tool_executor.run_tool = terminal_result
+    answer = PlanExecutor(context).execute("ler arquivos", {})
+
+    assert answer == f"{status} message"
+    assert [state.get_step_status(index) for index in range(2)] == [
+        expected_step_status,
+        expected_step_status,
+    ]
+    assert len(state.tool_history) == 2
 
 
 def test_cancellation_in_flight_finishes_current_step_and_preserves_next(monkeypatch):

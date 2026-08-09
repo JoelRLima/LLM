@@ -40,8 +40,8 @@ MAX_OUTPUT_CHARS = 4000
 class ShellSkill(BaseSkill):
     name = "shell"
     description = (
-        "Restricted validation/read-only command runner: ruff check, git "
-        "log and tree when available. It is not an arbitrary shell "
+        "Restricted validation/read-only command runner: ruff check, local "
+        "git history metadata and tree when available. It is not an arbitrary shell "
         "or an operating-system sandbox."
     )
 
@@ -60,7 +60,10 @@ class ShellSkill(BaseSkill):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "command": "string: ruff check, git log ou tree (shell=False)",
+            "command": (
+                "string: ruff check, git log with optional max-count, or tree "
+                "(shell=False)"
+            ),
         }
 
     def execute(self, args: Dict[str, Any]) -> Any:
