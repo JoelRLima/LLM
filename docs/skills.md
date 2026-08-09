@@ -132,8 +132,8 @@ legada da skill. O campo externo `ok` só é verdadeiro para `succeeded`;
 - `file_writer` valida a requisição e delega backup, diff, confirmação e
   escrita a `file_writer_runtime.py`;
 - `shell` usa `shlex.split`, `shell=False`, timeout, allowlist e validação dos
-  argumentos que representam paths; `pytest`, `mypy` e `ruff` também consultam
-  `ApprovalPort` antes da execução;
+  argumentos que representam paths; `ruff` consulta `ApprovalPort` antes da
+  execução;
 - `process_paths.py`, `process_safety.py` e `process_environment.py` isolam,
   respectivamente, paths, efeitos/allowlist e sanitização do ambiente usados
   por `shell` e `git_reader`;
@@ -160,12 +160,14 @@ runner**. A superficie model-actionable exata e `ruff check`, `git status`,
 os aliases `echo`, `type`, `dir` e `ls` nao fazem parte da allowlist.
 
 Ruff e executado com `--isolated --no-cache --no-fix`; configuracao explicita,
-mutacao e `tree -o` sao rejeitados. Git recebe apenas os overrides necessarios
-para desabilitar pager, fsmonitor, untracked cache, diff externo e textconv.
-O runner usa `shell=False`, ambiente construido por allowlist e limites
-independentes de stdout/stderr. Isso nao fornece sandbox de filesystem, rede,
-TOCTOU ou preempcao universal; validacao de path nao limita efeitos
-transitivos de um programa.
+mutacao e `tree -o` sao rejeitados. Git recebe overrides para desabilitar pager,
+fsmonitor, untracked cache, diff externo, textconv e verificacao de assinaturas;
+flags e formatos de assinatura sao rejeitados. O nome allowlisted e resolvido
+para um executavel absoluto/canonico fora do workspace; se so houver um
+`ruff` dentro do workspace, ele fica indisponivel. O runner usa `shell=False`,
+ambiente construido por allowlist e limites independentes de stdout/stderr.
+Isso nao fornece sandbox de filesystem, rede, TOCTOU ou preempcao universal;
+validacao de path nao limita efeitos transitivos de um programa.
 
 ## Como adicionar uma skill
 

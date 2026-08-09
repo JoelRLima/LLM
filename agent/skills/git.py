@@ -11,6 +11,7 @@ from .process_paths import workspace_argument_error
 from .process_safety import (
     git_read_only_error,
     hardened_command,
+    resolve_trusted_executable,
     split_command,
 )
 
@@ -82,8 +83,20 @@ class GitSkill(BaseSkill):
 
     def _run(self, full_cmd: list[str]) -> dict[str, Any]:
         try:
+            environment = confined_process_environment(self.workspace)
+            executable = resolve_trusted_executable(
+                "git", environment, self.workspace.root
+            )
+            if executable is None:
+                return {
+                    "ok": False,
+                    "done": False,
+                    "error": "O git confiavel nao foi encontrado fora do workspace.",
+                }
+            command = list(hardened_command(full_cmd))
+            command[0] = executable
             result = subprocess.run(
-                list(hardened_command(full_cmd)),
+                command,
                 shell=False,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
@@ -91,7 +104,7 @@ class GitSkill(BaseSkill):
                 check=False,
                 timeout=self.timeout,
                 cwd=self.workspace.root,
-                env=confined_process_environment(self.workspace),
+                env=environment,
             )
             return self._format_result(result)
         except FileNotFoundError:

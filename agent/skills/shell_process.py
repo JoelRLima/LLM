@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -20,9 +22,10 @@ from agent.tools.process_tree import (
 )
 from agent.tools.stdio_streams import StreamCapture, close_pipes, start_readers
 
+from .process_safety import resolve_trusted_executable
+
 MAX_OUTPUT_BYTES = 1_048_576
 MAX_STDERR_BYTES = 1_048_576
-_PATH_SEPARATOR = os.pathsep
 
 
 @dataclass(frozen=True)
@@ -65,45 +68,78 @@ def _stop_readers(readers: list[Any], stop_readers: Event | None) -> None:
         reader.join(timeout=1.0)
 
 
-def _resolve_executable(command: str, environment: dict[str, str]) -> str | None:
-    """Resolve an allowlisted executable without implicit cwd shadowing."""
+def _resolve_executable(
+    command: str,
+    environment: dict[str, str],
+    workspace: str | Path | None = None,
+) -> str | None:
+    """Resolve an executable while excluding the controlled workspace."""
 
-    command_path = Path(command)
-    if command_path.is_absolute():
-        candidates = [command_path]
-    else:
-        raw_path = environment.get("PATH", "")
-        path_entries = [
-            Path(entry)
-            for entry in raw_path.split(_PATH_SEPARATOR)
-            if entry and Path(entry).is_absolute()
-        ]
-        if os.name == "nt" and not command_path.suffix:
-            names = [
-                command + extension
-                for extension in environment.get("PATHEXT", "").split(_PATH_SEPARATOR)
-                if extension
-            ]
-        else:
-            names = [command]
-        candidates = [directory / name for directory in path_entries for name in names]
+    return resolve_trusted_executable(command, environment, workspace or Path.cwd())
 
-    for candidate in candidates:
-        if not candidate.is_file():
-            continue
-        resolved = candidate.resolve()
-        if os.name == "nt":
-            pathext = {
-                extension.casefold()
-                for extension in environment.get("PATHEXT", "").split(_PATH_SEPARATOR)
-                if extension
-            }
-            if resolved.suffix.casefold() not in pathext:
-                continue
-        elif not os.access(resolved, os.X_OK):
-            continue
-        return str(resolved)
+
+def _safe_cleanup(
+    current: ShellProcessError | None,
+    action: Callable[[], None],
+    detail: str,
+) -> ShellProcessError | None:
+    try:
+        action()
+    except Exception as exc:
+        return current or ShellProcessError(
+            "unavailable", f"{detail}: {type(exc).__name__}: {exc}"
+        )
+    return current
+
+
+def _terminate_shell_process(
+    process: subprocess.Popen[Any],
+    windows_job: Any,
+    process_group: int | None,
+) -> ShellProcessError | None:
+    try:
+        termination_error = terminate_process(
+            process, windows_job, process_group_id=process_group
+        )
+    except Exception as exc:
+        return ShellProcessError(
+            "unavailable", f"Cleanup shell falhou: {type(exc).__name__}: {exc}"
+        )
+    if termination_error is not None:
+        return ShellProcessError("unavailable", f"Cleanup shell falhou: {termination_error}")
     return None
+
+
+def _cleanup_shell_resources(
+    process: subprocess.Popen[Any] | None,
+    windows_job: Any,
+    process_group: int | None,
+    readers: list[Any],
+    stop_readers: Event | None,
+    termination_completed: bool,
+) -> ShellProcessError | None:
+    cleanup_error: ShellProcessError | None = None
+    if process is not None and not termination_completed:
+        cleanup_error = _terminate_shell_process(process, windows_job, process_group)
+    if stop_readers is not None:
+        cleanup_error = _safe_cleanup(
+            cleanup_error, stop_readers.set, "Cleanup dos readers falhou"
+        )
+    if process is not None:
+        cleanup_error = _safe_cleanup(
+            cleanup_error, lambda: close_pipes(process), "Fechamento dos pipes falhou"
+        )
+    cleanup_error = _safe_cleanup(
+        cleanup_error,
+        lambda: _stop_readers(readers, stop_readers),
+        "Finalizacao dos readers falhou",
+    )
+
+    def close_job() -> None:
+        if not close_windows_job(windows_job):
+            raise OSError("Job Object nao confirmou fechamento")
+
+    return _safe_cleanup(cleanup_error, close_job, "Fechamento do Job falhou")
 
 
 def run_bounded_process(
@@ -113,7 +149,7 @@ def run_bounded_process(
     """Run an allowlisted command with concurrent bounded stream drains."""
 
     selected_argv = list(argv)
-    executable = _resolve_executable(selected_argv[0], environment)
+    executable = _resolve_executable(selected_argv[0], environment, workspace)
     if executable is None:
         raise FileNotFoundError(selected_argv[0])
     selected_argv[0] = executable
@@ -126,6 +162,7 @@ def run_bounded_process(
     stop_readers: Event | None = None
     stdout: StreamCapture | None = None
     stderr: StreamCapture | None = None
+    termination_completed = False
     try:
         process = subprocess.Popen(
             selected_argv, shell=False, stdin=subprocess.DEVNULL,
@@ -147,6 +184,7 @@ def run_bounded_process(
                     "Falha ao associar o processo shell ao Job Object; "
                     f"cleanup falhou: {termination_error}",
                 )
+            termination_completed = True
             raise ShellProcessError(
                 "unavailable",
                 "Falha ao associar o processo shell ao Job Object.",
@@ -159,6 +197,7 @@ def run_bounded_process(
             termination_error = terminate_process(process, windows_job, process_group_id=process_group)
             if termination_error is not None:
                 raise ShellProcessError("unavailable", f"Cleanup shell falhou: {termination_error}")
+            termination_completed = True
             raise failure
         process.wait()
         stop_readers.set()
@@ -172,12 +211,16 @@ def run_bounded_process(
             bytes(stderr.content).decode("utf-8", errors="replace"),
         )
     finally:
-        if stop_readers is not None:
-            stop_readers.set()
-        if process is not None:
-            close_pipes(process)
-        _stop_readers(readers, stop_readers)
-        close_windows_job(windows_job)
+        cleanup_error = _cleanup_shell_resources(
+            process,
+            windows_job,
+            process_group,
+            readers,
+            stop_readers,
+            termination_completed,
+        )
+        if cleanup_error is not None and sys.exc_info()[0] is None:
+            raise cleanup_error
 
 
 __all__ = ["MAX_OUTPUT_BYTES", "MAX_STDERR_BYTES", "ShellProcessError", "run_bounded_process"]

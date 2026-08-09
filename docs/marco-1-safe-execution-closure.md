@@ -76,9 +76,16 @@ symlinks.
 
 `ruff` é forçado a `check --isolated --no-cache --no-fix`; configuração explícita
 e modos mutantes são rejeitados. Git mantém somente status/log/diff, desabilita
-pager, fsmonitor, untracked cache, diff externo e textconv. `tree -o` é
-rejeitado. Approval continua sendo uma policy de produto para efeitos; não é
-tratada como boundary técnica.
+pager, fsmonitor, untracked cache, diff externo, textconv e verificação de
+assinaturas. Flags e formatos que solicitam verificadores de assinatura são
+rejeitados. `tree -o` é rejeitado. Approval continua sendo uma policy de
+produto para efeitos; não é tratada como boundary técnica.
+
+O nome allowlisted não é uma garantia sobre qualquer binário com esse nome.
+Cada runner resolve o caminho absoluto/canônico a partir de entradas absolutas
+do `PATH` e rejeita executáveis cujo destino esteja dentro da árvore do
+workspace controlado pelo modelo. Assim, `ruff` pode ficar indisponível quando
+somente uma instalação local dentro do workspace estiver presente.
 
 Essa capability **não é** arbitrary shell, workspace sandbox, network sandbox,
 filesystem sandbox, isolamento de secrets, proteção universal contra TOCTOU ou
@@ -93,15 +100,16 @@ promete execução segura de comandos não listados.
 G1 model-actionable enforcement       = fechado nos caminhos suportados
 G2 terminalidade                       = latch por tentativa, sem histórico
 G3 cancelamento/cleanup proporcional  = fechado para subprocessos cooperativos
-G4 Windows process-tree safety         = corrigida e validada localmente
+G4 process-tree safety                 = corrigida e validada no Windows/POSIX
 G5 shell boundary                     = capability reduzida e factual
 G6 claims <= evidence                 = revisado
 ```
 
-POSIX Runtime Validation permanece um gap quando não existe um ambiente Linux/
-POSIX pronto no host. Não instalar WSL, Docker, VM ou distribuição faz parte
-do escopo congelado; os testes POSIX suportados devem ser executados depois em
-um runtime real disponível.
+Timeout/cancelamento POSIX, cleanup de descendentes após a saída do pai e
+ausência de efeito tardio são exercitados no gate focal Linux do CI Ubuntu.
+Falhas excepcionais pós-`Popen` também possuem regressões reais no runner.
+Esses testes validam o lifecycle bounded declarado; não equivalem a sandbox de
+sistema operacional ou preempção universal.
 
 Ficam para trabalho posterior a migração de callers legados/low-level, uma
 distinção entre invocação lógica e tentativa de retry, isolamento técnico de

@@ -3,6 +3,7 @@ import os
 import select
 import shlex
 import signal
+import subprocess
 import sys
 import textwrap
 import threading
@@ -137,6 +138,7 @@ def test_shell_runs_normal_git_read_only_command_with_sanitized_environment(
     assert result["ok"] is True
     assert captured["command"] == [
         "git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+        "-c", "log.showSignature=false",
         "--no-pager", "status",
     ]
     environment = captured["environment"]
@@ -300,13 +302,15 @@ def test_posix_shell_process_terminates_parent_and_descendant(
             time.sleep(1)
         """
     )
-    executable = tmp_path / "ruff"
-    executable.write_text("#!/usr/bin/env python3\n" + parent_code, encoding="utf-8")
+    trusted_tools = tmp_path.parent / f"{tmp_path.name}-trusted-tools"
+    trusted_tools.mkdir()
+    executable = trusted_tools / "ruff"
+    executable.write_text(f"#!{sys.executable}\n" + parent_code, encoding="utf-8")
     executable.chmod(0o755)
 
     def test_environment(workspace: WorkspaceContext) -> dict[str, str]:
         environment = confined_process_environment(workspace)
-        environment["PATH"] = os.pathsep.join((str(tmp_path), environment["PATH"]))
+        environment["PATH"] = str(trusted_tools)
         return environment
 
     monkeypatch.setattr("agent.skills.shell.confined_process_environment", test_environment)
@@ -370,21 +374,206 @@ def test_executable_resolution_does_not_accept_workspace_shadow(
     command: str,
 ) -> None:
     workspace = WorkspaceContext.create(tmp_path)
+    shadow_dir = tmp_path / "bin"
+    shadow_dir.mkdir()
     if os.name == "nt":
-        shadow = tmp_path / f"{command}.exe"
+        shadow = shadow_dir / f"{command}.exe"
         shadow.write_bytes(Path(sys.executable).read_bytes())
     else:
-        shadow = tmp_path / command
+        shadow = shadow_dir / command
         shadow.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         shadow.chmod(0o755)
-    monkeypatch.chdir(tmp_path)
     environment = confined_process_environment(workspace)
+    environment["PATH"] = os.pathsep.join((str(tmp_path), str(shadow_dir), environment["PATH"]))
 
-    resolved = _resolve_executable(command, environment)
+    resolved = _resolve_executable(command, environment, workspace.root)
 
-    assert resolved is None or Path(resolved).resolve() != shadow.resolve()
+    assert resolved is None or not Path(resolved).resolve().is_relative_to(workspace.root)
     if resolved is not None:
         assert Path(resolved).is_absolute()
+
+
+@pytest.mark.parametrize("command", ["ruff", "git", "tree"])
+def test_shell_rejects_workspace_executable_shadow_in_real_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    workspace = tmp_path / "workspace"
+    bin_dir = workspace / "bin"
+    bin_dir.mkdir(parents=True)
+    sentinel = workspace / f"{command}-shadow-ran"
+    if os.name == "nt":
+        fake = bin_dir / f"{command}.cmd"
+        fake.write_text(f'@echo fake > "{sentinel}"\n@exit /b 42\n', encoding="utf-8")
+    else:
+        fake = bin_dir / command
+        fake.write_text(
+            f"#!/bin/sh\nprintf fake > {shlex.quote(str(sentinel))}\nexit 42\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+    workspace_context = WorkspaceContext.create(workspace)
+
+    def workspace_only_environment(current_workspace: WorkspaceContext) -> dict[str, str]:
+        environment = confined_process_environment(current_workspace)
+        environment["PATH"] = str(bin_dir)
+        environment.setdefault("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+        return environment
+
+    monkeypatch.setattr(
+        "agent.skills.shell.confined_process_environment", workspace_only_environment
+    )
+    skill = ShellSkill(workspace=workspace_context, approval_policy=AutoApprove())
+    argument = "ruff check ." if command == "ruff" else f"{command} ." if command == "tree" else "git status"
+    result = skill.execute({"command": argument})
+
+    assert result["ok"] is False
+    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git log --show-signature",
+        *[f"git log --pretty=format:{marker}" for marker in ("%G?", "%GS", "%GK", "%GF", "%GP", "%GT", "%GG")],
+    ],
+)
+def test_shell_rejects_signature_verification_before_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
+        {"command": command}
+    )
+    assert result["ok"] is False
+    assert "assinatura" in result["error"].casefold() or "signature" in result["error"].casefold()
+
+
+def _assert_process_terminated(process: subprocess.Popen[object]) -> None:
+    deadline = time.monotonic() + 5
+    while process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert process.poll() is not None
+
+
+@pytest.mark.parametrize("failure_point", ["readers", "monitor"])
+def test_post_popen_exception_terminates_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    workspace = WorkspaceContext.create(tmp_path)
+    created: list[subprocess.Popen[object]] = []
+    original_popen = shell_process_module.subprocess.Popen
+
+    def capture_popen(*args: object, **kwargs: object) -> subprocess.Popen[object]:
+        process = original_popen(*args, **kwargs)
+        created.append(process)
+        return process
+
+    monkeypatch.setattr(shell_process_module.subprocess, "Popen", capture_popen)
+    if failure_point == "readers":
+        monkeypatch.setattr(
+            shell_process_module,
+            "start_readers",
+            lambda *_args: (_ for _ in ()).throw(OSError("reader setup sentinel")),
+        )
+    else:
+        monkeypatch.setattr(
+            shell_process_module,
+            "_monitor_process",
+            lambda *_args: (_ for _ in ()).throw(RuntimeError("monitor sentinel")),
+        )
+
+    with pytest.raises((OSError, RuntimeError), match="sentinel"):
+        run_bounded_process(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            workspace=workspace.root,
+            environment=confined_process_environment(workspace),
+            timeout=5,
+        )
+
+    assert created
+    _assert_process_terminated(created[0])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups are unavailable on Windows")
+def test_posix_shell_parent_exit_terminates_descendant_with_inherited_pipes(
+    tmp_path: Path,
+) -> None:
+    if not hasattr(os, "pidfd_open"):
+        pytest.skip("pidfd_open is required for a race-resistant process assertion")
+    workspace = WorkspaceContext.create(tmp_path)
+    parent_pid_path = tmp_path / "parent.pid"
+    child_pid_path = tmp_path / "child.pid"
+    ready_path = tmp_path / "child-ready"
+    probe_path = tmp_path / "probe"
+    late_path = tmp_path / "late"
+    trusted_tools = tmp_path.parent / f"{tmp_path.name}-parent-tools"
+    trusted_tools.mkdir()
+    child_code = textwrap.dedent(
+        f"""
+        import os
+        import pathlib
+        import time
+        pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid()), encoding="utf-8")
+        pathlib.Path({str(ready_path)!r}).write_text("ready", encoding="utf-8")
+        while not pathlib.Path({str(probe_path)!r}).exists():
+            time.sleep(0.01)
+        pathlib.Path({str(late_path)!r}).write_text("late", encoding="utf-8")
+        """
+    )
+    parent_code = textwrap.dedent(
+        f"""
+        import pathlib
+        import subprocess
+        import sys
+        import time
+        pathlib.Path({str(parent_pid_path)!r}).write_text(str(__import__('os').getpid()), encoding="utf-8")
+        subprocess.Popen([sys.executable, "-c", {child_code!r}])
+        while not pathlib.Path({str(ready_path)!r}).exists():
+            time.sleep(0.01)
+        """
+    )
+    executable = trusted_tools / "ruff"
+    executable.write_text(f"#!{sys.executable}\n" + parent_code, encoding="utf-8")
+    executable.chmod(0o755)
+    environment = confined_process_environment(workspace)
+    environment["PATH"] = str(trusted_tools)
+    worker_result: list[object] = []
+
+    def invoke() -> None:
+        try:
+            worker_result.append(
+                run_bounded_process(
+                    ["ruff", "check", "."],
+                    workspace=workspace.root,
+                    environment=environment,
+                    timeout=5,
+                )
+            )
+        except BaseException as exc:
+            worker_result.append(exc)
+
+    worker = threading.Thread(target=invoke)
+    child_pidfd: int | None = None
+    try:
+        worker.start()
+        assert _wait_for_path(child_pid_path)
+        child_pidfd = os.pidfd_open(int(child_pid_path.read_text(encoding="utf-8")), 0)  # type: ignore[attr-defined]
+        worker.join(timeout=8)
+        assert not worker.is_alive()
+        assert worker_result
+        assert isinstance(worker_result[0], ShellProcessError)
+        assert _wait_for_pidfd(child_pidfd, 5000)
+        probe_path.write_text("probe", encoding="utf-8")
+        assert not _wait_for_path(late_path, timeout=0.5)
+    finally:
+        if worker.is_alive():
+            worker.join(timeout=1)
+        if child_pidfd is not None:
+            os.close(child_pidfd)
 
 
 def test_job_assignment_failure_terminates_started_process_before_surface_error(

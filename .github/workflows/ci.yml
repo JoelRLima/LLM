@@ -46,6 +46,7 @@ jobs:
           pytest -q
           "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[timeout-timed_out]"
           "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[cancel-cancelled]"
+          tests/unit/skills/test_shell.py::test_posix_shell_parent_exit_terminates_descendant_with_inherited_pipes
 
       - name: Pytest
         env:

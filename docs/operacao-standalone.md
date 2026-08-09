@@ -208,6 +208,10 @@ com `shell=False`, ambiente explicito, paths validados e streams bounded.
 `pytest` e `mypy` foram removidos da allowlist porque podem executar codigo
 controlado pelo workspace ou plugins. Nao ha sandbox tecnica de filesystem ou
 rede; ambiente filtrado e validacao de paths nao garantem isolamento transitivo.
+Os nomes permitidos nao selecionam qualquer binario: Git, Ruff e tree so sao
+executados quando um caminho absoluto/canonico confiavel fora do workspace pode
+ser resolvido. Uma instalacao local de Ruff dentro do workspace pode, portanto,
+ficar indisponivel.
 
 ## Verificação do artefato
 
