@@ -204,6 +204,19 @@ class CommandResult:
     stderr: str
 
 
+def _emit_failure_annotation(message: str) -> None:
+    compact = " ".join(message.split())[:1200]
+    escaped = (
+        compact.replace("%", "%25")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+    )
+    print(
+        f"::error title=Installed wheel acceptance::{escaped}",
+        file=sys.stderr,
+    )
+
+
 @dataclass(frozen=True)
 class InstallationMode:
     name: str
@@ -712,6 +725,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except VerificationError as exc:
         print(f"Installed package verification failed: {exc}", file=sys.stderr)
+        _emit_failure_annotation(str(exc))
         return 1
     if arguments.offline_diagnostic:
         print(
