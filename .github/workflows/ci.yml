@@ -40,6 +40,13 @@ jobs:
           mypy --platform linux
           mypy --platform win32
 
+      - name: Marco 1 POSIX shell lifecycle
+        if: runner.os == 'Linux'
+        run: >
+          pytest -q
+          "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[timeout-timed_out]"
+          "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[cancel-cancelled]"
+
       - name: Pytest
         env:
           AGENT_RUNTIME_DIR: ${{ runner.temp }}/llm-agent-runtime
