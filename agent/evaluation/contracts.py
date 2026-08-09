@@ -56,6 +56,7 @@ class ExecutionObservation:
     diagnostics: List[Dict[str, Any]] = field(default_factory=list)
     artifacts: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
+    measurement: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -76,3 +77,4 @@ class ScenarioReport:
     observation: ExecutionObservation
     failures: tuple[EvaluationFailure, ...]
     changed_files: tuple[str, ...]
+    expected: ScenarioExpectation = field(default_factory=ScenarioExpectation)
