@@ -28,43 +28,36 @@ class ToolExecutor:
         self, tool_name: str, args: ToolArgs, record_result: bool = True
     ) -> ToolResult:
         gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
-        if gateway is not None:
-            # Check for non-existent tool to raise ToolNotFoundError if expected
-            if hasattr(self.orchestrator, "skills") and tool_name not in self.orchestrator.skills:
-                try:
-                    gateway.registry.descriptor(tool_name)
-                except KeyError as exc:
-                    raise ToolNotFoundError(
-                        f"Tool '{tool_name}' não foi registrada no Orchestrator."
-                    ) from exc
-
-            print(f"⚙️  Usando {tool_name}...", end="", flush=True)
-            logger.info(f"Executando tool {tool_name} com args {args}")
-
-            raw_res = gateway.run(
-                tool_name,
-                args,
-                active_skills=self.orchestrator.active_skills or None,
-                allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
-                record_result=record_result,
+        if gateway is None:
+            # The legacy invoker remains available to explicit low-level/admin
+            # callers, but ToolExecutor is the model-actionable surface and
+            # never falls back to a direct skill call.
+            raise RuntimeError(
+                "ToolInvocationGateway nao foi configurado para o runtime standalone."
             )
-            result = cast(ToolResult, raw_res.to_legacy_dict())
-            msg = result.get("message") or ("Concluído" if result.get("ok") else "Falha")
-            print(f" {msg}")
-            if getattr(self.orchestrator, "verbose", False):
-                print(f"[DEBUG] Resultado completo: {stringify(result)}")
-            return result
 
-        legacy_invoker = getattr(self.orchestrator, "legacy_tool_invoker", None)
-        if legacy_invoker is None:
-            raise RuntimeError("ToolInvocationGateway não foi configurado para o runtime standalone.")
-        try:
-            result = cast(ToolResult, legacy_invoker.invoke(tool_name, args, record_result=record_result))
-        except KeyError as exc:
-            raise ToolNotFoundError(str(exc)) from exc
-        msg = result.get("message") or ("Concluído" if result.get("ok") else "Falha")
+        if hasattr(self.orchestrator, "skills") and tool_name not in self.orchestrator.skills:
+            try:
+                gateway.registry.descriptor(tool_name)
+            except KeyError as exc:
+                raise ToolNotFoundError(
+                    f"Tool '{tool_name}' nao foi registrada no Orchestrator."
+                ) from exc
+
+        print(f"Usando {tool_name}...", end="", flush=True)
+        logger.info("Executando tool %s com args %s", tool_name, args)
+        raw_res = gateway.run(
+            tool_name,
+            args,
+            active_skills=self.orchestrator.active_skills or None,
+            allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
+            record_result=record_result,
+            cancellation_token=getattr(self.orchestrator, "cancellation_token", None),
+        )
+        result = cast(ToolResult, raw_res.to_legacy_dict())
+        msg = result.get("message") or ("Concluido" if result.get("ok") else "Falha")
         print(f" {msg}")
-        if self.orchestrator.verbose:
+        if getattr(self.orchestrator, "verbose", False):
             print(f"[DEBUG] Resultado completo: {stringify(result)}")
         return result
 
@@ -81,16 +74,8 @@ class ToolExecutor:
                 )
                 if res.ok:
                     return str(res.data or text[:300])
-            else:
-                legacy_invoker = getattr(self.orchestrator, "legacy_tool_invoker", None)
-                if legacy_invoker is not None:
-                    result = legacy_invoker.invoke(
-                        "summarize", {"text": text, "context": context}, record_result=False
-                    )
-                    if result.get("ok"):
-                        return str(result.get("data", text[:300]))
-        except Exception as e:
-            logger.warning(f"Falha ao usar summarize_skill: {e}")
+        except Exception as exc:
+            logger.warning("Falha ao usar summarize_skill: %s", exc)
         return text[:300] + "..." if len(text) > 300 else text
 
     def maybe_summarize_and_store(
@@ -117,11 +102,8 @@ class ToolExecutor:
         memory.remember(memory_key, summary, section="file_summaries")
         memory.state["analyzed_files"][memory_key] = summary[:150]
         try:
-            with self._resolve_user_path(file_path).open(
-                "r",
-                encoding="utf-8",
-            ) as f:
-                file_hash = hashlib.sha256(f.read().encode("utf-8")).hexdigest()
+            with self._resolve_user_path(file_path).open("r", encoding="utf-8") as handle:
+                file_hash = hashlib.sha256(handle.read().encode("utf-8")).hexdigest()
             memory.state.setdefault("file_hashes", {})[memory_key] = file_hash
         except (OSError, ValueError):
             pass

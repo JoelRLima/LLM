@@ -12,6 +12,7 @@ from agent.llm.context_manager import ContextManager
 from agent.llm.router import is_security_objective, route_objective
 from agent.llm.session import ChatSession
 from agent.memory.memory import AgentMemory
+from agent.orchestration.compatibility import install_compatibility_gateway
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
 from agent.orchestration.operations import OrchestratorOperations
 from agent.orchestration.security_service import SecurityAnalysisService
@@ -71,7 +72,7 @@ class Orchestrator(OrchestratorOperations):
         self.application_authority = application_authority
         self.task_authority = task_authority
         self._planning_context: PlanningContextSnapshot | None = None
-        self.legacy_tool_invoker = LegacyToolInvoker(self) if tool_registry is None else None
+        self.legacy_tool_invoker = None
         self.max_steps = 15
         self.max_total_actions = 20
         self.max_early_final_attempts = 3
@@ -109,7 +110,14 @@ class Orchestrator(OrchestratorOperations):
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:
             self.register_skill(skill)
-
+        if self.tool_registry is None and selected_skills:
+            install_compatibility_gateway(
+                self,
+                selected_skills,
+                skill_registry=skill_registry,
+            )
+        if self.tool_invocation_gateway is None and self.tool_registry is None and not selected_skills:
+            self.legacy_tool_invoker = LegacyToolInvoker(self)
     @property
     def workspace(self) -> WorkspaceManager:
         return self.subsystems.workspace

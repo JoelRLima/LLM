@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 
 from agent.runtime.workspace_context import WorkspaceContext
@@ -43,15 +44,15 @@ def confined_process_environment(
 ) -> dict[str, str]:
     """Remove path redirection from inherited env and relocate mutable homes."""
 
-    environment = dict(source if source is not None else os.environ)
-    for key in tuple(environment):
-        upper = key.upper()
-        if (
-            upper in _REMOVED_ENVIRONMENT
-            or upper.startswith("GIT_CONFIG_")
-            or upper.startswith("GIT_TRACE")
-        ):
-            environment.pop(key, None)
+    raw = dict(source if source is not None else os.environ)
+    # Shell validation is model-actionable. Keep only executable/runtime
+    # essentials and benign locale settings; arbitrary host variables may
+    # contain credentials, tokens, or import/path hooks.
+    allowed = {
+        "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR",
+        "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
+    }
+    environment = {key: value for key, value in raw.items() if key.upper() in allowed}
     root = str(workspace.root)
     for key in (
         "APPDATA",
@@ -72,6 +73,13 @@ def confined_process_environment(
     environment["GIT_PAGER"] = "cat"
     environment["PAGER"] = "cat"
     environment["PYTHONNOUSERSITE"] = "1"
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    interpreter_dir = os.path.dirname(sys.executable)
+    if interpreter_dir:
+        environment["PATH"] = os.pathsep.join(
+            part for part in (interpreter_dir, environment.get("PATH", "")) if part
+        )
     return environment
 
 

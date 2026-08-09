@@ -16,6 +16,7 @@ import agent.tools.stdio_adapter as stdio_adapter_module
 import agent.tools.stdio_cleanup as stdio_cleanup_module
 import agent.tools.stdio_launcher as stdio_launcher_module
 import agent.tools.stdio_process as stdio_process_module
+from agent.cancellation import CancellationToken
 from agent.tools.contracts import ToolInvocation, ToolStatus
 from agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter, load_extension_manifest
 
@@ -440,6 +441,39 @@ def test_stdio_adapter_discards_late_response_after_timeout(tmp_path: Path) -> N
     assert result.status == ToolStatus.TIMED_OUT
     assert result.invocation_id
     assert not (tmp_path / "late-response.txt").exists()
+
+
+def test_stdio_adapter_cancellation_terminates_process_tree(tmp_path: Path) -> None:
+    late_path = tmp_path / "cancelled-late.txt"
+    adapter = _adapter_for_script(
+        tmp_path,
+        f"""
+        import json
+        import pathlib
+        import sys
+        import time
+
+        json.loads(sys.stdin.readline())
+        time.sleep(5)
+        pathlib.Path(r'{late_path.as_posix()}').write_text('late', encoding='utf-8')
+        print(json.dumps({{"status": "succeeded"}}))
+        """,
+        timeout_seconds=10,
+    )
+    token = CancellationToken()
+    result_box: list[Any] = []
+    worker = threading.Thread(
+        target=lambda: result_box.append(
+            adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}, cancellation_token=token))
+        )
+    )
+    worker.start()
+    time.sleep(0.2)
+    token.cancel()
+    worker.join(timeout=5)
+
+    assert result_box[0].status is ToolStatus.CANCELLED
+    assert not late_path.exists()
 
 
 def test_stdio_adapter_accepts_failed_response_with_matching_id(tmp_path: Path) -> None:

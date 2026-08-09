@@ -25,10 +25,9 @@ class SecurityAnalysisService:
             )
             result = res.to_legacy_dict()
         else:
-            legacy_invoker = getattr(self.orchestrator, "legacy_tool_invoker", None)
-            if legacy_invoker is None:
-                return None
-            result = legacy_invoker.invoke("code_analyzer", {"target": target, "mode": "security"}, record_result=False)
+            # Security analysis is reached from the model orchestration path;
+            # it must fail closed when no canonical gateway exists.
+            return None
         if not result.get("ok"):
             return None
 

@@ -200,6 +200,15 @@ que continua sujeito às permissões do processo do usuário. A fase 1 fecha
 escapes diretos de argumento; isolamento de processo e autorização unificada
 por capability permanecem trabalho posterior.
 
+### Estado da capability de comandos no Marco 1
+
+A `ShellSkill` model-actionable nao e um shell arbitrario. Ela aceita somente
+`ruff check`, `git status`, `git log`, `git diff` e `tree` quando disponivel,
+com `shell=False`, ambiente explicito, paths validados e streams bounded.
+`pytest` e `mypy` foram removidos da allowlist porque podem executar codigo
+controlado pelo workspace ou plugins. Nao ha sandbox tecnica de filesystem ou
+rede; ambiente filtrado e validacao de paths nao garantem isolamento transitivo.
+
 ## Verificação do artefato
 
 O gate completo cria um wheel, instala-o com dependências em venv limpo e roda

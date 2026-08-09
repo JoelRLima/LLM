@@ -28,6 +28,7 @@ e para os padrões de código, o [guia de contribuição](../CONTRIBUTING.md).
 | [adr/0005-launcher-interno-contencao-stdio-windows.md](adr/0005-launcher-interno-contencao-stdio-windows.md) | launcher interno Windows-only, associação ao Job antes da extension e status privado |
 | [adr/0013-fronteira-canonica-authority-approval-invocacao.md](adr/0013-fronteira-canonica-authority-approval-invocacao.md) | fronteira canÃ´nica de authority, approval e lifecycle de invocation |
 | [gate-2.7b-authority-invocation.md](gate-2.7b-authority-invocation.md) | authority, approval e lifecycle de invocation |
+| [marco-1-safe-execution-closure.md](marco-1-safe-execution-closure.md) | garantias de execucao, terminalidade, stdio e shell do Marco 1 |
 | [gate-2.7b-self-review.md](gate-2.7b-self-review.md) | implementacao, autoauditoria e evidencias do Gate 2.7b |
 | [agent/core.md](agent/core.md) | Arquivos de `agent/` |
 | [agent/llm.md](agent/llm.md) | Arquivos de `agent/llm` |

@@ -1,41 +1,53 @@
 # Gate 2.7b — authority, approval e invocation lifecycle
 
-O fluxo canônico do runtime standalone é:
+O fluxo canonico do runtime standalone e:
 
 ```text
 ToolInvocationRequest
-  → binding do RuntimeSnapshotIdentity
-  → descriptor/origin do ToolRegistry
-  → ApplicationAuthoritySnapshot
-  → TaskAuthoritySnapshot
-  → grants/capabilities
-  → schema
-  → ApprovalPort
-  → ToolInvocationGateway
-  → adapter
-  → ToolResult/evento
+  -> binding do RuntimeSnapshotIdentity
+  -> descriptor/origin do ToolRegistry
+  -> ApplicationAuthoritySnapshot
+  -> TaskAuthoritySnapshot
+  -> grants/capabilities
+  -> schema
+  -> ApprovalPort
+  -> ToolInvocationGateway
+  -> adapter
+  -> ToolResult/evento
 ```
 
-Extensions exigem grant da aplicação e um `TaskAuthoritySnapshot` explícito.
-`None` significa ausência e falha fechado; `TaskAuthoritySnapshot()` é um
-snapshot vazio explícito e só autoriza uma extension que não exija capabilities.
-Builtins preservam a política histórica sem depender de grants de extensions.
+Extensions exigem grant da aplicacao e um `TaskAuthoritySnapshot` explicito.
+`None` significa ausencia e falha fechado; `TaskAuthoritySnapshot()` e um
+snapshot vazio explicito e so autoriza uma extension que nao exija capabilities.
+Builtins preservam a politica historica sem depender de grants de extensions.
 
 O gateway nunca usa `active_skills`, persona, prompt ou output do planner como
-concessão. Esses dados podem restringir visibilidade, mas a origem e as
-capabilities são derivadas do descriptor e dos snapshots imutáveis. O registry
-e a authority precisam pertencer ao mesmo bootstrap/workspace.
+concessao. Esses dados restringem visibilidade, mas a origem e as capabilities
+sao derivadas do descriptor e dos snapshots imutaveis. O registry e a
+authority precisam pertencer ao mesmo bootstrap/workspace.
 
-Negações retornam `ToolResult` correlacionado pelo mesmo `invocation_id` e
+Negacoes retornam `ToolResult` correlacionado pelo mesmo `invocation_id` e
 emitem `tool_denied` sem argumentos ou resultado integral. Effects emitem
-`approval_requested`; aprovação positiva emite `approval_approved`; rejeição e
-falha não chamam o adapter. Invocações aprovadas emitem exatamente um
-`tool_start` e um `tool_end`. ID divergente no resultado é
-`PROTOCOL_ERROR`.
+`approval_requested`; aprovacao positiva emite `approval_approved`; rejeicao e
+falha nao chamam o adapter. Invocacoes aprovadas emitem exatamente um
+`tool_start` e um `tool_end`. ID divergente no resultado e `PROTOCOL_ERROR`.
 
-O caminho canônico é montado por `AgentApplication`; seu `task_authority`
-opcional deve vir de uma camada confiável. A aplicação não fornece esse
-snapshot por padrão, mantendo extensions invisíveis no planning e negadas na
-execução. `LegacyToolInvoker`, o loader legado de registry e chamadas diretas
-ao adapter permanecem pendências de hardening do Gate 2.7c; o `ToolRegistry`
-direto já bloqueia extensions por fail-closed.
+O gateway reserva cada `invocation_id` somente enquanto a tentativa concreta
+esta ativa. Uma tentativa concorrente com o mesmo ID e rejeitada antes do
+adapter. Depois da terminalidade, uma nova requisicao concreta pode usar um
+novo UUID ou reutilizar o ID sem que isso crie semantica de retry, deduplicacao
+historica ou exactly-once. Timeout e cancelamento possuem resultado terminal
+proprio; a conclusao tardia de um worker nao publica outro evento terminal. O
+gateway nao mantem conjunto historico permanente de IDs.
+
+`ToolExecutor` nao reconstrói um caminho model-actionable via
+`LegacyToolInvoker`. Construcao direta com builtins usa o gateway canonico;
+skills customizadas so sao adaptadas quando um `SkillRegistry` explicito
+fornece descriptor, capabilities, schema e policy. Registro tardio sem
+metadata nao torna uma skill executavel pelo modelo e falha fechado.
+
+O caminho principal e montado por `AgentApplication`; seu `task_authority`
+opcional deve vir de uma camada confiavel. A aplicacao nao fornece esse
+snapshot por padrao, mantendo extensions invisiveis no planning e negadas na
+execucao. Chamadas low-level a `LegacyToolInvoker`, registry ou adapters sao
+compatibilidade interna e permanecem fora da superficie model-actionable.

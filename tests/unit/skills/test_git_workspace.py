@@ -34,6 +34,7 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
         "core.fsmonitor=false",
         "-c",
         "core.untrackedCache=false",
+        "--no-pager",
         "status",
     ]
     assert captured["shell"] is False
@@ -150,6 +151,7 @@ def test_git_skill_accepts_inside_paths_and_disables_extension_hooks(
         "core.fsmonitor=false",
         "-c",
         "core.untrackedCache=false",
+        "--no-pager",
         "diff",
         "--no-ext-diff",
         "--no-textconv",

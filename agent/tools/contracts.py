@@ -185,12 +185,12 @@ class ToolInvocation:
     invocation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     task_id: Optional[str] = None
     workspace: Optional[str] = None
-
+    cancellation_token: Any = field(default=None, kw_only=True, repr=False, compare=False)
+    cancellation_event: Any = field(default=None, kw_only=True, repr=False, compare=False)
 
 @dataclass(frozen=True, slots=True)
 class ToolInvocationRequest:
     """Validated invocation boundary prepared before gateway integration."""
-
     invocation_id: str
     tool_name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)

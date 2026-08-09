@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import threading
+import time
 from typing import Any, Callable, Dict, Optional
 
 from agent.approval import ApprovalDecision, ApprovalPort, ApprovalRequest, RequireExplicitApproval
@@ -17,6 +19,9 @@ from agent.tools.contracts import (
     ToolStatus,
 )
 from agent.tools.invocation_support import (
+    _InvocationAttempt,
+    _set_cancel_event,
+    _token_cancelled,
     check_authority,
     denial,
     prepare_request,
@@ -46,7 +51,18 @@ class ToolInvocationGateway:
         self.approval_port = approval_port or RequireExplicitApproval()
         self.application_authority = application_authority
         self.task_authority = task_authority
+        self._invocation_lock = threading.Lock()
+        self._active_invocations: set[str] = set()
+    def _begin_invocation(self, invocation_id: str) -> bool:
+        with self._invocation_lock:
+            if invocation_id in self._active_invocations:
+                return False
+            self._active_invocations.add(invocation_id)
+            return True
 
+    def _finish_invocation(self, invocation_id: str) -> None:
+        with self._invocation_lock:
+            self._active_invocations.discard(invocation_id)
     def run(
         self,
         tool_name: str | ToolInvocationRequest,
@@ -58,6 +74,7 @@ class ToolInvocationGateway:
         record_result: bool = True,
         task_id: Optional[str] = None,
         authorization_context: AuthorizationContext | None = None,
+        cancellation_token: Any | None = None,
     ) -> ToolResult:
         """Validate and execute one request; historical calls remain wrappers."""
         request, request_error = prepare_request(tool_name, args, timeout_seconds, task_id)
@@ -79,30 +96,46 @@ class ToolInvocationGateway:
                     else None
                 )
             ),
+            cancellation_token=cancellation_token,
+            cancellation_event=threading.Event(),
         )
-        descriptor, authorization_error = self._authorize(
-            invocation,
-            active_skills,
-            allowed_capabilities,
-            authorization_context,
-        )
-        if authorization_error is not None:
-            self._emit_denial(authorization_error, record_result, invocation.tool_name, invocation.args)
-            return authorization_error
-        assert descriptor is not None
-        self._emit("tool_start", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
-        logger.info("[GATEWAY] Invocando tool '%s' (id: %s)", invocation.tool_name, invocation.invocation_id)
-        timeout = request.timeout_seconds if request.timeout_seconds is not None else descriptor.timeout_seconds
-        result = self._execute(invocation, timeout)
-        result = validate_result(invocation, result)
-        self._emit("tool_end", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id, "status": result.status.value, "ok": result.ok})
-        self._record(invocation.tool_name, invocation.args, result, record_result)
-        return result
+        attempt = _InvocationAttempt(invocation.invocation_id)
+        if not self._begin_invocation(invocation.invocation_id):
+            duplicate = denial(
+                invocation,
+                ToolStatus.PROTOCOL_ERROR,
+                "DUPLICATE_INVOCATION_ID",
+                "invocation_id ja possui uma tentativa ativa.",
+            )
+            self._emit_denial(duplicate, record_result, invocation.tool_name, invocation.args)
+            return duplicate
+        try:
+            descriptor, authorization_error = self._authorize(
+                invocation,
+                active_skills,
+                allowed_capabilities,
+                authorization_context,
+            )
+            if authorization_error is not None:
+                self._complete_denial(attempt, authorization_error, record_result, invocation.tool_name, invocation.args)
+                return authorization_error
+            assert descriptor is not None
+            self._emit("tool_start", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
+            logger.info("[GATEWAY] Invocando tool '%s' (id: %s)", invocation.tool_name, invocation.invocation_id)
+            timeout = request.timeout_seconds if request.timeout_seconds is not None else descriptor.timeout_seconds
+            result = self._execute(invocation, timeout, attempt)
+            result = validate_result(invocation, result)
+            self._complete_result(attempt, invocation, result, record_result)
+            return result
+        except Exception:
+            # Unexpected registry/adapter plumbing errors must not poison the
+            # bounded active-ID set for the lifetime of the gateway.
+            self._finish_invocation(invocation.invocation_id)
+            raise
 
     def invoke(self, request: ToolInvocationRequest, **kwargs: Any) -> ToolResult:
         """Explicit name for callers that already own a canonical request."""
         return self.run(request, **kwargs)
-
     def _authorize(
         self,
         invocation: ToolInvocation,
@@ -134,7 +167,6 @@ class ToolInvocationGateway:
         if approval_result is not None:
             return None, approval_result
         return descriptor, None
-
     def _check_effect_approval(self, invocation: ToolInvocation, descriptor: ToolDescriptor) -> ToolResult | None:
         effects = frozenset({"write", "vcs_write", "process", "network", "package_install"})
         requested = effects & descriptor.capabilities
@@ -159,37 +191,96 @@ class ToolInvocationGateway:
         status = ToolStatus.BLOCKED if decision is ApprovalDecision.REQUIRED else ToolStatus.PERMISSION_DENIED
         code = "APPROVAL_REQUIRED" if status is ToolStatus.BLOCKED else "APPROVAL_DENIED"
         return denial(invocation, status, code, "A aprovacao necessaria nao foi concedida.")
-
-    def _execute(self, invocation: ToolInvocation, timeout_seconds: int | None) -> ToolResult:
-        if timeout_seconds and timeout_seconds > 0:
-            return self._invoke_with_timeout(invocation, timeout_seconds)
+    def _execute(
+        self,
+        invocation: ToolInvocation,
+        timeout_seconds: int | None,
+        attempt: _InvocationAttempt,
+    ) -> ToolResult:
+        if _token_cancelled(invocation.cancellation_token):
+            _set_cancel_event(invocation)
+            return denial(invocation, ToolStatus.CANCELLED, "CANCELLED", "Execucao cancelada.")
+        if (timeout_seconds and timeout_seconds > 0) or invocation.cancellation_token is not None:
+            return self._invoke_with_timeout(invocation, timeout_seconds, attempt)
         try:
             return self.registry._invoke_from_gateway(invocation)
         except Exception as exc:
             logger.warning("[GATEWAY] Adapter failed: %s", type(exc).__name__)
             return denial(invocation, ToolStatus.FAILED, "ADAPTER_FAILED", "Adapter invocation failed.")
 
-    def _invoke_with_timeout(self, invocation: ToolInvocation, timeout_seconds: int) -> ToolResult:
+    def _invoke_with_timeout(
+        self,
+        invocation: ToolInvocation,
+        timeout_seconds: int | None,
+        attempt: _InvocationAttempt,
+    ) -> ToolResult:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self.registry._invoke_from_gateway, invocation)
+        attempt.mark_worker_pending()
+        future.add_done_callback(lambda _future: self._worker_finished(attempt))
+        deadline = time.monotonic() + float(timeout_seconds) if timeout_seconds else None
         try:
-            result = future.result(timeout=float(timeout_seconds))
-            return validate_result(invocation, result)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
-            logger.warning("[GATEWAY] Tool '%s' excedeu o timeout de %ss", invocation.tool_name, timeout_seconds)
-            return denial(invocation, ToolStatus.TIMED_OUT, "TIMEOUT", "Execucao excedeu o limite.")
+            while True:
+                if _token_cancelled(invocation.cancellation_token):
+                    _set_cancel_event(invocation)
+                    future.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    logger.info("[GATEWAY] Tool '%s' cancelada", invocation.tool_name)
+                    return denial(invocation, ToolStatus.CANCELLED, "CANCELLED", "Execucao cancelada.")
+                remaining = 0.05 if deadline is None else min(0.05, deadline - time.monotonic())
+                if remaining <= 0:
+                    _set_cancel_event(invocation)
+                    future.cancel()
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    logger.warning("[GATEWAY] Tool '%s' excedeu o timeout de %ss", invocation.tool_name, timeout_seconds)
+                    return denial(invocation, ToolStatus.TIMED_OUT, "TIMEOUT", "Execucao excedeu o limite.")
+                try:
+                    result = future.result(timeout=remaining)
+                    validated = validate_result(invocation, result)
+                    executor.shutdown(wait=True, cancel_futures=True)
+                    return validated
+                except concurrent.futures.TimeoutError:
+                    continue
         except Exception as exc:
             executor.shutdown(wait=True, cancel_futures=True)
+            self._worker_finished(attempt)
             logger.warning("[GATEWAY] Adapter failed: %s", type(exc).__name__)
             return denial(invocation, ToolStatus.FAILED, "ADAPTER_FAILED", "Adapter invocation failed.")
-        else:
-            executor.shutdown(wait=True, cancel_futures=True)
 
+    def _worker_finished(self, attempt: _InvocationAttempt) -> None:
+        if attempt.worker_finished() and attempt.can_release():
+            self._finish_invocation(attempt.invocation_id)
     def _emit_denial(self, result: ToolResult, record_result: bool, tool_name: str, args: Dict[str, Any]) -> None:
         self._emit("tool_denied", {"invocation_id": result.invocation_id, "status": result.status.value, "reason": result.error.code if result.error else "DENIED"})
         self._record(tool_name, args, result, record_result)
+
+    def _complete_denial(
+        self,
+        attempt: _InvocationAttempt,
+        result: ToolResult,
+        record_result: bool,
+        tool_name: str,
+        args: Dict[str, Any],
+    ) -> None:
+        if not attempt.claim_terminal():
+            return
+        self._emit_denial(result, record_result, tool_name, args)
+        if attempt.can_release():
+            self._finish_invocation(attempt.invocation_id)
+
+    def _complete_result(
+        self,
+        attempt: _InvocationAttempt,
+        invocation: ToolInvocation,
+        result: ToolResult,
+        record_result: bool,
+    ) -> None:
+        if not attempt.claim_terminal():
+            return
+        self._emit("tool_end", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id, "status": result.status.value, "ok": result.ok})
+        self._record(invocation.tool_name, invocation.args, result, record_result)
+        if attempt.can_release():
+            self._finish_invocation(attempt.invocation_id)
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         if self.event_emitter is not None:

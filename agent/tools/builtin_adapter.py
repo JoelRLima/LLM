@@ -73,7 +73,15 @@ class BuiltinToolAdapter(ToolAdapter):
             )
 
         try:
-            raw_result = skill.execute(invocation.args)
+            contextual_execute = getattr(skill, "execute_with_context", None)
+            if callable(contextual_execute):
+                raw_result = contextual_execute(
+                    invocation.args,
+                    cancellation_token=invocation.cancellation_token,
+                    cancellation_event=invocation.cancellation_event,
+                )
+            else:
+                raw_result = skill.execute(invocation.args)
         except Exception as exc:
             return ToolResult(
                 invocation_id=invocation.invocation_id,

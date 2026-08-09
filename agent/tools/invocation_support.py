@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -165,6 +167,9 @@ def validate_result(invocation: ToolInvocation, result: Any) -> ToolResult:
 
 
 __all__ = [
+    "_InvocationAttempt",
+    "_set_cancel_event",
+    "_token_cancelled",
     "check_authority",
     "denial",
     "prepare_request",
@@ -172,3 +177,51 @@ __all__ = [
     "validate_binding",
     "validate_result",
 ]
+
+
+@dataclass
+class _InvocationAttempt:
+    """Bounded ownership state for one concrete invocation attempt."""
+
+    invocation_id: str
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    terminal: bool = False
+    worker_pending: bool = False
+
+    def claim_terminal(self) -> bool:
+        with self.lock:
+            if self.terminal:
+                return False
+            self.terminal = True
+            return True
+
+    def mark_worker_pending(self) -> None:
+        with self.lock:
+            self.worker_pending = True
+
+    def worker_finished(self) -> bool:
+        with self.lock:
+            self.worker_pending = False
+            return self.terminal
+
+    def can_release(self) -> bool:
+        with self.lock:
+            return self.terminal and not self.worker_pending
+
+
+def _token_cancelled(token: Any | None) -> bool:
+    if token is None:
+        return False
+    try:
+        return bool(token.cancelled)
+    except (AttributeError, TypeError):
+        return False
+
+
+def _set_cancel_event(invocation: ToolInvocation) -> None:
+    event = invocation.cancellation_event
+    if event is not None:
+        try:
+            event.set()
+        except (AttributeError, TypeError):
+            pass

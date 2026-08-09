@@ -49,7 +49,7 @@ def start_readers(
 ) -> tuple[list[Thread], StreamCapture, StreamCapture, Event, list[str]]:
     """Start the two bounded readers used by a stdio process."""
 
-    if process.stdin is None or process.stdout is None or process.stderr is None:
+    if process.stdout is None or process.stderr is None:
         raise OSError("pipes da extensao nao foram criados")
     stdout = StreamCapture(stdout_limit)
     stderr = StreamCapture(stderr_limit)

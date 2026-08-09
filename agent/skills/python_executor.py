@@ -7,11 +7,13 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
+from threading import Event
 from typing import Any
 
 from agent.runtime.logging import logger
 
 from .base import BaseSkill
+from .python_process import PythonProcessCancelled, run_python_process
 from .python_sandbox_policy import validate_code
 from .python_sandbox_runtime import (
     SandboxLimits,
@@ -170,6 +172,48 @@ class PythonExecutorSkill(BaseSkill):
                 f"Execução rejeitada pela validação pós-execução da sandbox: {state_error}",
             )
         return self._format_result(result)
+
+    def execute_with_context(
+        self, args: dict[str, Any], *, cancellation_token: Any | None = None,
+        cancellation_event: Event | None = None,
+    ) -> dict[str, Any]:
+        """Canonical adapter hook with bounded cooperative cancellation."""
+
+        code = str(args.get("code", ""))
+        if not code.strip():
+            return self._error("cÃ³digo vazio", "Nenhum cÃ³digo fornecido.")
+        validation_error = self._validate_code(code)
+        if validation_error:
+            return self._error(validation_error, f"Erro de seguranÃ§a na validaÃ§Ã£o: {validation_error}")
+        try:
+            with tempfile.TemporaryDirectory(prefix="agent_sandbox_", ignore_cleanup_errors=True) as temp_dir:
+                write_error = self._write_script(temp_dir, self._build_wrapper(code))
+                if write_error:
+                    return self._error(write_error, "Erro ao criar arquivo da sandbox.")
+                try:
+                    result = run_python_process(
+                        [sys.executable, "script.py"],
+                        cwd=temp_dir,
+                        timeout=self.timeout,
+                        cancellation_token=cancellation_token,
+                        cancellation_event=cancellation_event,
+                        drop_privileges=self._drop_privileges if os.name == "posix" and getattr(os, "geteuid", lambda: 1)() == 0 else None,
+                    )
+                except PythonProcessCancelled:
+                    return self._error("Execucao cancelada.", "O cÃ³digo foi cancelado.")
+                except subprocess.TimeoutExpired:
+                    return self._error(f"Timeout apÃ³s {self.timeout}s", "O cÃ³digo excedeu o tempo limite.")
+                except Exception as exc:
+                    return self._error(str(exc), "Erro ao executar o subprocesso.")
+                output_error = self._validate_output(result.stdout or "", result.stderr or "")
+                if output_error:
+                    return output_error
+                state_error = self._validate_sandbox_state(temp_dir)
+                if state_error:
+                    return self._error(state_error, f"ExecuÃ§Ã£o rejeitada pela validaÃ§Ã£o pÃ³s-execuÃ§Ã£o da sandbox: {state_error}")
+                return self._format_result(result)
+        finally:
+            logger.debug("[python_executor] Sandbox destruÃ­da e limpeza concluÃ­da")
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         code = str(args.get("code", ""))

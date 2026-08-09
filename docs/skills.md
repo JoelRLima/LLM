@@ -152,6 +152,21 @@ projeto; confinamento de argumentos impede escapes diretos, mas não transforma
 o processo em isolamento forte. A capability `process` deve ser tratada como
 autoridade relevante.
 
+### Closure do Marco 1: ShellSkill reduzida
+
+Na closure atual, `shell` e um **restricted validation/read-only command
+runner**. A superficie model-actionable exata e `ruff check`, `git status`,
+`git log`, `git diff` e `tree` quando o executavel existe. `pytest`, `mypy` e
+os aliases `echo`, `type`, `dir` e `ls` nao fazem parte da allowlist.
+
+Ruff e executado com `--isolated --no-cache --no-fix`; configuracao explicita,
+mutacao e `tree -o` sao rejeitados. Git recebe apenas os overrides necessarios
+para desabilitar pager, fsmonitor, untracked cache, diff externo e textconv.
+O runner usa `shell=False`, ambiente construido por allowlist e limites
+independentes de stdout/stderr. Isso nao fornece sandbox de filesystem, rede,
+TOCTOU ou preempcao universal; validacao de path nao limita efeitos
+transitivos de um programa.
+
 ## Como adicionar uma skill
 
 1. Implemente `BaseSkill` em um módulo pequeno.

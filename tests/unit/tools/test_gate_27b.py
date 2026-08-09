@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
+from agent.llm.session import ChatSession
+from agent.orchestrator import Orchestrator
+from agent.skills.descriptor import SkillDescriptor, SkillSpec
+from agent.skills.echo import EchoSkill
+from agent.skills.registry import SkillRegistry
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     ToolDescriptor,
@@ -207,3 +214,82 @@ def test_adapter_failure_has_one_terminal_event() -> None:
     result = gateway.run("builtin", {})
     assert result.status is ToolStatus.FAILED
     assert events == ["tool_start", "tool_end"]
+
+
+def test_direct_orchestrator_builtin_compatibility_uses_gateway() -> None:
+    session = ChatSession(
+        "system",
+        {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
+        gateway=object(),
+    )
+    orchestrator = Orchestrator(session, [EchoSkill()])
+
+    assert orchestrator.tool_invocation_gateway is not None
+    assert orchestrator.legacy_tool_invoker is None
+    result = orchestrator.tool_executor.run_tool("echo", {"message": "canonical"})
+
+    assert result["ok"] is True
+    assert result["data"] == "canonical"
+
+
+def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass() -> None:
+    class CustomEcho:
+        name = "custom_echo"
+        description = "custom echo"
+        calls = 0
+
+        def get_schema(self):
+            return {"type": "object"}
+
+        def execute(self, args):
+            self.calls += 1
+            return {"ok": True, "done": True, "data": args.get("message")}
+
+    session = ChatSession(
+        "system",
+        {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
+        gateway=object(),
+    )
+    orchestrator = Orchestrator(session)
+    skill = CustomEcho()
+    orchestrator.register_skill(skill)
+
+    with pytest.raises(RuntimeError, match="ToolInvocationGateway"):
+        orchestrator.tool_executor.run_tool("custom_echo", {"message": "bypass"})
+    assert skill.calls == 0
+
+
+def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gateway() -> None:
+    class CustomEcho:
+        name = "custom_echo"
+        description = "custom echo"
+        calls = 0
+
+        def get_schema(self):
+            return {"type": "object", "properties": {"message": {"type": "string"}}}
+
+        def execute(self, args):
+            self.calls += 1
+            return {"ok": True, "done": True, "data": args.get("message")}
+
+    skill = CustomEcho()
+    metadata = SkillRegistry()
+    metadata.register(
+        SkillDescriptor(
+            spec=SkillSpec(module="custom", class_name="CustomEcho", name="custom_echo"),
+            skill=skill,
+        )
+    )
+    session = ChatSession(
+        "system",
+        {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
+        gateway=object(),
+    )
+    orchestrator = Orchestrator(session, skill_registry=metadata)
+
+    assert orchestrator.tool_invocation_gateway is not None
+    result = orchestrator.tool_executor.run_tool("custom_echo", {"message": "metadata"})
+
+    assert result["ok"] is True
+    assert result["data"] == "metadata"
+    assert skill.calls == 1

@@ -9,10 +9,13 @@ validação pós-execução (Camada 4) e a política Fail Closed (Camada 6).
 """
 import os
 import tempfile
+import threading
+import time
 from unittest.mock import patch
 
 import pytest
 
+from agent.cancellation import CancellationToken
 from agent.skills.python_executor import PythonExecutorSkill
 
 
@@ -74,6 +77,26 @@ def test_timeout(skill: PythonExecutorSkill) -> None:
     result = fast_skill.execute({"code": "while True:\n    pass\n"})
     assert result["ok"] is False
     assert "Timeout" in result["error"]
+
+
+def test_cancellation_terminates_context_process() -> None:
+    skill = PythonExecutorSkill(timeout_seconds=10)
+    token = CancellationToken()
+    result_box: list[dict] = []
+    worker = threading.Thread(
+        target=lambda: result_box.append(
+            skill.execute_with_context(
+                {"code": "while True:\n    pass\n"},
+                cancellation_token=token,
+            )
+        )
+    )
+    worker.start()
+    time.sleep(0.2)
+    token.cancel()
+    worker.join(timeout=5)
+    assert result_box[0]["ok"] is False
+    assert "cancel" in result_box[0]["error"].lower()
 
 
 def test_erro_de_sintaxe(skill: PythonExecutorSkill) -> None:

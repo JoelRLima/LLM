@@ -144,7 +144,12 @@ class StdioToolAdapter(ToolAdapter):
             "args": invocation.args,
             "invocation_id": invocation.invocation_id,
         }
-        process_result = self._run_process(payload, invocation.invocation_id)
+        process_result = self._run_process(
+            payload,
+            invocation.invocation_id,
+            cancellation_token=getattr(invocation, "cancellation_token", None),
+            cancellation_event=getattr(invocation, "cancellation_event", None),
+        )
         if isinstance(process_result, ToolResult):
             return process_result
         response_or_error = self._decode_response(process_result.stdout, invocation.invocation_id)
@@ -154,7 +159,14 @@ class StdioToolAdapter(ToolAdapter):
         status = response.get("status", "succeeded")
         return self._result_for_status(invocation.invocation_id, status, response)
 
-    def _run_process(self, payload: dict[str, Any], invocation_id: str) -> Any:
+    def _run_process(
+        self,
+        payload: dict[str, Any],
+        invocation_id: str,
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> Any:
         outcome = run_stdio_process(
             entrypoint=self._manifest_snapshot.entrypoint,
             cwd=self._cwd,
@@ -162,6 +174,8 @@ class StdioToolAdapter(ToolAdapter):
             payload=payload,
             stdout_limit=MAX_OUTPUT_BYTES,
             stderr_limit=MAX_STDERR_BYTES,
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
         )
         if outcome.failure is not None:
             failure: ProcessFailure = outcome.failure

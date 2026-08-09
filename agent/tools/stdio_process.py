@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import Any, Optional, Tuple, cast
 
+from agent.cancellation import is_cancellation_requested
 from agent.tools import stdio_cleanup as _stdio_cleanup
 from agent.tools.contracts import ToolStatus
 from agent.tools.process_tree import (
@@ -75,11 +76,11 @@ def _limit_failure(
     return None
 
 
-def _monitor_process(
-    context: _ProcessContext, timeout_seconds: int, stdout_limit: int, stderr_limit: int
-) -> Optional[ProcessFailure]:
+def _monitor_process(context: _ProcessContext, timeout_seconds: int, stdout_limit: int, stderr_limit: int, cancellation_token: Any | None = None, cancellation_event: Event | None = None) -> Optional[ProcessFailure]:
     deadline = time.monotonic() + timeout_seconds
     while context.process.poll() is None:
+        if is_cancellation_requested(cancellation_token, cancellation_event):
+            return _failure(ToolStatus.CANCELLED, "CANCELLED", "Execucao cancelada.", "Execucao externa cancelada.")
         failure = _limit_failure(context.stdout, context.stderr, stdout_limit, stderr_limit)
         if failure is not None:
             return failure
@@ -253,10 +254,7 @@ def _build_outcome(
     return ProcessOutcome(completed=subprocess.CompletedProcess(context.process.args, context.process.returncode, stdout_text, stderr))
 
 
-def run_stdio_process(
-    *, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_seconds: int,
-    payload: dict[str, Any], stdout_limit: int, stderr_limit: int,
-) -> ProcessOutcome:
+def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_seconds: int, payload: dict[str, Any], stdout_limit: int, stderr_limit: int, cancellation_token: Any | None = None, cancellation_event: Event | None = None) -> ProcessOutcome:
     context: _ProcessContext | None = None
     try:
         context = _start_process(entrypoint, cwd, stdout_limit, stderr_limit)
@@ -266,7 +264,7 @@ def run_stdio_process(
         if os.name == "nt":
             request_payload = build_launcher_envelope(entrypoint, payload, cast(Path, context.status_path))
         _send_request(context.process, request_payload)
-        failure = _monitor_process(context, timeout_seconds, stdout_limit, stderr_limit)
+        failure = _monitor_process(context, timeout_seconds, stdout_limit, stderr_limit, cancellation_token, cancellation_event)
         if failure is not None:
             cleanup_failure = _cleanup(context, terminate_tree=True)
             return ProcessOutcome(failure=cleanup_failure or failure)

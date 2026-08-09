@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from threading import Event
 from typing import Any, Dict
 
 from agent.approval import (
@@ -26,6 +27,8 @@ from .process_safety import (
 from .process_safety import (
     split_command as _split_command,
 )
+from .shell_process import ShellProcessError as _ShellProcessError
+from .shell_process import run_bounded_process as _run_bounded_process
 
 ALLOWED_COMMANDS = ALLOWED_SHELL_COMMANDS
 
@@ -37,8 +40,9 @@ MAX_OUTPUT_CHARS = 4000
 class ShellSkill(BaseSkill):
     name = "shell"
     description = (
-        "Executa comandos de inspeção e validação permitidos: pytest, ruff, mypy, git (status/log/diff), listagem e echo. "
-        "NÃO executa comandos destrutivos como rm, del, format, etc."
+        "Restricted validation/read-only command runner: ruff check, git "
+        "status/log/diff and tree when available. It is not an arbitrary shell "
+        "or an operating-system sandbox."
     )
 
     def __init__(
@@ -56,7 +60,7 @@ class ShellSkill(BaseSkill):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "command": "string: o comando completo a executar (ex: 'pytest tests/', 'git status')",
+            "command": "string: ruff check, git status/log/diff ou tree (shell=False)",
         }
 
     def execute(self, args: Dict[str, Any]) -> Any:
@@ -82,7 +86,10 @@ class ShellSkill(BaseSkill):
         if not _is_command_allowed(tokens):
             return {
                 "ok": False, "done": True,
-                "error": f"Comando não permitido: '{command}'. Apenas validação, listagem e operações Git somente-leitura são permitidas."
+                "error": (
+                    f"Comando não permitido: '{command}'. "
+                    "Apenas ruff check, Git status/log/diff e tree são permitidos."
+                )
             }
         policy_error = unsafe_command_error(tokens)
         if policy_error:
@@ -98,24 +105,47 @@ class ShellSkill(BaseSkill):
         effect = shell_effect(tokens)
         return self._confirm_effect(effect, command) if effect else None
 
-    def _execute_tokens(self, tokens: list[str]) -> dict[str, Any]:
+    def execute_with_context(
+        self, args: Dict[str, Any], *, cancellation_token: Any | None = None,
+        cancellation_event: Event | None = None,
+    ) -> Any:
+        command = str(args.get("command", "")).strip()
+        if not command:
+            return {"ok": False, "done": True, "error": "Nenhum comando fornecido."}
+        tokens = _split_command(command)
+        if tokens is None:
+            return {"ok": False, "done": True, "error": "Comando com sintaxe invalida."}
+        denied = self._preflight(tokens, command)
+        if denied is not None:
+            return denied
+        return self._execute_tokens(tokens, cancellation_token, cancellation_event)
+
+    def _execute_tokens(
+        self, tokens: list[str], cancellation_token: Any | None = None,
+        cancellation_event: Event | None = None,
+    ) -> dict[str, Any]:
         try:
-            result = subprocess.run(
+            result = _run_bounded_process(
                 list(hardened_command(tokens)),
-                shell=False,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
+                workspace=self.workspace.root,
+                environment=confined_process_environment(self.workspace),
                 timeout=self.timeout,
-                cwd=self.workspace.root,
-                env=confined_process_environment(self.workspace),
-                check=False,
+                cancellation_token=cancellation_token,
+                cancellation_event=cancellation_event,
             )
             return self._format_result(result)
         except FileNotFoundError:
             return {
                 "ok": False, "done": True,
                 "error": f"Executável '{tokens[0]}' não encontrado no PATH."
+            }
+        except _ShellProcessError as exc:
+            return {
+                "ok": False,
+                "done": True,
+                "status": exc.status,
+                "error": exc.detail,
+                "message": exc.detail,
             }
         except subprocess.TimeoutExpired:
             return {"ok": False, "done": True, "error": f"Timeout após {self.timeout}s."}
