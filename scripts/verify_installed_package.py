@@ -66,35 +66,13 @@ denied = registry.skill("file_reader").execute({"file_path": escape_path})
 shell = registry.skill("shell")
 git_reader = registry.skill("git_reader")
 escape_attempts = {
-    "shell_read": shell.execute(
-        {
-            "command": shlex.join(
-                ["git", "diff", "--no-index", "sample.py", escape_path]
-            )
-        }
-    ),
+    "shell_status": shell.execute({"command": "git status"}),
+    "shell_diff": shell.execute({"command": "git diff"}),
     "shell_write": shell.execute(
         {"command": shlex.join(["tree", "-o", escape_path, "."])}
     ),
-    "git_read": git_reader.execute(
-        {
-            "command": "diff",
-            "args": shlex.join(["--no-index", "sample.py", escape_path]),
-        }
-    ),
-    "git_write": git_reader.execute(
-        {
-            "command": "diff",
-            "args": shlex.join(
-                [
-                    "--no-index",
-                    f"--output={escape_path}",
-                    "sample.py",
-                    "sample.py",
-                ]
-            ),
-        }
-    ),
+    "git_status": git_reader.execute({"command": "status"}),
+    "git_diff": git_reader.execute({"command": "diff"}),
 }
 secret = sentinel_before.decode("utf-8")
 
@@ -539,7 +517,7 @@ def _verify_installed_probe(
     if not isinstance(codes, list) or "PYSEC001" not in codes:
         raise VerificationError("Probe instalado não confirmou análise de código real.")
     process_guards = payload.get("process_escape_denied")
-    if process_guards != ["git_read", "git_write", "shell_read", "shell_write"]:
+    if process_guards != ["git_diff", "git_status", "shell_diff", "shell_status"]:
         raise VerificationError(
             "Probe instalado não confirmou confinamento de ShellSkill/GitSkill."
         )

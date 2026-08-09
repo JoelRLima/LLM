@@ -41,7 +41,7 @@ class ShellSkill(BaseSkill):
     name = "shell"
     description = (
         "Restricted validation/read-only command runner: ruff check, git "
-        "status/log/diff and tree when available. It is not an arbitrary shell "
+        "log and tree when available. It is not an arbitrary shell "
         "or an operating-system sandbox."
     )
 
@@ -60,7 +60,7 @@ class ShellSkill(BaseSkill):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "command": "string: ruff check, git status/log/diff ou tree (shell=False)",
+            "command": "string: ruff check, git log ou tree (shell=False)",
         }
 
     def execute(self, args: Dict[str, Any]) -> Any:
@@ -88,7 +88,7 @@ class ShellSkill(BaseSkill):
                 "ok": False, "done": True,
                 "error": (
                     f"Comando não permitido: '{command}'. "
-                    "Apenas ruff check, Git status/log/diff e tree são permitidos."
+                    "Apenas ruff check, Git log e tree são permitidos."
                 )
             }
         policy_error = unsafe_command_error(tokens)

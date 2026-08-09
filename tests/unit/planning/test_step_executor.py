@@ -234,6 +234,33 @@ def test_parallel_batch_records_partial_failure_without_losing_success(monkeypat
     ]
 
 
+def test_parallel_batch_records_gateway_results_for_runtime_guards(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "two.py"}},
+        ]
+    )
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+
+    def run_tool(tool_name, args, record_result):
+        result = context.run_tool_impl(tool_name, args)
+        if record_result:
+            state.record_tool_result(tool_name, args, result)
+        return result
+
+    context.tool_executor.run_tool = run_tool
+    PlanExecutor(context).execute("ler arquivos", {})
+
+    assert len(state.tool_history) == 2
+    assert {entry["args"]["file_path"] for entry in state.tool_history} == {
+        "one.py",
+        "two.py",
+    }
+
+
 def test_cancellation_in_flight_finishes_current_step_and_preserves_next(monkeypatch):
     state = _state(monkeypatch)
     state.set_plan(

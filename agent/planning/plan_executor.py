@@ -120,7 +120,7 @@ class PlanExecutor:
                 else:
                     if not getattr(self.orchestrator, "tool_invocation_gateway", None):
                         self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
-                    futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, False)] = index
+                    futures[executor.submit(self.orchestrator.tool_executor.run_tool, tool, args, True)] = index
             for future in concurrent.futures.as_completed(futures):
                 results[futures[future]] = self._future_result(future)
         return cached, results

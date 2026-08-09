@@ -26,9 +26,17 @@ from agent.skills.shell_process import (
 
 
 def test_shell_allows_only_the_reduced_read_only_surface() -> None:
-    for command in ("ruff check .", "git status", "git log", "git diff", "tree ."):
+    for command in ("ruff check .", "git log", "tree ."):
         assert _is_command_allowed(_split_command(command))
-    for command in ("pytest -q", "mypy .", "echo hello", "type file.txt", "dir"):
+    for command in (
+        "git status",
+        "git diff",
+        "pytest -q",
+        "mypy .",
+        "echo hello",
+        "type file.txt",
+        "dir",
+    ):
         assert not _is_command_allowed(_split_command(command))
 
 
@@ -68,7 +76,10 @@ def test_shell_rejects_external_reads_without_exposing_sentinel(
     )
 
     assert result["ok"] is False
-    assert "workspace" in str(result["error"]).casefold()
+    if rendered[0] == "git":
+        assert "log" in str(result["error"]).casefold()
+    else:
+        assert "workspace" in str(result["error"]).casefold()
     assert secret not in json.dumps(result, ensure_ascii=False)
     assert sentinel.read_text(encoding="utf-8") == secret
 
@@ -133,13 +144,13 @@ def test_shell_runs_normal_git_read_only_command_with_sanitized_environment(
     monkeypatch.setenv("GIT_TRACE", str(tmp_path / "trace"))
     skill = ShellSkill(base_dir=tmp_path)
 
-    result = skill.execute({"command": "git status"})
+    result = skill.execute({"command": "git log"})
 
     assert result["ok"] is True
     assert captured["command"] == [
         "git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
         "-c", "log.showSignature=false",
-        "--no-pager", "status",
+        "--no-pager", "log", "--no-ext-diff", "--no-textconv", "--pretty=medium",
     ]
     environment = captured["environment"]
     assert isinstance(environment, dict)
@@ -242,7 +253,7 @@ def test_windows_tokenization_preserves_backslashes_and_quoted_spaces(
 
 
 def test_control_tokens_are_rejected_before_execution() -> None:
-    assert _split_command("git status; tree .") is None
+    assert _split_command("git log; tree .") is None
     assert _split_command("ruff check . | more") is None
 
 
@@ -393,6 +404,63 @@ def test_executable_resolution_does_not_accept_workspace_shadow(
         assert Path(resolved).is_absolute()
 
 
+def test_executable_resolution_rejects_workspace_indirection_to_external_identity(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    workspace = WorkspaceContext.create(workspace_root)
+    bin_dir = workspace.root / "bin"
+    bin_dir.mkdir(parents=True)
+    link = bin_dir / "ruff"
+    try:
+        link.symlink_to(Path(sys.executable))
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+
+    environment = confined_process_environment(workspace)
+    environment["PATH"] = str(bin_dir)
+
+    assert _resolve_executable("ruff", environment, workspace.root) is None
+
+
+@pytest.mark.parametrize("path_value", ["", ".", "bin"])
+def test_executable_resolution_ignores_empty_and_relative_path_entries(
+    tmp_path: Path, path_value: str
+) -> None:
+    workspace = WorkspaceContext.create(tmp_path)
+    environment = confined_process_environment(workspace)
+    environment["PATH"] = path_value
+
+    assert _resolve_executable("ruff", environment, workspace.root) is None
+
+
+def test_executable_resolution_rejects_nested_workspace_indirection(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    workspace = WorkspaceContext.create(workspace_root)
+    external = tmp_path / "external"
+    payload = external / "payload"
+    payload.mkdir(parents=True)
+    executable = payload / "ruff"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    inside = workspace.root / "inside"
+    inside.mkdir()
+    outward = inside / "out"
+    entry = external / "entry"
+    try:
+        outward.symlink_to(payload, target_is_directory=True)
+        entry.symlink_to(inside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+
+    environment = confined_process_environment(workspace)
+    environment["PATH"] = str(entry / "out")
+
+    assert _resolve_executable("ruff", environment, workspace.root) is None
+
+
 @pytest.mark.parametrize("command", ["ruff", "git", "tree"])
 def test_shell_rejects_workspace_executable_shadow_in_real_runner(
     tmp_path: Path,
@@ -425,7 +493,7 @@ def test_shell_rejects_workspace_executable_shadow_in_real_runner(
         "agent.skills.shell.confined_process_environment", workspace_only_environment
     )
     skill = ShellSkill(workspace=workspace_context, approval_policy=AutoApprove())
-    argument = "ruff check ." if command == "ruff" else f"{command} ." if command == "tree" else "git status"
+    argument = "ruff check ." if command == "ruff" else f"{command} ." if command == "tree" else "git log"
     result = skill.execute({"command": argument})
 
     assert result["ok"] is False

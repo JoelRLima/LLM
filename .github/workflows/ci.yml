@@ -51,7 +51,11 @@ jobs:
       - name: Pytest
         env:
           AGENT_RUNTIME_DIR: ${{ runner.temp }}/llm-agent-runtime
-        run: pytest -q
+        run: pytest -q --junitxml=pytest-results.xml
+
+      - name: Diagnose Pytest failures
+        if: failure()
+        run: python scripts/report_pytest_failures.py pytest-results.xml
 
       - name: Installed wheel acceptance gate
         run: python scripts/verify_installed_package.py

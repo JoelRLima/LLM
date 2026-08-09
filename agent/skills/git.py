@@ -18,7 +18,7 @@ from .process_safety import (
 
 class GitSkill(BaseSkill):
     name = "git_reader"
-    description = "Executa comandos básicos do git (status, log, diff) para inspecionar o repositório."
+    description = "Executa somente git log para inspecionar o histórico do repositório."
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class GitSkill(BaseSkill):
 
     def get_schema(self) -> Dict[str, Any]:
         return {
-            "command": "string (apenas 'status', 'log', 'diff' permitidos)",
+            "command": "string (somente 'log' permitido)",
             "args": "string (argumentos extras opcionais, ex: '--oneline -n 5' para o log)"
         }
 
@@ -49,13 +49,12 @@ class GitSkill(BaseSkill):
         args: Dict[str, Any],
     ) -> tuple[list[str] | None, dict[str, Any] | None]:
         cmd = args.get("command")
-        if not cmd or cmd not in ["status", "log", "diff"]:
+        if not cmd or cmd != "log":
             return None, {
                 "ok": False,
                 "done": False,
                 "error": (
-                    "Apenas comandos 'status', 'log', e 'diff' "
-                    "são permitidos por segurança."
+                    "Apenas o comando 'log' é permitido por segurança."
                 ),
             }
         extra_args = str(args.get("args", "")).strip()

@@ -9,9 +9,7 @@ from pathlib import Path
 
 ALLOWED_SHELL_COMMANDS = {
     "ruff",
-    "git status",
     "git log",
-    "git diff",
     "tree",
 }
 
@@ -59,6 +57,22 @@ def _command_name(tokens: Sequence[str]) -> str:
     return Path(tokens[0]).name.casefold() if tokens else ""
 
 
+def _path_traverses_workspace(candidate: Path, workspace_root: Path) -> bool:
+    """Return whether any canonical component enters the controlled workspace."""
+
+    absolute = Path(os.path.abspath(os.fspath(candidate)))
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current /= component
+        try:
+            resolved = current.resolve()
+        except (OSError, RuntimeError, ValueError):
+            return True
+        if resolved == workspace_root or resolved.is_relative_to(workspace_root):
+            return True
+    return False
+
+
 def resolve_trusted_executable(
     command: str,
     environment: Mapping[str, str],
@@ -88,6 +102,15 @@ def resolve_trusted_executable(
 
     for candidate in candidates:
         try:
+            # A workspace-controlled directory entry is not trusted merely
+            # because it resolves to a file outside the workspace.  A
+            # symlink/junction there can redirect an allowlisted name to an
+            # unrelated executable (for example, ``ruff -> python``).
+            # Reject the lexical candidate before following indirection, and
+            # keep the existing final-target check for links from outside.
+            lexical_candidate = Path(os.path.abspath(os.fspath(candidate)))
+            if _path_traverses_workspace(lexical_candidate, workspace_root):
+                continue
             resolved = candidate.resolve()
             if not resolved.is_file() or resolved.is_relative_to(workspace_root):
                 continue
@@ -120,6 +143,9 @@ def _git_token_error(token: str) -> str | None:
 
 def git_read_only_error(tokens: Sequence[str]) -> str | None:
     """Keep GitSkill and ShellSkill on the same read-only Git surface."""
+
+    if len(tokens) < 2 or tokens[1].casefold() != "log":
+        return "Somente 'git log' está disponível na superfície model-actionable."
 
     forbidden = {
         "--ext-diff": "external diff",

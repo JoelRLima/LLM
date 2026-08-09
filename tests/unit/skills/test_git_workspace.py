@@ -3,6 +3,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -135,7 +136,7 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr("agent.skills.git.subprocess.run", fake_run)
     skill = GitSkill(base_dir=tmp_path)
 
-    result = skill.execute({"command": "status"})
+    result = skill.execute({"command": "log"})
 
     assert result["ok"] is True
     assert Path(captured["command"][0]).is_absolute()
@@ -148,7 +149,10 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
         "-c",
         "log.showSignature=false",
         "--no-pager",
-        "status",
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--pretty=medium",
     ]
     assert captured["shell"] is False
     assert captured["stdin"] is subprocess.DEVNULL
@@ -194,7 +198,10 @@ def test_git_skill_rejects_external_reads_without_exposing_sentinel(
     )
 
     assert result["ok"] is False
-    assert "workspace" in result["error"].casefold()
+    if command == "log":
+        assert "workspace" in result["error"].casefold()
+    else:
+        assert "log" in result["error"].casefold()
     assert secret not in json.dumps(result, ensure_ascii=False)
     assert sentinel.read_text(encoding="utf-8") == secret
 
@@ -230,18 +237,14 @@ def test_git_skill_rejects_external_output_without_mutation(
     )
 
     assert result["ok"] is False
-    assert "somente leitura" in result["error"]
+    assert "log" in result["error"].casefold()
     assert sentinel.read_text(encoding="utf-8") == "preservar\n"
 
 
-def test_git_skill_accepts_inside_paths_and_disables_extension_hooks(
+def test_git_skill_accepts_log_and_disables_extension_hooks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = tmp_path / "first.txt"
-    second = tmp_path / "second.txt"
-    first.write_text("first\n", encoding="utf-8")
-    second.write_text("second\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
     def fake_run(command, **kwargs):
@@ -252,8 +255,8 @@ def test_git_skill_accepts_inside_paths_and_disables_extension_hooks(
     monkeypatch.setattr(subprocess, "run", fake_run)
     result = GitSkill(base_dir=tmp_path).execute(
         {
-            "command": "diff",
-            "args": shlex.join(["--no-index", "first.txt", "second.txt"]),
+            "command": "log",
+            "args": "-1",
         }
     )
 
@@ -268,12 +271,11 @@ def test_git_skill_accepts_inside_paths_and_disables_extension_hooks(
         "-c",
         "log.showSignature=false",
         "--no-pager",
-        "diff",
+        "log",
         "--no-ext-diff",
         "--no-textconv",
-        "--no-index",
-        "first.txt",
-        "second.txt",
+        "-1",
+        "--pretty=medium",
     ]
     environment = captured["env"]
     assert isinstance(environment, dict)
@@ -335,10 +337,98 @@ def test_git_skill_rejects_workspace_shadow_with_real_process(
         return original_run(command, **kwargs)
 
     monkeypatch.setattr(git_module.subprocess, "run", capture_run)
-    result = skill.execute({"command": "status"})
+    result = skill.execute({"command": "log"})
 
     command = captured["command"]
     assert Path(command[0]).is_absolute()
     assert not Path(command[0]).resolve().is_relative_to(workspace.resolve())
     assert not sentinel.exists()
     assert result["error"] != "Exit code 42"
+
+
+def test_git_skill_rejects_workspace_indirection_to_external_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git confiavel nao disponivel no host")
+    subprocess.run([git, "init", "-q"], cwd=workspace, check=True)
+    bin_dir = workspace / "bin"
+    bin_dir.mkdir()
+    link = bin_dir / ("git.exe" if os.name == "nt" else "git")
+    try:
+        link.symlink_to(Path(sys.executable))
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
+
+    def test_environment(current_workspace):
+        environment = confined_process_environment(current_workspace)
+        environment["PATH"] = os.pathsep.join((str(bin_dir), str(Path(git).parent)))
+        environment.setdefault("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+        return environment
+
+    monkeypatch.setattr(git_module, "confined_process_environment", test_environment)
+    result = GitSkill(base_dir=workspace).execute({"command": "log"})
+
+    assert result["ok"] is True
+
+
+@pytest.mark.parametrize(
+    ("surface", "invocation"),
+    [
+        ("git", {"command": "status"}),
+        ("git", {"command": "diff"}),
+        ("git", {"command": "diff", "args": "--cached"}),
+        ("git", {"command": "diff", "args": "--staged tracked.txt"}),
+        ("shell", {"command": "git status"}),
+        ("shell", {"command": "git diff"}),
+        ("shell", {"command": "git diff --cached"}),
+        ("shell", {"command": "git diff --staged tracked.txt"}),
+    ],
+)
+def test_model_actionable_git_status_diff_reject_before_content_filter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+    invocation: dict[str, str],
+) -> None:
+    repo = tmp_path / "filter-repo"
+    git_dir = repo / ".git"
+    git_dir.mkdir(parents=True)
+    sentinel = tmp_path / "filter-ran"
+    helper = tmp_path / "filter_helper.py"
+    helper.write_text(
+        "import pathlib, sys\n"
+        f"pathlib.Path({str(sentinel)!r}).write_text('hit', encoding='utf-8')\n"
+        "sys.stdout.buffer.write(sys.stdin.buffer.read())\n",
+        encoding="utf-8",
+    )
+    (repo / ".gitattributes").write_text(
+        "*.txt filter=sentinel\n", encoding="utf-8"
+    )
+    (repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    (git_dir / "config").write_text(
+        "[core]\n\trepositoryformatversion = 0\n"
+        "[filter \"sentinel\"]\n"
+        f"\tclean = {shlex.join([sys.executable, str(helper)])}\n"
+        f"\tprocess = {shlex.join([sys.executable, str(helper)])}\n"
+        f"\tsmudge = {shlex.join([sys.executable, str(helper)])}\n",
+        encoding="utf-8",
+    )
+
+    def forbidden_process(*args: object, **kwargs: object) -> None:
+        raise AssertionError(f"Git should be rejected before execution: {args!r} {kwargs!r}")
+
+    if surface == "git":
+        monkeypatch.setattr(git_module.subprocess, "run", forbidden_process)
+        result = GitSkill(base_dir=repo).execute(invocation)
+    else:
+        monkeypatch.setattr("agent.skills.shell._run_bounded_process", forbidden_process)
+        result = ShellSkill(base_dir=repo, approval_policy=AutoApprove()).execute(invocation)
+
+    assert result["ok"] is False
+    assert "log" in str(result["error"]).casefold()
+    assert not sentinel.exists()

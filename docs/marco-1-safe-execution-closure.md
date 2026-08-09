@@ -55,11 +55,11 @@ runner**. A allowlist model-actionable exata é:
 
 ```text
 ruff check [args...]
-git status [args...]
 git log [args...]
-git diff [args...]
 tree [args...]            # somente quando o executável existir
 ```
+
+`git status` e `git diff` foram reduzidos da superfície model-actionable.
 
 Isso vale tanto no Windows quanto no POSIX disponível; `tree` pode não existir
 em uma instalação específica. `pytest` e `mypy` foram removidos porque um
@@ -75,7 +75,7 @@ rejeitados. Paths explícitos são resolvidos contra o workspace, incluindo
 symlinks.
 
 `ruff` é forçado a `check --isolated --no-cache --no-fix`; configuração explícita
-e modos mutantes são rejeitados. Git mantém somente status/log/diff, desabilita
+e modos mutantes são rejeitados. Git mantém somente `log`, desabilita
 pager, fsmonitor, untracked cache, diff externo, textconv e verificação de
 assinaturas. Flags e formatos que solicitam verificadores de assinatura são
 rejeitados; a superfície model-actionable de `git log` não aceita seleção de
@@ -86,9 +86,11 @@ boundary técnica.
 
 O nome allowlisted não é uma garantia sobre qualquer binário com esse nome.
 Cada runner resolve o caminho absoluto/canônico a partir de entradas absolutas
-do `PATH` e rejeita executáveis cujo destino esteja dentro da árvore do
-workspace controlado pelo modelo. Assim, `ruff` pode ficar indisponível quando
-somente uma instalação local dentro do workspace estiver presente.
+do `PATH` e rejeita tanto candidatos textuais sob a árvore do workspace quanto
+destinos finais dentro dela. Symlinks, junctions e cadeias equivalentes locais
+não substituem a identidade da ferramenta. Assim, `ruff` pode ficar
+indisponível quando somente uma instalação local ou uma indirection local
+estiver presente.
 
 Essa capability **não é** arbitrary shell, workspace sandbox, network sandbox,
 filesystem sandbox, isolamento de secrets, proteção universal contra TOCTOU ou
