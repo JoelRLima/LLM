@@ -3,8 +3,10 @@ import pytest
 from agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
+    bind_task_authority,
     derive_effective_task_authority,
 )
+from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 from agent.tools.workspace_extensions_resolver import ResolvedWorkspaceExtension, ResolvedWorkspaceExtensions
 
 
@@ -53,6 +55,19 @@ def test_persona_only_restricts_explicit_task_authority() -> None:
     effective = derive_effective_task_authority(task, frozenset({"read"}))
     assert effective is not None
     assert effective.allowed_capabilities == frozenset({"read"})
+
+
+def test_product_task_authority_binding_carries_runtime_identity() -> None:
+    identity = RuntimeSnapshotIdentity.create("workspace")
+    application = ApplicationAuthoritySnapshot(runtime_identity=identity)
+    task = bind_task_authority(
+        ["read"], application, policy_source="test.product_surface"
+    )
+    assert task.allowed_capabilities == frozenset({"read"})
+    assert task.runtime_identity == identity
+    assert task.policy_source == "test.product_surface"
+    with pytest.raises(TypeError):
+        bind_task_authority("read", application, policy_source="test.invalid")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("bad", ["", "../workspace", "C:\\workspace"])

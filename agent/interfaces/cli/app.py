@@ -182,6 +182,16 @@ def _run_tools(args: argparse.Namespace) -> int:
     )
 
 
+def _run_extensions(args: argparse.Namespace) -> int:
+    from agent.interfaces.cli.extensions import run_extensions
+
+    return run_extensions(
+        args,
+        app_paths=_app_paths(args),
+        workspace=_workspace(args),
+    )
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     command = args.command or "chat"
     if command == "chat":
@@ -196,6 +206,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _run_state(args)
     if command == "tools":
         return _run_tools(args)
+    if command == "extensions":
+        return _run_extensions(args)
     raise ValueError(f"Comando desconhecido: {command}")
 
 

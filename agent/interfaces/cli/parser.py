@@ -28,6 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("chat", parents=[common], help="abre o chat interativo (comando padrão)", argument_default=argparse.SUPPRESS)
     run = subcommands.add_parser("run", parents=[common], help="executa um objetivo sem abrir o chat", argument_default=argparse.SUPPRESS)
     run.add_argument("objective", nargs="+", metavar="OBJETIVO")
+    run.add_argument(
+        "--task-authority",
+        action="append",
+        dest="task_authority_capabilities",
+        metavar="CAPABILITY",
+        help="concede autoridade explicita somente para esta tarefa; repita para cada capability (nao substitui --yes)",
+    )
     run.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
     run.add_argument("--yes", action="store_true", dest="assume_yes", help="aprova efeitos que pedirem consentimento nesta execução")
     doctor = subcommands.add_parser("doctor", parents=[common], help="executa o diagnóstico local", argument_default=argparse.SUPPRESS)
@@ -58,4 +65,39 @@ def build_parser() -> argparse.ArgumentParser:
         if command != "doctor":
             item.add_argument("id", metavar="ID")
         item.add_argument("--state", metavar="ARQUIVO", help="arquivo do registro de extensões")
+    extensions = subcommands.add_parser(
+        "extensions",
+        parents=[common],
+        help="administra o catalogo moderno e a configuracao de extensions",
+        argument_default=argparse.SUPPRESS,
+    )
+    extensions_commands = extensions.add_subparsers(dest="extensions_command", required=True)
+    for command, help_text in (
+        ("list", "lista o catalogo moderno e o estado do workspace"),
+        ("inspect", "inspeciona a configuracao efetiva do workspace"),
+    ):
+        item = extensions_commands.add_parser(command, parents=[common], help=help_text)
+        item.add_argument("--json", action="store_true", dest="json_output", help="emite um unico documento JSON")
+        if command == "inspect":
+            item.add_argument("id", nargs="?", metavar="ID", help="filtra uma extension")
+    register = extensions_commands.add_parser(
+        "register", parents=[common], help="registra um manifest no catalogo moderno"
+    )
+    register.add_argument("manifest", metavar="MANIFEST")
+    register.add_argument("--json", action="store_true", dest="json_output", help="emite um unico documento JSON")
+    for command, help_text in (
+        ("enable", "habilita uma extension neste workspace"),
+        ("disable", "desabilita uma extension neste workspace"),
+    ):
+        item = extensions_commands.add_parser(command, parents=[common], help=help_text)
+        item.add_argument("id", metavar="ID")
+        item.add_argument("--json", action="store_true", dest="json_output", help="emite um unico documento JSON")
+    for command, help_text in (
+        ("grant", "concede uma capability persistente no workspace"),
+        ("revoke", "revoga uma capability persistente no workspace"),
+    ):
+        item = extensions_commands.add_parser(command, parents=[common], help=help_text)
+        item.add_argument("id", metavar="ID")
+        item.add_argument("capability", metavar="CAPABILITY")
+        item.add_argument("--json", action="store_true", dest="json_output", help="emite um unico documento JSON")
     return parser

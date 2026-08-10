@@ -63,6 +63,24 @@ def test_extension_requires_explicit_task_authority_and_matching_grant() -> None
     assert with_task.eligible_names == frozenset({"builtin", "external"})
 
 
+def test_persona_restriction_hides_extension_even_with_task_authority() -> None:
+    identity = RuntimeSnapshotIdentity.create("workspace")
+    registry = _Registry((_extension(),), identity)
+    authority = ApplicationAuthoritySnapshot(
+        runtime_identity=identity,
+        extension_grants={"scanner.extension": frozenset({"read"})},
+    )
+
+    context = build_planning_context(
+        registry,
+        authority,
+        TaskAuthoritySnapshot(frozenset({"read"})),
+        frozenset(),
+    )
+
+    assert context.eligible_names == frozenset()
+
+
 def test_zero_capability_extension_requires_explicit_task_snapshot() -> None:
     identity = RuntimeSnapshotIdentity.create("workspace")
     descriptor = ToolDescriptor(

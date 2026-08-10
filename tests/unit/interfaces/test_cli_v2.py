@@ -306,3 +306,26 @@ def test_run_yes_is_the_only_headless_auto_approval(
 
     assert isinstance(policies[0], RequireExplicitApproval)
     assert isinstance(policies[1], AutoApprove)
+
+
+def test_run_task_authority_is_explicit_product_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent.application import AgentApplication
+
+    captured: dict[str, Any] = {}
+
+    def create(**kwargs: Any) -> _Application:
+        captured.update(kwargs)
+        return _Application()
+
+    monkeypatch.setattr(AgentApplication, "create", create)
+
+    cli._create_application(
+        cli.build_parser().parse_args(
+            ["run", "--task-authority", "read", "--task-authority", "process", "objetivo"]
+        ),
+        configure_logging=False,
+    )
+
+    assert captured["task_authority_capabilities"] == ["read", "process"]

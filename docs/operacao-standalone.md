@@ -32,6 +32,7 @@ llm-agent config path
 llm-agent config validate
 llm-agent config migrate --from ARQUIVO
 llm-agent state migrate --from DIRETÓRIO
+llm-agent extensions list|register|enable|disable|grant|revoke|inspect
 ```
 
 As flags comuns `--home`, `--config`, `--workspace` e `--profile` são aceitas
@@ -230,6 +231,33 @@ workspace pode, portanto, ficar indisponivel. Em `git log`, o runtime fixa
 rejeita formatos, flags de diff, pathspecs, assinatura e helpers selecionados
 pelo modelo, evitando dependencia de `format.pretty` e aliases `pretty.*` do
 repositorio.
+
+## Administracao de extensions
+
+O fluxo de produto usa o catalogo moderno e a configuracao por workspace:
+
+```powershell
+llm-agent extensions register C:\ext\manifest.json --home C:\app --workspace C:\projeto
+llm-agent extensions enable demo.extension --home C:\app --workspace C:\projeto
+llm-agent extensions grant demo.extension read --home C:\app --workspace C:\projeto
+llm-agent extensions inspect --json --home C:\app --workspace C:\projeto
+```
+
+Tambem estao disponiveis `extensions list`, `extensions disable` e
+`extensions revoke ID CAPABILITY`. O estado persistente fica no catalogo
+global e no arquivo de extensions do workspace; esses comandos nao escrevem no
+registry legado de `llm-agent tools`.
+
+Para executar uma tarefa com uma extension, forneca authority de tarefa de
+forma explicita e independente do modelo:
+
+```powershell
+llm-agent run --workspace C:\projeto --task-authority read --yes --json "Execute a ferramenta"
+```
+
+Repita `--task-authority` para capabilities adicionais. A flag `--yes` e
+somente approval e nao substitui authority. A ausencia ou insuficiencia de
+authority termina sem iniciar o processo stdio.
 
 ## Verificação do artefato
 

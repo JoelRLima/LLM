@@ -88,12 +88,30 @@ authority. O `AgentApplication` sem `TaskAuthoritySnapshot` mantém extensions
 invisíveis e não executáveis. A API programática suporta injetar esse snapshot;
 a CLI padrão não o concede automaticamente.
 
-O subcomando `llm-agent tools` ainda administra o registry legado
+O subcomando `llm-agent tools` permanece legado e administra apenas
 `extensions/registry.json`; ele não configura o catálogo/workspace consumido
-por `ApplicationExtensionBootstrap`. Portanto não é o workflow administrativo
-CURRENT das extensions runtime. O workflow canônico atual é programático via
-`ExtensionCatalogService` e `WorkspaceExtensionService`; uma CLI canônica de
-catálogo/grants ainda não é fornecida.
+por `ApplicationExtensionBootstrap`. O workflow administrativo CURRENT é
+`llm-agent extensions`, que delega nos services canônicos.
+
+## Superficie administrativa CURRENT
+
+Use `llm-agent extensions` para administrar a capability moderna:
+
+```text
+extensions list
+extensions register MANIFEST
+extensions enable ID
+extensions disable ID
+extensions grant ID CAPABILITY
+extensions revoke ID CAPABILITY
+extensions inspect [ID]
+```
+
+Os comandos delegam nos services canonicos e nao editam o registry legado.
+`llm-agent tools` continua uma superficie de compatibilidade que usa
+`extensions/registry.json`; seu estado nao e consumido pelo bootstrap moderno.
+Depois da configuracao, `llm-agent run` ainda exige `--task-authority` explicita
+para a tarefa. Approval continua separado e nao repara authority ausente.
 
 ## Ausências
 

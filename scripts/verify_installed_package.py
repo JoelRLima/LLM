@@ -19,8 +19,10 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import venv
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -637,6 +639,43 @@ class CommandResult:
     stderr: str
 
 
+class _F1ModelHandler(BaseHTTPRequestHandler):
+    """Deterministic OpenAI-compatible model used by installed F1 acceptance."""
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler contract.
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        messages = payload.get("messages", [])
+        system = str(messages[0].get("content", "")) if messages else ""
+        prompt = str(messages[-1].get("content", "")) if messages else ""
+        if "You are a Router Agent" in system:
+            content = '{"persona":"coder"}'
+        elif "Crie um plano sequencial" in prompt:
+            content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
+        elif "Resultados das ferramentas executadas:" in prompt:
+            content = "F1_INSTALLED_EVIDENCE"
+        else:
+            content = '{"persona":"coder"}'
+        body = json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        del format, args
+
+
 def _emit_failure_annotation(message: str) -> None:
     compact = " ".join(message.split())[:1200]
     escaped = (
@@ -758,6 +797,31 @@ def _run(
             f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return result
+
+
+def _run_expected_failure(
+    name: str,
+    argv: Sequence[str],
+    *,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> CommandResult:
+    print(f"[installed-gate] {name}...", flush=True)
+    completed = subprocess.run(
+        list(argv),
+        cwd=cwd,
+        env=dict(environment),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=180,
+    )
+    if completed.returncode == 0:
+        raise VerificationError(f"{name} deveria falhar, mas retornou sucesso.")
+    return CommandResult(name, completed.stdout, completed.stderr)
 
 
 def _venv_executable(environment_dir: Path, name: str) -> Path:
@@ -1136,6 +1200,134 @@ def _verify_extension_aware_bootstrap(
         raise VerificationError("Bootstrap instalado importou o checkout.")
 
 
+def _verify_f1_installed(
+    entrypoint: Path,
+    app_home: Path,
+    workspace: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Exercise canonical CLI administration, authority and a real stdio child."""
+
+    f1_home = app_home.parent / "f1-app-home"
+    f1_workspace = workspace.parent / "f1-workspace"
+    extension_dir = workspace.parent / "f1-extension"
+    marker = workspace.parent / "f1-extension-spawned.txt"
+    f1_workspace.mkdir()
+    extension_dir.mkdir()
+    (extension_dir / "tool.py").write_text(
+        "import json\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('spawned', encoding='utf-8')\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "print(json.dumps({'invocation_id': payload['invocation_id'], 'status': 'succeeded', 'message': 'F1_EXTERNAL_EVIDENCE'}), flush=True)\n",
+        encoding="utf-8",
+    )
+    manifest = extension_dir / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "id": "wheel.extension",
+                "version": "1.0.0",
+                "protocol_version": "1.0",
+                "transport": "stdio",
+                "entrypoint": ["${python}", "${extension_dir}/tool.py"],
+                "timeout_seconds": 5,
+                "tools": [
+                    {
+                        "name": "wheel_tool",
+                        "description": "installed F1 tool",
+                        "schema": {},
+                        "capabilities": ["process"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _F1ModelHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    f1_environment = dict(environment)
+    f1_environment["LLM_AGENT_API_URL"] = (
+        f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
+    )
+    common = ("--home", str(f1_home), "--workspace", str(f1_workspace))
+    try:
+        registered = _run(
+            "f1-installed-register",
+            (str(entrypoint), "extensions", "register", str(manifest), *common, "--json"),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        if parse_json_output(registered).get("extension_id") != "wheel.extension":
+            raise VerificationError("F1 instalada nao registrou a extension no catalogo moderno.")
+        _run(
+            "f1-installed-enable",
+            (str(entrypoint), "extensions", "enable", "wheel.extension", *common, "--json"),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        _run(
+            "f1-installed-grant",
+            (str(entrypoint), "extensions", "grant", "wheel.extension", "process", *common, "--json"),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        _run(
+            "f1-installed-config-init",
+            (str(entrypoint), "config", "init", "--home", str(f1_home)),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        if marker.exists():
+            marker.unlink()
+        denied = _run_expected_failure(
+            "f1-installed-yes-without-authority",
+            (
+                str(entrypoint),
+                "run",
+                "--json",
+                "--yes",
+                *common,
+                "Use wheel_tool sem task authority",
+            ),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        denied_payload = parse_json_output(denied)
+        if denied_payload.get("success") is True or marker.exists():
+            raise VerificationError("F1 instalada permitiu --yes substituir task authority.")
+
+        succeeded = _run(
+            "f1-installed-run-with-authority",
+            (
+                str(entrypoint),
+                "run",
+                "--json",
+                "--yes",
+                "--task-authority",
+                "process",
+                *common,
+                "Use wheel_tool with F1_EXTERNAL_EVIDENCE",
+            ),
+            cwd=cwd,
+            environment=f1_environment,
+        )
+        succeeded_payload = parse_json_output(succeeded)
+        if succeeded_payload.get("success") is not True:
+            raise VerificationError("F1 instalada nao concluiu a jornada com authority explicita.")
+        if "F1_EXTERNAL_EVIDENCE" not in json.dumps(succeeded_payload, ensure_ascii=False):
+            raise VerificationError("F1 instalada nao consumiu o resultado estruturado do processo.")
+        if not marker.exists():
+            raise VerificationError("F1 instalada nao iniciou o processo stdio real.")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def _verify_version(result: CommandResult) -> None:
     if not re.search(r"\b\d+\.\d+\.\d+\b", result.stdout):
         raise VerificationError(f"--version não informou versão semântica: {result.stdout!r}")
@@ -1242,6 +1434,13 @@ def verify_installed_package(
             temp / "extension-app-home",
             temp / "extension-workspace",
             project_root,
+            external_cwd,
+            runtime_environment,
+        )
+        _verify_f1_installed(
+            entrypoint,
+            app_home,
+            workspace,
             external_cwd,
             runtime_environment,
         )

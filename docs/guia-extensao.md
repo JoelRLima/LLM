@@ -188,6 +188,25 @@ Ao adicionar uma chave:
 Paths de checkpoint, relatório, memória, cache e outros detalhes internos
 pertencem a `AppPaths`/`WorkspacePaths`, não ao arquivo de preferência.
 
+## Administracao canonica CURRENT
+
+F1 disponibiliza a superficie de produto `llm-agent extensions`. Ela registra
+o manifest no catalogo moderno e usa `WorkspaceExtensionService` para
+`enable`, `disable`, `grant`, `revoke` e `inspect`. O comando legado
+`llm-agent tools` continua separado e continua usando apenas
+`extensions/registry.json`.
+
+Para uma tarefa headless, a authority deve ser fornecida explicitamente fora
+do modelo, por exemplo:
+
+```powershell
+llm-agent run --workspace C:\projeto --task-authority read --yes "Use a extension"
+```
+
+`--task-authority` cria um snapshot limitado a esta execucao e ligado ao
+runtime atual. `--yes` somente aprova efeitos; nao cria authority. Sem a flag,
+extensions permanecem inelegiveis e o gateway nao inicia o processo.
+
 ## Gates antes de concluir
 
 ```powershell

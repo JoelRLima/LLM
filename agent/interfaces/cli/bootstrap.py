@@ -30,6 +30,7 @@ def create_application(
         config_path=getattr(args, "config", None),
         profile=getattr(args, "profile", None),
         approval_policy=approval_policy,
+        task_authority_capabilities=getattr(args, "task_authority_capabilities", None),
         configure_logging=configure_logging,
     )
 

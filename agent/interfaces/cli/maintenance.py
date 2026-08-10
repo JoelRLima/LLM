@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from agent.runtime.paths import AppPaths
 from agent.tools.extension_registry import ExtensionRegistry
@@ -98,8 +98,8 @@ def run_state(
 def _registry_path(args: argparse.Namespace, app_paths: AppPaths) -> Path:
     state_path = getattr(args, "state", None)
     if state_path:
-        return Path(state_path).expanduser().resolve()
-    return app_paths.extensions_dir / "registry.json"
+        return Path(str(state_path)).expanduser().resolve()
+    return cast(Path, app_paths.extensions_dir / "registry.json")
 
 
 def run_tools(
@@ -146,4 +146,10 @@ def run_tools(
     raise ValueError(f"Comando de ferramentas desconhecido: {args.tools_command}")
 
 
-__all__ = ["config_repository", "run_config", "run_doctor", "run_state", "run_tools"]
+__all__ = [
+    "config_repository",
+    "run_config",
+    "run_doctor",
+    "run_state",
+    "run_tools",
+]

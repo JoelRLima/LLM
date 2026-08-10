@@ -7,7 +7,7 @@ import threading
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
@@ -19,7 +19,7 @@ from agent.runtime.logging import setup_logger, teardown_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot, bind_task_authority
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.invocation_gateway import ToolInvocationGateway
@@ -105,6 +105,7 @@ class AgentApplication:
         gateway: LegacyPayloadGateway | None = None,
         approval_policy: ApprovalPort | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
+        task_authority_capabilities: Iterable[str] | None = None,
         configure_logging: bool = True,
         debug_mode: int = 0,
     ) -> "AgentApplication":
@@ -145,6 +146,9 @@ class AgentApplication:
                 workspace_context.workspace_id,
                 workspace_context.root,
             ).build(BuiltinToolAdapter(skill_registry))
+            if task_authority is not None and task_authority_capabilities is not None:
+                raise ValueError("forneca task_authority ou task_authority_capabilities, nao ambos")
+            selected_task_authority = task_authority if task_authority_capabilities is None else bind_task_authority(task_authority_capabilities, extension_bootstrap.authority, policy_source="cli.task_authority")
             tool_registry = extension_bootstrap.registry
             orchestrator = Orchestrator(
                 session,
@@ -154,12 +158,12 @@ class AgentApplication:
                 workspace_root=workspace_context.root,
                 workspace_paths=workspace_paths,
                 application_authority=extension_bootstrap.authority,
-                task_authority=task_authority,
+                task_authority=selected_task_authority,
             )
             tool_invocation_gateway = ToolInvocationGateway(
                 tool_registry,
                 application_authority=extension_bootstrap.authority,
-                task_authority=task_authority,
+                task_authority=selected_task_authority,
                 approval_port=selected_approval,
                 event_emitter=orchestrator._emit,
                 state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
@@ -186,7 +190,7 @@ class AgentApplication:
                 tool_invocation_gateway=tool_invocation_gateway,
                 bootstrap_diagnostics=extension_bootstrap.diagnostics,
                 application_authority=extension_bootstrap.authority,
-                task_authority=task_authority,
+                task_authority=selected_task_authority,
             )
             return app
 

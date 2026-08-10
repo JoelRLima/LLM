@@ -73,6 +73,21 @@ APIs diretas de skills, adapters, registry e `LegacyToolInvoker` existem para
 testes, administração ou compatibilidade. Elas não são a superfície suportada
 para decisões do modelo e não devem ser apresentadas como um segundo gateway.
 
+## Authority na superficie de produto
+
+No produto headless, o usuario fornece `--task-authority CAPABILITY` ao
+comando `llm-agent run`; a opcao pode ser repetida. A CLI passa apenas os
+valores explicitamente informados para `AgentApplication.create`, que os liga
+ao `RuntimeSnapshotIdentity` produzido pelo bootstrap atual antes de montar o
+planner e o gateway. Assim, authority de outra workspace nao pode ser
+reutilizada por esse runtime.
+
+Essa entrada nao e derivada do objetivo, do plano, da resposta do modelo, de
+`active_skills`, de grants persistentes ou de approval. `--yes` seleciona
+`AutoApprove` somente para efeitos que ja passaram por authority; sem
+`--task-authority`, a extension continua invisivel para planning e negada pelo
+gateway. O caminho interativo nao cria um segundo mecanismo de authority.
+
 ## Falhas e observabilidade
 
 Unknown tool produz `UNAVAILABLE`. Binding, authority, capabilities e approval

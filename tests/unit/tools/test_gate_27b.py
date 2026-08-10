@@ -119,6 +119,31 @@ def test_extension_with_bound_task_authority_succeeds() -> None:
     assert adapter.calls == 1
 
 
+def test_extension_with_insufficient_workspace_grant_fails_before_adapter() -> None:
+    adapter = _Adapter(_extension())
+    identity = RuntimeSnapshotIdentity("snapshot-a", "workspace-a")
+    registry = ToolRegistry(identity)
+    registry.register_adapter(adapter)
+    registry.freeze()
+    authority = ApplicationAuthoritySnapshot(
+        identity,
+        extension_grants={"demo.extension": frozenset()},
+    )
+    gateway = ToolInvocationGateway(
+        registry,
+        application_authority=authority,
+        task_authority=TaskAuthoritySnapshot(frozenset({"read"}), runtime_identity=identity),
+        approval_port=AutoApprove(),
+    )
+
+    result = gateway.run("external", {})
+
+    assert result.status is ToolStatus.PERMISSION_DENIED
+    assert result.error is not None
+    assert result.error.code == "WORKSPACE_GRANT_DENIED"
+    assert adapter.calls == 0
+
+
 def test_approval_denial_is_structured_and_has_no_start() -> None:
     adapter = _Adapter(_extension(capabilities=frozenset({"write"})))
     identity = RuntimeSnapshotIdentity("snapshot-a", "workspace-a")

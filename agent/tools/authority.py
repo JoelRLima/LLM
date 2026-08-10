@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, cast
 from uuid import uuid4
 
 from agent.tools.extension_state import validate_extension_id
@@ -68,11 +68,11 @@ class ApplicationAuthoritySnapshot:
 
     @property
     def snapshot_id(self) -> str:
-        return self.runtime_identity.snapshot_id
+        return str(cast(RuntimeSnapshotIdentity, self.runtime_identity).snapshot_id)
 
     @property
     def workspace_id(self) -> str:
-        return self.runtime_identity.workspace_id
+        return str(cast(RuntimeSnapshotIdentity, self.runtime_identity).workspace_id)
 
     @property
     def extension_grants(self) -> dict[str, frozenset[str]]:
@@ -128,6 +128,28 @@ class TaskAuthoritySnapshot:
             raise TypeError("runtime_identity invÃ¡lida")
 
 
+def bind_task_authority(
+    capabilities: Iterable[str],
+    application_authority: ApplicationAuthoritySnapshot | None,
+    *,
+    policy_source: str,
+) -> TaskAuthoritySnapshot:
+    """Bind explicit product input to the current trusted runtime snapshot.
+
+    The caller supplies the task capabilities outside the model.  Binding the
+    resulting snapshot to the bootstrap identity prevents it from being
+    replayed against another workspace or application snapshot.
+    """
+
+    if not isinstance(application_authority, ApplicationAuthoritySnapshot):
+        raise TypeError("application_authority invalida")
+    return TaskAuthoritySnapshot(
+        allowed_capabilities=_capabilities(capabilities),
+        policy_source=policy_source,
+        runtime_identity=application_authority.runtime_identity,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class EffectiveTaskAuthority:
     """Task capabilities restricted by an optional canonical persona policy."""
@@ -160,5 +182,6 @@ __all__ = [
     "ApplicationAuthoritySnapshot",
     "EffectiveTaskAuthority",
     "TaskAuthoritySnapshot",
+    "bind_task_authority",
     "derive_effective_task_authority",
 ]
