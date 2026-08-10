@@ -1,139 +1,102 @@
-# Módulo `agent/` — tools
+# Tools, skills e superfície model-actionable
 
-> Parte da documentação técnica do projeto. Veja o [índice](../README.md).
+> **STATUS: CURRENT — PRIMARY HOME.** Este documento classifica o que existe no
+> código, o que o modelo pode selecionar e o que é capability suportada.
+> Authority e approval pertencem a [security.md](security.md); processo e stdio
+> pertencem a [runtime.md](runtime.md).
 
-## Visão geral
+## Camadas
 
-O pacote `agent/tools/` define o microkernel de ferramentas do agente, com
-registradores, adaptadores e um gateway centralizado de invocação.
+`SkillRegistry` constrói builtins a partir de `agent/skills/catalog.py`.
+`BuiltinToolAdapter` converte seus descritores para `ToolDescriptor`.
+`ToolRegistry` agrega builtins e extensions. O planning recebe apenas uma
+projeção elegível; `ToolInvocationGateway` aplica enforcement na execução.
 
-Ele separa três responsabilidades:
+```text
+exists in code ≠ model-actionable ≠ supported product capability
+```
 
-1. Contratos de ferramentas (`agent/tools/contracts.py`).
-2. Registro e descoberta de adaptadores (`ToolRegistry`).
-3. Controle de autorização, validação e timeout (`ToolInvocationGateway`).
+Uma API low-level pode ser útil a administração/testes sem ser apresentada ao
+modelo. Uma tool apresentada ainda pode ser negada por authority ou approval.
 
-## ToolRegistry
+## Builtins CURRENT
 
-- Implementado em `agent/tools/tool_registry.py`.
-- Agrega `ToolAdapter`s que expõem descritores de ferramentas.
-- Mantém um cache de `ToolDescriptor` por nome.
-- Resolve ferramentas por nome e invoca o adapter correto.
-- Retorna `ToolResult` com `UNAVAILABLE` quando a ferramenta não existe.
-- Também converte descritores em `ToolMetadata` para uso pelo planner.
+| Tool | Função | Exposição model-actionable |
+| :--- | :--- | :--- |
+| `file_reader` | leitura UTF-8 confinada | sim, conforme persona |
+| `directory_lister` | listagem confinada | sim, conforme persona |
+| `grep` | busca textual confinada | sim, conforme persona |
+| `code_analyzer` | análise AST/textual | sim, conforme persona |
+| `code_task` | analyze/review/generate/modify/repair/refactor/template/multitask | sim; é o caminho suportado de mudança |
+| `file_writer` | escrita direta legada/admin | **não**; excluído por `MODEL_ACTIONABLE_EXCLUDED` |
+| `shell` | runner reduzido | sim somente quando a persona possui todas as capabilities |
+| `git_reader` | histórico Git local | sim, conforme persona |
+| `python_executor` | Python com policy própria | sim, conforme persona; não é sandbox forte |
+| `session_memory` | memória da sessão/workspace | sim, conforme persona |
+| `web_search` | busca DuckDuckGo | sim para a persona com network e com approval de efeito |
+| `calculator`, `echo`, `summarize` | cálculo, infraestrutura e resumo | sim, conforme persona |
 
-### Comportamento
+### Modify + validate
 
-- `register_adapter(adapter)` adiciona adaptadores dinamicamente e atualiza
-  o cache.
-- `descriptor(name)` levanta `KeyError` se a ferramenta não foi registrada.
-- `invoke(invocation)` delega ao adapter correspondente.
+O caminho model-actionable do coder é:
 
-## ToolInvocationGateway
+```text
+code_task → CodingApplicationService → ChangeSet → approval → commit
+          → ProjectValidator → succeeded | unverified | rollback + failed
+```
 
-- Implementado em `agent/tools/invocation_gateway.py`.
-- É o único ponto de controle para execução de ferramenta quando presente.
-- Encapsula:
-  - Existência da ferramenta no registro.
-  - Autorização por `active_skills`.
-  - Autorização por `allowed_capabilities`.
-  - Validação de schema de argumentos.
-  - Timeout e tratamento de exceções.
-  - Emissão de eventos de telemetria.
-  - Registro de resultados no estado.
+`file_writer` permanece registrado porque consumidores low-level e legados o
+usam, mas não aparece nas views do planner. Um plano do modelo que tente
+chamá-lo é filtrado/bloqueado e não deve mutar o workspace. Validação ausente
+gera `unverified`, nunca sucesso artificial.
 
-### Validação e autorização
+### Shell, Git e Ruff reduzidos
 
-- Se a ferramenta não estiver registrada, retorna `ToolResult.status == UNAVAILABLE`.
-- Se o nome da ferramenta não estiver em `active_skills`, retorna `PERMISSION_DENIED`.
-- Se os requisitos de capacidades da ferramenta não forem subconjunto de
-  `allowed_capabilities`, retorna `PERMISSION_DENIED`.
-- `descriptor.schema` é usado para validar os tipos básicos dos argumentos antes
-  da invocação.
+`ShellSkill` não é shell arbitrário. Usa `shell=False`, executável confiável
+fora do workspace, ambiente allowlisted, timeout e streams limitados. A
+superfície aceita somente:
 
-### Timeouts
+- `git log` com formato fixo, sem patch/pathspec/remerge/helpers e com contador
+  opcional limitado a 1–1000;
+- `ruff check` isolado, sem cache e sem fix; flags de mutação, output, watch ou
+  config explícita são rejeitadas;
+- `tree` quando um executável confiável está disponível, sem output em arquivo.
 
-- `timeout_seconds` pode ser fornecido na chamada.
-- Caso contrário, usa `descriptor.timeout_seconds`.
-- Timeout resulta em `ToolStatus.TIMED_OUT`.
+`GitSkill` (`git_reader`) expõe somente `log`. `git status`, `git diff`, commit,
+checkout, push, `pytest`, `mypy` e comandos arbitrários foram reduzidos away da
+superfície model-actionable. Ruff é validation read-only na semântica do
+produto, embora o descriptor de `shell` declare capabilities conservadoras e
+o gateway solicite approval para processo/escrita potencial.
 
-### Eventos e persistência
+## Extensions externas
 
-- Emite `tool_start` e `tool_end` via `event_emitter` opcional.
-- Registra resultados no estado via `state_recorder` opcional.
-- Falhas de emissão ou registro não interrompem a execução do gateway.
+Uma tool stdio só entra no runtime após a cadeia:
 
-No lote paralelo de leituras do `PlanExecutor`, o gateway continua aplicando
-authority, capabilities, approval e lifecycle, mas recebe `record_result=False`;
-o finalizer paralelo é o owner único do recording, usando o `step_id` capturado
-por invocação. Isso evita duplicatas, perda de falhas inesperadas e atribuição
-ao passo errado por `current_step_id` mutável.
+```text
+catálogo global + configuração/grants do workspace
+→ resolução ready
+→ ApplicationExtensionBootstrap
+→ binding e ToolRegistry congelado
+→ planning context elegível
+→ task authority
+→ ToolInvocationGateway
+→ StdioToolAdapter
+```
 
-## Protocolo stdio e correlação de invocações
+Registro, descoberta, manifest válido e apresentação ao planner não concedem
+authority. O `AgentApplication` sem `TaskAuthoritySnapshot` mantém extensions
+invisíveis e não executáveis. A API programática suporta injetar esse snapshot;
+a CLI padrão não o concede automaticamente.
 
-O transport stdio usa a versão de protocolo atual `1.0`. Nesta fase de
-desenvolvimento não existe compatibilidade legada nem uma versão `1.1` em
-paralelo.
+O subcomando `llm-agent tools` ainda administra o registry legado
+`extensions/registry.json`; ele não configura o catálogo/workspace consumido
+por `ApplicationExtensionBootstrap`. Portanto não é o workflow administrativo
+CURRENT das extensions runtime. O workflow canônico atual é programático via
+`ExtensionCatalogService` e `WorkspaceExtensionService`; uma CLI canônica de
+catálogo/grants ainda não é fornecida.
 
-Cada request contém um `invocation_id` não vazio. A extension deve devolver
-exatamente uma linha JSON não vazia; linhas vazias adicionais são ignoradas.
-A resposta terminal deve conter o mesmo ID. O
-adapter rejeita como `PROTOCOL_ERROR` respostas sem ID
-(`MISSING_INVOCATION_ID`), com ID divergente ou desconhecido
-(`INVOCATION_MISMATCH`), JSON inválido e mais de uma linha de resposta.
+## Ausências
 
-O framing é estrito: stdout e stderr são drenados concorrentemente enquanto o
-processo produz dados, sem `communicate()` acumular streams ilimitados. O limite
-de stdout é `MAX_OUTPUT_BYTES` (1 MiB) e o limite independente de stderr é
-`MAX_STDERR_BYTES` (1 MiB); exceder qualquer um encerra a execução com erro de
-protocolo (`OUTPUT_LIMIT` ou `STDERR_OUTPUT_LIMIT`). stderr é mantido apenas
-como amostra diagnóstica limitada e nunca entra no resultado de sucesso. A
-resposta deve ser UTF-8 e o manifest aceita
-somente tipos explícitos, `transport: "stdio"`, protocolo `1.0`, entrypoint
-não vazio, tools com nomes únicos e `timeout_seconds` obrigatório, inteiro
-entre 1 e 3600 segundos. `MAX_STDERR_BYTES` permanece em 1 MiB; conteúdo
-volumoso e artifacts não devem ser enviados por stderr.
-Campos não documentados no objeto raiz do manifest ou nas declarações de tools
-são rejeitados. Campos internos de `schema` seguem JSON Schema e não são
-tratados como campos do manifest.
-
-Exit code diferente de zero sempre produz `FAILED`/`PROCESS_FAILED`, mesmo que
-uma resposta JSON tenha sido escrita. Com exit code zero, `status` ausente
-mantém o default de sucesso já existente; valores desconhecidos são erro de
-protocolo.
-
-Ao atingir timeout, limite, erro de processo ou sucesso, o adapter solicita o
-encerramento da árvore da extension (SIGTERM e depois SIGKILL no grupo POSIX;
-Job Object no Windows), fecha os pipes e aguarda as threads de drenagem. A invocacao
-nao deixa descendentes de background sobrevivendo ao retorno. No Windows, o
-fallback `taskkill.exe` usa o diretÃ³rio de sistema obtido do Win32, nunca
-`SystemRoot`/`WINDIR` herdado. Falhas
-de terminação, Job Object e drenagem são retornadas como `CLEANUP_ERROR`, nunca
-ocultadas por `daemon=True`; falha isolada ao remover o status privado fica
-registrada em diagnóstico bounded sem substituir o resultado principal.
-O caminho anterior à criação do contexto usa o helper interno
-`agent.tools.stdio_cleanup` para agregar essas falhas sem perder o erro original.
-No Windows, o adapter inicia primeiro o launcher interno
-`agent.tools.stdio_launcher`, associa o launcher ao Job Object e só então envia
-o envelope privado. A extension real não é iniciada antes da associação; falha
-de criação ou associação retorna falha de infraestrutura e não degrada para
-execução direta. O launcher herda stdout/stderr para que os limites e a
-drenagem concorrente continuem no adapter. O protocolo público permanece
-`1.0`; esse launcher é um detalhe interno, não uma sandbox e não exige mudança
-nas extensions. Respostas tardias são descartadas e não são associadas a outra
-invocação.
-
-Timeout encerra o subprocesso da invocação; uma resposta tardia não é
-reassociada a outra chamada. Eventos `tool_start`/`tool_end`, o resultado
-canônico e o registro de estado carregam o mesmo ID. Ainda não há um
-`attempt_id` separado para distinguir tentativas de retry de uma invocação
-lógica; essa evolução permanece pendente.
-
-## Integridade do fluxo
-
-- Na composição standalone, o gateway é a fronteira canônica para invocações
-  de tools. A fachada `LegacyToolInvoker` existe apenas para consumidores
-  legados que não montam `AgentApplication`.
-- O gateway bloqueia tools não registradas, capabilities não concedidas,
-  efeitos sem aprovação e argumentos incompatíveis antes do adapter. Isso não
-  constitui sandbox de sistema operacional.
+MCP não existe neste repositório. Não há arbitrary shell, package install
+model-actionable, sandbox universal, hot reload, marketplace ou transport
+remoto. Web existe somente pela skill `web_search`; não implica browser/MCP.

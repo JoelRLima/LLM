@@ -225,7 +225,7 @@ class AppPaths:
 
     @property
     def extensions_registry_file(self) -> Path:
-        """Canonical registry shared by CLI maintenance and bootstrap."""
+        """Legacy CLI registry; modern bootstrap uses catalog/workspace state."""
         return self.extensions_dir / "registry.json"
 
     @property

@@ -1,5 +1,9 @@
 # Gate 2.7b — authority, approval e invocation lifecycle
 
+> **STATUS: CLOSED MILESTONE RECORD.** Preserva a evidência do Gate 2.7b. Para o
+> contrato CURRENT, use [security](agent/security.md); a ordem total abaixo foi
+> parcialmente substituída pelo [ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+
 O fluxo canonico do runtime standalone e:
 
 ```text

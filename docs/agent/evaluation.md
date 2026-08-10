@@ -1,91 +1,83 @@
-# Módulo `agent/` — evaluation
+# Evaluation
 
-> Parte da documentação técnica do projeto. Veja o [índice](../README.md).
+> **STATUS: CURRENT — PRIMARY HOME.** Este documento define o núcleo de eval,
+> seus conjuntos curados e o nível de evidência que eles fornecem. Estratégia
+> transversal de testes fica em [testes.md](../testes.md).
 
-## Visão geral
+## Escopo e evidência
 
-O pacote `agent/evaluation/` suporta cenários herméticos de avaliação de
-capacidades.
+`agent/evaluation/` executa cenários herméticos em workspaces temporários e
+avalia efeitos observáveis. Ele não substitui testes unitários nem demonstra
+qualidade de um modelo real.
 
-Ele não faz parte do fluxo de execução do agente, mas fornece uma camada de
-verificação externa que checa efeitos observáveis em workspaces isolados.
+Há três níveis que não devem ser confundidos:
 
-## Contratos
+- **determinístico/scripted**: runtime real com decisões de modelo controladas;
+- **reproducer focal**: node pytest que protege uma regressão específica;
+- **real-model evidence**: execução repetível com backend/modelo declarado.
 
-Implementados em `agent/evaluation/contracts.py`.
+Somente o primeiro e o segundo estão cobertos pelo Block A atual.
 
-### `FileExpectation`
+## Capability Set
 
-Define o estado esperado de um arquivo após a execução:
+`CURATED_CAPABILITY_SET`, em `agent/evaluation/curated.py`, contém **9** cenários:
 
-- `path`
-- `exists`
-- `exact_content`
-- `contains`
-- `not_contains`
+| ID | Propriedade observada |
+| --- | --- |
+| `cap-read` | leitura sem mutação |
+| `cap-search` | busca sem mutação |
+| `cap-modify-validate` | alteração pelo fluxo suportado e validação |
+| `cap-shell` | superfície Shell/Git reduzida |
+| `cap-extension` | extension stdio autorizada e preparada pelo harness |
+| `cap-no-tool` | resposta sem tool |
+| `cap-failure` | falha de capability sem falso sucesso |
+| `cap-denial-recovery` | negação preserva o workspace |
+| `cap-recovery` | rollback após alteração inválida |
 
-### `ScenarioExpectation`
+O teste de integração executa oito cenários internos em conjunto e o cenário
+de extension separadamente; a contagem do conjunto continua sendo 9.
 
-Expressa as expectativas de um cenário:
+## Regression Set
 
-- `success`
-- `files`
-- `unchanged_files`
-- `allowed_changed_files`
-- `answer_contains`
-- `answer_not_contains`
-- `max_steps`
+`CURATED_REGRESSION_SET`, em `agent/evaluation/regressions.py`, contém **8**
+reprodutores focais: authority, terminalidade, ownership de processo stdio,
+bypass do writer, Git/shell, identidade do protocolo stdio, probe instalado e
+projeção de measurement.
 
-### `CapabilityScenario`
+O caso `writer-validation-bypass` aponta para
+`test_model_planned_file_writer_is_excluded_with_auto_approval_and_no_mutation`:
+uma decisão do modelo tenta `file_writer` sob `AutoApprove`; o teste confirma
+que `code_task` permanece apresentado, que `file_writer` não aparece na persona
+nem na planning view, que nenhuma tool é invocada e que o workspace não muda.
+O caminho positivo de modificação é protegido separadamente pelos testes de
+`code_task`.
 
-Define um cenário de avaliação hermético:
+## Contratos e execução
 
-- `scenario_id`
-- `capability`
-- `objective`
-- `initial_files`
-- `expectation`
-- `metadata`
+- `CapabilityScenario` declara objetivo, arquivos iniciais, expectativas e
+  metadata de preparação.
+- `AgentApplicationScenarioExecutor` adapta a composition root real ao cenário.
+- `CapabilityEvaluator` cria workspace vazio, captura hashes antes/depois,
+  executa e aplica grading determinístico.
+- `ScenarioReport` e `EvaluationSetReport` preservam falhas, observação,
+  mudanças e agregados; a exportação é JSON serializável.
+- caminhos dos fixtures são relativos e validados; arquivos não autorizados a
+  mudar fazem o cenário falhar.
 
-### `ExecutionObservation`
+Measurement é coletado pelo executor e projetado no export de eval; o dado
+continua pertencendo ao runtime/reporting, não a uma métrica inventada pelo
+grader. Veja [reporting.md](reporting.md).
 
-Representa o resultado bruto de uma execução:
+## Estado do Marco 3
 
-- `success`
-- `answer`
-- `steps`
-- `diagnostics`
-- `artifacts`
-- `error`
+```text
+Block A = GREEN LOCAL
+Block B = NOT COMPLETED
+Block C = NOT COMPLETED
+Standalone V1 = NOT YET DECLARED
+```
 
-### `EvaluationFailure` e `ScenarioReport`
-
-- `EvaluationFailure` descreve uma falha objetiva.
-- `ScenarioReport` agrega o resultado final, incluindo `passed`,
-  `observation`, `failures` e `changed_files`.
-
-## Executor de cenários
-
-- `CapabilityEvaluator` em `agent/evaluation/runner.py` prepara um workspace
-  limpo, escreve arquivos iniciais e executa o agente através de um adapter
-  (`ScenarioExecutor`).
-- O executor:
-  1. cria o workspace vazio,
-  2. escreve `initial_files`,
-  3. captura um snapshot dos hashes antes da execução,
-  4. chama `executor.execute(objective, workspace)`,
-  5. captura o snapshot depois da execução,
-  6. compara alterações de arquivos,
-  7. verifica o resultado contra `ScenarioExpectation`.
-- A verificação inclui:
-  - `success` esperado,
-  - presença/ausência de trechos na resposta,
-  - existência e conteúdo de arquivos,
-  - arquivos não alterados,
-  - arquivos alterados permitidos.
-
-## Segurança e hermeticidade
-
-- O workspace de avaliação deve estar vazio antes de iniciar.
-- Caminhos relativos são resolvidos de forma segura com `_safe_relative_path`.
-- O snapshot usa SHA-256 para detectar alterações precisas no workspace.
+Block A entrega core reutilizável, 9 capability scenarios, 8 regression cases,
+grading determinístico, agregação/export e reuso de measurement. Não declara
+benchmark real-model, comparação de planners/modelos, release gate final nem
+fresh-wheel de V1.

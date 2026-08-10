@@ -1,5 +1,9 @@
 # Marco 1 — Safe Execution Closure
 
+> **STATUS: CLOSED MILESTONE RECORD.** Este registro não substitui os contratos
+> CURRENT de [security](agent/security.md), [tools](agent/tools.md) e
+> [runtime](agent/runtime.md).
+
 Este documento registra somente as garantias efetivamente sustentadas pela
 implementação local do Marco 1. Ele não declara sandbox de sistema operacional
 nem inicia o Marco 2.

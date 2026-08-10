@@ -1,6 +1,9 @@
 # ADR 0013 — Fronteira canônica de authority, approval e invocation
 
-- Status: concluído nesta baseline
+- Status: parcialmente substituído pelo ADR 0014
+- Substituição parcial: somente a prescrição de ordem total do item 5; as
+  decisões sobre authority, approval, identidade, grants, gateway e
+  `invocation_id` permanecem aceitas.
 - Escopo: Gate 2.7b
 - Data: 2026-08-08
 

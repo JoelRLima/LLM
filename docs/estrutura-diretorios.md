@@ -1,5 +1,8 @@
 # Estrutura de diretórios
 
+> **STATUS: CURRENT — LAYOUT REFERENCE.** Ownership conceitual está no
+> [índice técnico](README.md).
+
 Esta é a árvore lógica atual. Arquivos de cache, ambiente virtual e artifacts
 gerados foram omitidos.
 

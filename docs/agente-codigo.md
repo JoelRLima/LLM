@@ -1,9 +1,15 @@
 # Domínio de engenharia de código
 
+> **STATUS: CURRENT — DOMAIN GUIDE.** Exposição model-actionable e boundaries
+> de tools pertencem a [agent/tools.md](agent/tools.md).
+
 ## Visão geral
 
 O domínio `agent/code/` concentra análise, geração, alteração, validação e
 reparo. Ele não conhece CLI, `Orchestrator` ou provider concreto.
+
+O caminho de alteração suportado pelo modelo é `code_task` → `ChangeSet` →
+`ProjectValidator`. `file_writer` não é uma alternativa model-actionable.
 
 ```text
 ProjectDiscovery -> ProjectProfile
@@ -157,8 +163,9 @@ conteúdo muito grande e quantidade de arquivos acima do limite. Os defaults sã
 
 Abaixo do limiar, a transação permanece somente em stage e retorna `blocked`
 com diff, score e motivos. A CLI interativa mostra a prévia e pede confirmação.
-Na composição standalone, `ApprovalPort` é a fonte de autoridade: headless
-bloqueia por padrão e `llm-agent run --yes` aprova apenas aquela execução.
+Na composição standalone, `ApprovalPort` coleta consentimento para o efeito já
+autorizado: headless bloqueia por padrão e `llm-agent run --yes` fornece
+approval apenas para aquela execução. Ele não cria authority ou grants.
 `auto_confirm` permanece somente para consumidores legados que constroem a
 skill diretamente.
 

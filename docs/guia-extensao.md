@@ -1,5 +1,10 @@
 # Guia de extensão
 
+> **STATUS: CURRENT — EXTENSION/CHANGE GUIDE.** Contratos de capability,
+> authority e processo pertencem, respectivamente, a
+> [tools](agent/tools.md), [security](agent/security.md) e
+> [runtime](agent/runtime.md).
+
 Use este mapa para colocar uma mudança na camada correta. A regra central é:
 skills e CLI adaptam entradas; domínio implementa comportamento; runtime
 fornece serviços transversais; adapters isolam tecnologias externas.
@@ -14,7 +19,7 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | compressão de contexto | [`context_manager.py`](../agent/llm/context_manager.py) | respeite o perfil de hardware e use o gateway para tokens |
 | perfil de hardware | [`hardware.py`](../agent/runtime/hardware.py) e [`config.py`](../agent/runtime/config.py) | para 8 GB, mantenha concorrência de modelo em 1 |
 | composição da aplicação | [`application.py`](../agent/application.py) | interfaces reutilizam esta raiz; não montam runtime paralelo |
-| autoridade de escrita | [`approval.py`](../agent/approval.py) | injete `ApprovalPort`; domínio e modo headless nunca consultam stdin |
+| consentimento para efeitos | [`approval.py`](../agent/approval.py) | injete `ApprovalPort`; approval não cria authority e o domínio nunca consulta stdin |
 | workspace | [`workspace_context.py`](../agent/runtime/workspace_context.py) | receba a raiz explicitamente e injete-a em consumidores |
 | nova linguagem | [`agent/code/languages/`](../agent/code/languages/) | implemente o adapter e declare limitações reais |
 | descoberta do projeto | [`discovery.py`](../agent/code/discovery.py) | não execute scripts de manifests durante descoberta |
@@ -53,6 +58,20 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 Não selecione comportamento pelo nome do modelo.
 
 ## Implementar uma extension stdio
+
+### Registro e ativação CURRENT
+
+O workflow canônico é programático: `ExtensionCatalogService` adiciona/observa
+o manifest global; `WorkspaceExtensionService` habilita a extension e mantém
+grants explícitos do workspace; `ApplicationExtensionBootstrap` resolve e
+materializa descriptors/adapters para a application. A camada chamadora ainda
+precisa fornecer `TaskAuthoritySnapshot` para a invocation model-actionable.
+
+`llm-agent tools` ainda lê e escreve `extensions/registry.json` por meio de
+`ExtensionRegistry`. Essa CLI é uma superfície legada e **não** configura o
+catálogo/workspace/bootstrap CURRENT. Até existir uma CLI canônica, use os
+services em integração administrativa/testes; não prometa ao usuário que
+`tools add/enable` torna uma extension visível ao planner.
 
 O manifest deve declarar `id`, `version`, `protocol_version: "1.0"`,
 `transport: "stdio"`, um `entrypoint` como lista de strings, `tools` como lista

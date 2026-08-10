@@ -1,5 +1,9 @@
 # TaskGraph e multitarefa local
 
+> **STATUS: CURRENT — DOMAIN REFERENCE.** Planning e orchestration authoritative
+> ficam em [agent/planning.md](agent/planning.md) e
+> [agent/orchestration.md](agent/orchestration.md).
+
 ## Definição
 
 Multitarefa neste projeto significa executar unidades de trabalho de um DAG com

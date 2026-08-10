@@ -1,5 +1,8 @@
 # Compatibilidade e retirada de legado
 
+> **STATUS: CURRENT — DEPRECATION INVENTORY.** Este arquivo é atualizado quando
+> aliases entram ou saem; não é um relato histórico de milestone.
+
 Este inventário impede que fachadas temporárias se tornem arquitetura
 permanente. Código novo deve importar somente o caminho canônico. O gate
 arquitetural rejeita imports dos aliases da raiz dentro de `agent/`.

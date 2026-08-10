@@ -1,80 +1,48 @@
-# Arquitetura de execução e retomada
+# Arquitetura de execução
 
-## Fluxo canônico
+> **STATUS: CURRENT — OVERVIEW.** Este documento é uma porta de entrada; os
+> contratos normativos pertencem aos primary homes ligados abaixo.
 
-Todo plano segue a mesma cadeia:
+## Composition e fluxo
 
 ```text
-linear / reativo / hierárquico
-            |
-            v
-    ExecutionGateway
- valida -> otimiza -> revalida
-            |
-            v
-       PlanExecutor
- coordena dependências, lote paralelo,
- limites, cancelamento e replan
-            |
-            v
-       StepExecutor
- valida e executa uma ferramenta,
- pós-processa e encerra o passo
-            |
-            v
-         AgentState
- IDs, estados, histórico e checkpoint
+CLI / headless
+→ AgentApplication.create()
+→ planning context + persona/tool view
+→ planner (linear, reactive ou hierarchical)
+→ ExecutionGateway do plano (validate/optimize/revalidate)
+→ PlanExecutor / StepExecutor
+→ ToolInvocationGateway (eligibility/authority/schema/approval)
+→ builtin adapter ou stdio process
+→ ToolResult → state/checkpoint/report/final response
 ```
 
-`PlanExecutor` não implementa mais o ciclo interno de uma ferramenta. O
-`StepExecutor`, injetável pelo construtor, é o núcleo único dessa operação.
+Há dois gateways diferentes: `agent/planning/execution_gateway.py` valida o
+plano; `agent/tools/invocation_gateway.py` aplica a fronteira de cada tool.
+Nenhum plano ou tool apresentada cria authority. Veja
+[planning](agent/planning.md), [orchestration](agent/orchestration.md) e
+[security](agent/security.md).
 
-## Estados do passo
+## Estado e retomada
 
-Um passo começa em `pending` e recebe um `_step_id` estável. Ao iniciar uma
-tentativa passa para `running`. A finalização usa um dos estados terminais:
+Steps têm `_step_id` estável, tentativas e estados `pending`, `running`,
+`completed`, `failed` ou `skipped`. Checkpoint v2 preserva plano e records. No
+resume, `running` volta a `pending`, concluídos não se repetem e falhos/pulados
+só voltam com flags explícitas. O plano restaurado é revalidado e authority é
+reconstruída do runtime atual; ela não é confiada ao checkpoint.
 
-- `completed`: execução e pós-processamento concluídos;
-- `failed`: passo encerrado com erro;
-- `skipped`: passo deliberadamente ignorado, por exemplo por dependência falha.
+## Paralelismo
 
-O contador `attempts` e o último erro ficam em `StepExecutionRecord`, separado
-do conteúdo declarativo do plano.
+O scheduler pode executar fisicamente leituras independentes em paralelo. A
+semântica de decisão, o recording terminal e a ordem consumida permanecem na
+ordem lógica do plano, não na ordem em que futures terminam. Escritas e recursos
+incompatíveis são serializados. Detalhes: [planning](agent/planning.md),
+[orchestration](agent/orchestration.md) e [multitarefa](multitarefa.md).
 
-## Checkpoint e retomada
+## Recovery e limites
 
-O schema v2 persiste plano, IDs e registros de execução. Ao restaurar:
-
-1. passos `completed` permanecem terminais; `failed` e `skipped` também
-   permanecem por padrão, mas podem voltar a `pending` pelas flags de retry;
-2. passos que estavam `running` voltam a `pending`, pois não há confirmação de
-   conclusão atômica;
-3. o executor seleciona `next_pending_index()` e não repete passos concluídos;
-4. o plano restaurado ainda atravessa o `ExecutionGateway` antes da execução.
-
-Eventos `step_completed`, `step_failed` e `step_skipped` disparam persistência.
-O `CancellationToken` é consultado em limites seguros e `cancel_task()` salva o
-checkpoint imediatamente.
-
-## Responsabilidades
-
-- `ExecutionGateway`: política de entrada, validação e otimização.
-- `PlanExecutor`: coordenação entre passos e mutações de plano por replan.
-- `StepExecutor`: ciclo de vida de exatamente um passo.
-- `AgentState`: fonte de verdade das transições e serialização.
-- `CheckpointManager`: I/O atômico e versionamento do checkpoint.
-
-No lote paralelo de leituras, o gateway continua sendo o owner de enforcement,
-mas o `PlanExecutor` é o owner único do recording final. Cada resultado é
-associado ao `step_id` capturado antes da concorrência e registrado uma única
-vez, inclusive falhas inesperadas, cancelamentos, bloqueios e resultados
-unverified. A ordem de recording é a ordem determinística do plano, não a
-ordem de conclusão dos futures.
-
-## Limitações remanescentes
-
-- resultados de ferramentas e eventos ainda são dicionários livres;
-- o lote paralelo compartilha o estado da tarefa, mas a coleta dos futures e o
-  recording terminal são serializados pelo `PlanExecutor` antes dos consumers;
-- checkpoints de schema v1 são rejeitados, sem migração automática;
-- cancelamento é cooperativo e não encerra uma ferramenta já bloqueada.
+Timeout publica um único resultado terminal e descarta conclusão tardia para
+efeitos de estado. Cancelamento é cooperativo no core; adapters de processo
+possuem cleanup específico. Restore points de workspace, checkpoint e backup de
+memória não são equivalentes. Não há transação distribuída nem sandbox universal.
+Processos/stdout/stderr/plataformas: [runtime](agent/runtime.md).

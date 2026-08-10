@@ -1,5 +1,8 @@
 # Perfil de hardware limitado — GTX 1070, 8 GB de VRAM
 
+> **STATUS: CURRENT — ENVIRONMENT PROFILE.** Estes defaults descrevem um perfil
+> suportado, não uma garantia universal de performance ou qualidade de modelo.
+
 ## Objetivo
 
 O perfil `low_vram_8gb` é o default do projeto. Ele evita que multitarefa e

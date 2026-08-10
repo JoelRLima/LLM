@@ -1,5 +1,8 @@
 # Modelos e providers
 
+> **STATUS: CURRENT — OPERATIONAL REFERENCE.** O contrato arquitetural vive em
+> [agent/llm.md](agent/llm.md).
+
 ## Objetivo
 
 O núcleo não depende de um modelo específico nem do formato HTTP de um

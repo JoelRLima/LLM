@@ -1,63 +1,78 @@
-# Módulo `agent/` — orchestration
+# Orchestration e AgentApplication
 
-> Parte da documentação técnica do projeto. Veja o [índice](../README.md).
+> **STATUS: CURRENT — PRIMARY HOME.** Este documento descreve composição,
+> ciclo da tarefa, execução e consumo de resultados.
 
-## Visão geral
+## Composition root
 
-O pacote `agent/orchestration/` concentra a composição de runtime e o ciclo da
-execução de uma tarefa sob a fachada do `Orchestrator`.
+`AgentApplication.create()` é a raiz suportada, independente de UI:
 
-Ele mantém a orquestração fora dos caminhos de implementação de ferramentas,
-sem criar um segundo ponto de entrada para o agente.
+```text
+workspace/config/paths
+→ lock e logging
+→ model session e builtin SkillRegistry
+→ extension bootstrap e ToolRegistry congelado
+→ Orchestrator
+→ ToolInvocationGateway
+```
 
-## Componentes principais
+CLI, modo headless, evals e acceptance instalado reutilizam essa fronteira.
+`close()` é idempotente; execução e fechamento são serializados enquanto
+stdout/logging legados forem recursos globais do processo.
 
-- `AgentSubsystems` (`agent/orchestration/subsystems.py`)
-  - Constrói serviços sob demanda para manter o bootstrap leve.
-  - Expõe `workspace`, `context_manager`, `auto_coder`, `reactive_loop`,
-    `plan_builder`, `plan_executor`, `final_responder`, `tool_executor`,
-    `watchdog` e `execution_gateway`.
-  - Garante que cada serviço seja instanciado apenas uma vez por execução.
+## Ciclo da tarefa
 
-- `OrchestratorOperations` (`agent/orchestration/operations.py`)
-  - Fornece portas de infraestrutura compartilhadas por planejamento,
-    execução e composição.
-  - Centraliza gravação e restauração de checkpoint, persistência de memória,
-    geração de relatórios, emissão de eventos e métricas.
-  - Também expõe métodos transversais como `_save_checkpoint()`,
-    `_load_checkpoint()`, `_delete_checkpoint()`, `_emit()`, `_log_metric()` e
-    `_generate_task_report()`.
+```text
+objetivo
+→ TaskRunner
+→ trivial ou route persona
+→ planning context
+→ hierárquico | segurança | linear | fallback reativo
+→ ExecutionGateway de plano
+→ PlanExecutor / StepExecutor
+→ ToolExecutor
+→ ToolInvocationGateway
+→ tool result
+→ FinalResponder
+→ AgentRunResult
+```
 
-- `TaskRunner` (`agent/orchestration/task_runner.py`)
-  - Coordena o ciclo de vida de uma única tarefa.
-  - Resolve o objetivo atual, detecta retomada via checkpoint e decide se deve
-    tratar a solicitação como trivial, hierárquica, de segurança ou linear.
-  - Executa o plano validado, atualiza o estado, persiste checkpoints e limpa o
-    histórico de mensagens ao final.
-  - Em caso de interrupção (`KeyboardInterrupt`), salva o checkpoint e retorna
-    uma mensagem amigável.
+`AgentSubsystems` constrói serviços sob demanda. `TaskRunner` possui prepare,
+resume, dispatch e cleanup. `OrchestratorOperations` concentra checkpoint,
+memória, eventos, métricas e task reports. O caminho especializado de
+segurança também invoca `code_analyzer` pelo gateway quando ele existe.
 
-- `SecurityAnalysisService` (`agent/orchestration/security_service.py`)
-  - Trata objetivos de auditoria de segurança.
-  - Invoca `code_analyzer` via `ToolInvocationGateway` quando disponível ou via
-    skill legada quando não há gateway.
-  - Consolida achados com o `security_scanner` e, em seguida, gera a resposta
-    final para o usuário.
+## Identidades e resultados
 
-## Fluxo de execução
+Uma task mantém objective, persona, plano e eventos. Cada passo possui
+`_step_id` estável e `StepExecutionRecord`. Cada chamada canônica possui
+`invocation_id`; retry ainda não possui `attempt_id` próprio.
 
-1. O `TaskRunner` resolve o objetivo e decide se retoma um checkpoint.
-2. Se o objetivo for trivial, ele responde diretamente.
-3. Para objetivos de segurança, delega ao `SecurityAnalysisService`.
-4. Para objetivos complexos, tenta o caminho hierárquico.
-5. Se o plano é gerado, ele é executado pelo `ExecutionGateway`.
-6. Ao final, persiste memória, gera relatório opcional e limpa o estado do
-   agente.
+`AgentRunResult` preserva `succeeded`, `failed`, `blocked`, `cancelled`,
+`unverified`, `timed_out`, `permission_denied`, `protocol_error` ou
+`unavailable`. Somente `succeeded` produz `success: true`. Texto final ou output
+do modelo não promove status terminal de uma tool.
 
-## Responsabilidades do pacote
+## Execução e ownership
 
-- Isolar a composição de serviços do resto do domínio.
-- Garantir que o ciclo de uma tarefa seja reproduzível e auditável.
-- Fornecer pontos únicos de checkpoint e relatório.
-- Manter a separação entre decisão de fluxo, execução de ferramentas e
-  infraestrutura.
+`PlanExecutor` coordena dependências, budgets, lotes, checkpoint e replan.
+`StepExecutor` finaliza exatamente um passo. `ToolExecutor` cria
+`ToolInvocationRequest` e exige o gateway canônico; não possui fallback
+model-actionable para chamadas diretas.
+
+No lote paralelo, o gateway continua owner do enforcement. O finalizer do
+`PlanExecutor` é owner único do recording, registra cada slot uma vez em ordem
+lógica e só então aplica summarização ou decisão de replan. Completion física
+fora de ordem não altera a semântica sequencial.
+
+## Falha, rollback e retomada
+
+Checkpoint v2 revalida o plano no resume e não persiste authority efetiva.
+Passos concluídos não repetem; `running` volta a `pending`; retry de failed ou
+skipped é opt-in. Cancelamento salva checkpoint. Falha da tarefa aciona
+rollback do `WorkspaceManager`; no domínio `code_task`, o `ChangeSet` possui
+seu próprio commit/validation/rollback transacional.
+
+Rollback cobre arquivos conhecidos pela operação, não efeitos arbitrários de
+processos ou rede. Falha ao persistir memória torna a tarefa falha e preserva
+o checkpoint.

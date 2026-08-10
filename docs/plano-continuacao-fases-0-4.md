@@ -1,5 +1,8 @@
 # Continuação executável para encerrar as fases 0–4
 
+> **STATUS: HISTORICAL RUNBOOK.** Não execute como plano CURRENT. Consulte o
+> [índice técnico](README.md) e os primary homes para o estado vigente.
+
 ## 1. Objetivo e escopo
 
 Este runbook contém somente o trabalho ainda necessário depois da execução de

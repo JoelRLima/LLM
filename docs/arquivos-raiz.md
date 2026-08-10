@@ -1,5 +1,8 @@
 # Fachadas da raiz e pontos canônicos
 
+> **STATUS: CURRENT — ROOT-FILES REFERENCE.** Este arquivo não define contratos
+> de subsistemas; veja o [índice técnico](README.md).
+
 A raiz mantém somente entry points, aliases de compatibilidade, configuração
 de empacotamento e documentação. Implementações novas pertencem ao pacote
 `agent/`; consulte também o [inventário de legado](legado.md).
@@ -108,8 +111,9 @@ Os workflows de `agent/code` usam `ProjectValidator` e resultados normalizados.
 
 O score é calculado localmente a partir da estrutura do ChangeSet. Essa seção
 não concede sucesso nem ignora validators. Na aplicação standalone, a
-autoridade vem de `ApprovalPort`: chat pergunta ao usuário, headless bloqueia e
-`run --yes` aprova somente a execução corrente.
+confirmação do efeito passa por `ApprovalPort`: chat pergunta ao usuário,
+headless bloqueia e `run --yes` fornece approval somente para a execução
+corrente. Authority, capabilities e grants são verificados separadamente.
 
 ### Outros campos
 
@@ -177,7 +181,8 @@ exceção. O mesmo gate roda em `.github/workflows/ci.yml`.
 
 ## Documentação arquitetural
 
-`README.md` cobre instalação e uso, `EstruturaProjeto.md` é a referência
-canônica das responsabilidades e os guias permanentes ficam em `docs/`.
+`README.md` cobre instalação e uso, `EstruturaProjeto.md` é um mapa secundário
+da estrutura e das responsabilidades do código, e os guias permanentes ficam em
+`docs/`. `docs/README.md` é o índice authoritative de ownership documental.
 Artefatos intermediários de análise, roadmap, tasks e revisão não fazem parte
 da documentação versionada.

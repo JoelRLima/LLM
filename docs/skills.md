@@ -1,5 +1,8 @@
 # Skills
 
+> **STATUS: CURRENT — REFERENCE.** A classificação authoritative de exposição
+> ao modelo está em [agent/tools.md](agent/tools.md).
+
 Skills são adaptadores da borda do sistema. Elas validam argumentos, convertem
 o pedido para um caso de uso e normalizam o resultado. Regras de negócio novas
 devem permanecer nos domínios correspondentes.
@@ -92,6 +95,13 @@ malformado, mas não elimina a responsabilidade da skill de cumprir o contrato.
 O alias histórico `git` ainda é aceito onde o planejador legado exige
 compatibilidade; o nome canônico é `git_reader`.
 
+O catálogo acima descreve o que existe no runtime, não a view do modelo.
+`file_writer` é explicitamente removido de todas as views por
+`MODEL_ACTIONABLE_EXCLUDED`; alteração model-actionable usa `code_task`.
+Extensions aparecem apenas quando bootstrap, planning context e task authority
+as tornam elegíveis. Consulte [security](agent/security.md) antes de interpretar
+“disponível” como “autorizada”.
+
 ## `code_task`
 
 A skill recebe `ModelGateway` e configuração por injeção, sem referência ao
@@ -118,10 +128,11 @@ Exemplo:
 
 Sem gateway injetado, ações que exigem modelo falham explicitamente; análise e
 review continuam disponíveis. Propostas de baixa confiança retornam `blocked`
-sem escrever. Na aplicação standalone, a autorização vem do `ApprovalPort`:
-chat pode perguntar, headless bloqueia e `run --yes` aprova somente aquela
-execução. `auto_confirm: true` é compatibilidade para construção direta e
-legada da skill. O campo externo `ok` só é verdadeiro para `succeeded`;
+sem escrever. Na aplicação standalone, o consentimento para o efeito passa por
+`ApprovalPort`: chat pode perguntar, headless bloqueia e `run --yes` fornece
+approval somente para aquela execução. Authority e grants permanecem
+independentes. `auto_confirm: true` é compatibilidade para construção direta
+e legada da skill. O campo externo `ok` só é verdadeiro para `succeeded`;
 `unverified` permanece visível em `data.status` e nunca é promovido a sucesso.
 
 ## Segurança das skills existentes

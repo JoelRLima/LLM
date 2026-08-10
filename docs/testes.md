@@ -1,17 +1,15 @@
 # Testes e gates de qualidade
 
+> **STATUS: CURRENT — TEST STRATEGY REFERENCE.** Eval e seu nível de evidência
+> pertencem a [agent/evaluation.md](agent/evaluation.md).
+
 ## Baseline atual
 
-Nota factual: resultados dependem da versao de Python e do sistema operacional.
-A matriz CI suportada possui celulas historicamente vermelhas conhecidas em
-testes de storage/lock/manifesto; os gates focalizados (Ruff, qualidade, mypy,
-lifecycle POSIX e acceptance quando alcancado) devem ser reportados
-separadamente. Este documento nao usa uma execucao local isolada para declarar
-a suite universalmente verde.
+Resultados dependem da versão de Python e do sistema operacional. Uma execução
+local isolada não declara a suíte ou a matriz CI universalmente verde; todo
+relato deve registrar comando, host e resultado realmente observado.
 
-- pytest: executar na matriz suportada; o CI mantém células históricas vermelhas
-  conhecidas em storage/lock/manifesto, enquanto o host local deve registrar a
-  versão do Python e o sistema operacional;
+- pytest: executar na matriz suportada e reportar cada ambiente separadamente;
 - Ruff: repositório limpo;
 - mypy: pacote `agent`, scripts e fachadas da raiz analisados para Linux e
   Windows, sem erros e sem overrides por módulo;
@@ -95,6 +93,12 @@ As seis fixtures em `tests/fixtures/capabilities/` representam analyze,
 generate, modify, repair, review e multitask. O evaluator não aceita uma
 resposta textual convincente sem os efeitos esperados.
 
+O Marco 3 Block A acrescenta um core separado em `agent/evaluation/`: são **9**
+Capability Scenarios curados e **8** Regression Cases. O harness scripted prova
+efeitos e controle determinísticos sobre `AgentApplication`; não é evidência de
+qualidade de modelo real. Block A está GREEN LOCAL, Blocks B/C não foram
+concluídos e Standalone V1 ainda não foi declarada.
+
 ## Runtime, skills e multitarefa
 
 | Teste | Cobertura |
@@ -123,7 +127,7 @@ A suíte preserva a regressão das fases anteriores:
 - `ExecutionGateway`, `PlanExecutor` e `StepExecutor`;
 - fluxo reativo e hierárquico;
 - cost guard, watchdog e cancelamento;
-- file writer, shell e sandbox Python;
+- writer low-level, shell reduzida e executor Python legado;
 - memória, parsers, health check, configuração e CLI/orchestrator.
 
 Os arquivos correspondentes estão nos grupos acima. O mypy descobre todo o

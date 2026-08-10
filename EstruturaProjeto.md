@@ -1,8 +1,9 @@
 # Estrutura e arquitetura do LLM Agent
 
-Este documento descreve o estado atual do repositório. Ele, o README e os guias
-permanentes em `docs/` formam a referência operacional; artefatos temporários de
-análise e roadmap não fazem parte da documentação versionada.
+> **STATUS: CURRENT — SECONDARY CODE MAP.** O
+> [README raiz](README.md) é a entrada de produto e
+> [docs/README.md](docs/README.md) é o índice authoritative de ownership
+> documental. Em conflito, os primary homes indicados naquele índice prevalecem.
 
 ## 1. Objetivo e escopo
 
@@ -58,8 +59,8 @@ arquivo exibido por `llm-agent config path`. As chaves legadas `api_url`,
 `max_tokens`, `timeout` e `ENABLE_GBNF` continuam válidas durante a migração.
 
 `llm-agent run --workspace <diretório> --json <objetivo>` oferece a fronteira
-headless. Ela não consulta stdin: uma ação sem autoridade retorna `blocked`;
-`run --yes` aprova os efeitos que pedirem consentimento somente naquela
+headless. Ela não consulta stdin: uma ação negada ou sem aprovação retorna
+`blocked`; `run --yes` aprova os efeitos que pedirem consentimento somente naquela
 execução. `--home <diretório>` fixa todos os dados da aplicação sob uma raiz
 portátil. Configuração ou estado do antigo checkout só são copiados pelos
 comandos explícitos `config migrate` e `state migrate`; a origem é preservada.
@@ -142,8 +143,9 @@ futuras interfaces devem reutilizar essa fronteira.
 
 Define `ApprovalPort` e as decisões `approved`, `rejected` e `required`.
 `RequireExplicitApproval` é o padrão headless; `AutoApprove` só deve ser
-injetado por uma autoridade explícita, como `run --yes`. Interação de terminal
-pertence exclusivamente ao adapter da CLI.
+injetado por uma escolha explícita da interface, como `run --yes`. Isso fornece
+approval somente para a execução corrente e não cria authority, capability ou
+grant. Interação de terminal pertence exclusivamente ao adapter da CLI.
 
 ### `agent/runtime/`
 
@@ -452,7 +454,9 @@ Limitações explícitas:
 - locks do scheduler são locais ao processo;
 - o lock da aplicação é conservador: após término abrupto, um lock abandonado
   exige inspeção e remoção manual;
-- autorização unificada de extensões externas ainda pertence a uma fase futura;
+- extensions externas exigem catálogo/configuração, grants de aplicação e
+  task authority explícita; a CLI canônica para esse workflow ainda não existe;
+- MCP e sandbox universal de filesystem/rede não são fornecidos;
 - a qualidade da geração ainda depende do modelo escolhido.
 
 ## 11. Documentação relacionada

@@ -1,5 +1,9 @@
 # Gate 2.7b — implementacao e autoauditoria
 
+> **STATUS: CLOSED MILESTONE RECORD.** Baseline, comandos e conclusões abaixo
+> pertencem ao gate encerrado; consulte [security](agent/security.md) para o
+> contrato CURRENT.
+
 ## Estado inicial
 
 - Baseline: `8959378f95acf95992d51207d0eb1d1fddb8860a` em `main`.

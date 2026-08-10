@@ -1,51 +1,21 @@
-# Módulo `agent/` — health
+# Health e diagnósticos
 
-> Parte da documentação técnica do projeto. Veja o [índice](../README.md).
+> **STATUS: CURRENT — PRIMARY HOME.** Operação do comando está em
+> [operacao-standalone.md](../operacao-standalone.md).
 
-## Visão geral
+`llm-agent doctor` executa checks read-only de Python/pacote, paths, workspace,
+configuração, estado persistente e backend configurado. O relatório distingue
+`read_write`, `read_only` e `unavailable`, além de readiness offline.
 
-O pacote `agent/health/` contém componentes de diagnóstico e verificações de
-integridade do runtime.
+Os checks standalone não constroem o `Orchestrator` nem executam uma tarefa.
+Escrever relatório só ocorre quando solicitado por `--write-report`. Checks
+legados de runtime cobrem skills, logs, permissões e diretórios órfãos, mas não
+substituem o diagnóstico do bootstrap de extensions.
 
-Ele é usado pelo comando `llm-agent doctor` para avaliar se a instalação,
-configuração, workspace e memória estão em condições de operação.
+Para extensions, catálogo, configuração, manifest, grants, drift e
+materialização produzem diagnósticos próprios na inicialização. Uma extension
+descoberta pode permanecer indisponível; health/diagnóstico não concede
+authority nem prova que uma task authority a exporá.
 
-## Componentes principais
-
-- `agent/health/core.py`
-  - Define constantes e caminhos essenciais para saúde do projeto.
-  - Lista chaves de configuração obrigatórias, seções esperadas de memória e
-    skills essenciais.
-  - Fornece `ensure_sys_path()` para tornar o repositório importável nas
-    verificações legadas de health.
-
-- `agent/health/standalone.py` e `agent/health/standalone_checks.py`
-  - Implementam verificações read-only que não inicializam o Orchestrator.
-  - Verificam:
-    - esquema de configuração,
-    - integridade da memória JSON/SQLite,
-    - paths de aplicação,
-    - permissões e disponibilidade de disk,
-    - tamanho do estado,
-    - saúde do workspace.
-
-- `agent/health/state_integrity.py`
-  - Contém checagens específicas de integridade de estado persistente.
-  - Detecta corrupção, chaves ausentes e inconsistências estruturais.
-
-## Propriedades do diagnóstico
-
-- O diagnóstico é offline: não constrói modelo nem testa backends.
-- O relatório pode ser gerado em JSON ou outro formato sem gravar nada,
-  exceto quando `--write-report` é usado.
-- Um workspace somente leitura pode ser considerado válido para análise, mas
-  não para alterações.
-- `doctor` distingue `read_write`, `read_only` e `unavailable`.
-
-## Invariantes
-
-- Verificações de saúde não devem executar efeitos.
-- O comando `doctor` não deve alterar estado, exceto quando explicitamente
-  solicitado por `--write-report`.
-- O diagnóstico se concentra em integridade, configuração e compatibilidade,
-  não em qualidade de modelo ou resultados de execução.
+Health não é benchmark de modelo, scanner científico, sandbox probe universal,
+teste de rede abrangente ou garantia de que toda invocation futura terá sucesso.

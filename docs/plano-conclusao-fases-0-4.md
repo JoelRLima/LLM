@@ -1,5 +1,8 @@
 # Plano executável para concluir as fases 0–4
 
+> **STATUS: HISTORICAL RUNBOOK.** Não execute como plano CURRENT. Consulte o
+> [índice técnico](README.md) e os primary homes para o estado vigente.
+
 ## 1. Finalidade
 
 Este documento é a fonte operacional para levar o estado atual do repositório

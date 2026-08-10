@@ -1,8 +1,8 @@
 # Operação standalone
 
-Este guia descreve o comportamento instalado entregue nas fases 0 e 1. A visão
-de longo prazo, incluindo tools externas e extensions, está em
-[plataforma-standalone.md](plataforma-standalone.md).
+> **STATUS: CURRENT — OPERATION GUIDE.** Escopo e limites do produto ficam em
+> [plataforma-standalone.md](plataforma-standalone.md); contratos internos no
+> [índice técnico](README.md).
 
 ## Instalação e primeiro uso
 
@@ -43,11 +43,12 @@ filesystem. `doctor` também não constrói modelo, skills ou orquestrador.
 
 ### Execução headless e aprovação
 
-`run` nunca lê `stdin`. Escritas de `file_writer`/`code_task` e validadores
-executados pela `ShellSkill` passam pela autoridade injetada; a política
+`run` nunca lê `stdin`. O fluxo model-actionable de escrita usa `code_task`;
+`file_writer` permanece low-level/admin e é excluído das views do modelo.
+Efeitos e validadores que exigem consentimento passam por approval; a política
 headless padrão devolve `blocked` e o efeito não ocorre, inclusive para
-propostas de alta confiança. `--yes` concede aprovação a esses pedidos somente
-naquela execução:
+propostas de alta confiança. `--yes` concede aprovação somente naquela execução
+e não cria grants ou authority:
 
 ```powershell
 llm-agent run --workspace C:\projetos\app --json "Revise o código"
@@ -59,7 +60,7 @@ Estados públicos:
 | Status | Significado | `success` |
 | :--- | :--- | :---: |
 | `succeeded` | objetivo concluído e verificado conforme o caso de uso | `true` |
-| `blocked` | efeito preparado, mas falta autoridade ou confirmação | `false` |
+| `blocked` | policy/authority ou aprovação impediu o efeito | `false` |
 | `unverified` | efeito aplicado sem validator disponível | `false` |
 | `cancelled` | cancelamento confirmado | `false` |
 | `failed` | bootstrap, execução, validação ou persistência falhou | `false` |

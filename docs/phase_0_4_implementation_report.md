@@ -1,9 +1,9 @@
 # Relatório Detalhado de Implementação: Fases 0-4
 
-> Estado factual: este relatório descreve o snapshot atual. A existência de
-> uma classe não é, sozinha, evidência de integração concluída. O runbook
-> [plano executável das fases 0–4](plano-conclusao-fases-0-4.md) é a fonte
-> operacional para o que ainda estiver marcado como parcial ou pendente.
+> **STATUS: HISTORICAL REPORT.** Este relatório descreve o snapshot da fase em
+> que foi escrito. A existência de uma classe não era, sozinha, evidência de
+> integração concluída. Use o [índice técnico CURRENT](README.md) para o estado
+> vigente.
 
 ## Objetivo
 

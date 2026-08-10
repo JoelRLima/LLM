@@ -1,77 +1,142 @@
-# Documentação
+# Documentação técnica
 
-Índice técnico curado. Para instalação, veja o [README principal](../README.md),
-para a visão canônica das responsabilidades, [EstruturaProjeto.md](../EstruturaProjeto.md),
-e para os padrões de código, o [guia de contribuição](../CONTRIBUTING.md).
+> **STATUS: CURRENT — DOCUMENTATION HUB.** O [README raiz](../README.md) é a
+> entrada de produto; este arquivo é o mapa authoritative para manutenção.
 
-## Como ler o estado atual
+## Classes documentais
 
-Para entender o runtime atual, siga esta ordem:
+- **CURRENT / PRIMARY HOME**: contrato vigente; existe um único home por
+  conceito.
+- **CURRENT / REFERENCE ou GUIDE**: uso transversal ou operacional; resume e
+  aponta para primary homes.
+- **ADR**: decisão e contexto histórico. Pode ser aceito, substituído ou
+  parcialmente substituído; não é reescrito para fingir o estado atual.
+- **HISTORICAL / CLOSED MILESTONE**: evidência de uma fase encerrada, nunca fonte
+  do contrato CURRENT.
 
-1. [plataforma-standalone.md](plataforma-standalone.md) — escopo e jornadas do assistente;
-2. [arquitetura-execucao.md](arquitetura-execucao.md) — gateway, planner, estado e retomada;
-3. [skills.md](skills.md) — capabilities realmente model-actionable;
-4. [marco-1-safe-execution-closure.md](marco-1-safe-execution-closure.md) — garantias e limites de execução;
-5. [testes.md](testes.md) — evidências locais e gates de qualidade.
+## Primary homes
 
-### Matriz de capabilities
+| Quero entender… | Documento authoritative |
+| --- | --- |
+| contratos core, identidades e lifecycle | [agent/core.md](agent/core.md) |
+| planners, contexto, discovery e replan | [agent/planning.md](agent/planning.md) |
+| `AgentApplication`, executor e consumo de resultados | [agent/orchestration.md](agent/orchestration.md) |
+| authority, grants, approval, eligibility e trust boundaries | [agent/security.md](agent/security.md) |
+| tools, skills e exposição ao modelo | [agent/tools.md](agent/tools.md) |
+| stdio, timeout, processos e diferenças de plataforma | [agent/runtime.md](agent/runtime.md) |
+| provider/modelo e structured output | [agent/llm.md](agent/llm.md) |
+| memória persistente e camada semântica opcional | [agent/memory.md](agent/memory.md) |
+| eval core, Capability/Regression Sets e evidência | [agent/evaluation.md](agent/evaluation.md) |
+| measurement, projeções e relatórios | [agent/reporting.md](agent/reporting.md) |
+| health e diagnósticos | [agent/health.md](agent/health.md) |
+| desenvolvimento de extensions | [guia-extensao.md](guia-extensao.md) |
+| instalação, CLI e paths | [operacao-standalone.md](operacao-standalone.md) |
+| estratégia de testes e quality gates | [testes.md](testes.md) |
 
-| Capability | Estado atual |
-| :--- | :--- |
-| gateway canônico de tools | IMPLEMENTADO |
-| authority, capabilities e approval | IMPLEMENTADO |
-| extensions stdio 1.0 | IMPLEMENTADO |
-| ShellSkill restrita | IMPLEMENTADO |
-| metadados de histórico Git local | IMPLEMENTADO |
-| `git status` e `git diff` model-actionable | REDUZIDO AWAY |
-| shell arbitrário | NÃO FORNECIDO |
-| execução paralela local | IMPLEMENTADO |
-| sandbox forte de filesystem/rede | NÃO FORNECIDA |
+## Matriz CURRENT de capabilities
 
-Os relatórios e planos `phase_0_4_implementation_report.md`,
-`plano-conclusao-fases-0-4.md` e `plano-continuacao-fases-0-4.md` são históricos
-ou runbooks de fases anteriores; não substituem os documentos de estado acima.
-ADRs preservam decisões no contexto em que foram tomadas e não devem ser
-reescritos retroativamente.
+“Implementada” significa que há código; “model-actionable” significa que pode
+aparecer na view do planner/modelo. Em todos os casos, exposição não equivale a
+permissão de executar.
 
-| Documento | Conteúdo |
-| :--- | :--- |
-| [estrutura-diretorios.md](estrutura-diretorios.md) | Árvore de Diretórios do Projeto |
-| [arquivos-raiz.md](arquivos-raiz.md) | Detalhamento dos Arquivos da Raiz (Root Files) |
-| [skills.md](skills.md) | Mapeamento de Ferramentas (Skills) em `agent/skills/` |
-| [testes.md](testes.md) | A Suíte de Testes (tests/) |
-| [guia-extensao.md](guia-extensao.md) | Guia de Extensão e Solução de Problemas (Onde Alterar?) |
-| [arquitetura-execucao.md](arquitetura-execucao.md) | Fluxo canônico, estados, checkpoint e retomada |
-| [modelos-providers.md](modelos-providers.md) | ModelGateway, adapters, capacidades e configuração |
-| [perfil-hardware.md](perfil-hardware.md) | Defaults para GTX 1070/8 GB e operação de baixo consumo |
-| [agente-codigo.md](agente-codigo.md) | Descoberta, análise, ChangeSet, validação e workflows |
-| [multitarefa.md](multitarefa.md) | TaskGraph, isolamento, checkpoint e scheduler de recursos |
-| [legado.md](legado.md) | Fachadas compatíveis, consumidores e condições de retirada |
-| [plataforma-standalone.md](plataforma-standalone.md) | Arquitetura-alvo, invariantes e jornadas do assistente standalone |
-| [operacao-standalone.md](operacao-standalone.md) | Instalação, CLI, paths, configuração, aprovação, migração, lifecycle e gate do wheel |
-| [plano-conclusao-fases-0-4.md](plano-conclusao-fases-0-4.md) | Runbook executável, tarefas, dependências e critérios para concluir as fases 0–4 |
-| [plano-continuacao-fases-0-4.md](plano-continuacao-fases-0-4.md) | Continuação focada somente nas pendências confirmadas das fases 0–4 |
-| [adr/0001-limites-do-pacote.md](adr/0001-limites-do-pacote.md) | Decisão sobre pacote, interfaces e aliases da raiz |
-| [adr/0002-visao-do-assistente-standalone.md](adr/0002-visao-do-assistente-standalone.md) | Visão, vocabulário, trust model, fronteiras e definição verificável da v1 |
-| [adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md](adr/0003-bootstrap-paths-e-ciclo-de-vida-standalone.md) | Decisão sobre composição, paths, configuração, workspace, migração e ciclo de vida standalone |
-| [adr/0004-invocation-id-protocolo-stdio-1-0.md](adr/0004-invocation-id-protocolo-stdio-1-0.md) | `invocation_id` obrigatório no protocolo stdio 1.0, framing e respostas tardias |
-| [adr/0005-launcher-interno-contencao-stdio-windows.md](adr/0005-launcher-interno-contencao-stdio-windows.md) | launcher interno Windows-only, associação ao Job antes da extension e status privado |
-| [adr/0013-fronteira-canonica-authority-approval-invocacao.md](adr/0013-fronteira-canonica-authority-approval-invocacao.md) | fronteira canÃ´nica de authority, approval e lifecycle de invocation |
-| [gate-2.7b-authority-invocation.md](gate-2.7b-authority-invocation.md) | authority, approval e lifecycle de invocation |
-| [marco-1-safe-execution-closure.md](marco-1-safe-execution-closure.md) | garantias de execucao, terminalidade, stdio e shell do Marco 1 |
-| [gate-2.7b-self-review.md](gate-2.7b-self-review.md) | implementacao, autoauditoria e evidencias do Gate 2.7b |
-| [agent/core.md](agent/core.md) | Arquivos de `agent/` |
-| [agent/llm.md](agent/llm.md) | Arquivos de `agent/llm` |
-| [agent/memory.md](agent/memory.md) | Arquivos de `agent/memory` |
-| [agent/planning.md](agent/planning.md) | Arquivos de `agent/planning` |
-| [agent/reporting.md](agent/reporting.md) | Arquivos de `agent/reporting` |
-| [agent/security.md](agent/security.md) | Arquivos de `agent/security` |
-| [agent/orchestration.md](agent/orchestration.md) | Arquivos de `agent/orchestration` |
-| [agent/tools.md](agent/tools.md) | Arquivos de `agent/tools` |
-| [agent/runtime.md](agent/runtime.md) | Arquivos de `agent/runtime` |
-| [agent/evaluation.md](agent/evaluation.md) | Arquivos de `agent/evaluation` |
-| [agent/health.md](agent/health.md) | Arquivos de `agent/health` |
+| Capability | Implementada? | Model-actionable? | Exposure / boundary | Primary docs |
+| --- | --- | --- | --- | --- |
+| Read | sim | sim | workspace; persona/view e gateway | [tools](agent/tools.md) |
+| Search/list | sim | sim | busca/listagem confinada ao workspace | [tools](agent/tools.md) |
+| Modify + validate | sim | sim | `code_task` → `ChangeSet` → `ProjectValidator` | [tools](agent/tools.md), [agente de código](agente-codigo.md) |
+| Low-level writer | sim | **não** | `file_writer`; admin/legado, excluído das views | [tools](agent/tools.md) |
+| Shell | sim, reduzida | sim, condicional | somente `ruff check`, `git log`, `tree`; sem shell | [tools](agent/tools.md) |
+| Git | sim, reduzida | sim via skills permitidas | somente histórico local (`log`); status/diff model-actionable removidos | [tools](agent/tools.md) |
+| Ruff | sim | sim via ShellSkill | somente `ruff check`; validação, sem `--fix`/config arbitrária | [tools](agent/tools.md) |
+| External stdio | sim | condicional | catálogo + workspace grants + task authority + gateway | [tools](agent/tools.md), [runtime](agent/runtime.md) |
+| Memory | sim | sim, conforme persona/fluxo | persistente por workspace; sem authority; semântica opcional | [memory](agent/memory.md) |
+| MCP | **não fornecido** | não | nenhuma integração MCP no repo | [tools](agent/tools.md) |
+| Web | sim (`web_search`) | sim para researcher | rede sujeita a policy/approval; não é browser/MCP | [tools](agent/tools.md) |
 
----
+Não há arbitrary shell, package install model-actionable, sandbox universal de
+filesystem/rede nem garantia de execução de qualquer extension descoberta.
 
-Para o estado atual, use os guias acima, o README e `EstruturaProjeto.md`.
+## Fluxo arquitetural
+
+[arquitetura-execucao.md](arquitetura-execucao.md) é a visão macro. Os detalhes
+pertencem aos primary homes. Para extensions, o caminho CURRENT é:
+
+```text
+catalog/config → ApplicationExtensionBootstrap → planner visibility
+→ task authority → ToolInvocationGateway → stdio adapter
+→ external process → ToolResult
+```
+O planner orienta; o gateway aplica. Binding e `active_skills` são eligibility
+estritamente redutiva, não fontes de authority. Veja o
+[ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+
+## Guias e referências CURRENT
+
+| Documento | Responsabilidade |
+| --- | --- |
+| [arquitetura-execucao.md](arquitetura-execucao.md) | overview do fluxo e navegação para contratos |
+| [plataforma-standalone.md](plataforma-standalone.md) | escopo, jornadas e limites do produto |
+| [operacao-standalone.md](operacao-standalone.md) | instalação, CLI, paths, config e migração |
+| [skills.md](skills.md) | referência dos adapters builtin |
+| [agente-codigo.md](agente-codigo.md) | domínio de código e ChangeSet/validation |
+| [multitarefa.md](multitarefa.md) | TaskGraph e scheduler local |
+| [modelos-providers.md](modelos-providers.md) | configuração operacional de providers |
+| [guia-extensao.md](guia-extensao.md) | localização de mudanças e workflow de extension |
+| [testes.md](testes.md) | pirâmide de testes e gates |
+| [estrutura-diretorios.md](estrutura-diretorios.md) | árvore lógica |
+| [arquivos-raiz.md](arquivos-raiz.md) | fachadas e arquivos da raiz |
+| [perfil-hardware.md](perfil-hardware.md) | profile de ambiente limitado, não contrato universal |
+| [legado.md](legado.md) | inventário CURRENT de compatibilidade/deprecação |
+| [EstruturaProjeto.md](../EstruturaProjeto.md) | mapa secundário do código; este índice prevalece para ownership documental |
+
+## ADRs
+
+Os [ADRs 0001–0012](adr/) registram pacote, visão standalone, bootstrap/paths,
+stdio/Windows, catálogo/configuração/bootstrap de extensions e contexto/views
+de planning. O [ADR 0013](adr/0013-fronteira-canonica-authority-approval-invocacao.md)
+permanece aceito salvo sua ordem total de guards, parcialmente substituída pelo
+[ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+
+## Registros históricos
+
+Estes arquivos preservam evidência e planos de fases anteriores; consulte os
+primary homes para comportamento vigente:
+
+- [gate-2.7b-authority-invocation.md](gate-2.7b-authority-invocation.md) — closed milestone;
+- [gate-2.7b-self-review.md](gate-2.7b-self-review.md) — closed milestone;
+- [marco-1-safe-execution-closure.md](marco-1-safe-execution-closure.md) — closed milestone;
+- [phase_0_4_implementation_report.md](phase_0_4_implementation_report.md) — historical report;
+- [plano-conclusao-fases-0-4.md](plano-conclusao-fases-0-4.md) — historical runbook;
+- [plano-continuacao-fases-0-4.md](plano-continuacao-fases-0-4.md) — historical runbook.
+
+`legado.md` não está nessa classe: ele é um inventário CURRENT de aliases e
+condições de retirada.
+
+## Routing de atualização
+
+| Se alterar… | Atualize… |
+| --- | --- |
+| contratos/identidades/lifecycle core | `agent/core.md` |
+| semantics de planning/discovery/replan | `agent/planning.md` |
+| composition/executor/result consumption | `agent/orchestration.md` |
+| authority/approval/eligibility/trust boundary | `agent/security.md`; ADR somente se houver nova decisão durável |
+| capability ou exposição de tool | `agent/tools.md`; esta matriz se a linha mudar |
+| subprocess/stdio/timeout/cancelamento | `agent/runtime.md` |
+| provider/model contract | `agent/llm.md`; `modelos-providers.md` se mudar uso/config |
+| memória | `agent/memory.md` |
+| eval core/sets/grading | `agent/evaluation.md`; `testes.md` se a estratégia transversal mudar |
+| measurement/report/export | `agent/reporting.md` |
+| extension developer/admin workflow | `guia-extensao.md` |
+| install/startup/CLI/paths | `operacao-standalone.md` e, se afetar escopo, `plataforma-standalone.md` |
+| TaskGraph/scheduler | `multitarefa.md` e `agent/planning.md` |
+| layout | `estrutura-diretorios.md`; `arquivos-raiz.md` para fachadas |
+
+## Estado de maturidade
+
+```text
+Marcos 1 e 2 = CLOSED
+Marco 3 Block A = GREEN LOCAL
+Marco 3 Block B = NOT COMPLETED
+Marco 3 Block C = NOT COMPLETED
+Standalone V1 = NOT YET DECLARED
+```
