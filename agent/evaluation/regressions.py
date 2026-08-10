@@ -40,8 +40,8 @@ CURATED_REGRESSION_SET: tuple[RegressionCase, ...] = (
     RegressionCase(
         "writer-validation-bypass",
         "R-WRITER",
-        "tests/unit/code/test_coding_workflows.py::test_code_task_auto_approval_applies_high_confidence_write",
-        "supported modify path remains changeset/validation based",
+        "tests/integration/test_standalone_application.py::test_model_planned_file_writer_is_excluded_with_auto_approval_and_no_mutation",
+        "file_writer is excluded from the model view even with approval available, without mutation",
     ),
     RegressionCase(
         "git-remerge-denial",

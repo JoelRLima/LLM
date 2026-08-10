@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent.application import AgentApplication
+from agent.approval import AutoApprove
 from agent.memory.memory import MemoryLoadError
 from agent.planning.step_policies import StepPolicies
 from agent.runtime.config_errors import ConfigNotFound
@@ -478,9 +479,8 @@ def test_process_stdout_capture_serializes_concurrent_applications(tmp_path: Pat
     assert maximum_active == 1
 
 
-def test_headless_write_blocks_without_stdin_and_propagates_status(
+def test_model_planned_file_writer_is_excluded_with_auto_approval_and_no_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = _initialized_paths(tmp_path)
     workspace = tmp_path / "workspace"
@@ -494,18 +494,20 @@ def test_headless_write_blocks_without_stdin_and_propagates_status(
         paths=paths,
         workspace=workspace,
         gateway=gateway,
+        approval_policy=AutoApprove(),
         configure_logging=False,
     )
     try:
-        def forbidden_input(*values, **options):
-            raise AssertionError(
-                f"headless tentou acessar stdin: {values!r} {options!r}"
-            )
-
-        monkeypatch.setattr("builtins.input", forbidden_input)
-
         result = application.run("escreva headless.txt")
+        planning_view = application.orchestrator.get_planning_view("linear")
 
+        assert application.orchestrator.current_persona == "coder"
+        assert "code_task" in application.orchestrator.active_skills
+        assert "file_writer" not in application.orchestrator.active_skills
+        assert planning_view is not None
+        assert "code_task" in planning_view.presented_names
+        assert "file_writer" not in planning_view.presented_names
+        assert application.orchestrator.agent_state.tool_history == []
         assert result.status == "blocked"
         assert result.success is False
         assert not (workspace / "headless.txt").exists()
