@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import cast
 
@@ -50,6 +51,16 @@ def _run_cli(args: list[str], capsys: pytest.CaptureFixture[str]) -> dict[str, o
     return cast(dict[str, object], json.loads(captured.out))
 
 
+def _run_cli_failure(args: list[str], capsys: pytest.CaptureFixture[str]) -> int:
+    code = cli.main(args)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    payload = json.loads(captured.out)
+    assert payload["status"] == "failed"
+    assert payload["success"] is False
+    return code
+
+
 def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -64,7 +75,10 @@ def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
         ["extensions", "register", str(manifest), *common], capsys
     )
     assert registered["extension_id"] == "demo.extension"
-    assert (home / "data" / "extensions" / "catalog.json").is_file()
+    catalog_path = home / "data" / "extensions" / "catalog.json"
+    assert catalog_path.is_file()
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert catalog["extensions"]["demo.extension"]["manifest_path"] == manifest.as_posix()
     assert not (home / "data" / "extensions" / "registry.json").exists()
 
     _run_cli(["extensions", "enable", "demo.extension", *common], capsys)
@@ -93,6 +107,100 @@ def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
     _run_cli(["extensions", "disable", "demo.extension", *common], capsys)
     inspected = _run_cli(["extensions", "inspect", *common], capsys)
     assert inspected["extensions"][0]["activation_status"] == "disabled"  # type: ignore[index]
+
+
+def test_cli_rejects_relative_manifest_without_interpreting_cwd(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _manifest(tmp_path / "manifest.json")
+    monkeypatch.chdir(tmp_path)
+
+    code = _run_cli_failure(
+        [
+            "extensions",
+            "register",
+            "manifest.json",
+            "--home",
+            str(home),
+            "--workspace",
+            str(workspace),
+            "--json",
+        ],
+        capsys,
+    )
+
+    assert code != 0
+    assert not (home / "data" / "extensions" / "catalog.json").exists()
+
+
+def test_cli_rejects_home_and_dotdot_without_silent_normalization(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manifest = tmp_path / "manifest.json"
+    _manifest(manifest)
+    common = ["--home", str(home), "--workspace", str(workspace), "--json"]
+
+    expanded = False
+
+    original_expanduser = Path.expanduser
+
+    def track_expanduser(path: Path) -> Path:
+        nonlocal expanded
+        if str(path).startswith("~"):
+            expanded = True
+        return original_expanduser(path)
+
+    monkeypatch.setattr(Path, "expanduser", track_expanduser)
+    assert _run_cli_failure(
+        ["extensions", "register", "~/manifest.json", *common], capsys
+    ) != 0
+    assert expanded is False
+    lexical_dotdot = tmp_path / "nested" / ".." / "manifest.json"
+    assert _run_cli_failure(
+        ["extensions", "register", str(lexical_dotdot), *common], capsys
+    ) != 0
+    assert not (home / "data" / "extensions" / "catalog.json").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink privilege varies on Windows")
+def test_cli_preserves_absolute_symlink_manifest_identity(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    real_dir = tmp_path / "real"
+    alias_dir = tmp_path / "alias"
+    real_dir.mkdir()
+    real_manifest = real_dir / "manifest.json"
+    _manifest(real_manifest)
+    alias_dir.symlink_to(real_dir, target_is_directory=True)
+    alias_manifest = alias_dir / "manifest.json"
+
+    _run_cli(
+        [
+            "extensions",
+            "register",
+            str(alias_manifest),
+            "--home",
+            str(home),
+            "--workspace",
+            str(workspace),
+            "--json",
+        ],
+        capsys,
+    )
+
+    catalog = json.loads(
+        (home / "data" / "extensions" / "catalog.json").read_text(encoding="utf-8")
+    )
+    assert catalog["extensions"]["demo.extension"]["manifest_path"] == alias_manifest.as_posix()
 
 
 def test_product_task_authority_is_bound_to_current_application_snapshot(

@@ -248,6 +248,11 @@ llm-agent extensions grant demo.extension process --home C:\app --workspace C:\p
 llm-agent extensions inspect --json --home C:\app --workspace C:\projeto
 ```
 
+Na CLI CURRENT, `extensions register MANIFEST` exige uma referência absoluta
+lexical válida. A CLI não usa o `cwd` como base, não expande `~` nem normaliza
+`..` ou dereferencia um alias de symlink antes do serviço; a referência lexical
+aceita é a identidade persistida no catálogo.
+
 Cada comando `extensions grant` concede uma capability persistente no workspace;
 conceda cada capability declarada pelo manifest separadamente, lembrando que uma
 extension stdio sempre exige `process` (e `read` somente quando declarado). Isso

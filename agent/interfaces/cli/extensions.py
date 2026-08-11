@@ -127,7 +127,7 @@ def run_extensions(
     json_output = bool(getattr(args, "json_output", False))
 
     if command == "register":
-        result = catalog.add(Path(args.manifest).expanduser().resolve())
+        result = catalog.add(args.manifest)
         entry = result.entry
         assert entry is not None
         _print_extension_payload(
