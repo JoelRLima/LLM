@@ -25,7 +25,7 @@ faz uma requisição ao backend.
 
 ```text
 llm-agent [chat]
-llm-agent run [--json] [--yes] OBJETIVO
+llm-agent run [--task-authority CAPABILITY]... [--json] [--yes] OBJETIVO
 llm-agent doctor [--json] [--write-report]
 llm-agent config init
 llm-agent config path
@@ -240,8 +240,11 @@ O fluxo de produto usa o catalogo moderno e a configuracao por workspace:
 llm-agent extensions register C:\ext\manifest.json --home C:\app --workspace C:\projeto
 llm-agent extensions enable demo.extension --home C:\app --workspace C:\projeto
 llm-agent extensions grant demo.extension read --home C:\app --workspace C:\projeto
+llm-agent extensions grant demo.extension process --home C:\app --workspace C:\projeto
 llm-agent extensions inspect --json --home C:\app --workspace C:\projeto
 ```
+
+Cada comando `extensions grant` concede uma capability persistente no workspace; para uma extension stdio, conceda `read` e `process` separadamente. Isso nao cria task authority nem approval.
 
 Tambem estao disponiveis `extensions list`, `extensions disable` e
 `extensions revoke ID CAPABILITY`. O estado persistente fica no catalogo
