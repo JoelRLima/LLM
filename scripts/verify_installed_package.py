@@ -56,6 +56,7 @@ from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 workspace = Path(sys.argv[1]).resolve()
 sentinel = Path(sys.argv[2]).resolve()
 scratch_dir = Path(sys.argv[3]).resolve()
+stdio_process_required = False
 sample = workspace / "sample.py"
 sentinel_before = sentinel.read_bytes()
 sample_before = sample.read_bytes()
@@ -347,6 +348,7 @@ def run_modify_journeys(app_home, workspace):
 
 
 def run_extension_journeys(base_dir):
+    global stdio_process_required
     extension_dir = base_dir / "external-stdio-extension"
     extension_dir.mkdir(parents=True, exist_ok=True)
     marker = extension_dir / "spawned.txt"
@@ -376,14 +378,36 @@ def run_extension_journeys(base_dir):
             "name": "demo_tool",
             "description": "Extensao externa stdio deterministica.",
             "schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
-            "capabilities": ["read"],
+            "capabilities": ["read", "process"],
         }],
     }), encoding="utf-8")
+    invalid_manifest = base_dir / "missing-process-manifest.json"
+    invalid_manifest.write_text(json.dumps({
+        "id": "missing.process.extension",
+        "version": "1.0.0",
+        "protocol_version": "1.0",
+        "transport": "stdio",
+        "entrypoint": ["${python}", "${extension_dir}/tool.py"],
+        "timeout_seconds": 5,
+        "tools": [{"name": "missing_process_tool", "schema": {}, "capabilities": ["read"]}],
+    }), encoding="utf-8")
+    invalid_catalog = ExtensionCatalogService(
+        ExtensionCatalogStorage(base_dir / "missing-process-catalog.json")
+    )
+    try:
+        invalid_catalog.add(invalid_manifest)
+    except RuntimeError:
+        stdio_process_required = True
+    else:
+        raise AssertionError("manifest stdio sem process foi aceito")
+    if marker.exists():
+        raise AssertionError("validacao de manifest stdio iniciou processo")
+
     measurements = []
     scenarios = (
-        ("d1_success", "SLICE_D1: use a extensao externa e informe D1_EXTERNAL_EVIDENCE.", TaskAuthoritySnapshot(frozenset({"read"}))),
-        ("d3_denied", "SLICE_D3: use a extensao externa sem autoridade suficiente.", TaskAuthoritySnapshot(frozenset({"read"}), runtime_identity=RuntimeSnapshotIdentity("wrong-runtime", "workspace"))),
-        ("d4_failure", "SLICE_D4: use a extensao externa e reporte D4_EXTERNAL_FAILURE.", TaskAuthoritySnapshot(frozenset({"read"}))),
+        ("d1_success", "SLICE_D1: use a extensao externa e informe D1_EXTERNAL_EVIDENCE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
+        ("d3_denied", "SLICE_D3: use a extensao externa sem autoridade suficiente.", TaskAuthoritySnapshot(frozenset({"read", "process"}), runtime_identity=RuntimeSnapshotIdentity("wrong-runtime", "workspace"))),
+        ("d4_failure", "SLICE_D4: use a extensao externa e reporte D4_EXTERNAL_FAILURE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
     )
     for name, objective, authority in scenarios:
         scenario_home = base_dir / f"app-{name}"
@@ -398,10 +422,11 @@ def run_extension_journeys(base_dir):
         service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
         service.enable("installed.demo.extension")
         service.grant("installed.demo.extension", "read")
+        service.grant("installed.demo.extension", "process")
         marker.unlink(missing_ok=True)
         started_at = time.monotonic()
         gateway = DeterministicJourneyGateway(objective)
-        with AgentApplication.create(paths=paths, workspace=scenario_workspace, gateway=gateway, task_authority=authority, configure_logging=False) as application:
+        with AgentApplication.create(paths=paths, workspace=scenario_workspace, gateway=gateway, task_authority=authority, approval_policy=AutoApprove(), configure_logging=False) as application:
             application.orchestrator._route_persona(objective)
             planning_view = application.orchestrator.get_planning_view("linear")
             if planning_view is None or "demo_tool" not in planning_view.presented_names:
@@ -524,6 +549,7 @@ print(
     json.dumps(
         {
             "diagnostic_codes": codes,
+            "stdio_process_required": stdio_process_required,
             "escape_denied": True,
             "process_escape_denied": sorted(escape_attempts),
             "slice_a": slice_measurements,
@@ -576,7 +602,7 @@ manifest.write_text(
             "transport": "stdio",
             "entrypoint": ["${python}", "${extension_dir}/tool.py"],
             "timeout_seconds": 5,
-            "tools": [{"name": "wheel_tool", "schema": {}, "capabilities": ["read"]}],
+            "tools": [{"name": "wheel_tool", "schema": {}, "capabilities": ["read", "process"]}],
         }
     ),
     encoding="utf-8",
@@ -589,6 +615,7 @@ workspace_id = WorkspaceContext.create(workspace).workspace_id
 service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
 service.enable("wheel.extension")
 service.grant("wheel.extension", "read")
+service.grant("wheel.extension", "process")
 process_calls = []
 
 
@@ -1037,6 +1064,8 @@ def _verify_installed_probe(
         raise VerificationError("Probe instalado não reportou status=ok.")
     if payload.get("escape_denied") is not True:
         raise VerificationError("Probe instalado não confirmou confinamento ao workspace.")
+    if payload.get("stdio_process_required") is not True:
+        raise VerificationError("Probe instalado aceitou manifest stdio sem capability process.")
     codes = payload.get("diagnostic_codes")
     if not isinstance(codes, list) or "PYSEC001" not in codes:
         raise VerificationError("Probe instalado não confirmou análise de código real.")

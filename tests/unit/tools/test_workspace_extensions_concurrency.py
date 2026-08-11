@@ -90,7 +90,7 @@ def _manifest(path: Path) -> None:
                 "transport": "stdio",
                 "entrypoint": ["python", "demo.py"],
                 "timeout_seconds": 5,
-                "tools": [{"name": "tool", "schema": {}, "capabilities": ["read"]}],
+                "tools": [{"name": "tool", "schema": {}, "capabilities": ["read", "process"]}],
             }
         ),
         encoding="utf-8",

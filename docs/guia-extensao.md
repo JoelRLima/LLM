@@ -67,11 +67,11 @@ grants explícitos do workspace; `ApplicationExtensionBootstrap` resolve e
 materializa descriptors/adapters para a application. A camada chamadora ainda
 precisa fornecer `TaskAuthoritySnapshot` para a invocation model-actionable.
 
-`llm-agent tools` ainda lê e escreve `extensions/registry.json` por meio de
-`ExtensionRegistry`. Essa CLI é uma superfície legada e **não** configura o
-catálogo/workspace/bootstrap CURRENT. Até existir uma CLI canônica, use os
-services em integração administrativa/testes; não prometa ao usuário que
-`tools add/enable` torna uma extension visível ao planner.
+`llm-agent tools` le e escreve apenas `extensions/registry.json` por meio de
+`ExtensionRegistry`. Essa CLI e uma superficie legada de compatibilidade e nao
+configura o catalogo/workspace/bootstrap CURRENT. Para administracao canonica,
+use `llm-agent extensions register|enable|grant|inspect`; `tools add/enable` nao
+torna uma extension visivel ao planner.
 
 O manifest deve declarar `id`, `version`, `protocol_version: "1.0"`,
 `transport: "stdio"`, um `entrypoint` como lista de strings, `tools` como lista
@@ -80,6 +80,9 @@ inválidos não são convertidos silenciosamente.
 Campos não documentados no objeto raiz ou nas declarações de tools são
 rejeitados. Campos internos de `schema` seguem JSON Schema e não são tratados
 como campos do manifest.
+Cada tool com `transport: "stdio"` deve declarar a capability `process`;
+o parser, catalogo, materializacao e adapter rejeitam o manifest antes de spawn
+quando essa capability falta.
 
 Para cada invocação, leia o único request JSONL de stdin e escreva exatamente
 uma linha JSON não vazia em stdout; linhas vazias adicionais são ignoradas. A resposta deve conter o mesmo
@@ -200,12 +203,13 @@ Para uma tarefa headless, a authority deve ser fornecida explicitamente fora
 do modelo, por exemplo:
 
 ```powershell
-llm-agent run --workspace C:\projeto --task-authority read --yes "Use a extension"
+llm-agent run --workspace C:\projeto --task-authority read --task-authority process --yes "Use a extension"
 ```
 
-`--task-authority` cria um snapshot limitado a esta execucao e ligado ao
-runtime atual. `--yes` somente aprova efeitos; nao cria authority. Sem a flag,
-extensions permanecem inelegiveis e o gateway nao inicia o processo.
+`--task-authority` cria um snapshot capability-wide, limitado a esta execucao
+e ligado ao runtime atual; nao altera grants persistentes nem a persona. `--yes`
+somente aprova efeitos; nao cria authority. Sem a flag, extensions permanecem
+inelegiveis e o gateway nao inicia o processo.
 
 ## Gates antes de concluir
 

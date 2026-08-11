@@ -24,6 +24,7 @@ from agent.tools.extension_runtime import (
     ExtensionRuntimeMaterializer,
 )
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from agent.tools.stdio_adapter import StdioToolAdapter
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.workspace_extensions_resolver import resolve_workspace_extensions
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
@@ -73,6 +74,25 @@ class WorkspaceToolRegistryComposer:
         rejection_reasons: dict[str, set[str]] = {}
         for binding in bindings:
             names = [descriptor.name for descriptor in binding.descriptors]
+            transport = binding.metadata.get("transport")
+            if (transport == "stdio" or isinstance(binding.adapter, StdioToolAdapter)) and any(
+                "process" not in descriptor.capabilities for descriptor in binding.descriptors
+            ):
+                rejection_reasons.setdefault(binding.extension_id, set()).add("stdio_process")
+                invalid_descriptor = next(
+                    descriptor
+                    for descriptor in binding.descriptors
+                    if "process" not in descriptor.capabilities
+                )
+                diagnostics.append(
+                    ExtensionRuntimeDiagnostic(
+                        extension_id=binding.extension_id,
+                        code="EXTENSION_RUNTIME_DESCRIPTOR_INVALID",
+                        severity="error",
+                        safe_message="Tool stdio sem capability process foi rejeitada.",
+                        tool_name=invalid_descriptor.name,
+                    )
+                )
             if len(names) != len(set(names)):
                 rejection_reasons.setdefault(binding.extension_id, set()).add("internal")
             if set(names) & builtin_names:

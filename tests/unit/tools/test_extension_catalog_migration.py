@@ -34,7 +34,7 @@ def _manifest(extension_id: str) -> dict[str, object]:
         "transport": "stdio",
         "entrypoint": ["python", "demo.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
     }
 
 

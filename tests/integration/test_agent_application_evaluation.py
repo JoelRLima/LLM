@@ -197,7 +197,7 @@ def _prepare_extension(objective: str, workspace: Path, paths: Any) -> None:
                     "name": "demo_tool",
                     "description": "deterministic eval extension",
                     "schema": {"type": "object", "properties": {"text": {"type": "string"}}},
-                    "capabilities": ["read"],
+                    "capabilities": ["read", "process"],
                 }],
             }
         ),
@@ -209,6 +209,7 @@ def _prepare_extension(objective: str, workspace: Path, paths: Any) -> None:
     service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
     service.enable("eval.extension")
     service.grant("eval.extension", "read")
+    service.grant("eval.extension", "process")
 
 
 def test_curated_extension_uses_real_stdio_process_and_gateway(tmp_path: Path) -> None:
@@ -216,7 +217,7 @@ def test_curated_extension_uses_real_stdio_process_and_gateway(tmp_path: Path) -
     executor = AgentApplicationScenarioExecutor(
         lambda objective, workspace: JourneyGateway(objective),
         approval_policy=AutoApprove(),
-        task_authority=TaskAuthoritySnapshot(frozenset({"read"})),
+        task_authority=TaskAuthoritySnapshot(frozenset({"read", "process"})),
         prepare=_prepare_extension,
     )
 

@@ -52,7 +52,7 @@ def test_observation_reads_manifest_once_and_extracts_safe_capabilities(tmp_path
         "entrypoint": ["python", "demo.py"],
         "timeout_seconds": 5,
         "tools": [
-            {"name": "a", "schema": {}, "capabilities": ["write", "read"]},
+            {"name": "a", "schema": {}, "capabilities": ["write", "read", "process"]},
             {"name": "b", "schema": {}, "capabilities": ["read", "process"]},
         ],
     }

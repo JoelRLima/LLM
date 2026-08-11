@@ -252,11 +252,12 @@ Para executar uma tarefa com uma extension, forneca authority de tarefa de
 forma explicita e independente do modelo:
 
 ```powershell
-llm-agent run --workspace C:\projeto --task-authority read --yes --json "Execute a ferramenta"
+llm-agent run --workspace C:\projeto --task-authority read --task-authority process --yes --json "Execute a ferramenta"
 ```
 
-Repita `--task-authority` para capabilities adicionais. A flag `--yes` e
-somente approval e nao substitui authority. A ausencia ou insuficiencia de
+Repita `--task-authority` para capabilities adicionais; o snapshot tem escopo
+de toda a tarefa e nao direciona nem persiste grants ou persona. A flag `--yes`
+e somente approval e nao substitui authority. A ausencia ou insuficiencia de
 authority termina sem iniciar o processo stdio.
 
 ## Verificação do artefato

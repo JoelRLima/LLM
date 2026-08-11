@@ -4,7 +4,7 @@
 > authority, grants, approval, eligibility e enforcement. ADRs registram por
 > que as decisões foram tomadas; em especial, consulte os
 > [ADRs 0013](../adr/0013-fronteira-canonica-authority-approval-invocacao.md) e
-> [0014](../adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+> [0014](../adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md). A regra de transporte stdio esta no [ADR 0015](../adr/0015-stdio-requer-process.md).
 
 ## Invariantes
 
@@ -41,6 +41,8 @@ builtins e não exige grants de extension. Eles continuam sujeitos à
 eligibility, capabilities de persona, schema e approval de efeitos. Extensions
 exigem application grant, `TaskAuthoritySnapshot` e todas as capabilities em
 ambos os snapshots.
+Para `transport: "stdio"`, `process` e obrigatoria e validada antes de
+materializacao, authority/approval ou spawn.
 
 ## Pipeline CURRENT
 

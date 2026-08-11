@@ -200,7 +200,7 @@ def test_installed_probe_covers_slice_b_modify_validate_journey() -> None:
 
 def test_installed_probe_covers_external_stdio_slice_d() -> None:
     assert "run_extension_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_D1", "SLICE_D3", "SLICE_D4", "demo_tool", "TaskAuthoritySnapshot"):
+    for marker in ("SLICE_D1", "SLICE_D3", "SLICE_D4", "demo_tool", "TaskAuthoritySnapshot", "stdio_process_required"):
         assert marker in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_d_payload)
     assert 'payload.get("slice_d")' in source

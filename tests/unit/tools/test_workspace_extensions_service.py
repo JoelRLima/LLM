@@ -22,6 +22,9 @@ from agent.tools.workspace_extensions_storage import WorkspaceExtensionsStorage
 
 
 def _manifest(extension_id: str = "demo.extension", capabilities: list[str] | None = None) -> dict:
+    declared = list(capabilities or [])
+    if "process" not in declared:
+        declared.append("process")
     return {
         "id": extension_id,
         "version": "1.0.0",
@@ -29,7 +32,7 @@ def _manifest(extension_id: str = "demo.extension", capabilities: list[str] | No
         "transport": "stdio",
         "entrypoint": ["python", "demo.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": capabilities or []}],
+        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": declared}],
     }
 
 
@@ -70,10 +73,11 @@ def test_disable_preserves_grants_and_reenable_restores_readiness(tmp_path: Path
     _, _, service = _services(tmp_path, capabilities=["read"])
     service.enable("demo.extension")
     service.grant("demo.extension", "read")
+    service.grant("demo.extension", "process")
     assert service.disable("demo.extension").changed is True
     disabled = service.resolve().get("demo.extension")
     assert disabled.activation_status == "disabled"
-    assert disabled.configured_grants == ("read",)
+    assert disabled.configured_grants == ("process", "read")
     assert service.enable("demo.extension").changed is True
     assert service.resolve().get("demo.extension").activation_status == "ready"
 
@@ -116,7 +120,7 @@ def test_manifest_drift_blocks_grant_but_preserves_workspace_state(tmp_path: Pat
     manifest, _, service = _services(tmp_path, capabilities=["read"])
     service.enable("demo.extension")
     original = service.load()
-    _write(manifest, _manifest(capabilities=["read", "process"]))
+    _write(manifest, _manifest(capabilities=["read", "process", "network"]))
     assert service.resolve().get("demo.extension").activation_status == "blocked"
     with pytest.raises(WorkspaceManifestBlockedError):
         service.grant("demo.extension", "process")

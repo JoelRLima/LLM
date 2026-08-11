@@ -219,6 +219,7 @@ class ExtensionRuntimeMaterializer:
                 metadata={
                     "protocol_version": parsed.protocol_version,
                     "manifest_version": parsed.version,
+                    "transport": parsed.transport,
                     "cwd": str(self.workspace_root),
                 },
             ),

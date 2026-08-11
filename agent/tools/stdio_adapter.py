@@ -27,6 +27,7 @@ from agent.tools.extension_manifest_parser import (
     ManifestProtocolError,
     ManifestStructureError,
     load_extension_manifest_bytes,
+    validate_transport_capabilities,
 )
 from agent.tools.stdio_process import ProcessFailure, run_stdio_process
 
@@ -89,6 +90,14 @@ class StdioToolAdapter(ToolAdapter):
     __slots__ = ("_manifest_snapshot", "_cwd")
 
     def __init__(self, manifest: ExtensionManifest, *, cwd: str | Path | None = None) -> None:
+        for tool in manifest.tools:
+            if not isinstance(tool, Mapping):
+                raise TypeError("tools do adapter devem ser objetos JSON")
+            validate_transport_capabilities(
+                manifest.transport,
+                tool.get("capabilities", []),
+                tool_name=str(tool.get("name", "tool")),
+            )
         copied_tools = tuple(freeze_json_like(tool) for tool in manifest.tools)
         if not all(isinstance(tool, FrozenJsonObject) for tool in copied_tools):
             raise TypeError("tools do adapter devem ser objetos JSON")
@@ -248,6 +257,11 @@ class StdioToolAdapter(ToolAdapter):
             for capability in capabilities
         ):
             raise ValueError(f"Capabilities invalidas para tool '{name}'")
+        validate_transport_capabilities(
+            self._manifest_snapshot.transport,
+            capabilities,
+            tool_name=name,
+        )
         cost = tool.get("cost", 5)
         if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
             raise ValueError(f"Custo invalido para tool '{name}'")

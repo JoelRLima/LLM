@@ -222,7 +222,7 @@ def test_load_extension_manifest_and_build_descriptors(tmp_path: Path) -> None:
                             "properties": {"message": {"type": "string"}},
                             "required": ["message"],
                         },
-                        "capabilities": ["read"],
+                        "capabilities": ["read", "process"],
                         "cost": 2,
                     }
                 ],
@@ -237,13 +237,13 @@ def test_load_extension_manifest_and_build_descriptors(tmp_path: Path) -> None:
     descriptors = adapter.descriptors()
     assert len(descriptors) == 1
     assert descriptors[0].name == "echo_tool"
-    assert descriptors[0].capabilities == frozenset({"read"})
+    assert descriptors[0].capabilities == frozenset({"read", "process"})
 
 
 def test_stdio_manifest_is_rebuilt_and_private_configuration_is_preserved(
     tmp_path: Path,
 ) -> None:
-    original_tools = ({"name": "echo_tool", "schema": {"nested": {"items": [1]}}},)
+    original_tools = ({"name": "echo_tool", "schema": {"nested": {"items": [1]}}, "capabilities": ["process"]},)
     original_entrypoint = ["python", "demo.py"]
     manifest = ExtensionManifest(
         id="demo.extension",
@@ -321,6 +321,7 @@ def test_stdio_adapter_invokes_external_process_and_returns_result(tmp_path: Pat
                             "properties": {"message": {"type": "string"}},
                             "required": ["message"],
                         },
+                        "capabilities": ["process"],
                     }
                 ],
             }
@@ -352,7 +353,7 @@ def _adapter_for_script(tmp_path: Path, source: str, *, timeout_seconds: int = 5
                 "transport": "stdio",
                 "entrypoint": ["python", "script.py"],
                 "timeout_seconds": timeout_seconds,
-                "tools": [{"name": "echo_tool"}],
+                "tools": [{"name": "echo_tool", "capabilities": ["process"]}],
             }
         ),
         encoding="utf-8",
@@ -1600,7 +1601,7 @@ def test_load_extension_manifest_rejects_coercive_types(
         "transport": "stdio",
         "entrypoint": [sys.executable, "script.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "echo_tool"}],
+        "tools": [{"name": "echo_tool", "capabilities": ["process"]}],
     }
     payload[field] = value
     manifest_path = tmp_path / "manifest.json"
@@ -1656,7 +1657,7 @@ def test_load_extension_manifest_rejects_invalid_protocol_fields(
         "transport": "stdio",
         "entrypoint": [sys.executable, "script.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "echo_tool"}],
+        "tools": [{"name": "echo_tool", "capabilities": ["process"]}],
     }
     mutation(payload)
     manifest_path = tmp_path / "manifest.json"
@@ -1664,6 +1665,21 @@ def test_load_extension_manifest_rejects_invalid_protocol_fields(
 
     with pytest.raises(ValueError):
         load_extension_manifest(manifest_path)
+
+
+def test_stdio_adapter_rejects_missing_process_before_spawn(tmp_path: Path) -> None:
+    manifest = ExtensionManifest(
+        id="demo.extension",
+        version="1.0.0",
+        protocol_version="1.0",
+        transport="stdio",
+        entrypoint=("python", "tool.py"),
+        timeout_seconds=5,
+        tools=(({"name": "demo_tool", "schema": {}, "capabilities": ["read"]}),),
+    )
+
+    with pytest.raises(ValueError, match="process"):
+        StdioToolAdapter(manifest, cwd=tmp_path)
 
 
 def test_stdio_manifest_rejects_negative_cost(tmp_path: Path) -> None:
@@ -1674,7 +1690,7 @@ def test_stdio_manifest_rejects_negative_cost(tmp_path: Path) -> None:
         "transport": "stdio",
         "entrypoint": [sys.executable, "script.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "echo_tool", "cost": -1}],
+        "tools": [{"name": "echo_tool", "capabilities": ["process"], "cost": -1}],
     }
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -1691,7 +1707,7 @@ def _valid_manifest_payload() -> dict[str, object]:
         "transport": "stdio",
         "entrypoint": [sys.executable, "script.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "echo_tool"}],
+        "tools": [{"name": "echo_tool", "capabilities": ["process"]}],
     }
 
 

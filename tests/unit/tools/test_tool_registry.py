@@ -71,7 +71,7 @@ def test_load_tool_registry_registers_enabled_extensions(tmp_path: Path) -> None
                         "name": "demo_tool",
                         "description": "Ferramenta de demonstração",
                         "schema": {},
-                        "capabilities": ["read"],
+                        "capabilities": ["read", "process"],
                         "cost": 1,
                     }
                 ],

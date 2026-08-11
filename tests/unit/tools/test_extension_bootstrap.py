@@ -44,6 +44,29 @@ def _binding(extension_id: str, *names: str) -> ExtensionRuntimeBinding:
     )
 
 
+def test_composer_rejects_stale_stdio_binding_without_process(tmp_path: Path) -> None:
+    builtin = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path))
+    descriptor = _descriptor("stale_tool")
+    binding = ExtensionRuntimeBinding(
+        extension_id="stale.extension",
+        approved_fingerprint="0" * 64,
+        adapter=_Adapter((descriptor,)),
+        descriptors=(descriptor,),
+        metadata={"transport": "stdio"},
+    )
+
+    result = WorkspaceToolRegistryComposer().compose(
+        builtin, ExtensionRuntimeMaterialization(bindings=(binding,))
+    )
+
+    assert "stale_tool" not in result.registry.names()
+    assert any(
+        item.code == "EXTENSION_RUNTIME_DESCRIPTOR_INVALID"
+        and item.extension_id == "stale.extension"
+        for item in result.diagnostics
+    )
+
+
 def test_composer_preserves_builtins_and_rejects_all_colliding_extensions(tmp_path: Path) -> None:
     builtin = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path))
     materialization = ExtensionRuntimeMaterialization(
@@ -217,7 +240,7 @@ def test_workspace_bootstrap_isolated_and_old_snapshot_is_immutable(tmp_path: Pa
     manifest.write_text(json.dumps({
         "id": "demo.extension", "version": "1", "protocol_version": "1.0", "transport": "stdio",
         "entrypoint": ["${python}", "demo.py"], "timeout_seconds": 5,
-        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
     }), encoding="utf-8")
     catalog = ExtensionCatalogService(ExtensionCatalogStorage(paths.extensions_catalog_file))
     catalog.add(manifest)
@@ -230,6 +253,7 @@ def test_workspace_bootstrap_isolated_and_old_snapshot_is_immutable(tmp_path: Pa
     first_service = WorkspaceExtensionService.for_workspace(paths, first_id, catalog)
     first_service.enable("demo.extension")
     first_service.grant("demo.extension", "read")
+    first_service.grant("demo.extension", "process")
     builtin = BuiltinToolAdapter(load_skill_registry(base_dir=first_root))
     first = ApplicationExtensionBootstrap(paths, first_id, first_root).build(builtin)
     second_builtin = BuiltinToolAdapter(load_skill_registry(base_dir=second_root))
@@ -239,7 +263,7 @@ def test_workspace_bootstrap_isolated_and_old_snapshot_is_immutable(tmp_path: Pa
     assert "demo_tool" not in second.registry.names()
     assert first.authority is not None
     assert first.registry.runtime_identity is first.authority.runtime_identity
-    assert first.authority.extension_grants["demo.extension"] == frozenset({"read"})
+    assert first.authority.extension_grants["demo.extension"] == frozenset({"read", "process"})
     assert second.authority is not None
     assert second.authority.extension_grants == {}
     first_service.disable("demo.extension")

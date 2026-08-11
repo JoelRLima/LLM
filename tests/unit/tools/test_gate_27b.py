@@ -108,6 +108,22 @@ def identity_placeholder() -> RuntimeSnapshotIdentity:
     return RuntimeSnapshotIdentity("other-snapshot", "workspace-a")
 
 
+def test_process_capability_is_shared_across_task_authority() -> None:
+    adapter = _Adapter(_extension(capabilities=frozenset({"read", "process"})))
+    identity = RuntimeSnapshotIdentity("snapshot-a", "workspace-a")
+    gateway, _, _ = _bound_gateway(
+        adapter,
+        task=TaskAuthoritySnapshot(frozenset({"read"}), runtime_identity=identity),
+    )
+
+    result = gateway.run("external", {})
+
+    assert result.status is ToolStatus.PERMISSION_DENIED
+    assert result.error is not None
+    assert result.error.code == "TASK_AUTHORITY_DENIED"
+    assert adapter.calls == 0
+
+
 def test_extension_with_bound_task_authority_succeeds() -> None:
     adapter = _Adapter(_extension())
     identity = RuntimeSnapshotIdentity("snapshot-a", "workspace-a")

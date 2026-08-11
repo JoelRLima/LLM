@@ -454,8 +454,9 @@ Limitações explícitas:
 - locks do scheduler são locais ao processo;
 - o lock da aplicação é conservador: após término abrupto, um lock abandonado
   exige inspeção e remoção manual;
-- extensions externas exigem catálogo/configuração, grants de aplicação e
-  task authority explícita; a CLI canônica para esse workflow ainda não existe;
+- extensions externas exigem catalogo/configuracao, grants de aplicacao e
+  task authority explicita; `llm-agent extensions` e a CLI canonica e
+  `llm-agent tools` permanece apenas compatibilidade legada;
 - MCP e sandbox universal de filesystem/rede não são fornecidos;
 - a qualidade da geração ainda depende do modelo escolhido.
 

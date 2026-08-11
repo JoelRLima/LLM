@@ -16,7 +16,7 @@
         },
         "required": ["text"]
       },
-      "capabilities": ["read"],
+      "capabilities": ["read", "process"],
       "cost": 1
     }
   ]

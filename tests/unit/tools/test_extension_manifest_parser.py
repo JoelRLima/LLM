@@ -23,7 +23,7 @@ def _payload() -> dict[str, object]:
         "transport": "stdio",
         "entrypoint": ["python", "demo.py"],
         "timeout_seconds": 5,
-        "tools": [{"name": "demo_tool", "schema": {}}],
+        "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
     }
 
 
@@ -54,12 +54,20 @@ def test_legacy_duplicate_key_policy_is_distinct_from_strict_mode() -> None:
         b'{"id":"demo.extension","id":"other.extension",'
         b'"version":"1.0.0","protocol_version":"1.0",'
         b'"transport":"stdio","entrypoint":["python","demo.py"],'
-        b'"timeout_seconds":5,"tools":[{"name":"demo_tool"}]}'
+        b'"timeout_seconds":5,"tools":[{"name":"demo_tool","capabilities":["process"]}]}'
     )
 
     assert load_extension_manifest_bytes(content, mode="legacy_stdio_compatibility").id == "other.extension"
     with pytest.raises(ManifestStructureError):
         load_extension_manifest_bytes(content, mode="strict_catalog")
+
+
+def test_stdio_manifest_requires_process_capability() -> None:
+    payload = _payload()
+    payload["tools"][0]["capabilities"] = ["read"]  # type: ignore[index]
+
+    with pytest.raises(ManifestStructureError, match="process"):
+        load_extension_manifest_bytes(json.dumps(payload).encode("utf-8"))
 
 
 def test_protocol_error_is_typed() -> None:
@@ -93,7 +101,7 @@ def test_gate1_path_api_preserves_nan_and_duplicate_key_behavior(tmp_path) -> No
         b'{"id":"first.extension","id":"second.extension",'
         b'"version":"1.0.0","protocol_version":"1.0",'
         b'"transport":"stdio","entrypoint":["python"],'
-        b'"timeout_seconds":5,"tools":[{"name":"demo_tool"}]}'
+        b'"timeout_seconds":5,"tools":[{"name":"demo_tool","capabilities":["process"]}]}'
     )
     assert load_extension_manifest(manifest_path).id == "second.extension"
 

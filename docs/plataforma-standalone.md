@@ -35,9 +35,9 @@ persona ou extension não pode criar caminho alternativo model-actionable.
 - **troca de modelo**: provider fica atrás de `ModelGateway`.
 
 `run --yes` satisfaz approval local da execução, não concede authority. A
-administração canônica de catálogo/grants de extension ainda é programática;
-`llm-agent tools` opera um registry legado e não configura automaticamente o
-bootstrap CURRENT.
+A administracao canonica de catalogo/grants de extension usa `llm-agent extensions`;
+`llm-agent tools` permanece uma superficie de compatibilidade legada e nao
+configura automaticamente o bootstrap CURRENT.
 
 ## Trust model e limites
 

@@ -34,7 +34,7 @@ def _manifest(path: Path) -> None:
                         "name": "demo_tool",
                         "description": "demo",
                         "schema": {},
-                        "capabilities": ["read"],
+                        "capabilities": ["read", "process"],
                     }
                 ],
             }
@@ -72,6 +72,10 @@ def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
         ["extensions", "grant", "demo.extension", "read", *common], capsys
     )
     assert granted["grants"] == ["read"]
+    granted = _run_cli(
+        ["extensions", "grant", "demo.extension", "process", *common], capsys
+    )
+    assert granted["grants"] == ["process", "read"]
 
     inspected = _run_cli(["extensions", "inspect", *common], capsys)
     assert inspected["extensions"][0]["activation_status"] == "ready"  # type: ignore[index]
@@ -79,10 +83,10 @@ def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
     listed = _run_cli(["extensions", "list", *common], capsys)
     extension = listed["extensions"][0]  # type: ignore[index]
     assert extension["workspace"]["enabled"] is True  # type: ignore[index]
-    assert extension["workspace"]["grants"] == ["read"]  # type: ignore[index]
+    assert extension["workspace"]["grants"] == ["process", "read"]  # type: ignore[index]
 
     _run_cli(
-        ["extensions", "revoke", "demo.extension", "read", *common], capsys
+        ["extensions", "revoke", "demo.extension", "process", *common], capsys
     )
     inspected = _run_cli(["extensions", "inspect", *common], capsys)
     assert inspected["extensions"][0]["activation_status"] == "blocked"  # type: ignore[index]
@@ -142,7 +146,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
                 "transport": "stdio",
                 "entrypoint": ["${python}", "${extension_dir}/tool.py"],
                 "timeout_seconds": 5,
-                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
             }
         ),
         encoding="utf-8",
@@ -153,6 +157,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
     service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
     service.enable("demo.extension")
     service.grant("demo.extension", "read")
+    service.grant("demo.extension", "process")
 
     with AgentApplication.create(
         paths=paths,
@@ -173,6 +178,33 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
         gateway=OfflineLegacyGateway("unused"),
         approval_policy=AutoApprove(),
         task_authority_capabilities=["read"],
+        configure_logging=False,
+    ) as application:
+        denied = application.tool_invocation_gateway.run("demo_tool", {})
+        assert denied.status is ToolStatus.PERMISSION_DENIED
+        assert denied.error is not None
+        assert denied.error.code == "TASK_AUTHORITY_DENIED"
+    assert not marker.exists()
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        task_authority_capabilities=["read", "process"],
+        configure_logging=False,
+    ) as application:
+        blocked = application.tool_invocation_gateway.run("demo_tool", {})
+        assert blocked.status is ToolStatus.BLOCKED
+        assert blocked.error is not None
+        assert blocked.error.code == "APPROVAL_REQUIRED"
+    assert not marker.exists()
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        approval_policy=AutoApprove(),
+        task_authority_capabilities=["read", "process"],
         configure_logging=False,
     ) as application:
         succeeded = application.tool_invocation_gateway.run("demo_tool", {})

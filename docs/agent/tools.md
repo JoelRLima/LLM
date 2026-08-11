@@ -70,7 +70,8 @@ o gateway solicite approval para processo/escrita potencial.
 
 ## Extensions externas
 
-Uma tool stdio só entra no runtime após a cadeia:
+Uma tool stdio so entra no runtime apos a cadeia; por iniciar um processo
+externo, seu manifest e descriptor exigem explicitamente `process`:
 
 ```text
 catálogo global + configuração/grants do workspace

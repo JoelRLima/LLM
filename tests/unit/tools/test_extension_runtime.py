@@ -25,7 +25,7 @@ def _manifest(path: Path, *, entrypoint: list[str] | None = None, tool_name: str
             "transport": "stdio",
             "entrypoint": entrypoint if entrypoint is not None else ["${python}", "${extension_dir}/demo.py"],
             "timeout_seconds": 5,
-            "tools": [{"name": tool_name, "schema": {}, "capabilities": ["read"]}],
+            "tools": [{"name": tool_name, "schema": {}, "capabilities": ["read", "process"]}],
         }
     ).encode("utf-8")
     path.write_bytes(content)
@@ -45,6 +45,7 @@ def _resolved(tmp_path: Path, *, entrypoint: list[str] | None = None):
     service = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
     service.enable("demo.extension")
     service.grant("demo.extension", "read")
+    service.grant("demo.extension", "process")
     return manifest, paths, workspace, catalog, service.resolve()
 
 
@@ -162,7 +163,7 @@ def test_runtime_binding_and_stdio_configuration_are_deeply_immutable(tmp_path: 
     assert second == {"nested": {"values": ["original"]}}
     assert binding.metadata == second
 
-    original_tools = ({"name": "demo", "schema": {"nested": {"values": [1]}}, "capabilities": ["read"]},)
+    original_tools = ({"name": "demo", "schema": {"nested": {"values": [1]}}, "capabilities": ["read", "process"]},)
     original_entrypoint = ["python", "demo.py"]
     manifest = ExtensionManifest(
         id="demo.extension",

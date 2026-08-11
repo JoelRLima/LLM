@@ -68,7 +68,7 @@ def _parse_entrypoint(payload: dict[str, Any]) -> Tuple[str, ...]:
     return entrypoint
 
 
-def _validate_tool(tool: Any) -> Dict[str, Any]:
+def _validate_tool(tool: Any, transport: str) -> Dict[str, Any]:
     if not isinstance(tool, dict):
         raise ManifestStructureError("Manifest contem tool invalida")
     _reject_unknown_fields(tool, _ALLOWED_TOOL_FIELDS, "tool")
@@ -84,6 +84,7 @@ def _validate_tool(tool: Any) -> Dict[str, Any]:
         not isinstance(capability, str) or not capability.strip() for capability in capabilities
     ):
         raise ManifestStructureError(f"Capabilities invalidas para tool '{name}'")
+    validate_transport_capabilities(transport, capabilities, tool_name=name)
     if "cost" in tool and (
         not isinstance(tool["cost"], int) or isinstance(tool["cost"], bool) or tool["cost"] < 0
     ):
@@ -91,11 +92,25 @@ def _validate_tool(tool: Any) -> Dict[str, Any]:
     return tool
 
 
-def _parse_tools(payload: dict[str, Any]) -> Tuple[Dict[str, Any], ...]:
+def validate_transport_capabilities(
+    transport: str,
+    capabilities: Any,
+    *,
+    tool_name: str = "tool",
+) -> None:
+    """Enforce the canonical effect required by each supported transport."""
+
+    if transport == "stdio" and "process" not in capabilities:
+        raise ManifestStructureError(
+            f"Tool stdio '{tool_name}' requer capability process"
+        )
+
+
+def _parse_tools(payload: dict[str, Any], transport: str) -> Tuple[Dict[str, Any], ...]:
     raw_tools = payload["tools"]
     if not isinstance(raw_tools, list) or not raw_tools:
         raise ManifestStructureError("Manifest deve conter uma lista nao vazia de tools")
-    tools = tuple(_validate_tool(tool) for tool in raw_tools)
+    tools = tuple(_validate_tool(tool, transport) for tool in raw_tools)
     names = [tool["name"] for tool in tools]
     if len(names) != len(set(names)):
         raise ManifestStructureError("Manifest contém tools duplicadas")
@@ -172,7 +187,7 @@ def load_extension_manifest_bytes(
         transport=payload["transport"],
         entrypoint=_parse_entrypoint(payload),
         timeout_seconds=_parse_timeout(payload),
-        tools=_parse_tools(payload),
+        tools=_parse_tools(payload, payload["transport"]),
     )
 
 
@@ -184,4 +199,5 @@ __all__ = [
     "ManifestStructureError",
     "SUPPORTED_PROTOCOL",
     "load_extension_manifest_bytes",
+    "validate_transport_capabilities",
 ]

@@ -73,7 +73,7 @@ def test_application_loads_ready_extension_from_catalog_and_workspace(tmp_path: 
                 "transport": "stdio",
                 "entrypoint": ["python", "demo.py"],
                 "timeout_seconds": 5,
-                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
         }),
         encoding="utf-8",
     )
@@ -83,6 +83,7 @@ def test_application_loads_ready_extension_from_catalog_and_workspace(tmp_path: 
     workspace_extensions = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
     workspace_extensions.enable("demo.extension")
     workspace_extensions.grant("demo.extension", "read")
+    workspace_extensions.grant("demo.extension", "process")
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
@@ -109,7 +110,7 @@ def test_extension_aware_bootstrap_does_not_start_processes(
                 "transport": "stdio",
                 "entrypoint": ["${python}", "${extension_dir}/demo.py"],
                 "timeout_seconds": 5,
-                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read"]}],
+                "tools": [{"name": "demo_tool", "schema": {}, "capabilities": ["read", "process"]}],
             }
         ),
         encoding="utf-8",
@@ -120,6 +121,7 @@ def test_extension_aware_bootstrap_does_not_start_processes(
     workspace_extensions = WorkspaceExtensionService.for_workspace(paths, workspace_id, catalog)
     workspace_extensions.enable("demo.extension")
     workspace_extensions.grant("demo.extension", "read")
+    workspace_extensions.grant("demo.extension", "process")
 
     def forbidden(*args, **kwargs):
         raise AssertionError("bootstrap iniciou processo externo")
@@ -161,7 +163,7 @@ def test_extension_bootstrap_acceptance_drift_replace_and_workspace_isolation(tm
                     "transport": "stdio",
                     "entrypoint": ["${python}", "${extension_dir}/demo.py"],
                     "timeout_seconds": 5,
-                    "tools": [{"name": tool_name, "schema": {}, "capabilities": ["read"]}],
+                    "tools": [{"name": tool_name, "schema": {}, "capabilities": ["read", "process"]}],
                 }
             ),
             encoding="utf-8",
@@ -175,6 +177,7 @@ def test_extension_bootstrap_acceptance_drift_replace_and_workspace_isolation(tm
     service_a = WorkspaceExtensionService.for_workspace(paths, workspace_id_a, catalog)
     service_a.enable("demo.extension")
     service_a.grant("demo.extension", "read")
+    service_a.grant("demo.extension", "process")
 
     with AgentApplication.create(
         paths=paths,

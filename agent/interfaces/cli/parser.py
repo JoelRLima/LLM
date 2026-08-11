@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="task_authority_capabilities",
         metavar="CAPABILITY",
-        help="concede autoridade explicita somente para esta tarefa; repita para cada capability (nao substitui --yes)",
+        help="autoridade capability-wide da tarefa; repita para cada capability (nao concede grant/persona e nao substitui --yes)",
     )
     run.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
     run.add_argument("--yes", action="store_true", dest="assume_yes", help="aprova efeitos que pedirem consentimento nesta execução")
@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     state_commands = state.add_subparsers(dest="state_command", required=True)
     state_migrate = state_commands.add_parser("migrate", parents=[common], help="copia um runtime legado")
     state_migrate.add_argument("--from", required=True, dest="source", metavar="DIR")
-    tools = subcommands.add_parser("tools", parents=[common], help="gerencia extensões externas de ferramentas", argument_default=argparse.SUPPRESS)
+    tools = subcommands.add_parser("tools", parents=[common], help="compatibilidade legada de tools; use extensions para administracao canonica", argument_default=argparse.SUPPRESS)
     tools_commands = tools.add_subparsers(dest="tools_command", required=True)
     tools_list = tools_commands.add_parser("list", parents=[common], help="lista extensões registradas")
     tools_list.add_argument("--state", metavar="ARQUIVO", help="arquivo do registro de extensões")

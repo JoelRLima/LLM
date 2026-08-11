@@ -70,8 +70,8 @@ def test_workspace_grants_acceptance_and_manifest_drift(tmp_path: Path) -> None:
 def test_orphan_reference_and_two_workspace_isolation(tmp_path: Path) -> None:
     alpha = tmp_path / "alpha.json"
     beta = tmp_path / "beta.json"
-    _write(alpha, _manifest("alpha.extension", ["read"]))
-    _write(beta, _manifest("beta.extension", ["write"]))
+    _write(alpha, _manifest("alpha.extension", ["read", "process"]))
+    _write(beta, _manifest("beta.extension", ["write", "process"]))
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
