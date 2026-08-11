@@ -26,10 +26,11 @@ Nenhum plano ou tool apresentada cria authority. Veja
 ## Estado e retomada
 
 Steps têm `_step_id` estável, tentativas e estados `pending`, `running`,
-`completed`, `failed` ou `skipped`. Checkpoint v2 preserva plano e records. No
-resume, `running` volta a `pending`, concluídos não se repetem e falhos/pulados
-só voltam com flags explícitas. O plano restaurado é revalidado e authority é
-reconstruída do runtime atual; ela não é confiada ao checkpoint.
+`completed`, `failed`, `skipped`, `blocked` ou `unverified`. Checkpoint v2
+preserva plano e records. No resume, `running` volta a `pending`, concluídos,
+blocked e unverified permanecem terminais, e failed/skipped só voltam com flags
+explícitas. O plano restaurado é revalidado e authority é reconstruída do
+runtime atual; ela não é confiada ao checkpoint.
 
 ## Paralelismo
 

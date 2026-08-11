@@ -59,9 +59,10 @@ arquivo exibido por `llm-agent config path`. As chaves legadas `api_url`,
 `max_tokens`, `timeout` e `ENABLE_GBNF` continuam válidas durante a migração.
 
 `llm-agent run --workspace <diretório> --json <objetivo>` oferece a fronteira
-headless. Ela não consulta stdin: uma ação negada ou sem aprovação retorna
-`blocked`; `run --yes` aprova os efeitos que pedirem consentimento somente naquela
-execução. `--home <diretório>` fixa todos os dados da aplicação sob uma raiz
+headless. Ela não consulta stdin: uma ação que aguarda approval retorna
+`blocked`; ausência de authority, capability ou eligibility retorna
+`permission_denied`. `run --yes` aprova os efeitos que pedirem consentimento
+somente naquela execução e não cria authority. `--home <diretório>` fixa todos os dados da aplicação sob uma raiz
 portátil. Configuração ou estado do antigo checkout só são copiados pelos
 comandos explícitos `config migrate` e `state migrate`; a origem é preservada.
 
@@ -117,7 +118,8 @@ As dependências apontam para contratos estreitos:
   tokenize específicos do protocolo;
 - `structured_output.py`: seleciona JSON Schema, GBNF ou JSON instruído e
   valida o retorno;
-- `context_manager.py`: orçamento e compressão do contexto;
+- `context_manager.py`: budget de saída e compressão do histórico; a memória
+  serializada não recebe um budget independente no caminho atual;
 - `model_client.py`: fachada do planejador legado. Casos de uso novos usam
   `ModelGateway` diretamente.
 

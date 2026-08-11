@@ -119,6 +119,20 @@ concluídos e Standalone V1 ainda não foi declarada.
 | [`test_coding_workflows.py`](../tests/unit/code/test_coding_workflows.py) | análise sem modelo, review read-only, geração, rollback, `unverified`, reparo, bloqueio por confiança e capacidades multitarefa |
 | [`test_code_assistance.py`](../tests/unit/code/test_code_assistance.py) | seleção por target/símbolo/import, diretórios, policy, classificador, `/code` e templates |
 
+## Catálogo, extensions e stdio
+
+Os testes de catálogo/workspace cobrem codec, lock, migração, storage, resolução
+(`ready`/`blocked`/`disabled`/`orphaned`), materialização e diagnóstico; os testes
+de runtime cobrem manifest parser, bootstrap, adapter/launcher stdio, limites,
+cancelamento, cleanup e o helper de processo. As integrações cobrem acceptance
+do catálogo/workspace e a CLI canônica de extensions. Os módulos principais são
+`tests/unit/tools/test_extension_catalog_*`,
+`test_workspace_extensions_*`, `test_extension_runtime.py`,
+`test_extension_bootstrap.py`, `test_extension_manifest_parser.py`,
+`test_stdio_adapter.py`, `test_stdio_launcher.py`, `test_process_tree.py` e
+`tests/integration/test_extension_catalog_acceptance.py`,
+`test_workspace_extensions_acceptance.py` e `test_canonical_extensions_cli.py`.
+
 ## Núcleo legado protegido
 
 A suíte preserva a regressão das fases anteriores:

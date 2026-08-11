@@ -50,8 +50,14 @@ Uma task mantém objective, persona, plano e eventos. Cada passo possui
 
 `AgentRunResult` preserva `succeeded`, `failed`, `blocked`, `cancelled`,
 `unverified`, `timed_out`, `permission_denied`, `protocol_error` ou
-`unavailable`. Somente `succeeded` produz `success: true`. Texto final ou output
-do modelo não promove status terminal de uma tool.
+`unavailable` quando o resultado terminal está projetado no `AgentState`.
+Somente `succeeded` deve produzir `success: true`; texto final ou output do
+modelo não promove status terminal de uma tool. Há uma limitação conhecida no
+executor hierárquico: o `TaskTracker` agrega falhas de macro-steps
+independentemente e esse agregado ainda não é projetado de forma universal em
+`AgentRunResult`. Portanto, uma mistura de falha e sucesso em um MacroPlan não
+é evidência suficiente para declarar o resultado da tarefa como sucesso; esse
+fechamento de runtime permanece fora deste audit documental.
 
 ## Execução e ownership
 

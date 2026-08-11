@@ -10,14 +10,19 @@ O sistema mantém fatos em suas fontes operacionais e os projeta para relatório
 - histórico/estado da tarefa fornece steps, status e erros;
 - eventos de replan fornecem tentativas e motivos;
 - `MetricsRecorder` mantém JSONL e permite uma marca d'água por tarefa;
-- resultados de invocation fornecem status, duração e limites observados;
+- resultados de invocation fornecem status e, quando o adapter os preserva,
+  limites de saída; duração é uma métrica da tarefa/eval, não um campo garantido
+  por invocation;
 - `TaskReportBuilder` agrega essas fontes em JSON ou Markdown;
 - o adapter de eval projeta um subconjunto de measurement para
   `ExecutionObservation` e exportação do cenário.
 
 Projection não é uma segunda fonte de verdade. Campos ausentes permanecem
-ausentes; reporting não deve inferir sucesso, autoridade ou execução a partir
-de texto livre.
+ausentes. O resultado projetado (`last_result`/status) é a evidência primária de
+sucesso; o builder legado ainda possui fallback para o último step ou para uma
+resposta final não vazia quando não há resultado projetado. Esse fallback é
+compatibilidade de relatório, não prova independente de execução, autoridade ou
+sucesso a partir de texto livre.
 
 ## Artefatos
 

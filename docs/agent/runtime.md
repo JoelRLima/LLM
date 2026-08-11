@@ -30,9 +30,10 @@ são convertidos em sucesso.
 ## Stdio 1.0
 
 Cada invocação externa usa um subprocesso e um request com `invocation_id` não
-vazio. A resposta é exatamente uma linha JSON não vazia, UTF-8, com o mesmo ID
-e status conhecido. ID ausente/divergente, JSON/framing inválido e output acima
-de 1 MiB por stream são erros de protocolo. Exit code não zero é falha mesmo
+vazio. A resposta é exatamente uma linha JSON não vazia, UTF-8, com o mesmo ID.
+`status` é opcional: quando omitido, o adapter assume `succeeded`; quando
+presente, deve ser conhecido. ID ausente/divergente, JSON/framing inválido e
+output acima de 1 MiB por stream são erros de protocolo. Exit code não zero é falha mesmo
 que stdout contenha um JSON plausível. Stderr é diagnóstico limitado, nunca
 resultado de sucesso.
 
@@ -61,8 +62,9 @@ plataformas além das exercitadas pela matriz do projeto.
 Memória JSON/SQLite é inicializada explicitamente e persiste por workspace.
 Promoções JSON usam tempfile, fsync e `os.replace`; corrupção falha fechado.
 Checkpoint v2 persiste IDs/estados de passos; `running` volta a `pending`, e
-estados terminais só repetem por flags explícitas. O lock por workspace é
-conservador e um lock abandonado pode exigir inspeção manual.
+somente `failed`/`skipped` podem ser reabertos por flags explícitas. Estados
+`completed`, `blocked` e `unverified` permanecem terminais. O lock por workspace
+é conservador e um lock abandonado pode exigir inspeção manual.
 
 ## Não garantias
 

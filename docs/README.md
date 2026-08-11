@@ -48,7 +48,7 @@ permissão de executar.
 | Shell | sim, reduzida | sim, condicional | somente `ruff check`, `git log`, `tree`; sem shell | [tools](agent/tools.md) |
 | Git | sim, reduzida | sim via skills permitidas | somente histórico local (`log`); status/diff model-actionable removidos | [tools](agent/tools.md) |
 | Ruff | sim | sim via ShellSkill | somente `ruff check`; validação, sem `--fix`/config arbitrária | [tools](agent/tools.md) |
-| External stdio | sim | condicional | catálogo + workspace grants + task authority + gateway | [tools](agent/tools.md), [runtime](agent/runtime.md) |
+| External stdio | sim | condicional | catálogo + workspace grants (incluindo `process`) + task authority + gateway | [tools](agent/tools.md), [runtime](agent/runtime.md) |
 | Memory | sim | sim, conforme persona/fluxo | persistente por workspace; sem authority; semântica opcional | [memory](agent/memory.md) |
 | MCP | **não fornecido** | não | nenhuma integração MCP no repo | [tools](agent/tools.md) |
 | Web | sim (`web_search`) | sim para researcher | rede sujeita a policy/approval; não é browser/MCP | [tools](agent/tools.md) |
@@ -62,13 +62,15 @@ filesystem/rede nem garantia de execução de qualquer extension descoberta.
 pertencem aos primary homes. Para extensions, o caminho CURRENT é:
 
 ```text
-catalog/config → ApplicationExtensionBootstrap → planner visibility
-→ task authority → ToolInvocationGateway → stdio adapter
+catalog/config → ApplicationExtensionBootstrap → task authority
+→ planner visibility → ToolInvocationGateway → stdio adapter
 → external process → ToolResult
 ```
 O planner orienta; o gateway aplica. Binding e `active_skills` são eligibility
 estritamente redutiva, não fontes de authority. Veja o
-[ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+[ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md). O
+[ADR 0015](adr/0015-stdio-requer-process.md) torna `process` obrigatório para
+transportes stdio.
 
 ## Guias e referências CURRENT
 
@@ -96,6 +98,8 @@ stdio/Windows, catálogo/configuração/bootstrap de extensions e contexto/views
 de planning. O [ADR 0013](adr/0013-fronteira-canonica-authority-approval-invocacao.md)
 permanece aceito salvo sua ordem total de guards, parcialmente substituída pelo
 [ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
+[ADR 0015](adr/0015-stdio-requer-process.md) registra a exigência de `process`
+para transportes stdio.
 
 ## Registros históricos
 

@@ -139,9 +139,10 @@ proposed -> staged -> committed -> validated
 ```
 
 O transaction captura backups limitados, produz unified diff, revalida o
-snapshot antes do commit e usa replace atômico por arquivo. Se o arquivo mudar
-entre a prévia/confirmação e o commit, a alteração externa é preservada e o
-ChangeSet falha por conflito. A garantia cobre apenas os arquivos descritos no ChangeSet;
+snapshot antes do commit e usa replace atômico por arquivo. Divergência
+detectada nessa revalidação é rejeitada como conflito; isso não é uma garantia
+universal contra TOCTOU durante o apply, e não promete preservar toda alteração
+externa concorrente. A garantia cobre apenas os arquivos descritos no ChangeSet;
 não cobre efeitos arbitrários de shell, processos ou rede.
 
 ## Confiança e confirmação

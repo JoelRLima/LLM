@@ -85,11 +85,12 @@ o parser, catalogo, materializacao e adapter rejeitam o manifest antes de spawn
 quando essa capability falta.
 
 Para cada invocação, leia o único request JSONL de stdin e escreva exatamente
-uma linha JSON não vazia em stdout; linhas vazias adicionais são ignoradas. A resposta deve conter o mesmo
-`invocation_id` não vazio recebido no request e um `status` `succeeded` ou
-`failed`; JSON inválido,
-stdout extra, ID ausente/divergente e status desconhecido são erros de
-protocolo. Envie logs e diagnósticos para stderr.
+uma linha JSON não vazia em stdout; linhas vazias adicionais são ignoradas. A
+resposta deve conter o mesmo `invocation_id` não vazio recebido no request.
+`status` é opcional: sua ausência equivale a `succeeded`; quando presente,
+somente `succeeded` ou `failed` são aceitos. JSON inválido, stdout extra, ID
+ausente/divergente e status desconhecido são erros de protocolo. Envie logs e
+diagnósticos para stderr.
 
 Exit code diferente de zero é falha de processo e não pode ser mascarado por
 uma resposta JSON aparentemente válida.
@@ -110,6 +111,12 @@ iniciando a extension diretamente. O launcher é um detalhe interno, não é
 registrado como tool e não é uma sandbox de sistema operacional. Respostas
 tardias são descartadas. O subprocesso recebe apenas o ambiente operacional
 mínimo.
+
+Antes do binding, a materialização revalida o manifest, seu fingerprint e a
+união de capabilities exigidas; placeholders suportados no entrypoint são
+`${extension_dir}` e `${python}`. Entradas `ready` são as únicas materializadas;
+manifests inválidos, alterados ou com capabilities incompatíveis ficam
+`blocked`/`disabled`/`orphaned` com diagnóstico tipado.
 
 ## Adicionar uma linguagem
 
@@ -150,8 +157,10 @@ Um workflow deve:
 - preferir `edit` localizado com `base_hash` e `expected_text` a `modify`
   integral;
 - submeter a prévia à política de confiança antes do commit;
-- consultar a autoridade injetada antes de qualquer commit, mesmo quando a
-  política de confiança permitir auto-apply;
+- atravessar a fronteira `ToolInvocationGateway` com a authority da tarefa e a
+  aprovação aplicável antes de expor o workflow model-actionable; a transação
+  de código em si usa `ChangeApprovalPolicy`/`ApprovalPort` e não recebe uma
+  autoridade implícita;
 - classificar falhas antes de oferecer contexto a uma tentativa de reparo;
 - devolver `succeeded`, `failed`, `cancelled`, `blocked` ou `unverified` com
   semântica exata;

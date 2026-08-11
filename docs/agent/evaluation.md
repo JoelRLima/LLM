@@ -56,13 +56,18 @@ O caminho positivo de modificação é protegido separadamente pelos testes de
 
 - `CapabilityScenario` declara objetivo, arquivos iniciais, expectativas e
   metadata de preparação.
-- `AgentApplicationScenarioExecutor` adapta a composition root real ao cenário.
+- `AgentApplicationScenarioExecutor` adapta a composition root real ao cenário;
+  preparação específica (por exemplo, um repositório Git ou uma extension) é
+  fornecida pelo callback do harness, não inferida automaticamente do metadata.
 - `CapabilityEvaluator` cria workspace vazio, captura hashes antes/depois,
   executa e aplica grading determinístico.
 - `ScenarioReport` e `EvaluationSetReport` preservam falhas, observação,
   mudanças e agregados; a exportação é JSON serializável.
-- caminhos dos fixtures são relativos e validados; arquivos não autorizados a
-  mudar fazem o cenário falhar.
+- caminhos dos fixtures são relativos e validados; quando
+  `allowed_changed_files` declara uma allowlist, mudanças fora dela fazem o
+  cenário falhar. `unchanged_files` protege somente os arquivos explicitamente
+  listados; caches transitórios (`.git`, `.pytest_cache`, `__pycache__` e
+  `.temp_analysis`) são ignorados pelo snapshot do harness.
 
 Measurement é coletado pelo executor e projetado no export de eval; o dado
 continua pertencendo ao runtime/reporting, não a uma métrica inventada pelo

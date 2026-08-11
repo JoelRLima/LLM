@@ -78,8 +78,8 @@ catálogo global + configuração/grants do workspace
 → resolução ready
 → ApplicationExtensionBootstrap
 → binding e ToolRegistry congelado
+→ task authority snapshot
 → planning context elegível
-→ task authority
 → ToolInvocationGateway
 → StdioToolAdapter
 ```
@@ -113,6 +113,13 @@ Os comandos delegam nos services canonicos e nao editam o registry legado.
 `extensions/registry.json`; seu estado nao e consumido pelo bootstrap moderno.
 Depois da configuracao, `llm-agent run` ainda exige `--task-authority` explicita
 para a tarefa. Approval continua separado e nao repara authority ausente.
+
+O bootstrap degradado preserva a aplicação utilizável quando catálogo ou estado
+de workspace estão ausentes; corrupção ou indisponibilidade também congela
+somente os builtins e publica diagnóstico tipado. Não concede grants. Na
+resolução, a presença de catálogo pode ser `orphaned` e a ativação pode ser
+`ready`, `blocked` ou `disabled`, com diagnósticos de manifest, capability ou
+grant ausente/não utilizado; somente `ready` é materializado.
 
 ## Ausências
 

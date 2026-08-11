@@ -22,11 +22,15 @@ mas não substitui `PlanValidator`, authority ou schema de tools.
 
 - `ChatSession` mantém histórico e é também fachada de compatibilidade para o
   fluxo legado.
-- `ContextManager` monta contexto do projeto, compacta histórico e usa memória
-  dentro de budgets.
+- `ContextManager` monta contexto do projeto e compacta o histórico. A memória
+  disponível é serializada como contexto; o caminho atual não seleciona memória
+  por um orçamento separado. O budget explícito cobre a saída do modelo e a
+  compressão do histórico.
 - `ModelClient` adapta decisões estruturadas do planejador sobre a sessão.
-- o router escolhe persona por casos triviais/keywords e, se necessário, pelo
-  modelo. Persona limita a view de tools; não cria authority.
+- o router escolhe entre `coder`, `researcher`, `general` e
+  `security_auditor`: saudações e pedidos de listagem/consulta têm heurísticas
+  determinísticas; keywords de segurança selecionam o auditor e os demais casos
+  podem consultar o modelo. Persona limita a view de tools; não cria authority.
 
 ## Scripted/offline versus modelo real
 

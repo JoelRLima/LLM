@@ -61,10 +61,14 @@ Estados públicos:
 | Status | Significado | `success` |
 | :--- | :--- | :---: |
 | `succeeded` | objetivo concluído e verificado conforme o caso de uso | `true` |
-| `blocked` | policy/authority ou aprovação impediu o efeito | `false` |
+| `blocked` | policy de execução ou aprovação requerida impediu o efeito | `false` |
 | `unverified` | efeito aplicado sem validator disponível | `false` |
 | `cancelled` | cancelamento confirmado | `false` |
 | `failed` | bootstrap, execução, validação ou persistência falhou | `false` |
+| `timed_out` | limite de tempo encerrou a invocation | `false` |
+| `permission_denied` | authority, capability ou eligibility recusou a invocation | `false` |
+| `protocol_error` | adapter/protocolo retornou envelope inválido | `false` |
+| `unavailable` | capability ou provider não está disponível | `false` |
 
 Saída `--json` contém exatamente um documento em stdout. Logs ficam fora desse
 stream. Exit code `0` representa sucesso, `1` um estado operacional não
@@ -244,7 +248,10 @@ llm-agent extensions grant demo.extension process --home C:\app --workspace C:\p
 llm-agent extensions inspect --json --home C:\app --workspace C:\projeto
 ```
 
-Cada comando `extensions grant` concede uma capability persistente no workspace; para uma extension stdio, conceda `read` e `process` separadamente. Isso nao cria task authority nem approval.
+Cada comando `extensions grant` concede uma capability persistente no workspace;
+conceda cada capability declarada pelo manifest separadamente, lembrando que uma
+extension stdio sempre exige `process` (e `read` somente quando declarado). Isso
+nao cria task authority nem approval.
 
 Tambem estao disponiveis `extensions list`, `extensions disable` e
 `extensions revoke ID CAPABILITY`. O estado persistente fica no catalogo

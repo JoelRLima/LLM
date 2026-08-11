@@ -40,7 +40,9 @@ authority/approval na chamada concreta de uma tool.
 Falhas recuperáveis são classificadas deterministicamente; heurísticas seguras
 precedem a consulta ao modelo. Uma proposta de replan é validada contra o mesmo
 planning context e não pode introduzir tool fora da view. Passo bloqueado não é
-removido silenciosamente. Retry tem budgets limitados e não cria authority.
+removido silenciosamente. Cada chamada de replan recebe um budget limitado; os
+contadores atuais não são um budget compartilhado de toda a tarefa. Replan não
+cria authority.
 
 ## Paralelismo
 

@@ -60,9 +60,11 @@ precisa ser copiado para o workspace.
 | `default_model_profile` | string | ausente/legado | Nome da entrada selecionada em `model_profiles`. |
 | `model_profiles` | objeto | `{}`/legado | Perfis de provider, endpoint, modelo, limites e capacidades. |
 
-Se `default_model_profile` não existir ou não apontar para um objeto, a factory
-usa as chaves legadas. O adapter rejeita provider desconhecido. Capacidades
-devem refletir o endpoint real; não são inferidas pelo nome do modelo.
+Consumidores diretos de compatibilidade podem usar as chaves legadas quando
+`default_model_profile` não existir. O `ConfigRepository` standalone, porém,
+valida o profile selecionado e falha para configuração inválida; ele não faz
+fallback silencioso. O adapter rejeita provider desconhecido. Capacidades devem
+refletir o endpoint real; não são inferidas pelo nome do modelo.
 
 ### Compatibilidade legada
 
