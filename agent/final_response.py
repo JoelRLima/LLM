@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -40,9 +41,29 @@ class FinalResponder:
         chunks: list[str] = []
         for entry in self.orchestrator.agent_state.tool_history:
             tool_name = entry.get("tool", "")
-            result_data = entry.get("result", {}).get("data", "")
-            if result_data:
-                chunks.append(f"\n\n--- Resultado de {tool_name} ---\n{str(result_data)[:2000]}")
+            result = entry.get("result", {})
+            if not isinstance(result, dict):
+                result = {}
+            if "data" in result:
+                try:
+                    observation = json.dumps(
+                        result["data"], ensure_ascii=False, default=str
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    observation = str(result["data"])
+            else:
+                observation = "<data ausente>"
+            chunk = (
+                f"\n\n--- Resultado de {tool_name} ---\n"
+                f"status: {result.get('status')}\n"
+                f"ok: {result.get('ok')}\n"
+                f"observação: {observation[:2000]}"
+            )
+            for field in ("message", "error"):
+                value = result.get(field)
+                if value:
+                    chunk += f"\n{field}: {str(value)[:2000]}"
+            chunks.append(chunk)
         return "".join(chunks)
 
     def _build_prompt(self, objective: str, notes_content: str) -> str:
@@ -59,7 +80,12 @@ class FinalResponder:
                 "Resultados das ferramentas executadas:\n"
                 f"{self._tool_results_summary()}\n\n"
                 "Responda ao objetivo do usuário com base nesses resultados. "
-                "Não use ferramentas. Apenas texto."
+                "Não use ferramentas. Apenas texto. "
+                "Use somente fatos suportados pelas observações explícitas acima. "
+                "Uma coleção vazia (por exemplo, []) significa que nenhum item foi observado; "
+                "não invente arquivos, diretórios ou propriedades típicas. "
+                "Se não houver evidência, diga que não foi observado. "
+                "Um resultado com erro não comprova o estado."
             )
 
         if self._is_security_objective(objective):
