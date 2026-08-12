@@ -16,6 +16,8 @@ class _Result:
     success: bool
     answer: str = ""
     error: str | None = None
+    receipt: dict[str, Any] | None = None
+    report_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -23,6 +25,8 @@ class _Result:
             "success": self.success,
             "answer": self.answer,
             "error": self.error,
+            "receipt": self.receipt or {},
+            "report_path": self.report_path,
         }
 
 
@@ -115,6 +119,8 @@ def test_run_json_emits_one_document_and_disables_logging(
     assert json.loads(output.out) == {
         "answer": "feito",
         "error": None,
+        "receipt": {},
+        "report_path": None,
         "status": "succeeded",
         "success": True,
     }
@@ -134,6 +140,61 @@ def test_run_failure_returns_one_and_still_closes_application(
 
     assert capsys.readouterr().err.strip() == "falhou"
     assert application.closed is True
+
+
+def test_human_run_projects_operational_receipt_without_hiding_model_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _Result(
+        True,
+        "Modifiquei e validei sample.py.",
+        receipt={
+            "workspace": "/tmp/workspace",
+            "status": "succeeded",
+            "tools": [{"tool": "code_task", "status": "succeeded", "executed": True, "invocation_id": "inv-1"}],
+            "files_affected": ["sample.py"],
+            "validation": {"ran": True, "outcome": "passed"},
+            "rollback": {"occurred": False, "outcome": None},
+        },
+        report_path="/tmp/report.json",
+    )
+    application = _Application(result)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+
+    assert cli.main(["run", "modifique", "sample.py"]) == 0
+    output = capsys.readouterr()
+    assert "Modifiquei e validei sample.py." in output.out
+    assert "files_affected: sample.py" in output.out
+    assert "validation: passed" in output.out
+    assert "executed=True" in output.out
+    assert "report_path: /tmp/report.json" in output.out
+
+
+def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _Result(
+        True,
+        "Modifiquei sample.py.",
+        receipt={
+            "workspace": "/tmp/workspace",
+            "status": "succeeded",
+            "tools": [{"tool": "file_reader", "status": "succeeded", "executed": True, "invocation_id": "inv-read"}],
+            "files_affected": [],
+            "validation": {"ran": False, "outcome": None},
+            "rollback": {"occurred": False, "outcome": None},
+        },
+    )
+    application = _Application(result)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+
+    assert cli.main(["run", "leia", "sample.py"]) == 0
+    output = capsys.readouterr().out
+    assert "Modifiquei sample.py." in output
+    assert "files_affected: []" in output
+    assert "validation: not_run" in output
 
 
 def test_default_command_is_chat_and_closes_application(monkeypatch: pytest.MonkeyPatch) -> None:

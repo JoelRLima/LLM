@@ -116,15 +116,15 @@ class ProviderFailureGateway:
 
     def complete_payload(self, payload: Dict[str, Any]) -> str:
         del payload
-        raise RuntimeError("provider endpoint invalid")
+        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
 
     def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
         del payload, stream
-        raise RuntimeError("provider endpoint invalid")
+        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
 
     def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
         del response, callbacks
-        raise RuntimeError("provider endpoint invalid")
+        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
 
     def count_tokens(self, text: str) -> int:
         del text
@@ -151,13 +151,15 @@ def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Pa
         result = application.run("leia notes.txt")
 
     assert result.status == "failed"
-    assert result.error == "provider endpoint invalid"
+    assert result.error == "Model provider request failed."
+    assert "TOPSECRET" not in repr(result.to_dict())
     assert result.receipt["error"]["code"] == "MODEL_PROVIDER_ERROR"
     assert result.receipt["error"]["layer"] == "provider"
     assert result.report_path is not None
     report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
     assert report["success"] is False
     assert report["status"] == "failed"
+    assert "TOPSECRET" not in Path(result.report_path).read_text(encoding="utf-8")
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:
@@ -181,6 +183,7 @@ def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: P
         assert result.receipt["files_affected"] == ["sample.py"]
         assert result.receipt["validation"] == {"ran": True, "outcome": expected_validation}
         assert result.receipt["rollback"]["occurred"] is expected_rollback
+        assert result.receipt["final_state"] == ("restored" if expected_rollback else "applied")
         assert (workspace / "sample.py").read_text(encoding="utf-8") == expected_content
 
 

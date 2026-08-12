@@ -238,7 +238,7 @@ def test_request_does_not_fallback_on_generic_error():
 
     session.send_non_streaming_request.side_effect = side_effect
 
-    with pytest.raises(ModelProviderError, match="internal server error"):
+    with pytest.raises(ModelProviderError, match="Model provider request failed"):
         ModelClient.request(
             session,
             {"max_tokens": 100},

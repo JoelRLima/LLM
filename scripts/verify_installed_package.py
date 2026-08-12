@@ -202,15 +202,18 @@ def project_measurement(name, objective, started_at, application, result, family
     }
 
 
-def assert_public_receipt(result):
+def assert_public_receipt(result, expected_workspace=None):
     receipt = result.receipt
-    if not isinstance(receipt, dict) or receipt.get("workspace") != str(workspace):
+    expected = expected_workspace or workspace
+    if not isinstance(receipt, dict) or receipt.get("workspace") != str(expected):
         raise AssertionError(f"receipt publico ausente ou workspace divergente: {result.to_dict()!r}")
     if not result.report_path or not Path(result.report_path).is_file():
         raise AssertionError(f"report_path nao persistido: {result.to_dict()!r}")
     report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
     if bool(report.get("success")) != result.success or report.get("status") != result.status:
         raise AssertionError(f"report e resultado divergentes: {result.to_dict()!r}")
+    if report.get("receipt", {}).get("workspace") != str(expected):
+        raise AssertionError(f"report nao projetou receipt: {result.to_dict()!r}")
 
 
 def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
@@ -235,6 +238,8 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             result = application.run(objective)
             if name in {"a1_read", "a2_search"}:
                 assert_public_receipt(result)
+                if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != []:
+                    raise AssertionError(f"receipt de leitura incorreto: {result.to_dict()!r}")
             measurement = project_measurement(name, objective, started_at, application, result)
             measurement["answer"] = result.answer[:500]
             measurement["model_calls"] = len(gateway.calls)
@@ -331,6 +336,8 @@ def run_modify_journeys(app_home, workspace):
             if expected == "bypass" and planning_view is not None and "file_writer" in planning_view.presented_names:
                 raise AssertionError("file_writer permanece model-actionable na jornada suportada")
             result = application.run(objective)
+            if expected in {"success", "failure"}:
+                assert_public_receipt(result, scenario_workspace)
             measurement = project_measurement(name, objective, started_at, application, result, family="b")
             measurement["answer"] = result.answer[:500]
             measurement["model_calls"] = len(gateway.calls)
@@ -346,11 +353,27 @@ def run_modify_journeys(app_home, workspace):
                     raise AssertionError(f"B1 nÃ£o observou validaÃ§Ã£o real: {measurement!r}")
                 if invocations[0]["invocation_id"] == invocations[1]["invocation_id"]:
                     raise AssertionError(f"B1 reutilizou invocation_id: {measurement!r}")
+                if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != ["sample.py"]:
+                    raise AssertionError(f"B1 receipt nao refletiu mutacao: {result.to_dict()!r}")
+                if result.receipt.get("validation") != {"ran": True, "outcome": "passed"}:
+                    raise AssertionError(f"B1 receipt nao refletiu validacao: {result.to_dict()!r}")
+                if result.receipt.get("rollback", {}).get("occurred"):
+                    raise AssertionError(f"B1 receipt indicou rollback: {result.to_dict()!r}")
+                if result.receipt.get("final_state") != "applied":
+                    raise AssertionError(f"B1 receipt nao refletiu estado final: {result.to_dict()!r}")
             elif expected == "failure":
                 if result.status == "succeeded" or "validada" in result.answer.casefold():
                     raise AssertionError(f"B2 publicou sucesso validado após failure: {measurement!r}")
                 if measurement["before"] != measurement["after"] or len(invocations) != 2 or invocations[1].get("outcome") != "FAILED":
                     raise AssertionError(f"B2 nÃ£o preservou failure/rollback: {measurement!r}")
+                if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != ["sample.py"]:
+                    raise AssertionError(f"B2 receipt nao refletiu execucao: {result.to_dict()!r}")
+                if result.receipt.get("validation") != {"ran": True, "outcome": "failed"}:
+                    raise AssertionError(f"B2 receipt nao refletiu failure: {result.to_dict()!r}")
+                if result.receipt.get("rollback") != {"occurred": True, "outcome": "restored"}:
+                    raise AssertionError(f"B2 receipt nao refletiu restauracao: {result.to_dict()!r}")
+                if result.receipt.get("final_state") != "restored":
+                    raise AssertionError(f"B2 receipt nao refletiu estado restaurado: {result.to_dict()!r}")
             elif expected == "bypass":
                 if result.status == "succeeded" or measurement["before"] != measurement["after"]:
                     raise AssertionError(f"B3 writer direto ainda concluiu: {measurement!r}")

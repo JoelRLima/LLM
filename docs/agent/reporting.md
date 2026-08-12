@@ -18,11 +18,12 @@ O sistema mantém fatos em suas fontes operacionais e os projeta para relatório
   `ExecutionObservation` e exportação do cenário.
 
 Projection não é uma segunda fonte de verdade. Campos ausentes permanecem
-ausentes. O resultado projetado (`last_result`/status) é a evidência primária de
-sucesso; o builder legado ainda possui fallback para o último step ou para uma
-resposta final não vazia quando não há resultado projetado. Esse fallback é
-compatibilidade de relatório, não prova independente de execução, autoridade ou
-sucesso a partir de texto livre.
+ausentes. `AgentRunResult.status/success` e o `canonical_outcome` fornecido ao
+`TaskReportBuilder` representam o resultado operacional da execução; não são um
+julgamento de satisfação semântica do objetivo. O receipt operacional separa a
+resposta do modelo dos fatos observáveis: tools executadas ou negadas, arquivos,
+validação, rollback, causa e caminho do relatório. A satisfação do objetivo
+continua sendo responsabilidade de um avaliador externo.
 
 ## Artefatos
 

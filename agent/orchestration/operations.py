@@ -130,12 +130,15 @@ class OrchestratorOperations:
             config = (self.session.config or {}).get("task_report", {}) or {}
             if not config.get("enabled", True):
                 return None
+            if status is None:
+                logger.warning("Task report requires canonical execution status")
+                return None
             builder = TaskReportBuilder(self.session.config)
             report = builder.build_report(
                 self.agent_state,
                 self._get_metrics_for_task(),
                 final_answer,
-                canonical_outcome={"status": status, "error": error} if status is not None else None,
+                canonical_outcome={"status": status, "error": error},
                 receipt=receipt,
             )
             path = builder.save_report(report, format=config.get("format", "json"))

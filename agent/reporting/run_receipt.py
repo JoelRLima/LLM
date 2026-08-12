@@ -8,10 +8,10 @@ from typing import Any, cast
 from agent.llm.model_client import ModelProviderError
 
 
-def effect_for_status(status: str) -> bool | None:
-    if status in {"blocked", "permission_denied", "unavailable", "protocol_error"}:
+def executed_for_status(status: str) -> bool | None:
+    if status in {"blocked", "permission_denied", "unavailable"}:
         return False
-    if status == "succeeded":
+    if status in {"succeeded", "failed", "timed_out", "protocol_error"}:
         return True
     return None
 
@@ -47,21 +47,21 @@ def _artifact_metadata(data: Any) -> list[dict[str, Any]]:
 def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, list[dict[str, Any]]]:
     raw = cast(dict[str, Any], entry.get("result") if isinstance(entry.get("result"), dict) else {})
     status = str(raw.get("status") or entry.get("status") or "")
-    effect = raw.get("effect_executed")
-    if not isinstance(effect, bool):
-        effect = effect_for_status(status)
+    executed = raw.get("executed")
+    if not isinstance(executed, bool):
+        executed = executed_for_status(status)
     tool = {
         "tool": str(entry.get("tool") or ""),
         "invocation_id": entry.get("invocation_id") or raw.get("invocation_id"),
         "status": status,
-        "effect_executed": effect,
+        "executed": executed,
         "error_code": raw.get("error_code"),
     }
     metadata = _artifact_metadata(raw.get("data"))
     if any(item.get("applied") is True for item in metadata):
-        effect = True
-        tool["effect_executed"] = True
-    return tool, effect, metadata
+        executed = True
+        tool["executed"] = True
+    return tool, executed, metadata
 
 
 def _collect_artifact_state(
@@ -130,19 +130,22 @@ def build_run_receipt(
         }
         if isinstance(raw_detail, dict):
             cause["detail"] = dict(raw_detail)
-    effect_executed: bool | None = (
+    executed: bool | None = (
         effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
     )
+    replan = {"occurred": True, "count": replan_count} if replan_count else None
+    final_state = "restored" if rollback["occurred"] else ("applied" if files else None)
     return {
         "workspace": str(workspace),
         "tools": tools,
         "files_affected": sorted(files),
         "validation": validation,
         "rollback": rollback,
+        "final_state": final_state,
         "repair": {"occurred": repair_count > 0, "count": repair_count},
-        "replan": {"occurred": replan_count > 0, "count": replan_count},
+        "replan": replan,
         "error": cause,
-        "effect_executed": effect_executed,
+        "executed": executed,
         "status": status,
     }
 
@@ -155,13 +158,15 @@ def build_run_diagnostics(
     failure_layer: str | None = None,
 ) -> tuple[dict[str, Any], ...]:
     diagnostics: list[dict[str, Any]] = []
-    if error or failure_code:
-        last = getattr(state, "last_result", None) or {}
+    last = getattr(state, "last_result", None) or {}
+    observed_code = last.get("error_code") if isinstance(last, dict) else None
+    code = failure_code or observed_code
+    if error or code:
         diagnostics.append({
-            "layer": failure_layer or failure_layer_for_code(failure_code),
-            "code": failure_code or "RUN_FAILED",
+            "layer": failure_layer or failure_layer_for_code(code),
+            "code": code or "RUN_FAILED",
             "message": error or "A execucao nao foi concluida.",
-            "effect_executed": effect_for_status(str(last.get("status") or "")),
+            "executed": executed_for_status(str(last.get("status") or "")),
         })
     last_result = getattr(state, "last_result", None) or {}
     data = last_result.get("data") if isinstance(last_result, dict) else None

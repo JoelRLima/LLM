@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable
 from typing import Any, Dict, Optional, cast
 
-from agent.error_handler import ErrorHandler
 from agent.parsers import extract_json, extract_json_from_end
 from agent.runtime.logging import logger
 
@@ -23,7 +22,8 @@ class ModelProviderError(RuntimeError):
     layer = "provider"
 
     def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
-        self.public_message = ErrorHandler.sanitize_error(str(message)) or "Falha na comunicacao com o modelo."
+        del message
+        self.public_message = "Model provider request failed."
         super().__init__(self.public_message)
         if cause is not None:
             self.__cause__ = cause
