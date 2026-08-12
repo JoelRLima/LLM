@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.final_response import FinalResponder
+from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
 from agent.llm.model_client import ModelProviderError
 
 
@@ -95,6 +95,8 @@ def test_tool_summary_preserves_positive_and_failed_observations() -> None:
                     "ok": False,
                     "status": "failed",
                     "data": "",
+                    "executed": True,
+                    "error_code": "TOOL_ERROR",
                     "error": "acesso negado",
                 },
             },
@@ -105,9 +107,166 @@ def test_tool_summary_preserves_positive_and_failed_observations() -> None:
     summary = responder._tool_results_summary()
 
     assert "sentinel_unique_8472.txt" in summary
-    assert "status: failed" in summary
-    assert "error: acesso negado" in summary
+    assert '"status":"failed"' in summary
+    assert '"executed":true' in summary
+    assert '"error_code":"TOOL_ERROR"' in summary
+    assert "acesso negado" not in summary
     assert 'observação: ""' in summary
+
+
+@pytest.mark.parametrize(
+    ("data", "serialized"),
+    (([], "[]"), ({}, "{}"), ("", '""'), (None, "null")),
+)
+def test_tool_summary_preserves_each_falsy_data_semantic(data, serialized) -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "probe",
+                "result": {"ok": True, "status": "succeeded", "data": data},
+            }
+        ]
+    )
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert f"observação: {serialized}" in summary
+
+
+def test_tool_summary_distinguishes_missing_data_from_none() -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {"tool": "missing", "result": {"ok": True, "status": "succeeded"}},
+            {
+                "tool": "none",
+                "result": {"ok": True, "status": "succeeded", "data": None},
+            },
+        ]
+    )
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert "observação: <data ausente>" in summary
+    assert "observação: null" in summary
+
+
+def test_tool_summary_preserves_multiple_results_in_order() -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "first",
+                "result": {"ok": True, "status": "succeeded", "data": {"first": 1}},
+            },
+            {
+                "tool": "empty",
+                "result": {"ok": True, "status": "succeeded", "data": []},
+            },
+            {
+                "tool": "failed",
+                "result": {
+                    "ok": False,
+                    "status": "failed",
+                    "data": None,
+                    "error_code": "TOOL_ERROR",
+                    "error": "conteúdo interno",
+                },
+            },
+        ]
+    )
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert summary.index('"tool":"first"') < summary.index('"tool":"empty"')
+    assert summary.index('"tool":"empty"') < summary.index('"tool":"failed"')
+    assert "conteúdo interno" not in summary
+    assert summary.count("observação:") == 3
+
+
+def test_tool_summary_does_not_forward_raw_error_or_message_secrets() -> None:
+    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "failed",
+                "result": {
+                    "ok": False,
+                    "status": "failed",
+                    "data": None,
+                    "error_code": "TOOL_ERROR",
+                    "message": secret,
+                    "error": secret,
+                },
+            }
+        ]
+    )
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert '"error_code":"TOOL_ERROR"' in summary
+    for marker in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert marker not in summary
+
+
+def test_tool_summary_has_one_global_budget_and_keeps_every_result() -> None:
+    history = [
+        {
+            "tool": f"tool_{index}",
+            "result": {"ok": True, "status": "succeeded", "data": "x" * 10_000},
+        }
+        for index in range(60)
+    ]
+    state = SimpleNamespace(tool_history=history)
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
+    assert summary.count("--- Resultado de ferramenta ---") == len(history)
+    assert '"tool":"tool_0"' in summary
+    assert '"tool":"tool_59"' in summary
+
+
+def test_tool_summary_budget_includes_json_escaped_metadata() -> None:
+    history = [
+        {
+            "tool": "\x00" * 32,
+            "result": {
+                "ok": True,
+                "status": "succeeded",
+                "executed": True,
+                "error_code": "APPLICATION_AUTHORITY_MISSING",
+                "data": "x" * 10_000,
+            },
+        }
+        for _ in range(60)
+    ]
+    state = SimpleNamespace(tool_history=history)
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
+    assert "\x00" not in summary
+    assert summary.count("--- Resultado de ferramenta ---") == len(history)
+
+
+def test_tool_summary_drops_untrusted_error_code() -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "failed",
+                "result": {
+                    "ok": False,
+                    "status": "failed",
+                    "data": None,
+                    "error_code": "TOPSECRET",
+                },
+            }
+        ]
+    )
+
+    summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
+
+    assert "TOPSECRET" not in summary
+    assert '"error_code":null' in summary
 
 
 @pytest.mark.parametrize("streaming", [False, True])

@@ -7,6 +7,52 @@ from agent.llm.model_client import ModelProviderError
 from agent.llm.router import is_security_objective
 from agent.runtime.logging import logger
 
+MAX_TOOL_RESULTS_SUMMARY_CHARS = 12_000
+MAX_TOOL_RESULT_SUMMARY_CHARS = 2_000
+PUBLIC_TOOL_ERROR_CODES = frozenset(
+    {
+        "ADAPTER_FAILED",
+        "APPLICATION_AUTHORITY_DENIED",
+        "APPLICATION_AUTHORITY_MISSING",
+        "APPROVAL_DENIED",
+        "APPROVAL_FAILED",
+        "APPROVAL_REQUIRED",
+        "AUTHORITY_REQUIRED",
+        "CANCELLED",
+        "DUPLICATE_INVOCATION_ID",
+        "EXECUTION_ERROR",
+        "INVALID_ARGUMENTS",
+        "INVALID_RESPONSE",
+        "INVALID_RESULT",
+        "INVALID_STATUS",
+        "INVOCATION_ID_MISMATCH",
+        "ORIGIN_MISMATCH",
+        "PERMISSION_DENIED",
+        "REGISTRY_UNBOUND",
+        "REQUEST_INVALID",
+        "RUNTIME_MISMATCH",
+        "TASK_AUTHORITY_DENIED",
+        "TASK_AUTHORITY_MISSING",
+        "TIMEOUT",
+        "TOOL_ERROR",
+        "TOOL_NOT_FOUND",
+        "WORKSPACE_GRANT_DENIED",
+    }
+)
+PUBLIC_TOOL_STATUSES = frozenset(
+    {
+        "blocked",
+        "cancelled",
+        "failed",
+        "permission_denied",
+        "protocol_error",
+        "succeeded",
+        "timed_out",
+        "unavailable",
+        "unverified",
+    }
+)
+
 
 class FinalResponder:
     def __init__(
@@ -38,9 +84,18 @@ class FinalResponder:
         return ""
 
     def _tool_results_summary(self) -> str:
+        history = self.orchestrator.agent_state.tool_history
+        if not history:
+            return ""
+        per_result_budget = min(
+            MAX_TOOL_RESULT_SUMMARY_CHARS,
+            max(200, MAX_TOOL_RESULTS_SUMMARY_CHARS // len(history)),
+        )
         chunks: list[str] = []
-        for entry in self.orchestrator.agent_state.tool_history:
-            tool_name = entry.get("tool", "")
+        for entry in history:
+            tool_name = re.sub(
+                r"[^A-Za-z0-9_.-]", "?", str(entry.get("tool", ""))
+            )[:32]
             result = entry.get("result", {})
             if not isinstance(result, dict):
                 result = {}
@@ -53,17 +108,40 @@ class FinalResponder:
                     observation = str(result["data"])
             else:
                 observation = "<data ausente>"
-            chunk = (
-                f"\n\n--- Resultado de {tool_name} ---\n"
-                f"status: {result.get('status')}\n"
-                f"ok: {result.get('ok')}\n"
-                f"observação: {observation[:2000]}"
+            raw_error_code = result.get("error_code")
+            error_code = (
+                str(raw_error_code)
+                if isinstance(raw_error_code, str)
+                and raw_error_code in PUBLIC_TOOL_ERROR_CODES
+                else None
             )
-            for field in ("message", "error"):
-                value = result.get(field)
-                if value:
-                    chunk += f"\n{field}: {str(value)[:2000]}"
-            chunks.append(chunk)
+            raw_status = result.get("status")
+            status = (
+                raw_status
+                if isinstance(raw_status, str) and raw_status in PUBLIC_TOOL_STATUSES
+                else "unknown"
+            )
+            raw_ok = result.get("ok")
+            ok = raw_ok if type(raw_ok) is bool else None
+            raw_executed = result.get("executed")
+            executed = raw_executed if type(raw_executed) is bool else None
+            metadata = json.dumps(
+                {
+                    "tool": tool_name,
+                    "status": status,
+                    "ok": ok,
+                    "executed": executed,
+                    "error_code": error_code,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            prefix = f"\n\n--- Resultado de ferramenta ---\n{metadata}\nobservação: "
+            available = max(0, per_result_budget - len(prefix))
+            if len(observation) > available:
+                marker = "…<truncado>"
+                observation = observation[: max(0, available - len(marker))] + marker
+            chunks.append(prefix + observation)
         return "".join(chunks)
 
     def _build_prompt(self, objective: str, notes_content: str) -> str:
