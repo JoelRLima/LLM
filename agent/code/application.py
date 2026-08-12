@@ -13,7 +13,13 @@ from agent.code.task_templates import build_code_task_template
 from agent.code.workflows import CodingWorkflowService
 from agent.llm.contracts import ModelGateway, UnavailableModelGateway
 from agent.planning.task_graph import TaskGraph, task_graph_from_dict
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from agent.runtime.context import (
+    NullMetricsSink,
+    RuntimeLimits,
+    TaskExecutionContext,
+    TaskResult,
+    TaskStatus,
+)
 from agent.runtime.hardware import resolve_hardware_profile
 
 
@@ -30,6 +36,7 @@ class CodeRequest:
 def build_code_context(
     config: Dict[str, Any],
     model_gateway: Optional[ModelGateway],
+    metrics_sink: Any = None,
 ) -> TaskExecutionContext:
     hardware = resolve_hardware_profile(config)
     profiles = config.get("model_profiles")
@@ -59,6 +66,7 @@ def build_code_context(
         model_gateway=model_gateway or UnavailableModelGateway(),
         cancellation=CancellationToken(),
         limits=limits,
+        metrics_sink=metrics_sink or NullMetricsSink(),
         permissions=frozenset({"read", "write", "process", "analyze"}),
         metadata={
             "model": getattr(

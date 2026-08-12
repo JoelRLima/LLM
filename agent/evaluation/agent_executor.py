@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from agent.application import AgentApplication
 from agent.approval import ApprovalPort
 from agent.evaluation.contracts import ExecutionObservation
+from agent.reporting.task_report_rendering import aggregate_metrics
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.tools.authority import TaskAuthoritySnapshot
@@ -72,6 +73,8 @@ class AgentApplicationScenarioExecutor:
                 ]
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 metadata = metadata if isinstance(metadata, dict) else {}
+                task_metrics = application.orchestrator._get_metrics_for_task()
+                canonical_metrics = aggregate_metrics(task_metrics, len(history))
                 measurement = {
                     "task_id": f"eval:{objective.split(':', 1)[0].strip()}",
                     "duration_ms": int((time.monotonic() - started) * 1000),
@@ -87,7 +90,16 @@ class AgentApplicationScenarioExecutor:
                     "output_chars": int(metadata.get("total_chars", len(output))),
                     "truncated": bool(metadata.get("truncated", False)),
                     "tool_history_count": len(history),
-                    "model_calls": len(getattr(gateway, "calls", [])),
+                    "model_calls": canonical_metrics["model_calls"],
+                    "gateway_calls": len(getattr(gateway, "calls", [])),
+                    "run_id": next(
+                        (
+                            str(entry["run_id"])
+                            for entry in task_metrics
+                            if isinstance(entry, dict) and entry.get("run_id")
+                        ),
+                        None,
+                    ),
                     "status": result.status,
                 }
                 return ExecutionObservation(

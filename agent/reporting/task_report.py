@@ -42,6 +42,11 @@ class TaskReportBuilder:
         steps = self._build_steps(history)
         start, end = self._resolve_time_range(events, metrics_entries)
         answer = final_answer or ""
+        run_ids = sorted({
+            str(entry["run_id"])
+            for entry in metrics_entries
+            if isinstance(entry, dict) and entry.get("run_id")
+        })
         report = {
             "task_id": self._generate_task_id(),
             "objective": getattr(agent_state, "objective", None),
@@ -56,6 +61,8 @@ class TaskReportBuilder:
         }
         report["status"] = status
         report["error"] = canonical_outcome.get("error")
+        if len(run_ids) == 1:
+            report["run_id"] = run_ids[0]
         if receipt is not None:
             report["receipt"] = receipt
         return report
@@ -174,7 +181,7 @@ class TaskReportBuilder:
         return now, now
 
     @staticmethod
-    def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[str, int]:
+    def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[str, Any]:
         return aggregate_metrics(entries, tools_called)
 
     @staticmethod

@@ -41,7 +41,6 @@ from agent.workspace import WorkspaceManager
 
 class Orchestrator(OrchestratorOperations):
     """Public composition facade for the agent runtime."""
-
     def __init__(
         self,
         session: ChatSession,
@@ -84,6 +83,7 @@ class Orchestrator(OrchestratorOperations):
         self._cancelled = False
         self._task_start_time = 0.0
         self._metrics_start_line = 0
+        self._run_id: str | None = None
         self.cancellation_token = CancellationToken()
         self.checkpoint_file = str(
             checkpoint_file
@@ -105,6 +105,7 @@ class Orchestrator(OrchestratorOperations):
             memory.initialize()
         self.checkpoint_manager = CheckpointManager(self.checkpoint_file)
         self.metrics_recorder = MetricsRecorder(selected_metrics)
+        self.session.set_model_call_callback(self._log_metric)
         self.agent_state = AgentState(memory=memory)
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])

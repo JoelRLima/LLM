@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, Sequence
 
 from agent.code.changes import ChangeSet, changeset_from_dict
@@ -67,14 +68,6 @@ def propose_changes(service: Any, objective: str, target_files: Sequence[str]) -
         structured_output=structured,
     )
     response, call_number = _complete(service, request)
-    service.context.record_metric("model_call", {
-        "operation": "propose_changes",
-        "provider": service.context.model_gateway.provider_name,
-        "call_number": call_number,
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "total_tokens": response.usage.total_tokens,
-    })
     parsed = parse_structured_response(response.content, CHANGESET_SCHEMA)
     return changeset_from_dict(parsed, objective=objective)
 
@@ -94,11 +87,35 @@ def _prompt(objective: str, targets: Sequence[str], context: str, instruction: s
 def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
     service.context.emit("model_call_started", {"operation": "propose_changes"})
     call_number = service.context.consume_model_call()
-    with service.context.model_slot():
-        response = service.context.model_gateway.complete(request)
+    started_at = time.monotonic()
+    try:
+        with service.context.model_slot():
+            response = service.context.model_gateway.complete(request)
+    except Exception:
+        service.context.record_metric("model_call", {
+            "operation": "propose_changes",
+            "provider": service.context.model_gateway.provider_name,
+            "call_number": call_number,
+            "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
+            "success": False,
+        })
+        raise
+    usage = getattr(response, "usage", None)
+    data = {
+        "operation": "propose_changes",
+        "provider": service.context.model_gateway.provider_name,
+        "call_number": call_number,
+        "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
+        "success": True,
+    }
+    for field in ("input_tokens", "output_tokens", "total_tokens"):
+        value = getattr(usage, field, None)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            data[field] = int(value)
+    service.context.record_metric("model_call", data)
     service.context.emit("model_call_completed", {
         "operation": "propose_changes",
         "provider": service.context.model_gateway.provider_name,
-        "tokens": response.usage.total_tokens,
+        "tokens": getattr(usage, "total_tokens", None),
     })
     return response, call_number

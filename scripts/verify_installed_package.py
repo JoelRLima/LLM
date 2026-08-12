@@ -234,6 +234,23 @@ def assert_public_receipt(result, expected_workspace=None):
         raise AssertionError(f"report nao projetou receipt: {result.to_dict()!r}")
 
 
+def assert_canonical_model_measurement(result, gateway, application):
+    del application
+    if not result.report_path or not Path(result.report_path).is_file():
+        raise AssertionError("report de medicao nao persistido")
+    report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+    metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
+    expected = len(gateway.calls)
+    if metrics.get("model_calls") != expected:
+        raise AssertionError(
+            f"model_calls divergente: gateway={expected}, report={metrics.get('model_calls')}"
+        )
+    if not report.get("run_id"):
+        raise AssertionError("run_id ausente no report instalado")
+    if metrics.get("total_duration_ms", 0) <= 0:
+        raise AssertionError("duracao de run instalada nao observavel")
+
+
 def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
     paths = AppPaths.discover(app_home, env={})
     ConfigRepository(paths).initialize()
@@ -271,6 +288,8 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             measurement["answer"] = result.answer[:500]
             measurement["model_calls"] = len(gateway.calls)
             measurement["status"] = result.status
+            if uses_model:
+                assert_canonical_model_measurement(result, gateway, application)
             if uses_model and name == "a4_no_tool":
                 raise AssertionError("cenÃ¡rio no-tool nÃ£o deveria usar modelo")
             if name == "a4_no_tool" and measurement["tools"]:

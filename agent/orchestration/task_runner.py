@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from agent.llm.router import _is_clearly_trivial
 from agent.planning.complexity import is_hierarchical
@@ -68,6 +71,7 @@ class TaskRunner:
         else:
             self.orchestrator._reset_task_state(inputs.objective)
         self.orchestrator._task_start_time = Watchdog.start_task()
+        self.orchestrator._run_id = uuid4().hex
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
         print(f"\nAnalisando: \"{inputs.objective}\"")
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
@@ -135,18 +139,47 @@ class TaskRunner:
 
     def _cleanup(self, original_count: int) -> None:
         orchestrator = self.orchestrator
-        if orchestrator._task_failed:
-            orchestrator.workspace.rollback()
-        while len(orchestrator.session.messages) > original_count:
-            orchestrator.session.messages.pop()
-        maximum = orchestrator.agent_state.max_history_turns
-        orchestrator.agent_state.conversation_history = orchestrator.agent_state.conversation_history[-maximum:]
-        orchestrator.context_manager.maybe_compress_context()
         try:
-            orchestrator._persist_memory_to_file()
-        except Exception:
-            orchestrator._task_failed = True
-            logger.exception("Falha ao persistir memória ao finalizar a tarefa.")
-            raise
-        if not orchestrator._cancelled:
-            orchestrator._delete_checkpoint()
+            if orchestrator._task_failed:
+                orchestrator.workspace.rollback()
+            while len(orchestrator.session.messages) > original_count:
+                orchestrator.session.messages.pop()
+            maximum = orchestrator.agent_state.max_history_turns
+            orchestrator.agent_state.conversation_history = orchestrator.agent_state.conversation_history[-maximum:]
+            orchestrator.context_manager.maybe_compress_context()
+            try:
+                orchestrator._persist_memory_to_file()
+            except Exception:
+                orchestrator._task_failed = True
+                logger.exception("Falha ao persistir memória ao finalizar a tarefa.")
+                raise
+            if not orchestrator._cancelled:
+                orchestrator._delete_checkpoint()
+        finally:
+            log_metric = getattr(orchestrator, "_log_metric", None)
+            if getattr(orchestrator, "_run_id", None) is not None and callable(log_metric):
+                try:
+                    last_result = getattr(orchestrator.agent_state, "last_result", None)
+                    last_status = (
+                        str(last_result.get("status"))
+                        if isinstance(last_result, dict) and last_result.get("status")
+                        else None
+                    )
+                    log_metric({
+                        "type": "run",
+                        "metric_type": "run",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "duration_ms": max(
+                            0, int((time.monotonic() - orchestrator._task_start_time) * 1000)
+                        ),
+                        "success": (
+                            not orchestrator._task_failed
+                            and not orchestrator._cancelled
+                            and last_status not in {
+                                "blocked", "unverified", "cancelled", "failed",
+                                "timed_out", "permission_denied", "protocol_error", "unavailable",
+                            }
+                        ),
+                    })
+                except Exception as exc:
+                    logger.warning("Falha ao registrar duracao da tarefa: %s", type(exc).__name__)

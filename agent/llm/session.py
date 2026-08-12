@@ -1,5 +1,7 @@
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import time
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from agent.llm.contracts import (
     LegacyPayloadGateway,
@@ -32,6 +34,49 @@ class ChatSession:
         self.config: Dict[str, Any] = config
         self.gateway: LegacyPayloadGateway = gateway or create_model_gateway(config)
         self.hardware_profile: HardwareProfile = resolve_hardware_profile(config)
+        self.model_call_callback: Callable[[Dict[str, Any]], None] | None = None
+
+    def set_model_call_callback(
+        self, callback: Callable[[Dict[str, Any]], None] | None
+    ) -> None:
+        """Instala o observador da fronteira legada de provider.
+
+        O callback pertence ao transporte (e não ao parser/model client),
+        portanto cada request real é publicado uma única vez, inclusive em
+        falhas e streams.
+        """
+        self.model_call_callback = callback
+
+    def _record_model_call(
+        self, started_at: float, *, success: bool, streaming: bool, response: Any = None
+    ) -> None:
+        callback = self.model_call_callback
+        if callback is None:
+            return
+        entry: Dict[str, Any] = {
+            "type": "model_call",
+            "metric_type": "model_call",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
+            "success": bool(success),
+            "streaming": bool(streaming),
+            "provider": getattr(self.gateway, "provider_name", None),
+            "model": getattr(self.gateway, "model", self.config.get("model")),
+        }
+        usage = response.get("usage") if isinstance(response, dict) else None
+        if isinstance(usage, dict):
+            for source, target in (
+                ("prompt_tokens", "prompt_tokens"),
+                ("completion_tokens", "completion_tokens"),
+                ("total_tokens", "total_tokens"),
+            ):
+                value = usage.get(source)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    entry[target] = int(value)
+        try:
+            callback(entry)
+        except Exception as exc:  # observability must not change provider semantics
+            logger.warning("Falha ao registrar chamada do modelo: %s", type(exc).__name__)
 
     # ---- Gerenciamento de prompts ----
 
@@ -144,20 +189,38 @@ class ChatSession:
             reasoning_budget=self.thinking_budget,
             structured_output=structured,
         )
-        return self.gateway.build_payload(request)
+        return cast(Dict[str, Any], self.gateway.build_payload(request))
 
     # ---- Envio de requisições ----
 
     def send_request(self, payload: Dict[str, Any], stream: bool = True) -> Any:
         """Fachada legada; transporte pertence ao adapter de provider."""
-        return self.gateway.send_payload(payload, stream=stream)
+        started_at = time.monotonic()
+        try:
+            response = self.gateway.send_payload(payload, stream=stream)
+        except Exception:
+            self._record_model_call(started_at, success=False, streaming=stream)
+            raise
+        self._record_model_call(
+            started_at, success=True, streaming=stream, response=response
+        )
+        return response
 
     def send_non_streaming_request(self, payload: Dict[str, Any]) -> str:
         """
         Envia uma requisição sem streaming e retorna o texto da resposta.
         Levanta exceções em caso de erro (timeout, HTTPError, etc.).
         """
-        return self.gateway.complete_payload(payload)
+        started_at = time.monotonic()
+        try:
+            response = self.gateway.complete_payload(payload)
+        except Exception:
+            self._record_model_call(started_at, success=False, streaming=False)
+            raise
+        self._record_model_call(
+            started_at, success=True, streaming=False, response=response
+        )
+        return cast(str, response)
 
     # ---- Processamento de stream (mantido) ----
 
@@ -172,4 +235,4 @@ class ChatSession:
             on_error(message)           – erro reportado pelo servidor
             on_done(timings)            – timings finais (último chunk)
         """
-        return self.gateway.consume_stream(response, callbacks)
+        return cast(str, self.gateway.consume_stream(response, callbacks))

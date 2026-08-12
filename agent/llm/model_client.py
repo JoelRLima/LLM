@@ -109,6 +109,8 @@ class ModelClient:
             return
         usage = response.get("usage") or {} if isinstance(response, dict) else {}
         callback({
+            "type": "model_metadata",
+            "metric_type": "model_metadata",
             "timestamp": dt.datetime.now().isoformat(),
             "step_type": step_type,
             "tool": decision.get("tool") if decision else None,

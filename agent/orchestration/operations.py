@@ -21,6 +21,7 @@ class OrchestratorOperations:
     checkpoint_manager: Any
     metrics_recorder: Any
     _metrics_start_line: int
+    _run_id: str | None
     _task_failed: bool
     _cancelled: bool
     cancellation_token: Any
@@ -110,7 +111,10 @@ class OrchestratorOperations:
             self._save_checkpoint()
 
     def _log_metric(self, entry: Dict[str, Any]) -> None:
-        self.metrics_recorder.log_metric(entry)
+        enriched = dict(entry)
+        if getattr(self, "_run_id", None) is not None:
+            enriched.setdefault("run_id", self._run_id)
+        self.metrics_recorder.log_metric(enriched)
 
     def _count_metrics_lines(self) -> int:
         return int(self.metrics_recorder.count_lines())

@@ -48,6 +48,14 @@ class _PolicyApprover:
         )
 
 
+class _OrchestratorMetricsSink:
+    def __init__(self, callback: Any) -> None:
+        self._callback = callback
+
+    def record(self, metric: Dict[str, Any]) -> None:
+        self._callback(metric)
+
+
 class CodeTaskSkill(BaseSkill):
     name = "code_task"
     description = (
@@ -70,6 +78,7 @@ class CodeTaskSkill(BaseSkill):
             if self.config.get("auto_confirm") is True
             else RequireExplicitApproval()
         )
+        self.orchestrator: Any | None = None
 
     def get_schema(self) -> dict:
         return {
@@ -110,7 +119,14 @@ class CodeTaskSkill(BaseSkill):
         targets_raw = args.get("targets", [])
         targets = [str(item) for item in targets_raw] if isinstance(targets_raw, list) else []
         try:
-            context = build_code_context(self.config, self.model_gateway)
+            metrics_sink = (
+                _OrchestratorMetricsSink(self.orchestrator._log_metric)
+                if self.orchestrator is not None
+                else None
+            )
+            context = build_code_context(
+                self.config, self.model_gateway, metrics_sink=metrics_sink
+            )
             graph = args.get("graph")
             result = CodingApplicationService(
                 self.base_dir,
