@@ -41,6 +41,8 @@ def apply_changes(
         applied=True,
         validation=report.status.value,
         validation_invocation_id=validation_invocation_id,
+        rollback_occurred=False,
+        final_state="applied",
     )
     if report.status == ValidationStatus.PASSED:
         transaction.mark_validated()
@@ -48,6 +50,15 @@ def apply_changes(
     if report.status == ValidationStatus.UNAVAILABLE:
         return TaskResult(TaskStatus.UNVERIFIED, summary="ChangeSet aplicado, mas não há validação disponível.", artifacts=(artifact,), diagnostics=diagnostics)
     transaction.rollback()
+    artifact = _artifact(
+        preview,
+        assessment,
+        applied=True,
+        validation=report.status.value,
+        validation_invocation_id=validation_invocation_id,
+        rollback_occurred=True,
+        final_state="restored",
+    )
     status = TaskStatus.CANCELLED if report.status == ValidationStatus.CANCELLED else TaskStatus.FAILED
     return TaskResult(status, summary="Validação falhou; alterações revertidas.", artifacts=(artifact,), diagnostics=diagnostics, error=f"validation:{report.status.value}")
 
@@ -59,6 +70,8 @@ def _artifact(
     applied: bool,
     validation: str | None = None,
     validation_invocation_id: str | None = None,
+    rollback_occurred: bool = False,
+    final_state: str | None = None,
 ) -> Artifact:
     metadata = {
         "change_set_id": preview.change_set_id,
@@ -67,7 +80,10 @@ def _artifact(
         "confidence_reasons": assessment.reasons,
         "requires_confirmation": assessment.requires_confirmation,
         "applied": applied,
+        "rollback_occurred": rollback_occurred,
     }
+    if final_state is not None:
+        metadata["final_state"] = final_state
     if validation is not None:
         metadata["validation"] = validation
     if validation_invocation_id is not None:

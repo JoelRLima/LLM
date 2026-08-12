@@ -37,7 +37,6 @@ class TaskRunner:
             if not inputs.resumed and _is_clearly_trivial(inputs.objective):
                 return str(self.orchestrator._answer_trivial(inputs.objective))
             answer = self._execute(inputs, stream_callback)
-            self.orchestrator._generate_task_report(answer)
             return answer
         except KeyboardInterrupt:
             return self._handle_interrupt()

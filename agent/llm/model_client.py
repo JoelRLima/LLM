@@ -9,10 +9,24 @@ import time
 from collections.abc import Callable
 from typing import Any, Dict, Optional, cast
 
+from agent.error_handler import ErrorHandler
 from agent.parsers import extract_json, extract_json_from_end
 from agent.runtime.logging import logger
 
 FALLBACK_AGENT_MAX_TOKENS = 4096
+
+
+class ModelProviderError(RuntimeError):
+    """Public-safe causal failure for one model/provider request."""
+
+    code = "MODEL_PROVIDER_ERROR"
+    layer = "provider"
+
+    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
+        self.public_message = ErrorHandler.sanitize_error(str(message)) or "Falha na comunicacao com o modelo."
+        super().__init__(self.public_message)
+        if cause is not None:
+            self.__cause__ = cause
 
 
 class ModelClient:
@@ -67,7 +81,7 @@ class ModelClient:
             )
             if not can_fallback:
                 logger.error(f"Erro na requisição ao modelo: {exc}")
-                return f"Erro na requisição: {exc}"
+                raise ModelProviderError(str(exc), cause=exc) from exc
         cls._backend_supports_grammar = False
         fallback_payload = dict(request_payload)
         fallback_payload.pop("grammar", None)
@@ -75,7 +89,7 @@ class ModelClient:
             return session.send_non_streaming_request(fallback_payload)
         except Exception as exc:
             logger.error(f"Erro na requisição ao modelo: {exc}")
-            return f"Erro na requisição: {exc}"
+            raise ModelProviderError(str(exc), cause=exc) from exc
 
     @staticmethod
     def _extract_decision(response: Any) -> Optional[Dict[str, Any]]:
@@ -116,9 +130,11 @@ class ModelClient:
         retry_payload["stream"] = False
         try:
             response = session.send_non_streaming_request(retry_payload)
+        except ModelProviderError:
+            raise
         except Exception as exc:
             logger.error(f"Erro no retry: {exc}")
-            return None
+            raise ModelProviderError(str(exc), cause=exc) from exc
         if verbose:
             print(" ✓")
         return ModelClient._extract_decision(response)

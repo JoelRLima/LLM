@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Iterator
 
+from agent.application import AgentApplication
 from agent.approval import AutoApprove
 from agent.evaluation import (
     AgentApplicationScenarioExecutor,
@@ -14,6 +15,8 @@ from agent.evaluation import (
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.tools.authority import TaskAuthoritySnapshot
 from agent.tools.extension_catalog_service import ExtensionCatalogService
@@ -105,6 +108,80 @@ class JourneyGateway:
         if "CAP_FAILURE" in self.objective:
             return "A inspeção falhou; não foi possível concluir com sucesso."
         return "A tarefa foi concluída com a evidência retornada."
+
+
+class ProviderFailureGateway:
+    def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
+        return {"messages": [{"role": item.role, "content": item.content} for item in request.messages]}
+
+    def complete_payload(self, payload: Dict[str, Any]) -> str:
+        del payload
+        raise RuntimeError("provider endpoint invalid")
+
+    def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
+        del payload, stream
+        raise RuntimeError("provider endpoint invalid")
+
+    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
+        del response, callbacks
+        raise RuntimeError("provider endpoint invalid")
+
+    def count_tokens(self, text: str) -> int:
+        del text
+        return 1
+
+
+def _initialized_paths(tmp_path: Path) -> AppPaths:
+    paths = AppPaths.discover(tmp_path / "home", env={})
+    ConfigRepository(paths).initialize()
+    return paths
+
+
+def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    paths = _initialized_paths(tmp_path)
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=ProviderFailureGateway(),
+        configure_logging=False,
+    ) as application:
+        result = application.run("leia notes.txt")
+
+    assert result.status == "failed"
+    assert result.error == "provider endpoint invalid"
+    assert result.receipt["error"]["code"] == "MODEL_PROVIDER_ERROR"
+    assert result.receipt["error"]["layer"] == "provider"
+    assert result.report_path is not None
+    report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+    assert report["success"] is False
+    assert report["status"] == "failed"
+
+
+def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:
+    for objective, expected_status, expected_validation, expected_rollback, expected_content in (
+        ("CAP_MODIFY: altere sample.py", "succeeded", "passed", False, "value = 2"),
+        ("CAP_RECOVERY: altere sample.py", "failed", "failed", True, "value = 1\n"),
+    ):
+        case_root = tmp_path / objective.split(":", 1)[0].lower()
+        workspace = case_root / "workspace"
+        workspace.mkdir(parents=True)
+        (workspace / "sample.py").write_text("value = 1\n", encoding="utf-8")
+        with AgentApplication.create(
+            paths=_initialized_paths(case_root),
+            workspace=workspace,
+            gateway=JourneyGateway(objective),
+            approval_policy=AutoApprove(),
+            configure_logging=False,
+        ) as application:
+            result = application.run(objective)
+        assert result.status == expected_status
+        assert result.receipt["files_affected"] == ["sample.py"]
+        assert result.receipt["validation"] == {"ran": True, "outcome": expected_validation}
+        assert result.receipt["rollback"]["occurred"] is expected_rollback
+        assert (workspace / "sample.py").read_text(encoding="utf-8") == expected_content
 
 
 def test_capability_evaluator_uses_real_agent_application_path(tmp_path: Path) -> None:

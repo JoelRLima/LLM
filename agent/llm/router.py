@@ -2,6 +2,7 @@ import json
 import re
 from typing import List, Tuple
 
+from agent.llm.model_client import ModelProviderError
 from agent.llm.prompts import CODER_PROMPT, GENERAL_PROMPT, RESEARCHER_PROMPT, SECURITY_AUDITOR_PROMPT
 from agent.llm.session import ChatSession
 from agent.runtime.logging import logger
@@ -96,6 +97,13 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
 
     try:
         response = session.send_non_streaming_request(payload)
+    except ModelProviderError:
+        raise
+    except Exception as exc:
+        logger.error(f"Erro no roteamento LLM: {exc}")
+        raise ModelProviderError(str(exc), cause=exc) from exc
+
+    try:
 
         match = re.search(r"```(?:json)?\s*([\s\S]*?)```", response)
         if match:
@@ -108,7 +116,7 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         else:
             persona = "general"
     except Exception as e:
-        logger.error(f"Erro no roteamento LLM: {e}")
+        logger.error(f"Resposta invÃ¡lida no roteamento LLM: {e}")
         persona = "general"
 
     session.messages[0]["content"] = original_prompt

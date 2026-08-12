@@ -7,12 +7,18 @@ import threading
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
+from agent.reporting.run_receipt import (
+    derive_error,
+    derive_status,
+    finalize_run_result,
+    public_exception_message,
+)
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.logging import setup_logger, teardown_logger
@@ -38,6 +44,8 @@ class AgentRunResult:
     error: str | None = None
     diagnostics: tuple[dict[str, Any], ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+    receipt: dict[str, Any] = field(default_factory=dict)
+    report_path: str | None = None
 
     @property
     def success(self) -> bool:
@@ -52,6 +60,8 @@ class AgentRunResult:
             "error": self.error,
             "diagnostics": list(self.diagnostics),
             "metadata": dict(self.metadata),
+            "receipt": dict(self.receipt),
+            "report_path": self.report_path,
         }
 
 
@@ -167,7 +177,7 @@ class AgentApplication:
                 approval_port=selected_approval,
                 event_emitter=orchestrator._emit,
                 state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
-                    name, args, res.to_legacy_dict()
+                    name, args, res.to_legacy_dict(include_details=True)
                 ),
             )
             orchestrator.tool_registry = tool_registry
@@ -220,6 +230,8 @@ class AgentApplication:
             raise RuntimeError("A aplicação já foi encerrada.")
         captured = io.StringIO()
         self._task_attempted = True
+        vars(self.orchestrator)["_last_failure_code"] = None
+        vars(self.orchestrator)["_last_failure_layer"] = None
         try:
             with redirect_stdout(captured):
                 answer = str(self.orchestrator.run(objective))
@@ -227,30 +239,16 @@ class AgentApplication:
             self.cancel()
             return self._result("cancelled", "", error="Tarefa cancelada pelo usuário.")
         except Exception as exc:
-            return self._result("failed", "", error=f"{type(exc).__name__}: {exc}")
+            vars(self.orchestrator)["_last_failure_code"] = getattr(exc, "code", None)
+            vars(self.orchestrator)["_last_failure_layer"] = getattr(exc, "layer", None)
+            return self._result("failed", "", error=public_exception_message(exc))
 
-        last_result = self.orchestrator.agent_state.last_result or {}
-        tool_status = str(last_result.get("status") or "")
-        if tool_status in {
-            "blocked", "unverified", "cancelled", "failed", "timed_out",
-            "permission_denied", "protocol_error", "unavailable",
-        }:
-            status = tool_status
-        elif self.orchestrator._cancelled:
-            status = "cancelled"
-        elif self.orchestrator._task_failed:
-            status = "failed"
-        else:
-            status = "succeeded"
+        status = derive_status(self.orchestrator)
         metadata: dict[str, Any] = {}
         legacy_output = captured.getvalue().strip()
         if legacy_output:
             metadata["legacy_output"] = legacy_output
-        error = (
-            str(last_result.get("error"))
-            if status != "succeeded" and last_result.get("error")
-            else None
-        )
+        error = derive_error(self.orchestrator, status)
         return self._result(status, answer, error=error, metadata=metadata)
 
     def _result(
@@ -259,15 +257,16 @@ class AgentApplication:
         answer: str,
         *,
         error: str | None = None,
+        diagnostics: tuple[dict[str, Any], ...] = (),
         metadata: dict[str, Any] | None = None,
+        receipt: dict[str, Any] | None = None,
+        report_path: str | None = None,
     ) -> AgentRunResult:
-        return AgentRunResult(
-            status=status,
-            answer=answer,
-            workspace=str(self.workspace.root),
-            error=error,
-            metadata=metadata or {},
-        )
+        return cast(AgentRunResult, finalize_run_result(
+            AgentRunResult, self.workspace.root, self.orchestrator, status, answer,
+            error=error, diagnostics=diagnostics, metadata=metadata,
+            receipt=receipt, report_path=report_path,
+        ))
 
     def cancel(self) -> None:
         if not self._closed:

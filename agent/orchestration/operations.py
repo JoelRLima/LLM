@@ -52,7 +52,7 @@ class OrchestratorOperations:
             context_limit = int(
                 getattr(getattr(self.session, "hardware_profile", None), "context_limit", 8_192)
             )
-            return planning_view.render(compact=compact, context_limit=context_limit)
+            return cast(str, planning_view.render(compact=compact, context_limit=context_limit))
         descriptions = []
         for skill in self.skills.values():
             if self.active_skills and skill.name not in self.active_skills:
@@ -118,18 +118,34 @@ class OrchestratorOperations:
     def _get_metrics_for_task(self) -> List[Dict[str, Any]]:
         return cast(List[Dict[str, Any]], self.metrics_recorder.get_entries_since(self._metrics_start_line))
 
-    def _generate_task_report(self, final_answer: str) -> None:
+    def _generate_task_report(
+        self,
+        final_answer: str,
+        *,
+        status: str | None = None,
+        error: str | None = None,
+        receipt: Dict[str, Any] | None = None,
+    ) -> str | None:
         try:
             config = (self.session.config or {}).get("task_report", {}) or {}
             if not config.get("enabled", True):
-                return
+                return None
             builder = TaskReportBuilder(self.session.config)
-            report = builder.build_report(self.agent_state, self._get_metrics_for_task(), final_answer)
+            report = builder.build_report(
+                self.agent_state,
+                self._get_metrics_for_task(),
+                final_answer,
+                canonical_outcome={"status": status, "error": error} if status is not None else None,
+                receipt=receipt,
+            )
             path = builder.save_report(report, format=config.get("format", "json"))
+            saved_path = str(path)
             if self.verbose:
                 print(f"Relatório da tarefa salvo em: {path}")
+            return saved_path
         except Exception as exc:
-            logger.warning("Falha ao gerar relatório da tarefa: %s", exc)
+            logger.warning("Task report generation failed: %s", exc)
+            return None
 
     def _is_task_solved(self) -> bool:
         if not self.agent_state.tool_history:

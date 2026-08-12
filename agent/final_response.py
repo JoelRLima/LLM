@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from agent.llm.model_client import ModelProviderError
 from agent.llm.router import is_security_objective
 from agent.runtime.logging import logger
 
@@ -89,9 +90,11 @@ class FinalResponder:
             else:
                 final_payload["stream"] = False
                 response = self.orchestrator.session.send_non_streaming_request(final_payload)
+        except ModelProviderError:
+            raise
         except Exception as exc:
             logger.error(f"Erro na requisição final: {exc}")
-            response = ""
+            raise ModelProviderError(str(exc), cause=exc) from exc
         return response.strip() if isinstance(response, str) and response.strip() else "Não foi possível gerar uma resposta final."
 
     def _cleanup_session(self) -> None:

@@ -202,6 +202,17 @@ def project_measurement(name, objective, started_at, application, result, family
     }
 
 
+def assert_public_receipt(result):
+    receipt = result.receipt
+    if not isinstance(receipt, dict) or receipt.get("workspace") != str(workspace):
+        raise AssertionError(f"receipt publico ausente ou workspace divergente: {result.to_dict()!r}")
+    if not result.report_path or not Path(result.report_path).is_file():
+        raise AssertionError(f"report_path nao persistido: {result.to_dict()!r}")
+    report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+    if bool(report.get("success")) != result.success or report.get("status") != result.status:
+        raise AssertionError(f"report e resultado divergentes: {result.to_dict()!r}")
+
+
 def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
     paths = AppPaths.discover(app_home, env={})
     ConfigRepository(paths).initialize()
@@ -222,6 +233,8 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             configure_logging=False,
         ) as application:
             result = application.run(objective)
+            if name in {"a1_read", "a2_search"}:
+                assert_public_receipt(result)
             measurement = project_measurement(name, objective, started_at, application, result)
             measurement["answer"] = result.answer[:500]
             measurement["model_calls"] = len(gateway.calls)

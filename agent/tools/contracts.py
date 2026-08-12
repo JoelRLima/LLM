@@ -274,20 +274,20 @@ class ToolResult:
         """Whether execution reached a terminal state."""
         return self.status in frozenset(ToolStatus)
 
-    def to_legacy_dict(self) -> Dict[str, Any]:
-        """Convert to legacy ToolResult dictionary format for upstream compatibility."""
+    def to_legacy_dict(self, *, include_details: bool = False) -> Dict[str, Any]:
         err_msg = self.error.message if self.error else None
         if not err_msg and not self.ok:
             err_msg = self.message or f"Tool execution failed with status: {self.status.value}"
-        return {
-            "invocation_id": self.invocation_id,
-            "ok": self.ok,
-            "done": self.done,
-            "status": self.status.value,
-            "data": self.data,
-            "error": err_msg,
-            "message": self.message,
+        result: Dict[str, Any] = {
+            "invocation_id": self.invocation_id, "ok": self.ok, "done": self.done,
+            "status": self.status.value, "data": self.data,
+            "error": err_msg, "message": self.message,
         }
+        if include_details:
+            result.update({"error_code": self.error.code if self.error else None,
+                           "error_detail": self.error.detail if self.error else None,
+                           "artifacts": list(self.artifacts)})
+        return result
 
 
 class ToolAdapter(Protocol):

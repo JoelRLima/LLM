@@ -1,3 +1,8 @@
+from types import SimpleNamespace
+
+import pytest
+
+from agent.application import AgentApplication
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.paths import REPORTS_DIR
 
@@ -40,3 +45,56 @@ def test_task_report_projects_invocation_and_output_bounds() -> None:
     assert step["result"]["status"] == "succeeded"
     assert step["result"]["output_chars"] == 5
     assert step["result"]["truncated"] is False
+
+
+def test_task_report_does_not_infer_success_from_final_answer() -> None:
+    state = type(
+        "State",
+        (),
+        {
+            "objective": "failed task",
+            "tool_history": [
+                {"tool": "shell", "args": {}, "result": {"ok": False, "status": "failed", "error": "boom"}}
+            ],
+            "events": [],
+            "last_result": None,
+        },
+    )()
+
+    report = TaskReportBuilder({}).build_report(state, [], "A resposta textual nao prova sucesso.")
+
+    assert report["success"] is False
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    (("permission_denied", "TASK_AUTHORITY_MISSING"), ("permission_denied", "WORKSPACE_GRANT_DENIED"), ("blocked", "APPROVAL_REQUIRED")),
+)
+def test_public_receipt_preserves_denial_cause_and_no_effect(tmp_path, status: str, code: str) -> None:
+    raw_result = {
+        "status": status,
+        "ok": False,
+        "error": "public-safe denial",
+        "error_code": code,
+        "invocation_id": "inv-denied",
+    }
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(
+            last_result=raw_result,
+            tool_history=[
+                {"tool": "demo_tool", "invocation_id": "inv-denied", "result": raw_result}
+            ],
+            events=[],
+        ),
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result(status, "blocked", error="public-safe denial")
+
+    assert result.receipt["error"]["code"] == code
+    assert result.receipt["tools"][0]["invocation_id"] == "inv-denied"
+    assert result.receipt["effect_executed"] is False

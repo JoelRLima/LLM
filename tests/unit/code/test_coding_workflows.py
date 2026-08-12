@@ -95,6 +95,8 @@ def test_generate_uses_changeset_and_real_syntax_validation(tmp_path: Path):
     assert (tmp_path / "math_utils.py").exists()
     assert result.artifacts[0].metadata["validation"] == "passed"
     assert result.artifacts[0].metadata["validation_invocation_id"]
+    assert result.artifacts[0].metadata["rollback_occurred"] is False
+    assert result.artifacts[0].metadata["final_state"] == "applied"
     assert len(gateway.calls) == 1
 
 
@@ -180,6 +182,8 @@ def test_failed_validation_rolls_back_generated_file(tmp_path: Path):
     assert result.error == "validation:failed"
     assert result.artifacts[0].metadata["validation"] == "failed"
     assert result.artifacts[0].metadata["validation_invocation_id"]
+    assert result.artifacts[0].metadata["rollback_occurred"] is True
+    assert result.artifacts[0].metadata["final_state"] == "restored"
     assert not (tmp_path / "broken.py").exists()
 
 

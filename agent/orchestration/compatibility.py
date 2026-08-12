@@ -37,7 +37,7 @@ def install_compatibility_gateway(
         approval_port=RequireExplicitApproval(),
         event_emitter=orchestrator._emit,
         state_recorder=lambda name, args, result: orchestrator.agent_state.record_tool_result(
-            name, args, result.to_legacy_dict()
+            name, args, result.to_legacy_dict(include_details=True)
         ),
     )
     return True

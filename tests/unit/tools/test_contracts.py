@@ -98,6 +98,21 @@ def test_tool_result_to_legacy_dict() -> None:
     }
 
 
+def test_tool_result_rich_legacy_projection_preserves_receipt_details() -> None:
+    result = ToolResult(
+        invocation_id="denied-1",
+        status=ToolStatus.PERMISSION_DENIED,
+        error=ToolError("TASK_AUTHORITY_MISSING", "Authority da tarefa ausente."),
+        message="Authority da tarefa ausente.",
+    )
+
+    projected = result.to_legacy_dict(include_details=True)
+
+    assert projected["error_code"] == "TASK_AUTHORITY_MISSING"
+    assert projected["error_detail"] is None
+    assert projected["artifacts"] == []
+
+
 def test_tool_descriptor_defaults() -> None:
     desc = ToolDescriptor(name="test_tool", description="A test tool")
     assert desc.name == "test_tool"

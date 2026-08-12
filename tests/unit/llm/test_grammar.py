@@ -14,7 +14,7 @@ import pytest
 from agent.llm import grammars
 from agent.llm.context_manager import ContextManager
 from agent.llm.grammars import AUTO_GRAMMAR, get_grammar
-from agent.llm.model_client import ModelClient
+from agent.llm.model_client import ModelClient, ModelProviderError
 from agent.llm.session import ChatSession
 from agent.runtime import config as config_module
 
@@ -238,12 +238,13 @@ def test_request_does_not_fallback_on_generic_error():
 
     session.send_non_streaming_request.side_effect = side_effect
 
-    result = ModelClient.request(
-        session,
-        {"max_tokens": 100},
-        step_type="final",
-        grammar='{"answer": "..."}',
-    )
+    with pytest.raises(ModelProviderError, match="internal server error"):
+        ModelClient.request(
+            session,
+            {"max_tokens": 100},
+            step_type="final",
+            grammar='{"answer": "..."}',
+        )
 
     # Erro genérico (500) não deve acionar o fallback de gramática nem
     # marcar o backend como incompatível (a primeira tentativa mantém
@@ -251,7 +252,6 @@ def test_request_does_not_fallback_on_generic_error():
     # já existente, é independente da lógica de gramática).
     assert "grammar" in call_payloads[0]
     assert ModelClient._backend_supports_grammar is None
-    assert result["action"] == "error"
 
 
 def test_is_grammar_unsupported_error_detects_400_with_grammar_text():

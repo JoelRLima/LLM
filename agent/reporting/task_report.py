@@ -25,7 +25,13 @@ class TaskReportBuilder:
         self.output_dir = str(settings.get("output_dir", REPORTS_DIR))
 
     def build_report(
-        self, agent_state: Any, metrics_entries: List[Dict[str, Any]], final_answer: str
+        self,
+        agent_state: Any,
+        metrics_entries: List[Dict[str, Any]],
+        final_answer: str,
+        *,
+        canonical_outcome: Dict[str, Any] | None = None,
+        receipt: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         metrics_entries = metrics_entries or []
         history = getattr(agent_state, "tool_history", None) or []
@@ -33,11 +39,14 @@ class TaskReportBuilder:
         steps = self._build_steps(history)
         start, end = self._resolve_time_range(events, metrics_entries)
         answer = final_answer or ""
-        return {
+        report = {
             "task_id": self._generate_task_id(),
             "objective": getattr(agent_state, "objective", None),
             "success": self._determine_success(
-                steps, answer, getattr(agent_state, "last_result", None)
+                steps,
+                answer,
+                getattr(agent_state, "last_result", None),
+                canonical_outcome=canonical_outcome,
             ),
             "start_time": start,
             "end_time": end,
@@ -47,6 +56,12 @@ class TaskReportBuilder:
             "errors": self._collect_errors(steps),
             "final_answer_preview": answer[:MAX_PREVIEW_CHARS],
         }
+        if canonical_outcome is not None:
+            report["status"] = canonical_outcome.get("status")
+            report["error"] = canonical_outcome.get("error")
+        if receipt is not None:
+            report["receipt"] = receipt
+        return report
 
     def save_report(
         self, report: Dict[str, Any], format: str = "json", path: Optional[str] = None
@@ -148,11 +163,18 @@ class TaskReportBuilder:
 
     @staticmethod
     def _determine_success(
-        steps: List[Dict[str, Any]], final_answer: str, projected_result: Any = None
+        steps: List[Dict[str, Any]],
+        final_answer: str,
+        projected_result: Any = None,
+        *,
+        canonical_outcome: Dict[str, Any] | None = None,
     ) -> bool:
+        if isinstance(canonical_outcome, dict) and canonical_outcome.get("status"):
+            return canonical_outcome.get("status") == "succeeded"
         if isinstance(projected_result, dict) and "ok" in projected_result:
             return bool(projected_result.get("ok"))
-        return bool((steps and steps[-1].get("result", {}).get("ok")) or final_answer.strip())
+        del final_answer
+        return bool(steps and steps[-1].get("result", {}).get("ok"))
 
     @staticmethod
     def _resolve_time_range(
