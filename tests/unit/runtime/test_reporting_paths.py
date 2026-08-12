@@ -156,3 +156,34 @@ def test_preview_artifact_does_not_claim_applied_files(tmp_path) -> None:
     assert result.receipt["proposed_files"] == ["module.py"]
     assert result.receipt["files_affected"] == []
     assert result.receipt["final_state"] is None
+
+
+@pytest.mark.parametrize("executed", [True, False, None])
+def test_receipt_executed_preserves_tool_result_with_applied_artifact(tmp_path, executed) -> None:
+    raw = {
+        "status": "succeeded",
+        "ok": True,
+        "executed": executed,
+        "data": {
+            "artifacts": [{"metadata": {"affected_files": ["module.py"], "applied": True}}]
+        },
+    }
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(
+            last_result=raw,
+            tool_history=[{"tool": "code_task", "result": raw}],
+            events=[],
+        ),
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result("succeeded", "applied", error=None)
+
+    assert result.receipt["tools"][0]["executed"] is executed
+    assert result.receipt["executed"] is executed
+    assert result.receipt["files_affected"] == ["module.py"]
+    assert result.receipt["final_state"] == "applied"

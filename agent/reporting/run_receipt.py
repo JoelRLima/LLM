@@ -48,9 +48,6 @@ def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, l
         "error_code": raw.get("error_code"),
     }
     metadata = _artifact_metadata(raw.get("data"))
-    if any(item.get("applied") is True for item in metadata):
-        executed = True
-        tool["executed"] = True
     return tool, executed, metadata
 
 
