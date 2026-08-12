@@ -80,7 +80,7 @@ class ModelClient:
                 and cls._is_grammar_unsupported_error(exc)
             )
             if not can_fallback:
-                logger.error(f"Erro na requisição ao modelo: {exc}")
+                logger.error("Model provider request failed (%s).", type(exc).__name__)
                 raise ModelProviderError(str(exc), cause=exc) from exc
         cls._backend_supports_grammar = False
         fallback_payload = dict(request_payload)
@@ -88,7 +88,7 @@ class ModelClient:
         try:
             return session.send_non_streaming_request(fallback_payload)
         except Exception as exc:
-            logger.error(f"Erro na requisição ao modelo: {exc}")
+            logger.error("Model provider fallback request failed (%s).", type(exc).__name__)
             raise ModelProviderError(str(exc), cause=exc) from exc
 
     @staticmethod
@@ -133,7 +133,7 @@ class ModelClient:
         except ModelProviderError:
             raise
         except Exception as exc:
-            logger.error(f"Erro no retry: {exc}")
+            logger.error("Model provider retry failed (%s).", type(exc).__name__)
             raise ModelProviderError(str(exc), cause=exc) from exc
         if verbose:
             print(" ✓")

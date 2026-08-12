@@ -93,7 +93,7 @@ class FinalResponder:
         except ModelProviderError:
             raise
         except Exception as exc:
-            logger.error(f"Erro na requisição final: {exc}")
+            logger.error("Model provider final response failed (%s).", type(exc).__name__)
             raise ModelProviderError(str(exc), cause=exc) from exc
         return response.strip() if isinstance(response, str) and response.strip() else "Não foi possível gerar uma resposta final."
 

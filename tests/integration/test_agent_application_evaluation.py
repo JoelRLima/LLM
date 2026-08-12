@@ -111,20 +111,25 @@ class JourneyGateway:
 
 
 class ProviderFailureGateway:
+    _secret_message = (
+        "request failed api_key=TOPSECRET Authorization: Bearer TOPSECRET "
+        "token=TOPSECRET password=TOPSECRET"
+    )
+
     def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
         return {"messages": [{"role": item.role, "content": item.content} for item in request.messages]}
 
     def complete_payload(self, payload: Dict[str, Any]) -> str:
         del payload
-        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
+        raise RuntimeError(self._secret_message)
 
     def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
         del payload, stream
-        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
+        raise RuntimeError(self._secret_message)
 
     def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
         del response, callbacks
-        raise RuntimeError("request failed https://example.test/?api_key=TOPSECRET")
+        raise RuntimeError(self._secret_message)
 
     def count_tokens(self, text: str) -> int:
         del text
@@ -137,7 +142,7 @@ def _initialized_paths(tmp_path: Path) -> AppPaths:
     return paths
 
 
-def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Path) -> None:
+def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Path, caplog: Any) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     paths = _initialized_paths(tmp_path)
@@ -152,14 +157,18 @@ def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Pa
 
     assert result.status == "failed"
     assert result.error == "Model provider request failed."
-    assert "TOPSECRET" not in repr(result.to_dict())
+    for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert secret not in repr(result.to_dict())
     assert result.receipt["error"]["code"] == "MODEL_PROVIDER_ERROR"
     assert result.receipt["error"]["layer"] == "provider"
     assert result.report_path is not None
     report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
     assert report["success"] is False
     assert report["status"] == "failed"
-    assert "TOPSECRET" not in Path(result.report_path).read_text(encoding="utf-8")
+    report_text = Path(result.report_path).read_text(encoding="utf-8")
+    for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert secret not in report_text
+        assert secret not in caplog.text
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:

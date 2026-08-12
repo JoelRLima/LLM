@@ -27,6 +27,7 @@ def test_gateway_run_success(tmp_path: Path) -> None:
 
     assert result.ok is True
     assert result.status == ToolStatus.SUCCEEDED
+    assert result.executed is True
     assert len(events) == 2
     assert events[0][0] == "tool_start"
     assert events[1][0] == "tool_end"
@@ -48,6 +49,7 @@ def test_gateway_permission_denied(tmp_path: Path) -> None:
     assert result.status == ToolStatus.PERMISSION_DENIED
     assert result.error is not None
     assert result.error.code == "PERMISSION_DENIED"
+    assert result.executed is False
 
 
 def test_gateway_tool_unavailable() -> None:
@@ -88,6 +90,44 @@ def test_gateway_rejects_arguments_that_do_not_match_schema() -> None:
     assert result.status == ToolStatus.PROTOCOL_ERROR
     assert result.error is not None
     assert result.error.code == "INVALID_ARGUMENTS"
+    assert result.executed is False
+
+
+def test_gateway_marks_adapter_failure_as_executed() -> None:
+    class FailingAdapter:
+        def descriptors(self) -> tuple[ToolDescriptor, ...]:
+            return (ToolDescriptor("failing", "failing"),)
+
+        def invoke(self, invocation: ToolInvocation) -> ToolResult:
+            del invocation
+            raise RuntimeError("adapter failed")
+
+    registry = ToolRegistry()
+    registry.register_adapter(FailingAdapter())
+    result = ToolInvocationGateway(registry).run("failing", {})
+
+    assert result.status is ToolStatus.FAILED
+    assert result.error is not None
+    assert result.error.code == "ADAPTER_FAILED"
+    assert result.executed is True
+
+
+def test_gateway_marks_invalid_adapter_result_as_executed() -> None:
+    class InvalidAdapter:
+        def descriptors(self) -> tuple[ToolDescriptor, ...]:
+            return (ToolDescriptor("invalid", "invalid"),)
+
+        def invoke(self, invocation: ToolInvocation) -> ToolResult:
+            return ToolResult("wrong-id", ToolStatus.SUCCEEDED)
+
+    registry = ToolRegistry()
+    registry.register_adapter(InvalidAdapter())
+    result = ToolInvocationGateway(registry).run("invalid", {})
+
+    assert result.status is ToolStatus.PROTOCOL_ERROR
+    assert result.error is not None
+    assert result.error.code == "INVOCATION_ID_MISMATCH"
+    assert result.executed is True
 
 
 def test_gateway_capabilities_are_enforced() -> None:

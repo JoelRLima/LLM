@@ -88,6 +88,7 @@ def test_public_receipt_preserves_denial_cause_and_no_effect(tmp_path, status: s
         "error": "public-safe denial",
         "error_code": code,
         "invocation_id": "inv-denied",
+        "executed": False,
     }
     app = object.__new__(AgentApplication)
     app.workspace = SimpleNamespace(root=tmp_path)
@@ -112,3 +113,46 @@ def test_public_receipt_preserves_denial_cause_and_no_effect(tmp_path, status: s
     assert result.diagnostics[0]["code"] == code
     assert result.diagnostics[0]["layer"] == "gateway"
     assert result.diagnostics[0]["executed"] is False
+
+
+def test_unknown_legacy_history_keeps_executed_unknown(tmp_path) -> None:
+    raw = {"status": "succeeded", "ok": True, "data": "legacy"}
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(last_result=raw, tool_history=[{"tool": "legacy", "result": raw}], events=[]),
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result("succeeded", "legacy")
+
+    assert result.receipt["tools"][0]["executed"] is None
+
+
+def test_preview_artifact_does_not_claim_applied_files(tmp_path) -> None:
+    raw = {
+        "status": "blocked",
+        "ok": False,
+        "executed": False,
+        "data": {
+            "artifacts": [{"metadata": {"affected_files": ["module.py"], "applied": False}}]
+        },
+        "error_code": "APPROVAL_REQUIRED",
+        "error": "approval required",
+    }
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(last_result=raw, tool_history=[{"tool": "code_task", "result": raw}], events=[]),
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result("blocked", "preview", error="approval required")
+
+    assert result.receipt["proposed_files"] == ["module.py"]
+    assert result.receipt["files_affected"] == []
+    assert result.receipt["final_state"] is None

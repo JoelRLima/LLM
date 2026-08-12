@@ -257,14 +257,13 @@ class ToolError:
 @dataclass(frozen=True)
 class ToolResult:
     """Standardized output produced by any tool adapter."""
-
     invocation_id: str
     status: ToolStatus
     data: Any = None
     error: Optional[ToolError] = None
     message: Optional[str] = None
     artifacts: Tuple[Any, ...] = ()
-
+    executed: bool | None = None
     @property
     def ok(self) -> bool:
         return self.status == ToolStatus.SUCCEEDED
@@ -286,7 +285,8 @@ class ToolResult:
         if include_details:
             result.update({"error_code": self.error.code if self.error else None,
                            "error_detail": self.error.detail if self.error else None,
-                           "artifacts": list(self.artifacts)})
+                           "artifacts": list(self.artifacts),
+                           "executed": self.executed})
         return result
 
 

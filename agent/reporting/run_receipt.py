@@ -8,14 +8,6 @@ from typing import Any, cast
 from agent.llm.model_client import ModelProviderError
 
 
-def executed_for_status(status: str) -> bool | None:
-    if status in {"blocked", "permission_denied", "unavailable"}:
-        return False
-    if status in {"succeeded", "failed", "timed_out", "protocol_error"}:
-        return True
-    return None
-
-
 def failure_layer_for_code(code: str | None) -> str:
     if code == "MODEL_PROVIDER_ERROR":
         return "provider"
@@ -48,8 +40,6 @@ def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, l
     raw = cast(dict[str, Any], entry.get("result") if isinstance(entry.get("result"), dict) else {})
     status = str(raw.get("status") or entry.get("status") or "")
     executed = raw.get("executed")
-    if not isinstance(executed, bool):
-        executed = executed_for_status(status)
     tool = {
         "tool": str(entry.get("tool") or ""),
         "invocation_id": entry.get("invocation_id") or raw.get("invocation_id"),
@@ -67,13 +57,16 @@ def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, l
 def _collect_artifact_state(
     metadata: list[dict[str, Any]],
     files: set[str],
+    proposed: set[str],
     validation: dict[str, Any],
     rollback: dict[str, Any],
 ) -> None:
     for item in metadata:
         affected = item.get("affected_files")
         if isinstance(affected, (list, tuple)):
-            files.update(str(path) for path in affected)
+            proposed.update(str(path) for path in affected)
+            if item.get("applied") is True:
+                files.update(str(path) for path in affected)
         if item.get("validation") is not None:
             validation["ran"] = True
             validation["outcome"] = str(item["validation"])
@@ -97,6 +90,7 @@ def build_run_receipt(
     ]
     tools: list[dict[str, Any]] = []
     files: set[str] = set()
+    proposed: set[str] = set()
     validation = {"ran": False, "outcome": None}
     rollback = {"occurred": False, "outcome": None}
     effects: list[bool] = []
@@ -105,7 +99,7 @@ def build_run_receipt(
         tools.append(tool)
         if isinstance(effect, bool):
             effects.append(effect)
-        _collect_artifact_state(metadata, files, validation, rollback)
+        _collect_artifact_state(metadata, files, proposed, validation, rollback)
 
     events = getattr(state, "events", None) or []
     replan_count = sum(
@@ -139,6 +133,7 @@ def build_run_receipt(
         "workspace": str(workspace),
         "tools": tools,
         "files_affected": sorted(files),
+        "proposed_files": sorted(proposed - files),
         "validation": validation,
         "rollback": rollback,
         "final_state": final_state,
@@ -166,7 +161,7 @@ def build_run_diagnostics(
             "layer": failure_layer or failure_layer_for_code(code),
             "code": code or "RUN_FAILED",
             "message": error or "A execucao nao foi concluida.",
-            "executed": executed_for_status(str(last.get("status") or "")),
+            "executed": last.get("executed") if isinstance(last.get("executed"), bool) else None,
         })
     last_result = getattr(state, "last_result", None) or {}
     data = last_result.get("data") if isinstance(last_result, dict) else None

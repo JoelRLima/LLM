@@ -63,7 +63,7 @@ def ask_llm_for_alternative(
             log_metric_callback=orchestrator._log_metric if hasattr(orchestrator, "_log_metric") else None,
         )
     except Exception as exc:
-        logger.warning("Replanner: falha ao consultar LLM: %s", exc, exc_info=True)
+        logger.warning("Replanner provider request failed (%s).", type(exc).__name__)
         return None
     if not isinstance(decision, dict) or "tool" not in decision:
         return None

@@ -31,6 +31,7 @@ def prepare_request(
             return None, ToolResult(
                 invocation_id=tool_name.invocation_id,
                 status=ToolStatus.PROTOCOL_ERROR,
+                executed=False,
                 error=ToolError("REQUEST_INVALID", "Request canônico não aceita campos duplicados."),
                 message="Request de invocação inválido.",
             )
@@ -48,18 +49,27 @@ def prepare_request(
         return None, ToolResult(
             invocation_id=invocation_id,
             status=ToolStatus.PROTOCOL_ERROR,
+            executed=False,
             error=ToolError("REQUEST_INVALID", str(exc)),
             message="Request de invocação inválido.",
         )
     return request, None
 
 
-def denial(invocation: ToolInvocation, status: ToolStatus, code: str, detail: str) -> ToolResult:
+def denial(
+    invocation: ToolInvocation,
+    status: ToolStatus,
+    code: str,
+    detail: str,
+    *,
+    executed: bool | None = False,
+) -> ToolResult:
     return ToolResult(
         invocation_id=invocation.invocation_id,
         status=status,
         error=ToolError(code, detail),
         message=detail,
+        executed=executed,
     )
 
 
@@ -152,7 +162,10 @@ def validate_property(key: str, value: Any, schema: Any) -> None:
         raise ValueError(f"argument '{key}' must be a {expected_type}")
 
 
-def validate_result(invocation: ToolInvocation, result: Any) -> ToolResult:
+def validate_result(
+    invocation: ToolInvocation,
+    result: Any,
+) -> ToolResult:
     if not isinstance(result, ToolResult):
         return denial(invocation, ToolStatus.PROTOCOL_ERROR, "INVALID_RESULT", "Adapter não retornou ToolResult.")
     if not isinstance(result.status, ToolStatus):

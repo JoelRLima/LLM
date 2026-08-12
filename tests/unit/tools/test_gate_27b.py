@@ -180,6 +180,7 @@ def test_approval_denial_is_structured_and_has_no_start() -> None:
     assert result.error is not None
     assert result.error.code == "APPROVAL_DENIED"
     assert adapter.calls == 0
+    assert result.executed is False
     assert [kind for kind, _ in events] == ["approval_requested", "tool_denied"]
     assert all("invocation_id" in data for _, data in events)
 
@@ -197,6 +198,7 @@ def test_vcs_write_is_an_effect_requiring_approval() -> None:
     assert result.error is not None
     assert result.error.code == "APPROVAL_REQUIRED"
     assert adapter.calls == 0
+    assert result.executed is False
 
 
 def test_approval_failure_is_fail_closed() -> None:
@@ -218,6 +220,7 @@ def test_approval_failure_is_fail_closed() -> None:
     assert result.error is not None
     assert result.error.code == "APPROVAL_FAILED"
     assert adapter.calls == 0
+    assert result.executed is False
 
 
 def test_result_id_mismatch_is_protocol_failure() -> None:

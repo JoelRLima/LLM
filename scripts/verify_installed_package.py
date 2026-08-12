@@ -39,7 +39,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent.approval import AutoApprove
+from agent.approval import ApprovalDecision, AutoApprove
 from agent.skills import load_skill_registry
 from agent.application import AgentApplication
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
@@ -86,6 +86,8 @@ class DeterministicJourneyGateway:
     def complete_payload(self, payload):
         messages = payload.get("messages", [])
         self.calls.append(payload)
+        if "SLICE_A5_PROVIDER_FAILURE" in self.objective:
+            raise RuntimeError("provider request failed https://example.test/?api_key=TOPSECRET")
         system = str(messages[0].get("content", "")) if messages else ""
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
@@ -99,7 +101,12 @@ class DeterministicJourneyGateway:
                 return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
             if "SLICE_C2" in self.objective:
                 return '{"plan":[{"tool":"shell","args":{"command":"git status"}}]}'
-            if "SLICE_B1" in self.objective or "SLICE_B2" in self.objective or "SLICE_B4" in self.objective:
+            if (
+                "SLICE_B1" in self.objective
+                or "SLICE_B2" in self.objective
+                or "SLICE_B4" in self.objective
+                or "SLICE_B5" in self.objective
+            ):
                 return '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"%s","targets":["sample.py"]}}]}' % self.objective
             if "SLICE_B3" in self.objective:
                 return '{"plan":[{"tool":"file_writer","args":{"action":"write","file_path":"sample.py","content":"bypass\\n"}}]}'
@@ -114,6 +121,8 @@ class DeterministicJourneyGateway:
                 return '{"changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
             if "SLICE_B4" in self.objective:
                 return '{"changes":[{"path":"../outside.py","kind":"create","content":"unauthorized\\\\n"}]}'
+            if "SLICE_B5" in self.objective:
+                return '{"changes":[{"path":"sample.py","kind":"modify","content":"value = 2\\\\n"}]}'
         if "Resultados das ferramentas executadas:" in prompt:
             if "SLICE_A1_EVIDENCE" in prompt:
                 return "A leitura encontrou SLICE_A1_EVIDENCE no arquivo permitido."
@@ -131,6 +140,8 @@ class DeterministicJourneyGateway:
                 return "A modificaÃ§Ã£o nÃ£o foi validada: o validator real falhou e o arquivo foi revertido."
             if "SLICE_B4" in self.objective:
                 return "A modificaÃ§Ã£o fora da autoridade foi recusada sem alterar o workspace."
+            if "SLICE_B5" in self.objective:
+                return "A proposta foi bloqueada antes da aplicaÃ§Ã£o; o arquivo permaneceu inalterado."
             if "D1_EXTERNAL_EVIDENCE" in prompt:
                 return "A extensao externa confirmou D1_EXTERNAL_EVIDENCE pelo protocolo stdio real."
             if "RUNTIME_MISMATCH" in prompt or "TASK_AUTHORITY" in prompt or "autoridade" in prompt.casefold():
@@ -157,6 +168,13 @@ class DeterministicJourneyGateway:
 
     def count_tokens(self, text):
         return max(1, len(text) // 4)
+
+
+class GatewayApprovePreviewPolicy:
+    def request(self, request):
+        if request.action == "apply_changeset":
+            return ApprovalDecision.REQUIRED
+        return ApprovalDecision.APPROVED
 
 
 def project_measurement(name, objective, started_at, application, result, family="a"):
@@ -223,6 +241,7 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
         ("a1_read", "SLICE_A1: leia o arquivo permitido e informe a evidÃªncia.", True),
         ("a2_search", "SLICE_A2: busque a evidÃªncia no workspace e informe o resultado.", True),
         ("a3_denied", "SLICE_A3: leia o caminho fora do workspace e informe o resultado.", True),
+        ("a5_provider_failure", "SLICE_A5_PROVIDER_FAILURE: leia notes.txt.", True),
         ("a4_no_tool", "oi", False),
     )
     measurements = []
@@ -240,6 +259,14 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
                 assert_public_receipt(result)
                 if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != []:
                     raise AssertionError(f"receipt de leitura incorreto: {result.to_dict()!r}")
+            if name == "a5_provider_failure":
+                assert_public_receipt(result)
+                visible = json.dumps(result.to_dict(), ensure_ascii=False, default=str)
+                visible += Path(result.report_path).read_text(encoding="utf-8") if result.report_path else ""
+                if result.status != "failed" or result.error != "Model provider request failed.":
+                    raise AssertionError(f"falha de provider sem mensagem estavel: {result.to_dict()!r}")
+                if "TOPSECRET" in visible:
+                    raise AssertionError(f"segredo do provider exposto no probe instalado: {visible!r}")
             measurement = project_measurement(name, objective, started_at, application, result)
             measurement["answer"] = result.answer[:500]
             measurement["model_calls"] = len(gateway.calls)
@@ -250,6 +277,10 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
                 raise AssertionError("cenÃ¡rio no-tool invocou ferramenta")
             if name == "a3_denied" and measurement["terminal_outcome"] != "DENIED":
                 raise AssertionError(f"denial instalada nÃ£o observÃ¡vel: {measurement!r}")
+            if name == "a3_denied":
+                assert_public_receipt(result)
+                if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != []:
+                    raise AssertionError(f"denial instalada nao refletiu entrada na capability: {result.to_dict()!r}")
             if name in {"a1_read", "a2_search"} and not any(
                 marker in result.answer for marker in ("SLICE_A1_EVIDENCE", "SLICE_A2_EVIDENCE")
             ):
@@ -297,6 +328,10 @@ def run_shell_journeys(app_home, workspace, failure_workspace):
             elif name == "c2_unsupported":
                 if history_result.get("ok") is not False or "permitido" not in str(history_result.get("error", "")).casefold():
                     raise AssertionError(f"capability removida executada: {measurement!r}")
+                if result.receipt.get("executed") is not False:
+                    raise AssertionError(f"capability removida indicou execucao: {result.to_dict()!r}")
+            elif name == "c3_failure" and result.receipt.get("executed") is not True:
+                raise AssertionError(f"failure de shell nao marcou fronteira executada: {result.to_dict()!r}")
             elif result.status == "succeeded" or not result.answer:
                 raise AssertionError(f"failure de shell não foi observado: {measurement!r}")
     return measurements
@@ -308,6 +343,7 @@ def run_modify_journeys(app_home, workspace):
         ("b2_validation_failure", "SLICE_B2: aplique a alteraÃ§Ã£o determinÃ­stica e valide.", "failure"),
         ("b3_writer_bypass", "SLICE_B3: use file_writer diretamente para alterar sample.py.", "bypass"),
         ("b4_denied_modify", "SLICE_B4: modifique o alvo fora da autoridade permitida.", "denied"),
+        ("b5_preview_blocked", "SLICE_B5: proponha uma modificaÃ§Ã£o sem aplicar.", "preview"),
     )
     measurements = []
     for name, objective, expected in scenarios:
@@ -328,7 +364,7 @@ def run_modify_journeys(app_home, workspace):
             paths=scenario_paths,
             workspace=scenario_workspace,
             gateway=gateway,
-            approval_policy=AutoApprove(),
+            approval_policy=GatewayApprovePreviewPolicy() if expected == "preview" else AutoApprove(),
             configure_logging=False,
         ) as application:
             application.orchestrator._route_persona(objective)
@@ -336,7 +372,7 @@ def run_modify_journeys(app_home, workspace):
             if expected == "bypass" and planning_view is not None and "file_writer" in planning_view.presented_names:
                 raise AssertionError("file_writer permanece model-actionable na jornada suportada")
             result = application.run(objective)
-            if expected in {"success", "failure"}:
+            if expected in {"success", "failure", "bypass", "denied", "preview"}:
                 assert_public_receipt(result, scenario_workspace)
             measurement = project_measurement(name, objective, started_at, application, result, family="b")
             measurement["answer"] = result.answer[:500]
@@ -380,6 +416,17 @@ def run_modify_journeys(app_home, workspace):
             elif expected == "denied":
                 if result.status == "succeeded" or outside.read_text(encoding="utf-8") != outside_before:
                     raise AssertionError(f"B4 alterou alvo fora da autoridade: {measurement!r}")
+                if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != []:
+                    raise AssertionError(f"B4 receipt nao refletiu entrada na capability: {result.to_dict()!r}")
+            elif expected == "preview":
+                if result.status != "blocked" or measurement["before"] != measurement["after"]:
+                    raise AssertionError(f"B5 preview nao foi bloqueado sem mutacao: {measurement!r}")
+                if result.receipt.get("executed") is not True:
+                    raise AssertionError(f"B5 preview nao refletiu entrada na capability: {result.to_dict()!r}")
+                if result.receipt.get("proposed_files") != ["sample.py"]:
+                    raise AssertionError(f"B5 preview nao preservou proposed_files: {result.to_dict()!r}")
+                if result.receipt.get("files_affected") != [] or result.receipt.get("final_state") == "applied":
+                    raise AssertionError(f"B5 preview indicou efeito aplicado: {result.to_dict()!r}")
     return measurements
 
 
@@ -543,7 +590,7 @@ slice_measurements = run_slice_a_journeys(
     scratch_dir,
     outside,
 )
-if len(slice_measurements) != 4:
+if len(slice_measurements) != 5:
     raise SystemExit(f"installed Slice A produziu mediÃ§Ã£o incompleta: {slice_measurements!r}")
 if any(item.get("invocation_id") is None for item in slice_measurements[:3]):
     raise SystemExit(f"installed Slice A perdeu invocation_id: {slice_measurements!r}")
@@ -568,7 +615,7 @@ modify_measurements = run_modify_journeys(
     workspace.parent / "slice-b-app-home",
     workspace,
 )
-if len(modify_measurements) != 4:
+if len(modify_measurements) != 5:
     raise SystemExit(f"installed Slice B produziu mediÃ§Ã£o incompleta: {modify_measurements!r}")
 if modify_measurements[0].get("terminal_outcome") != "SUCCESS":
     raise SystemExit(f"installed Slice B B1 falhou: {modify_measurements!r}")
@@ -578,6 +625,8 @@ if modify_measurements[2].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B3 manteve bypass: {modify_measurements!r}")
 if modify_measurements[3].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B4 alterou alvo negado: {modify_measurements!r}")
+if modify_measurements[4].get("terminal_outcome") == "SUCCESS":
+    raise SystemExit(f"installed Slice B B5 aplicou preview bloqueado: {modify_measurements!r}")
 extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
 if len(extension_measurements) != 3:
     raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
@@ -1133,17 +1182,20 @@ def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
         "installed-slice-a:a1_read",
         "installed-slice-a:a2_search",
         "installed-slice-a:a3_denied",
+        "installed-slice-a:a5_provider_failure",
         "installed-slice-a:a4_no_tool",
     ]
-    if not isinstance(slice_a, list) or len(slice_a) != 4:
-        raise VerificationError("Probe instalado nÃ£o executou os quatro cenÃ¡rios Slice A.")
+    if not isinstance(slice_a, list) or len(slice_a) != 5:
+        raise VerificationError("Probe instalado nao executou os cinco cenarios Slice A.")
     if [item.get("task_id") for item in slice_a] != expected_ids:
-        raise VerificationError("Probe instalado nÃ£o executou os quatro cenÃ¡rios Slice A.")
+        raise VerificationError("Probe instalado nao executou os cinco cenarios Slice A.")
     if [item.get("terminal_outcome") for item in slice_a[:2]] != ["SUCCESS", "SUCCESS"]:
         raise VerificationError("Slice A read/search instalada nÃ£o produziu sucesso.")
     if slice_a[2].get("terminal_outcome") != "DENIED":
         raise VerificationError("Slice A nÃ£o observou denial de path externo.")
-    if bool(slice_a[3].get("tools")) or bool(slice_a[3].get("model_calls")):
+    if slice_a[3].get("terminal_outcome") != "FAILED" or slice_a[3].get("error") != "Model provider request failed.":
+        raise VerificationError("Slice A provider failure instalada nao preservou mensagem estavel.")
+    if bool(slice_a[4].get("tools")) or bool(slice_a[4].get("model_calls")):
         raise VerificationError("Slice A no-tool executou modelo/tool indevidamente.")
     if not all(item.get("invocation_id") for item in slice_a[:3]):
         raise VerificationError("Slice A perdeu invocation_id em ferramenta executada.")
@@ -1181,9 +1233,10 @@ def _validate_slice_b_payload(payload: Mapping[str, Any]) -> None:
         "installed-slice-b:b2_validation_failure",
         "installed-slice-b:b3_writer_bypass",
         "installed-slice-b:b4_denied_modify",
+        "installed-slice-b:b5_preview_blocked",
     ]
-    if not isinstance(modify, list) or len(modify) != 4:
-        raise VerificationError("Probe instalado nÃ£o executou os cenÃ¡rios Slice B.")
+    if not isinstance(modify, list) or len(modify) != 5:
+        raise VerificationError("Probe instalado nao executou os cinco cenarios Slice B.")
     if [item.get("task_id") for item in modify] != expected_ids:
         raise VerificationError("Probe instalado nÃ£o preservou a identidade dos cenÃ¡rios Slice B.")
     if modify[0].get("terminal_outcome") != "SUCCESS" or modify[0].get("before") == modify[0].get("after"):
@@ -1194,6 +1247,8 @@ def _validate_slice_b_payload(payload: Mapping[str, Any]) -> None:
         raise VerificationError("Slice B B3 manteve writer direto model-actionable.")
     if modify[3].get("terminal_outcome") == "SUCCESS":
         raise VerificationError("Slice B B4 alterou alvo fora da autoridade.")
+    if modify[4].get("terminal_outcome") == "SUCCESS" or modify[4].get("before") != modify[4].get("after"):
+        raise VerificationError("Slice B B5 aplicou preview bloqueado.")
     _validate_slice_b_invocations(modify[0])
     _validate_slice_b_invocations(modify[1])
     if not all("duration_ms" in item and "output_chars" in item for item in modify):

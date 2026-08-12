@@ -7,6 +7,7 @@ Testes da infraestrutura de suporte a gramáticas GBNF:
 - agent/llm/model_client.py (envio e fallback automático)
 - agent/llm/context_manager.py (seleção automática / override / desabilitação)
 """
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -252,6 +253,42 @@ def test_request_does_not_fallback_on_generic_error():
     # já existente, é independente da lógica de gramática).
     assert "grammar" in call_payloads[0]
     assert ModelClient._backend_supports_grammar is None
+
+
+def test_provider_secrets_are_not_logged_on_normal_or_fallback_requests(caplog):
+    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    session = MagicMock()
+    session.send_non_streaming_request.side_effect = [
+        FakeHTTPError(400, f"unknown parameter: grammar ({secret})"),
+        FakeHTTPError(500, secret),
+    ]
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(ModelProviderError, match="Model provider request failed"):
+        ModelClient.request(
+            session,
+            {"max_tokens": 100},
+            step_type="final",
+            grammar='{"answer": "..."}',
+        )
+
+    for marker in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert marker not in caplog.text
+
+
+def test_provider_secrets_are_not_logged_on_retry(caplog):
+    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    session = MagicMock()
+    session.build_payload.return_value = {"messages": []}
+    session.config = {"agent_max_tokens": 100}
+    session.send_non_streaming_request.side_effect = RuntimeError(secret)
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(ModelProviderError, match="Model provider request failed"):
+        ModelClient._retry(session, verbose=False)
+
+    for marker in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert marker not in caplog.text
 
 
 def test_is_grammar_unsupported_error_detects_400_with_grammar_text():

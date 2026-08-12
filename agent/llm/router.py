@@ -100,7 +100,7 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
     except ModelProviderError:
         raise
     except Exception as exc:
-        logger.error(f"Erro no roteamento LLM: {exc}")
+        logger.error("Model provider router request failed (%s).", type(exc).__name__)
         raise ModelProviderError(str(exc), cause=exc) from exc
 
     try:
