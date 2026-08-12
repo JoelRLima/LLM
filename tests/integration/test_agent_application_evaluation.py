@@ -136,6 +136,18 @@ class ProviderFailureGateway:
         return 1
 
 
+class RecoveringGateway(JourneyGateway):
+    def __init__(self, objective: str) -> None:
+        super().__init__(objective)
+        self.fail_once = True
+
+    def complete_payload(self, payload: Dict[str, Any]) -> str:
+        if self.fail_once:
+            self.fail_once = False
+            raise RuntimeError("transient provider failure")
+        return super().complete_payload(payload)
+
+
 def _initialized_paths(tmp_path: Path) -> AppPaths:
     paths = AppPaths.discover(tmp_path / "home", env={})
     ConfigRepository(paths).initialize()
@@ -175,6 +187,60 @@ def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Pa
     for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
         assert secret not in report_text
         assert secret not in caplog.text
+
+
+def test_reused_application_emits_one_run_metric_per_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "notes.txt").write_text("CAP_READ_EVIDENCE\n", encoding="utf-8")
+    objective = "CAP_READ: leia notes.txt e informe CAP_READ_EVIDENCE."
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=JourneyGateway(objective),
+        configure_logging=False,
+    ) as application:
+        first = application.run(objective)
+        first_report = json.loads(Path(first.report_path).read_text(encoding="utf-8"))
+        first_metrics = application.orchestrator._get_metrics_for_task()
+        second = application.run(objective)
+        second_report = json.loads(Path(second.report_path).read_text(encoding="utf-8"))
+        second_metrics = application.orchestrator._get_metrics_for_task()
+
+    first_run = [item for item in first_metrics if item.get("metric_type") == "run"]
+    second_run = [item for item in second_metrics if item.get("metric_type") == "run"]
+    assert first.success is True and second.success is True
+    assert first_report["success"] is True and second_report["success"] is True
+    assert len(first_run) == 1 and len(second_run) == 1
+    assert first_run[0]["success"] is True and second_run[0]["success"] is True
+    assert first_report["run_id"] != second_report["run_id"]
+    assert first_run[0]["run_id"] == first_report["run_id"]
+    assert second_run[0]["run_id"] == second_report["run_id"]
+
+
+def test_reused_application_failed_then_successful_run_has_isolated_outcomes(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "notes.txt").write_text("CAP_READ_EVIDENCE\n", encoding="utf-8")
+    objective = "CAP_READ: leia notes.txt e informe CAP_READ_EVIDENCE."
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=RecoveringGateway(objective),
+        configure_logging=False,
+    ) as application:
+        failed = application.run(objective)
+        failed_report = json.loads(Path(failed.report_path).read_text(encoding="utf-8"))
+        failed_metrics = application.orchestrator._get_metrics_for_task()
+        succeeded = application.run(objective)
+        succeeded_report = json.loads(Path(succeeded.report_path).read_text(encoding="utf-8"))
+        succeeded_metrics = application.orchestrator._get_metrics_for_task()
+
+    assert failed.success is False and failed_report["success"] is False
+    assert succeeded.success is True and succeeded_report["success"] is True
+    assert [item["success"] for item in failed_metrics if item.get("metric_type") == "run"] == [False]
+    assert [item["success"] for item in succeeded_metrics if item.get("metric_type") == "run"] == [True]
+    assert failed_report["run_id"] != succeeded_report["run_id"]
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:

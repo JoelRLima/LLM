@@ -70,6 +70,7 @@ class TaskRunner:
             self.orchestrator._reset_task_state(inputs.objective)
         self.orchestrator._task_start_time = Watchdog.start_task()
         self.orchestrator._run_id = uuid4().hex
+        self.orchestrator._run_metric_recorded = False
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
         print(f"\nAnalisando: \"{inputs.objective}\"")
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
