@@ -5,6 +5,8 @@ import pytest
 
 from agent.interfaces.cli import app as cli
 from agent.interfaces.cli.workspace_entry import canonical_workspace, choose_workspace
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
 
 
 class _Console:
@@ -52,6 +54,8 @@ def test_choose_workspace_reprompts_invalid_path_then_accepts_other(tmp_path: Pa
 def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    app_home = tmp_path / "app-home"
+    ConfigRepository(AppPaths.discover(app_home=app_home)).initialize()
     application = SimpleNamespace(
         session=SimpleNamespace(config={}),
         orchestrator=SimpleNamespace(),
@@ -74,7 +78,7 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     monkeypatch.setattr(cli, "_create_application", create)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
 
-    assert cli.main(["chat"]) == 0
+    assert cli.main(["chat", "--home", str(app_home)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
 
