@@ -116,6 +116,26 @@ class OrchestratorOperations:
             enriched.setdefault("run_id", self._run_id)
         self.metrics_recorder.log_metric(enriched)
 
+    def _record_canonical_run_metric(self, success: bool) -> None:
+        """Project the already-derived application outcome into JSONL once."""
+        if getattr(self, "_run_metric_recorded", False):
+            return
+        run_id = getattr(self, "_run_id", None)
+        started = getattr(self, "_task_start_time", 0.0)
+        if not run_id or not started:
+            return
+        import time
+        from datetime import datetime, timezone
+
+        self._log_metric({
+            "type": "run",
+            "metric_type": "run",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": max(0, int((time.monotonic() - started) * 1000)),
+            "success": bool(success),
+        })
+        self._run_metric_recorded = True
+
     def _count_metrics_lines(self) -> int:
         return int(self.metrics_recorder.count_lines())
 

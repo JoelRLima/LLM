@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -155,31 +153,5 @@ class TaskRunner:
                 raise
             if not orchestrator._cancelled:
                 orchestrator._delete_checkpoint()
-        finally:
-            log_metric = getattr(orchestrator, "_log_metric", None)
-            if getattr(orchestrator, "_run_id", None) is not None and callable(log_metric):
-                try:
-                    last_result = getattr(orchestrator.agent_state, "last_result", None)
-                    last_status = (
-                        str(last_result.get("status"))
-                        if isinstance(last_result, dict) and last_result.get("status")
-                        else None
-                    )
-                    log_metric({
-                        "type": "run",
-                        "metric_type": "run",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "duration_ms": max(
-                            0, int((time.monotonic() - orchestrator._task_start_time) * 1000)
-                        ),
-                        "success": (
-                            not orchestrator._task_failed
-                            and not orchestrator._cancelled
-                            and last_status not in {
-                                "blocked", "unverified", "cancelled", "failed",
-                                "timed_out", "permission_denied", "protocol_error", "unavailable",
-                            }
-                        ),
-                    })
-                except Exception as exc:
-                    logger.warning("Falha ao registrar duracao da tarefa: %s", type(exc).__name__)
+        except Exception:
+            raise

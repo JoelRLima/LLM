@@ -165,6 +165,12 @@ def test_provider_failure_preserves_public_cause_and_report_outcome(tmp_path: Pa
     report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
     assert report["success"] is False
     assert report["status"] == "failed"
+    run_metrics = [
+        entry for entry in application.orchestrator._get_metrics_for_task()
+        if entry.get("metric_type") == "run"
+    ]
+    assert len(run_metrics) == 1
+    assert run_metrics[0]["success"] is False
     report_text = Path(result.report_path).read_text(encoding="utf-8")
     for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
         assert secret not in report_text
@@ -193,6 +199,9 @@ def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: P
         assert result.receipt["validation"] == {"ran": True, "outcome": expected_validation}
         assert result.receipt["rollback"]["occurred"] is expected_rollback
         assert result.receipt["final_state"] == ("restored" if expected_rollback else "applied")
+        report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+        assert report["success"] is (expected_status == "succeeded")
+        assert report["metrics"]["total_duration_ms"] > 0
         assert (workspace / "sample.py").read_text(encoding="utf-8") == expected_content
 
 

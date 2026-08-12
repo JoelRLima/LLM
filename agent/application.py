@@ -262,6 +262,9 @@ class AgentApplication:
         receipt: dict[str, Any] | None = None,
         report_path: str | None = None,
     ) -> AgentRunResult:
+        record_metric = getattr(self.orchestrator, "_record_canonical_run_metric", None)
+        if callable(record_metric):
+            record_metric(status == "succeeded")
         return cast(AgentRunResult, finalize_run_result(
             AgentRunResult, self.workspace.root, self.orchestrator, status, answer,
             error=error, diagnostics=diagnostics, metadata=metadata,

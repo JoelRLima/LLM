@@ -290,6 +290,12 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             measurement["status"] = result.status
             if uses_model:
                 assert_canonical_model_measurement(result, gateway, application)
+            if name == "a4_no_tool":
+                if measurement["model_calls"] != 0:
+                    raise AssertionError(f"cenÃ¡rio no-model invocou provider: {measurement!r}")
+                report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+                if report.get("metrics", {}).get("model_calls") != 0:
+                    raise AssertionError("report no-model nao preservou model_calls=0")
             if uses_model and name == "a4_no_tool":
                 raise AssertionError("cenÃ¡rio no-tool nÃ£o deveria usar modelo")
             if name == "a4_no_tool" and measurement["tools"]:
