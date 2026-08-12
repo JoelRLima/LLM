@@ -12,7 +12,7 @@ from rich.console import Console
 
 from agent.interfaces.cli import first_run
 from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.cli.workspace_entry import argument_workspace
+from agent.interfaces.cli.workspace_entry import argument_workspace, render_active_workspace
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 
 console = Console()
@@ -104,12 +104,13 @@ def _run_chat(args: argparse.Namespace) -> int:
             return first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args))
         raise
     try:
-        _chat_loop(
-            _context_from_application(
-                application,
-                config_path=_value(args, "config"),
-            )
+        context = _context_from_application(
+            application,
+            config_path=_value(args, "config"),
         )
+        if first_run.is_interactive_terminal():
+            render_active_workspace(console, context.workspace)
+        _chat_loop(context)
     finally:
         application.close()
     return 0

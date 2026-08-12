@@ -4,8 +4,10 @@ from types import SimpleNamespace
 import pytest
 
 from agent.interfaces.cli import app as cli
-from agent.interfaces.cli import workspace_entry
+from agent.interfaces.cli import command_handlers, workspace_entry
+from agent.interfaces.cli.commands import handle_command
 from agent.interfaces.cli.workspace_entry import canonical_workspace, choose_workspace
+from agent.runtime.config_errors import ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 
@@ -127,12 +129,14 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
 ) -> None:
     app_home = tmp_path / "app-home"
     ConfigRepository(AppPaths.discover(app_home=app_home)).initialize()
+    canonical_root = tmp_path / "canonical-root"
+    canonical_root.mkdir()
     application = SimpleNamespace(
         session=SimpleNamespace(config={}),
         orchestrator=SimpleNamespace(),
         config={},
         paths=SimpleNamespace(),
-        workspace=SimpleNamespace(root=tmp_path.resolve()),
+        workspace=SimpleNamespace(root=canonical_root.resolve()),
         workspace_paths=SimpleNamespace(),
         closed=False,
         close=lambda: None,
@@ -141,8 +145,9 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     selected.mkdir()
     seen: dict[str, object] = {}
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    output = _Console("2", str(selected))
+    monkeypatch.setattr(cli, "console", output)
     monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
-    monkeypatch.setattr(cli.console, "input", lambda prompt: str(selected) if "Pasta" in prompt else "2")
     def create(args: object, **_: object) -> object:
         seen["args"] = args
         return application
@@ -153,6 +158,9 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     assert cli.main(["chat", "--home", str(app_home)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
+    rendered = "\n".join(output.output)
+    assert rendered.count("Workspace ativo") == 1
+    assert str(canonical_root.resolve()) in rendered
 
 
 def test_chat_explicit_workspace_bypasses_chooser(
@@ -166,7 +174,8 @@ def test_chat_explicit_workspace_bypasses_chooser(
         workspace_paths=SimpleNamespace(), close=lambda: None,
     )
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
-    monkeypatch.setattr(cli.console, "input", lambda _: (_ for _ in ()).throw(AssertionError("chooser")))
+    output = _Console()
+    monkeypatch.setattr(cli, "console", output)
     seen: dict[str, object] = {}
     def create(args: object, **_: object) -> object:
         seen["args"] = args
@@ -178,6 +187,7 @@ def test_chat_explicit_workspace_bypasses_chooser(
     assert cli.main(["chat", "--workspace", str(selected)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
+    assert "\n".join(output.output).count(str(selected)) == 1
 
 
 def test_chat_non_tty_keeps_current_directory_without_prompt(
@@ -189,7 +199,8 @@ def test_chat_non_tty_keeps_current_directory_without_prompt(
         workspace_paths=SimpleNamespace(), close=lambda: None,
     )
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: False)
-    monkeypatch.setattr(cli.console, "input", lambda _: (_ for _ in ()).throw(AssertionError("prompt")))
+    output = _Console()
+    monkeypatch.setattr(cli, "console", output)
     monkeypatch.setattr(
         workspace_entry,
         "choose_directory_native",
@@ -207,3 +218,39 @@ def test_chat_non_tty_keeps_current_directory_without_prompt(
     assert cli.main(["chat"]) == 0
 
     assert not hasattr(seen["args"], "workspace")
+    assert "Workspace ativo" not in "\n".join(output.output)
+
+
+@pytest.mark.parametrize("command", ["/workspace", "/diretorio", "/pwd"])
+def test_workspace_command_uses_active_context_root(
+    command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    active_root = tmp_path / "active"
+    active_root.mkdir()
+    output = _Console()
+    monkeypatch.setattr(command_handlers, "console", output)
+    context = SimpleNamespace(workspace=SimpleNamespace(root=active_root.resolve()))
+
+    handled, should_exit = handle_command(command, context)
+
+    assert handled is True
+    assert should_exit is False
+    assert "\n".join(output.output).count(str(active_root.resolve())) == 1
+
+
+def test_first_run_recovery_happens_before_workspace_display(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = _Console()
+    monkeypatch.setattr(cli, "console", output)
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli.first_run, "prepare_chat_workspace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "_create_application",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ConfigNotFound("missing")),
+    )
+    monkeypatch.setattr(cli.first_run, "recover_first_run_config", lambda *args, **kwargs: 0)
+
+    assert cli.main(["chat"]) == 0
+    assert "Workspace ativo" not in "\n".join(output.output)

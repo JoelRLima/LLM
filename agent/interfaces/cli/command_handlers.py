@@ -6,10 +6,15 @@ from rich.panel import Panel
 from rich.table import Table
 
 from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_result
+from agent.interfaces.cli.workspace_entry import render_active_workspace
 from agent.runtime import paths
 from agent.runtime.logging import set_debug_level
 
 Handler = Callable[[str, Any], None]
+
+
+def show_workspace(_: str, ctx: Any) -> None:
+    render_active_workspace(console, ctx.workspace)
 
 
 def system_prompt(_: str, ctx: Any) -> None:

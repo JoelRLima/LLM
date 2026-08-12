@@ -22,6 +22,7 @@ from agent.interfaces.cli.command_handlers import (
     show_events,
     show_memory,
     show_prompt,
+    show_workspace,
     system_prompt,
     toggle_debug,
     toggle_thinking,
@@ -78,6 +79,7 @@ EXACT_HANDLERS = {
     "/save_memory": save_memory, "/salvarmemoria": save_memory,
     "/load_memory": load_memory, "/carregarmemoria": load_memory,
     "/doctor": doctor, "/ls": list_files, "/list": list_files,
+    "/workspace": show_workspace, "/diretorio": show_workspace, "/pwd": show_workspace,
     "/retry": retry, "/retomar": retry,
 }
 PREFIX_HANDLERS = (

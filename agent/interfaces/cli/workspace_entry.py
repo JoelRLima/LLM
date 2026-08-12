@@ -24,6 +24,13 @@ def canonical_workspace(path: str | Path) -> Path:
     return cast(Path, WorkspaceContext.create(path).root)
 
 
+def render_active_workspace(console: Any, workspace: WorkspaceContext) -> None:
+    """Render the canonical workspace owned by the active application."""
+
+    console.print("[bold cyan]Workspace ativo:[/bold cyan]")
+    console.print(str(workspace.root), markup=False)
+
+
 def native_picker_available() -> bool:
     """Return whether the optional Windows picker can be imported."""
 
@@ -132,4 +139,5 @@ __all__ = [
     "choose_directory_native",
     "choose_workspace",
     "native_picker_available",
+    "render_active_workspace",
 ]

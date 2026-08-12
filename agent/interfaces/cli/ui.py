@@ -68,6 +68,7 @@ def exibir_menu() -> None:
         ("/memory, /memoria", "Mostra a memória do agente"),
         ("/events", "Mostra os eventos da última execução"),
         ("/doctor, /diagnostico", "Executa o diagnóstico de saúde"),
+        ("/workspace, /diretorio", "Mostra o workspace ativo"),
         ("/retry, /retomar", "Retoma a tarefa interrompida"),
         ("/ls, /list", "Lista os arquivos do projeto"),
         ("/read <arquivo>", "Lê um arquivo"),
