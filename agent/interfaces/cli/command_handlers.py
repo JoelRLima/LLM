@@ -239,6 +239,7 @@ def web_search(text: str, ctx: Any) -> None:
 
 def retry(_: str, ctx: Any) -> None:
     console.print("[bold yellow]Verificando checkpoint...[/bold yellow]")
-    answer = ctx.orchestrator.run(None, stream_callback=None)
+    result = ctx.application.run(None)
+    answer = result.answer
     console.print(Panel(answer, title="[bold blue]Agente[/bold blue]"))
     ctx.session.add_assistant_message(answer)

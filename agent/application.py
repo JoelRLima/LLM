@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import io
 import threading
-from contextlib import redirect_stdout
+from collections.abc import Callable
+from contextlib import nullcontext, redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, cast
@@ -32,7 +33,6 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 _RUN_LOCK = threading.RLock()
-
 
 @dataclass(frozen=True)
 class AgentRunResult:
@@ -221,11 +221,11 @@ class AgentApplication:
         report["output_dir"] = str(workspace_paths.reports_dir)
         config["task_report"] = report
 
-    def run(self, objective: str) -> AgentRunResult:
+    def run(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         with _RUN_LOCK:
-            return self._run_locked(objective)
+            return self._run_locked(objective, stream_callback=stream_callback)
 
-    def _run_locked(self, objective: str) -> AgentRunResult:
+    def _run_locked(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         if self._closed:
             raise RuntimeError("A aplicação já foi encerrada.")
         captured = io.StringIO()
@@ -233,8 +233,10 @@ class AgentApplication:
         vars(self.orchestrator)["_last_failure_code"] = None
         vars(self.orchestrator)["_last_failure_layer"] = None
         try:
-            with redirect_stdout(captured):
-                answer = str(self.orchestrator.run(objective))
+            output_context = redirect_stdout(captured) if stream_callback is None else nullcontext()
+            callback_args = {} if stream_callback is None else {"stream_callback": stream_callback}
+            with output_context:
+                answer = str(self.orchestrator.run(objective, **callback_args))
         except KeyboardInterrupt:
             self.cancel()
             return self._result("cancelled", "", error="Tarefa cancelada pelo usuário.")
@@ -250,7 +252,6 @@ class AgentApplication:
             metadata["legacy_output"] = legacy_output
         error = derive_error(self.orchestrator, status)
         return self._result(status, answer, error=error, metadata=metadata)
-
     def _result(
         self,
         status: str,

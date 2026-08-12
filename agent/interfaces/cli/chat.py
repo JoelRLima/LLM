@@ -61,7 +61,7 @@ def run_chat_turn(console: Console, session: ChatSession, text: str, diagnostic_
         console.print(f"[bold yellow]A resposta foi {state}; sua mensagem foi mantida no histórico.[/bold yellow]")
 
 
-def run_agent_turn(console: Console, ctx: Any, text: str) -> None:
+def run_agent_turn(console: Console, ctx: Any, text: str) -> Any:
     streamed = False
 
     def on_chunk(chunk: str) -> None:
@@ -70,9 +70,11 @@ def run_agent_turn(console: Console, ctx: Any, text: str) -> None:
         print(chunk, end="", flush=True)
 
     console.print("[bold blue]Agente:[/bold blue]")
-    answer = ctx.orchestrator.run(text, stream_callback=on_chunk)
+    result = ctx.application.run(text, stream_callback=on_chunk)
+    answer = result.answer
     print()
     if answer and not streamed:
         console.print(answer)
     ctx.session.add_user_message(text)
     ctx.session.add_assistant_message(answer)
+    return result

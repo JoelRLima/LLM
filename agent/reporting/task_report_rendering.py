@@ -30,6 +30,7 @@ def aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[
             duration_entries and any(_has_number(entry, DURATION_KEYS) for entry in duration_entries)
         ),
         "model_calls": model_calls,
+        "run_calls": len(run_entries),
         "tools_called": tools_called,
         "token_usage_available": bool(token_values),
     }

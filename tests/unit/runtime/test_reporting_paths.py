@@ -187,3 +187,29 @@ def test_receipt_executed_preserves_tool_result_with_applied_artifact(tmp_path, 
     assert result.receipt["executed"] is executed
     assert result.receipt["files_affected"] == ["module.py"]
     assert result.receipt["final_state"] == "applied"
+
+
+def test_post_mortem_args_keep_only_bounded_resource_identity() -> None:
+    secret = "TOPSECRET"
+    report = TaskReportBuilder({}).build_report(
+        SimpleNamespace(
+            objective="read",
+            events=[],
+            tool_history=[{
+                "tool": "file_reader",
+                "args": {
+                    "file_path": "README.md",
+                    "api_key": secret,
+                    "content": secret,
+                    "nested": {"password": secret},
+                },
+                "result": {"ok": True, "status": "succeeded", "executed": True},
+            }],
+        ),
+        [],
+        "done",
+        canonical_outcome={"status": "succeeded", "error": None},
+    )
+
+    assert report["steps"][0]["args"] == {"file_path": "README.md"}
+    assert secret not in repr(report["steps"][0]["args"])

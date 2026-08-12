@@ -76,7 +76,10 @@ class PlanBuilder:
             return PlanBuildResult()
         filtered = self._filter_plan(plan)
         if not filtered:
-            self.orchestrator._emit("hard_block", {"reason": "plano vazio após filtros"})
+            self.orchestrator._emit(
+                "hard_block",
+                {"reason": "plano vazio após filtros", "reason_code": "PLAN_BLOCKED"},
+            )
             self.orchestrator.agent_state.project_last_result(
                 "planner",
                 {},

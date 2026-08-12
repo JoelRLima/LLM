@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, Iterator
 
 import pytest
+from rich.console import Console
 
 from agent.application import AgentApplication
 from agent.approval import AutoApprove
@@ -16,6 +19,7 @@ from agent.evaluation import (
     ScenarioExpectation,
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
+from agent.interfaces.cli.chat import run_agent_turn
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -251,6 +255,109 @@ def test_reused_application_failed_then_successful_run_has_isolated_outcomes(tmp
     assert [item["success"] for item in failed_metrics if item.get("metric_type") == "run"] == [False]
     assert [item["success"] for item in succeeded_metrics if item.get("metric_type") == "run"] == [True]
     assert failed_report["run_id"] != succeeded_report["run_id"]
+
+
+def _interactive_turn(application: AgentApplication, objective: str) -> Any:
+    console = Console(file=StringIO(), force_terminal=False)
+    context = SimpleNamespace(
+        application=application,
+        orchestrator=application.orchestrator,
+        session=application.session,
+    )
+    return run_agent_turn(console, context, objective)
+
+
+def test_interactive_runs_share_canonical_finalization_and_keep_prior_report(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "notes.txt").write_text("CAP_READ_EVIDENCE\n", encoding="utf-8")
+    direct_objective = "DIRECT_CAPITAL: Qual e a capital da Franca?"
+    read_objective = "CAP_READ: leia notes.txt e informe CAP_READ_EVIDENCE."
+    gateway = JourneyGateway(direct_objective)
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path), workspace=workspace,
+        gateway=gateway,
+        configure_logging=False,
+    ) as application:
+        direct = _interactive_turn(application, direct_objective)
+        direct_report_path = Path(direct.report_path)
+        direct_report_before = json.loads(direct_report_path.read_text(encoding="utf-8"))
+        direct_events = list(application.orchestrator.agent_state.events)
+        gateway.objective = read_objective
+        read = _interactive_turn(application, read_objective)
+        read_report = json.loads(Path(read.report_path).read_text(encoding="utf-8"))
+        current_events = list(application.orchestrator.agent_state.events)
+        direct_report_after = json.loads(direct_report_path.read_text(encoding="utf-8"))
+
+    assert direct.receipt["tools"] == [] and direct.receipt["executed"] is None
+    assert direct_report_before["planner_outcome"] == "direct_response"
+    assert direct_report_before == direct_report_after
+    assert direct_report_before["report_path"] == direct.report_path
+    assert direct.report_path != read.report_path
+    assert direct_report_before["run_id"] != read_report["run_id"]
+    assert [event["type"] for event in direct_report_before["event_summary"]] == ["direct_response"]
+    assert any(event.get("type") == "direct_response" for event in direct_events)
+    assert any(event.get("type") == "tool_end" for event in current_events)
+    assert read_report["planner_outcome"] == "use_tools"
+    assert read_report["report_path"] == read.report_path
+    step = read_report["steps"][0]
+    assert step["tool"] == "file_reader"
+    assert step["args"] == {"file_path": "notes.txt"}
+    assert step["invocation_id"]
+    assert step["result"]["executed"] is True
+    assert read.receipt["tools"][0]["invocation_id"] == step["invocation_id"]
+    assert read.receipt["tools"][0]["executed"] is True
+    for report in (direct_report_before, read_report):
+        assert report["metrics"]["run_calls"] == 1
+
+
+def test_interactive_denial_is_bounded_and_survives_a_later_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    denial_objective = "CAP_DENIAL: leia ../outside.txt"
+    gateway = JourneyGateway(denial_objective)
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path), workspace=workspace,
+        gateway=gateway,
+        task_authority=TaskAuthoritySnapshot(frozenset({"process"})),
+        configure_logging=False,
+    ) as application:
+        denied = _interactive_turn(application, denial_objective)
+        denied_path = Path(denied.report_path)
+        gateway.objective = "DIRECT_CAPITAL"
+        _interactive_turn(application, "DIRECT_CAPITAL: Qual e a capital da Franca?")
+        report = json.loads(denied_path.read_text(encoding="utf-8"))
+
+    assert denied.success is False
+    assert denied.receipt["tools"] == []
+    assert denied.receipt["executed"] is None
+    assert report["steps"] == []
+    assert report["planner_outcome"] == "blocked"
+    assert any(
+        event.get("type") == "hard_block" and event.get("reason_code") == "PLAN_BLOCKED"
+        for event in report["event_summary"]
+    )
+    assert report["metrics"]["run_calls"] == 1
+
+
+def test_interactive_provider_failure_is_canonically_finalized(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path), workspace=workspace,
+        gateway=ProviderFailureGateway(), configure_logging=False,
+    ) as application:
+        result = _interactive_turn(application, "leia notes.txt")
+
+    report_text = Path(result.report_path).read_text(encoding="utf-8")
+    report = json.loads(report_text)
+    assert result.status == "failed"
+    assert result.error == "Model provider request failed."
+    assert report["status"] == "failed"
+    assert report["metrics"]["run_calls"] == 1
+    assert report["metrics"]["model_calls"] == 1
+    for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
+        assert secret not in report_text
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:

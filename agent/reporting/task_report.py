@@ -54,6 +54,8 @@ class TaskReportBuilder:
             "start_time": start,
             "end_time": end,
             "steps": steps,
+            "planner_outcome": self._project_planner_outcome(events),
+            "event_summary": self._project_events(events),
             "replan_events": self._extract_replan_events(events),
             "metrics": aggregate_metrics(metrics_entries, len(history)),
             "errors": self._collect_errors(steps),
@@ -73,12 +75,13 @@ class TaskReportBuilder:
         selected = (format or self.default_format or "json").lower()
         selected = selected if selected in ("json", "markdown") else "json"
         if path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             extension = "json" if selected == "json" else "md"
-            path = os.path.join(self.output_dir, f"task_{timestamp}.{extension}")
+            identity = str(report.get("task_id") or self._generate_task_id())
+            path = os.path.join(self.output_dir, f"task_{identity}.{extension}")
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
+        report["report_path"] = str(path)
         content = json.dumps(report, indent=2, ensure_ascii=False, default=str) if selected == "json" else render_markdown(report)
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as stream:
@@ -118,6 +121,8 @@ class TaskReportBuilder:
                 "error": self._truncate(raw_result.get("error") or ""),
                 "data_summary": output_text,
                 "status": str(raw_result.get("status") or ""),
+                "executed": raw_result.get("executed"),
+                "reason_code": raw_result.get("error_code"),
                 "output_chars": len(output_text),
                 "truncated": bool(
                     metadata.get("truncated", False)
@@ -136,7 +141,7 @@ class TaskReportBuilder:
         step: Dict[str, Any] = {
             "index": index,
             "tool": entry.get("tool"),
-            "args": entry.get("args") or {},
+            "args": self._project_args(entry.get("args")),
             "result": result,
         }
         invocation_id = entry.get("invocation_id") or (
@@ -147,6 +152,68 @@ class TaskReportBuilder:
         if cache_hit is not None:
             step["cache_hit"] = bool(cache_hit)
         return step
+
+    @staticmethod
+    def _project_args(raw_args: Any) -> Dict[str, str]:
+        """Keep bounded resource identity, never arbitrary tool payloads."""
+        if not isinstance(raw_args, dict):
+            return {}
+        projected: Dict[str, str] = {}
+        for key in ("file_path", "path", "target", "mode", "action"):
+            value = raw_args.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                projected[key] = str(value)[:200]
+        return projected
+
+    @staticmethod
+    def _project_planner_outcome(events: List[Dict[str, Any]]) -> str | None:
+        outcome = None
+        for event in events or []:
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("type")
+            if event_type == "direct_response":
+                outcome = "direct_response"
+            elif event_type == "plan_created":
+                outcome = "use_tools"
+            elif event_type == "hard_block":
+                outcome = "blocked"
+        return outcome
+
+    @staticmethod
+    def _project_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Project the existing event taxonomy into bounded post-mortem evidence."""
+        projected: List[Dict[str, Any]] = []
+        for event in events or []:
+            summary = TaskReportBuilder._project_event(event)
+            if summary is not None:
+                projected.append(summary)
+            if len(projected) >= 50:
+                break
+        return projected
+
+    @staticmethod
+    def _project_event(event: Any) -> Dict[str, Any] | None:
+        if not isinstance(event, dict):
+            return None
+        event_type = str(event.get("type") or "")
+        raw_data = event.get("data")
+        data: Dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
+        if event_type in {"direct_response", "hard_block", "plan_created"}:
+            summary: Dict[str, Any] = {"type": event_type}
+            if event_type == "plan_created":
+                summary["steps"] = int(data.get("steps") or 0)
+            elif event_type == "hard_block":
+                summary["reason_code"] = data.get("reason_code") or "PLAN_BLOCKED"
+            return summary
+        if event_type not in {"tool_start", "tool_end", "tool_denied"}:
+            return None
+        summary = {"type": event_type, "invocation_id": data.get("invocation_id")}
+        if event_type != "tool_start":
+            summary["status"] = data.get("status")
+        if event_type == "tool_denied":
+            summary["reason_code"] = data.get("reason")
+        return summary
 
     @staticmethod
     def _extract_replan_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
