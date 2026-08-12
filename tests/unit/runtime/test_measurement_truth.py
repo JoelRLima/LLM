@@ -164,3 +164,10 @@ def test_aggregate_no_model_is_zero_not_inferred_from_tools() -> None:
     metrics = aggregate_metrics([{"type": "run", "duration_ms": 1}], tools_called=1)
     assert metrics["model_calls"] == 0
     assert metrics["total_tokens"] is None
+
+
+def test_aggregate_zero_run_duration_remains_observable() -> None:
+    metrics = aggregate_metrics([{"type": "run", "duration_ms": 0}], tools_called=0)
+
+    assert metrics["duration_available"] is True
+    assert metrics["total_duration_ms"] == 0

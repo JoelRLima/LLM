@@ -249,8 +249,11 @@ def assert_canonical_model_measurement(result, gateway, application):
         )
     if not report.get("run_id"):
         raise AssertionError("run_id ausente no report instalado")
-    if metrics.get("total_duration_ms", 0) <= 0:
+    if metrics.get("duration_available") is not True:
         raise AssertionError("duracao de run instalada nao observavel")
+    duration = metrics.get("total_duration_ms")
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration < 0:
+        raise AssertionError("duracao de run instalada invalida")
 
 
 def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
