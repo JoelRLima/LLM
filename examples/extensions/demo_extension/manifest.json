@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "protocol_version": "1.0",
   "transport": "stdio",
-  "entrypoint": ["python", "demo_extension.py"],
+  "entrypoint": ["${python}", "${extension_dir}/demo_extension.py"],
   "timeout_seconds": 5,
   "tools": [
     {
