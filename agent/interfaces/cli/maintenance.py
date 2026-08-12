@@ -46,6 +46,15 @@ def config_repository(
     return ConfigRepository(app_paths, config_path=config_path)
 
 
+def initialize_config(
+    app_paths: AppPaths,
+    config_path: str | Path | None,
+) -> Path:
+    """Initialize config through the same domain used by `config init`."""
+
+    return cast(Path, config_repository(app_paths, config_path).initialize())
+
+
 def run_config(
     args: argparse.Namespace,
     *,
@@ -57,7 +66,7 @@ def run_config(
     if args.config_command == "path":
         print(repository.path)
     elif args.config_command == "init":
-        print(repository.initialize())
+        print(initialize_config(app_paths, config_path))
     elif args.config_command == "validate":
         repository.load(
             overrides=(
@@ -148,6 +157,7 @@ def run_tools(
 
 __all__ = [
     "config_repository",
+    "initialize_config",
     "run_config",
     "run_doctor",
     "run_state",

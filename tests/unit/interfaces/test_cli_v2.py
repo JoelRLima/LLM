@@ -98,6 +98,193 @@ def test_config_init_then_validate_offline(tmp_path: Path, capsys: pytest.Captur
     assert "Configuração válida" in capsys.readouterr().out
 
 
+def test_chat_missing_config_interactive_yes_uses_canonical_init(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    prompts: list[str] = []
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda prompt: prompts.append(prompt) or "y",
+    )
+
+    assert cli.main(["chat", "--home", str(home)]) == 0
+
+    config = home / "config" / "config.json"
+    assert json.loads(config.read_text(encoding="utf-8"))["schema_version"] == 1
+    output = capsys.readouterr()
+    assert "Configuração criada" in output.out
+    assert "llm-agent config validate" in output.out
+    assert "llm-agent doctor" in output.out
+    assert output.err == ""
+    assert prompts == ["Deseja criar a configuração padrão agora? [Y/n] "]
+
+
+def test_chat_missing_config_interactive_no_does_not_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli.console, "input", lambda _prompt: "n")
+
+    assert cli.main(["chat", "--home", str(home)]) == 0
+
+    assert not (home / "config" / "config.json").exists()
+    assert "llm-agent config init" in capsys.readouterr().out
+
+
+def test_chat_missing_config_interactive_eof_does_not_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+
+    def eof(_prompt: str) -> str:
+        raise EOFError
+
+    monkeypatch.setattr(cli.console, "input", eof)
+
+    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert not (home / "config" / "config.json").exists()
+    assert "llm-agent config init" in capsys.readouterr().out
+
+
+def test_chat_missing_config_noninteractive_is_actionable_without_prompt_or_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: False)
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("non-interactive prompt")),
+    )
+
+    assert cli.main(["chat", "--home", str(home)]) == 2
+
+    assert not (home / "config" / "config.json").exists()
+    captured = capsys.readouterr()
+    assert "llm-agent config init" in captured.err
+    assert captured.out == ""
+
+
+def test_run_missing_config_json_is_actionable_without_prompt_or_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("headless prompt")),
+    )
+
+    assert cli.main(["run", "--json", "--home", str(home), "oi"]) == 2
+
+    assert not (home / "config" / "config.json").exists()
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["status"] == "failed"
+    assert "llm-agent config init" in payload["error"]
+    assert captured.err == ""
+
+
+def test_explicit_missing_config_never_uses_first_run_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    explicit = tmp_path / "explicit.json"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("explicit config prompt")),
+    )
+
+    assert cli.main(["chat", "--config", str(explicit)]) == 2
+
+    assert not explicit.exists()
+    assert f"llm-agent config init --config {explicit}" in capsys.readouterr().err
+
+
+def test_invalid_config_is_not_treated_as_first_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "app"
+    config = home / "config" / "config.json"
+    config.parent.mkdir(parents=True)
+    config.write_text('{"schema_version": 1, "max_tokens": "invalid"}', encoding="utf-8")
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("invalid config prompt")),
+    )
+
+    assert cli.main(["chat", "--home", str(home)]) == 2
+
+    captured = capsys.readouterr()
+    assert "llm-agent config init" not in captured.err
+    assert "Configuração criada" not in captured.out
+
+
+def test_existing_config_keeps_normal_chat_startup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "app"
+    assert cli.main(["config", "init", "--home", str(home)]) == 0
+    entered: list[bool] = []
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_chat_loop", lambda _context: entered.append(True))
+    monkeypatch.setattr(
+        cli.console,
+        "input",
+        lambda _prompt: (_ for _ in ()).throw(AssertionError("recovery prompt")),
+    )
+
+    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert entered == [True]
+
+
+def test_first_run_init_failure_preserves_error_without_false_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from agent.interfaces.cli import maintenance
+
+    home = tmp_path / "app"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli.console, "input", lambda _prompt: "y")
+    monkeypatch.setattr(
+        maintenance,
+        "initialize_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("sem permissão")),
+    )
+
+    assert cli.main(["chat", "--home", str(home)]) == 2
+
+    captured = capsys.readouterr()
+    assert "sem permissão" in captured.err
+    assert "Configuração criada" not in captured.out
+    assert not (home / "config" / "config.json").exists()
+
+
 def test_run_json_emits_one_document_and_disables_logging(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

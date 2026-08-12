@@ -10,7 +10,9 @@ from typing import Any, Sequence
 
 from rich.console import Console
 
+from agent.interfaces.cli import first_run
 from agent.interfaces.cli.parser import build_parser
+from agent.runtime.config_errors import ConfigError, ConfigNotFound
 
 console = Console()
 NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
@@ -97,7 +99,12 @@ def _create_application(args: argparse.Namespace, *, configure_logging: bool) ->
 
 
 def _run_chat(args: argparse.Namespace) -> int:
-    application = _create_application(args, configure_logging=True)
+    try:
+        application = _create_application(args, configure_logging=True)
+    except ConfigNotFound:
+        if _value(args, "config") is None and first_run.is_interactive_terminal():
+            return first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args))
+        raise
     try:
         _chat_loop(
             _context_from_application(
@@ -273,13 +280,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         _emit_error("Operação cancelada pelo usuário.", json_output=json_output)
         return 1
-    except (FileNotFoundError, NotADirectoryError, PermissionError, ValueError) as exc:
-        _emit_error(str(exc), json_output=json_output)
-        return 2
     except Exception as exc:
-        from agent.runtime.config_errors import ConfigError
         from agent.runtime.state_migration import StateMigrationError
 
+        if isinstance(exc, ConfigNotFound):
+            _emit_error(first_run.actionable_missing_config(args, exc), json_output=json_output)
+            return 2
+        if isinstance(exc, (FileNotFoundError, NotADirectoryError, PermissionError, ValueError)):
+            _emit_error(str(exc), json_output=json_output)
+            return 2
         if isinstance(exc, (ConfigError, StateMigrationError)):
             _emit_error(str(exc), json_output=json_output)
             return 2

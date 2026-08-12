@@ -1490,6 +1490,24 @@ def _verify_config(app_home: Path) -> None:
         raise VerificationError("config init não criou configuração schema_version=1.")
 
 
+def _verify_missing_config_recovery(
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    result = _run_expected_failure(
+        "installed-missing-config-recovery",
+        (str(entrypoint), "chat", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    if "llm-agent config init" not in result.stderr:
+        raise VerificationError("Installed CLI did not expose missing-config recovery.")
+    if (app_home / "config" / "config.json").exists():
+        raise VerificationError("Installed CLI created config without non-interactive consent.")
+
+
 def _verify_greeting(payload: Mapping[str, Any]) -> None:
     rendered = json.dumps(payload, ensure_ascii=False).casefold()
     if not any(term in rendered for term in ("olá", "ola", "ajudar")):
@@ -1592,6 +1610,12 @@ def verify_installed_package(
         _verify_import_origin(
             venv_python,
             site_packages,
+            external_cwd,
+            runtime_environment,
+        )
+        _verify_missing_config_recovery(
+            entrypoint,
+            temp / "missing-config-home",
             external_cwd,
             runtime_environment,
         )

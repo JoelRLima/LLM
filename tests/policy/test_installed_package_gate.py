@@ -149,6 +149,9 @@ def test_installed_gate_includes_extension_aware_bootstrap_probe() -> None:
 
 
 def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
+    source = inspect.getsource(verify_installed_package)
+    assert "_verify_missing_config_recovery(" in source
+
     assert '"git_log_one": git_reader.execute' in INSTALLED_PROBE_SOURCE
     assert '"shell_log": shell.execute' in INSTALLED_PROBE_SOURCE
     assert '"git_remerge": git_reader.execute' in INSTALLED_PROBE_SOURCE
