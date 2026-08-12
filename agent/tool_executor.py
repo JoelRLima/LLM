@@ -1,6 +1,7 @@
 import hashlib
+import json
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -55,7 +56,9 @@ class ToolExecutor:
                     f"Tool '{tool_name}' nao foi registrada no Orchestrator."
                 ) from exc
 
-        print(f"Usando {tool_name}...", end="", flush=True)
+        resource = self._primary_resource(args)
+        resource_text = f" Recurso: {json.dumps(resource, ensure_ascii=True)}." if resource else ""
+        print(f"Usando {tool_name}...{resource_text}", end="", flush=True)
         logger.info("Executando tool %s com args %s", tool_name, args)
         raw_res = gateway.invoke(
             request,
@@ -70,6 +73,14 @@ class ToolExecutor:
         if getattr(self.orchestrator, "verbose", False):
             print(f"[DEBUG] Resultado completo: {stringify(result)}")
         return result
+
+    @staticmethod
+    def _primary_resource(args: Mapping[str, Any]) -> str | None:
+        for key in ("file_path", "target", "path", "directory"):
+            value = args.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
 
     def summarize_text(self, text: str, context: str = "") -> str:
         try:

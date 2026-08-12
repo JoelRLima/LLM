@@ -53,7 +53,9 @@ array  ::= "[" ws (value ("," ws value)*)? ws "]"
 
 PLAN_GRAMMAR = (
     r"""
-root      ::= "{" ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" ws "}"
+root      ::= plan-response | direct-response
+plan-response ::= "{" ws "\"action\"" ws ":" ws "\"use_tools\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" ws "}"
+direct-response ::= "{" ws "\"action\"" ws ":" ws "\"direct_response\"" ws "," ws "\"answer\"" ws ":" ws string ws "}"
 plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object ws "}"
 """
     + _COMMON_RULES

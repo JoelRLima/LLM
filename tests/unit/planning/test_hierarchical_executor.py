@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from agent.planning.hierarchical_executor import HierarchicalExecutor
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
+from agent.planning.plan_builder import PlanBuildResult
 
 
 class _State:
@@ -69,7 +70,9 @@ def test_hierarchical_flow_executes_each_microplan_through_gateway():
     tracker = _Tracker()
     executor = HierarchicalExecutor(
         plan_builder=SimpleNamespace(
-            build_plan=lambda goal: ([{"tool": "echo", "args": {"text": goal}}], None)
+            build_plan=lambda goal: PlanBuildResult(
+                plan=[{"tool": "echo", "args": {"text": goal}}]
+            )
         ),
         plan_executor=object(),
         final_responder=SimpleNamespace(

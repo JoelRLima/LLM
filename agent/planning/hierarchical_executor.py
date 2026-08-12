@@ -171,9 +171,12 @@ class HierarchicalExecutor:
         success = False
         summary_text = ""
         try:
-            plan, blocked_answer = self.plan_builder.build_plan(step.goal)
-            if blocked_answer or not plan:
-                summary_text = blocked_answer or (
+            decision = self.plan_builder.build_plan(step.goal)
+            if decision.direct_answer:
+                summary_text = decision.direct_answer
+                success = True
+            elif decision.blocked_answer or not decision.plan:
+                summary_text = decision.blocked_answer or (
                     "Não foi possível gerar um plano de execução para este sub-objetivo."
                 )
                 success = False
@@ -185,7 +188,7 @@ class HierarchicalExecutor:
                 # deste sub-objetivo atravessa o mesmo ExecutionGateway do
                 # caminho linear, que valida, otimiza e só então executa.
                 gateway_result = self.execution_gateway.execute_validated_plan(
-                    plan, step.goal, tool_usage_count
+                    decision.plan, step.goal, tool_usage_count
                 )
                 if gateway_result.aborted:
                     summary_text = gateway_result.final_answer or (

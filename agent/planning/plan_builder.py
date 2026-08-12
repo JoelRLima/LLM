@@ -1,11 +1,15 @@
 import inspect
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, cast
 
 from agent.parsers import validate_tool_args
 from agent.planning.planning_context import validate_planning_tool_arguments
 
 PLANNING_GUIDANCE = """
+Responder diretamente e uma acao valida. Use uma ferramenta somente quando ela
+fornecer observacao, computacao deterministica relevante ou efeito que melhore
+materialmente a execucao. Nao use ferramentas apenas porque estao disponiveis.
 Escolha a ferramenta de menor custo que resolva cada passo:
 - localizar: directory_lister; buscar texto: grep; entender código: code_analyzer;
 - ler: file_reader; modificar/validar: code_task; executar Python: python_executor.
@@ -13,6 +17,13 @@ Para modificações, use code_task action='modify' ou action='repair'.
 Em análises de segurança, comece com code_analyzer mode='security' em um arquivo.
 Evite leituras repetidas, caches/logs no escopo e passos que apaguem conteúdo.
 """
+
+
+@dataclass(frozen=True)
+class PlanBuildResult:
+    plan: Optional[List[Dict[str, Any]]] = None
+    blocked_answer: Optional[str] = None
+    direct_answer: Optional[str] = None
 
 
 def build_planner_tools_description(orchestrator: Any, *, planner_kind: str, compact: bool) -> str:
@@ -46,7 +57,7 @@ class PlanBuilder:
         self.orchestrator = orchestrator
         self.analysis_notes_file = Path(analysis_notes_file)
 
-    def build_plan(self, objective: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    def build_plan(self, objective: str) -> PlanBuildResult:
         self._clear_analysis_notes()
         decision = self.orchestrator.context_manager.ask_model(
             self._build_prompt(objective),
@@ -56,9 +67,13 @@ class PlanBuilder:
         )
         if self.orchestrator.verbose:
             print(f"[DEBUG] plan_decision bruto: {decision}")
+        direct_answer = self._direct_answer(decision)
+        if direct_answer is not None:
+            self.orchestrator._emit("direct_response", {})
+            return PlanBuildResult(direct_answer=direct_answer)
         plan = self._normalize_decision(decision)
         if plan is None:
-            return None, None
+            return PlanBuildResult()
         filtered = self._filter_plan(plan)
         if not filtered:
             self.orchestrator._emit("hard_block", {"reason": "plano vazio após filtros"})
@@ -74,13 +89,16 @@ class PlanBuilder:
                 },
             )
             self.orchestrator.fail_task()
-            return [], "Não foi possível executar esta ação; ela foi bloqueada pelas políticas de segurança."
+            return PlanBuildResult(
+                plan=[],
+                blocked_answer="Não foi possível executar esta ação; ela foi bloqueada pelas políticas de segurança.",
+            )
         self.orchestrator.agent_state.set_plan(filtered)
         canonical = self.orchestrator.agent_state.plan
         self.orchestrator._emit("plan_created", {"steps": len(canonical), "plan": canonical})
         if self.orchestrator.verbose:
             print(f"[DEBUG] Plano canônico com {len(canonical)} passos: {canonical}")
-        return canonical, None
+        return PlanBuildResult(plan=canonical)
 
     def _clear_analysis_notes(self) -> None:
         if not self.analysis_notes_file.exists():
@@ -101,14 +119,26 @@ class PlanBuilder:
 Ferramentas disponíveis:
 {tools}
 
-Crie um plano sequencial mínimo. Responda apenas com JSON:
-{{"plan": [{{"tool": "file_reader", "args": {{"file_path": "cli.py"}}}}]}}
+Escolha exatamente uma das duas respostas JSON:
+{{"action": "direct_response", "answer": "resposta final ao usuario"}}
+{{"action": "use_tools", "plan": [{{"tool": "ferramenta", "args": {{}}}}]}}
+Use direct_response quando puder responder adequadamente com o conhecimento e o
+contexto atuais e nenhuma ferramenta acrescentar observacao, computacao ou efeito
+material. Use use_tools quando precisar observar um recurso, obter informacao
+externa/atual, executar computacao deterministica relevante ou causar um efeito.
 Cada passo deve usar exatamente uma ferramenta da lista e conter tool (string) e args (objeto).
 Para file_writer, omita content quando ele precisar ser gerado durante a execução.
 Use file_reader sem start_line/end_line para leitura automática em chunks.
 Não use shell para escrever e não inclua um passo final sem ferramenta.
 {PLANNING_GUIDANCE}
 """
+
+    @staticmethod
+    def _direct_answer(decision: Dict[str, Any]) -> Optional[str]:
+        if decision.get("action") != "direct_response":
+            return None
+        answer = decision.get("answer")
+        return answer.strip() if isinstance(answer, str) and answer.strip() else None
 
     def _normalize_decision(self, decision: Dict[str, Any]) -> Optional[List[Any]]:
         plan = decision.get("plan")

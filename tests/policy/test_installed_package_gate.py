@@ -168,7 +168,7 @@ def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
 def test_installed_probe_covers_slice_a_journey_and_measurement() -> None:
     assert "AgentApplication.create" in INSTALLED_PROBE_SOURCE
     assert "run_slice_a_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_A1", "SLICE_A2", "SLICE_A3", "a4_no_tool"):
+    for marker in ("SLICE_A1", "SLICE_A2", "SLICE_A3", "a4_no_tool", "SLICE_A6_DIRECT"):
         assert marker in INSTALLED_PROBE_SOURCE
     for field in (
         "task_id",

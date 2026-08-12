@@ -90,13 +90,20 @@ class TaskRunner:
         security = self._try_security(inputs.objective, on_chunk)
         if security is not None:
             return security
-        plan, blocked = self.orchestrator.plan_builder.build_plan(inputs.objective)
-        if blocked:
-            self.orchestrator.agent_state.conversation_history.append({"user": inputs.objective, "agent": blocked})
-            return str(blocked)
-        if not plan:
+        decision = self.orchestrator.plan_builder.build_plan(inputs.objective)
+        if decision.blocked_answer:
+            self.orchestrator.agent_state.conversation_history.append(
+                {"user": inputs.objective, "agent": decision.blocked_answer}
+            )
+            return str(decision.blocked_answer)
+        if decision.direct_answer:
+            self.orchestrator.agent_state.conversation_history.append(
+                {"user": inputs.objective, "agent": decision.direct_answer}
+            )
+            return str(decision.direct_answer)
+        if not decision.plan:
             return str(self.orchestrator._run_reactive(inputs.objective, usage, inputs.original_message_count))
-        return self._execute_plan(plan, inputs.objective, usage, on_chunk)
+        return self._execute_plan(decision.plan, inputs.objective, usage, on_chunk)
 
     def _resume_plan(self) -> List[Dict[str, Any]]:
         self.orchestrator._restore_persona_from_state()

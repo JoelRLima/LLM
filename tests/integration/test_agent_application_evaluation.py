@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Iterator
 
+import pytest
+
 from agent.application import AgentApplication
 from agent.approval import AutoApprove
 from agent.evaluation import (
@@ -64,7 +66,7 @@ class JourneyGateway:
     def _response(self, system: str, prompt: str) -> str:
         if "You are a Router Agent" in system:
             return '{"persona":"coder"}'
-        if "Crie um plano sequencial" in prompt:
+        if "Escolha exatamente uma das duas respostas JSON" in prompt:
             return self._plan_response()
         if "Objetivo de engenharia:" in prompt and "CAP_MODIFY" in self.objective:
             return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
@@ -75,6 +77,14 @@ class JourneyGateway:
         return '{"persona":"coder"}'
 
     def _plan_response(self) -> str:
+        direct_answers = (
+            ("DIRECT_EXACT", "abacaxi azul"),
+            ("DIRECT_CAPITAL", "A capital da França é Paris."),
+            ("DIRECT_SKY", "O céu parece azul porque a atmosfera dispersa mais a luz azul."),
+        )
+        for marker, answer in direct_answers:
+            if marker in self.objective:
+                return json.dumps({"action": "direct_response", "answer": answer}, ensure_ascii=False)
         plans = (
             ("CAP_DENIAL", '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'),
             ("CAP_SEARCH", '{"plan":[{"tool":"grep","args":{"pattern":"CAP_SEARCH_EVIDENCE","path":"."}}]}'),
@@ -291,6 +301,74 @@ def test_capability_evaluator_uses_real_agent_application_path(tmp_path: Path) -
     assert report.observation.measurement["tools"] == ["file_reader"]
     assert report.observation.measurement["model_calls"] >= 2
     assert report.observation.measurement["invocation_ids"]
+
+
+@pytest.mark.parametrize(
+    ("objective", "expected"),
+    (
+        ("DIRECT_EXACT: Escreva exatamente: abacaxi azul", "abacaxi azul"),
+        ("DIRECT_CAPITAL: Qual é a capital da França?", "A capital da França é Paris."),
+        (
+            "DIRECT_SKY: Explique em uma frase por que o céu parece azul.",
+            "O céu parece azul porque a atmosfera dispersa mais a luz azul.",
+        ),
+    ),
+)
+def test_direct_response_is_a_first_class_no_tool_result(
+    tmp_path: Path, objective: str, expected: str
+) -> None:
+    case_root = tmp_path / objective.split(":", 1)[0].lower()
+    workspace = case_root / "workspace"
+    workspace.mkdir(parents=True)
+    gateway = JourneyGateway(objective)
+    with AgentApplication.create(
+        paths=_initialized_paths(case_root),
+        workspace=workspace,
+        gateway=gateway,
+        configure_logging=False,
+    ) as application:
+        result = application.run(objective)
+        history = list(application.orchestrator.agent_state.tool_history)
+        events = list(application.orchestrator.agent_state.events)
+
+    report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
+    assert result.status == "succeeded"
+    assert result.answer == expected
+    assert history == []
+    assert not {event.get("type") for event in events} & {"tool_start", "tool_end"}
+    assert result.receipt["tools"] == []
+    assert result.receipt["executed"] is None
+    assert report["metrics"]["tools_called"] == 0
+    assert report["metrics"]["model_calls"] == len(gateway.calls) == 1
+
+
+def test_direct_response_can_use_existing_conversation_context(tmp_path: Path) -> None:
+    first = "DIRECT_EXACT: Escreva exatamente: abacaxi azul"
+    second = "Qual foi a minha pergunta anterior?"
+    gateway = JourneyGateway(first)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=gateway,
+        configure_logging=False,
+    ) as application:
+        initial = application.run(first)
+        gateway.objective = "DIRECT_CONTEXT"
+        original_plan_response = gateway._plan_response
+        gateway._plan_response = lambda: json.dumps(
+            {"action": "direct_response", "answer": first}, ensure_ascii=False
+        )
+        recalled = application.run(second)
+        gateway._plan_response = original_plan_response
+        history = list(application.orchestrator.agent_state.tool_history)
+        events = list(application.orchestrator.agent_state.events)
+
+    assert initial.answer == "abacaxi azul"
+    assert recalled.answer == first
+    assert history == []
+    assert not {event.get("type") for event in events} & {"tool_start", "tool_end"}
 
 
 def _prepare_git(objective: str, workspace: Path, _paths: Any) -> None:

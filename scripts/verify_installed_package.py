@@ -92,7 +92,9 @@ class DeterministicJourneyGateway:
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             return '{"persona": "coder"}'
-        if "Crie um plano sequencial" in prompt:
+        if "Escolha exatamente uma das duas respostas JSON" in prompt:
+            if "SLICE_A6_DIRECT" in self.objective:
+                return '{"action":"direct_response","answer":"abacaxi azul"}'
             if "SLICE_A1" in self.objective:
                 return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
             if "SLICE_A2" in self.objective:
@@ -259,6 +261,7 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
         ("a2_search", "SLICE_A2: busque a evidÃªncia no workspace e informe o resultado.", True),
         ("a3_denied", "SLICE_A3: leia o caminho fora do workspace e informe o resultado.", True),
         ("a5_provider_failure", "SLICE_A5_PROVIDER_FAILURE: leia notes.txt.", True),
+        ("a6_direct", "SLICE_A6_DIRECT: escreva exatamente: abacaxi azul", True),
         ("a4_no_tool", "oi", False),
     )
     measurements = []
@@ -300,6 +303,14 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
                 raise AssertionError("cenÃ¡rio no-tool nÃ£o deveria usar modelo")
             if name == "a4_no_tool" and measurement["tools"]:
                 raise AssertionError("cenÃ¡rio no-tool invocou ferramenta")
+            if name == "a6_direct":
+                if result.answer != "abacaxi azul" or measurement["tools"]:
+                    raise AssertionError(f"direct response instalada divergente: {measurement!r}")
+                if result.receipt.get("tools") != [] or result.receipt.get("executed") is not None:
+                    raise AssertionError(f"receipt direct response inventou execucao: {result.to_dict()!r}")
+                event_types = {event.get("type") for event in application.orchestrator.agent_state.events}
+                if event_types & {"tool_start", "tool_end"}:
+                    raise AssertionError(f"direct response publicou evento de tool: {event_types!r}")
             if name == "a3_denied" and measurement["terminal_outcome"] != "DENIED":
                 raise AssertionError(f"denial instalada nÃ£o observÃ¡vel: {measurement!r}")
             if name == "a3_denied":
@@ -615,12 +626,12 @@ slice_measurements = run_slice_a_journeys(
     scratch_dir,
     outside,
 )
-if len(slice_measurements) != 5:
+if len(slice_measurements) != 6:
     raise SystemExit(f"installed Slice A produziu mediÃ§Ã£o incompleta: {slice_measurements!r}")
 if any(item.get("invocation_id") is None for item in slice_measurements[:3]):
     raise SystemExit(f"installed Slice A perdeu invocation_id: {slice_measurements!r}")
-if slice_measurements[3].get("tools"):
-    raise SystemExit(f"installed Slice A no-tool invocou ferramenta: {slice_measurements[3]!r}")
+if slice_measurements[4].get("tools") or slice_measurements[5].get("tools"):
+    raise SystemExit(f"installed Slice A direct/no-tool invocou ferramenta: {slice_measurements[4:]!r}")
 failure_workspace = workspace.parent / "shell-failure-workspace"
 failure_workspace.mkdir(parents=True, exist_ok=True)
 shell_measurements = run_shell_journeys(
@@ -787,7 +798,7 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             content = '{"persona":"coder"}'
-        elif "Crie um plano sequencial" in prompt:
+        elif "Escolha exatamente uma das duas respostas JSON" in prompt:
             content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
         elif "Resultados das ferramentas executadas:" in prompt:
             content = "F1_INSTALLED_EVIDENCE"
@@ -1208,19 +1219,22 @@ def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
         "installed-slice-a:a2_search",
         "installed-slice-a:a3_denied",
         "installed-slice-a:a5_provider_failure",
+        "installed-slice-a:a6_direct",
         "installed-slice-a:a4_no_tool",
     ]
-    if not isinstance(slice_a, list) or len(slice_a) != 5:
-        raise VerificationError("Probe instalado nao executou os cinco cenarios Slice A.")
+    if not isinstance(slice_a, list) or len(slice_a) != 6:
+        raise VerificationError("Probe instalado nao executou os seis cenarios Slice A.")
     if [item.get("task_id") for item in slice_a] != expected_ids:
-        raise VerificationError("Probe instalado nao executou os cinco cenarios Slice A.")
+        raise VerificationError("Probe instalado nao executou os seis cenarios Slice A.")
     if [item.get("terminal_outcome") for item in slice_a[:2]] != ["SUCCESS", "SUCCESS"]:
         raise VerificationError("Slice A read/search instalada nÃ£o produziu sucesso.")
     if slice_a[2].get("terminal_outcome") != "DENIED":
         raise VerificationError("Slice A nÃ£o observou denial de path externo.")
     if slice_a[3].get("terminal_outcome") != "FAILED" or slice_a[3].get("error") != "Model provider request failed.":
         raise VerificationError("Slice A provider failure instalada nao preservou mensagem estavel.")
-    if bool(slice_a[4].get("tools")) or bool(slice_a[4].get("model_calls")):
+    if slice_a[4].get("answer") != "abacaxi azul" or bool(slice_a[4].get("tools")):
+        raise VerificationError("Slice A direct response instalada divergiu.")
+    if bool(slice_a[5].get("tools")) or bool(slice_a[5].get("model_calls")):
         raise VerificationError("Slice A no-tool executou modelo/tool indevidamente.")
     if not all(item.get("invocation_id") for item in slice_a[:3]):
         raise VerificationError("Slice A perdeu invocation_id em ferramenta executada.")
