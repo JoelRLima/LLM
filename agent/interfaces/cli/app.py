@@ -12,6 +12,7 @@ from rich.console import Console
 
 from agent.interfaces.cli import first_run
 from agent.interfaces.cli.parser import build_parser
+from agent.interfaces.cli.workspace_entry import argument_workspace
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 
 console = Console()
@@ -88,10 +89,6 @@ def _app_paths(args: argparse.Namespace) -> Any:
     return AppPaths.discover(app_home=_value(args, "home"))
 
 
-def _workspace(args: argparse.Namespace) -> Path:
-    return Path(_value(args, "workspace", Path.cwd())).expanduser()
-
-
 def _create_application(args: argparse.Namespace, *, configure_logging: bool) -> Any:
     from agent.interfaces.cli.bootstrap import create_application
 
@@ -99,6 +96,7 @@ def _create_application(args: argparse.Namespace, *, configure_logging: bool) ->
 
 
 def _run_chat(args: argparse.Namespace) -> int:
+    first_run.prepare_chat_workspace(args, console=console, app_paths=_app_paths(args))
     try:
         application = _create_application(args, configure_logging=True)
     except ConfigNotFound:
@@ -188,7 +186,7 @@ def _run_doctor(args: argparse.Namespace) -> int:
     json_output = bool(_value(args, "json_output", False))
     return run_doctor(
         app_paths=_app_paths(args),
-        workspace=_workspace(args),
+        workspace=argument_workspace(args),
         config_path=_value(args, "config"),
         profile=_value(args, "profile"),
         json_output=json_output,
@@ -219,7 +217,7 @@ def _run_state(args: argparse.Namespace) -> int:
     return run_state(
         args,
         app_paths=_app_paths(args),
-        workspace=_workspace(args),
+        workspace=argument_workspace(args),
     )
 
 
@@ -229,7 +227,7 @@ def _run_tools(args: argparse.Namespace) -> int:
     return run_tools(
         args,
         app_paths=_app_paths(args),
-        workspace=_workspace(args),
+        workspace=argument_workspace(args),
     )
 
 
@@ -239,7 +237,7 @@ def _run_extensions(args: argparse.Namespace) -> int:
     return run_extensions(
         args,
         app_paths=_app_paths(args),
-        workspace=_workspace(args),
+        workspace=argument_workspace(args),
     )
 
 

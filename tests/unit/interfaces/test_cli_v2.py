@@ -254,7 +254,7 @@ def test_existing_config_keeps_normal_chat_startup(
     monkeypatch.setattr(
         cli.console,
         "input",
-        lambda _prompt: (_ for _ in ()).throw(AssertionError("recovery prompt")),
+        lambda _prompt: "1",
     )
 
     assert cli.main(["chat", "--home", str(home)]) == 0

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from agent.interfaces.cli import maintenance
+from agent.runtime.config_errors import ConfigError, ConfigNotFound
+from agent.runtime.config_repository import ConfigRepository
 
 
 def is_interactive_terminal() -> bool:
@@ -57,9 +59,28 @@ def recover_first_run_config(
     return 0
 
 
+def prepare_chat_workspace(args: argparse.Namespace, *, console: Any, app_paths: Any) -> None:
+    """Offer workspace entry only after an existing config is valid."""
+
+    if getattr(args, "workspace", None) is not None or not is_interactive_terminal():
+        return
+    config_path = getattr(args, "config", None)
+    config_file = Path(config_path).expanduser().resolve() if config_path is not None else app_paths.config_file
+    if not config_file.is_file():
+        return
+    try:
+        ConfigRepository(app_paths, config_path=config_path).load()
+    except (ConfigError, ConfigNotFound, OSError, ValueError):
+        return
+    from agent.interfaces.cli.workspace_entry import choose_workspace
+
+    args.workspace = str(choose_workspace(console=console))
+
+
 __all__ = [
     "actionable_missing_config",
     "config_init_command",
     "is_interactive_terminal",
     "recover_first_run_config",
+    "prepare_chat_workspace",
 ]
