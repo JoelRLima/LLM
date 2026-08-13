@@ -32,6 +32,7 @@ PERSONA_CAPABILITIES: Dict[str, frozenset[SkillCapability]] = {
             SkillCapability.PROCESS,
             SkillCapability.MEMORY,
             SkillCapability.ANALYZE,
+            SkillCapability.VALIDATE,
             SkillCapability.VCS_READ,
         }
     ),
@@ -54,6 +55,7 @@ PERSONA_CAPABILITIES: Dict[str, frozenset[SkillCapability]] = {
             SkillCapability.PROCESS,
             SkillCapability.MEMORY,
             SkillCapability.ANALYZE,
+            SkillCapability.VALIDATE,
         }
     ),
 }

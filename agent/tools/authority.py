@@ -3,12 +3,51 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Iterable, Mapping, cast
 from uuid import uuid4
 
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 from agent.tools.workspace_extensions_resolver import ResolvedWorkspaceExtensions
+
+
+class OperationalMode(str, Enum):
+    """User-facing capability ceiling projected onto canonical authority."""
+
+    READ_ONLY = "read-only"
+    EDITOR = "editor"
+    FULL = "full"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            OperationalMode.READ_ONLY: "READ ONLY",
+            OperationalMode.EDITOR: "EDITOR",
+            OperationalMode.FULL: "FULL",
+        }[self]
+
+    @classmethod
+    def parse(cls, value: str) -> "OperationalMode | None":
+        normalized = value.strip().casefold().replace("_", "-")
+        if normalized in {"read", "readonly", "read-only"}:
+            return cls.READ_ONLY
+        if normalized == "editor":
+            return cls.EDITOR
+        if normalized == "full":
+            return cls.FULL
+        return None
+
+
+def operational_mode_capabilities(mode: OperationalMode) -> frozenset[str] | None:
+    """Return the mode ceiling; ``None`` means no additional reduction."""
+
+    if mode is OperationalMode.FULL:
+        return None
+    capabilities = {"read", "vcs_read", "analyze"}
+    if mode is OperationalMode.EDITOR:
+        capabilities.update({"write", "validate"})
+    return frozenset(capabilities)
 
 
 def _capabilities(values: Iterable[str]) -> frozenset[str]:
@@ -181,7 +220,9 @@ def derive_effective_task_authority(
 __all__ = [
     "ApplicationAuthoritySnapshot",
     "EffectiveTaskAuthority",
+    "OperationalMode",
     "TaskAuthoritySnapshot",
     "bind_task_authority",
     "derive_effective_task_authority",
+    "operational_mode_capabilities",
 ]

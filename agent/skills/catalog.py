@@ -42,7 +42,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "config": {},
             "approval_policy": None,
         },
-        capabilities=frozenset({C.READ, C.WRITE, C.PROCESS, C.ANALYZE}),
+        capabilities=frozenset({C.READ, C.WRITE, C.VALIDATE, C.ANALYZE}),
         cost=8,
         timeout_seconds=120,
         category="WRITE",

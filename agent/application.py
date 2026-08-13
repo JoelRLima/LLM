@@ -13,6 +13,7 @@ from typing import Any, Iterable, Mapping, cast
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
 from agent.llm.session import ChatSession
+from agent.orchestration.operational_modes import ApplicationOperationalModeMixin, OperationalMode
 from agent.orchestrator import Orchestrator
 from agent.reporting.run_receipt import (
     derive_error,
@@ -33,7 +34,6 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 _RUN_LOCK = threading.RLock()
-
 @dataclass(frozen=True)
 class AgentRunResult:
     """Structured boundary result shared by headless interfaces."""
@@ -63,9 +63,7 @@ class AgentRunResult:
             "receipt": dict(self.receipt),
             "report_path": self.report_path,
         }
-
-
-class AgentApplication:
+class AgentApplication(ApplicationOperationalModeMixin):
     """Owns one configured assistant runtime and its resources."""
 
     def __init__(
@@ -102,7 +100,6 @@ class AgentApplication:
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
-
     @classmethod
     def create(
         cls,
@@ -116,6 +113,7 @@ class AgentApplication:
         approval_policy: ApprovalPort | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
         task_authority_capabilities: Iterable[str] | None = None,
+        operational_mode: OperationalMode | None = None,
         configure_logging: bool = True,
         debug_mode: int = 0,
     ) -> "AgentApplication":
@@ -202,14 +200,14 @@ class AgentApplication:
                 application_authority=extension_bootstrap.authority,
                 task_authority=selected_task_authority,
             )
+            if operational_mode is not None:
+                app.orchestrator.set_operational_mode(operational_mode)
             return app
-
         except Exception:
             instance_lock.release()
             if logging_acquired:
                 teardown_logger()
             raise
-
     @staticmethod
     def _apply_workspace_paths(
         config: dict[str, Any],
@@ -220,7 +218,6 @@ class AgentApplication:
         report = raw_report if isinstance(raw_report, dict) else {}
         report["output_dir"] = str(workspace_paths.reports_dir)
         config["task_report"] = report
-
     def run(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         with _RUN_LOCK:
             return self._run_locked(objective, stream_callback=stream_callback)
@@ -271,7 +268,6 @@ class AgentApplication:
             error=error, diagnostics=diagnostics, metadata=metadata,
             receipt=receipt, report_path=report_path,
         ))
-
     def cancel(self) -> None:
         if not self._closed:
             self.orchestrator.cancel_task()

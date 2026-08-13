@@ -14,6 +14,7 @@ from agent.llm.session import ChatSession
 from agent.memory.memory import AgentMemory
 from agent.orchestration.compatibility import install_compatibility_gateway
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
+from agent.orchestration.operational_modes import OperationalModeMixin, refresh_capability_projection
 from agent.orchestration.operations import OrchestratorOperations
 from agent.orchestration.security_service import SecurityAnalysisService
 from agent.orchestration.subsystems import AgentSubsystems
@@ -27,11 +28,15 @@ from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
 from agent.runtime.paths import WorkspacePaths
-from agent.skills.policy import builtin_skills_for_persona, include_eligible_extensions, persona_allowed_capabilities
+from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from agent.tools.authority import (
+    ApplicationAuthoritySnapshot,
+    OperationalMode,
+    TaskAuthoritySnapshot,
+)
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.legacy_invoker import LegacyToolInvoker
 from agent.tools.tool_registry import ToolRegistry
@@ -39,9 +44,8 @@ from agent.watchdog import Watchdog
 from agent.workspace import WorkspaceManager
 
 
-class Orchestrator(OrchestratorOperations):
+class Orchestrator(OperationalModeMixin, OrchestratorOperations):
     """Public composition facade for the agent runtime."""
-
     def __init__(
         self,
         session: ChatSession,
@@ -71,6 +75,8 @@ class Orchestrator(OrchestratorOperations):
         self.tool_invocation_gateway = tool_invocation_gateway
         self.application_authority = application_authority
         self.task_authority = task_authority
+        self._operational_mode: OperationalMode | None = None
+        self._persona_allowed_capabilities: frozenset[str] | None = None
         self._planning_context: PlanningContextSnapshot | None = None
         self.legacy_tool_invoker = None
         self.max_steps = 15
@@ -130,19 +136,15 @@ class Orchestrator(OrchestratorOperations):
     @property
     def auto_coder(self) -> AutoCoder:
         return self.subsystems.auto_coder
-
     @property
     def reactive_loop(self) -> ReactiveLoop:
         return cast(ReactiveLoop, self.subsystems.reactive_loop)
-
     @property
     def plan_builder(self) -> PlanBuilder:
         return cast(PlanBuilder, self.subsystems.plan_builder)
-
     @property
     def plan_executor(self) -> PlanExecutor:
         return cast(PlanExecutor, self.subsystems.plan_executor)
-
     @property
     def final_responder(self) -> FinalResponder:
         return self.subsystems.final_responder
@@ -194,9 +196,8 @@ class Orchestrator(OrchestratorOperations):
         self.current_persona = persona
         self.agent_state.persona = persona
         self.agent_state.persona_prompt = persona_prompt
-        registry = getattr(self, "tool_registry", None)
-        self.active_skills = builtin_skills_for_persona(persona, registry=registry)
-        self.allowed_capabilities = persona_allowed_capabilities(persona)
+        self._persona_allowed_capabilities = persona_allowed_capabilities(persona)
+        refresh_capability_projection(self)
         self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             persona_prompt,
@@ -215,9 +216,8 @@ class Orchestrator(OrchestratorOperations):
             return
         self.current_persona = persona
         self.current_persona_prompt = persona_prompt or ""
-        registry = getattr(self, "tool_registry", None)
-        self.active_skills = builtin_skills_for_persona(persona, registry=registry)
-        self.allowed_capabilities = persona_allowed_capabilities(persona)
+        self._persona_allowed_capabilities = persona_allowed_capabilities(persona)
+        refresh_capability_projection(self)
         self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             self.current_persona_prompt,

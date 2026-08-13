@@ -124,7 +124,7 @@ class ToolRegistry:
             reads = any(c in desc.capabilities for c in ("read", "vcs_read"))
             writes = any(c in desc.capabilities for c in ("write", "vcs_write"))
             side_effects = writes or any(
-                c in desc.capabilities for c in ("process", "network", "package_install")
+                c in desc.capabilities for c in ("process", "network", "package_install", "validate")
             )
             result[desc.name] = ToolMetadata(
                 cost=desc.cost,

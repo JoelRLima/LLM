@@ -17,6 +17,7 @@ class SkillCapability(str, Enum):
     VCS_READ = "vcs_read"
     VCS_WRITE = "vcs_write"
     PACKAGE_INSTALL = "package_install"
+    VALIDATE = "validate"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ class SkillSpec:
                 SkillCapability.NETWORK,
                 SkillCapability.VCS_WRITE,
                 SkillCapability.PACKAGE_INSTALL,
+                SkillCapability.VALIDATE,
             }
         )
 

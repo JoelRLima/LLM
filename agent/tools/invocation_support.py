@@ -103,8 +103,33 @@ def check_authority(
     application: ApplicationAuthoritySnapshot | None,
     task: TaskAuthoritySnapshot | None,
     invocation: ToolInvocation,
+    required_capabilities: frozenset[str] | None = None,
 ) -> ToolResult | None:
+    required = (
+        frozenset(descriptor.capabilities)
+        if required_capabilities is None
+        else frozenset(required_capabilities)
+    )
+    if (
+        task is not None
+        and task.runtime_identity is not None
+        and application is not None
+        and task.runtime_identity != application.runtime_identity
+    ):
+        return denial(
+            invocation,
+            ToolStatus.PERMISSION_DENIED,
+            "RUNTIME_MISMATCH",
+            "Task authority pertence a outro runtime.",
+        )
     if descriptor.origin_kind is ToolOriginKind.BUILTIN:
+        if task is not None and not required.issubset(task.allowed_capabilities):
+            return denial(
+                invocation,
+                ToolStatus.PERMISSION_DENIED,
+                "TASK_AUTHORITY_DENIED",
+                "Task authority insuficiente.",
+            )
         return None
     if descriptor.origin_kind is not ToolOriginKind.EXTENSION or not descriptor.extension_id:
         return denial(invocation, ToolStatus.PERMISSION_DENIED, "ORIGIN_MISMATCH", "Origem da tool inválida.")
@@ -115,9 +140,6 @@ def check_authority(
         return denial(invocation, ToolStatus.PERMISSION_DENIED, "APPLICATION_AUTHORITY_DENIED", "Extension não autorizada pela aplicação.")
     if task is None:
         return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_AUTHORITY_MISSING", "Authority da tarefa ausente.")
-    if task.runtime_identity is not None and task.runtime_identity != application.runtime_identity:
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "RUNTIME_MISMATCH", "Task authority pertence a outro runtime.")
-    required = frozenset(descriptor.capabilities)
     if not required.issubset(grants):
         return denial(invocation, ToolStatus.PERMISSION_DENIED, "WORKSPACE_GRANT_DENIED", "Grant da extension insuficiente.")
     if not required.issubset(task.allowed_capabilities):

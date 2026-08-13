@@ -9,12 +9,43 @@ from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_
 from agent.interfaces.cli.workspace_entry import render_active_workspace
 from agent.runtime import paths
 from agent.runtime.logging import set_debug_level
+from agent.tools.authority import OperationalMode
+from agent.tools.mode_enforcement import requests_test_execution
 
 Handler = Callable[[str, Any], None]
 
 
 def show_workspace(_: str, ctx: Any) -> None:
     render_active_workspace(console, ctx.workspace)
+
+
+def mode_command(text: str, ctx: Any) -> None:
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) == 1:
+        mode = getattr(ctx.orchestrator, "operational_mode", None)
+        label = mode.display_name if isinstance(mode, OperationalMode) else "FULL"
+        console.print(
+            f"Modo ativo: {label}\n\n"
+            "Opções:\n"
+            "  /modo read-only   Somente leitura; sem mutações\n"
+            "  /modo editor      Leitura e edição controlada no workspace\n"
+            "  /modo full        Usa toda a autoridade já concedida\n\n"
+            "FULL continua sujeito a grants, approvals e confinement."
+        )
+        return
+    if parts[1].strip().casefold() in {"help", "ajuda"}:
+        mode_command("/modo", ctx)
+        return
+    mode = OperationalMode.parse(parts[1])
+    if mode is None:
+        console.print("[yellow]Uso: /modo [read-only|editor|full][/yellow]")
+        return
+    setter = getattr(ctx.orchestrator, "set_operational_mode", None)
+    if not callable(setter):
+        console.print("[red]Modos operacionais indisponíveis nesta sessão.[/red]")
+        return
+    setter(mode)
+    console.print(f"Modo ativo: {mode.display_name}")
 
 
 def system_prompt(_: str, ctx: Any) -> None:
@@ -103,6 +134,17 @@ def code_command(text: str, ctx: Any) -> None:
     except CodeCommandError as exc:
         console.print(f"[bold red]{exc}[/bold red]")
         return
+    if parsed.action in {"generate", "modify", "repair", "refactor", "multitask", "template"}:
+        mode_allows = getattr(ctx.orchestrator, "mode_allows", None)
+        if not callable(mode_allows) or not mode_allows({"write", "validate"}):
+            console.print("[bold red]Ação negada pelo modo operacional ativo.[/bold red]")
+            return
+        mode = getattr(ctx.orchestrator, "operational_mode", None)
+        if mode is not OperationalMode.FULL and requests_test_execution(
+            {"include_tests": parsed.include_tests}
+        ):
+            console.print("[bold red]Execução de testes exige modo FULL.[/bold red]")
+            return
     if parsed.action == "help":
         console.print(Panel(CODE_COMMAND_HELP, title="[bold blue]/code[/bold blue]"))
         return

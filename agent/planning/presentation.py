@@ -77,7 +77,7 @@ class PlanningPresentationSnapshot:
                 cacheable=tool.cacheable,
                 side_effects=bool(
                     tool.required_capabilities
-                    & frozenset({"write", "process", "network", "package_install", "vcs_write"})
+                    & frozenset({"write", "process", "network", "package_install", "vcs_write", "validate"})
                 ),
                 category=tool.category,
             )

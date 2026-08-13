@@ -19,6 +19,7 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
+from agent.tools.invocation_activity import InvocationActivityMixin
 from agent.tools.invocation_support import (
     _InvocationAttempt,
     _set_cancel_event,
@@ -30,10 +31,11 @@ from agent.tools.invocation_support import (
     validate_binding,
     validate_result,
 )
+from agent.tools.mode_enforcement import check_capability_ceiling, required_capabilities_for_invocation
 from agent.tools.tool_registry import ToolRegistry
 
 
-class ToolInvocationGateway:
+class ToolInvocationGateway(InvocationActivityMixin):
     """Canonical boundary for request, authority, approval and adapter calls."""
     def __init__(
         self,
@@ -51,17 +53,12 @@ class ToolInvocationGateway:
         self.approval_port = approval_port or RequireExplicitApproval()
         self.application_authority = application_authority
         self.task_authority = task_authority
+        self._capability_ceiling: frozenset[str] | None = None
+        self._ceiling_mode: str | None = None
         self._invocation_lock = threading.Lock()
         self._active_invocations: set[str] = set()
-    def _begin_invocation(self, invocation_id: str) -> bool:
-        with self._invocation_lock:
-            if invocation_id in self._active_invocations:
-                return False
-            self._active_invocations.add(invocation_id)
-            return True
-    def _finish_invocation(self, invocation_id: str) -> None:
-        with self._invocation_lock:
-            self._active_invocations.discard(invocation_id)
+    def set_capability_ceiling(self, capabilities: frozenset[str] | None, *, mode: str | None = None) -> None:
+        self._capability_ceiling, self._ceiling_mode = (None if capabilities is None else frozenset(capabilities), mode)
     def run(
         self,
         tool_name: str | ToolInvocationRequest,
@@ -129,8 +126,6 @@ class ToolInvocationGateway:
             self._complete_result(attempt, invocation, result, record_result)
             return result
         except Exception:
-            # Unexpected registry/adapter plumbing errors must not poison the
-            # bounded active-ID set for the lifetime of the gateway.
             self._finish_invocation(invocation.invocation_id)
             raise
     def invoke(self, request: ToolInvocationRequest, **kwargs: Any) -> ToolResult:
@@ -152,13 +147,15 @@ class ToolInvocationGateway:
             return None, binding_error
         if active_skills is not None and invocation.tool_name not in active_skills:
             return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Tool bloqueada pela visibilidade de planning.")
-        authority_error = check_authority(descriptor, self.application_authority, self.task_authority, invocation)
+        required_capabilities = required_capabilities_for_invocation(descriptor, invocation.args)
+        authority_error = check_authority(descriptor, self.application_authority, self.task_authority, invocation, required_capabilities)
         if authority_error is not None:
             return None, authority_error
-        if authorization_context is not None and descriptor.capabilities - authorization_context.effective_capabilities():
+        if authorization_context is not None and required_capabilities - authorization_context.effective_capabilities():
             return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Capabilities nao concedidas.")
-        if allowed_capabilities is not None and descriptor.capabilities - frozenset(allowed_capabilities):
-            return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Capabilities nao autorizadas.")
+        capability_error = check_capability_ceiling(invocation, descriptor, self._capability_ceiling, self._ceiling_mode, allowed_capabilities)
+        if capability_error is not None:
+            return None, capability_error
         try:
             validate_arguments(descriptor, invocation.args)
         except (TypeError, ValueError, AttributeError) as exc:
@@ -168,8 +165,8 @@ class ToolInvocationGateway:
             return None, approval_result
         return descriptor, None
     def _check_effect_approval(self, invocation: ToolInvocation, descriptor: ToolDescriptor) -> ToolResult | None:
-        effects = frozenset({"write", "vcs_write", "process", "network", "package_install"})
-        requested = effects & descriptor.capabilities
+        effects = frozenset({"write", "vcs_write", "process", "network", "package_install", "validate"})
+        requested = effects & required_capabilities_for_invocation(descriptor, invocation.args)
         if not requested:
             return None
         self._emit("approval_requested", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})

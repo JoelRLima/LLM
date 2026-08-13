@@ -24,11 +24,18 @@ def canonical_workspace(path: str | Path) -> Path:
     return cast(Path, WorkspaceContext.create(path).root)
 
 
-def render_active_workspace(console: Any, workspace: WorkspaceContext) -> None:
+def render_active_workspace(
+    console: Any,
+    workspace: WorkspaceContext,
+    *,
+    show_mode_hint: bool = False,
+) -> None:
     """Render the canonical workspace owned by the active application."""
 
     console.print("[bold cyan]Workspace ativo:[/bold cyan]")
     console.print(str(workspace.root), markup=False)
+    if show_mode_hint:
+        console.print("[dim][READ ONLY] — use /modo para consultar ou alterar o modo[/dim]")
 
 
 def native_picker_available() -> bool:

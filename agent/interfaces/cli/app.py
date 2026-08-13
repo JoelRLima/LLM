@@ -30,8 +30,9 @@ def _prompt(ctx: Any) -> str | None:
     thinking = obter_status_think(ctx.session)
     diagnostic = ("", " [yellow][DIAG NORMAL][/yellow]", " [yellow][DIAG VERBOSE][/yellow]")[ctx.modo_diagnostico]
     agent = " [green][AGENTE][/green]" if ctx.modo_agente else ""
+    mode = getattr(ctx.orchestrator, "operational_mode_label", "FULL")
     try:
-        return str(console.input(f"\n[cyan][Pensar: {thinking}][/cyan]{diagnostic}{agent} > "))
+        return str(console.input(f"\n[cyan][Pensar: {thinking}][/cyan] [{mode}]{diagnostic}{agent} > "))
     except (EOFError, KeyboardInterrupt):
         console.print("\n[bold yellow]Encerrando...[/bold yellow]")
         return None
@@ -109,7 +110,7 @@ def _run_chat(args: argparse.Namespace) -> int:
             config_path=_value(args, "config"),
         )
         if first_run.is_interactive_terminal():
-            render_active_workspace(console, context.workspace)
+            render_active_workspace(console, context.workspace, show_mode_hint=True)
         _chat_loop(context)
     finally:
         application.close()

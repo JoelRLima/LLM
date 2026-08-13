@@ -4,8 +4,10 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
+from agent.approval import ApprovalDecision
 from agent.code.changes import ChangePreview
 from agent.code.policy import ProposalAssessment
+from agent.interfaces.cli.approval_input import parse_console_approval
 from agent.runtime.context import TaskResult
 
 console = Console()
@@ -24,8 +26,10 @@ class ConsoleChangeApprover:
             for reason in assessment.reasons:
                 console.print(f"  [yellow]- {reason}[/yellow]")
             console.print(Syntax(preview.diff or "(diff vazio)", "diff", word_wrap=True))
-            answer = console.input("[bold cyan]Aplicar este ChangeSet? [s/N]:[/bold cyan] ")
-            return answer.strip().casefold() in {"s", "sim", "y", "yes"}
+            answer = console.input(
+                "[bold cyan]Aplicar este ChangeSet? [s/sim/y/yes = sim; Enter/n/nao/não/no = não]:[/bold cyan] "
+            )
+            return parse_console_approval(answer) is ApprovalDecision.APPROVED
 
 
 def render_code_result(result: TaskResult) -> None:
@@ -63,12 +67,13 @@ def exibir_menu() -> None:
         ("/save, /salvar", "Salva o histórico em um arquivo"),
         ("/load, /carregar", "Carrega o histórico de um arquivo"),
         ("/agent, /agente", "Ativa/desativa ou executa o modo agente"),
-        ("/code help", "Workflows explícitos de código sem planner"),
         ("/debug", "Alterna modo diagnóstico"),
         ("/memory, /memoria", "Mostra a memória do agente"),
         ("/events", "Mostra os eventos da última execução"),
         ("/doctor, /diagnostico", "Executa o diagnóstico de saúde"),
         ("/workspace, /diretorio", "Mostra o workspace ativo"),
+        ("/modo, /mode, /authority", "Consulta ou altera o modo operacional"),
+        ("/code help", "Mostra os workflows explícitos de código"),
         ("/retry, /retomar", "Retoma a tarefa interrompida"),
         ("/ls, /list", "Lista os arquivos do projeto"),
         ("/read <arquivo>", "Lê um arquivo"),

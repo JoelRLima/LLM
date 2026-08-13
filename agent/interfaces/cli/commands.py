@@ -14,6 +14,7 @@ from agent.interfaces.cli.command_handlers import (
     list_files,
     load_history,
     load_memory,
+    mode_command,
     read_file,
     remember,
     retry,
@@ -80,9 +81,11 @@ EXACT_HANDLERS = {
     "/load_memory": load_memory, "/carregarmemoria": load_memory,
     "/doctor": doctor, "/ls": list_files, "/list": list_files,
     "/workspace": show_workspace, "/diretorio": show_workspace, "/pwd": show_workspace,
+    "/modo": mode_command, "/mode": mode_command, "/authority": mode_command,
     "/retry": retry, "/retomar": retry,
 }
 PREFIX_HANDLERS = (
+    ("/modo", mode_command), ("/mode", mode_command), ("/authority", mode_command),
     ("/agent", agent_command), ("/agente", agent_command), ("/code", code_command),
     ("/remember", remember), ("/read", read_file), ("/find", find_text),
     ("/search", web_search),

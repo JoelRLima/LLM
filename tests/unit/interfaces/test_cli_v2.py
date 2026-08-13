@@ -245,6 +245,7 @@ def test_invalid_config_is_not_treated_as_first_run(
 def test_existing_config_keeps_normal_chat_startup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     home = tmp_path / "app"
     assert cli.main(["config", "init", "--home", str(home)]) == 0
@@ -259,6 +260,7 @@ def test_existing_config_keeps_normal_chat_startup(
 
     assert cli.main(["chat", "--home", str(home)]) == 0
     assert entered == [True]
+    assert capsys.readouterr().out.count("[READ ONLY]") == 1
 
 
 def test_first_run_init_failure_preserves_error_without_false_success(

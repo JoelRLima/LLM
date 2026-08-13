@@ -218,7 +218,9 @@ def test_chat_non_tty_keeps_current_directory_without_prompt(
     assert cli.main(["chat"]) == 0
 
     assert not hasattr(seen["args"], "workspace")
-    assert "Workspace ativo" not in "\n".join(output.output)
+    rendered = "\n".join(output.output)
+    assert "Workspace ativo" not in rendered
+    assert "[READ ONLY]" not in rendered
 
 
 @pytest.mark.parametrize("command", ["/workspace", "/diretorio", "/pwd"])

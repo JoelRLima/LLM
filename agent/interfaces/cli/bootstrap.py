@@ -10,6 +10,7 @@ from agent.application import AgentApplication
 from agent.approval import AutoApprove, RequireExplicitApproval
 from agent.interfaces.cli.approval import ConsoleApproval
 from agent.runtime.paths import AppPaths
+from agent.tools.authority import OperationalMode
 
 
 def create_application(
@@ -31,6 +32,7 @@ def create_application(
         profile=getattr(args, "profile", None),
         approval_policy=approval_policy,
         task_authority_capabilities=getattr(args, "task_authority_capabilities", None),
+        operational_mode=(OperationalMode.READ_ONLY if command == "chat" else None),
         configure_logging=configure_logging,
     )
 
