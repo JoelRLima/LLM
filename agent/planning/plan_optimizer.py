@@ -35,6 +35,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.tool_metadata import TOOL_METADATA, ToolMetadata, estimate_step_cost, get_tool_metadata
@@ -108,6 +109,20 @@ class PlanOptimizer:
         cost_details_before = self._cost_details(original)
         cost_before = self._total_cost(cost_details_before)
 
+        # Deferred references are stable step IDs at this boundary, so reordering
+        # cannot retarget them. Exact-read deduplication can still delete the
+        # referenced producer, though; preserve the narrow plan until the
+        # optimizer becomes explicitly dependency-aware.
+        if any(is_deferred_condition(step) for step in original):
+            return OptimizationReport(
+                optimized_steps=original,
+                cost_before=cost_before,
+                cost_after=cost_before,
+                cost_details_before=cost_details_before,
+                cost_details_after=list(cost_details_before),
+                changed=False,
+            )
+
         transformations: List[str] = []
 
         deduped, removed_duplicates = self._remove_exact_duplicates(original, transformations)
@@ -148,6 +163,9 @@ class PlanOptimizer:
         for step in plan:
             if not isinstance(step, dict):
                 continue
+            if is_deferred_condition(step):
+                details.append(ToolCost(tool="deferred_condition", cost=0))
+                continue
             tool = step.get("tool", "")
             args = step.get("args", {}) if isinstance(step.get("args"), dict) else {}
             details.append(ToolCost(tool=tool, cost=self._estimate_cost(tool, args)))
@@ -155,8 +173,8 @@ class PlanOptimizer:
 
     def _estimate_cost(self, tool: str, args: Dict[str, Any]) -> int:
         if self.planning_context is None:
-            return estimate_step_cost(tool, args)
-        return self._meta(tool).cost
+            return int(estimate_step_cost(tool, args))
+        return int(self._meta(tool).cost)
 
     @staticmethod
     def _total_cost(details: List[ToolCost]) -> int:
@@ -187,6 +205,9 @@ class PlanOptimizer:
 
         for idx, step in enumerate(plan):
             if not isinstance(step, dict):
+                result.append(step)
+                continue
+            if is_deferred_condition(step):
                 result.append(step)
                 continue
 
@@ -248,6 +269,8 @@ class PlanOptimizer:
                 prev_step = result[i - 1]
                 cur_step = result[i]
                 if not isinstance(prev_step, dict) or not isinstance(cur_step, dict):
+                    continue
+                if is_deferred_condition(prev_step) or is_deferred_condition(cur_step):
                     continue
 
                 prev_meta = self._meta(prev_step.get("tool", ""))

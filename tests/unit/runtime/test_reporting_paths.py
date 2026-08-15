@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.application import AgentApplication
+from agent.reporting.run_receipt import derive_status
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.paths import REPORTS_DIR
 
@@ -70,6 +71,25 @@ def test_task_report_does_not_infer_success_from_final_answer() -> None:
     )
 
     assert report["success"] is False
+
+
+@pytest.mark.parametrize(
+    ("disposition", "expected"),
+    (("block", "blocked"), ("fail", "failed")),
+)
+def test_public_status_honors_canonical_terminal_disposition(
+    disposition: str, expected: str
+) -> None:
+    orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(
+            last_result={"ok": True, "status": "succeeded"},
+            terminal_disposition=disposition,
+        ),
+        _cancelled=False,
+        _task_failed=False,
+    )
+
+    assert derive_status(orchestrator) == expected
 
 
 def test_task_report_requires_canonical_outcome() -> None:
@@ -158,6 +178,41 @@ def test_preview_artifact_does_not_claim_applied_files(tmp_path) -> None:
     assert result.receipt["final_state"] is None
 
 
+def test_preview_artifact_with_staged_mutation_is_only_proposed(tmp_path) -> None:
+    raw = {
+        "status": "blocked",
+        "ok": False,
+        "executed": True,
+        "data": {
+            "artifacts": [{"metadata": {
+                "affected_files": ["module.py"],
+                "applied": False,
+                "mutation_occurred": True,
+            }}]
+        },
+        "error_code": "TOOL_ERROR",
+        "error": "confirmation_required",
+    }
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(
+            last_result=raw,
+            tool_history=[{"tool": "code_task", "result": raw}],
+            events=[],
+        ),
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result("blocked", "preview", error="confirmation_required")
+
+    assert result.receipt["proposed_files"] == ["module.py"]
+    assert result.receipt["files_affected"] == []
+    assert result.receipt["mutation_occurred"] is False
+
+
 @pytest.mark.parametrize("executed", [True, False, None])
 def test_receipt_executed_preserves_tool_result_with_applied_artifact(tmp_path, executed) -> None:
     raw = {
@@ -165,7 +220,12 @@ def test_receipt_executed_preserves_tool_result_with_applied_artifact(tmp_path, 
         "ok": True,
         "executed": executed,
         "data": {
-            "artifacts": [{"metadata": {"affected_files": ["module.py"], "applied": True}}]
+            "artifacts": [{"metadata": {
+                "affected_files": ["module.py"],
+                "applied": True,
+                "mutation_occurred": True,
+                "final_state": "applied",
+            }}]
         },
     }
     app = object.__new__(AgentApplication)
@@ -187,6 +247,7 @@ def test_receipt_executed_preserves_tool_result_with_applied_artifact(tmp_path, 
     assert result.receipt["executed"] is executed
     assert result.receipt["files_affected"] == ["module.py"]
     assert result.receipt["final_state"] == "applied"
+    assert result.receipt["mutation_occurred"] is True
 
 
 def test_post_mortem_args_keep_only_bounded_resource_identity() -> None:

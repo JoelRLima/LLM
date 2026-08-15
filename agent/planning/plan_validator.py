@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import validate_tool_args
+from agent.planning.deferred_condition import is_deferred_condition
+from agent.planning.deferred_validation import validate_deferred_items
 from agent.planning.planning_context import (
     PlanningContextError,
     PlanningContextSnapshot,
@@ -35,7 +37,6 @@ class BlockedStep:
     index: int
     reason: str
 
-
 @dataclass
 class ValidationReport:
     """Resultado de uma chamada a `PlanValidator.validate()`."""
@@ -43,7 +44,6 @@ class ValidationReport:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     blocked_steps: List[BlockedStep] = field(default_factory=list)
-
 
 class PlanValidator:
     """Valida planos contra o schema das ferramentas, a lista de
@@ -63,6 +63,8 @@ class PlanValidator:
         planning_context: PlanningContextSnapshot | None = None,
         presented_names: frozenset[str] | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        objective: str = "",
+        canonical_deferred_references: bool = False,
     ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
@@ -70,6 +72,8 @@ class PlanValidator:
         self.tool_registry = tool_registry
         self.planning_context = planning_context
         self.planning_view = planning_view
+        self.objective = objective
+        self.canonical_deferred_references = canonical_deferred_references
         if planning_context is not None and planning_view is not None:
             if planning_view.planning_context_id != planning_context.snapshot_id:
                 raise PlanningContextError("planning context e view divergem")
@@ -81,9 +85,8 @@ class PlanValidator:
         self.presented_names = (
             frozenset(presented_names)
             if presented_names is not None
-            else (planning_context.eligible_names if planning_context is not None else None)
+        else (planning_context.eligible_names if planning_context is not None else None)
         )
-
     def validate(self, plan: Optional[List[Dict[str, Any]]]) -> ValidationReport:
         """Executa todas as checagens sobre `plan` e retorna um
         `ValidationReport` consolidado.
@@ -99,7 +102,6 @@ class PlanValidator:
         errors: List[str] = []
         warnings: List[str] = []
         blocked: List[BlockedStep] = []
-
         if plan is None or not isinstance(plan, list):
             errors.append("Plano ausente ou em formato inválido (esperada uma lista de passos).")
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
@@ -108,12 +110,14 @@ class PlanValidator:
             errors.append("Plano vazio: nenhum passo para executar.")
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
 
+        errors.extend(validate_deferred_items(plan, self.objective, self.canonical_deferred_references, self._validate_step_schema))
+        if errors:
+            return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
         self._validate_schema_and_tools(plan, blocked)
         self._validate_analysis_notes(plan, blocked)
         self._validate_patch_without_read(plan, warnings)
         self._validate_consecutive_writes(plan, warnings)
         self._validate_inverted_dependencies(plan, blocked)
-
         is_valid = len(blocked) < len(plan)
         return ValidationReport(is_valid=is_valid, errors=errors, warnings=warnings, blocked_steps=blocked)
 
@@ -130,6 +134,8 @@ class PlanValidator:
         """Valida, para cada passo: formato mínimo, existência da
         ferramenta, permissão (active_skills) e schema de argumentos."""
         for idx, step in enumerate(plan):
+            if is_deferred_condition(step):
+                continue
             problem = self._validate_step_schema(step)
             if problem:
                 blocked.append(BlockedStep(idx, problem))

@@ -4,6 +4,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from agent.planning.task_completion import allow_linear_completion
+from agent.reporting.operational_outcome import project_operational_outcome
 from agent.security.security_scanner import consolidate
 
 
@@ -52,7 +54,10 @@ class SecurityAnalysisService:
         )
         if result.aborted:
             return result.final_answer or "A análise foi interrompida."
-        return str(self.orchestrator.final_responder.build_final_answer(objective, on_chunk=on_chunk))
+        blocker = allow_linear_completion(self.orchestrator, objective)
+        if blocker is not None:
+            return str(blocker)
+        return self._final_answer(objective, on_chunk)
 
     @staticmethod
     def _build_prompt(target: str, objective: str, findings: list[Any]) -> str:
@@ -80,11 +85,26 @@ class SecurityAnalysisService:
     def _answer_with_prompt(
         self, prompt: str, objective: str, on_chunk: Callable[[str], None] | None
     ) -> str:
+        blocker = allow_linear_completion(self.orchestrator, objective)
+        if blocker is not None:
+            return str(blocker)
         if not self.orchestrator.session.messages:
-            return str(self.orchestrator.final_responder.build_final_answer(objective, on_chunk=on_chunk))
+            return self._final_answer(objective, on_chunk)
         original = self.orchestrator.session.messages[-1]["content"]
         self.orchestrator.session.messages[-1]["content"] = prompt
         try:
-            return str(self.orchestrator.final_responder.build_final_answer(objective, on_chunk=on_chunk))
+            return self._final_answer(objective, on_chunk)
         finally:
             self.orchestrator.session.messages[-1]["content"] = original
+
+    def _final_answer(
+        self, objective: str, on_chunk: Callable[[str], None] | None
+    ) -> str:
+        outcome = project_operational_outcome(self.orchestrator.agent_state)
+        return str(
+            self.orchestrator.final_responder.build_final_answer(
+                objective,
+                on_chunk=on_chunk,
+                operational_outcome=outcome,
+            )
+        )

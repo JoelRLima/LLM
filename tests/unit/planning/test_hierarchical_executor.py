@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from agent.execution_state import StepExecutionRecord, StepStatus
 from agent.planning.hierarchical_executor import HierarchicalExecutor
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
 from agent.planning.plan_builder import PlanBuildResult
@@ -76,7 +77,7 @@ def test_hierarchical_flow_executes_each_microplan_through_gateway():
         ),
         plan_executor=object(),
         final_responder=SimpleNamespace(
-            build_final_answer=lambda prompt, on_chunk=None: "consolidado"
+            build_final_answer=lambda prompt, on_chunk=None, **_kwargs: "consolidado"
         ),
         context_manager=object(),
         session=SimpleNamespace(messages=[]),
@@ -96,3 +97,14 @@ def test_hierarchical_flow_executes_each_microplan_through_gateway():
     assert gateway.calls[0][1] == "subobjetivo"
     assert tracker.completed is True
     assert state.plan == []
+
+
+def test_hierarchical_microstep_failure_is_not_overwritten_by_later_success():
+    state = SimpleNamespace(
+        step_records={
+            "failed": StepExecutionRecord("failed", status=StepStatus.FAILED),
+            "later": StepExecutionRecord("later", status=StepStatus.COMPLETED),
+        }
+    )
+
+    assert HierarchicalExecutor._has_failed_execution_record(state) is True

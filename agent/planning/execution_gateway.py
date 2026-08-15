@@ -3,8 +3,10 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
+from agent.planning.deferred_condition import bind_deferred_observation_references, is_deferred_condition
+from agent.planning.execution_validation import validate_and_optimize_plan as _validate_and_optimize_plan
 from agent.planning.plan_optimizer import PlanOptimizer
-from agent.planning.plan_validator import BlockedStep, PlanValidator
+from agent.planning.plan_validator import BlockedStep
 from agent.planning.planning_context import (
     PlanningContextError,
     PlanningContextSnapshot,
@@ -12,6 +14,7 @@ from agent.planning.planning_context import (
 from agent.planning.presentation import PlanningPresentationSnapshot, validate_planning_view_binding
 from agent.planning.replan import ReplanContext, replan
 from agent.runtime.logging import logger
+from agent.state import AgentState
 
 
 @dataclass
@@ -45,10 +48,13 @@ class ExecutionGateway:
         if validated is None:
             return ExecutionResult(
                 aborted=True,
-                final_answer="Não foi possível validar um plano seguro; a execução foi interrompida.",
+                final_answer="Execução bloqueada: não foi possível validar um plano seguro; a execução foi interrompida.",
             )
         self.orchestrator.agent_state.set_plan(validated)
         canonical = self.orchestrator.agent_state.plan
+        self.orchestrator._emit(
+            "plan_created", {"steps": len(canonical), "plan": canonical}
+        )
         answer = self.orchestrator.plan_executor.execute(objective, tool_usage_count)
         return ExecutionResult(final_answer=answer, validated_plan=canonical)
 
@@ -60,57 +66,43 @@ class ExecutionGateway:
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
-        explicit_context = planning_context is not None
-        context = (
-            planning_context
-            if planning_context is not None
-            else getattr(self.orchestrator, "planning_context", None)
-        )
-        self._active_planning_context = context
-        presentation = self._planning_view(context, "linear", planning_view, explicit_context)
-        validator = PlanValidator(
-            self.orchestrator.skills,
-            self.orchestrator.active_skills,
-            getattr(self.orchestrator, "allowed_capabilities", None),
-            getattr(self.orchestrator, "tool_registry", None),
-            planning_context=context,
-            presented_names=presentation.presented_names if presentation is not None else None,
-            planning_view=presentation,
-        )
-        report = validator.validate(plan)
-        self._log_validation(report)
-        if not report.is_valid:
-            self._abort("plano inválido", report.errors)
-            return None
-        recovered = self._recover(
+        return _validate_and_optimize_plan(
+            self,
             plan,
             objective,
-            report.blocked_steps,
-            "replanejamento inicial falhou",
-            context,
-            presentation,
+            planning_context=planning_context,
+            planning_view=planning_view,
         )
-        if recovered is None:
+
+    @staticmethod
+    def _bind_deferred_references(
+        plan: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if not any(is_deferred_condition(step) for step in plan):
+            return plan
+        canonical = AgentState.canonicalize_plan_steps(
+            plan,
+            preserve_step_ids=False,
+        )
+        return bind_deferred_observation_references(canonical)
+
+    def extend_validated_plan(
+        self,
+        plan: List[Dict[str, Any]],
+        objective: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Validate a continuation through this gateway before state insertion."""
+
+        validated = self.validate_and_optimize_plan(plan, objective)
+        if validated is None:
             return None
-        optimized = self._optimize(
-            recovered,
-            context,
-            presentation.presented_names if presentation else None,
-            presentation,
+        state = self.orchestrator.agent_state
+        for step in validated:
+            state.insert_plan_step(len(state.plan), step)
+        self.orchestrator._emit(
+            "plan_extended", {"steps": len(validated), "plan": validated}
         )
-        post_report = validator.validate(optimized)
-        self._log_validation(post_report, "pós-otimização")
-        if not post_report.is_valid:
-            self._abort("plano inválido pós-otimização", post_report.errors)
-            return None
-        return self._recover(
-            optimized,
-            objective,
-            post_report.blocked_steps,
-            "replanejamento pós-otimização falhou",
-            context,
-            presentation,
-        )
+        return validated
 
     @staticmethod
     def _log_validation(report: Any, phase: str = "validação") -> None:
@@ -126,6 +118,22 @@ class ExecutionGateway:
         if errors:
             event["errors"] = errors
         self.orchestrator._emit("hard_block", event)
+        project_result = getattr(
+            self.orchestrator.agent_state, "project_last_result", None
+        )
+        if callable(project_result):
+            project_result(
+                "planner",
+                {},
+                {
+                    "ok": False,
+                    "done": True,
+                    "status": "blocked",
+                    "executed": False,
+                    "error": "plan_blocked",
+                    "message": "Plano bloqueado pela validação canônica.",
+                },
+            )
         self.orchestrator.fail_task()
 
     def _recover(

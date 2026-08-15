@@ -106,8 +106,20 @@ def test_get_grammar_returns_none_when_disabled(monkeypatch):
 def test_get_grammar_returns_mapped_grammar_when_enabled(monkeypatch):
     monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
     assert get_grammar("plan") == grammars.PLAN_GRAMMAR
+    assert get_grammar("continuation_plan") == grammars.CONTINUATION_PLAN_GRAMMAR
     assert get_grammar("tool_decision") == grammars.TOOL_DECISION_GRAMMAR
     assert get_grammar("unknown_step") is None
+
+
+def test_plan_grammar_exposes_only_closed_mechanical_deferred_shape(monkeypatch):
+    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
+    grammar = get_grammar("plan") or ""
+
+    assert "plan-item ::= tool-step | deferred-condition" in grammar
+    assert '"\\\"deferred_condition\\\""' in grammar
+    assert '"\\\"equals\\\""' in grammar
+    assert '"\\\"waive_effect\\\""' in grammar
+    assert "semantic_judgment" not in grammar
 
 
 # ----------------------------------------------------------------------

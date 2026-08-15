@@ -3,8 +3,11 @@ from typing import Any, Dict, cast
 
 from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
+from agent.final_response import render_operational_answer
 from agent.parsers import stringify
 from agent.planning.plan_builder import build_planner_tools_description
+from agent.planning.task_completion import allow_linear_completion
+from agent.reporting.operational_outcome import project_operational_outcome
 from agent.watchdog import Watchdog
 
 
@@ -68,9 +71,17 @@ class ReactiveLoop:
 
     def _final_answer(self, decision: ModelDecision, objective: str) -> str:
         answer = str(decision.get("answer") or decision.get("message") or "Tarefa concluída.")
+        answer = self._canonical_answer(answer, objective)
         self.orchestrator._emit("final", {"answer": answer[:100]})
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
+
+    def _canonical_answer(self, answer: str, objective: str) -> str:
+        blocker = allow_linear_completion(self.orchestrator, objective)
+        if blocker is not None:
+            return cast(str, blocker)
+        outcome = project_operational_outcome(self.orchestrator.agent_state)
+        return render_operational_answer(outcome) or answer
 
     def _handle_decision(
         self, decision: ModelDecision, objective: str, usage: Dict[str, int], reactive_step: int
@@ -91,4 +102,6 @@ class ReactiveLoop:
         self.orchestrator.agent_state.plan_step = reactive_step
         if result.aborted:
             return result.final_answer or "A tarefa falhou e foi abortada."
-        return str(result.final_answer) if result.final_answer else None
+        if result.final_answer:
+            return self._canonical_answer(str(result.final_answer), objective)
+        return None

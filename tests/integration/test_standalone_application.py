@@ -8,27 +8,763 @@ from pathlib import Path
 import pytest
 
 from agent.application import AgentApplication
-from agent.approval import AutoApprove
+from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
 from agent.memory.memory import MemoryLoadError
 from agent.planning.step_policies import StepPolicies
+from agent.planning.task_completion import (
+    allow_linear_completion,
+    initialize_task_progression,
+)
 from agent.runtime.config_errors import ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLockError
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
+from agent.tools.authority import OperationalMode
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from tests.support.offline_scenarios import OfflineLegacyGateway
+from agent.watchdog import Watchdog
+from tests.support.offline_scenarios import OfflineLegacyGateway, OfflineModelGateway
 
 
 def _initialized_paths(tmp_path: Path) -> AppPaths:
     paths = AppPaths.discover(tmp_path / "home", env={})
     ConfigRepository(paths).initialize()
     return paths
+
+
+class _QueuedLegacyGateway(OfflineLegacyGateway):
+    def __init__(self, responses: list[str]) -> None:
+        OfflineModelGateway.__init__(self, responses)
+        self.payloads = []
+
+
+class _CountingApproval:
+    def __init__(self) -> None:
+        self.requests: list[ApprovalRequest] = []
+
+    def request(self, request: ApprovalRequest) -> ApprovalDecision:
+        self.requests.append(request)
+        return ApprovalDecision.APPROVED
+
+
+def _run_queued_task(
+    tmp_path: Path,
+    content: str,
+    objective: str,
+    responses: list[str],
+    mode: OperationalMode = OperationalMode.EDITOR,
+    extra_files: dict[str, str] | None = None,
+    approval_policy=None,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "controle.txt").write_text(content, encoding="utf-8")
+    for relative_path, extra_content in (extra_files or {}).items():
+        (workspace / relative_path).write_text(extra_content, encoding="utf-8")
+    gateway = _QueuedLegacyGateway(responses)
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=gateway,
+        approval_policy=approval_policy or AutoApprove(),
+        operational_mode=mode,
+        configure_logging=False,
+    ) as application:
+        result = application.run(objective)
+        history = [entry["tool"] for entry in application.orchestrator.agent_state.tool_history]
+        state = application.orchestrator.agent_state
+        progression = {
+            "events": list(state.events),
+            "requested": list(state.requested_effects),
+            "executed": list(state.executed_effects),
+            "waived": list(state.waived_effects),
+            "pending": list(state.pending_effects()),
+            "continuations": state.continuation_attempts,
+            "terminal": state.terminal_disposition,
+            "plan": [dict(step) for step in state.plan],
+            "step_statuses": [state.get_step_status(index).value for index in range(len(state.plan))],
+        }
+    return result, gateway, workspace, history, progression
+
+
+def _manual_deferred_plan() -> list[dict[str, object]]:
+    return [
+        {"tool": "file_reader", "args": {"file_path": "controle.txt"}},
+        {
+            "kind": "deferred_condition",
+            "observation_ref": 1,
+            "predicate": {"op": "equals", "value": "original"},
+            "on_true": {
+                "tool": "code_task",
+                "args": {
+                    "action": "modify",
+                    "objective": "Altere controle.txt para modificado",
+                    "targets": ["controle.txt"],
+                },
+            },
+            "on_false": {"waive_effect": "write"},
+        },
+    ]
+
+
+def _planner_deferred_response() -> str:
+    return json.dumps(
+        {
+            "action": "use_tools",
+            "plan": _manual_deferred_plan(),
+        }
+    )
+
+
+def _run_manual_deferred_task(
+    tmp_path: Path,
+    content: str,
+    responses: list[str],
+):
+    objective = (
+        'Se controle.txt contiver exatamente "original", altere para "modificado"; '
+        "caso contrario nao altere."
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "controle.txt").write_text(content, encoding="utf-8")
+    gateway = _QueuedLegacyGateway(responses)
+    approval = _CountingApproval()
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=gateway,
+        approval_policy=approval,
+        operational_mode=OperationalMode.EDITOR,
+        configure_logging=False,
+    ) as application:
+        orchestrator = application.orchestrator
+        orchestrator._reset_task_state(objective)
+        initialize_task_progression(orchestrator, objective)
+        orchestrator._task_start_time = Watchdog.start_task()
+        orchestrator._route_persona(objective)
+        execution = orchestrator.execution_gateway.execute_validated_plan(
+            _manual_deferred_plan(),
+            objective,
+            {},
+        )
+        completion_blocker = allow_linear_completion(orchestrator, objective)
+        state = orchestrator.agent_state
+        snapshot = {
+            "history": [item["tool"] for item in state.tool_history],
+            "events": list(state.events),
+            "requested": list(state.requested_effects),
+            "executed": list(state.executed_effects),
+            "waived": list(state.waived_effects),
+            "pending": list(state.pending_effects()),
+            "continuations": state.continuation_attempts,
+            "step_statuses": [
+                state.get_step_status(index).value for index in range(len(state.plan))
+            ],
+        }
+    return (
+        execution,
+        completion_blocker,
+        gateway,
+        approval,
+        workspace,
+        snapshot,
+    )
+
+
+def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) -> None:
+    execution, blocker, gateway, approval, workspace, snapshot = (
+        _run_manual_deferred_task(
+            tmp_path,
+            "original",
+            [
+                '{"persona":"coder"}',
+                '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+            ],
+        )
+    )
+
+    assert execution.aborted is False
+    assert blocker is None
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert snapshot["history"] == ["file_reader", "code_task"]
+    assert snapshot["executed"] == ["write"]
+    assert snapshot["waived"] == []
+    assert snapshot["pending"] == []
+    assert snapshot["continuations"] == 0
+    assert approval.requests
+    assert len(gateway.payloads) == 1  # persona routing happened before plan acceptance
+    assert len(gateway.calls) == 1  # code proposal, not conditional resolution
+    resolved = next(
+        event
+        for event in snapshot["events"]
+        if event.get("type") == "deferred_condition_resolved"
+    )
+    assert resolved["data"]["selected_branch"] == "true"
+    assert not any(event.get("type") == "replan" for event in snapshot["events"])
+
+
+def test_manual_deferred_equals_false_binds_existing_write_waiver(tmp_path: Path) -> None:
+    execution, blocker, gateway, approval, workspace, snapshot = (
+        _run_manual_deferred_task(
+            tmp_path,
+            "modificado",
+            ['{"persona":"coder"}'],
+        )
+    )
+
+    assert execution.aborted is False
+    assert blocker is None
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert snapshot["history"] == ["file_reader"]
+    assert snapshot["executed"] == []
+    assert snapshot["waived"] == ["write"]
+    assert snapshot["pending"] == []
+    assert snapshot["continuations"] == 0
+    assert approval.requests == []
+    assert len(gateway.payloads) == 1
+    assert gateway.calls == []
+    resolved = next(
+        event
+        for event in snapshot["events"]
+        if event.get("type") == "deferred_condition_resolved"
+    )
+    assert resolved["data"]["selected_branch"] == "false"
+    waiver = next(
+        event
+        for event in snapshot["events"]
+        if event.get("type") == "effect_waiver_bound"
+    )
+    assert waiver["data"]["source"] == "deferred_condition"
+    assert not any(event.get("type") == "replan" for event in snapshot["events"])
+
+
+def test_manual_deferred_blocks_when_file_observation_is_only_a_summary(
+    tmp_path: Path,
+) -> None:
+    execution, blocker, gateway, approval, workspace, snapshot = (
+        _run_manual_deferred_task(
+            tmp_path,
+            "x" * 25_000,
+            ['{"persona":"coder"}'],
+        )
+    )
+
+    assert execution.aborted is False
+    assert blocker == "deferred_condition_blocked"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "x" * 25_000
+    assert snapshot["history"] == ["file_reader"]
+    assert snapshot["executed"] == []
+    assert snapshot["waived"] == []
+    assert snapshot["pending"] == ["write"]
+    assert approval.requests == []
+    assert len(gateway.payloads) == 1
+    assert gateway.calls == []
+    blocked = next(
+        event
+        for event in snapshot["events"]
+        if event.get("type") == "deferred_condition_blocked"
+    )
+    assert "integral" in blocked["data"]["reason"]
+
+
+def test_real_initial_planner_deferred_true_promotes_write_without_continuation(
+    tmp_path: Path,
+) -> None:
+    approval = _CountingApproval()
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        'Se controle.txt contiver exatamente "original", altere para "modificado"; '
+        "caso contrario nao altere.",
+        [
+            '{"persona":"coder"}',
+            _planner_deferred_response(),
+            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+        ],
+        approval_policy=approval,
+    )
+
+    assert result.status == "unverified", result.error
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader", "code_task"]
+    assert [step.get("kind") or step.get("tool") for step in progression["plan"]] == [
+        "file_reader",
+        "deferred_condition",
+        "code_task",
+    ]
+    observation_id = progression["plan"][0]["_step_id"]
+    assert progression["plan"][1]["observation_ref"] == observation_id
+    assert progression["executed"] == ["write"]
+    assert progression["waived"] == []
+    assert progression["pending"] == []
+    assert progression["continuations"] == 0
+    assert [request.action for request in approval.requests] == [
+        "code_task",
+        "apply_changeset",
+    ]
+    assert len(gateway.payloads) == 2  # router + one initial planning decision
+    assert len(gateway.calls) == 1  # code_task proposal is not a branch decision
+    assert "continuation_plan" not in str(gateway.payloads)
+    assert not any(event.get("type") == "replan" for event in progression["events"])
+
+
+def test_real_initial_planner_deferred_false_waives_without_effect_or_continuation(
+    tmp_path: Path,
+) -> None:
+    approval = _CountingApproval()
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        'Se controle.txt contiver exatamente "original", altere para "modificado"; '
+        "caso contrario nao altere.",
+        [
+            '{"persona":"coder"}',
+            _planner_deferred_response(),
+        ],
+        approval_policy=approval,
+    )
+
+    assert result.status == "succeeded", result.error
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader"]
+    assert [step.get("kind") or step.get("tool") for step in progression["plan"]] == [
+        "file_reader",
+        "deferred_condition",
+    ]
+    observation_id = progression["plan"][0]["_step_id"]
+    assert progression["plan"][1]["observation_ref"] == observation_id
+    assert progression["executed"] == []
+    assert progression["waived"] == ["write"]
+    assert progression["pending"] == []
+    assert progression["continuations"] == 0
+    assert approval.requests == []
+    assert len(gateway.payloads) == 2  # router + one initial planning decision
+    assert gateway.calls == []
+    assert "continuation_plan" not in str(gateway.payloads)
+    assert not any(event.get("type") == "replan" for event in progression["events"])
+
+
+def test_initial_multi_step_plan_is_persisted_and_executed_without_replanning(
+    tmp_path: Path,
+) -> None:
+    result, gateway, _, history, progression = _run_queued_task(
+        tmp_path,
+        "alpha",
+        "Compare controle.txt e outro.txt",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"file_reader","args":{"file_path":"outro.txt"}}]}',
+            "Os arquivos contem alpha e beta.",
+        ],
+        extra_files={"outro.txt": "beta"},
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader", "file_reader"]
+    assert [step["tool"] for step in progression["plan"]] == [
+        "file_reader",
+        "file_reader",
+    ]
+    assert progression["step_statuses"] == ["completed", "completed"]
+    assert progression["continuations"] == 0
+    assert len(gateway.payloads) == 3  # router, one initial plan, final synthesis
+    assert "plano executavel completo" in gateway.payloads[1]["messages"][-1]["content"]
+    assert "continuation_plan" not in str(gateway.payloads)
+
+
+def test_simple_edit_executes_from_initial_plan_without_rediscovery(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para modificado",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Altere controle.txt para modificado","targets":["controle.txt"]}}]}',
+            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+        ],
+    )
+
+    assert result.status == "unverified", result.error
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["code_task"]
+    assert progression["step_statuses"] == ["unverified"]
+    assert progression["continuations"] == 0
+    assert len(gateway.payloads) == 2  # router and one initial plan
+    assert len(gateway.calls) == 1  # code proposal through the canonical gateway
+    assert "continuation_plan" not in str(gateway.payloads)
+
+
+def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para que contenha apenas modificado",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"execute","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Altere controle.txt para que contenha apenas modificado","targets":["controle.txt"]}}]}',
+            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado","expected_text":"original"}]}]}',
+        ],
+    )
+
+    assert result.status == "unverified", result.error
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader", "code_task"]
+    assert result.answer.startswith("Uma alteração foi aplicada.")
+    assert result.receipt["mutation_occurred"] is True
+    assert result.receipt["operational_outcome"]["executed_effects"] == ["write"]
+    assert progression["executed"] == ["write"]
+    assert progression["pending"] == []
+    assert progression["terminal"] == "complete"
+    outcome_event = next(
+        event for event in progression["events"] if event.get("type") == "task_outcome"
+    )
+    assert outcome_event["data"]["mutation_occurred"] is True
+    assert outcome_event["data"]["executed_effects"] == ["write"]
+    assert len(gateway.payloads) == 3  # router, initial plan, bounded continuation
+    continuation_grammar = gateway.payloads[2]["grammar"]
+    assert "complete_without_effect" in continuation_grammar
+    assert "observation_index" in continuation_grammar
+    assert "effect_required" not in continuation_grammar
+    assert "direct_response" not in continuation_grammar
+
+
+def test_observation_only_request_does_not_continue_to_write(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Leia controle.txt e diga o conteudo",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            "O arquivo contem original.",
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == ["file_reader"]
+    assert progression["requested"] == []
+    assert progression["terminal"] == "complete"
+
+
+def test_already_satisfied_mutation_request_avoids_write(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Altere controle.txt para que contenha apenas modificado",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete_without_effect","observation_index":1}',
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader"]
+    assert progression["waived"] == ["write"]
+    assert progression["pending"] == []
+    assert progression["terminal"] == "complete"
+    assert result.answer.startswith("Nenhuma escrita foi executada.")
+    assert "alterad" not in result.answer.casefold()
+    assert result.receipt["mutation_occurred"] is False
+    assert result.receipt["operational_outcome"]["waived_effects"] == ["write"]
+    outcome_event = next(
+        event for event in progression["events"] if event.get("type") == "task_outcome"
+    )
+    assert outcome_event["data"]["mutation_occurred"] is False
+    assert outcome_event["data"]["waived_effects"] == ["write"]
+    assert sum(event.get("type") == "task_outcome" for event in progression["events"]) == 1
+    waiver = next(
+        event
+        for event in progression["events"]
+        if event.get("type") == "effect_waiver_bound"
+    )
+    assert waiver["data"]["observation_index"] == 1
+    assert len(gateway.payloads) == 3
+    continuation_prompt = gateway.payloads[2]["messages"][-1]["content"]
+    assert "obrigacao ainda nao resolvida" in continuation_prompt
+    assert "nao uma ordem para executar" in continuation_prompt
+    assert "Primeiro confronte o objetivo condicional" in continuation_prompt
+    assert '1: status=completed, tool="file_reader"' in continuation_prompt
+    assert "Nao repita uma observacao ja concluida com sucesso" in continuation_prompt
+
+
+def test_noop_code_task_does_not_prove_a_pending_write(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Se controle.txt for original, altere para modificado; caso contrario nao altere.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"execute","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Mantenha controle.txt como modificado","targets":["controle.txt"]}}]}',
+            '{"changes":[{"path":"controle.txt","kind":"modify","content":"modificado"}]}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader", "code_task"]
+    assert progression["executed"] == []
+    assert progression["waived"] == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+    assert result.receipt["mutation_occurred"] is False
+    assert result.receipt["operational_outcome"]["pending_effects"] == ["write"]
+    outcome_event = next(
+        event for event in progression["events"] if event.get("type") == "task_outcome"
+    )
+    assert outcome_event["data"]["status"] == "block"
+    assert outcome_event["data"]["pending_effects"] == ["write"]
+
+
+def test_effect_waiver_rejects_unbound_observation_reference(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Altere controle.txt para que contenha apenas modificado",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete_without_effect","observation_index":2}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader"]
+    assert progression["waived"] == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+    assert len(gateway.payloads) == 3
+
+
+def test_continuation_claim_cannot_replace_missing_write_evidence(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Primeiro leia controle.txt. Se o conteudo for exatamente original, altere para modificado.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete_without_effect","observation_index":1,"answer":"O arquivo e original; portanto ainda preciso usar code_task."}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == ["file_reader"]
+    assert progression["waived"] == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+    assert len(gateway.payloads) == 3
+    continuation_prompt = gateway.payloads[2]["messages"][-1]["content"]
+    assert "nenhum efeito de escrita executado" in continuation_prompt
+    assert "nao prova execucao nem dispensa efeito" in continuation_prompt
+    assert "1: tool=\"file_reader\"" in continuation_prompt
+
+
+def test_read_only_mutation_request_remains_blocked_before_approval(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para que contenha apenas modificado",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"execute","plan":[{"tool":"code_task","args":{"target":"controle.txt","content":"modificado"}},{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+        ],
+        mode=OperationalMode.READ_ONLY,
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == ["file_reader"]
+    proposed = next(
+        event
+        for event in progression["events"]
+        if event.get("type") == "continuation_plan_proposed"
+    )
+    assert [step["tool"] for step in proposed["data"]["plan"]] == [
+        "code_task",
+        "file_reader",
+    ]
+    assert any(event["type"] == "hard_block" for event in progression["events"])
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+    assert len(gateway.payloads) >= 3
+
+
+def test_malformed_code_task_arguments_reach_canonical_validation(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para modificado",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"code_task","args":{"target":"controle.txt","content":"modificado"}}]}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == []
+    assert progression["terminal"] == "block"
+    hard_block = next(
+        event for event in progression["events"] if event.get("type") == "hard_block"
+    )
+    assert "unknown argument(s): content, target" in str(
+        hard_block["data"].get("errors")
+    )
+
+
+def test_initial_final_text_cannot_claim_unexecuted_write(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para modificado",
+        [
+            '{"persona":"coder"}',
+            '{"action":"direct_response","answer":"Arquivo alterado com sucesso."}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert "permanece pendente" in result.answer
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+
+
+def test_reactive_final_cannot_claim_pending_write(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Altere controle.txt para modificado",
+        [
+            '{"persona":"coder"}',
+            '{"action":"replan"}',
+            '{"action":"final","answer":"Arquivo alterado com sucesso."}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert "permanece pendente" in result.answer
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+
+
+def test_hierarchical_final_cannot_claim_pending_write(tmp_path: Path) -> None:
+    objective = "Analise todos os arquivos e depois modifique controle.txt para modificado"
+    macro = {
+        "steps": [
+            {
+                "id": "s1",
+                "title": "Editar",
+                "goal": "Altere controle.txt para modificado",
+                "priority": "medium",
+                "depends_on": [],
+                "estimated_tools": [],
+            }
+        ]
+    }
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        objective,
+        [
+            '{"persona":"coder"}',
+            json.dumps(macro),
+            '{"action":"direct_response","answer":"Arquivo alterado com sucesso."}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert "permanece pendente" in result.answer
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert history == []
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+    assert len(gateway.payloads) == 4  # router, macro plan, micro plan, summary flush
+
+
+def test_security_final_cannot_claim_pending_write(tmp_path: Path) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        "Analise a seguranca de app.py e corrija a vulnerabilidade",
+        ['{"persona":"security_auditor"}'],
+        extra_files={"app.py": "value = eval(input())\n"},
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "requested_effect_pending"
+    assert "permanece pendente" in result.answer
+    assert workspace.joinpath("app.py").read_text(encoding="utf-8") == "value = eval(input())\n"
+    assert history == ["code_analyzer"]
+    assert progression["pending"] == ["write"]
+    assert progression["terminal"] == "block"
+
+
+def test_hierarchical_failure_is_not_overwritten_by_later_success(tmp_path: Path) -> None:
+    objective = "Analise todos os arquivos e depois leia controle.txt"
+    macro = {
+        "steps": [
+            {
+                "id": "s1",
+                "title": "Falha",
+                "goal": "Leia missing.txt",
+                "priority": "medium",
+                "depends_on": [],
+            },
+            {
+                "id": "s2",
+                "title": "Sucesso",
+                "goal": "Leia controle.txt",
+                "priority": "medium",
+                "depends_on": [],
+            },
+        ]
+    }
+    result, _, workspace, _, progression = _run_queued_task(
+        tmp_path,
+        "original",
+        objective,
+        [
+            '{"persona":"coder"}',
+            json.dumps(macro),
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"missing.txt"}}]}',
+            '{"action":"final","answer":"sem replanning"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            "summary flush",
+            "final answer",
+        ],
+    )
+
+    assert result.status == "failed"
+    assert result.success is False
+    assert result.answer == "A tarefa não pôde ser concluída."
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
+    assert progression["terminal"] == "fail"
+    assert any(event.get("type") == "step_failed" for event in progression["events"])
 
 
 def test_application_runs_trivial_task_with_explicit_workspace(tmp_path: Path) -> None:

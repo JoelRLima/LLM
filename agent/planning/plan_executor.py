@@ -1,10 +1,12 @@
 import concurrent.futures
 import uuid
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import ToolArgs, ToolResult
 from agent.cost_guard import DEFAULT_MAX_TASK_TOOL_CALLS, CostGuard
+from agent.planning.deferred_condition import is_deferred_condition
+from agent.planning.deferred_execution import execute_deferred_condition
+from agent.planning.execution_models import StepLoopResult
 from agent.planning.parallel_contracts import (
     ParallelInvocation,
     correlate_parallel_result,
@@ -18,16 +20,12 @@ from agent.planning.semantic_projection import (
     projection_for_outcome,
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from agent.planning.task_completion import (
+    continue_after_observation,
+    needs_effect_continuation,
+)
 from agent.tools.contracts import ToolInvocationRequest
 from agent.watchdog import Watchdog
-
-
-@dataclass
-class StepLoopResult:
-    next_index: int
-    result: Optional[ToolResult] = None
-    answer: Optional[str] = None
-    stop: bool = False
 
 
 class PlanExecutor:
@@ -53,6 +51,11 @@ class PlanExecutor:
             if iteration.stop:
                 return iteration.answer
             index = state.next_pending_index(iteration.next_index)
+            if index is None and needs_effect_continuation(self.orchestrator, objective):
+                answer = continue_after_observation(self.orchestrator, objective)
+                if isinstance(answer, str) and answer:
+                    return answer
+                index = state.next_pending_index()
         if last_result is not None and not last_result.get("ok"):
             return f"A tarefa não pôde ser concluída. Último erro: {last_result.get('error', 'Erro desconhecido')}"
         return None
@@ -66,6 +69,8 @@ class PlanExecutor:
         blocked = self._check_watchdog() or self._check_cost_limits(index + 1)
         if blocked:
             return StepLoopResult(index, answer=blocked, stop=True)
+        if is_deferred_condition(step):
+            return self._execute_deferred_condition(index, objective)
         if not self._check_dependencies_ok(index):
             self.step_executor.finish_skipped(index, "dependência não satisfeita")
             return StepLoopResult(index + 1)
@@ -86,6 +91,8 @@ class PlanExecutor:
             return self._handle_replan(index, step, tool, objective, outcome.error, outcome.result)
         return StepLoopResult(index + 1, outcome.result)
 
+    def _execute_deferred_condition(self, index: int, objective: str) -> StepLoopResult:
+        return execute_deferred_condition(self, index, objective)
     def _handle_replan(
         self, index: int, step: Dict[str, Any], tool: str, objective: str,
         error: str, result: Optional[ToolResult],
@@ -97,7 +104,6 @@ class PlanExecutor:
             self._replace_current_step(index, replacements)
             return StepLoopResult(index, result)
         return StepLoopResult(index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True)
-
     def _collect_parallel_read_batch(self, start_index: int) -> List[int]:
         batch: List[int] = []
         state = self.orchestrator.agent_state
@@ -110,7 +116,6 @@ class PlanExecutor:
                 break
             batch.append(index)
         return batch
-
     def _execute_parallel_read_batch(
         self, batch_indices: List[int], objective: str, usage: Dict[str, int]
     ) -> StepLoopResult:
@@ -165,7 +170,6 @@ class PlanExecutor:
                 index = futures[future]
                 results[index] = future_parallel_result(future, correlations[index])
         return cached, results, correlations
-
     def _finalize_parallel(
         self, indices: List[int], cached: Dict[int, ToolResult], results: Dict[int, ToolResult],
         correlations: Dict[int, ParallelInvocation],

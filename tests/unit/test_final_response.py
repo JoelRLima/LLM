@@ -5,6 +5,7 @@ import pytest
 
 from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
 from agent.llm.model_client import ModelProviderError
+from agent.reporting.operational_outcome import OperationalOutcome
 
 
 class FailingSession:
@@ -51,6 +52,91 @@ class GroundingSession:
     def remove_last_user_message(self) -> None:
         if self.messages and self.messages[-1]["role"] == "user":
             self.messages.pop()
+
+
+class ForbiddenOperationalSession:
+    def __getattr__(self, name):
+        raise AssertionError(f"model session must not be used for operational truth: {name}")
+
+
+def _outcome(**overrides):
+    values = {
+        "terminal_status": "complete",
+        "requested_effects": ("write",),
+        "executed_effects": (),
+        "waived_effects": ("write",),
+        "pending_effects": (),
+        "mutation_occurred": False,
+        "validation_status": None,
+        "rollback_occurred": False,
+        "blocked_reason": None,
+        "failure_reason": None,
+        "files_affected": (),
+        "evidence_invocation_ids": ("read-1",),
+    }
+    values.update(overrides)
+    return OperationalOutcome(**values)
+
+
+def test_operational_outcome_cannot_be_overridden_by_model_prose() -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "altere o arquivo",
+        operational_outcome=_outcome(),
+    )
+
+    assert answer.startswith("Nenhuma escrita foi executada.")
+    assert "alterad" not in answer.casefold()
+    assert state.conversation_history[-1]["agent"] == answer
+
+
+def test_operational_outcome_renders_real_write_and_unavailable_validation() -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "altere o arquivo",
+        operational_outcome=_outcome(
+            executed_effects=("write",),
+            waived_effects=(),
+            mutation_occurred=True,
+            validation_status="unavailable",
+            files_affected=("controle.txt",),
+        ),
+    )
+
+    assert "alteração foi aplicada" in answer
+    assert "controle.txt" in answer
+    assert "não havia validação aplicável" in answer
+
+
+def test_operational_outcome_renders_rollback_as_no_persisted_write() -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "altere o arquivo",
+        operational_outcome=_outcome(
+            executed_effects=("write",),
+            waived_effects=(),
+            mutation_occurred=True,
+            rollback_occurred=True,
+            validation_status="failed",
+            files_affected=("controle.txt",),
+        ),
+    )
+
+    assert "foi revertida" in answer
+    assert "nenhuma escrita persistiu" in answer
+    assert "foi aplicada" not in answer
 
 
 def test_empty_tool_observation_reaches_grounded_synthesis() -> None:

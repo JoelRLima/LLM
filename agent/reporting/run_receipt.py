@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from agent.llm.model_client import ModelProviderError
+from agent.reporting.operational_outcome import project_operational_outcome
 
 
 def failure_layer_for_code(code: str | None) -> str:
@@ -53,7 +54,6 @@ def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, l
 
 def _collect_artifact_state(
     metadata: list[dict[str, Any]],
-    files: set[str],
     proposed: set[str],
     validation: dict[str, Any],
     rollback: dict[str, Any],
@@ -62,8 +62,6 @@ def _collect_artifact_state(
         affected = item.get("affected_files")
         if isinstance(affected, (list, tuple)):
             proposed.update(str(path) for path in affected)
-            if item.get("applied") is True:
-                files.update(str(path) for path in affected)
         if item.get("validation") is not None:
             validation["ran"] = True
             validation["outcome"] = str(item["validation"])
@@ -86,7 +84,6 @@ def build_run_receipt(
         if isinstance(item, dict)
     ]
     tools: list[dict[str, Any]] = []
-    files: set[str] = set()
     proposed: set[str] = set()
     validation = {"ran": False, "outcome": None}
     rollback = {"occurred": False, "outcome": None}
@@ -96,7 +93,7 @@ def build_run_receipt(
         tools.append(tool)
         if isinstance(effect, bool):
             effects.append(effect)
-        _collect_artifact_state(metadata, files, proposed, validation, rollback)
+        _collect_artifact_state(metadata, proposed, validation, rollback)
 
     events = getattr(state, "events", None) or []
     replan_count = sum(
@@ -125,15 +122,22 @@ def build_run_receipt(
         effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
     )
     replan = {"occurred": True, "count": replan_count} if replan_count else None
-    final_state = "restored" if rollback["occurred"] else ("applied" if files else None)
+    outcome = project_operational_outcome(state)
+    final_state = (
+        "restored"
+        if outcome.rollback_occurred
+        else ("applied" if outcome.mutation_occurred else None)
+    )
     return {
         "workspace": str(workspace),
         "tools": tools,
-        "files_affected": sorted(files),
-        "proposed_files": sorted(proposed - files),
+        "files_affected": list(outcome.files_affected),
+        "proposed_files": sorted(proposed - set(outcome.files_affected)),
         "validation": validation,
         "rollback": rollback,
         "final_state": final_state,
+        "mutation_occurred": outcome.mutation_occurred,
+        "operational_outcome": outcome.to_dict(),
         "repair": {"occurred": repair_count > 0, "count": repair_count},
         "replan": replan,
         "error": cause,
@@ -183,6 +187,13 @@ def derive_status(orchestrator: Any) -> str:
         "permission_denied", "protocol_error", "unavailable",
     }:
         return tool_status
+    terminal_disposition = getattr(
+        orchestrator.agent_state, "terminal_disposition", None
+    )
+    if terminal_disposition == "block":
+        return "blocked"
+    if terminal_disposition == "fail":
+        return "failed"
     if orchestrator._cancelled:
         return "cancelled"
     if orchestrator._task_failed:

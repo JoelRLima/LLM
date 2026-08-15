@@ -10,6 +10,11 @@ class PlanStep(TypedDict, total=False):
     tool: str
     args: ToolArgs
     _step_id: str
+    kind: str
+    observation_ref: int | str
+    predicate: Dict[str, Any]
+    on_true: Dict[str, Any]
+    on_false: Dict[str, Any]
 
 
 class ToolResult(TypedDict, total=False):

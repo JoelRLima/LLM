@@ -138,7 +138,14 @@ def _surviving_steps(steps: list[Dict[str, Any]], validator: PlanValidator, phas
     for error in report.errors:
         logger.warning("[VALIDATOR][%s] %s", phase, error)
     blocked = {item.index for item in report.blocked_steps}
-    return [step for index, step in enumerate(steps) if index not in blocked]
+    if blocked:
+        logger.warning(
+            "[VALIDATOR][%s] replacement rejeitado integralmente; passos bloqueados=%s",
+            phase,
+            sorted(index + 1 for index in blocked),
+        )
+        return []
+    return list(steps)
 
 
 def _log_action(context: ReplanContext, category: ErrorCategory, action: ReplanAction) -> None:

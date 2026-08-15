@@ -1,10 +1,11 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from agent.llm.model_client import ModelProviderError
 from agent.llm.router import is_security_objective
+from agent.reporting.operational_outcome import OperationalOutcome
 from agent.runtime.logging import logger
 
 MAX_TOOL_RESULTS_SUMMARY_CHARS = 12_000
@@ -54,6 +55,51 @@ PUBLIC_TOOL_STATUSES = frozenset(
 )
 
 
+def render_operational_answer(outcome: OperationalOutcome) -> str | None:
+    """Render canonical operational truth when the outcome contains effects."""
+
+    if not any(
+        (
+            outcome.requested_effects,
+            outcome.executed_effects,
+            outcome.waived_effects,
+            outcome.pending_effects,
+            outcome.mutation_occurred,
+            outcome.rollback_occurred,
+        )
+    ):
+        return None
+    if outcome.pending_effects:
+        return (
+            "A tarefa não foi concluída: os efeitos solicitados permanecem "
+            f"pendentes ({', '.join(outcome.pending_effects)})."
+        )
+    if outcome.rollback_occurred:
+        return "A alteração tentada foi revertida; nenhuma escrita persistiu no estado final."
+    if "write" in outcome.executed_effects and outcome.mutation_occurred:
+        files = (
+            f" Arquivos afetados: {', '.join(outcome.files_affected)}."
+            if outcome.files_affected
+            else ""
+        )
+        validation = (
+            " A alteração foi aplicada, mas não havia validação aplicável disponível."
+            if outcome.validation_status == "unavailable"
+            else (
+                f" Validação: {outcome.validation_status}."
+                if outcome.validation_status
+                else ""
+            )
+        )
+        return f"Uma alteração foi aplicada.{files}{validation}".strip()
+    if "write" in outcome.waived_effects:
+        return (
+            "Nenhuma escrita foi executada. A obrigação condicional de escrita "
+            "foi dispensada com base na observação registrada."
+        )
+    return "A tarefa terminou sem mutação operacional comprovada."
+
+
 class FinalResponder:
     def __init__(
         self,
@@ -64,7 +110,24 @@ class FinalResponder:
         self.orchestrator = orchestrator
         self.analysis_notes_file = Path(analysis_notes_file)
 
-    def build_final_answer(self, objective: str, on_chunk: Optional[Callable[[str], None]] = None) -> str:
+    def build_final_answer(
+        self,
+        objective: str,
+        on_chunk: Optional[Callable[[str], None]] = None,
+        *,
+        operational_outcome: OperationalOutcome | None = None,
+    ) -> str:
+        operational_answer = (
+            render_operational_answer(operational_outcome)
+            if operational_outcome is not None
+            else None
+        )
+        if operational_answer is not None:
+            answer = operational_answer
+            self.orchestrator.agent_state.conversation_history.append(
+                {"user": objective, "agent": answer}
+            )
+            return answer
         notes_content = self._read_notes()
         final_prompt = self._build_prompt(objective, notes_content)
         self.orchestrator.session.add_user_message(final_prompt)
@@ -229,4 +292,4 @@ class FinalResponder:
 
         Delega para a fonte canônica única (router.is_security_objective),
         eliminando a lista de keywords duplicada/dessincronizada (achado 1.8)."""
-        return is_security_objective(objective)
+        return cast(bool, is_security_objective(objective))

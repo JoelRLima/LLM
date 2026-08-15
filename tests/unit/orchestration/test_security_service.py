@@ -40,19 +40,35 @@ class _FakeContextManager:
 
 def test_security_analysis_service_passes_authorization_context_to_gateway() -> None:
     gateway = _FakeGateway()
+    state = SimpleNamespace(
+        tool_history=[],
+        last_result=None,
+        requested_effects=[],
+        executed_effects=[],
+        waived_effects=[],
+        terminal_disposition=None,
+        pending_effects=lambda: (),
+        events=[],
+    )
     orchestrator = SimpleNamespace(
         tool_invocation_gateway=gateway,
         active_skills=["code_analyzer"],
         allowed_capabilities=frozenset({"read", "analyze"}),
+        agent_state=state,
         context_manager=_FakeContextManager(),
         session=SimpleNamespace(messages=[{"content": "system"}], config={}),
-        final_responder=SimpleNamespace(build_final_answer=lambda prompt, on_chunk=None: "ok"),
+        final_responder=SimpleNamespace(
+            build_final_answer=lambda prompt, on_chunk=None, **_kwargs: "ok"
+        ),
         execution_gateway=SimpleNamespace(
             execute_validated_plan=lambda plan, objective, usage: SimpleNamespace(
                 aborted=False,
                 final_answer="ok",
                 validated_plan=plan,
             )
+        ),
+        _emit=lambda event_type, data=None: state.events.append(
+            {"type": event_type, "data": data or {}}
         ),
     )
 

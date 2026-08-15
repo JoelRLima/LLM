@@ -4,6 +4,7 @@ from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.planning_context import PlanningContextError, PlanningContextSnapshot, PlanningTool
 from agent.planning.replan import _validate_and_optimize_new_steps
 from agent.planning.replan_models import ReplanAction
+from agent.state import AgentState
 from agent.tools.contracts import ToolOriginKind
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
@@ -104,8 +105,81 @@ def test_gateway_does_not_execute_invalid_plan():
     result = gateway.execute_validated_plan([], "objetivo", {})
 
     assert result.aborted is True
+    assert "bloquead" in (result.final_answer or "").casefold()
     assert orchestrator.failed is True
     assert orchestrator.plan_executor.calls == 0
+
+
+def _deferred_plan(*, reference=1, operator="equals", literal="original"):
+    return [
+        {"tool": "echo", "args": {}, "_step_id": "observation"},
+        {
+            "kind": "deferred_condition",
+            "observation_ref": reference,
+            "predicate": {"op": operator, "value": literal},
+            "on_true": {"tool": "echo", "args": {}},
+            "on_false": {"waive_effect": "write"},
+        },
+    ]
+
+
+def test_gateway_accepts_and_preserves_valid_deferred_condition() -> None:
+    orchestrator = _Orchestrator()
+    result = ExecutionGateway(orchestrator).execute_validated_plan(
+        _deferred_plan(),
+        'Se o valor for "original", escreva.',
+        {},
+    )
+
+    assert result.aborted is False
+    assert orchestrator.plan_executor.calls == 1
+    assert result.validated_plan[1]["kind"] == "deferred_condition"
+    observation_id = result.validated_plan[0]["_step_id"]
+    assert observation_id.startswith("step-")
+    assert observation_id != "observation"
+    assert result.validated_plan[1]["observation_ref"] == observation_id
+    assert isinstance(result.validated_plan[1]["observation_ref"], str)
+
+    persisted = AgentState()
+    persisted.set_plan(result.validated_plan)
+    restored = AgentState()
+    restored.from_checkpoint_dict(persisted.to_checkpoint_dict())
+    assert restored.plan[1]["observation_ref"] == restored.plan[0]["_step_id"]
+
+
+@pytest.mark.parametrize(
+    ("plan", "objective", "error_fragment"),
+    [
+        (_deferred_plan(reference=3), 'Se for "original", escreva.', "observation_ref"),
+        (
+            _deferred_plan(reference="observation"),
+            'Se for "original", escreva.',
+            "ordinal local",
+        ),
+        (
+            _deferred_plan(operator="contains"),
+            'Se for "original", escreva.',
+            "somente equals",
+        ),
+        (
+            _deferred_plan(literal="ausente"),
+            'Se for "original", escreva.',
+            "objetivo original",
+        ),
+    ],
+)
+def test_gateway_rejects_invalid_deferred_condition_without_execution(
+    plan,
+    objective,
+    error_fragment,
+) -> None:
+    orchestrator = _Orchestrator()
+    result = ExecutionGateway(orchestrator).execute_validated_plan(plan, objective, {})
+
+    assert result.aborted is True
+    assert orchestrator.plan_executor.calls == 0
+    hard_block = next(data for event, data in orchestrator.events if event == "hard_block")
+    assert error_fragment in str(hard_block["errors"])
 
 
 def test_context_validation_does_not_execute_extension() -> None:

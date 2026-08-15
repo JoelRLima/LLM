@@ -140,6 +140,42 @@ def test_step_executor_completes_and_emits_terminal_event(monkeypatch):
     assert context.events[-1][0] == "step_completed"
 
 
+def test_deferred_condition_blocks_when_referenced_observation_is_not_completed(
+    monkeypatch,
+):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {
+                "tool": "file_reader",
+                "args": {"file_path": "controle.txt"},
+                "_step_id": "observation-step",
+            },
+            {
+                "kind": "deferred_condition",
+                "observation_ref": "observation-step",
+                "predicate": {"op": "equals", "value": "original"},
+                "on_true": {"tool": "echo", "args": {"text": "modificado"}},
+                "on_false": {"waive_effect": "write"},
+            },
+        ]
+    )
+    state.mark_step_failed(0, "read failed")
+    context = _Context(state)
+
+    outcome = PlanExecutor(context)._execute_deferred_condition(
+        1,
+        'Se for "original", escreva.',
+    )
+
+    assert outcome.stop is True
+    assert outcome.result is not None
+    assert outcome.result["status"] == "blocked"
+    assert state.get_step_status(1) is StepStatus.BLOCKED
+    assert context.calls == []
+    assert not any(event == "replan" for event, _ in context.events)
+
+
 def test_plan_executor_resume_does_not_repeat_completed_step(monkeypatch):
     state = _state(monkeypatch)
     state.objective = "retomar"

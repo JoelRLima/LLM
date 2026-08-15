@@ -36,8 +36,22 @@ class _State:
         self.plan = []
         self.tool_history = []
         self.last_result = None
+        self.requested_effects = []
+        self.executed_effects = []
+        self.waived_effects = []
+        self.terminal_disposition = None
+        self.events = []
         self.conversation_history = []
         self.memory = SimpleNamespace(state={"file_summaries": {}})
+
+    def pending_effects(self):
+        satisfied = set(self.executed_effects) | set(self.waived_effects)
+        return tuple(effect for effect in self.requested_effects if effect not in satisfied)
+
+    def project_last_result(self, tool_name, args, result):
+        self.last_tool = tool_name
+        self.last_args = args
+        self.last_result = result
 
 
 class _Orchestrator:
@@ -87,3 +101,38 @@ def test_reactive_renderer_type_error_does_not_fallback_to_legacy() -> None:
     orchestrator._build_tools_description = broken_renderer
     with pytest.raises(TypeError, match="erro interno"):
         ReactiveLoop(orchestrator)._build_prompt("responda")
+
+
+def test_reactive_tool_terminal_answer_cannot_bypass_pending_effect_guard() -> None:
+    orchestrator = _Orchestrator()
+    orchestrator.agent_state.requested_effects = ["write"]
+    orchestrator.execution_gateway = SimpleNamespace(
+        execute_validated_plan=lambda *_args, **_kwargs: SimpleNamespace(
+            aborted=False,
+            final_answer="Arquivo alterado com sucesso.",
+        )
+    )
+
+    answer = ReactiveLoop(orchestrator)._handle_decision(
+        {"action": "tool", "tool": "file_writer", "args": {}},
+        "Altere o arquivo.",
+        {},
+        1,
+    )
+
+    assert answer == "A tarefa não foi concluída: o efeito solicitado permanece pendente."
+    assert orchestrator.agent_state.terminal_disposition == "block"
+
+
+def test_reactive_final_cannot_replace_canonical_write_waiver() -> None:
+    orchestrator = _Orchestrator()
+    orchestrator.agent_state.requested_effects = ["write"]
+    orchestrator.agent_state.waived_effects = ["write"]
+
+    answer = ReactiveLoop(orchestrator)._final_answer(
+        {"action": "final", "answer": "Arquivo alterado com sucesso."},
+        "Altere o arquivo somente se necessário.",
+    )
+
+    assert answer.startswith("Nenhuma escrita foi executada.")
+    assert "alterado com sucesso" not in answer

@@ -7,6 +7,14 @@ from uuid import uuid4
 
 from agent.llm.router import _is_clearly_trivial
 from agent.planning.complexity import is_hierarchical
+from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.task_completion import (
+    allow_linear_completion,
+    complete_direct_answer,
+    initialize_task_progression,
+    mark_terminal_failure,
+)
+from agent.reporting.operational_outcome import project_operational_outcome
 from agent.runtime.logging import logger
 from agent.watchdog import Watchdog
 
@@ -68,6 +76,7 @@ class TaskRunner:
             self.orchestrator._task_failed = False
         else:
             self.orchestrator._reset_task_state(inputs.objective)
+            initialize_task_progression(self.orchestrator, inputs.objective)
         self.orchestrator._task_start_time = Watchdog.start_task()
         self.orchestrator._run_id = uuid4().hex
         self.orchestrator._run_metric_recorded = False
@@ -91,17 +100,21 @@ class TaskRunner:
         if security is not None:
             return security
         decision = self.orchestrator.plan_builder.build_plan(inputs.objective)
-        if decision.blocked_answer:
+        if decision.kind is PlanningDecisionKind.BLOCK and decision.blocked_answer:
+            self.orchestrator.agent_state.terminal_disposition = "block"
             self.orchestrator.agent_state.conversation_history.append(
                 {"user": inputs.objective, "agent": decision.blocked_answer}
             )
             return str(decision.blocked_answer)
-        if decision.direct_answer:
-            self.orchestrator.agent_state.conversation_history.append(
-                {"user": inputs.objective, "agent": decision.direct_answer}
+        if decision.kind is PlanningDecisionKind.COMPLETE and decision.direct_answer:
+            answer = complete_direct_answer(
+                self.orchestrator, inputs.objective, str(decision.direct_answer)
             )
-            return str(decision.direct_answer)
-        if not decision.plan:
+            self.orchestrator.agent_state.conversation_history.append(
+                {"user": inputs.objective, "agent": answer}
+            )
+            return answer
+        if decision.kind is PlanningDecisionKind.REPLAN or not decision.plan:
             return str(self.orchestrator._run_reactive(inputs.objective, usage, inputs.original_message_count))
         return self._execute_plan(decision.plan, inputs.objective, usage, on_chunk)
 
@@ -128,14 +141,35 @@ class TaskRunner:
     ) -> str:
         result = self.orchestrator.execution_gateway.execute_validated_plan(plan, objective, usage)
         if result.aborted:
+            mark_terminal_failure(self.orchestrator)
             answer = result.final_answer or "A execução foi interrompida."
             self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
             return answer
         self.orchestrator.agent_state.set_plan(result.validated_plan)
         self.orchestrator._save_checkpoint()
         if result.final_answer:
-            return str(result.final_answer)
-        return str(self.orchestrator.final_responder.build_final_answer(objective, on_chunk=on_chunk))
+            blocker = allow_linear_completion(self.orchestrator, objective)
+            if blocker is not None:
+                return blocker
+            outcome = project_operational_outcome(self.orchestrator.agent_state)
+            return str(
+                self.orchestrator.final_responder.build_final_answer(
+                    objective,
+                    on_chunk=on_chunk,
+                    operational_outcome=outcome,
+                )
+            )
+        blocker = allow_linear_completion(self.orchestrator, objective)
+        if blocker is not None:
+            return blocker
+        outcome = project_operational_outcome(self.orchestrator.agent_state)
+        return str(
+            self.orchestrator.final_responder.build_final_answer(
+                objective,
+                on_chunk=on_chunk,
+                operational_outcome=outcome,
+            )
+        )
 
     def _handle_interrupt(self) -> str:
         self.orchestrator._cancelled = True

@@ -6,7 +6,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
 from agent.runtime.paths import REPORTS_DIR
@@ -67,6 +67,7 @@ class TaskReportBuilder:
             report["run_id"] = run_ids[0]
         if receipt is not None:
             report["receipt"] = receipt
+            report["operational_outcome"] = receipt.get("operational_outcome")
         return report
 
     def save_report(
@@ -249,8 +250,8 @@ class TaskReportBuilder:
 
     @staticmethod
     def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[str, Any]:
-        return aggregate_metrics(entries, tools_called)
+        return cast(Dict[str, Any], aggregate_metrics(entries, tools_called))
 
     @staticmethod
     def _render_markdown(report: Dict[str, Any]) -> str:
-        return render_markdown(report)
+        return cast(str, render_markdown(report))

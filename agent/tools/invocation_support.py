@@ -156,12 +156,31 @@ def validate_arguments(descriptor: Any, args: dict[str, Any]) -> None:
     properties = schema.get("properties") or {}
     if not isinstance(properties, dict):
         raise ValueError("schema properties must be an object")
+    _validate_argument_shape(schema, properties, args)
+    _validate_argument_values(properties, args)
+
+
+def _validate_argument_shape(
+    schema: dict[str, Any],
+    properties: dict[str, Any],
+    args: dict[str, Any],
+) -> None:
+    if schema.get("additionalProperties") is False:
+        unknown = sorted(str(key) for key in args if key not in properties)
+        if unknown:
+            raise ValueError(f"unknown argument(s): {', '.join(unknown)}")
     required = schema.get("required") or []
     if not isinstance(required, list):
         required = [required]
     for key in required:
         if key not in args:
             raise ValueError(f"missing required argument: {key}")
+
+
+def _validate_argument_values(
+    properties: dict[str, Any],
+    args: dict[str, Any],
+) -> None:
     for key, value in args.items():
         prop_schema = properties.get(key)
         if prop_schema:
@@ -182,6 +201,9 @@ def validate_property(key: str, value: Any, schema: Any) -> None:
     }
     if expected_type in valid_types and not valid_types[expected_type]:
         raise ValueError(f"argument '{key}' must be a {expected_type}")
+    allowed_values = schema.get("enum")
+    if isinstance(allowed_values, (list, tuple)) and value not in allowed_values:
+        raise ValueError(f"argument '{key}' has an unsupported value")
 
 
 def validate_result(

@@ -13,10 +13,13 @@ Todas as dependências são recebidas por injeção; este módulo não conhece o
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from agent.execution_state import StepStatus
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
 from agent.planning.step_contracts import StepOutcomeKind
+from agent.planning.task_completion import allow_linear_completion
 from agent.planning.task_graph import task_graph_from_macro_plan, topological_nodes
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
+from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.task_tracker import TaskTracker
 from agent.runtime.logging import logger
 
@@ -126,6 +129,9 @@ class HierarchicalExecutor:
         self.summarizer.force_flush()
         accumulated = self.summarizer.get_accumulated_content()
 
+        orchestrator = getattr(self.plan_executor, "orchestrator", None)
+        if any_step_failed and orchestrator is not None:
+            orchestrator.fail_task()
         final_answer = self._build_final_answer(macro_plan.objective, accumulated, on_chunk)
 
         if any_step_failed:
@@ -142,6 +148,11 @@ class HierarchicalExecutor:
         on_chunk: Optional[Callable[[str], None]],
     ) -> str:
         """Chama o `final_responder` uma única vez, com o conteúdo consolidado."""
+        orchestrator = getattr(self.plan_executor, "orchestrator", None)
+        if orchestrator is not None:
+            blocker = allow_linear_completion(orchestrator, objective)
+            if blocker is not None:
+                return str(blocker)
         consolidated_prompt = (
             f"{objective}\n\n"
             "Os resultados a seguir foram obtidos ao decompor este objetivo em "
@@ -150,7 +161,18 @@ class HierarchicalExecutor:
             f"{accumulated_content}"
         )
         try:
-            return str(self.final_responder.build_final_answer(consolidated_prompt, on_chunk=on_chunk))
+            outcome = (
+                project_operational_outcome(orchestrator.agent_state)
+                if orchestrator is not None
+                else None
+            )
+            return str(
+                self.final_responder.build_final_answer(
+                    consolidated_prompt,
+                    on_chunk=on_chunk,
+                    operational_outcome=outcome,
+                )
+            )
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao gerar resposta final consolidada: {e}")
             return accumulated_content or "Não foi possível gerar a resposta final consolidada."
@@ -203,7 +225,7 @@ class HierarchicalExecutor:
                     self.tracker.record_tool_call(len(step_results))
                     success = self._determine_step_success(
                         step_results, getattr(self.plan_executor, "last_projection", None)
-                    )
+                    ) and not self._has_failed_execution_record(agent_state)
                     summary_text = self._summarize_step_results(step_results)
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao executar sub-objetivo '{step.id}': {e}")
@@ -267,6 +289,15 @@ class HierarchicalExecutor:
         if isinstance(result, dict) and "ok" in result:
             return bool(result.get("ok"))
         return True
+
+    @staticmethod
+    def _has_failed_execution_record(agent_state: Any) -> bool:
+        records = getattr(agent_state, "step_records", {})
+        return isinstance(records, dict) and any(
+            getattr(record, "status", None)
+            in {StepStatus.FAILED, StepStatus.BLOCKED}
+            for record in records.values()
+        )
 
     @staticmethod
     def _summarize_step_results(step_results: List[Dict[str, Any]]) -> str:

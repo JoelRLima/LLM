@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, cast
 from uuid import uuid4
 
+from agent.planning.planning_schema import validate_argument_shape, validate_property_value
 from agent.planning.schema_safety import (
     MAX_SCHEMA_DEPTH,
     PlanningSchemaError,
@@ -102,26 +103,11 @@ def validate_planning_tool_arguments(descriptor: Any, args: Mapping[str, Any]) -
     if not isinstance(args, dict):
         raise ValueError("arguments must be a JSON object")
     properties = schema.get("properties") or {}
-    required = schema.get("required") or []
-    required_values = required if isinstance(required, list) else [required]
-    for key in required_values:
-        if key not in args:
-            raise ValueError(f"missing required argument: {key}")
+    validate_argument_shape(schema, properties, args)
     for key, value in args.items():
         prop_schema = properties.get(key)
-        if not isinstance(prop_schema, Mapping):
-            continue
-        expected_type = prop_schema.get("type")
-        valid_types = {
-            "string": isinstance(value, str),
-            "integer": isinstance(value, int) and not isinstance(value, bool),
-            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-            "boolean": isinstance(value, bool),
-            "object": isinstance(value, dict),
-            "array": isinstance(value, list),
-        }
-        if expected_type in valid_types and not valid_types[expected_type]:
-            raise ValueError(f"argument '{key}' must be a {expected_type}")
+        if isinstance(prop_schema, Mapping):
+            validate_property_value(key, value, prop_schema)
 
 
 @dataclass(frozen=True, slots=True)

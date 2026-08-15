@@ -47,3 +47,32 @@ def test_optimizer_rejects_unknown_tool_in_canonical_context() -> None:
     )
     with pytest.raises(PlanningOptimizationError):
         PlanOptimizer(planning_context=context).optimize([{"tool": "invented", "args": {}}])
+
+
+def test_optimizer_preserves_deferred_producer_until_dedup_is_dependency_aware() -> None:
+    plan = [
+        {
+            "tool": "file_reader",
+            "args": {"file_path": "controle.txt"},
+            "_step_id": "read-a",
+        },
+        {
+            "tool": "file_reader",
+            "args": {"file_path": "controle.txt"},
+            "_step_id": "read-b",
+        },
+        {
+            "kind": "deferred_condition",
+            "_step_id": "condition",
+            "observation_ref": "read-b",
+            "predicate": {"op": "equals", "value": "original"},
+            "on_true": {"tool": "echo", "args": {}},
+            "on_false": {"waive_effect": "write"},
+        },
+    ]
+
+    report = PlanOptimizer().optimize(plan)
+
+    assert report.optimized_steps == plan
+    assert report.removed_duplicates == 0
+    assert report.changed is False

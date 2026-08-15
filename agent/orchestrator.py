@@ -177,6 +177,7 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
     def _reset_task_state(self, objective: str) -> None:
         self.agent_state.objective = objective
         self.agent_state.reset_execution()
+        self.agent_state.reset_task_progression()
         self.agent_state.last_result = None
         self.agent_state.last_tool = None
         self.agent_state.last_args = None
@@ -291,7 +292,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self, objective: str, on_chunk: Callable[[str], None] | None = None
     ) -> Optional[str]:
         return cast(Optional[str], HierarchicalExecutionService(self).run(objective, on_chunk))
-
     def run(
         self,
         objective: Optional[str] = None,

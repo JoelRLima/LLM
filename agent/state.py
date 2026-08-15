@@ -12,6 +12,14 @@ from agent.contracts import (
 )
 from agent.execution_state import TERMINAL_STEP_STATUSES, StepExecutionRecord, StepStatus
 from agent.memory.memory import AgentMemory
+from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_plan import canonicalize_plan_steps
+from agent.state_progression import (
+    pending_effects,
+    record_executed_effect,
+    reset_task_progression,
+    waive_effect,
+)
 
 
 class AgentState:
@@ -30,6 +38,11 @@ class AgentState:
         self.tool_history: List[ToolHistoryEntry] = []
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
+        self.requested_effects: List[str] = []
+        self.executed_effects: List[str] = []
+        self.waived_effects: List[str] = []
+        self.continuation_attempts: int = 0
+        self.terminal_disposition: Optional[str] = None
 
         # Componentes de memória e histórico
         self.memory = memory or AgentMemory()
@@ -77,17 +90,21 @@ class AgentState:
     def _new_step_id() -> str:
         return f"step-{uuid.uuid4().hex}"
 
+    @classmethod
+    def canonicalize_plan_steps(
+        cls,
+        plan: Sequence[Mapping[str, Any]],
+        *,
+        preserve_step_ids: bool = True,
+    ) -> List[PlanStep]:
+        return canonicalize_plan_steps(plan, cls._new_step_id, preserve_step_ids=preserve_step_ids)
+
     def set_plan(self, plan: Sequence[Mapping[str, Any]]) -> None:
         """Substitui o plano e preserva registros de IDs que sobreviveram à transformação."""
-        normalized: List[PlanStep] = []
+        normalized = self.canonicalize_plan_steps(plan)
         records: Dict[str, StepExecutionRecord] = {}
-        for raw_step in plan:
-            step = cast(PlanStep, dict(raw_step))
-            args = step.get("args")
-            step["args"] = dict(args) if isinstance(args, dict) else {}
-            step_id = str(step.get("_step_id") or self._new_step_id())
-            step["_step_id"] = step_id
-            normalized.append(step)
+        for step in normalized:
+            step_id = str(step["_step_id"])
             records[step_id] = self.step_records.get(step_id) or StepExecutionRecord(step_id=step_id)
         self.plan = normalized
         self.step_records = records
@@ -100,6 +117,18 @@ class AgentState:
         self.current_step_id = None
         self.step_records = {}
 
+    def reset_task_progression(self, requested_effects: Sequence[str] = ()) -> None:
+        reset_task_progression(self, requested_effects)
+
+    def record_executed_effect(self, effect: str) -> None:
+        record_executed_effect(self, effect)
+
+    def waive_effect(self, effect: str) -> None:
+        waive_effect(self, effect)
+
+    def pending_effects(self) -> tuple[str, ...]:
+        return pending_effects(self)
+
     def clear_plan(self) -> None:
         self.reset_execution()
 
@@ -107,8 +136,9 @@ class AgentState:
         prepared = cast(PlanStep, dict(step))
         step_id = str(prepared.get("_step_id") or self._new_step_id())
         prepared["_step_id"] = step_id
-        args = prepared.get("args")
-        prepared["args"] = dict(args) if isinstance(args, dict) else {}
+        if "tool" in prepared or "args" in prepared:
+            args = prepared.get("args")
+            prepared["args"] = dict(args) if isinstance(args, dict) else {}
         self.plan.insert(index, prepared)
         self.step_records[step_id] = StepExecutionRecord(step_id=step_id)
 
@@ -215,6 +245,7 @@ class AgentState:
             "memory_state": memory_state,
             "persona": self.persona,
             "persona_prompt": self.persona_prompt,
+            **progression_checkpoint(self),
         }
 
         # Round-trip via json para sanitizar tipos não serializáveis
@@ -240,6 +271,7 @@ class AgentState:
         raw_plan = data.get("plan", self.plan) or []
         self.set_plan(raw_plan if isinstance(raw_plan, list) else [])
         self.plan_step = data.get("plan_step", self.plan_step) or 0
+        restore_progression(self, dict(data))
         raw_records = data.get("step_records") or []
         if isinstance(raw_records, list):
             for raw_record in raw_records:
