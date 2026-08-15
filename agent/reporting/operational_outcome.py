@@ -5,6 +5,66 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+PUBLIC_TERMINAL_STATUSES = frozenset(
+    {
+        "succeeded",
+        "blocked",
+        "cancelled",
+        "failed",
+        "timed_out",
+        "permission_denied",
+        "protocol_error",
+        "unavailable",
+        "unverified",
+    }
+)
+_DISPOSITION_TO_STATUS = {
+    "complete": "succeeded",
+    "block": "blocked",
+    "fail": "failed",
+}
+_STATUS_TO_DISPOSITION = {
+    "succeeded": "complete",
+    "blocked": "block",
+    "failed": "fail",
+}
+
+
+def normalize_terminal_status(
+    *,
+    last_result_status: Any = None,
+    terminal_disposition: Any = None,
+    task_failed: bool = False,
+    cancelled: bool = False,
+    explicit_status: Any = None,
+) -> str:
+    """Reduce established run facts to one public terminal status.
+
+    Failure/cancellation flags are lifecycle facts and therefore outrank an
+    earlier completion disposition.  Otherwise the terminal tool result keeps
+    its existing precedence over the task disposition.
+    """
+
+    disposition = _DISPOSITION_TO_STATUS.get(str(terminal_disposition or ""))
+    if explicit_status is not None:
+        status = str(explicit_status or "")
+        if status in PUBLIC_TERMINAL_STATUSES:
+            return status
+    status = str(last_result_status or "")
+    if status in PUBLIC_TERMINAL_STATUSES and status != "succeeded":
+        return status
+    if disposition in {"blocked", "failed"}:
+        return disposition
+    if cancelled:
+        return "cancelled"
+    if task_failed:
+        return "failed"
+    if status == "succeeded":
+        return status
+    if disposition is not None:
+        return disposition
+    return "succeeded"
+
 
 @dataclass(frozen=True, slots=True)
 class OperationalOutcome:
@@ -39,7 +99,9 @@ class OperationalOutcome:
 
     def debug_projection(self) -> dict[str, Any]:
         return {
-            "status": self.terminal_status,
+            # Keep the established task_outcome event vocabulary while using
+            # the normalized status as its sole source.
+            "status": _STATUS_TO_DISPOSITION.get(self.terminal_status, self.terminal_status),
             "requested_effects": list(self.requested_effects),
             "executed_effects": list(self.executed_effects),
             "waived_effects": list(self.waived_effects),
@@ -73,7 +135,13 @@ def metadata_is_persisted_mutation(metadata: dict[str, Any]) -> bool:
     )
 
 
-def project_operational_outcome(state: Any) -> OperationalOutcome:
+def project_operational_outcome(
+    state: Any,
+    *,
+    terminal_status: str | None = None,
+    task_failed: bool = False,
+    cancelled: bool = False,
+) -> OperationalOutcome:
     files: set[str] = set()
     evidence: list[str] = []
     validation_status: str | None = None
@@ -104,14 +172,19 @@ def project_operational_outcome(state: Any) -> OperationalOutcome:
 
     last = getattr(state, "last_result", None)
     last_result = last if isinstance(last, dict) else {}
-    disposition = getattr(state, "terminal_disposition", None)
-    terminal_status = str(disposition or last_result.get("status") or "unknown")
+    normalized_status = normalize_terminal_status(
+        explicit_status=terminal_status,
+        last_result_status=last_result.get("status"),
+        terminal_disposition=getattr(state, "terminal_disposition", None),
+        task_failed=task_failed,
+        cancelled=cancelled,
+    )
     reason = last_result.get("error")
     reason_text = str(reason) if reason else None
-    blocked_reason = reason_text if terminal_status == "block" else None
-    failure_reason = reason_text if terminal_status == "fail" else None
+    blocked_reason = reason_text if normalized_status == "blocked" else None
+    failure_reason = reason_text if normalized_status == "failed" else None
     return OperationalOutcome(
-        terminal_status=terminal_status,
+        terminal_status=normalized_status,
         requested_effects=tuple(getattr(state, "requested_effects", ()) or ()),
         executed_effects=tuple(getattr(state, "executed_effects", ()) or ()),
         waived_effects=tuple(getattr(state, "waived_effects", ()) or ()),
@@ -130,5 +203,6 @@ __all__ = [
     "OperationalOutcome",
     "artifact_metadata",
     "metadata_is_persisted_mutation",
+    "normalize_terminal_status",
     "project_operational_outcome",
 ]

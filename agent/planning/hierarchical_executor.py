@@ -162,7 +162,11 @@ class HierarchicalExecutor:
         )
         try:
             outcome = (
-                project_operational_outcome(orchestrator.agent_state)
+                project_operational_outcome(
+                    orchestrator.agent_state,
+                    task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+                    cancelled=bool(getattr(orchestrator, "_cancelled", False)),
+                )
                 if orchestrator is not None
                 else None
             )

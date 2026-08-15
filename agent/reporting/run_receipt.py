@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from agent.llm.model_client import ModelProviderError
-from agent.reporting.operational_outcome import project_operational_outcome
+from agent.reporting.operational_outcome import (
+    normalize_terminal_status,
+    project_operational_outcome,
+)
 
 
 def failure_layer_for_code(code: str | None) -> str:
@@ -122,7 +125,7 @@ def build_run_receipt(
         effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
     )
     replan = {"occurred": True, "count": replan_count} if replan_count else None
-    outcome = project_operational_outcome(state)
+    outcome = project_operational_outcome(state, terminal_status=status)
     final_state = (
         "restored"
         if outcome.rollback_occurred
@@ -181,24 +184,14 @@ def build_run_diagnostics(
 
 def derive_status(orchestrator: Any) -> str:
     last_result = orchestrator.agent_state.last_result or {}
-    tool_status = str(last_result.get("status") or "")
-    if tool_status in {
-        "blocked", "unverified", "cancelled", "failed", "timed_out",
-        "permission_denied", "protocol_error", "unavailable",
-    }:
-        return tool_status
-    terminal_disposition = getattr(
-        orchestrator.agent_state, "terminal_disposition", None
+    return normalize_terminal_status(
+        last_result_status=last_result.get("status"),
+        terminal_disposition=getattr(
+            orchestrator.agent_state, "terminal_disposition", None
+        ),
+        task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+        cancelled=bool(getattr(orchestrator, "_cancelled", False)),
     )
-    if terminal_disposition == "block":
-        return "blocked"
-    if terminal_disposition == "fail":
-        return "failed"
-    if orchestrator._cancelled:
-        return "cancelled"
-    if orchestrator._task_failed:
-        return "failed"
-    return "succeeded"
 
 
 def derive_error(orchestrator: Any, status: str) -> str | None:

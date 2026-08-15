@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.application import AgentApplication
+from agent.reporting.operational_outcome import normalize_terminal_status
 from agent.reporting.run_receipt import derive_status
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.paths import REPORTS_DIR
@@ -90,6 +91,53 @@ def test_public_status_honors_canonical_terminal_disposition(
     )
 
     assert derive_status(orchestrator) == expected
+
+
+@pytest.mark.parametrize(
+    ("facts", "expected"),
+    (
+        ({"terminal_disposition": "complete", "task_failed": True}, "failed"),
+        ({"terminal_disposition": "complete", "last_result_status": "failed"}, "failed"),
+        ({"terminal_disposition": "block", "last_result_status": "failed"}, "failed"),
+        ({"terminal_disposition": "complete", "last_result_status": "succeeded"}, "succeeded"),
+        ({"terminal_disposition": "block", "last_result_status": "succeeded"}, "blocked"),
+        ({"terminal_disposition": "complete", "cancelled": True}, "cancelled"),
+    ),
+)
+def test_terminal_status_normalization_has_one_lifecycle_precedence(facts, expected) -> None:
+    assert normalize_terminal_status(**facts) == expected
+
+
+def test_post_completion_failure_projects_failed_everywhere(tmp_path) -> None:
+    state = SimpleNamespace(
+        terminal_disposition="complete",
+        last_result={"ok": True, "status": "succeeded"},
+        tool_history=[],
+        events=[],
+    )
+
+    def fail_after_completion(_objective):
+        state.terminal_disposition = "complete"
+        raise RuntimeError("cleanup failed")
+
+    app = AgentApplication.__new__(AgentApplication)
+    app._closed = False
+    app._task_attempted = False
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        run=fail_after_completion,
+        agent_state=state,
+        _cancelled=False,
+        _task_failed=False,
+        _last_failure_code=None,
+        _last_failure_layer=None,
+    )
+
+    result = app._run_locked("objective")
+
+    assert result.status == "failed"
+    assert result.receipt["status"] == "failed"
+    assert result.receipt["operational_outcome"]["terminal_status"] == "failed"
 
 
 def test_task_report_requires_canonical_outcome() -> None:

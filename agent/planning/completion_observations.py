@@ -76,7 +76,9 @@ def observation_references(orchestrator: Any) -> str:
 
 def publish_outcome(orchestrator: Any) -> None:
     projection = project_operational_outcome(
-        orchestrator.agent_state
+        orchestrator.agent_state,
+        task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+        cancelled=bool(getattr(orchestrator, "_cancelled", False)),
     ).debug_projection()
     events = orchestrator.agent_state.events
     if events:

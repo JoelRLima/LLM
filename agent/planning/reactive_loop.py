@@ -80,7 +80,11 @@ class ReactiveLoop:
         blocker = allow_linear_completion(self.orchestrator, objective)
         if blocker is not None:
             return cast(str, blocker)
-        outcome = project_operational_outcome(self.orchestrator.agent_state)
+        outcome = project_operational_outcome(
+            self.orchestrator.agent_state,
+            task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
+            cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
+        )
         return render_operational_answer(outcome) or answer
 
     def _handle_decision(

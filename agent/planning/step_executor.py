@@ -116,9 +116,6 @@ class StepExecutor:
             return self._finish_post_process_failure(index, tool, args, result)
         self.context.agent_state.mark_step_completed(index)
         self._emit_terminal("step_completed", index)
-        edit_answer = self.maybe_finish_edit(objective)
-        if edit_answer:
-            return StepExecutionOutcome(StepOutcomeKind.FINAL, result=result, final_answer=edit_answer)
         return StepExecutionOutcome(StepOutcomeKind.COMPLETED, result=result)
 
     def _finish_tool_failure(self, index: int, tool: str, args: ToolArgs, result: ToolResult) -> StepExecutionOutcome:
@@ -204,14 +201,3 @@ class StepExecutor:
         return self.policies.try_cache(
             tool, args, file_path, step_id, record_result=record_result
         )
-
-    def maybe_finish_edit(self, objective: str) -> Optional[str]:
-        terms = ("mudar", "mude", "alterar", "altere", "corrigir", "corrija", "substituir", "substitua", "editar", "edite", "ajustar", "ajuste")
-        if not any(term in objective.lower() for term in terms):
-            return None
-        changed = any(item["tool"] == "file_writer" and item.get("result", {}).get("ok") for item in self.context.agent_state.tool_history)
-        if not changed:
-            return None
-        answer = "Arquivo alterado com sucesso."
-        self.context.agent_state.add_conversation_turn(objective, answer)
-        return answer

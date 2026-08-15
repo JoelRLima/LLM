@@ -197,6 +197,29 @@ def test_plan_executor_resume_does_not_repeat_completed_step(monkeypatch):
     assert state.get_step_status(1) is StepStatus.COMPLETED
 
 
+def test_successful_write_does_not_finish_before_remaining_plan_steps(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {
+                "tool": "file_writer",
+                "args": {"file_path": "first.txt", "content": "first"},
+            },
+            {"tool": "echo", "args": {"text": "validate"}},
+        ]
+    )
+    context = _Context(state)
+    context.skills["file_writer"] = _Skill()
+    context.active_skills.append("file_writer")
+
+    answer = PlanExecutor(context).execute("alterar e validar", {})
+
+    assert answer is None
+    assert context.calls == ["first.txt", "validate"]
+    assert state.get_step_status(0) is StepStatus.COMPLETED
+    assert state.get_step_status(1) is StepStatus.COMPLETED
+
+
 def test_cancelled_step_is_not_started(monkeypatch):
     state = _state(monkeypatch)
     state.set_plan([{"tool": "echo", "args": {"text": "não executar"}}])

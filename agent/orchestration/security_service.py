@@ -100,7 +100,11 @@ class SecurityAnalysisService:
     def _final_answer(
         self, objective: str, on_chunk: Callable[[str], None] | None
     ) -> str:
-        outcome = project_operational_outcome(self.orchestrator.agent_state)
+        outcome = project_operational_outcome(
+            self.orchestrator.agent_state,
+            task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
+            cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
+        )
         return str(
             self.orchestrator.final_responder.build_final_answer(
                 objective,
