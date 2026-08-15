@@ -17,9 +17,11 @@ class ToolResult(TypedDict, total=False):
     ok: bool
     done: bool
     status: str
+    executed: Optional[bool]
     data: Any
     error: Optional[str]
     message: Optional[str]
+    artifacts: List[Any]
     total_lines: int
 
 

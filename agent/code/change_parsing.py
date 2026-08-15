@@ -41,11 +41,17 @@ def _parse_text_edit(data: Any, path: str) -> TextEdit:
     return TextEdit(operation, start_line, end_line, "" if operation == TextEditKind.DELETE else str(content), expected)
 
 
-def _prepare_edit(lines: list[str], edit: TextEdit, path: str) -> tuple[int, int, str]:
+def observed_text_for_edit(source: str, edit: TextEdit, path: str = "arquivo") -> str:
+    """Return the exact snapshot text guarded by one edit, with strict bounds."""
+
+    lines = source.splitlines(keepends=True)
     if edit.operation in {TextEditKind.REPLACE, TextEditKind.DELETE}:
         assert edit.end_line is not None
         if edit.end_line > len(lines):
-            raise ChangeConflictError(f"Faixa fora do arquivo em '{path}'.")
+            raise ChangeConflictError(
+                f"Faixa fora do arquivo: {edit.start_line}..{edit.end_line} em "
+                f"'{path}': {len(lines)} linhas disponiveis; limites 1..{len(lines)}."
+            )
         left, right = edit.start_line - 1, edit.end_line
         expected_source = "".join(lines[left:right])
     elif edit.operation == TextEditKind.INSERT_BEFORE:
@@ -58,6 +64,19 @@ def _prepare_edit(lines: list[str], edit: TextEdit, path: str) -> tuple[int, int
             raise ChangeConflictError(f"Linha de inserção fora do arquivo em '{path}'.")
         left = right = edit.start_line
         expected_source = lines[edit.start_line - 1]
+    return expected_source
+
+
+def _prepare_edit(lines: list[str], edit: TextEdit, path: str) -> tuple[int, int, str]:
+    source = "".join(lines)
+    expected_source = observed_text_for_edit(source, edit, path)
+    if edit.operation in {TextEditKind.REPLACE, TextEditKind.DELETE}:
+        assert edit.end_line is not None
+        left, right = edit.start_line - 1, edit.end_line
+    elif edit.operation == TextEditKind.INSERT_BEFORE:
+        left = right = edit.start_line - 1
+    else:
+        left = right = edit.start_line
     if edit.expected_text is not None and expected_source != edit.expected_text:
         raise ChangeConflictError(f"expected_text divergente nas linhas de '{path}'.")
     replacement = "" if edit.operation == TextEditKind.DELETE else edit.content

@@ -200,6 +200,10 @@ def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, A
     required = schema.get("required", [])
     properties = schema.get("properties", {})
     errors = _validate_required(args, required)
+    if schema.get("additionalProperties") is False:
+        unknown = sorted(str(field) for field in args if field not in properties)
+        if unknown:
+            errors.append(f"Campos não suportados: {', '.join(unknown)}")
     for field, value in args.items():
         prop = properties.get(field)
         if not prop:

@@ -19,7 +19,10 @@ class FakeGateway:
 
     def complete(self, request):
         self.calls.append(request)
-        return ModelResponse(content=self.responses.pop(0))
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return ModelResponse(content=response)
 
     def stream(self, request):
         raise NotImplementedError
@@ -34,11 +37,36 @@ class ApproveAll:
         return True
 
 
-def _service(tmp_path: Path, gateway: FakeGateway, attempts: int = 2):
+class RecordingApprover(ApproveAll):
+    requires_explicit_approval = True
+
+    def __init__(self):
+        self.calls = 0
+
+    def approve(self, preview, assessment):
+        self.calls += 1
+        return super().approve(preview, assessment)
+
+
+class RecordingMetrics:
+    def __init__(self):
+        self.entries = []
+
+    def record(self, metric):
+        self.entries.append(metric)
+
+
+def _service(
+    tmp_path: Path,
+    gateway: FakeGateway,
+    attempts: int = 2,
+    metrics_sink=None,
+):
     context = TaskExecutionContext(
         model_gateway=gateway,
         cancellation=CancellationToken(),
         limits=RuntimeLimits(max_output_tokens=512, max_repair_attempts=attempts),
+        metrics_sink=metrics_sink or RecordingMetrics(),
     )
     return CodingWorkflowService(tmp_path, context)
 
@@ -97,7 +125,245 @@ def test_generate_uses_changeset_and_real_syntax_validation(tmp_path: Path):
     assert result.artifacts[0].metadata["validation_invocation_id"]
     assert result.artifacts[0].metadata["rollback_occurred"] is False
     assert result.artifacts[0].metadata["final_state"] == "applied"
+    assert result.artifacts[0].metadata["mutation_occurred"] is True
     assert len(gateway.calls) == 1
+
+
+def test_one_line_edit_uses_inclusive_eof_range_and_applies(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    gateway = FakeGateway(
+        [
+            _changes(
+                {
+                    "path": "controle.txt",
+                    "kind": "edit",
+                    "edits": [
+                        {
+                            "operation": "replace",
+                            "start_line": 1,
+                            "end_line": 1,
+                            "content": "modificado",
+                            "expected_text": "texto inventado pelo modelo",
+                        }
+                    ],
+                }
+            )
+        ]
+    )
+
+    result = _service(tmp_path, gateway).change(
+        "Altere controle.txt para modificado", ["controle.txt"], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.UNVERIFIED
+    assert target.read_text(encoding="utf-8") == "modificado"
+    assert result.artifacts[0].metadata["mutation_occurred"] is True
+    proposal_prompt = gateway.calls[0].messages[1].content
+    assert "--- controle.txt ---" in proposal_prompt
+    assert "original" in proposal_prompt
+    assert "inclusivas e 1-based" in proposal_prompt
+    assert "end_line nunca pode exceder" in proposal_prompt
+    assert "start_line=1 e end_line=1" in proposal_prompt
+    assert "EOF+1 para replace/delete" in proposal_prompt
+    assert "runtime vincula expected_text e base_hash" in proposal_prompt
+
+
+def test_noop_changeset_is_applied_without_claiming_a_mutation(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("modificado", encoding="utf-8")
+    gateway = FakeGateway(
+        [_changes({"path": "controle.txt", "kind": "modify", "content": "modificado"})]
+    )
+
+    result = _service(tmp_path, gateway).change(
+        "Mantenha controle.txt como modificado",
+        ["controle.txt"],
+        approver=ApproveAll(),
+    )
+
+    assert result.status == TaskStatus.UNVERIFIED
+    assert target.read_text(encoding="utf-8") == "modificado"
+    assert result.artifacts[0].content == ""
+    assert result.artifacts[0].metadata["applied"] is True
+    assert result.artifacts[0].metadata["mutation_occurred"] is False
+
+
+def test_invalid_model_range_is_not_clamped_or_sent_to_approval(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    invalid = _changes(
+        {
+            "path": "controle.txt",
+            "kind": "edit",
+            "edits": [
+                {
+                    "operation": "replace",
+                    "start_line": 1,
+                    "end_line": 3,
+                    "content": "modificado",
+                }
+            ],
+        }
+    )
+    gateway = FakeGateway([invalid, invalid])
+    approver = RecordingApprover()
+    metrics = RecordingMetrics()
+
+    result = _service(tmp_path, gateway, metrics_sink=metrics).change(
+        "Altere controle.txt para modificado",
+        ["controle.txt"],
+        approver=approver,
+    )
+
+    assert result.status == TaskStatus.FAILED
+    assert "fora do arquivo" in (result.error or "")
+    assert len(gateway.calls) == 2
+    assert "Faixa fora do arquivo: 1..3" in gateway.calls[1].messages[1].content
+    assert "1 linhas disponiveis; limites 1..1" in gateway.calls[1].messages[1].content
+    assert "Traceback" not in gateway.calls[1].messages[1].content
+    assert invalid not in gateway.calls[1].messages[1].content
+    assert [item["call_number"] for item in metrics.entries] == [1, 2]
+    assert approver.calls == 0
+    assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_invalid_model_range_gets_one_bounded_retry_then_applies_valid_range(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    invalid = _changes({
+        "path": "controle.txt",
+        "kind": "edit",
+        "edits": [{
+            "operation": "replace", "start_line": 1, "end_line": 3,
+            "content": "modificado",
+        }],
+    })
+    valid = _changes({
+        "path": "controle.txt",
+        "kind": "edit",
+        "edits": [{
+            "operation": "replace", "start_line": 1, "end_line": 1,
+            "content": "modificado", "expected_text": "modelo incorreto",
+        }],
+    })
+    gateway = FakeGateway([invalid, valid])
+    approver = RecordingApprover()
+    metrics = RecordingMetrics()
+
+    result = _service(tmp_path, gateway, metrics_sink=metrics).change(
+        "Altere controle.txt para modificado",
+        ["controle.txt"],
+        approver=approver,
+    )
+
+    assert result.status == TaskStatus.UNVERIFIED
+    assert len(gateway.calls) == 2
+    assert [item["call_number"] for item in metrics.entries] == [1, 2]
+    assert approver.calls == 1
+    assert target.read_text(encoding="utf-8") == "modificado"
+
+
+def test_modify_repairs_one_malformed_structured_proposal(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    gateway = FakeGateway(
+        [
+            "{}",
+            _changes(
+                {
+                    "path": "controle.txt",
+                    "kind": "edit",
+                    "edits": [
+                        {
+                            "operation": "replace",
+                            "start_line": 1,
+                            "end_line": 1,
+                            "content": "modificado",
+                            "expected_text": "original",
+                        }
+                    ],
+                }
+            ),
+        ]
+    )
+
+    result = _service(tmp_path, gateway).change(
+        "Altere controle.txt para modificado", ["controle.txt"], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.UNVERIFIED
+    assert target.read_text(encoding="utf-8") == "modificado"
+    assert len(gateway.calls) == 2
+    assert "Não retorne {}" in gateway.calls[1].messages[1].content
+
+
+def test_modify_repairs_one_canonically_empty_proposal(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    gateway = FakeGateway(
+        [
+            '{"changes":[]}',
+            _changes(
+                {
+                    "path": "controle.txt",
+                    "kind": "edit",
+                    "edits": [
+                        {
+                            "operation": "replace",
+                            "start_line": 1,
+                            "end_line": 1,
+                            "content": "modificado",
+                            "expected_text": "original",
+                        }
+                    ],
+                }
+            ),
+        ]
+    )
+
+    result = _service(tmp_path, gateway).change(
+        "Altere controle.txt para modificado", ["controle.txt"], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.UNVERIFIED
+    assert target.read_text(encoding="utf-8") == "modificado"
+    assert len(gateway.calls) == 2
+
+
+def test_proposal_recovery_stops_after_second_invalid_response(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    gateway = FakeGateway(["{}", '{"changes":[]}'])
+
+    result = _service(tmp_path, gateway).change(
+        "Altere controle.txt para modificado", ["controle.txt"], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.FAILED
+    assert "lista não vazia" in (result.error or "")
+    assert len(gateway.calls) == 2
+    assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_second_proposal_provider_failure_is_measured_once(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_text("original", encoding="utf-8")
+    gateway = FakeGateway(["{}", RuntimeError("provider failed")])
+    metrics = RecordingMetrics()
+
+    result = _service(tmp_path, gateway, metrics_sink=metrics).change(
+        "Altere controle.txt para modificado", ["controle.txt"], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.FAILED
+    assert result.error == "provider failed"
+    assert len(gateway.calls) == 2
+    assert [(item["call_number"], item["success"]) for item in metrics.entries] == [
+        (1, True),
+        (2, False),
+    ]
+    assert target.read_text(encoding="utf-8") == "original"
 
 
 def test_code_task_blocks_high_confidence_write_without_explicit_authority(
@@ -184,6 +450,7 @@ def test_failed_validation_rolls_back_generated_file(tmp_path: Path):
     assert result.artifacts[0].metadata["validation_invocation_id"]
     assert result.artifacts[0].metadata["rollback_occurred"] is True
     assert result.artifacts[0].metadata["final_state"] == "restored"
+    assert result.artifacts[0].metadata["mutation_occurred"] is True
     assert not (tmp_path / "broken.py").exists()
 
 

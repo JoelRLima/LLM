@@ -67,6 +67,7 @@ class ChangePreview:
     change_set_id: str
     affected_files: tuple[str, ...]
     diff: str
+    mutation_occurred: bool = False
 
 
 class ChangeSetError(RuntimeError):

@@ -79,6 +79,7 @@ def _artifact(
         "confidence": assessment.confidence,
         "confidence_reasons": assessment.reasons,
         "requires_confirmation": assessment.requires_confirmation,
+        "mutation_occurred": preview.mutation_occurred,
         "applied": applied,
         "rollback_occurred": rollback_occurred,
     }

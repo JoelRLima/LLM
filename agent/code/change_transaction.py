@@ -7,7 +7,7 @@ import os
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from agent.code.change_models import (
     ChangeConflictError,
@@ -38,7 +38,7 @@ class ChangeSetTransaction:
 
     def _resolve(self, relative: str) -> Path:
         try:
-            return resolve_workspace_path(self.root, relative)
+            return cast(Path, resolve_workspace_path(self.root, relative))
         except ValueError as exc:
             raise ChangeSetError(f"Caminho fora do projeto: {relative}") from exc
 
@@ -114,6 +114,7 @@ class ChangeSetTransaction:
         affected: list[str] = []
         reserved: Dict[Path, str] = {}
         backup_size = 0
+        mutation_occurred = False
         for change in self.change_set.changes:
             path = self._resolve(change.path)
             self._reserve(path, change.path, reserved)
@@ -125,11 +126,21 @@ class ChangeSetTransaction:
             affected.append(change.path)
             if change.kind == ChangeKind.MOVE:
                 self._stage_move(change, reserved, affected)
+                mutation_occurred = True
                 continue
             before_source, after_source = self._stage_content(change, path, before)
             diffs.extend(self._diff(change, before_source, after_source))
+            if change.kind in {ChangeKind.CREATE, ChangeKind.DELETE}:
+                mutation_occurred = True
+            elif self._staged_content[path] != before:
+                mutation_occurred = True
         self.change_set = replace(self.change_set, state=ChangeSetState.STAGED)
-        self._preview = ChangePreview(self.change_set.change_set_id, tuple(affected), "".join(diffs))
+        self._preview = ChangePreview(
+            self.change_set.change_set_id,
+            tuple(affected),
+            "".join(diffs),
+            mutation_occurred,
+        )
         return self._preview
 
     def _atomic_write(self, path: Path, content: bytes) -> None:

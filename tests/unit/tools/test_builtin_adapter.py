@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from agent.planning.planning_context import validate_planning_tool_arguments
 from agent.skills import load_skill_registry
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.contracts import ToolInvocation, ToolStatus
@@ -16,6 +17,39 @@ def test_builtin_adapter_descriptors(tmp_path: Path) -> None:
     assert "file_reader" in names
 
 
+def test_code_task_descriptor_is_canonical_and_rejects_writer_arguments(
+    tmp_path: Path,
+) -> None:
+    descriptor = next(
+        item
+        for item in BuiltinToolAdapter(
+            load_skill_registry(base_dir=tmp_path)
+        ).descriptors()
+        if item.name == "code_task"
+    )
+
+    assert descriptor.schema["type"] == "object"
+    assert descriptor.schema["required"] == ["action"]
+    assert descriptor.schema["additionalProperties"] is False
+    validate_planning_tool_arguments(
+        descriptor,
+        {
+            "action": "modify",
+            "objective": "alterar",
+            "targets": ["controle.txt"],
+        },
+    )
+    try:
+        validate_planning_tool_arguments(
+            descriptor,
+            {"action": "modify", "target": "controle.txt", "content": "novo"},
+        )
+    except ValueError as exc:
+        assert "unknown argument" in str(exc)
+    else:
+        raise AssertionError("writer arguments must not validate as code_task")
+
+
 def test_builtin_adapter_invoke_success(tmp_path: Path) -> None:
     skill_registry = load_skill_registry(base_dir=tmp_path)
     adapter = BuiltinToolAdapter(skill_registry)
@@ -26,6 +60,24 @@ def test_builtin_adapter_invoke_success(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.status == ToolStatus.SUCCEEDED
     assert result.data == "hello world"
+
+
+def test_file_reader_adapter_marks_only_integral_text_as_complete(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "small.txt").write_text("original", encoding="utf-8")
+    (tmp_path / "large.txt").write_text("x" * 25_000, encoding="utf-8")
+    adapter = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path))
+
+    complete = adapter.invoke(
+        ToolInvocation(tool_name="file_reader", args={"file_path": "small.txt"})
+    )
+    summarized = adapter.invoke(
+        ToolInvocation(tool_name="file_reader", args={"file_path": "large.txt"})
+    )
+
+    assert complete.artifacts[0]["metadata"]["complete"] is True
+    assert summarized.artifacts[0]["metadata"]["complete"] is False
 
 
 

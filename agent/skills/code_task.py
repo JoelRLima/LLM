@@ -82,29 +82,50 @@ class CodeTaskSkill(BaseSkill):
 
     def get_schema(self) -> dict:
         return {
-            "action": {
-                "type": "string",
-                "enum": [
-                    "analyze",
-                    "review",
-                    "generate",
-                    "modify",
-                    "repair",
-                    "refactor",
-                    "multitask",
-                    "template",
-                ],
-                "description": "Caso de uso de engenharia de código.",
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "analyze",
+                        "review",
+                        "generate",
+                        "modify",
+                        "repair",
+                        "refactor",
+                        "multitask",
+                        "template",
+                    ],
+                    "description": "Caso de uso de engenharia de código.",
+                },
+                "objective": {
+                    "type": "string",
+                    "description": "Objetivo da mudança ou análise.",
+                },
+                "targets": {
+                    "type": "array",
+                    "description": "Arquivos relevantes ao objetivo.",
+                },
+                "include_tests": {
+                    "type": "boolean",
+                    "description": "Executa testes descobertos além de sintaxe.",
+                },
+                "graph": {
+                    "type": "object",
+                    "description": "TaskGraph usado pela ação multitask.",
+                },
+                "template": {
+                    "type": "string",
+                    "enum": [
+                        "parallel_analyze",
+                        "parallel_review",
+                        "analyze_then_modify",
+                    ],
+                    "description": "Template determinístico, sem planejamento por LLM.",
+                },
             },
-            "objective": {"type": "string", "description": "Objetivo da mudança ou análise."},
-            "targets": {"type": "array", "description": "Arquivos relevantes ao objetivo."},
-            "include_tests": {"type": "boolean", "description": "Executa testes descobertos além de sintaxe."},
-            "graph": {"type": "object", "description": "TaskGraph usado pela ação multitask."},
-            "template": {
-                "type": "string",
-                "enum": ["parallel_analyze", "parallel_review", "analyze_then_modify"],
-                "description": "Template determinístico, sem planejamento por LLM.",
-            },
+            "required": ["action"],
+            "additionalProperties": False,
         }
 
     @staticmethod

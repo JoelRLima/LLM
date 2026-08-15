@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Sequence
+from typing import Dict, Sequence, cast
 
+from agent.code.context_excerpt import excerpt_from_source
 from agent.code.contracts import CodeAnalysis, RepositoryIndex
 from agent.code.intelligence import CodeIntelligenceService
 from agent.code.path_safety import resolve_workspace_path
@@ -40,6 +41,8 @@ class SelectedFile:
     score: int
     reasons: tuple[str, ...]
     content_hash: str
+    observed_text: str = field(repr=False)
+    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,11 +121,14 @@ class ContextSelector:
         return contained
 
     def _read_bytes(self, path: str) -> bytes:
-        return resolve_workspace_path(
-            self.root,
-            path,
-            require_file=True,
-        ).read_bytes()
+        return cast(
+            bytes,
+            resolve_workspace_path(
+                self.root,
+                path,
+                require_file=True,
+            ).read_bytes(),
+        )
 
     @staticmethod
     def _add_score(
@@ -198,7 +204,7 @@ class ContextSelector:
     def _read_excerpt(
         self,
         path: str,
-        analysis: CodeAnalysis,
+        analysis: CodeAnalysis | None,
         terms: frozenset[str],
         max_chars: int,
     ) -> tuple[str, bool]:
@@ -206,24 +212,7 @@ class ContextSelector:
         # Assim, expected_text produzido a partir deste contexto também é uma
         # precondição válida no Windows.
         source = self._read_bytes(path).decode("utf-8", errors="replace")
-        if len(source) <= max_chars:
-            return source, False
-        lines = source.splitlines(keepends=True)
-        ranges: list[tuple[int, int]] = [(0, min(len(lines), 40))]
-        for symbol in analysis.symbols:
-            if symbol.name.casefold() in terms or symbol.qualified_name.casefold() in terms:
-                ranges.append((max(0, symbol.start_line - 4), min(len(lines), symbol.end_line + 3)))
-        selected: list[str] = []
-        seen: set[int] = set()
-        for start, end in ranges:
-            for index in range(start, end):
-                if index in seen:
-                    continue
-                seen.add(index)
-                selected.append(f"{index + 1:>5}: {lines[index]}")
-                if sum(len(item) for item in selected) >= max_chars:
-                    return "".join(selected)[:max_chars], True
-        return "".join(selected)[:max_chars], True
+        return excerpt_from_source(source, analysis, terms, max_chars)
 
     def select(
         self,
@@ -234,6 +223,16 @@ class ContextSelector:
         index = self.intelligence.index_repository()
         scores, reasons = self._score(objective, explicit_targets, index)
         by_path = self._contained_by_path(index)
+        explicit_paths: set[str] = set()
+        for target in explicit_targets:
+            try:
+                resolved = resolve_workspace_path(self.root, target, require_file=True)
+                relative = resolved.relative_to(self.root).as_posix()
+            except (OSError, ValueError):
+                continue
+            explicit_paths.add(relative)
+            if relative not in scores:
+                self._add_score(scores, reasons, relative, 100, "target explícito")
         ranked = sorted(scores, key=lambda path: (-scores[path], path))[: self.max_files]
         terms = self._terms(objective)
         chunks: list[str] = []
@@ -242,17 +241,19 @@ class ContextSelector:
         remaining = max(1000, max_chars)
         for position, path in enumerate(ranked):
             analysis = by_path.get(path)
-            if analysis is None:
+            if analysis is None and path not in explicit_paths:
                 continue
             try:
                 per_file = max(800, remaining // max(1, len(ranked) - position))
-                excerpt, file_truncated = self._read_excerpt(
-                    path,
+                observed_bytes = self._read_bytes(path)
+                observed_text = observed_bytes.decode("utf-8", errors="replace")
+                excerpt, file_truncated = excerpt_from_source(
+                    observed_text,
                     analysis,
                     terms,
                     per_file,
                 )
-                digest = hashlib.sha256(self._read_bytes(path)).hexdigest()
+                digest = hashlib.sha256(observed_bytes).hexdigest()
             except (OSError, ValueError):
                 continue
             reason_values = tuple(sorted(reasons.get(path, {"seleção determinística"})))
@@ -269,7 +270,7 @@ class ContextSelector:
             remaining -= len(chunk)
             truncated = truncated or file_truncated
             selected_files.append(
-                SelectedFile(path, scores[path], reason_values, digest)
+                SelectedFile(path, scores[path], reason_values, digest, observed_text, file_truncated)
             )
             if remaining <= 0:
                 truncated = True

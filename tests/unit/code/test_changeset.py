@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from agent.code.change_models import TextEdit, TextEditKind
+from agent.code.change_parsing import apply_text_edits
 from agent.code.changes import (
     ChangeConflictError,
     ChangeKind,
@@ -53,6 +55,28 @@ def test_changeset_applies_multiple_files_and_can_rollback(tmp_path: Path):
     transaction.rollback()
     assert (tmp_path / "existing.py").read_text(encoding="utf-8") == original
     assert not (tmp_path / "created.py").exists()
+
+
+def test_changeset_preview_distinguishes_noop_from_actual_mutation(tmp_path: Path):
+    (tmp_path / "same.txt").write_text("modificado", encoding="utf-8")
+    noop = ChangeSetTransaction(
+        tmp_path,
+        ChangeSet(
+            objective="manter",
+            changes=(FileChange("same.txt", ChangeKind.MODIFY, "modificado"),),
+        ),
+    ).prepare()
+    changed = ChangeSetTransaction(
+        tmp_path,
+        ChangeSet(
+            objective="alterar",
+            changes=(FileChange("same.txt", ChangeKind.MODIFY, "novo"),),
+        ),
+    ).prepare()
+
+    assert noop.diff == ""
+    assert noop.mutation_occurred is False
+    assert changed.mutation_occurred is True
 
 
 def test_changeset_rejects_stale_hash_and_path_escape(tmp_path: Path):
@@ -190,6 +214,21 @@ def test_structured_edit_rejects_stale_anchor(tmp_path: Path):
 
     with pytest.raises(ChangeConflictError, match="expected_text"):
         ChangeSetTransaction(tmp_path, change_set).prepare()
+
+
+def test_one_line_edit_accepts_line_one_but_preserves_range_bounds():
+    assert apply_text_edits(
+        "original",
+        (TextEdit(TextEditKind.REPLACE, 1, 1, "modificado", "original"),),
+        "controle.txt",
+    ) == "modificado"
+
+    with pytest.raises(ChangeConflictError, match="Faixa fora do arquivo"):
+        apply_text_edits(
+            "original",
+            (TextEdit(TextEditKind.REPLACE, 1, 2, "modificado"),),
+            "controle.txt",
+        )
 
 
 def test_commit_rechecks_snapshot_without_overwriting_external_change(tmp_path: Path):

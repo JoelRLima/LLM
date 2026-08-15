@@ -120,6 +120,11 @@ class BuiltinToolAdapter(ToolAdapter):
                 status=ToolStatus.SUCCEEDED,
                 data=data,
                 message=message_text,
+                artifacts=self._observation_artifacts(
+                    invocation.tool_name,
+                    raw_result,
+                    data,
+                ),
             )
 
         return ToolResult(
@@ -131,4 +136,26 @@ class BuiltinToolAdapter(ToolAdapter):
                 message=str(error_text or message_text or "Falha na execução da ferramenta."),
             ),
             message=message_text,
+        )
+
+    @staticmethod
+    def _observation_artifacts(
+        tool_name: str,
+        raw_result: dict[str, object],
+        data: object,
+    ) -> tuple[object, ...]:
+        if tool_name != "file_reader" or not isinstance(data, str):
+            return ()
+        total_chars = raw_result.get("total_chars")
+        if type(total_chars) is not int or total_chars < 0:
+            return ()
+        return (
+            {
+                "kind": "text_observation",
+                "metadata": {
+                    "complete": len(data) == total_chars,
+                    "output_chars": len(data),
+                    "total_chars": total_chars,
+                },
+            },
         )

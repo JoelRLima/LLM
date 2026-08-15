@@ -57,6 +57,23 @@ def test_context_selection_expands_explicit_directory(tmp_path: Path):
     assert {item.path for item in root_selected.files} == {"pkg/a.py", "pkg/b.py"}
 
 
+def test_context_selection_preserves_explicit_non_code_target(tmp_path: Path):
+    target = tmp_path / "controle.txt"
+    target.write_bytes(b"original")
+    selector = ContextSelector(tmp_path, CodeIntelligenceService(tmp_path))
+
+    selected = selector.select(
+        'Altere controle.txt para que contenha apenas "modificado".',
+        ["controle.txt"],
+    )
+
+    assert [item.path for item in selected.files] == ["controle.txt"]
+    assert "--- controle.txt ---" in selected.text
+    assert selected.text.endswith("original")
+    assert selected.files[0].observed_text == "original"
+    assert selected.files[0].truncated is False
+
+
 def test_context_selection_rejects_untrusted_index_path_outside_workspace(
     tmp_path: Path,
 ) -> None:
