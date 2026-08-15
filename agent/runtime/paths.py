@@ -220,6 +220,11 @@ class AppPaths:
         return self.state_dir / "health_report.json"
 
     @property
+    def last_workspace_file(self) -> Path:
+        """Last successfully opened workspace for the interactive launcher."""
+        return self.state_dir / "last_workspace.json"
+
+    @property
     def extensions_dir(self) -> Path:
         return self.data_dir / "extensions"
 

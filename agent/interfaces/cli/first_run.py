@@ -72,9 +72,14 @@ def prepare_chat_workspace(args: argparse.Namespace, *, console: Any, app_paths:
         ConfigRepository(app_paths, config_path=config_path).load()
     except (ConfigError, ConfigNotFound, OSError, ValueError):
         return
-    from agent.interfaces.cli.workspace_entry import choose_workspace
+    from agent.interfaces.cli.workspace_entry import choose_workspace, load_last_workspace
 
-    args.workspace = str(choose_workspace(console=console))
+    args.workspace = str(
+        choose_workspace(
+            console=console,
+            last_workspace=load_last_workspace(app_paths),
+        )
+    )
 
 
 __all__ = [

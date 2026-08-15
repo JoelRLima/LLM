@@ -12,13 +12,11 @@ from rich.console import Console
 
 from agent.interfaces.cli import first_run
 from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.cli.workspace_entry import argument_workspace, render_active_workspace
+from agent.interfaces.cli.workspace_entry import argument_workspace, remember_workspace, render_active_workspace
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 
 console = Console()
 NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
-
-
 def obter_status_think(session: Any) -> str:
     if session.thinking_budget > 0:
         level = NIVEIS_THINKING.get(session.thinking_budget, "?")
@@ -98,10 +96,11 @@ def _create_application(args: argparse.Namespace, *, configure_logging: bool) ->
 
 def _run_chat(args: argparse.Namespace) -> int:
     first_run.prepare_chat_workspace(args, console=console, app_paths=_app_paths(args))
+    interactive = first_run.is_interactive_terminal()
     try:
         application = _create_application(args, configure_logging=True)
     except ConfigNotFound:
-        if _value(args, "config") is None and first_run.is_interactive_terminal():
+        if _value(args, "config") is None and interactive:
             return first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args))
         raise
     try:
@@ -109,14 +108,13 @@ def _run_chat(args: argparse.Namespace) -> int:
             application,
             config_path=_value(args, "config"),
         )
-        if first_run.is_interactive_terminal():
+        if interactive:
+            remember_workspace(application.paths, context.workspace.root)
             render_active_workspace(console, context.workspace, show_mode_hint=True)
         _chat_loop(context)
     finally:
         application.close()
     return 0
-
-
 def _print_json(document: Any) -> None:
     print(json.dumps(document, ensure_ascii=False, sort_keys=True))
 

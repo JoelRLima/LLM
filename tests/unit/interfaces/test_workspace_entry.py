@@ -6,7 +6,12 @@ import pytest
 from agent.interfaces.cli import app as cli
 from agent.interfaces.cli import command_handlers, workspace_entry
 from agent.interfaces.cli.commands import handle_command
-from agent.interfaces.cli.workspace_entry import canonical_workspace, choose_workspace
+from agent.interfaces.cli.workspace_entry import (
+    canonical_workspace,
+    choose_workspace,
+    load_last_workspace,
+    remember_workspace,
+)
 from agent.runtime.config_errors import ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -40,6 +45,59 @@ def test_choose_workspace_current_directory_is_canonical(tmp_path: Path) -> None
 
     assert selected == tmp_path.resolve()
     assert "Workspace:" in "\n".join(console.output)
+
+
+def test_choose_workspace_can_reopen_last_workspace_with_spaces_and_unicode(
+    tmp_path: Path,
+) -> None:
+    current = tmp_path / "current"
+    last = tmp_path / "Pasta com espaços – projeto"
+    current.mkdir()
+    last.mkdir()
+    console = _Console("1")
+
+    selected = choose_workspace(console=console, current=current, last_workspace=last)
+
+    assert selected == last.resolve()
+    rendered = "\n".join(console.output)
+    assert "Reabrir último diretório" in rendered
+    assert str(last.resolve()) in rendered
+
+
+def test_last_workspace_state_round_trip_and_stale_state_fails_closed(
+    tmp_path: Path,
+) -> None:
+    app_paths = AppPaths.discover(app_home=tmp_path / "app")
+    last = tmp_path / "last"
+    last.mkdir()
+
+    remember_workspace(app_paths, last)
+
+    assert load_last_workspace(app_paths) == last.resolve()
+    app_paths.last_workspace_file.write_text(
+        '{"schema_version": 1, "workspace": "missing"}\n',
+        encoding="utf-8",
+    )
+    assert load_last_workspace(app_paths) is None
+
+
+def test_stale_last_workspace_does_not_remove_normal_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = tmp_path / "current"
+    current.mkdir()
+    monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
+    console = _Console("1")
+
+    selected = choose_workspace(
+        console=console,
+        current=current,
+        last_workspace=tmp_path / "gone",
+    )
+
+    assert selected == current.resolve()
+    assert "Reabrir último diretório" not in "\n".join(console.output)
 
 
 def test_choose_workspace_reprompts_invalid_path_then_accepts_other(
@@ -161,6 +219,40 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     rendered = "\n".join(output.output)
     assert rendered.count("Workspace ativo") == 1
     assert str(canonical_root.resolve()) in rendered
+
+
+def test_chat_tty_reopens_persisted_last_workspace_and_records_active_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_home = tmp_path / "app-home"
+    app_paths = AppPaths.discover(app_home=app_home)
+    ConfigRepository(app_paths).initialize()
+    last = tmp_path / "Pasta com espaços – projeto"
+    last.mkdir()
+    remember_workspace(app_paths, last)
+    application = SimpleNamespace(
+        session=SimpleNamespace(config={}),
+        orchestrator=SimpleNamespace(),
+        config={},
+        paths=app_paths,
+        workspace=SimpleNamespace(root=last.resolve()),
+        workspace_paths=SimpleNamespace(),
+        close=lambda: None,
+    )
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    output = _Console("1")
+    monkeypatch.setattr(cli, "console", output)
+    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: application)
+    monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
+    monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
+
+    assert cli.main(["chat", "--home", str(app_home)]) == 0
+
+    rendered = "\n".join(output.output)
+    assert "Reabrir último diretório" in rendered
+    assert Path(application.workspace.root) == last.resolve()
+    assert load_last_workspace(app_paths) == last.resolve()
 
 
 def test_chat_explicit_workspace_bypasses_chooser(

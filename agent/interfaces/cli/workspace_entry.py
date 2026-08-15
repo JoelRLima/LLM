@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +24,59 @@ def canonical_workspace(path: str | Path) -> Path:
     """Resolve and validate one user-selected workspace."""
 
     return cast(Path, WorkspaceContext.create(path).root)
+
+
+def load_last_workspace(app_paths: Any) -> Path | None:
+    """Load the optional last workspace, failing closed for stale state."""
+
+    path = getattr(app_paths, "last_workspace_file", None)
+    if path is None:
+        return None
+    path = Path(path)
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        candidate = payload.get("workspace") if isinstance(payload, dict) else None
+        if not isinstance(candidate, str) or not candidate.strip():
+            return None
+        return canonical_workspace(candidate)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def remember_workspace(app_paths: Any, workspace: str | Path) -> None:
+    """Persist one successfully opened workspace without affecting startup."""
+
+    path = getattr(app_paths, "last_workspace_file", None)
+    if path is None:
+        return
+    try:
+        root = canonical_workspace(workspace)
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(
+                    {"schema_version": 1, "workspace": str(root)},
+                    handle,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+    except (OSError, TypeError, ValueError):
+        # The optional convenience must never make a valid startup fail.
+        return
 
 
 def render_active_workspace(
@@ -105,34 +160,71 @@ def _choose_manual_workspace(console: Any) -> Path | None:
         return None
 
 
-def choose_workspace(*, console: Any, current: str | Path | None = None) -> Path:
+def _render_workspace_menu(
+    console: Any,
+    current_path: Path,
+    last_path: Path | None,
+    picker_available: bool,
+) -> tuple[str | None, str, str | None, str]:
+    offset = 1 if last_path is not None else 0
+    console.print("\n[bold]LLM Agent[/bold]")
+    console.print("Workspace:")
+    if last_path is not None:
+        console.print(f"[1] Reabrir último diretório\n    {last_path}")
+        console.print(f"[2] Usar a pasta atual\n    {current_path}")
+    else:
+        console.print(f"[1] Usar a pasta atual\n    {current_path}")
+    if picker_available:
+        console.print(f"[{2 + offset}] Procurar pasta...")
+        console.print(f"[{3 + offset}] Informar caminho manualmente")
+    else:
+        console.print(f"[{2 + offset}] Informar caminho manualmente")
+    return (
+        "1" if last_path is not None else None,
+        "2" if last_path is not None else "1",
+        str(2 + offset) if picker_available else None,
+        str((3 if picker_available else 2) + offset),
+    )
+
+
+def _invalid_workspace_choice(console: Any, picker_available: bool) -> None:
+    message = "Escolha 1, 2 ou 3." if picker_available else "Escolha 1 ou 2."
+    console.print(f"[yellow]{message}[/yellow]")
+
+
+def choose_workspace(
+    *,
+    console: Any,
+    current: str | Path | None = None,
+    last_workspace: str | Path | None = None,
+) -> Path:
     """Choose a workspace without creating directories or changing cwd."""
 
     current_path = canonical_workspace(current or Path.cwd())
+    last_path: Path | None = None
+    if last_workspace is not None:
+        try:
+            last_path = canonical_workspace(last_workspace)
+        except (FileNotFoundError, NotADirectoryError, PermissionError, ValueError):
+            last_path = None
     picker_available = native_picker_available()
     while True:
-        console.print("\n[bold]LLM Agent[/bold]")
-        console.print("Workspace:")
-        console.print(f"[1] Usar a pasta atual\n    {current_path}")
-        if picker_available:
-            console.print("[2] Procurar pasta...")
-            console.print("[3] Informar caminho manualmente")
-        else:
-            console.print("[2] Informar caminho manualmente")
+        last_choice, current_choice, native_choice, manual_choice = _render_workspace_menu(
+            console, current_path, last_path, picker_available
+        )
         choice = console.input("> ").strip()
-        if choice in {"", "1"}:
+        if last_choice is not None and choice == last_choice:
+            assert last_path is not None
+            return last_path
+        if choice in {"", current_choice}:
             return current_path
-        manual_choice = "3" if picker_available else "2"
-        if picker_available and choice == "2":
+        if native_choice is not None and choice == native_choice:
             selected = _choose_native_workspace(console)
             if selected is not None:
                 return selected
             continue
         if choice != manual_choice:
-            console.print(
-                "[yellow]Escolha 1, 2 ou 3.[/yellow]" if picker_available
-                else "[yellow]Escolha 1 ou 2.[/yellow]"
-            )
+            _invalid_workspace_choice(console, picker_available)
             continue
         selected = _choose_manual_workspace(console)
         if selected is not None:
@@ -145,6 +237,8 @@ __all__ = [
     "canonical_workspace",
     "choose_directory_native",
     "choose_workspace",
+    "load_last_workspace",
     "native_picker_available",
+    "remember_workspace",
     "render_active_workspace",
 ]
