@@ -155,6 +155,7 @@ class FinalResponder:
             max(200, MAX_TOOL_RESULTS_SUMMARY_CHARS // len(history)),
         )
         chunks: list[str] = []
+        prefix_lengths: list[int] = []
         for entry in history:
             tool_name = re.sub(
                 r"[^A-Za-z0-9_.-]", "?", str(entry.get("tool", ""))
@@ -188,23 +189,57 @@ class FinalResponder:
             ok = raw_ok if type(raw_ok) is bool else None
             raw_executed = result.get("executed")
             executed = raw_executed if type(raw_executed) is bool else None
+            data_present = "data" in result
+            data_value = result.get("data")
+            data_chars = 0 if isinstance(data_value, str) and not data_value else None
+            data_complete = None
+            artifacts = result.get("artifacts")
+            if isinstance(artifacts, (list, tuple)):
+                for artifact in artifacts:
+                    artifact_metadata = (
+                        artifact.get("metadata") if isinstance(artifact, dict) else None
+                    )
+                    if (
+                        isinstance(artifact_metadata, dict)
+                        and type(artifact_metadata.get("complete")) is bool
+                    ):
+                        data_complete = artifact_metadata["complete"]
+                        break
+            metadata_values: dict[str, Any] = {
+                "tool": tool_name,
+                "status": status,
+                "ok": ok,
+                "executed": executed,
+                "error_code": error_code,
+            }
+            if not data_present or not data_value:
+                metadata_values["data_present"] = data_present
+            if data_chars is not None:
+                metadata_values["data_chars"] = data_chars
+            if data_complete is not None:
+                metadata_values["data_complete"] = data_complete
             metadata = json.dumps(
-                {
-                    "tool": tool_name,
-                    "status": status,
-                    "ok": ok,
-                    "executed": executed,
-                    "error_code": error_code,
-                },
+                metadata_values,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
             prefix = f"\n\n--- Resultado de ferramenta ---\n{metadata}\nobservação: "
+            prefix_lengths.append(len(prefix))
             available = max(0, per_result_budget - len(prefix))
             if len(observation) > available:
                 marker = "…<truncado>"
                 observation = observation[: max(0, available - len(marker))] + marker
             chunks.append(prefix + observation)
+        total = sum(len(chunk) for chunk in chunks)
+        overflow = max(0, total - MAX_TOOL_RESULTS_SUMMARY_CHARS)
+        for index in range(len(chunks) - 1, -1, -1):
+            if overflow <= 0:
+                break
+            removable = max(0, len(chunks[index]) - prefix_lengths[index])
+            remove = min(overflow, removable)
+            if remove:
+                chunks[index] = chunks[index][:-remove]
+                overflow -= remove
         return "".join(chunks)
 
     def _build_prompt(self, objective: str, notes_content: str) -> str:
@@ -220,6 +255,8 @@ class FinalResponder:
                 f"Objetivo: {objective}\n\n"
                 "Resultados das ferramentas executadas:\n"
                 f"{self._tool_results_summary()}\n\n"
+                "Quando data_present=true e data_chars=0, o texto foi observado e esta vazio; "
+                "isso difere de data_present=false ou de um resultado com erro. "
                 "Responda ao objetivo do usuário com base nesses resultados. "
                 "Não use ferramentas. Apenas texto. "
                 "Use somente fatos suportados pelas observações explícitas acima. "

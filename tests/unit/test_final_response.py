@@ -196,6 +196,8 @@ def test_tool_summary_preserves_positive_and_failed_observations() -> None:
     assert '"status":"failed"' in summary
     assert '"executed":true' in summary
     assert '"error_code":"TOOL_ERROR"' in summary
+    assert '"data_present":true' in summary
+    assert '"data_chars":0' in summary
     assert "acesso negado" not in summary
     assert 'observação: ""' in summary
 
@@ -234,6 +236,44 @@ def test_tool_summary_distinguishes_missing_data_from_none() -> None:
 
     assert "observação: <data ausente>" in summary
     assert "observação: null" in summary
+
+
+def test_two_successful_empty_reads_are_explicit_model_observations() -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "file_reader",
+                "args": {"file_path": "a.txt"},
+                "result": {
+                    "ok": True,
+                    "status": "succeeded",
+                    "data": "",
+                    "artifacts": [{"metadata": {"complete": True}}],
+                },
+            },
+            {
+                "tool": "file_reader",
+                "args": {"file_path": "b.txt"},
+                "result": {
+                    "ok": True,
+                    "status": "succeeded",
+                    "data": "",
+                    "artifacts": [{"metadata": {"complete": True}}],
+                },
+            },
+        ]
+    )
+
+    responder = FinalResponder(SimpleNamespace(agent_state=state))
+    summary = responder._tool_results_summary()
+    prompt = responder._build_prompt("compare a.txt and b.txt", "")
+
+    assert summary.count('"status":"succeeded"') == 2
+    assert summary.count('"data_present":true') == 2
+    assert summary.count('"data_chars":0') == 2
+    assert summary.count('"data_complete":true') == 2
+    assert "data_present=true" in prompt
+    assert "data_chars=0" in prompt
 
 
 def test_tool_summary_preserves_multiple_results_in_order() -> None:
