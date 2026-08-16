@@ -85,9 +85,11 @@ def _run_queued_task(
             "waived": list(state.waived_effects),
             "pending": list(state.pending_effects()),
             "continuations": state.continuation_attempts,
+            "reasoning_turns": state.reasoning_turns_used,
             "terminal": state.terminal_disposition,
             "plan": [dict(step) for step in state.plan],
             "step_statuses": [state.get_step_status(index).value for index in range(len(state.plan))],
+            "history_entries": [dict(entry) for entry in state.tool_history],
         }
     return result, gateway, workspace, history, progression
 
@@ -110,6 +112,134 @@ def _manual_deferred_plan() -> list[dict[str, object]]:
             "on_false": {"waive_effect": "write"},
         },
     ]
+
+
+def test_result_binding_executes_exact_observed_value_without_replanning(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e procure nos arquivos do workspace pela palavra que ele contém.",
+        [
+            '{"persona":"coder"}',
+                '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"grep","args":{"path":"."},"bindings":{"pattern":{"from_step":1,"path":[]}}}]}',
+            "A busca encontrou a palavra observada.",
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader", "grep"]
+    grep_entry = next(entry for entry in progression["history_entries"] if entry["tool"] == "grep")
+    assert grep_entry["args"]["pattern"] == "modificado"
+    assert "bindings" not in grep_entry["args"]
+    assert len(gateway.payloads) == 3
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert progression["continuations"] == 0
+
+
+def test_invalid_provenance_gets_same_tool_binding_repair_and_executes(tmp_path: Path) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "workspace marker",
+        "Leia fonte_h2.txt e procure nos outros arquivos do workspace pela palavra que ele contém.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"fonte_h2.txt"}},{"tool":"grep","args":{"path":".","pattern":"${1.text}","recursive":true,"max_results":20}}]}',
+            '{"tool":"grep","args":{"path":".","recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}',
+            "A busca foi executada com a palavra observada.",
+        ],
+        extra_files={"fonte_h2.txt": "orion_584271", "other.txt": "orion_584271"},
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader", "grep"]
+    grep_entry = next(entry for entry in progression["history_entries"] if entry["tool"] == "grep")
+    assert grep_entry["args"]["pattern"] == "orion_584271"
+    assert len(gateway.payloads) == 4
+    assert "binding syntax" in gateway.payloads[1]["messages"][-1]["content"]
+    assert "CONSTRAINED VALIDATION REPAIR" in gateway.payloads[2]["messages"][-1]["content"]
+    assert "${...}" in gateway.payloads[2]["messages"][-1]["content"]
+    assert workspace.joinpath("fonte_h2.txt").read_text(encoding="utf-8") == "orion_584271"
+
+
+def test_parallel_read_batch_prepares_bound_consumer_after_producer(tmp_path: Path) -> None:
+    result, gateway, _workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e outro.txt e procure a palavra observada.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"file_reader","args":{"file_path":"outro.txt"}},{"tool":"grep","args":{"path":"."},"bindings":{"pattern":{"from_step":1,"path":[]}}}]}',
+            "A busca usou o valor observado.",
+        ],
+        extra_files={"outro.txt": "independente"},
+    )
+
+    assert result.status == "succeeded"
+    assert history.count("file_reader") == 2
+    assert history[-1] == "grep"
+    grep_entry = progression["history_entries"][-1]
+    assert grep_entry["tool"] == "grep"
+    assert grep_entry["args"]["pattern"] == "modificado"
+    assert "bindings" not in grep_entry["args"]
+    assert len(gateway.payloads) == 3
+
+
+def test_bound_path_keeps_confinement_on_consumer_dispatch(tmp_path: Path) -> None:
+    result, _gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e use o resultado para continuar.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"echo","args":{"message":"../outside.txt"}},{"tool":"directory_lister","args":{"path":"."}},{"tool":"file_reader","args":{},"bindings":{"file_path":{"from_step":1,"path":[]}}}]}',
+        ],
+    )
+
+    assert result.status == "failed"
+    assert history[-1] == "file_reader"
+    assert progression["history_entries"][-1]["args"]["file_path"] == "../outside.txt"
+    assert "outside.txt" not in {path.name for path in workspace.parent.iterdir()}
+
+
+def test_reasoning_boundary_continues_once_after_prefix_exhaustion(tmp_path: Path) -> None:
+    result, gateway, _workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e decida semanticamente se há uma ação adicional necessária.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"continue_after_plan","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"a observação basta"}',
+            "A observação foi suficiente; nenhuma ação adicional foi executada.",
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader"]
+    assert progression["reasoning_turns"] == 1
+    assert len(gateway.payloads) == 4
+    assert progression["terminal"] == "complete"
+
+
+def test_reasoning_boundary_allows_two_bounded_phases(tmp_path: Path) -> None:
+    result, gateway, _workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia o arquivo e depois faça duas fases de raciocínio antes de responder.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"continue_after_plan","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"execute","plan":[{"tool":"directory_lister","args":{"path":"."}}]}',
+            '{"action":"complete","reason":"as duas observações bastam"}',
+            "As duas fases foram concluídas com as observações reais.",
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader", "directory_lister"]
+    assert progression["reasoning_turns"] == 2
+    assert progression["terminal"] == "complete"
+    assert len(gateway.payloads) == 5
 
 
 def _planner_deferred_response() -> str:

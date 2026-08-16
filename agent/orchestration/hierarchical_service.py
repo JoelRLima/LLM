@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Dict, cast
 
+from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.hierarchical_executor import HierarchicalExecutor
 from agent.planning.hierarchical_planner import HierarchicalPlanner
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
@@ -22,6 +23,9 @@ class HierarchicalExecutionService:
             ask_model=self._ask_model,
             valid_tools=list(planning_view.presented_names) if planning_view is not None else list(self.orchestrator.skills),
             planning_view=planning_view,
+            capability_manifest=render_active_harness_capabilities(
+                self.orchestrator, planner_kind="hierarchical"
+            ),
         )
         try:
             macro_plan = planner.build_plan(objective)

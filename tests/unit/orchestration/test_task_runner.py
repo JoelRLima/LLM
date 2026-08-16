@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from agent.memory.json_persistence import AtomicJsonWriteError
-from agent.orchestration.task_runner import TaskRunner
+from agent.orchestration import task_runner as task_runner_module
+from agent.orchestration.task_runner import TaskInputs, TaskRunner
+from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from agent.state import AgentState
 
 
 class _CancellationToken:
@@ -64,3 +67,41 @@ def test_task_success_is_not_returned_when_automatic_memory_save_fails(
     assert orchestrator.persistence_calls == 1
     assert orchestrator._task_failed is True
     assert orchestrator.checkpoint_deleted is False
+
+
+def test_initial_planner_block_uses_canonical_completion_owner(monkeypatch) -> None:
+    state = AgentState()
+    completion_calls = []
+
+    def completion_owner(orchestrator, objective):
+        completion_calls.append((orchestrator, objective))
+        orchestrator.agent_state.terminal_disposition = "block"
+        return "planejamento bloqueado"
+
+    monkeypatch.setattr(task_runner_module, "allow_linear_completion", completion_owner)
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        plan_builder=SimpleNamespace(
+            build_plan=lambda _objective: PlanBuildResult(
+                blocked_answer="planejamento bloqueado",
+                kind=PlanningDecisionKind.BLOCK,
+            )
+        ),
+        session=SimpleNamespace(config={}),
+        _task_failed=False,
+        _cancelled=False,
+        _route_persona=lambda _objective: None,
+        _save_checkpoint=lambda: None,
+        _is_security_objective=lambda _objective: False,
+        _try_hierarchical=lambda *_args: None,
+        _try_security=lambda *_args: None,
+        _emit=lambda *_args, **_kwargs: None,
+        tool_registry=None,
+    )
+
+    answer = TaskRunner(orchestrator)._execute(TaskInputs("objetivo", False, 0), None)
+
+    assert answer == "planejamento bloqueado"
+    assert completion_calls == [(orchestrator, "objetivo")]
+    assert state.terminal_disposition == "block"
+    assert state.last_result["status"] == "blocked"

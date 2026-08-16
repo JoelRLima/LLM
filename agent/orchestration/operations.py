@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import AgentEvent, EventData, ToolArgs, ToolResult
 from agent.error_handler import ErrorHandler
+from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.logging import logger
@@ -53,7 +54,12 @@ class OrchestratorOperations:
             context_limit = int(
                 getattr(getattr(self.session, "hardware_profile", None), "context_limit", 8_192)
             )
-            return cast(str, planning_view.render(compact=compact, context_limit=context_limit))
+            rendered = cast(str, planning_view.render(compact=compact, context_limit=context_limit))
+            if not compact:
+                return rendered
+            return rendered + "\n" + render_active_harness_capabilities(
+                self, planner_kind=planner_kind or "reactive"
+            )
         descriptions = []
         for skill in self.skills.values():
             if self.active_skills and skill.name not in self.active_skills:

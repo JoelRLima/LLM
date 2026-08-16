@@ -8,8 +8,12 @@ import time
 from dataclasses import replace
 from typing import Any, Callable, Dict, Optional
 
-from agent.approval import ApprovalDecision, ApprovalPort, ApprovalRequest, RequireExplicitApproval
+from agent.approval import (
+    ApprovalPort,
+    RequireExplicitApproval,
+)
 from agent.runtime.logging import logger
+from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     AuthorizationContext,
@@ -165,29 +169,7 @@ class ToolInvocationGateway(InvocationActivityMixin):
             return None, approval_result
         return descriptor, None
     def _check_effect_approval(self, invocation: ToolInvocation, descriptor: ToolDescriptor) -> ToolResult | None:
-        effects = frozenset({"write", "vcs_write", "process", "network", "package_install", "validate"})
-        requested = effects & required_capabilities_for_invocation(descriptor, invocation.args)
-        if not requested:
-            return None
-        self._emit("approval_requested", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
-        try:
-            decision = self.approval_port.request(
-                ApprovalRequest(
-                    action=invocation.tool_name,
-                    resource=str(invocation.args.get("file_path") or invocation.args.get("target") or "workspace"),
-                    prompt=f"Autorizar efeitos {', '.join(sorted(requested))} para {invocation.tool_name}?",
-                    metadata={"task_id": invocation.task_id, "invocation_id": invocation.invocation_id, "capabilities": sorted(requested)},
-                )
-            )
-        except Exception as exc:
-            logger.warning("[GATEWAY] Approval provider failed: %s", type(exc).__name__)
-            return denial(invocation, ToolStatus.FAILED, "APPROVAL_FAILED", "Approval provider failed.")
-        if decision is ApprovalDecision.APPROVED:
-            self._emit("approval_approved", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
-            return None
-        status = ToolStatus.BLOCKED if decision is ApprovalDecision.REQUIRED else ToolStatus.PERMISSION_DENIED
-        code = "APPROVAL_REQUIRED" if status is ToolStatus.BLOCKED else "APPROVAL_DENIED"
-        return denial(invocation, status, code, "A aprovacao necessaria nao foi concedida.")
+        return check_effect_approval(self, invocation, descriptor)
     def _execute(
         self,
         invocation: ToolInvocation,

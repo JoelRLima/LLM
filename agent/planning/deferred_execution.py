@@ -12,6 +12,7 @@ from agent.planning.deferred_condition import (
 )
 from agent.planning.execution_models import StepLoopResult
 from agent.planning.task_completion import bind_effect_waiver
+from agent.state_progression import current_result_for_step
 
 
 def execute_deferred_condition(
@@ -73,14 +74,7 @@ def _resolve_observation(
         return "identidade canônica da observação não existe no plano"
     if state.get_step_status(observation_index) is not StepStatus.COMPLETED:
         return "a observação referenciada não foi concluída com sucesso"
-    history_match = next(
-        (
-            (history_index, item)
-            for history_index, item in enumerate(state.tool_history, start=1)
-            if item.get("step_id") == reference
-        ),
-        None,
-    )
+    history_match = current_result_for_step(state.tool_history, reference)
     if history_match is None:
         return "resultado canônico da observação indisponível"
     history_index, history_item = history_match

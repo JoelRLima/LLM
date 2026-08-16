@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, Optional, Protocol
+
+from agent.tools.provenance import ArgumentOrigin
 
 
 class SkillCapability(str, Enum):
@@ -51,6 +54,10 @@ class SkillSpec:
     idempotent: bool = False
     timeout_seconds: Optional[int] = None
     category: str = "EXECUTE"
+    public_invocation_fields: frozenset[str] = frozenset()
+    argument_provenance: Mapping[str, frozenset[str | ArgumentOrigin]] = field(
+        default_factory=dict
+    )
 
     @property
     def side_effects(self) -> bool:

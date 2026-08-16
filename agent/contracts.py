@@ -6,9 +6,19 @@ ToolArgs = Dict[str, Any]
 EventData = Dict[str, Any]
 
 
+class ResultBinding(TypedDict):
+    """Model-facing structural reference to an earlier plan result."""
+
+    from_step: int | str
+    path: List[str | int]
+
+
 class PlanStep(TypedDict, total=False):
     tool: str
     args: ToolArgs
+    # Optional additive result-binding declarations.  Bindings are normalized
+    # to producer step IDs before persistence; model plans may use ordinals.
+    bindings: Dict[str, ResultBinding]
     _step_id: str
     kind: str
     observation_ref: int | str
@@ -78,3 +88,7 @@ class CheckpointData(TypedDict, total=False):
     memory_state: Dict[str, Any]
     persona: Optional[str]
     persona_prompt: Optional[str]
+    reasoning_turns_used: int
+    reasoning_last_history_count: int
+    reasoning_last_progress_token: Optional[str]
+    continue_after_plan: bool

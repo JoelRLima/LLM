@@ -131,10 +131,14 @@ def extract_json_from_end(text: str) -> Optional[Dict]:
 
     return last_valid
 
-def _validate_required(args: Dict[str, Any], required: List[str]) -> List[str]:
+def _validate_required(
+    args: Dict[str, Any], required: List[str], bound_fields: set[str] | None = None
+) -> List[str]:
+    bound_fields = bound_fields or set()
     return [
         f"Campo obrigatório ausente: '{field}'"
         for field in required
+        if field not in bound_fields
         if field not in args or args[field] is None
     ]
 
@@ -186,7 +190,12 @@ def _tool_specific_errors(tool_name: str, args: Dict[str, Any]) -> List[str]:
     return errors
 
 
-def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+def validate_tool_args(
+    tool_name: str,
+    args: Dict[str, Any],
+    skills: Dict[str, Any],
+    bound_fields: set[str] | None = None,
+) -> Tuple[bool, Optional[str]]:
     """Valida argumentos contra o schema exportado pela ferramenta."""
     skill = skills.get(tool_name)
     if not skill:
@@ -199,7 +208,20 @@ def validate_tool_args(tool_name: str, args: Dict[str, Any], skills: Dict[str, A
 
     required = schema.get("required", [])
     properties = schema.get("properties", {})
-    errors = _validate_required(args, required)
+    legacy_fields = {
+        key: value
+        for key, value in schema.items()
+        if key not in {"type", "required", "properties", "additionalProperties"}
+    }
+    if not properties and legacy_fields and all(isinstance(value, dict) for value in legacy_fields.values()):
+        # Legacy builtin skills expose a direct ``{field: schema}`` mapping;
+        # normalize it for bound-target validation without changing callers.
+        properties = legacy_fields
+    bound_fields = bound_fields or set()
+    unknown_bound = sorted(str(field) for field in bound_fields if field not in properties)
+    if unknown_bound:
+        return False, f"argument(s) vinculados desconhecidos: {', '.join(unknown_bound)}"
+    errors = _validate_required(args, required, bound_fields)
     if schema.get("additionalProperties") is False:
         unknown = sorted(str(field) for field in args if field not in properties)
         if unknown:

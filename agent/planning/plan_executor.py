@@ -1,18 +1,15 @@
-import concurrent.futures
-import uuid
 from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import ToolArgs, ToolResult
 from agent.cost_guard import DEFAULT_MAX_TASK_TOOL_CALLS, CostGuard
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_execution import execute_deferred_condition
+from agent.planning.dependency_map import build_dependency_map, dependency_succeeded, dependent_indices
 from agent.planning.execution_models import StepLoopResult
-from agent.planning.parallel_contracts import (
-    ParallelInvocation,
-    correlate_parallel_result,
-    future_parallel_result,
-)
+from agent.planning.parallel_contracts import ParallelInvocation
+from agent.planning.parallel_dispatch import run_parallel_tools
 from agent.planning.parallel_finalizer import finalize_parallel_index
+from agent.planning.plan_execution_loop import run_plan_loop
 from agent.planning.replan import ReplanContext, replan
 from agent.planning.semantic_projection import (
     SemanticProjection,
@@ -20,11 +17,6 @@ from agent.planning.semantic_projection import (
     projection_for_outcome,
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
-from agent.planning.task_completion import (
-    continue_after_observation,
-    needs_effect_continuation,
-)
-from agent.tools.contracts import ToolInvocationRequest
 from agent.watchdog import Watchdog
 
 
@@ -38,28 +30,18 @@ class PlanExecutor:
         self._dependency_files: Dict[tuple[int, int], str] = {}
         self.last_projection: Optional[SemanticProjection] = None
 
-    def execute(self, objective: str, tool_usage_count: Dict[str, int]) -> Optional[str]:
+    def execute(
+        self,
+        objective: str,
+        tool_usage_count: Dict[str, int],
+        *,
+        continue_after_plan: bool = False,
+    ) -> Optional[str]:
         state = self.orchestrator.agent_state
         self.last_projection = None
-        last_result: Optional[ToolResult] = None
         self.orchestrator.workspace.create_restore_point(state.plan)
         self._rebuild_dependency_map()
-        index = state.next_pending_index()
-        while index is not None:
-            iteration = self._execute_index(index, objective, tool_usage_count)
-            last_result = iteration.result or last_result
-            if iteration.stop:
-                return iteration.answer
-            index = state.next_pending_index(iteration.next_index)
-            if index is None and needs_effect_continuation(self.orchestrator, objective):
-                answer = continue_after_observation(self.orchestrator, objective)
-                if isinstance(answer, str) and answer:
-                    return answer
-                index = state.next_pending_index()
-        if last_result is not None and not last_result.get("ok"):
-            return f"A tarefa não pôde ser concluída. Último erro: {last_result.get('error', 'Erro desconhecido')}"
-        return None
-
+        return run_plan_loop(self, objective, tool_usage_count, continue_after_plan)
     def _execute_index(self, index: int, objective: str, usage: Dict[str, int]) -> StepLoopResult:
         state = self.orchestrator.agent_state
         if self.orchestrator.cancellation_token.cancelled:
@@ -101,8 +83,9 @@ class PlanExecutor:
         args = cast(ToolArgs, raw_args) if isinstance(raw_args, dict) else {}
         replacements = self._attempt_replan(step, tool, args, objective)
         if replacements:
-            self._replace_current_step(index, replacements)
-            return StepLoopResult(index, result)
+            if self._replace_current_step(index, replacements):
+                return StepLoopResult(index, result)
+            return StepLoopResult(index, result, "Replanejamento bloqueado: havia dependencias ja executadas.", True)
         return StepLoopResult(index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True)
     def _collect_parallel_read_batch(self, start_index: int) -> List[int]:
         batch: List[int] = []
@@ -132,44 +115,7 @@ class PlanExecutor:
     def _run_parallel_tools(
         self, indices: List[int]
     ) -> tuple[Dict[int, ToolResult], Dict[int, ToolResult], Dict[int, ParallelInvocation]]:
-        state = self.orchestrator.agent_state
-        cached: Dict[int, ToolResult] = {}
-        results: Dict[int, ToolResult] = {}
-        correlations: Dict[int, ParallelInvocation] = {}
-        futures: Dict[concurrent.futures.Future[ToolResult], int] = {}
-        workers = min(int(self.orchestrator.session.config.get("max_io_concurrency", 2)), len(indices))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            for index in indices:
-                tool, args, file_path = self._step_data(index)
-                invocation_id = str(uuid.uuid4())
-                correlation = ParallelInvocation(
-                    index=index,
-                    step_id=state.get_step_id(index),
-                    invocation_id=invocation_id,
-                    request=ToolInvocationRequest(invocation_id, tool, args),
-                )
-                correlations[index] = correlation
-                state.mark_step_running(index)
-                cache_hit, cache_result = self.step_executor.try_cache(
-                    tool, args, file_path, correlation.step_id, record_result=False
-                )
-                if cache_hit and cache_result is not None:
-                    cached[index] = correlate_parallel_result(cache_result, correlation)
-                else:
-                    if not getattr(self.orchestrator, "tool_invocation_gateway", None):
-                        self.orchestrator._emit("tool_start", {"tool": tool, "args": args})
-                    runner = getattr(self.orchestrator.tool_executor, "run_tool_invocation", None)
-                    if callable(runner):
-                        future = executor.submit(runner, correlation.request, False)
-                    else:
-                        future = executor.submit(
-                            self.orchestrator.tool_executor.run_tool, tool, args, False
-                        )
-                    futures[future] = index
-            for future in concurrent.futures.as_completed(futures):
-                index = futures[future]
-                results[index] = future_parallel_result(future, correlations[index])
-        return cached, results, correlations
+        return run_parallel_tools(self, indices)
     def _finalize_parallel(
         self, indices: List[int], cached: Dict[int, ToolResult], results: Dict[int, ToolResult],
         correlations: Dict[int, ParallelInvocation],
@@ -185,23 +131,29 @@ class PlanExecutor:
         if projection is None:
             return StepLoopResult(indices[-1] + 1)
         self.last_projection = projection
-        projection_tool, projection_args, _ = self._step_data(projection.logical_slot)
+        projection_correlation = correlations[projection.logical_slot]
+        projection_tool = projection_correlation.request.tool_name
+        projection_args = dict(projection_correlation.request.arguments)
         self.orchestrator.agent_state.project_last_result(
             projection_tool, projection_args, projection.result
         )
         if projection.outcome.kind is StepOutcomeKind.REPLAN:
             index = projection.logical_slot
             step = self.orchestrator.agent_state.plan[index]
-            tool, args, _ = self._step_data(index)
+            correlation = correlations[index]
+            tool = correlation.request.tool_name
+            args = dict(correlation.request.arguments)
             result, error = projection.result, projection.outcome.error
             replacements = self._attempt_replan(
                 step, tool, args, objective, last_result=result, last_error=error
             )
             if replacements:
-                self._replace_current_step(index, replacements)
-                return StepLoopResult(index, result)
+                if self._replace_current_step(index, replacements):
+                    return StepLoopResult(index, result)
+                return StepLoopResult(index, result, "Replanejamento bloqueado: havia dependencias ja executadas.", True)
+            return StepLoopResult(index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True)
             return StepLoopResult(
-                index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True
+                index, result, f"A tarefa nÃ£o pÃ´de ser concluÃ­da. Ãšltimo erro: {error}", True
             )
         return StepLoopResult(
             projection.logical_slot + 1,
@@ -217,19 +169,7 @@ class PlanExecutor:
         return str(step.get("tool", "")), args, str(args.get("target") or args.get("file_path") or "")
 
     def _build_dependency_map(self, plan: List[Dict[str, Any]]) -> Dict[int, List[int]]:
-        dependencies: Dict[int, List[int]] = {}
-        self._dependency_files = {}
-        producers: Dict[str, int] = {}
-        for index, step in enumerate(plan):
-            raw_args = step.get("args")
-            args = cast(ToolArgs, raw_args) if isinstance(raw_args, dict) else {}
-            file_path = str(args.get("file_path") or args.get("target") or "")
-            if step.get("tool") == "file_writer" and file_path:
-                producers[file_path] = index
-            elif step.get("tool") in ("file_reader", "code_analyzer") and file_path in producers:
-                producer = producers[file_path]
-                dependencies.setdefault(index, []).append(producer)
-                self._dependency_files[(index, producer)] = file_path
+        dependencies, self._dependency_files = build_dependency_map(plan)
         return dependencies
 
     def _check_dependencies_ok(self, index: int) -> bool:
@@ -242,9 +182,11 @@ class PlanExecutor:
         return True
 
     def _dependency_succeeded(self, index: int, producer: int) -> bool:
-        file_path = self._dependency_files.get((index, producer))
-        matching = [item for item in self.orchestrator.agent_state.tool_history if item.get("tool") == "file_writer" and (item.get("args") or {}).get("file_path") == file_path]
-        return bool(matching and matching[-1].get("result", {}).get("ok"))
+        return dependency_succeeded(
+            self.orchestrator.agent_state.tool_history,
+            self.orchestrator.agent_state.get_step_id(producer),
+            self._dependency_files.get((index, producer)),
+        )
 
     def _attempt_replan(
         self, step: Dict[str, Any], tool: str, args: ToolArgs, objective: str,
@@ -264,9 +206,32 @@ class PlanExecutor:
         action = replan(context, error, self.orchestrator)
         return action.steps if action else None
 
-    def _replace_current_step(self, index: int, new_steps: List[Dict[str, Any]]) -> None:
-        self.orchestrator.agent_state.replace_plan_step(index, new_steps)
+    def _replace_current_step(self, index: int, new_steps: List[Dict[str, Any]]) -> bool:
+        """Replace a failed producer without silently rewinding consumers."""
+
+        state = self.orchestrator.agent_state
+        producer_id = state.get_step_id(index)
+        dependents = dependent_indices(state.plan, index)
+        for dependent in sorted(dependents):
+            if dependent >= len(state.plan):
+                continue
+            status = state.get_step_status(dependent)
+            if status.value in {"running", "completed"}:
+                self.orchestrator._emit(
+                    "replan_blocked",
+                    {
+                        "step_id": producer_id,
+                        "reason": "dependencia causal ja executada",
+                    },
+                )
+                self.orchestrator.fail_task()
+                return False
+        for dependent in sorted(dependents, reverse=True):
+            if dependent < len(state.plan):
+                state.remove_plan_step(dependent)
+        state.replace_plan_step(index, new_steps)
         self._rebuild_dependency_map()
+        return True
 
     def _rebuild_dependency_map(self) -> None:
         self._step_dependencies = self._build_dependency_map(self.orchestrator.agent_state.plan)

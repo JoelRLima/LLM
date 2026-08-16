@@ -1,7 +1,10 @@
+import inspect
 import json
+from pathlib import Path
 
 import pytest
 
+import agent.runtime.config as config_module
 from agent.runtime.config import DEFAULT_CONFIG, carregar_config
 
 
@@ -21,6 +24,16 @@ def test_carregar_config_sucesso(tmp_path):
     cfg = carregar_config(str(p))
     assert cfg["api_url"] == "http://teste:8080"
     assert cfg["temperature"] == 0.8
+
+
+def test_reasoning_turn_default_has_one_packaged_source() -> None:
+    packaged = json.loads(
+        Path("agent/resources/default_config.json").read_text(encoding="utf-8")
+    )
+
+    assert packaged["max_reasoning_turns"] == 3
+    assert DEFAULT_CONFIG["max_reasoning_turns"] == packaged["max_reasoning_turns"]
+    assert '"max_reasoning_turns": 3' not in inspect.getsource(config_module)
 
 def test_carregar_config_arquivo_inexistente():
     with pytest.raises(FileNotFoundError):

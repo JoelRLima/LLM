@@ -1,5 +1,6 @@
 import json
 import os
+from importlib import resources
 from typing import Any, Dict
 
 from agent.runtime import paths
@@ -29,6 +30,23 @@ DEFAULT_CODE_POLICY: Dict[str, Any] = {
     "max_auto_files": 2,
     "require_target_alignment": True,
 }
+
+
+def _packaged_reasoning_turn_default() -> int:
+    """Read the canonical reasoning budget from the packaged config resource."""
+
+    try:
+        raw = resources.files("agent.resources").joinpath("default_config.json").read_text(
+            encoding="utf-8"
+        )
+        value = json.loads(raw)["max_reasoning_turns"]
+    except (FileNotFoundError, ModuleNotFoundError, KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("Default max_reasoning_turns is unavailable.") from exc
+    if type(value) is not int or value < 1:
+        raise RuntimeError("Default max_reasoning_turns is invalid.")
+    return value
+
+
 DEFAULT_COST_WATCHDOG: Dict[str, Any] = {
     "max_task_steps": 30,
     "max_task_tokens": 200000,
@@ -36,6 +54,7 @@ DEFAULT_COST_WATCHDOG: Dict[str, Any] = {
     "max_task_wall_seconds": 1800,
     "max_repeated_no_progress": 3,
     "max_consecutive_same_error": 3,
+    "max_reasoning_turns": _packaged_reasoning_turn_default(),
 }
 DEFAULT_CONFIG: Dict[str, Any] = {
     "api_url": "http://127.0.0.1:8080/v1/chat/completions",

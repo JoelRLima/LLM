@@ -142,6 +142,8 @@ class PythonExecutorSkill(BaseSkill):
                 "ok": True,
                 "done": True,
                 "data": output.strip() or "(sem saída)",
+                "total_chars": total_chars,
+                "truncated": truncated,
                 "error": None,
                 "message": "Código executado com sucesso." + suffix,
             }
@@ -149,6 +151,8 @@ class PythonExecutorSkill(BaseSkill):
             "ok": False,
             "done": True,
             "error": f"Código terminou com erro (exit {result.returncode})",
+            "total_chars": total_chars,
+            "truncated": truncated,
             "message": (output.strip() or "(sem saída)") + suffix,
         }
 

@@ -143,6 +143,7 @@ class FileReaderSkill(BaseSkill):
             "data": content,
             "total_lines": total_lines,
             "total_chars": total_chars,
+            "complete": True,
             "truncated": False,
             "error": None,
             "message": message
@@ -187,6 +188,7 @@ class FileReaderSkill(BaseSkill):
                 "data": full_content,
                 "total_lines": total_lines,
                 "total_chars": total_chars,
+                "complete": True,
                 "truncated": False,
                 "error": None,
                 "message": f"Arquivo lido completamente. Linhas: {total_lines}, caracteres: {total_chars}."
@@ -204,6 +206,7 @@ class FileReaderSkill(BaseSkill):
             "data": summary,
             "total_lines": total_lines,
             "total_chars": total_chars,
+            "complete": False,
             "truncated": False,
             "error": None,
             "message": (

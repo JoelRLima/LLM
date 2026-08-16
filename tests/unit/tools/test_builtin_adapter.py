@@ -80,6 +80,37 @@ def test_file_reader_adapter_marks_only_integral_text_as_complete(
     assert summarized.artifacts[0]["metadata"]["complete"] is False
 
 
+def test_builtin_adapter_preserves_partial_search_metadata(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("needle", encoding="utf-8")
+    (tmp_path / "b.txt").write_text("needle", encoding="utf-8")
+    result = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path)).invoke(
+        ToolInvocation(
+            tool_name="grep",
+            args={"path": ".", "pattern": "needle", "max_results": 1},
+        )
+    )
+
+    assert result.ok is True
+    assert result.artifacts[0]["metadata"]["truncated"] is True
+    assert result.artifacts[0]["metadata"]["total_matches"] == 1
+
+
+def test_adapter_does_not_misclassify_normalized_output_as_incomplete() -> None:
+    complete = BuiltinToolAdapter._observation_artifacts(
+        "shell",
+        {"total_chars": 6, "truncated": False},
+        "hello",
+    )
+    truncated = BuiltinToolAdapter._observation_artifacts(
+        "shell",
+        {"total_chars": 6, "truncated": True},
+        "hello",
+    )
+
+    assert complete[0]["metadata"]["complete"] is True
+    assert truncated[0]["metadata"]["complete"] is False
+
+
 
 def test_builtin_adapter_invoke_unavailable(tmp_path: Path) -> None:
     skill_registry = load_skill_registry(base_dir=tmp_path)

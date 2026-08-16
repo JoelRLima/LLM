@@ -140,6 +140,33 @@ def test_step_executor_completes_and_emits_terminal_event(monkeypatch):
     assert context.events[-1][0] == "step_completed"
 
 
+def test_prepare_invocation_resolves_symbolic_args_before_dispatch(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "echo", "args": {"text": "observed"}},
+            {
+                "tool": "echo",
+                "args": {},
+                "bindings": {"text": {"from_step": 1, "path": []}},
+            },
+        ]
+    )
+    state.mark_step_running(0)
+    state.record_tool_result(
+        "echo",
+        {"text": "observed"},
+        {"ok": True, "executed": True, "status": "succeeded", "data": "observed"},
+        step_id=state.get_step_id(0),
+    )
+    state.mark_step_completed(0)
+    prepared = StepExecutor(_Context(state)).prepare_invocation(1)
+
+    assert prepared.tool == "echo"
+    assert prepared.args == {"text": "observed"}
+    assert prepared.step_id == state.get_step_id(1)
+
+
 def test_deferred_condition_blocks_when_referenced_observation_is_not_completed(
     monkeypatch,
 ):

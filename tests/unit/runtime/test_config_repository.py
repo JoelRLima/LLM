@@ -40,6 +40,7 @@ def test_missing_configuration_is_explicit_or_can_resolve_defaults(
 
     assert resolved.schema_version == 1
     assert resolved.to_legacy_dict()["hardware_profile"] == "low_vram_8gb"
+    assert resolved.to_legacy_dict()["max_reasoning_turns"] == 3
 
 
 def test_initialize_uses_packaged_resource_outside_checkout_and_is_idempotent(

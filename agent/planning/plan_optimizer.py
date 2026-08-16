@@ -1,36 +1,4 @@
-"""
-PlanOptimizer: aplica transformações seguras e EQUIVALENTES a um plano já
-diagnosticado pelo PlanValidator, reduzindo o custo total estimado de
-execução sem alterar o resultado esperado da tarefa.
-
-Otimizações permitidas:
-    a. Remoção de passos duplicados exatos (mesma ferramenta + mesmos
-       `args`), restrita a ferramentas marcadas como `cacheable=True` em
-       `ToolMetadata` — ou seja, ferramentas sem efeitos colaterais e com
-       resultado determinístico. Ferramentas com `cacheable=False` (ex.:
-       file_writer, shell, python_executor) NUNCA têm passos removidos por
-       essa regra, mesmo que os `args` sejam idênticos, pois repetir a
-       chamada pode ser intencional (ex.: dois `append` idênticos devem
-       gerar duas gravações).
-    b. Consolidação de leituras múltiplas do mesmo arquivo com os mesmos
-       argumentos — coberta pela mesma regra de deduplicação acima, já
-       que duas leituras idênticas do mesmo arquivo (mesmo `file_path`,
-       mesmos `start_line`/`end_line`, etc.) são, por definição, passos
-       duplicados exatos.
-    c. Reordenação de passos de leitura/busca/análise independentes
-       (`category` em READ, SEARCH ou ANALYZE e `side_effects=False`)
-       para aproximá-los uns dos outros, desde que isso nunca viole uma
-       dependência (um passo de leitura nunca "ultrapassa" o passo
-       file_writer que produziu o arquivo que ele lê). Ferramentas com
-       `side_effects=True` NUNCA são movidas — apenas passos
-       independentes de leitura podem se deslocar ao redor delas.
-
-Este módulo NUNCA insere passos novos, NUNCA converte uma ferramenta em
-outra, e NUNCA altera os argumentos de um passo existente. Todas as
-decisões usam `ToolMetadata` — nenhum nome de ferramenta é hardcoded na
-lógica de otimização (os nomes só aparecem nos dados de
-`agent/tool_metadata.py`).
-"""
+"""Safe metadata-guided plan optimizer."""
 import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -38,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
+from agent.planning.result_bindings import has_result_bindings, referenced_step_ids
 from agent.planning.tool_metadata import TOOL_METADATA, ToolMetadata, estimate_step_cost, get_tool_metadata
 
 _MOVABLE_CATEGORIES = {"READ", "SEARCH", "ANALYZE"}
@@ -48,7 +17,7 @@ class PlanningOptimizationError(ValueError):
 
 @dataclass(frozen=True)
 class ToolCost:
-    """Custo estimado de uma única ferramenta/passo do plano."""
+    """Custo estimado de uma Ãºnica ferramenta/passo do plano."""
     tool: str
     cost: int
 
@@ -67,7 +36,7 @@ class OptimizationReport:
 
 
 class PlanOptimizer:
-    """Otimiza planos aplicando transformações equivalentes e seguras,
+    """Otimiza planos aplicando transformaÃ§Ãµes equivalentes e seguras,
     guiadas por `ToolMetadata`."""
 
     def __init__(
@@ -94,11 +63,11 @@ class PlanOptimizer:
                 self.tool_metadata = planning_context.present("optimizer", names).metadata_dict()
 
     # ------------------------------------------------------------------
-    # Ponto de entrada público
+    # Ponto de entrada pÃºblico
     # ------------------------------------------------------------------
 
     def optimize(self, plan: List[Dict[str, Any]]) -> OptimizationReport:
-        """Aplica as otimizações seguras a `plan` e retorna um relatório
+        """Aplica as otimizaÃ§Ãµes seguras a `plan` e retorna um relatÃ³rio
         detalhado. NUNCA modifica `plan` in-place; sempre retorna uma nova
         lista em `optimized_steps`, deixando o `plan` original intacto."""
         if not plan or not isinstance(plan, list):
@@ -153,7 +122,7 @@ class PlanOptimizer:
             metadata = self.tool_metadata.get(tool)
             if metadata is None:
                 raise PlanningOptimizationError(
-                    f"ferramenta '{tool}' ausente da view canÃ´nica de planning"
+                    f"ferramenta '{tool}' ausente da view canônica de planning"
                 )
             return metadata
         return self.tool_metadata.get(tool) or get_tool_metadata(tool)
@@ -190,18 +159,21 @@ class PlanOptimizer:
         return (step.get("tool", ""), args_repr)
 
     # ------------------------------------------------------------------
-    # (a) + (b) Remoção de duplicatas exatas
+    # (a) + (b) RemoÃ§Ã£o de duplicatas exatas
     # ------------------------------------------------------------------
 
     def _remove_exact_duplicates(
         self, plan: List[Dict[str, Any]], transformations: List[str]
     ) -> tuple:
         """Remove passos duplicados exatos, restrito a ferramentas
-        `cacheable=True` (sem efeitos colaterais, resultado determinístico).
+        `cacheable=True` (sem efeitos colaterais, resultado determinÃ­stico).
         Retorna (novo_plano, quantidade_removida)."""
         seen = set()
         result: List[Dict[str, Any]] = []
         removed = 0
+        # Never drop a producer/consumer identity while bindings are present.
+        # Their semantic dependency is richer than tool + concrete args.
+        referenced = referenced_step_ids(plan)
 
         for idx, step in enumerate(plan):
             if not isinstance(step, dict):
@@ -215,7 +187,8 @@ class PlanOptimizer:
             meta = self._meta(tool)
             key = self._step_key(step)
 
-            if meta.cacheable and key in seen:
+            step_id = str(step.get("_step_id") or "")
+            if meta.cacheable and key in seen and not has_result_bindings(step) and step_id not in referenced:
                 removed += 1
                 transformations.append(
                     f"Passo {idx + 1} ('{tool}') removido: duplicata exata de um passo anterior equivalente."
@@ -229,12 +202,12 @@ class PlanOptimizer:
         return result, removed
 
     # ------------------------------------------------------------------
-    # (c) Reordenação segura de leituras/buscas/análises independentes
+    # (c) ReordenaÃ§Ã£o segura de leituras/buscas/anÃ¡lises independentes
     # ------------------------------------------------------------------
 
     @staticmethod
     def _depends_on(step: Dict[str, Any], producer_step: Dict[str, Any]) -> bool:
-        """True se `step` (leitura/busca/análise) depende do arquivo
+        """True se `step` (leitura/busca/anÃ¡lise) depende do arquivo
         produzido por `producer_step` (um file_writer)."""
         if not isinstance(producer_step, dict) or producer_step.get("tool") != "file_writer":
             return False
@@ -249,15 +222,15 @@ class PlanOptimizer:
         return bool(s_fp == p_fp)
 
     def _group_reads(self, plan: List[Dict[str, Any]], transformations: List[str]) -> List[Dict[str, Any]]:
-        """Aproxima passos de leitura/busca/análise independentes uns dos
-        outros através de passes sucessivos de troca entre posições
+        """Aproxima passos de leitura/busca/anÃ¡lise independentes uns dos
+        outros atravÃ©s de passes sucessivos de troca entre posiÃ§Ãµes
         adjacentes (similar a um bubble sort), deslocando um passo de
         leitura para antes de um passo com efeitos colaterais sempre que
-        ele não depender do resultado desse passo.
+        ele nÃ£o depender do resultado desse passo.
 
-        Ferramentas com `side_effects=True` nunca são movidas: apenas os
-        passos de leitura independentes "ultrapassam" elas, uma posição
-        por vez, até não haver mais trocas seguras possíveis.
+        Ferramentas com `side_effects=True` nunca sÃ£o movidas: apenas os
+        passos de leitura independentes "ultrapassam" elas, uma posiÃ§Ã£o
+        por vez, atÃ© nÃ£o haver mais trocas seguras possÃ­veis.
         """
         result = list(plan)
         n = len(result)
@@ -281,6 +254,8 @@ class PlanOptimizer:
                     and not cur_meta.side_effects
                     and prev_meta.side_effects
                     and not self._depends_on(cur_step, prev_step)
+                    and not has_result_bindings(cur_step)
+                    and not has_result_bindings(prev_step)
                 )
                 if movable:
                     result[i - 1], result[i] = result[i], result[i - 1]
@@ -292,7 +267,7 @@ class PlanOptimizer:
 
         if moved_any:
             transformations.append(
-                "Passos de leitura/busca/análise independentes foram reagrupados, "
+                "Passos de leitura/busca/anÃ¡lise independentes foram reagrupados, "
                 "sem ultrapassar ferramentas com efeitos colaterais das quais dependem."
             )
 

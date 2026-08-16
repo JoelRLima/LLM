@@ -236,7 +236,11 @@ def _skill_result(ctx: Any, name: str, args: dict[str, Any], *, empty: str = "")
         result = gateway.run(
             name,
             args,
-            active_skills=getattr(ctx.orchestrator, "active_skills", None),
+            # Explicit slash commands select a fixed, public capability.  The
+            # planner/persona visibility projection applies only to model
+            # selection; passing the fresh-session empty projection here
+            # would deny every otherwise-authorized explicit read/search.
+            active_skills=None,
             allowed_capabilities=getattr(ctx.orchestrator, "allowed_capabilities", None),
         ).to_legacy_dict()
     else:

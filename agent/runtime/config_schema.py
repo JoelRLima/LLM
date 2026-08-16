@@ -53,6 +53,7 @@ ROOT_FIELDS: dict[str, Validator] = {
     "max_task_tokens": _is_int_at_least(1),
     "max_task_tool_calls": _is_int_at_least(1),
     "max_task_wall_seconds": _is_int_at_least(1),
+    "max_reasoning_turns": _is_int_at_least(1),
     "max_repeated_no_progress": _is_int_at_least(1),
     "max_consecutive_same_error": _is_int_at_least(1),
     "default_system_prompt": _is_string,

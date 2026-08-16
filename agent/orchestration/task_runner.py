@@ -90,7 +90,15 @@ class TaskRunner:
         usage: Dict[str, int] = {}
         if inputs.resumed and self.orchestrator.agent_state.plan:
             plan = self._resume_plan()
-            return self._execute_plan(plan, inputs.objective, usage, on_chunk)
+            return self._execute_plan(
+                plan,
+                inputs.objective,
+                usage,
+                on_chunk,
+                continue_after_plan=bool(
+                    getattr(self.orchestrator.agent_state, "continue_after_plan", False)
+                ),
+            )
         self.orchestrator._route_persona(inputs.objective)
         self.orchestrator._save_checkpoint()
         hierarchical = self._try_hierarchical(inputs.objective, on_chunk)
@@ -101,11 +109,23 @@ class TaskRunner:
             return security
         decision = self.orchestrator.plan_builder.build_plan(inputs.objective)
         if decision.kind is PlanningDecisionKind.BLOCK and decision.blocked_answer:
-            self.orchestrator.agent_state.terminal_disposition = "block"
-            self.orchestrator.agent_state.conversation_history.append(
-                {"user": inputs.objective, "agent": decision.blocked_answer}
+            self.orchestrator.agent_state.project_last_result(
+                "planner",
+                {},
+                {
+                    "ok": False,
+                    "done": True,
+                    "status": "blocked",
+                    "executed": False,
+                    "error": decision.blocked_answer,
+                    "message": decision.blocked_answer,
+                },
             )
-            return str(decision.blocked_answer)
+            blocked = allow_linear_completion(self.orchestrator, inputs.objective) or decision.blocked_answer
+            self.orchestrator.agent_state.conversation_history.append(
+                {"user": inputs.objective, "agent": blocked}
+            )
+            return str(blocked)
         if decision.kind is PlanningDecisionKind.COMPLETE and decision.direct_answer:
             answer = complete_direct_answer(
                 self.orchestrator, inputs.objective, str(decision.direct_answer)
@@ -116,7 +136,13 @@ class TaskRunner:
             return answer
         if decision.kind is PlanningDecisionKind.REPLAN or not decision.plan:
             return str(self.orchestrator._run_reactive(inputs.objective, usage, inputs.original_message_count))
-        return self._execute_plan(decision.plan, inputs.objective, usage, on_chunk)
+        return self._execute_plan(
+            decision.plan,
+            inputs.objective,
+            usage,
+            on_chunk,
+            continue_after_plan=decision.continue_after_plan,
+        )
 
     def _resume_plan(self) -> List[Dict[str, Any]]:
         self.orchestrator._restore_persona_from_state()
@@ -138,8 +164,18 @@ class TaskRunner:
     def _execute_plan(
         self, plan: List[Dict[str, Any]], objective: str, usage: Dict[str, int],
         on_chunk: Callable[[str], None] | None,
+        *,
+        continue_after_plan: bool = False,
     ) -> str:
-        result = self.orchestrator.execution_gateway.execute_validated_plan(plan, objective, usage)
+        self.orchestrator.agent_state.continue_after_plan = continue_after_plan
+        if continue_after_plan:
+            result = self.orchestrator.execution_gateway.execute_validated_plan(
+                plan, objective, usage, continue_after_plan=True
+            )
+        else:
+            result = self.orchestrator.execution_gateway.execute_validated_plan(
+                plan, objective, usage
+            )
         if result.aborted:
             mark_terminal_failure(self.orchestrator)
             answer = result.final_answer or "A execução foi interrompida."

@@ -98,7 +98,7 @@ class DeterministicJourneyGateway:
             if "SLICE_A1" in self.objective:
                 return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
             if "SLICE_A2" in self.objective:
-                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2_EVIDENCE","path":"."}}]}'
+                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2","path":"."}}]}'
             if "SLICE_C1" in self.objective or "SLICE_C3" in self.objective:
                 return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
             if "SLICE_C2" in self.objective:

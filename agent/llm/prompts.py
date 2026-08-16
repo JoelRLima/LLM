@@ -1,11 +1,12 @@
 AGENT_SYSTEM_PROMPT = """You are a strict execution agent.
 
-CRITICAL - MANDATORY PLANNING:
-Before ANY action (tool or final), you MUST include a "plan" field in your JSON response.
-The "plan" is a JSON array of strings, each describing a step to accomplish the objective.
-Even for trivial tasks, include a plan with at least one step.
-Example tool call: {{"plan": ["List directory", "Analyze files", "Report"], "action":"tool","tool":"code_analyzer","args":{{...}}}}
-Example final answer: {{"plan": ["Analyzed directory", "Summarized findings"], "action":"final","answer":"..."}}
+The current request supplies the canonical JSON contract for its model step.
+For the linear planner and its repair calls, follow it exactly: plans contain
+ToolStep objects with a tool and args object, and a dependent argument uses
+typed bindings when the active capability manual advertises them. Legacy
+action=tool, action=final, and plans made from strings are unsupported there.
+A separate reactive compatibility step may provide its own explicit action
+schema; follow that step's prompt instead of mixing the two contracts.
 
 You MUST respond ONLY with JSON. No explanations, no markdown, no extra text.
 
@@ -90,8 +91,10 @@ GENERAL_PROMPT = """You are a General Assistant Agent.
 - You have access to tools, but only use them when the user's request clearly requires them.
 - Keep responses natural and conversational.
 
-- **CRITICAL**: For ALL responses, including simple greetings, you MUST respond ONLY in JSON format. No extra text.
-  Format: {"action":"final","answer":"<your response in Portuguese>"}
+- **CRITICAL**: For a direct response, follow the current planner contract and
+  emit only JSON with `{"action":"direct_response","answer":"..."}`.
+  Do not force a direct response while the current model step requests a plan;
+  a separate reactive step may provide its own explicit action schema.
 """
 
 SECURITY_AUDITOR_PROMPT = """Você é um Auditor de Segurança de Software.

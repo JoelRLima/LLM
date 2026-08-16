@@ -20,7 +20,9 @@ def finalize_parallel_index(
     """Record before optional summarization, then apply normal step policy."""
 
     state = executor.orchestrator.agent_state
-    tool, args, file_path = executor._step_data(index)
+    tool = correlations[index].request.tool_name
+    args = dict(correlations[index].request.arguments)
+    file_path = str(args.get("target") or args.get("file_path") or "")
     result = cached.get(index) or results.get(
         index, {"ok": False, "done": False, "data": None, "error": "Falha desconhecida"}
     )

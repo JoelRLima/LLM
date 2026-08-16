@@ -10,7 +10,12 @@ def validate_argument_shape(
     schema: Mapping[str, Any],
     properties: Mapping[str, Any],
     args: Mapping[str, Any],
+    bound_fields: set[str] | None = None,
 ) -> None:
+    bound_fields = bound_fields or set()
+    unknown_bound = sorted(str(key) for key in bound_fields if key not in properties)
+    if unknown_bound:
+        raise ValueError(f"unknown bound argument(s): {', '.join(unknown_bound)}")
     if schema.get("additionalProperties") is False:
         unknown = sorted(str(key) for key in args if key not in properties)
         if unknown:
@@ -18,6 +23,8 @@ def validate_argument_shape(
     required = schema.get("required") or []
     required_values = required if isinstance(required, list) else [required]
     for key in required_values:
+        if key in bound_fields:
+            continue
         if key not in args:
             raise ValueError(f"missing required argument: {key}")
 

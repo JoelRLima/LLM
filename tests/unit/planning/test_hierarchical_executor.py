@@ -108,3 +108,46 @@ def test_hierarchical_microstep_failure_is_not_overwritten_by_later_success():
     )
 
     assert HierarchicalExecutor._has_failed_execution_record(state) is True
+
+
+def test_hierarchical_reasoning_boundary_rejects_before_gateway_prefix() -> None:
+    state = _State()
+    gateway_calls = []
+    tracker = SimpleNamespace(
+        mark_running=lambda _step_id: None,
+        mark_failed=lambda step_id, **kwargs: setattr(tracker, "failed", (step_id, kwargs)),
+        mark_completed=lambda *_args, **_kwargs: None,
+        record_tool_call=lambda _count: None,
+        failed=None,
+    )
+
+    class _GatewayWithoutBoundaryFlag:
+        def execute_validated_plan(self, plan, objective, tool_usage_count):
+            gateway_calls.append((plan, objective, tool_usage_count))
+
+    executor = HierarchicalExecutor(
+        plan_builder=SimpleNamespace(
+            build_plan=lambda _goal: PlanBuildResult(
+                plan=[{"tool": "echo", "args": {}}],
+                continue_after_plan=True,
+            )
+        ),
+        plan_executor=SimpleNamespace(orchestrator=SimpleNamespace()),
+        final_responder=SimpleNamespace(),
+        context_manager=object(),
+        session=SimpleNamespace(messages=[]),
+        tracker=tracker,
+        summarizer=_Summarizer(),
+        execution_gateway=_GatewayWithoutBoundaryFlag(),
+    )
+
+    ok = executor._execute_step(
+        MacroStep(id="s1", title="Etapa", goal="subobjetivo"),
+        state,
+        {},
+    )
+
+    assert ok is False
+    assert gateway_calls == []
+    assert tracker.failed[0] == "s1"
+    assert state.tool_history == []

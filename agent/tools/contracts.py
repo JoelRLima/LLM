@@ -10,6 +10,8 @@ from enum import Enum
 from typing import Any, Dict, Iterator, Mapping, Optional, Protocol, Tuple
 
 from agent.tools.extension_state import validate_extension_id
+from agent.tools.provenance import normalize_argument_provenance
+from agent.tools.public_invocation import normalize_public_invocation_fields
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnapshotIdentity
 
 RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
@@ -17,11 +19,7 @@ RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
 
 @dataclass(frozen=True, slots=True)
 class FrozenJsonObject(MappingABC[str, Any]):
-    """Private immutable mapping used for canonical JSON-like snapshots.
-
-    This intentionally is not a ``dict`` subclass.  Historical callers receive
-    a detached plain ``dict`` through the public properties below.
-    """
+    """Immutable JSON-like mapping."""
 
     _items: tuple[tuple[str, Any], ...]
 
@@ -30,19 +28,14 @@ class FrozenJsonObject(MappingABC[str, Any]):
             if item_key == key:
                 return value
         raise KeyError(key)
-
     def __iter__(self) -> Iterator[str]:
         return (key for key, _ in self._items)
-
     def __len__(self) -> int:
         return len(self._items)
-
     def __eq__(self, other: object) -> bool:
         if isinstance(other, MappingABC):
             return dict(self.items()) == dict(other.items())
         return NotImplemented
-
-
 def thaw_json_like(value: Any) -> Any:
     """Rebuild a fresh mutable public JSON value from an internal snapshot."""
 
@@ -79,8 +72,6 @@ def _freeze_mapping(value: MappingABC[str, Any], active: set[int]) -> FrozenJson
         return FrozenJsonObject(tuple(frozen_items))
     finally:
         active.remove(identity)
-
-
 def _freeze_sequence(value: list[Any] | tuple[Any, ...], active: set[int]) -> tuple[Any, ...]:
     identity = id(value)
     if identity in active:
@@ -90,8 +81,6 @@ def _freeze_sequence(value: list[Any] | tuple[Any, ...], active: set[int]) -> tu
         return tuple(freeze_json_like(item, _active=active) for item in value)
     finally:
         active.remove(identity)
-
-
 def freeze_json_like(value: Any, *, _active: set[int] | None = None) -> Any:
     """Copy and recursively freeze strict JSON-like values."""
 
@@ -144,6 +133,15 @@ class ToolDescriptor:
     supports_cancellation: bool = False
     origin_kind: ToolOriginKind = field(default=ToolOriginKind.BUILTIN, kw_only=True)
     extension_id: Optional[str] = field(default=None, kw_only=True)
+    # Only explicitly declared fields may be projected back into model
+    # context as invocation evidence.  Keep this empty by default: argument
+    # payloads are not public merely because they were executed.
+    public_invocation_fields: frozenset[str] = field(
+        default_factory=frozenset, kw_only=True
+    )
+    argument_provenance: Mapping[str, frozenset[str]] = field(
+        default_factory=dict, kw_only=True
+    )
 
     def __post_init__(self) -> None:
         try:
@@ -152,30 +150,36 @@ class ToolDescriptor:
             raise ValueError("schema excede a profundidade estrutural") from exc
         object.__setattr__(self, "schema", frozen_schema)
         if isinstance(self.capabilities, str):
-            raise TypeError("capabilities deve ser uma coleção de strings")
+            raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings")
         try:
             capabilities = frozenset(self.capabilities)
         except TypeError as exc:
-            raise TypeError("capabilities deve ser uma coleção de strings") from exc
+            raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings") from exc
         if any(type(value) is not str or not value.strip() for value in capabilities):
-            raise ValueError("capabilities contém valor inválido")
+            raise ValueError("capabilities contÃ©m valor invÃ¡lido")
         object.__setattr__(self, "capabilities", capabilities)
+        public_fields = normalize_public_invocation_fields(self.public_invocation_fields)
+        object.__setattr__(self, "public_invocation_fields", public_fields)
+        object.__setattr__(
+            self,
+            "argument_provenance",
+            normalize_argument_provenance(self.argument_provenance),
+        )
         if not isinstance(self.origin_kind, ToolOriginKind):
             object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
+        if self.origin_kind is ToolOriginKind.EXTENSION and public_fields:
+            raise ValueError("Tools de extension nao podem publicar campos de invocacao")
         if self.origin_kind is ToolOriginKind.EXTENSION:
             if not isinstance(self.extension_id, str) or not self.extension_id.strip():
                 raise ValueError("Tool de extension requer extension_id")
             validate_extension_id(self.extension_id)
         elif self.extension_id is not None:
-            raise ValueError("Tool builtin não pode conter extension_id")
-
+            raise ValueError("Tool builtin nÃ£o pode conter extension_id")
     def __getattribute__(self, name: str) -> Any:
         if name == "schema":
             snapshot = object.__getattribute__(self, "schema")
             return thaw_json_like(snapshot)
         return object.__getattribute__(self, name)
-
-
 @dataclass(frozen=True)
 class ToolInvocation:
     """Context and input arguments for a tool invocation."""
@@ -187,6 +191,16 @@ class ToolInvocation:
     workspace: Optional[str] = None
     cancellation_token: Any = field(default=None, kw_only=True, repr=False, compare=False)
     cancellation_event: Any = field(default=None, kw_only=True, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Freeze concrete arguments at the gateway execution boundary."""
+
+        object.__setattr__(self, "args", freeze_json_like(dict(self.args)))
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "args":
+            return thaw_json_like(object.__getattribute__(self, "args"))
+        return object.__getattribute__(self, name)
 
 @dataclass(frozen=True, slots=True)
 class ToolInvocationRequest:
@@ -203,9 +217,9 @@ class ToolInvocationRequest:
         if self.tool_name is not None and type(self.tool_name) is not str:
             raise TypeError("tool_name deve usar str exata")
         if not isinstance(self.invocation_id, str) or not self.invocation_id.strip():
-            raise ValueError("invocation_id deve ser uma string não vazia")
+            raise ValueError("invocation_id deve ser uma string nÃ£o vazia")
         if not isinstance(self.tool_name, str) or not self.tool_name.strip():
-            raise ValueError("tool_name deve ser uma string não vazia")
+            raise ValueError("tool_name deve ser uma string nÃ£o vazia")
         if not isinstance(self.arguments, Mapping):
             raise TypeError("arguments deve ser um mapping")
         object.__setattr__(self, "arguments", freeze_json_like(dict(self.arguments)))
@@ -216,21 +230,14 @@ class ToolInvocationRequest:
         if self.task_id is not None and (
             not isinstance(self.task_id, str) or not self.task_id.strip()
         ):
-            raise ValueError("task_id deve ser uma string nÃ£o vazia")
-
+            raise ValueError("task_id deve ser uma string não vazia")
     def __getattribute__(self, name: str) -> Any:
         if name == "arguments":
             return thaw_json_like(object.__getattribute__(self, "arguments"))
         return object.__getattribute__(self, name)
-
 @dataclass(frozen=True)
 class AuthorizationContext:
-    """Immutable grants used for one invocation.
-
-    Persona is retained as policy input only.  It is never treated as an
-    authority by itself; effective capabilities are the intersection of all
-    grants supplied by the caller and the extension.
-    """
+    """Immutable grants for one invocation."""
 
     task_id: str | None = None
     persona: str | None = None
@@ -243,8 +250,6 @@ class AuthorizationContext:
 
     def effective_capabilities(self) -> frozenset[str]:
         return self.task_capabilities & self.extension_capabilities
-
-
 @dataclass(frozen=True)
 class ToolError:
     """Structured error payload for failed tool invocations."""
@@ -267,12 +272,10 @@ class ToolResult:
     @property
     def ok(self) -> bool:
         return self.status == ToolStatus.SUCCEEDED
-
     @property
     def done(self) -> bool:
         """Whether execution reached a terminal state."""
         return self.status in frozenset(ToolStatus)
-
     def to_legacy_dict(self, *, include_details: bool = False) -> Dict[str, Any]:
         err_msg = self.error.message if self.error else None
         if not err_msg and not self.ok:
@@ -288,13 +291,10 @@ class ToolResult:
                            "artifacts": list(self.artifacts),
                            "executed": self.executed})
         return result
-
-
 class ToolAdapter(Protocol):
     """Protocol implemented by any tool source (builtin, stdio extension, etc.)."""
 
     def descriptors(self) -> Tuple[ToolDescriptor, ...]:
         ...
-
     def invoke(self, invocation: ToolInvocation) -> ToolResult:
         ...

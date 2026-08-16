@@ -12,7 +12,8 @@ from agent.planning.planning_context import (
     PlanningContextSnapshot,
 )
 from agent.planning.presentation import PlanningPresentationSnapshot, validate_planning_view_binding
-from agent.planning.replan import ReplanContext, replan
+from agent.planning.result_bindings import bind_result_references, has_result_bindings
+from agent.planning.validation_repair import replace_blocked_step, replan_blocked_steps
 from agent.runtime.logging import logger
 from agent.state import AgentState
 
@@ -36,6 +37,7 @@ class ExecutionGateway:
         objective: str,
         tool_usage_count: Dict[str, int],
         *,
+        continue_after_plan: bool = False,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
     ) -> ExecutionResult:
@@ -53,9 +55,19 @@ class ExecutionGateway:
         self.orchestrator.agent_state.set_plan(validated)
         canonical = self.orchestrator.agent_state.plan
         self.orchestrator._emit(
-            "plan_created", {"steps": len(canonical), "plan": canonical}
+            "plan_created",
+            {
+                "steps": len(canonical),
+                "plan": canonical,
+                "continue_after_plan": continue_after_plan,
+            },
         )
-        answer = self.orchestrator.plan_executor.execute(objective, tool_usage_count)
+        if continue_after_plan:
+            answer = self.orchestrator.plan_executor.execute(
+                objective, tool_usage_count, continue_after_plan=True
+            )
+        else:
+            answer = self.orchestrator.plan_executor.execute(objective, tool_usage_count)
         return ExecutionResult(final_answer=answer, validated_plan=canonical)
 
     def validate_and_optimize_plan(
@@ -78,13 +90,16 @@ class ExecutionGateway:
     def _bind_deferred_references(
         plan: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        if not any(is_deferred_condition(step) for step in plan):
+        if not any(is_deferred_condition(step) for step in plan) and not any(
+            has_result_bindings(step) for step in plan
+        ):
             return plan
         canonical = AgentState.canonicalize_plan_steps(
             plan,
             preserve_step_ids=False,
         )
-        return bind_deferred_observation_references(canonical)
+        bound: List[Dict[str, Any]] = bind_result_references(canonical, AgentState._new_step_id)
+        return bind_deferred_observation_references(bound)
 
     def extend_validated_plan(
         self,
@@ -144,15 +159,19 @@ class ExecutionGateway:
         failure_reason: str,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        repair_budget: Dict[str, int] | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
         if not blocked:
             return plan
+        if repair_budget is None:
+            repair_budget = {"remaining": 1}
         recovered = self._replan_blocked_steps(
             plan,
             objective,
             blocked,
             planning_context if planning_context is not None else getattr(self, "_active_planning_context", None),
             planning_view,
+            repair_budget,
         )
         if recovered is None:
             self._abort(failure_reason)
@@ -177,7 +196,6 @@ class ExecutionGateway:
                 planning_view=planning_view,
             ).optimize(plan)
         if report.changed:
-
             logger.info(
                 "[GATEWAY][OPTIMIZER] custo %s -> %s; %s transformações; %s duplicatas removidas",
                 report.cost_before,
@@ -197,12 +215,11 @@ class ExecutionGateway:
         blocked_steps: List[BlockedStep],
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        repair_budget: Dict[str, int] | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
-        updated = list(plan)
-        for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
-            if not self._replace_blocked_step(updated, objective, blocked, planning_context, planning_view):
-                return None
-        return updated or None
+        return replan_blocked_steps(
+            self, plan, objective, blocked_steps, planning_context, planning_view, repair_budget
+        )
 
     def _replace_blocked_step(
         self,
@@ -211,35 +228,11 @@ class ExecutionGateway:
         blocked: BlockedStep,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        repair_budget: Dict[str, int] | None = None,
     ) -> bool:
-        index = blocked.index
-        if index >= len(plan):
-            return False
-        step = plan[index] if isinstance(plan[index], dict) else {"tool": "", "args": {}}
-        context = ReplanContext(
-            task=objective,
-            current_step=step,
-            tool_history=self.orchestrator.agent_state.tool_history,
-            last_exception=blocked.reason,
+        return replace_blocked_step(
+            self, plan, objective, blocked, planning_context, planning_view, repair_budget
         )
-        action = replan(
-            context, blocked.reason, self.orchestrator,
-            planning_context=planning_context,
-            planning_view=planning_view,
-        )
-        self.orchestrator._emit("replan", {
-            "original_step": index,
-            "error": blocked.reason,
-            "strategy": action.source if action else "none",
-            "replacement_steps": len(action.steps) if action else 0,
-        })
-        if action and action.steps:
-            plan[index : index + 1] = action.steps
-            logger.info("Passo %s substituído por %s passo(s).", index + 1, len(action.steps))
-            return True
-        else:
-            logger.warning("Passo %s permanece bloqueado: nenhuma substituição válida.", index + 1)
-            return False
 
     def _planning_view(
         self,

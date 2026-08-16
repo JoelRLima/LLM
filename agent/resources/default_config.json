@@ -37,6 +37,7 @@
   "max_task_tokens": 200000,
   "max_task_tool_calls": 60,
   "max_task_wall_seconds": 1800,
+  "max_reasoning_turns": 3,
   "max_repeated_no_progress": 3,
   "max_consecutive_same_error": 3,
   "default_system_prompt": "You are a helpful assistant. Your final response must be in Portuguese (Brazil), natural and fluent.",

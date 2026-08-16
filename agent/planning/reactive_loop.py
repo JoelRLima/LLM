@@ -1,12 +1,14 @@
-import json
 from typing import Any, Dict, cast
 
 from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
 from agent.final_response import render_operational_answer
-from agent.parsers import stringify
 from agent.planning.plan_builder import build_planner_tools_description
 from agent.planning.task_completion import allow_linear_completion
+from agent.reporting.observation_evidence import (
+    observation_contract_instructions,
+    serialize_tool_observations,
+)
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.watchdog import Watchdog
 
@@ -55,19 +57,31 @@ class ReactiveLoop:
         tools = build_planner_tools_description(
             self.orchestrator, planner_kind="reactive", compact=True
         )
-        history = "".join(self._history_line(action) for action in self.orchestrator.agent_state.tool_history[-3:])
+        history = "".join(
+            self._history_line(
+                action,
+                descriptor_lookup=getattr(self.orchestrator, "tool_registry", None),
+            )
+            for action in self.orchestrator.agent_state.tool_history[-3:]
+        )
         return (
             f"Objetivo: {objective}\nFerramentas disponíveis:\n{tools}\n\n{history}"
+            f"{observation_contract_instructions()}\n"
             "Escolha o próximo passo e responda apenas com JSON válido. "
             "Use action='tool' com tool/args ou action='final' com answer."
         )
 
     @staticmethod
-    def _history_line(action: Dict[str, Any]) -> str:
-        result = stringify(action["result"])
-        if len(result) > 1000:
-            result = result[:1000] + "\n... (truncado)"
-        return f"- Usei: {action['tool']}\n  Com: {json.dumps(action['args'], ensure_ascii=False)}\n  Resultado: {result}\n"
+    def _history_line(action: Dict[str, Any], descriptor_lookup: Any = None) -> str:
+        evidence = serialize_tool_observations(
+            (action,),
+            max_chars=1500,
+            descriptor_lookup=descriptor_lookup,
+        )
+        return (
+            f"- Usei: {action.get('tool', '')}\n"
+            f"  authoritative_tool_observation: {evidence}\n"
+        )
 
     def _final_answer(self, decision: ModelDecision, objective: str) -> str:
         answer = str(decision.get("answer") or decision.get("message") or "Tarefa concluída.")

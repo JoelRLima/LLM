@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from agent.contracts import ToolResult
+from agent.planning.step_contracts import PreparedInvocation
 from agent.tools.contracts import ToolInvocationRequest
 
 
@@ -18,6 +19,7 @@ class ParallelInvocation:
     step_id: str
     invocation_id: str
     request: ToolInvocationRequest
+    prepared: PreparedInvocation | None = None
 
 
 def correlate_parallel_result(

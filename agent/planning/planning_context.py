@@ -25,6 +25,7 @@ from agent.tools.contracts import (
     thaw_json_like,
 )
 from agent.tools.extension_state import validate_extension_id
+from agent.tools.provenance import normalize_argument_provenance
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ class PlanningTool:
     cacheable: bool = False
     idempotent: bool = False
     supports_cancellation: bool = False
+    argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -66,6 +68,11 @@ class PlanningTool:
             raise PlanningContextError("schema de planning excede a profundidade maxima") from exc
         object.__setattr__(self, "input_schema", frozen_schema)
         object.__setattr__(self, "required_capabilities", frozenset(self.required_capabilities))
+        object.__setattr__(
+            self,
+            "argument_provenance",
+            normalize_argument_provenance(self.argument_provenance),
+        )
         if not isinstance(self.origin_kind, ToolOriginKind):
             object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
         if self.origin_kind is ToolOriginKind.EXTENSION:
@@ -83,8 +90,9 @@ class PlanningTool:
             return thaw_json_like(object.__getattribute__(self, "input_schema"))
         return object.__getattribute__(self, name)
 
-
-def validate_planning_tool_arguments(descriptor: Any, args: Mapping[str, Any]) -> None:
+def validate_planning_tool_arguments(
+    descriptor: Any, args: Mapping[str, Any], bound_fields: set[str] | None = None
+) -> None:
     """Validate JSON arguments against canonical planning metadata.
 
     This is deliberately a pure planning check; it does not invoke a gateway,
@@ -103,12 +111,19 @@ def validate_planning_tool_arguments(descriptor: Any, args: Mapping[str, Any]) -
     if not isinstance(args, dict):
         raise ValueError("arguments must be a JSON object")
     properties = schema.get("properties") or {}
-    validate_argument_shape(schema, properties, args)
+    legacy_fields = {
+        key: value
+        for key, value in schema.items()
+        if key not in {"type", "required", "properties", "additionalProperties"}
+    }
+    if not properties and legacy_fields and all(isinstance(value, Mapping) for value in legacy_fields.values()):
+        # Builtin legacy descriptors use a direct field-to-schema mapping.
+        properties = legacy_fields
+    validate_argument_shape(schema, properties, args, bound_fields)
     for key, value in args.items():
         prop_schema = properties.get(key)
         if isinstance(prop_schema, Mapping):
             validate_property_value(key, value, prop_schema)
-
 
 @dataclass(frozen=True, slots=True)
 class PlanningContextSnapshot:
@@ -141,7 +156,6 @@ class PlanningContextSnapshot:
             raise ValueError("eligible_names deve corresponder exatamente às tools")
         object.__setattr__(self, "tools", tools)
         object.__setattr__(self, "eligible_names", names)
-
     def present(
         self,
         planner_kind: str,
@@ -219,6 +233,7 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         cacheable=descriptor.cacheable,
         idempotent=descriptor.idempotent,
         supports_cancellation=descriptor.supports_cancellation,
+        argument_provenance=descriptor.argument_provenance,
     )
 
 

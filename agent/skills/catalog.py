@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from agent.skills.descriptor import SkillCapability as C
 from agent.skills.descriptor import SkillSpec
+from agent.tools.provenance import ArgumentOrigin
 
 BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
     SkillSpec(
@@ -57,6 +58,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         cacheable=True,
         idempotent=True,
         category="SEARCH",
+        public_invocation_fields=frozenset({"path"}),
     ),
     SkillSpec(
         "agent.skills.echo",
@@ -78,6 +80,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         cacheable=True,
         idempotent=True,
         category="READ",
+        public_invocation_fields=frozenset({"file_path"}),
     ),
     SkillSpec(
         "agent.skills.file_writer",
@@ -114,6 +117,16 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         cacheable=True,
         idempotent=True,
         category="SEARCH",
+        public_invocation_fields=frozenset({"path", "pattern"}),
+        argument_provenance={
+            "pattern": frozenset(
+                {
+                    ArgumentOrigin.USER_LITERAL.value,
+                    ArgumentOrigin.OBSERVATION_LITERAL.value,
+                    ArgumentOrigin.RESULT_BINDING.value,
+                }
+            )
+        },
     ),
     SkillSpec(
         "agent.skills.python_executor",
@@ -161,6 +174,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         cost=5,
         cacheable=True,
         category="NETWORK",
+        public_invocation_fields=frozenset({"query"}),
     ),
 )
 

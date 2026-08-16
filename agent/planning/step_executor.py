@@ -4,14 +4,16 @@ from typing import Dict, Optional
 
 from agent.contracts import ToolArgs, ToolResult
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.result_bindings import ResultBindingError, resolve_bound_args
 from agent.planning.step_contracts import (
     ExecutionContext,
+    PreparedInvocation,
     StepExecutionOutcome,
     StepOutcomeKind,
 )
 from agent.planning.step_policies import StepPolicies
 
-__all__ = ["StepExecutionOutcome", "StepExecutor", "StepOutcomeKind"]
+__all__ = ["PreparedInvocation", "StepExecutionOutcome", "StepExecutor", "StepOutcomeKind"]
 
 
 class StepExecutor:
@@ -24,10 +26,10 @@ class StepExecutor:
     def execute(self, index: int, objective: str, usage: Dict[str, int]) -> StepExecutionOutcome:
         if self.context.cancellation_token.cancelled:
             return StepExecutionOutcome(StepOutcomeKind.CANCELLED, final_answer="Tarefa cancelada. O progresso concluído foi preservado.")
-        tool, args, file_path = self._prepare(index)
-        validation = self._validate(index, tool, args)
-        if validation is not None:
-            return validation
+        prepared = self.prepare_invocation(index)
+        if isinstance(prepared, StepExecutionOutcome):
+            return prepared
+        tool, args, file_path = prepared.tool, prepared.args, prepared.file_path
         if self.policies.is_hard_blocked(tool, args, file_path, usage):
             return self.finish_skipped(index, "passo bloqueado por repetição")
         if self.policies.is_impossible_chunk(tool, args, file_path):
@@ -40,13 +42,34 @@ class StepExecutor:
             return result_or_outcome
         return self.finalize_result(index, tool, args, result_or_outcome, file_path, objective, usage)
 
-    def _prepare(self, index: int) -> tuple[str, ToolArgs, str]:
+    def prepare_invocation(self, index: int) -> PreparedInvocation | StepExecutionOutcome:
+        prepared = self._prepare(index)
+        if isinstance(prepared, StepExecutionOutcome):
+            return prepared
+        tool, args, file_path = prepared
+        validation = self._validate(index, tool, args)
+        if validation is not None:
+            return validation
+        return PreparedInvocation(
+            index=index,
+            step_id=self.context.agent_state.get_step_id(index),
+            tool=tool,
+            args=dict(args),
+            file_path=file_path,
+        )
+
+    def _prepare(self, index: int) -> tuple[str, ToolArgs, str] | StepExecutionOutcome:
         state = self.context.agent_state
         step = state.plan[index]
         raw_args = step.get("args")
         args: ToolArgs = raw_args if isinstance(raw_args, dict) else {}
         file_path = str(args.get("target") or args.get("file_path") or "")
         state.mark_step_running(index)
+        try:
+            args = resolve_bound_args(step, index, state.plan, state.tool_history)
+        except ResultBindingError as exc:
+            return self.finish_failed(index, f"binding inválido: {exc}", decisive=True)
+        file_path = str(args.get("target") or args.get("file_path") or "")
         return str(step.get("tool", "")), args, file_path
 
     def _validate(self, index: int, tool: str, args: ToolArgs) -> StepExecutionOutcome | None:

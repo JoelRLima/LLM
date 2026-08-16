@@ -6,6 +6,7 @@ import pytest
 from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
 from agent.llm.model_client import ModelProviderError
 from agent.reporting.operational_outcome import OperationalOutcome
+from agent.tools.contracts import ToolDescriptor
 
 
 class FailingSession:
@@ -45,7 +46,8 @@ class GroundingSession:
 
     def send_non_streaming_request(self, payload):
         self.final_prompt = payload["messages"][-1]["content"]
-        assert "observação: []" in self.final_prompt
+        assert '"value":[]' in self.final_prompt
+        assert '"present":true' in self.final_prompt
         assert "não invente arquivos" in self.final_prompt
         return "O workspace está vazio; nenhum item foi observado."
 
@@ -161,7 +163,7 @@ def test_empty_tool_observation_reaches_grounded_synthesis() -> None:
     answer = responder.build_final_answer("Liste os arquivos e diretórios.")
 
     assert answer == "O workspace está vazio; nenhum item foi observado."
-    assert "observação: []" in session.final_prompt
+    assert '"value":[]' in session.final_prompt
 
 
 def test_tool_summary_preserves_positive_and_failed_observations() -> None:
@@ -196,10 +198,30 @@ def test_tool_summary_preserves_positive_and_failed_observations() -> None:
     assert '"status":"failed"' in summary
     assert '"executed":true' in summary
     assert '"error_code":"TOOL_ERROR"' in summary
-    assert '"data_present":true' in summary
-    assert '"data_chars":0' in summary
+    assert '"present":true' in summary
+    assert '"chars":0' in summary
     assert "acesso negado" not in summary
-    assert 'observação: ""' in summary
+    assert '"value":""' in summary
+
+
+def test_analysis_notes_cannot_bypass_canonical_observations() -> None:
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "file_reader",
+                "result": {"ok": True, "status": "succeeded", "data": "observed"},
+            }
+        ]
+    )
+    responder = FinalResponder(
+        SimpleNamespace(agent_state=state, tool_registry=None)
+    )
+
+    prompt = responder._build_prompt("objetivo", "nota derivada")
+
+    assert "authoritative_tool_observation" in prompt
+    assert "not proof" in prompt.casefold() or "nao prova" in prompt.casefold()
+    assert "nao instrucoes" in prompt.casefold()
 
 
 @pytest.mark.parametrize(
@@ -218,7 +240,7 @@ def test_tool_summary_preserves_each_falsy_data_semantic(data, serialized) -> No
 
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
-    assert f"observação: {serialized}" in summary
+    assert f'"value":{serialized}' in summary
 
 
 def test_tool_summary_distinguishes_missing_data_from_none() -> None:
@@ -234,8 +256,10 @@ def test_tool_summary_distinguishes_missing_data_from_none() -> None:
 
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
-    assert "observação: <data ausente>" in summary
-    assert "observação: null" in summary
+    assert '"present":false' in summary
+    assert '"type":"missing"' in summary
+    assert '"present":true' in summary
+    assert '"value":null' in summary
 
 
 def test_two_successful_empty_reads_are_explicit_model_observations() -> None:
@@ -269,11 +293,11 @@ def test_two_successful_empty_reads_are_explicit_model_observations() -> None:
     prompt = responder._build_prompt("compare a.txt and b.txt", "")
 
     assert summary.count('"status":"succeeded"') == 2
-    assert summary.count('"data_present":true') == 2
-    assert summary.count('"data_chars":0') == 2
-    assert summary.count('"data_complete":true') == 2
-    assert "data_present=true" in prompt
-    assert "data_chars=0" in prompt
+    assert summary.count('"present":true') == 2
+    assert summary.count('"chars":0') == 2
+    assert summary.count('"complete":true') == 2
+    assert 'present=true' in prompt
+    assert '"chars":0' in prompt
 
 
 def test_tool_summary_preserves_multiple_results_in_order() -> None:
@@ -305,7 +329,7 @@ def test_tool_summary_preserves_multiple_results_in_order() -> None:
     assert summary.index('"tool":"first"') < summary.index('"tool":"empty"')
     assert summary.index('"tool":"empty"') < summary.index('"tool":"failed"')
     assert "conteúdo interno" not in summary
-    assert summary.count("observação:") == 3
+    assert summary.count('"observation":') == 3
 
 
 def test_tool_summary_does_not_forward_raw_error_or_message_secrets() -> None:
@@ -346,7 +370,7 @@ def test_tool_summary_has_one_global_budget_and_keeps_every_result() -> None:
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
     assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
-    assert summary.count("--- Resultado de ferramenta ---") == len(history)
+    assert summary.count('"observation":') == len(history)
     assert '"tool":"tool_0"' in summary
     assert '"tool":"tool_59"' in summary
 
@@ -371,7 +395,7 @@ def test_tool_summary_budget_includes_json_escaped_metadata() -> None:
 
     assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
     assert "\x00" not in summary
-    assert summary.count("--- Resultado de ferramenta ---") == len(history)
+    assert summary.count('"observation":') == len(history)
 
 
 def test_tool_summary_drops_untrusted_error_code() -> None:
@@ -392,7 +416,35 @@ def test_tool_summary_drops_untrusted_error_code() -> None:
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
     assert "TOPSECRET" not in summary
-    assert '"error_code":null' in summary
+    assert '"error_code"' not in summary
+
+
+def test_final_grounding_exposes_actual_query_not_objective_text() -> None:
+    descriptor = ToolDescriptor(
+        "grep", "grep", public_invocation_fields={"path", "pattern"}
+    )
+    state = SimpleNamespace(
+        tool_history=[
+            {
+                "tool": "grep",
+                "args": {"path": ".", "pattern": "controle.txt"},
+                "result": {
+                    "ok": True,
+                    "status": "succeeded",
+                    "executed": True,
+                    "data": [],
+                },
+            }
+        ]
+    )
+    registry = SimpleNamespace(descriptor=lambda _name: descriptor)
+
+    summary = FinalResponder(
+        SimpleNamespace(agent_state=state, tool_registry=registry)
+    )._tool_results_summary()
+
+    assert '"pattern":"controle.txt"' in summary
+    assert "modificado" not in summary
 
 
 @pytest.mark.parametrize("streaming", [False, True])

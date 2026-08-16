@@ -15,6 +15,7 @@ from agent.memory.memory import AgentMemory
 from agent.state_checkpoint import progression_checkpoint, restore_progression
 from agent.state_plan import canonicalize_plan_steps
 from agent.state_progression import (
+    current_result_for_step,
     pending_effects,
     record_executed_effect,
     reset_task_progression,
@@ -42,6 +43,10 @@ class AgentState:
         self.executed_effects: List[str] = []
         self.waived_effects: List[str] = []
         self.continuation_attempts: int = 0
+        self.reasoning_turns_used: int = 0
+        self.reasoning_last_history_count: int = -1
+        self.reasoning_last_progress_token: Optional[str] = None
+        self.continue_after_plan: bool = False
         self.terminal_disposition: Optional[str] = None
 
         # Componentes de memória e histórico
@@ -79,13 +84,11 @@ class AgentState:
         if logical_slot is not None:
             entry["logical_slot"] = logical_slot
         self.tool_history.append(entry)
-
     def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
         """Project a canonical terminal result without appending history again."""
         self.last_tool = tool_name
         self.last_args = args
         self.last_result = result
-
     @staticmethod
     def _new_step_id() -> str:
         return f"step-{uuid.uuid4().hex}"
@@ -97,8 +100,10 @@ class AgentState:
         *,
         preserve_step_ids: bool = True,
     ) -> List[PlanStep]:
-        return canonicalize_plan_steps(plan, cls._new_step_id, preserve_step_ids=preserve_step_ids)
-
+        return cast(
+            List[PlanStep],
+            canonicalize_plan_steps(plan, cls._new_step_id, preserve_step_ids=preserve_step_ids),
+        )
     def set_plan(self, plan: Sequence[Mapping[str, Any]]) -> None:
         """Substitui o plano e preserva registros de IDs que sobreviveram à transformação."""
         normalized = self.canonicalize_plan_steps(plan)
@@ -110,24 +115,23 @@ class AgentState:
         self.step_records = records
         if self.current_step_id not in records:
             self.current_step_id = None
-
     def reset_execution(self) -> None:
         self.plan = []
         self.plan_step = 0
         self.current_step_id = None
         self.step_records = {}
-
     def reset_task_progression(self, requested_effects: Sequence[str] = ()) -> None:
         reset_task_progression(self, requested_effects)
-
     def record_executed_effect(self, effect: str) -> None:
         record_executed_effect(self, effect)
-
     def waive_effect(self, effect: str) -> None:
         waive_effect(self, effect)
-
     def pending_effects(self) -> tuple[str, ...]:
         return pending_effects(self)
+
+    def current_result_for_step(self, step_id: str) -> tuple[int, ToolHistoryEntry] | None:
+        current = current_result_for_step(self.tool_history, step_id)
+        return cast(tuple[int, ToolHistoryEntry] | None, current)
 
     def clear_plan(self) -> None:
         self.reset_execution()
@@ -293,6 +297,4 @@ class AgentState:
         memory_state = data.get("memory_state")
         if memory_state is not None and hasattr(self.memory, "state"):
             self.memory.state = memory_state
-        self.prepare_for_resume(
-            retry_failed=retry_failed, retry_skipped=retry_skipped
-        )
+        self.prepare_for_resume(retry_failed=retry_failed, retry_skipped=retry_skipped)

@@ -15,6 +15,7 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
+from agent.tools.result_completeness import canonical_completeness
 
 
 class BuiltinToolAdapter(ToolAdapter):
@@ -39,6 +40,8 @@ class BuiltinToolAdapter(ToolAdapter):
             origin_kind=ToolOriginKind.BUILTIN,
             adapter_id="builtin",
             source_version="1",
+            public_invocation_fields=spec.public_invocation_fields,
+            argument_provenance=spec.argument_provenance,
         )
 
     @staticmethod
@@ -144,18 +147,29 @@ class BuiltinToolAdapter(ToolAdapter):
         raw_result: dict[str, object],
         data: object,
     ) -> tuple[object, ...]:
-        if tool_name != "file_reader" or not isinstance(data, str):
-            return ()
+        metadata: dict[str, object] = {}
+        for key in (
+            "complete",
+            "truncated",
+            "total_chars",
+            "total_lines",
+            "total_matches",
+            "output_chars",
+        ):
+            if key in raw_result:
+                metadata[key] = raw_result[key]
         total_chars = raw_result.get("total_chars")
-        if type(total_chars) is not int or total_chars < 0:
+        if isinstance(data, str) and type(total_chars) is int and total_chars >= 0:
+            complete, truncated = canonical_completeness(raw_result)
+            metadata["complete"] = complete
+            metadata["truncated"] = truncated
+            metadata["output_chars"] = len(data)
+            metadata["total_chars"] = total_chars
+        if not metadata:
             return ()
         return (
             {
-                "kind": "text_observation",
-                "metadata": {
-                    "complete": len(data) == total_chars,
-                    "output_chars": len(data),
-                    "total_chars": total_chars,
-                },
+                "kind": "text_observation" if tool_name == "file_reader" else "tool_observation",
+                "metadata": metadata,
             },
         )

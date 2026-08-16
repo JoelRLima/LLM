@@ -1,10 +1,13 @@
 import threading
 import time
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
+from agent.approval import ApprovalDecision
 from agent.cancellation import CancellationToken
+from agent.interfaces.cli.approval import ConsoleApproval
 from agent.skills import load_skill_registry
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
@@ -155,6 +158,136 @@ def test_gateway_capabilities_are_enforced() -> None:
     assert result.status == ToolStatus.PERMISSION_DENIED
     assert result.error is not None
     assert result.error.code == "PERMISSION_DENIED"
+
+
+def test_gateway_approval_receives_concrete_operation_snapshot() -> None:
+    class Approval:
+        def __init__(self) -> None:
+            self.captured = None
+
+        def request(self, request):
+            self.captured = request
+            return ApprovalDecision.REJECTED
+
+    class WriterAdapter:
+        def descriptors(self):
+            return (
+                ToolDescriptor(
+                    "writer",
+                    "writer",
+                    schema={"type": "object"},
+                    capabilities=frozenset({"write"}),
+                ),
+            )
+
+        def invoke(self, invocation):
+            raise AssertionError("approval denial must prevent adapter dispatch")
+
+    approval = Approval()
+    registry = ToolRegistry()
+    registry.register_adapter(WriterAdapter())
+    result = ToolInvocationGateway(registry, approval_port=approval).run(
+        "writer", {"file_path": "controle.txt", "content": "modificado"}
+    )
+
+    assert result.status is ToolStatus.PERMISSION_DENIED
+    assert approval.captured is not None
+    assert "controle.txt" in approval.captured.prompt
+    assert "modificado" in approval.captured.prompt
+    assert approval.captured.metadata["concrete_args"]["file_path"] == "controle.txt"
+
+
+def test_gateway_approval_cannot_mutate_executed_nested_arguments() -> None:
+    original = {
+        "file_path": "controle.txt",
+        "nested": {"b": "approved"},
+        "list": ["approved", {"x": "approved"}],
+    }
+
+    class HostileApproval:
+        def __init__(self) -> None:
+            self.approved = None
+
+        def request(self, request):
+            concrete = request.metadata["concrete_args"]
+            self.approved = deepcopy(concrete)
+            concrete["nested"]["b"] = "mutated"
+            concrete["list"][0] = "mutated"
+            concrete["list"][1]["x"] = "mutated"
+            return ApprovalDecision.APPROVED
+
+    class CapturingAdapter:
+        def descriptors(self):
+            return (ToolDescriptor("writer", "writer", capabilities=frozenset({"write"})),)
+
+        def invoke(self, invocation):
+            self.arguments = invocation.args
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, data=invocation.args)
+
+    approval = HostileApproval()
+    adapter = CapturingAdapter()
+    registry = ToolRegistry()
+    registry.register_adapter(adapter)
+    result = ToolInvocationGateway(registry, approval_port=approval).run("writer", original)
+
+    assert result.status is ToolStatus.SUCCEEDED
+    assert approval.approved == original
+    assert adapter.arguments == original
+    assert adapter.arguments == approval.approved
+
+
+def test_changed_retry_arguments_require_a_fresh_approval_snapshot() -> None:
+    approvals = []
+
+    class Approval:
+        def request(self, request):
+            approvals.append(deepcopy(request.metadata["concrete_args"]))
+            return ApprovalDecision.APPROVED
+
+    class WriterAdapter:
+        def descriptors(self):
+            return (ToolDescriptor("writer", "writer", capabilities=frozenset({"write"})),)
+
+        def invoke(self, invocation):
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, data="ok")
+
+    registry = ToolRegistry()
+    registry.register_adapter(WriterAdapter())
+    gateway = ToolInvocationGateway(registry, approval_port=Approval())
+
+    gateway.run("writer", {"file_path": "controle.txt", "content": "one"})
+    gateway.run("writer", {"file_path": "controle.txt", "content": "two"})
+
+    assert approvals == [
+        {"file_path": "controle.txt", "content": "one"},
+        {"file_path": "controle.txt", "content": "two"},
+    ]
+
+
+def test_console_approval_presents_concrete_operation(monkeypatch) -> None:
+    prompts = []
+    monkeypatch.setattr(
+        "agent.interfaces.cli.approval.console.input",
+        lambda prompt: prompts.append(prompt) or "sim",
+    )
+
+    class WriterAdapter:
+        def descriptors(self):
+            return (ToolDescriptor("writer", "writer", capabilities=frozenset({"write"})),)
+
+        def invoke(self, invocation):
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, data="ok")
+
+    registry = ToolRegistry()
+    registry.register_adapter(WriterAdapter())
+    result = ToolInvocationGateway(registry, approval_port=ConsoleApproval()).run(
+        "writer", {"file_path": "controle.txt", "content": "modificado"}
+    )
+
+    assert result.status is ToolStatus.SUCCEEDED
+    assert len(prompts) == 1
+    assert "controle.txt" in prompts[0]
+    assert "modificado" in prompts[0]
 
 
 def test_gateway_rejects_concurrent_duplicate_invocation_id_deterministically() -> None:

@@ -28,9 +28,10 @@ def validate_and_optimize_plan(
         context, "linear", planning_view, explicit_context
     )
     validator = _validator(gateway, context, presentation, objective)
+    repair_budget = {"remaining": 1}
     report = validator.validate(plan)
     gateway._log_validation(report)
-    if not report.is_valid:
+    if not report.is_valid and not _repairable_report(report):
         gateway._abort(
             "plano inválido",
             [*report.errors, *(item.reason for item in report.blocked_steps)],
@@ -48,7 +49,7 @@ def validate_and_optimize_plan(
         )
         bound_report = validator.validate(working_plan)
         gateway._log_validation(bound_report, "binding canônico")
-        if not bound_report.is_valid:
+        if not bound_report.is_valid and not _repairable_report(bound_report):
             gateway._abort(
                 "binding deferred inválido",
                 [*bound_report.errors, *(item.reason for item in bound_report.blocked_steps)],
@@ -62,6 +63,7 @@ def validate_and_optimize_plan(
         "replanejamento inicial falhou",
         context,
         presentation,
+        repair_budget,
     )
     if recovered is None:
         return None
@@ -73,7 +75,7 @@ def validate_and_optimize_plan(
     )
     post_report = validator.validate(optimized)
     gateway._log_validation(post_report, "pós-otimização")
-    if not post_report.is_valid:
+    if not post_report.is_valid and not _repairable_report(post_report):
         gateway._abort(
             "plano inválido pós-otimização",
             [*post_report.errors, *(item.reason for item in post_report.blocked_steps)],
@@ -86,7 +88,18 @@ def validate_and_optimize_plan(
         "replanejamento pós-otimização falhou",
         context,
         presentation,
+        repair_budget,
     ))
+
+
+def _repairable_report(report: Any) -> bool:
+    """Allow the bounded repair path to handle field-scoped blocked steps."""
+
+    return bool(
+        report.blocked_steps
+        and not report.errors
+        and all(item.is_validation_repair for item in report.blocked_steps)
+    )
 
 
 def _validator(
@@ -107,4 +120,7 @@ def _validator(
         planning_view=presentation,
         objective=objective,
         canonical_deferred_references=canonical_deferred_references,
+        available_observations=getattr(
+            gateway.orchestrator.agent_state, "tool_history", ()
+        ),
     )

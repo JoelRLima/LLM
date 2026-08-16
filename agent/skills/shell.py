@@ -8,6 +8,7 @@ from agent.approval import (
     ApprovalPort,
     ApprovalRequest,
     RequireExplicitApproval,
+    format_concrete_operation,
 )
 from agent.runtime.logging import logger
 from agent.runtime.workspace_context import WorkspaceContext
@@ -179,6 +180,8 @@ class ShellSkill(BaseSkill):
             "ok": ok,
             "done": True,
             "data": output.strip() or "(sem saída)",
+            "total_chars": total_chars,
+            "truncated": bool(truncation),
             "error": None if ok else f"Exit code {result.returncode}",
             "message": message + truncation,
         }
@@ -192,7 +195,9 @@ class ShellSkill(BaseSkill):
             ApprovalRequest(
                 action=effect,
                 resource=str(self.workspace.root),
-                prompt=f"Autorizar o comando com efeito '{effect}' no workspace?",
+                prompt=(
+                    f"Autorizar {format_concrete_operation(effect, str(self.workspace.root), {'command': command})[0]}?"
+                ),
                 metadata={"command": command},
             )
         )

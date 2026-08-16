@@ -67,7 +67,12 @@ class ToolExecutor:
             record_result=record_result,
             cancellation_token=getattr(self.orchestrator, "cancellation_token", None),
         )
-        result = cast(ToolResult, raw_res.to_legacy_dict())
+        # The executor facade is also used by parallel plan slots, where the
+        # gateway state recorder is intentionally disabled and the finalizer
+        # records this returned value itself. Preserve the canonical details
+        # there (executed/artifacts/error_code) instead of downgrading it to
+        # the historical projection before the result reaches AgentState.
+        result = cast(ToolResult, raw_res.to_legacy_dict(include_details=True))
         msg = result.get("message") or ("Concluido" if result.get("ok") else "Falha")
         print(f" {msg}")
         if getattr(self.orchestrator, "verbose", False):

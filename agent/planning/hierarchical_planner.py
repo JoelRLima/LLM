@@ -81,9 +81,11 @@ class HierarchicalPlanner:
         valid_tools: List[str],
         *,
         planning_view: PlanningPresentationSnapshot | None = None,
+        capability_manifest: str = "",
     ) -> None:
         self.ask_model = ask_model
         self.planning_view = planning_view
+        self.capability_manifest = capability_manifest
         self.valid_tools: Set[str] = set(
             planning_view.presented_names if planning_view is not None else (valid_tools or [])
         )
@@ -186,8 +188,10 @@ class HierarchicalPlanner:
         tools_list = ", ".join(sorted(self.valid_tools)) or "(nenhuma ferramenta disponível)"
         if self.planning_view is not None:
             tools_list = self.planning_view.render(compact=True)
+        manifest = f"{self.capability_manifest}\n\n" if self.capability_manifest else ""
         return (
             f"Objetivo complexo: {objective}\n\n"
+            f"{manifest}"
             f"Ferramentas disponíveis: {tools_list}\n\n"
             "Decomponha este objetivo em uma lista de sub-objetivos (macro passos) "
             "independentes e de alto nível, cada um representando uma unidade de "

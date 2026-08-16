@@ -27,6 +27,17 @@ class StepExecutionOutcome:
     decisive: bool = False
 
 
+@dataclass(frozen=True)
+class PreparedInvocation:
+    """Concrete, validated arguments captured before gateway dispatch."""
+
+    index: int
+    step_id: str
+    tool: str
+    args: ToolArgs
+    file_path: str
+
+
 class MemoryPort(Protocol):
     state: Dict[str, Any]
 

@@ -171,6 +171,11 @@ def _tool_payload(
         "capabilities": sorted(tool.required_capabilities),
         "origin": tool.origin_kind.value,
     }
+    if tool.argument_provenance:
+        payload["argument_provenance"] = {
+            argument: {"allowed_origins": sorted(origins)}
+            for argument, origins in sorted(tool.argument_provenance.items())
+        }
     if tool.extension_id is not None:
         payload["extension_id"] = tool.extension_id
     if include_schema:

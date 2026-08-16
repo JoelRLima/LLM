@@ -33,5 +33,6 @@ def test_tool_output_identifies_primary_resource_without_control_character_injec
 
     output = capsys.readouterr().out
     assert result["ok"] is True
+    assert result["executed"] is True
     assert 'Usando file_reader... Recurso: "cli.py\\nforged".' in output
     assert "\nforged" not in output
