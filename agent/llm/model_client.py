@@ -32,9 +32,16 @@ class ModelProviderError(RuntimeError):
 class ModelClient:
     """Compatibilidade de parsing e retry para consumidores legados."""
 
-    # None = suporte a GBNF ainda não testado neste processo/sessão.
-    # True/False = resultado já conhecido (evita novas tentativas de fallback).
-    _backend_supports_grammar: Optional[bool] = None
+    _GRAMMAR_SUPPORT_ATTR = "_grammar_supports_grammar"
+
+    @classmethod
+    def _grammar_support(cls, session: Any) -> Optional[bool]:
+        state = getattr(session, cls._GRAMMAR_SUPPORT_ATTR, None)
+        return state if state is True or state is False else None
+
+    @classmethod
+    def _set_grammar_support(cls, session: Any, value: bool) -> None:
+        setattr(session, cls._GRAMMAR_SUPPORT_ATTR, value)
 
     @staticmethod
     def _is_grammar_unsupported_error(error: Exception) -> bool:
@@ -72,17 +79,20 @@ class ModelClient:
         request_payload: Dict[str, Any],
     ) -> Any:
         try:
-            return session.send_non_streaming_request(request_payload)
+            response = session.send_non_streaming_request(request_payload)
+            if "grammar" in request_payload:
+                cls._set_grammar_support(session, True)
+            return response
         except Exception as exc:
             can_fallback = (
                 "grammar" in request_payload
-                and cls._backend_supports_grammar is None
+                and cls._grammar_support(session) is None
                 and cls._is_grammar_unsupported_error(exc)
             )
             if not can_fallback:
                 logger.error("Model provider request failed (%s).", type(exc).__name__)
                 raise ModelProviderError(str(exc), cause=exc) from exc
-        cls._backend_supports_grammar = False
+        cls._set_grammar_support(session, False)
         fallback_payload = dict(request_payload)
         fallback_payload.pop("grammar", None)
         try:
@@ -94,7 +104,11 @@ class ModelClient:
     @staticmethod
     def _extract_decision(response: Any) -> Optional[Dict[str, Any]]:
         decision = extract_json(response) or extract_json_from_end(response)
-        return cast(Optional[Dict[str, Any]], decision)
+        if not isinstance(decision, dict):
+            return None
+        if "action" not in decision and "tool" in decision:
+            return {"action": "tool", **decision}
+        return cast(Dict[str, Any], decision)
 
     @staticmethod
     def _record_metric(
@@ -122,8 +136,14 @@ class ModelClient:
         })
 
     @staticmethod
-    def _retry(session: Any, verbose: bool) -> Optional[Dict[str, Any]]:
+    def _retry(
+        session: Any,
+        verbose: bool,
+        grammar: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         retry_payload = session.build_payload()
+        if grammar is not None and ModelClient._grammar_support(session) is not False:
+            retry_payload["grammar"] = grammar
         hardware_profile = getattr(session, "hardware_profile", None)
         retry_payload["max_tokens"] = session.config.get("agent_max_tokens") or min(
             FALLBACK_AGENT_MAX_TOKENS,
@@ -169,7 +189,7 @@ class ModelClient:
         """
         started_at = time.time()
         request_payload = dict(payload)
-        if grammar is not None and cls._backend_supports_grammar is not False:
+        if grammar is not None and cls._grammar_support(session) is not False:
             request_payload["grammar"] = grammar
         if verbose:
             has_grammar = "grammar" in request_payload
@@ -189,7 +209,7 @@ class ModelClient:
                 flush=True,
             )
 
-        decision = cls._retry(session, verbose)
+        decision = cls._retry(session, verbose, grammar=grammar)
         if decision:
             return decision
         return {

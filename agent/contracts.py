@@ -60,6 +60,7 @@ class ModelDecision(TypedDict, total=False):
     action: str
     tool: str
     args: ToolArgs
+    bindings: Dict[str, ResultBinding]
     answer: str
     message: str
     reason: str

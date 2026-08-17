@@ -35,6 +35,7 @@ class ChatSession:
         self.gateway: LegacyPayloadGateway = gateway or create_model_gateway(config)
         self.hardware_profile: HardwareProfile = resolve_hardware_profile(config)
         self.model_call_callback: Callable[[Dict[str, Any]], None] | None = None
+        self._grammar_supports_grammar: Optional[bool] = None
 
     def set_model_call_callback(
         self, callback: Callable[[Dict[str, Any]], None] | None

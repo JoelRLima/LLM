@@ -133,7 +133,7 @@ def render_validation_repair_manual(
             "Repair the representation/source of "
             + (", ".join(fields) if fields else "the reported invalid field")
             + " only.",
-            "Return one complete JSON object for the same tool; do not add another step.",
+            "Return one complete action='tool' JSON object for the same tool; do not add another step.",
             "Use only the grounded provenance forms named by the validator detail; never invent a future value.",
             "SOURCES: known concrete value -> args; value supplied by ResultBinding -> bindings.",
             "A binding satisfies its target argument. If a field is in bindings, omit that field from args.",
@@ -146,6 +146,7 @@ def render_validation_repair_manual(
         right_args = dict(frozen_args)
         right_bindings: dict[str, Any] = dict(frozen_bindings or {})
         right_example: dict[str, Any] = {
+            "action": "tool",
             "tool": tool,
             "args": right_args,
             "bindings": right_bindings,
@@ -154,14 +155,14 @@ def render_validation_repair_manual(
         lines.extend(
             [
                 "RIGHT: "
-                + json.dumps(right_example, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                + json.dumps(right_example, ensure_ascii=False, separators=(",", ":")),
                 (
-                    'WRONG (pattern in both args and bindings): {"tool":"grep","args":{"path":".","pattern":"fonte_h2.txt",'
+                    'WRONG (pattern in both args and bindings): {"action":"tool","tool":"grep","args":{"path":".","pattern":"fonte_h2.txt",'
                     '"recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}'
                     if tool == "grep" and target == "pattern"
                     else "WRONG: the same argument name in args and bindings is invalid."
                 ),
-                'WRONG: {"tool":"grep","args":{"path":".","pattern":"${1.text}"}}',
+                'WRONG: {"action":"tool","tool":"grep","args":{"path":".","pattern":"${1.text}"}}',
                 "from_step: 1 is the first ToolStep in this same plan; path: [] is the complete canonical data value.",
                 "Do not use ${...}, $ref, {{...}}, or custom interpolation strings.",
                 "Do not replace this step with another tool.",

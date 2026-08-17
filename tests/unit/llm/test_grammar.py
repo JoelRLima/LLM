@@ -24,14 +24,6 @@ from agent.runtime import config as config_module
 # ----------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def reset_backend_grammar_support():
-    """Garante que o estado de cache do ModelClient não vaze entre testes."""
-    ModelClient._backend_supports_grammar = None
-    yield
-    ModelClient._backend_supports_grammar = None
-
-
 class FakeHTTPError(Exception):
     """Simula um requests.HTTPError com response.status_code/.text."""
 
@@ -64,6 +56,7 @@ def make_session():
         "max_tokens": 512,
         "timeout": 10,
         "agent_max_tokens": None,
+        "ENABLE_GBNF": True,
     }
     return ChatSession("system prompt", config)
 
@@ -111,6 +104,42 @@ def test_get_grammar_returns_mapped_grammar_when_enabled(monkeypatch):
     assert get_grammar("unknown_step") is None
 
 
+def test_get_grammar_uses_effective_config_without_global_mutation(monkeypatch):
+    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
+
+    assert get_grammar("tool_decision", {"ENABLE_GBNF": False}) is None
+    assert get_grammar("tool_decision", {"ENABLE_GBNF": True}) == grammars.TOOL_DECISION_GRAMMAR
+
+
+def test_tool_decision_grammar_matches_canonical_parser():
+    grammar = grammars.TOOL_DECISION_GRAMMAR
+
+    assert "root ::= tool-decision | final-decision" in grammar
+    assert '"\\\"action\\\""' in grammar
+    assert '"\\\"tool\\\""' in grammar
+    assert '"\\\"final\\\""' in grammar
+    assert '"\\\"answer\\\""' in grammar
+
+    for raw in (
+        '{"action":"tool","tool":"echo","args":{}}',
+        '{"action":"final","answer":"concluído"}',
+    ):
+        decision = ModelClient._extract_decision(raw)
+        assert decision is not None
+        assert decision["action"] in {"tool", "final"}
+
+
+def test_replan_grammar_uses_the_tool_only_canonical_root():
+    grammar = get_grammar("replan", {"ENABLE_GBNF": True}) or ""
+
+    assert "root ::= tool-decision" in grammar
+    assert "root ::= tool-decision | final-decision" not in grammar
+    assert "final-decision" not in grammar
+    assert ModelClient._extract_decision(
+        '{"action":"tool","tool":"echo","args":{}}'
+    ) == {"action": "tool", "tool": "echo", "args": {}}
+
+
 def test_plan_grammar_exposes_only_closed_mechanical_deferred_shape(monkeypatch):
     monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
     grammar = get_grammar("plan") or ""
@@ -136,6 +165,18 @@ def test_ask_model_auto_selects_grammar_by_step_type():
 
     _, kwargs = cm.model_client.request.call_args
     assert kwargs["grammar"] == grammars.PLAN_GRAMMAR
+
+
+def test_ask_model_uses_session_config_over_default_config(monkeypatch):
+    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", False)
+    cm = make_context_manager()
+    cm.model_client = MagicMock()
+    cm.model_client.request.return_value = {"action": "tool", "tool": "echo", "args": {}}
+
+    cm.ask_model("faça algo", step_type="tool_decision")
+
+    _, kwargs = cm.model_client.request.call_args
+    assert kwargs["grammar"] == grammars.TOOL_DECISION_GRAMMAR
 
 
 def test_ask_model_grammar_none_disables_grammar():
@@ -215,13 +256,13 @@ def test_request_fallback_on_grammar_unsupported_error():
     assert len(call_payloads) == 2
     assert "grammar" in call_payloads[0]
     assert "grammar" not in call_payloads[1]
-    assert ModelClient._backend_supports_grammar is False
+    assert session._grammar_supports_grammar is False
     assert result == {"action": "final", "answer": "ok"}
 
 
 def test_request_does_not_resend_grammar_after_backend_marked_unsupported():
-    ModelClient._backend_supports_grammar = False
     session = MagicMock()
+    session._grammar_supports_grammar = False
     call_payloads = []
 
     def side_effect(payload):
@@ -241,8 +282,38 @@ def test_request_does_not_resend_grammar_after_backend_marked_unsupported():
     assert "grammar" not in call_payloads[0]
 
 
+def test_grammar_capability_is_isolated_per_session():
+    session_a = MagicMock()
+    session_a._grammar_supports_grammar = None
+    calls_a = []
+
+    def reject_a(payload):
+        calls_a.append(payload)
+        if "grammar" in payload:
+            raise FakeHTTPError(400, "unknown parameter: grammar")
+        return '{"action":"final","answer":"a"}'
+
+    session_a.send_non_streaming_request.side_effect = reject_a
+    assert ModelClient.request(session_a, {}, grammar="grammar")["answer"] == "a"
+    assert session_a._grammar_supports_grammar is False
+
+    session_b = MagicMock()
+    session_b._grammar_supports_grammar = None
+    calls_b = []
+
+    def accept_b(payload):
+        calls_b.append(payload)
+        return '{"action":"final","answer":"b"}'
+
+    session_b.send_non_streaming_request.side_effect = accept_b
+    assert ModelClient.request(session_b, {}, grammar="grammar")["answer"] == "b"
+    assert "grammar" in calls_b[0]
+    assert session_b._grammar_supports_grammar is True
+
+
 def test_request_does_not_fallback_on_generic_error():
     session = MagicMock()
+    session._grammar_supports_grammar = None
     call_payloads = []
 
     def side_effect(payload):
@@ -264,7 +335,58 @@ def test_request_does_not_fallback_on_generic_error():
     # "grammar" no payload; o comportamento de retry por JSON truncado,
     # já existente, é independente da lógica de gramática).
     assert "grammar" in call_payloads[0]
-    assert ModelClient._backend_supports_grammar is None
+    assert session._grammar_supports_grammar is None
+
+
+def test_parse_retry_preserves_grammar_constraint():
+    session = MagicMock()
+    session._grammar_supports_grammar = None
+    session.build_payload.return_value = {"messages": []}
+    session.config = {"agent_max_tokens": 100}
+    call_payloads = []
+
+    def responses(payload):
+        call_payloads.append(payload)
+        return (
+            "not json"
+            if len(call_payloads) == 1
+            else '{"action":"final","answer":"ok"}'
+        )
+
+    session.send_non_streaming_request.side_effect = responses
+
+    result = ModelClient.request(session, {}, grammar="grammar")
+
+    assert result == {"action": "final", "answer": "ok"}
+    assert len(call_payloads) == 2
+    assert all(payload.get("grammar") == "grammar" for payload in call_payloads)
+
+
+def test_unsupported_grammar_parse_retry_stays_without_grammar():
+    session = MagicMock()
+    session._grammar_supports_grammar = None
+    session.build_payload.return_value = {"messages": []}
+    session.config = {"agent_max_tokens": 100}
+    call_payloads = []
+
+    def responses(payload):
+        call_payloads.append(payload)
+        if len(call_payloads) == 1:
+            raise FakeHTTPError(400, "unknown parameter: grammar")
+        if len(call_payloads) == 2:
+            return "not json"
+        return '{"action":"final","answer":"ok"}'
+
+    session.send_non_streaming_request.side_effect = responses
+
+    result = ModelClient.request(session, {}, grammar="grammar")
+
+    assert result == {"action": "final", "answer": "ok"}
+    assert len(call_payloads) == 3
+    assert "grammar" in call_payloads[0]
+    assert "grammar" not in call_payloads[1]
+    assert "grammar" not in call_payloads[2]
+    assert session._grammar_supports_grammar is False
 
 
 def test_provider_secrets_are_not_logged_on_normal_or_fallback_requests(caplog):

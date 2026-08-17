@@ -181,7 +181,7 @@ class ContextManager:
                 para desabilitar a gramática nesta chamada.
         """
         if isinstance(grammar, AutoGrammar):
-            effective_grammar = get_grammar(step_type)
+            effective_grammar = get_grammar(step_type, self.session.config)
         else:
             effective_grammar = grammar
         original_messages = [m.copy() for m in self.session.messages]

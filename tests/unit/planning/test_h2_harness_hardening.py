@@ -354,6 +354,9 @@ def test_binding_manual_is_not_advertised_when_gateway_lacks_binding_support():
 
 
 def test_rendered_repair_right_example_matches_binding_grammar():
+    from agent.llm.grammars import get_grammar
+    from agent.llm.model_client import ModelClient
+    from agent.parsers import validate_decision
     from agent.planning.capability_manifest import render_validation_repair_manual
 
     manual = render_validation_repair_manual(
@@ -367,6 +370,14 @@ def test_rendered_repair_right_example_matches_binding_grammar():
     )
     right_line = next(line for line in manual.splitlines() if line.startswith("RIGHT: "))
     right = json.loads(right_line.removeprefix("RIGHT: "))
+    assert right["action"] == "tool"
+    assert ModelClient._extract_decision(right_line.removeprefix("RIGHT: ")) == right
+    valid, error = validate_decision(right)
+    assert valid, error
+    replan_grammar = get_grammar("replan", {"ENABLE_GBNF": True}) or ""
+    assert "root ::= tool-decision" in replan_grammar
+    assert "root ::= tool-decision | final-decision" not in replan_grammar
+    assert "final-decision" not in replan_grammar
     assert right["bindings"]["pattern"] == {"from_step": 1, "path": []}
     assert "pattern" not in right["args"]
     assert "A binding satisfies its target argument." in manual
@@ -376,7 +387,7 @@ def test_rendered_repair_right_example_matches_binding_grammar():
     assert validate_result_bindings(
         [
             {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}},
-            right,
+            {key: value for key, value in right.items() if key != "action"},
         ]
     ) == []
 
@@ -404,7 +415,9 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
         def ask_model(self, prompt, *_args, **kwargs):
             self.prompt = prompt
             self.base_prompt = kwargs["base_prompt"]
+            self.kwargs = kwargs
             return {
+                "action": "tool",
                 "tool": "grep",
                 "args": {"path": ".", "recursive": True, "max_results": 20},
                 "bindings": {"pattern": {"from_step": 1, "path": []}},
@@ -429,6 +442,7 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
 
     complete_context = context.base_prompt + "\n" + context.prompt
     assert action is not None
+    assert context.kwargs["step_type"] == "replan"
     assert '"name":"file_reader"' in complete_context
     assert '"name":"grep"' in complete_context
     assert '"pattern":{"description"' in complete_context
@@ -445,13 +459,14 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
 
     right_line = next(line for line in context.prompt.splitlines() if line.startswith("RIGHT: "))
     right = json.loads(right_line.removeprefix("RIGHT: "))
+    assert right["action"] == "tool"
     assert "pattern" not in right["args"]
     assert right["bindings"]["pattern"] == {"from_step": 1, "path": []}
 
     wrong_line = next(
         line
         for line in context.prompt.splitlines()
-        if line.startswith('WRONG (pattern in both args and bindings): {"tool":"grep"')
+        if line.startswith('WRONG (pattern in both args and bindings): {"action":"tool","tool":"grep"')
         and '"pattern":"fonte_h2.txt"' in line
     )
     wrong = json.loads(wrong_line.split(": ", 1)[1])
@@ -488,6 +503,7 @@ def test_planning_catalog_exposes_descriptor_provenance_policy():
 
 def test_replan_preserves_optional_binding_for_grounded_correction():
     decision = {
+        "action": "tool",
         "tool": "grep",
         "args": {"path": "."},
         "bindings": {"pattern": {"from_step": 1, "path": []}},
@@ -518,6 +534,7 @@ def test_h2_provenance_block_reuses_one_bounded_binding_correction(tmp_path):
         def ask_model(self, *_args, **_kwargs):
             calls.append(1)
             return {
+                "action": "tool",
                 "tool": "grep",
                 "args": {"path": "."},
                 "bindings": {"pattern": {"from_step": 1, "path": []}},
@@ -623,6 +640,7 @@ def test_validation_repair_preserves_tool_and_frozen_arguments(tmp_path):
     orchestrator, prompts, executor = _repair_orchestrator(
         tmp_path,
         {
+            "action": "tool",
             "tool": "grep",
             "args": {"path": ".", "recursive": True, "max_results": 20},
             "bindings": {"pattern": {"from_step": 1, "path": []}},
@@ -682,7 +700,7 @@ def test_validation_repair_budget_exhaustion_does_not_request_third_plan(tmp_pat
 
 
 def test_validation_repair_prompt_exposes_binding_and_rejects_placeholders():
-    decision = {"tool": "grep", "args": {"path": "."}}
+    decision = {"action": "tool", "tool": "grep", "args": {"path": "."}}
 
     class _Context:
         def ask_model(self, prompt, *_args, **_kwargs):

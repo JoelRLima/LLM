@@ -114,8 +114,11 @@ class ReactiveLoop:
         if not tool:
             self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, "Ação 'tool' requer o campo 'tool'.")
             return None
+        step: Dict[str, Any] = {"tool": tool, "args": decision.get("args", {})}
+        if "bindings" in decision:
+            step["bindings"] = decision["bindings"]
         result = self.orchestrator.execution_gateway.execute_validated_plan(
-            [{"tool": tool, "args": decision.get("args", {})}], objective, usage
+            [step], objective, usage
         )
         self.orchestrator.agent_state.plan_step = reactive_step
         if result.aborted:

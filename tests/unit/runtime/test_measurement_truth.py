@@ -105,7 +105,6 @@ def test_grammar_fallback_records_each_real_provider_request() -> None:
     session = _session(gateway)
     session.set_model_call_callback(entries.append)
 
-    ModelClient._backend_supports_grammar = None
     result = ModelClient.request(session, {"max_tokens": 10}, grammar="grammar")
 
     assert result == {"action": "final"}
@@ -114,7 +113,7 @@ def test_grammar_fallback_records_each_real_provider_request() -> None:
     assert all(entry["success"] is True for entry in entries) is False
     assert entries[0]["success"] is False
     assert entries[1]["success"] is True
-    ModelClient._backend_supports_grammar = None
+    assert session._grammar_supports_grammar is False
 
 
 def test_modern_gateway_call_records_one_correlated_model_metric() -> None:

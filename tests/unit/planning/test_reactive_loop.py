@@ -1,7 +1,12 @@
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from agent.llm.context_manager import ContextManager
+from agent.llm.grammars import TOOL_DECISION_GRAMMAR
+from agent.llm.session import ChatSession
+from agent.parsers import validate_decision
 from agent.planning.reactive_loop import ReactiveLoop
 
 
@@ -28,6 +33,46 @@ class _Gateway:
     def execute_validated_plan(self, plan, objective, tool_usage_count):
         self.calls.append((plan, objective, tool_usage_count))
         return SimpleNamespace(aborted=False, final_answer=None)
+
+
+class _RealDecisionGateway:
+    provider_name = "test-provider"
+    model = "test-model"
+
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.payloads = []
+
+    def build_payload(self, request):
+        return {"messages": list(request.messages), "model": request.model}
+
+    def complete_payload(self, payload):
+        self.payloads.append(dict(payload))
+        return next(self.responses)
+
+    def count_tokens(self, text):
+        del text
+        return None
+
+
+def _real_context_manager(orchestrator, response):
+    gateway = _RealDecisionGateway([response])
+    orchestrator.agent_state.memory = SimpleNamespace(state={}, stringify=lambda: "")
+    session = ChatSession(
+        "system prompt",
+        {
+            "model": "test-model",
+            "max_tokens": 512,
+            "agent_max_tokens": None,
+            "ENABLE_GBNF": True,
+        },
+        gateway=gateway,
+    )
+    with patch("agent.llm.context_manager.SemanticMemory"):
+        context_manager = ContextManager(session, orchestrator.agent_state, verbose=False)
+    orchestrator.context_manager = context_manager
+    orchestrator.session = session
+    return context_manager, gateway
 
 
 class _State:
@@ -89,6 +134,65 @@ def test_reactive_loop_executes_tool_through_full_gateway(monkeypatch):
     plan, objective, _ = orchestrator.execution_gateway.calls[0]
     assert plan == [{"tool": "echo", "args": {"text": "oi"}}]
     assert objective == "responda"
+
+
+def test_real_shaped_reactive_tool_decision_reaches_runtime_gateway():
+    orchestrator = _Orchestrator()
+    context_manager, gateway = _real_context_manager(
+        orchestrator,
+        '{"action":"tool","tool":"echo","args":{},"bindings":{"text":{"from_step":1,"path":[]}}}',
+    )
+
+    decision = context_manager.ask_model("responda", step_type="tool_decision")
+    valid, error = validate_decision(decision)
+    assert valid, error
+
+    result = ReactiveLoop(orchestrator)._handle_decision(
+        decision, "responda", {}, 1
+    )
+
+    assert result is None
+    assert gateway.payloads[0]["grammar"] == TOOL_DECISION_GRAMMAR
+    assert orchestrator.execution_gateway.calls[0][0] == [
+        {"tool": "echo", "args": {}, "bindings": {"text": {"from_step": 1, "path": []}}}
+    ]
+
+
+def test_real_shaped_reactive_final_decision_reaches_runtime_terminal():
+    orchestrator = _Orchestrator()
+    context_manager, gateway = _real_context_manager(
+        orchestrator,
+        '{"action":"final","answer":"resposta final"}',
+    )
+
+    decision = context_manager.ask_model("responda", step_type="tool_decision")
+    valid, error = validate_decision(decision)
+    assert valid, error
+
+    answer = ReactiveLoop(orchestrator)._handle_decision(
+        decision, "responda", {}, 1
+    )
+
+    assert answer == "resposta final"
+    assert gateway.payloads[0]["grammar"] == TOOL_DECISION_GRAMMAR
+    assert orchestrator.execution_gateway.calls == []
+
+
+def test_reactive_prompt_grammar_and_parser_share_decision_envelope():
+    orchestrator = _Orchestrator()
+    prompt = ReactiveLoop(orchestrator)._build_prompt("responda")
+
+    assert "action='tool'" in prompt
+    assert "action='final'" in prompt
+    assert "root ::= tool-decision | final-decision" in TOOL_DECISION_GRAMMAR
+    assert '"\\\"bindings\\\""' in TOOL_DECISION_GRAMMAR
+
+    for decision in (
+        {"action": "tool", "tool": "echo", "args": {}},
+        {"action": "final", "answer": "resposta final"},
+    ):
+        valid, error = validate_decision(decision)
+        assert valid, error
 
 
 def test_reactive_renderer_type_error_does_not_fallback_to_legacy() -> None:

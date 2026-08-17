@@ -13,7 +13,7 @@ forma estrutural básica do JSON esperado. Validação semântica (nomes de
 ferramentas válidos, tipos de argumentos, etc.) continua sendo
 responsabilidade do PlanValidator.
 """
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from agent.runtime import config as _config
 
@@ -99,9 +99,8 @@ string-array ::= "[" ws (string ("," ws string)*)? ws "]"
     + _COMMON_RULES
 )
 
-TOOL_DECISION_GRAMMAR = (
-    r"""
-root ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+_TOOL_DECISION_PRODUCTIONS = r"""
+tool-decision ::= "{" ws "\"action\"" ws ":" ws "\"tool\"" ws "," ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
 bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
 binding-member ::= string ws ":" ws binding-spec
 binding-spec ::= "{" ws "\"from_step\"" ws ":" ws integer ws "," ws "\"path\"" ws ":" ws path-array ws "}"
@@ -109,6 +108,25 @@ path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
 path-segment ::= string | integer
 integer ::= [1-9] [0-9]*
 """
+
+_FINAL_DECISION_PRODUCTION = r"""
+final-decision ::= "{" ws "\"action\"" ws ":" ws "\"final\"" ws "," ws "\"answer\"" ws ":" ws string ws "}"
+"""
+
+TOOL_DECISION_GRAMMAR = (
+    r"""
+root ::= tool-decision | final-decision
+"""
+    + _TOOL_DECISION_PRODUCTIONS
+    + _FINAL_DECISION_PRODUCTION
+    + _COMMON_RULES
+)
+
+REPLAN_GRAMMAR = (
+    r"""
+root ::= tool-decision
+"""
+    + _TOOL_DECISION_PRODUCTIONS
     + _COMMON_RULES
 )
 
@@ -138,11 +156,14 @@ GRAMMARS: Dict[str, str] = {
     "tool_decision": TOOL_DECISION_GRAMMAR,
     "final": FINAL_GRAMMAR,
     "summarize": SUMMARIZE_GRAMMAR,
-    "replan": TOOL_DECISION_GRAMMAR,
+    "replan": REPLAN_GRAMMAR,
 }
 
 
-def get_grammar(step_type: str) -> Optional[str]:
+def get_grammar(
+    step_type: str,
+    config: Mapping[str, Any] | None = None,
+) -> Optional[str]:
     """
     Retorna a gramática GBNF correspondente ao `step_type`, ou None se
     não houver gramática mapeada ou se o suporte a GBNF estiver
@@ -151,10 +172,13 @@ def get_grammar(step_type: str) -> Optional[str]:
     Args:
         step_type: tipo do passo (plan, macro_plan, tool_decision, final,
             summarize, replan, etc.).
+        config: configuração efetiva da sessão/profile. Quando omitida,
+            preserva a compatibilidade dos callers legados com DEFAULT_CONFIG.
 
     Returns:
         A string da gramática GBNF, ou None.
     """
-    if not _config.DEFAULT_CONFIG.get("ENABLE_GBNF", True):
+    effective_config = _config.DEFAULT_CONFIG if config is None else config
+    if not effective_config.get("ENABLE_GBNF", True):
         return None
     return GRAMMARS.get(step_type)
