@@ -96,7 +96,7 @@ def test_lock_release_failure_is_typed(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_context_preserves_body_error_when_release_also_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     lock = ExtensionCatalogLock(tmp_path / "catalog.lock")
     lock.acquire()
@@ -112,4 +112,14 @@ def test_context_preserves_body_error_when_release_also_fails(
         with lock:
             raise ValueError("body")
 
-    assert any("release" in note for note in getattr(caught.value, "__notes__", []))
+    if callable(getattr(caught.value, "add_note", None)):
+        assert any(
+            "Falha ao liberar lock apos erro da operacao: release" in note
+            for note in getattr(caught.value, "__notes__", [])
+        )
+    else:
+        assert any(
+            record.name == "agent.tools.extension_catalog_lock"
+            and "Falha ao liberar lock apos erro da operacao: release" in record.getMessage()
+            for record in caplog.records
+        )

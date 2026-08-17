@@ -279,7 +279,7 @@ def test_isolated_close_failure_is_the_primary_error(
 
 
 def test_cleanup_failure_does_not_mask_primary_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     path = tmp_path / "catalog.json"
     path.write_bytes(b"previous")
@@ -298,7 +298,19 @@ def test_cleanup_failure_does_not_mask_primary_error(
 
     with pytest.raises(CatalogStorageError, match="Falha ao salvar") as caught:
         ExtensionCatalogStorage(path).save(_document())
-    assert any("cleanup" in note for note in getattr(caught.value, "__notes__", []))
+    assert len(caught.value.secondary_errors) == 1
+    assert str(caught.value.secondary_errors[0]) == "cleanup failed"
+    if callable(getattr(caught.value, "add_note", None)):
+        assert any(
+            "Falha secundaria durante cleanup do catalogo: cleanup failed" in note
+            for note in getattr(caught.value, "__notes__", [])
+        )
+    else:
+        assert any(
+            record.name == "agent.tools.extension_catalog_storage"
+            and "Falha secundaria durante cleanup do catalogo: cleanup failed" in record.getMessage()
+            for record in caplog.records
+        )
     assert path.read_bytes() == b"previous"
 
 

@@ -6,7 +6,7 @@ import pytest
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.tools.extension_catalog_document import PersistedCatalogEntry
-from agent.tools.extension_catalog_service import ExtensionCatalogService
+from agent.tools.extension_catalog_service import ExtensionCatalogService, host_path_flavor
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.extension_path import PersistedManifestPath
 from agent.tools.extension_runtime import ExtensionRuntimeBinding, ExtensionRuntimeMaterializer
@@ -200,9 +200,10 @@ def test_invalid_entrypoint_uses_canonical_manifest_invalid_diagnostic(tmp_path:
         }
     ).encode("utf-8")
     manifest.write_bytes(content)
+    flavor = host_path_flavor()
     entry = PersistedCatalogEntry(
         "demo.extension",
-        PersistedManifestPath(manifest.as_posix(), "windows"),
+        PersistedManifestPath(manifest.as_posix(), flavor),
         fingerprint_for_bytes(content),
     )
     resolved = ResolvedWorkspaceExtensions(
@@ -222,7 +223,7 @@ def test_invalid_entrypoint_uses_canonical_manifest_invalid_diagnostic(tmp_path:
             ),
         )
     )
-    result = ExtensionRuntimeMaterializer(tmp_path, host_flavor="windows").materialize(resolved)
+    result = ExtensionRuntimeMaterializer(tmp_path, host_flavor=flavor).materialize(resolved)
 
     assert result.bindings == ()
     assert result.diagnostics[0].code == "EXTENSION_RUNTIME_MANIFEST_INVALID"
