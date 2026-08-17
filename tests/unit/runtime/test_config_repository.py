@@ -40,6 +40,8 @@ def test_missing_configuration_is_explicit_or_can_resolve_defaults(
 
     assert resolved.schema_version == 1
     assert resolved.to_legacy_dict()["hardware_profile"] == "low_vram_8gb"
+    assert resolved.to_legacy_dict()["semantic_memory_enabled"] is False
+    assert resolved.to_legacy_dict()["semantic_memory_model"] == "all-MiniLM-L6-v2"
     assert resolved.to_legacy_dict()["max_reasoning_turns"] == 3
 
 
@@ -174,11 +176,15 @@ def test_environment_parsing_is_allowlisted_and_strict(
         environment={
             "LLM_AGENT_AUTO_CONFIRM": "true",
             "LLM_AGENT_MAX_MODEL_CALLS": "7",
+            "LLM_AGENT_SEMANTIC_MEMORY_ENABLED": "true",
+            "LLM_AGENT_SEMANTIC_MEMORY_MODEL": "custom-model",
         }
     ).to_dict()
 
     assert resolved["auto_confirm"] is True
     assert resolved["max_model_calls"] == 7
+    assert resolved["semantic_memory_enabled"] is True
+    assert resolved["semantic_memory_model"] == "custom-model"
     with pytest.raises(ConfigError, match="MAX_MODEL_CALLS"):
         repository.load(
             environment={"LLM_AGENT_MAX_MODEL_CALLS": "muitos"}

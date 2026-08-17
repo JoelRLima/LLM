@@ -45,6 +45,8 @@ ROOT_FIELDS: dict[str, Validator] = {
     "agent_max_tokens": lambda value: value is None or _is_int_at_least(1)(value),
     "timeout": _is_number_between(1.0),
     "hardware_profile": lambda value: isinstance(value, str) and value in HARDWARE_PROFILES,
+    "semantic_memory_enabled": _is_bool,
+    "semantic_memory_model": _is_non_empty_string,
     "max_model_concurrency": _is_int_at_least(1),
     "max_io_concurrency": _is_int_at_least(1),
     "max_process_concurrency": _is_int_at_least(1),

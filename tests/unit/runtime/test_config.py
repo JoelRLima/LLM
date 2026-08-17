@@ -50,6 +50,8 @@ def test_carregar_config_falta_campos_usa_fallback(tmp_path):
     assert cfg["resume_retry_failed"] is False
     assert cfg["resume_retry_skipped"] is False
     assert cfg["hardware_profile"] == "low_vram_8gb"
+    assert cfg["semantic_memory_enabled"] is False
+    assert cfg["semantic_memory_model"] == "all-MiniLM-L6-v2"
     assert cfg["max_model_concurrency"] == 1
     assert cfg["max_model_calls"] == 20
     assert cfg["code_policy"] == DEFAULT_CONFIG["code_policy"]

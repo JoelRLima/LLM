@@ -7,6 +7,8 @@
     "agent_max_tokens": null,
     "timeout": 300,
     "hardware_profile": "low_vram_8gb",
+    "semantic_memory_enabled": false,
+    "semantic_memory_model": "all-MiniLM-L6-v2",
     "max_model_concurrency": 1,
     "max_io_concurrency": 2,
     "max_process_concurrency": 1,

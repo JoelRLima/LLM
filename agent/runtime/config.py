@@ -63,6 +63,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_tokens": 4096,
     "timeout": 300,
     "hardware_profile": LOW_VRAM_8GB.name,
+    "semantic_memory_enabled": False,
+    "semantic_memory_model": "all-MiniLM-L6-v2",
     "max_model_concurrency": LOW_VRAM_8GB.max_model_concurrency,
     "max_io_concurrency": LOW_VRAM_8GB.max_io_concurrency,
     "max_process_concurrency": LOW_VRAM_8GB.max_process_concurrency,

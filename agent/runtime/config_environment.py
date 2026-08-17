@@ -45,6 +45,8 @@ ENV_BINDINGS: dict[str, tuple[str, Parser]] = {
     "LLM_AGENT_MAX_TOKENS": ("max_tokens", _parse_int),
     "LLM_AGENT_TIMEOUT": ("timeout", _parse_float),
     "LLM_AGENT_HARDWARE_PROFILE": ("hardware_profile", _parse_string),
+    "LLM_AGENT_SEMANTIC_MEMORY_ENABLED": ("semantic_memory_enabled", _parse_bool),
+    "LLM_AGENT_SEMANTIC_MEMORY_MODEL": ("semantic_memory_model", _parse_string),
     "LLM_AGENT_MAX_MODEL_CONCURRENCY": ("max_model_concurrency", _parse_int),
     "LLM_AGENT_MAX_IO_CONCURRENCY": ("max_io_concurrency", _parse_int),
     "LLM_AGENT_MAX_PROCESS_CONCURRENCY": ("max_process_concurrency", _parse_int),

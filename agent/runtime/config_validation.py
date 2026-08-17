@@ -56,6 +56,8 @@ def validate_root(validator: ConfigValidator, defaults: Mapping[str, Any]) -> No
         ("api_url", str, None, None), ("model", str, None, None),
         ("temperature", (int, float), 0.0, 2.0), ("max_tokens", int, 1, None),
         ("timeout", (int, float), 1, None), ("hardware_profile", str, None, None),
+        ("semantic_memory_enabled", bool, None, None),
+        ("semantic_memory_model", str, None, None),
         ("max_model_concurrency", int, 1, None), ("max_io_concurrency", int, 1, None),
         ("max_process_concurrency", int, 1, None), ("max_model_calls", int, 1, None),
         ("default_system_prompt", str, None, None), ("checkpoint_file", str, None, None),
