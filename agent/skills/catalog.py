@@ -81,6 +81,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         idempotent=True,
         category="READ",
         public_invocation_fields=frozenset({"file_path"}),
+        result_data_schema={"type": "string"},
     ),
     SkillSpec(
         "agent.skills.file_writer",
@@ -126,6 +127,17 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
                     ArgumentOrigin.RESULT_BINDING.value,
                 }
             )
+        },
+        result_data_schema={
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string"},
+                    "line": {"type": "integer"},
+                    "content": {"type": "string"},
+                },
+            },
         },
     ),
     SkillSpec(

@@ -135,8 +135,7 @@ def test_gateway_accepts_and_preserves_valid_deferred_condition() -> None:
     assert orchestrator.plan_executor.calls == 1
     assert result.validated_plan[1]["kind"] == "deferred_condition"
     observation_id = result.validated_plan[0]["_step_id"]
-    assert observation_id.startswith("step-")
-    assert observation_id != "observation"
+    assert observation_id == "observation"
     assert result.validated_plan[1]["observation_ref"] == observation_id
     assert isinstance(result.validated_plan[1]["observation_ref"], str)
 

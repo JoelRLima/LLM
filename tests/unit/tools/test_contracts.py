@@ -119,3 +119,18 @@ def test_tool_descriptor_defaults() -> None:
     assert desc.cost == 5
     assert desc.cacheable is False
     assert desc.capabilities == frozenset()
+
+
+@pytest.mark.parametrize(
+    "result_data_schema",
+    [
+        {"type": ["string"]},
+        {"type": "string", "properties": {}},
+        {"type": "array", "items": []},
+        {"type": "object", "properties": {"value": "string"}},
+        {"type": "string", "future_value": "not allowed"},
+    ],
+)
+def test_tool_descriptor_rejects_unsafe_result_data_schema(result_data_schema) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        ToolDescriptor("shaped", "shaped", result_data_schema=result_data_schema)

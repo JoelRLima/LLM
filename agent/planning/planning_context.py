@@ -13,6 +13,7 @@ from agent.planning.schema_safety import (
     validate_planning_schema_shape,
     validate_schema_depth,
 )
+from agent.skills.descriptor import freeze_result_data_schema
 from agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
@@ -51,7 +52,7 @@ class PlanningTool:
     idempotent: bool = False
     supports_cancellation: bool = False
     argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict)
-
+    result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
             raise PlanningContextError("PlanningTool requer nome")
@@ -68,18 +69,16 @@ class PlanningTool:
             raise PlanningContextError("schema de planning excede a profundidade maxima") from exc
         object.__setattr__(self, "input_schema", frozen_schema)
         object.__setattr__(self, "required_capabilities", frozenset(self.required_capabilities))
-        object.__setattr__(
-            self,
-            "argument_provenance",
-            normalize_argument_provenance(self.argument_provenance),
-        )
+        object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
+        object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
         if not isinstance(self.origin_kind, ToolOriginKind):
             object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
+        extension_id = self.extension_id
         if self.origin_kind is ToolOriginKind.EXTENSION:
-            if not isinstance(self.extension_id, str) or not self.extension_id.strip():
+            if not isinstance(extension_id, str) or not extension_id.strip():
                 raise PlanningContextError("Tool de extension requer extension_id")
             try:
-                validate_extension_id(self.extension_id)
+                validate_extension_id(extension_id)
             except ValueError as exc:
                 raise PlanningContextError("extension_id inválido") from exc
         elif self.extension_id is not None:
@@ -88,16 +87,14 @@ class PlanningTool:
     def __getattribute__(self, name: str) -> Any:
         if name == "input_schema":
             return thaw_json_like(object.__getattribute__(self, "input_schema"))
+        if name == "result_data_schema":
+            return thaw_json_like(object.__getattribute__(self, "result_data_schema"))
         return object.__getattribute__(self, name)
 
 def validate_planning_tool_arguments(
     descriptor: Any, args: Mapping[str, Any], bound_fields: set[str] | None = None
 ) -> None:
-    """Validate JSON arguments against canonical planning metadata.
-
-    This is deliberately a pure planning check; it does not invoke a gateway,
-    request approval, emit events, or touch an adapter.
-    """
+    """Validate JSON arguments against canonical planning metadata."""
 
     schema = getattr(descriptor, "input_schema", None)
     if schema is None:
@@ -234,6 +231,7 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         idempotent=descriptor.idempotent,
         supports_cancellation=descriptor.supports_cancellation,
         argument_provenance=descriptor.argument_provenance,
+        result_data_schema=descriptor.result_data_schema,
     )
 
 

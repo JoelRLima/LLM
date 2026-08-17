@@ -272,6 +272,11 @@ def replan(
             repairable_fields=repairable_fields,
             prior_steps=prior_steps,
         )
+        if validation_repair:
+            if action is not None:
+                ctx.llm_replans += 1
+                _log_action(ctx, category, action)
+            return action
         action = _validate_and_optimize_new_steps(
             action, orchestrator, planning_context, planning_view, objective=ctx.task
         )

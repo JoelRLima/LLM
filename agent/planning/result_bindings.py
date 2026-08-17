@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Callable
 
 from agent.state_progression import current_result_for_step
 from agent.tools.result_completeness import canonical_completeness
@@ -26,10 +26,7 @@ def has_result_bindings(step: Any) -> bool:
 def _binding_items(raw: Any) -> list[tuple[str, Mapping[str, Any]]]:
     if not isinstance(raw, Mapping):
         raise ResultBindingError("bindings deve ser um objeto target -> especificacao")
-    if any(
-        not isinstance(key, str) or not isinstance(value, Mapping)
-        for key, value in raw.items()
-    ):
+    if any(not isinstance(key, str) or not isinstance(value, Mapping) for key, value in raw.items()):
         raise ResultBindingError("bindings deve mapear target para objeto")
     return list(raw.items())
 
@@ -62,6 +59,53 @@ def validate_path(path: Any) -> tuple[str | int, ...]:
     return tuple(normalized)
 
 
+def _schema_at_path(
+    path: Sequence[str | int], schema: Mapping[str, Any] | None
+) -> Mapping[str, Any] | None:
+    if schema is None:
+        return None
+    current: Mapping[str, Any] | None = schema
+    for segment in path:
+        schema_type = current.get("type") if current is not None else None
+        if current is None or schema_type is None:
+            return None
+        if isinstance(segment, str):
+            if schema_type != "object":
+                raise ResultBindingError(
+                    "binding.path seleciona uma chave em resultado que não é objeto"
+                )
+            properties = current.get("properties")
+            if not isinstance(properties, Mapping) or segment not in properties:
+                raise ResultBindingError(
+                    f"binding.path seleciona propriedade não anunciada: {segment}"
+                )
+            child = properties[segment]
+        else:
+            if schema_type != "array":
+                raise ResultBindingError(
+                    "binding.path seleciona índice em resultado que não é array"
+                )
+            child = current.get("items")
+            if not isinstance(child, Mapping):
+                raise ResultBindingError(
+                    "binding.path seleciona índice sem schema de items anunciado"
+                )
+        current = child if isinstance(child, Mapping) else None
+        if current is None:
+            return None
+    return current
+
+
+def validate_path_against_schema(
+    path: Any, schema: Mapping[str, Any] | None
+) -> tuple[str | int, ...]:
+    """Validate path syntax and, when known, its advertised result shape."""
+
+    normalized = validate_path(path)
+    _schema_at_path(normalized, schema)
+    return normalized
+
+
 def _resolve_ordinal(source: Any, index: int, plan: Sequence[Mapping[str, Any]]) -> int | None:
     if type(source) is int:
         candidate = source - 1
@@ -72,7 +116,19 @@ def _resolve_ordinal(source: Any, index: int, plan: Sequence[Mapping[str, Any]])
     return None
 
 
-def _validate_spec(target: str, spec: Mapping[str, Any], index: int, plan: Sequence[Mapping[str, Any]], canonical: bool, args: Mapping[str, Any], seen: set[str]) -> None:
+def _validate_spec(
+    target: str,
+    spec: Mapping[str, Any],
+    index: int,
+    plan: Sequence[Mapping[str, Any]],
+    canonical: bool,
+    args: Mapping[str, Any],
+    seen: set[str],
+    result_data_schema_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+    | None = None,
+    target_schema_resolver: Callable[[Mapping[str, Any], str], Mapping[str, Any] | None]
+    | None = None,
+) -> None:
     target = _safe_target(target)
     if target in seen:
         raise ResultBindingError("target duplicado")
@@ -87,10 +143,35 @@ def _validate_spec(target: str, spec: Mapping[str, Any], index: int, plan: Seque
     source_index = _resolve_ordinal(source, index, plan)
     if source_index is None or not isinstance(plan[source_index].get("tool"), str) or plan[source_index].get("kind") == "deferred_condition":
         raise ResultBindingError("from_step deve apontar para ToolStep anterior")
-    validate_path(path)
+    result_schema = (
+        result_data_schema_resolver(plan[source_index])
+        if result_data_schema_resolver is not None
+        else None
+    )
+    normalized_path = validate_path_against_schema(path, result_schema)
+    if target_schema_resolver is not None and result_schema is not None:
+        source_leaf = _schema_at_path(normalized_path, result_schema)
+        target_schema = target_schema_resolver(plan[index], target)
+        source_type = source_leaf.get("type") if source_leaf is not None else None
+        target_type = target_schema.get("type") if target_schema is not None else None
+        simple_types = {
+            "array", "boolean", "integer", "null", "number", "object", "string"
+        }
+        if source_type in simple_types and target_type in simple_types and source_type != target_type:
+            raise ResultBindingError(
+                f"tipo do resultado ({source_type}) incompatível com argumento '{target}' ({target_type})"
+            )
 
 
-def validate_result_bindings(plan: Sequence[Mapping[str, Any]], *, canonical_references: bool = False) -> list[str]:
+def validate_result_bindings(
+    plan: Sequence[Mapping[str, Any]],
+    *,
+    canonical_references: bool = False,
+    result_data_schema_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+    | None = None,
+    target_schema_resolver: Callable[[Mapping[str, Any], str], Mapping[str, Any] | None]
+    | None = None,
+) -> list[str]:
     errors: list[str] = []
     for index, step in enumerate(plan):
         if not isinstance(step, Mapping) or "bindings" not in step:
@@ -100,7 +181,17 @@ def validate_result_bindings(plan: Sequence[Mapping[str, Any]], *, canonical_ref
             args = raw_args if isinstance(raw_args, Mapping) else {}
             seen: set[str] = set()
             for target, spec in binding_items(step):
-                _validate_spec(target, spec, index, plan, canonical_references, args, seen)
+                _validate_spec(
+                    target,
+                    spec,
+                    index,
+                    plan,
+                    canonical_references,
+                    args,
+                    seen,
+                    result_data_schema_resolver,
+                    target_schema_resolver,
+                )
         except ResultBindingError as exc:
             errors.append(f"Passo {index + 1} binding inválido: {exc}.")
     return errors
@@ -195,8 +286,6 @@ def resolve_bound_args(step: Mapping[str, Any], index: int, plan: Sequence[Mappi
         if current is None:
             raise ResultBindingError("resultado canônico do passo referenciado indisponível")
         _, entry = current
-        if current is None:
-            raise ResultBindingError("resultado canônico do passo referenciado indisponível")
         result = entry.get("result")
         if not isinstance(result, Mapping) or not _complete_result(result):
             raise ResultBindingError("resultado referenciado ausente, falho ou incompleto")
@@ -206,5 +295,6 @@ def resolve_bound_args(step: Mapping[str, Any], index: int, plan: Sequence[Mappi
 
 __all__ = [
     "ResultBindingError", "bind_result_references", "binding_items", "binding_targets", "has_result_bindings",
-    "referenced_step_ids", "resolve_bound_args", "validate_path", "validate_result_bindings",
+    "referenced_step_ids", "resolve_bound_args", "validate_path", "validate_path_against_schema",
+    "validate_result_bindings",
 ]

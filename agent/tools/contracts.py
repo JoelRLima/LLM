@@ -136,12 +136,9 @@ class ToolDescriptor:
     # Only explicitly declared fields may be projected back into model
     # context as invocation evidence.  Keep this empty by default: argument
     # payloads are not public merely because they were executed.
-    public_invocation_fields: frozenset[str] = field(
-        default_factory=frozenset, kw_only=True
-    )
-    argument_provenance: Mapping[str, frozenset[str]] = field(
-        default_factory=dict, kw_only=True
-    )
+    public_invocation_fields: frozenset[str] = field(default_factory=frozenset, kw_only=True)
+    argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict, kw_only=True)
+    result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         try:
@@ -160,11 +157,9 @@ class ToolDescriptor:
         object.__setattr__(self, "capabilities", capabilities)
         public_fields = normalize_public_invocation_fields(self.public_invocation_fields)
         object.__setattr__(self, "public_invocation_fields", public_fields)
-        object.__setattr__(
-            self,
-            "argument_provenance",
-            normalize_argument_provenance(self.argument_provenance),
-        )
+        object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
+        from agent.skills.descriptor import freeze_result_data_schema
+        object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
         if not isinstance(self.origin_kind, ToolOriginKind):
             object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
         if self.origin_kind is ToolOriginKind.EXTENSION and public_fields:
@@ -177,8 +172,10 @@ class ToolDescriptor:
             raise ValueError("Tool builtin nÃ£o pode conter extension_id")
     def __getattribute__(self, name: str) -> Any:
         if name == "schema":
-            snapshot = object.__getattribute__(self, "schema")
-            return thaw_json_like(snapshot)
+            return thaw_json_like(object.__getattribute__(self, "schema"))
+        if name == "result_data_schema":
+            snapshot = object.__getattribute__(self, "result_data_schema")
+            return thaw_json_like(snapshot) if snapshot is not None else None
         return object.__getattribute__(self, name)
 @dataclass(frozen=True)
 class ToolInvocation:

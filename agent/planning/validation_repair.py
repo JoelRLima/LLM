@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 
@@ -77,9 +78,17 @@ def replan_blocked_steps(
     """Replace only field-scoped blocked steps through the bounded repair path."""
 
     updated = list(plan)
+    allowed_blocked_indices = {item.index for item in blocked_steps}
     for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
         if not replace_blocked_step(
-            gateway, updated, objective, blocked, planning_context, planning_view, repair_budget
+            gateway,
+            updated,
+            objective,
+            blocked,
+            planning_context,
+            planning_view,
+            repair_budget,
+            _allowed_blocked_indices=allowed_blocked_indices,
         ):
             return None
     return updated or None
@@ -93,10 +102,11 @@ def replace_blocked_step(
     planning_context: Any = None,
     planning_view: Any = None,
     repair_budget: Dict[str, int] | None = None,
+    *,
+    _allowed_blocked_indices: set[int] | None = None,
 ) -> bool:
     """Apply one same-tool, field-constrained replacement, or fail closed."""
 
-    from agent.planning.dependency_map import dependent_indices
     from agent.planning.replan import ReplanContext, replan
     from agent.runtime.logging import logger
 
@@ -150,23 +160,102 @@ def replace_blocked_step(
             "replacement_steps": len(action.steps) if action else 0,
         },
     )
-    if not action or not action.steps or not accepts_constrained_repair(
-        step, action.steps[0], blocked.repairable_fields
-    ):
+    if not action or not action.steps or len(action.steps) != 1:
         logger.warning("Passo %s permanece bloqueado: nenhuma substituicao valida.", index + 1)
         return False
-    if len(action.steps) != 1:
-        logger.warning("Reparo rejeitado: a identidade de um passo exige exatamente um passo.")
+    if not accepts_constrained_repair(step, action.steps[0], blocked.repairable_fields):
+        logger.warning("Passo %s permanece bloqueado: nenhuma substituicao valida.", index + 1)
         return False
-    replacement = dict(action.steps[0])
+    replacement = deepcopy(action.steps[0])
     if "_step_id" in step:
         replacement["_step_id"] = step["_step_id"]
-    for dependent in sorted(dependent_indices(plan, index), reverse=True):
-        if dependent != index and dependent < len(plan):
-            del plan[dependent]
-    plan[index : index + 1] = [replacement]
-    logger.info("Passo %s substituido por %s passo(s).", index + 1, len(action.steps))
+    candidate = [deepcopy(item) for item in plan[:index]] + [replacement] + [
+        deepcopy(item) for item in plan[index + 1 :]
+    ]
+    accepted = _validate_reintegrated_candidate(
+        gateway,
+        candidate,
+        objective,
+        index,
+        planning_context,
+        planning_view,
+        _allowed_blocked_indices or {index},
+    )
+    if accepted is None:
+        logger.warning(
+            "Reparo do passo %s rejeitado: candidate causal completo inválido.", index + 1
+        )
+        return False
+    plan[:] = accepted
+    logger.info("Passo %s substituido atomicamente no plano causal.", index + 1)
     return True
+
+
+def _validate_reintegrated_candidate(
+    gateway: Any,
+    candidate: List[Dict[str, Any]],
+    objective: str,
+    repaired_index: int,
+    planning_context: Any,
+    planning_view: Any,
+    allowed_blocked_indices: set[int],
+) -> Optional[List[Dict[str, Any]]]:
+    """Validate prefix + repaired slot + suffix before touching the real plan."""
+
+    from agent.planning.plan_validator import PlanValidator
+    from agent.planning.presentation import validate_planning_view_binding
+    from agent.runtime.logging import logger
+
+    context = planning_context or getattr(gateway.orchestrator, "planning_context", None)
+    presentation = planning_view
+    if context is not None and presentation is not None:
+        validate_planning_view_binding(context, presentation, "linear")
+    elif context is not None and callable(getattr(gateway, "_planning_view", None)):
+        presentation = gateway._planning_view(context, "linear")
+
+    canonical = _has_deferred_or_result_bindings(candidate)
+    prepared = candidate
+    if canonical:
+        binder = getattr(gateway, "_bind_deferred_references", None)
+        if not callable(binder):
+            return None
+        try:
+            prepared = binder(candidate)
+        except (TypeError, ValueError, KeyError) as exc:
+            logger.warning("Candidate de reparo não pôde ser canonicalizado: %s", exc)
+            return None
+
+    validator = PlanValidator(
+        getattr(gateway.orchestrator, "skills", {}) or {},
+        getattr(gateway.orchestrator, "active_skills", []) or [],
+        getattr(gateway.orchestrator, "allowed_capabilities", None),
+        getattr(gateway.orchestrator, "tool_registry", None),
+        planning_context=context,
+        presented_names=presentation.presented_names if presentation is not None else None,
+        planning_view=presentation,
+        objective=objective,
+        canonical_deferred_references=canonical,
+        available_observations=getattr(
+            getattr(gateway.orchestrator, "agent_state", None), "tool_history", ()
+        ),
+    )
+    report = validator.validate(prepared)
+    for error in report.errors:
+        logger.warning("[VALIDATOR][validation repair] %s", error)
+    blocked_indexes = {item.index for item in report.blocked_steps}
+    if report.errors or repaired_index in blocked_indexes:
+        return None
+    if blocked_indexes - (allowed_blocked_indices - {repaired_index}):
+        return None
+    return [dict(step) for step in prepared]
+
+
+def _has_deferred_or_result_bindings(plan: List[Dict[str, Any]]) -> bool:
+    return any(
+        isinstance(step, Mapping)
+        and (step.get("kind") == "deferred_condition" or "bindings" in step)
+        for step in plan
+    )
 
 
 __all__ = [

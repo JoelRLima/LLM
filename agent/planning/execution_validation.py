@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, cast
 
 from agent.planning.plan_validator import PlanValidator
@@ -73,7 +74,16 @@ def validate_and_optimize_plan(
         presentation.presented_names if presentation else None,
         presentation,
     )
-    post_report = validator.validate(optimized)
+    post_validator = validator
+    if _has_canonical_references(optimized):
+        post_validator = _validator(
+            gateway,
+            context,
+            presentation,
+            objective,
+            canonical_deferred_references=True,
+        )
+    post_report = post_validator.validate(optimized)
     gateway._log_validation(post_report, "pós-otimização")
     if not post_report.is_valid and not _repairable_report(post_report):
         gateway._abort(
@@ -90,6 +100,25 @@ def validate_and_optimize_plan(
         presentation,
         repair_budget,
     ))
+
+
+def _has_canonical_references(plan: List[Dict[str, Any]]) -> bool:
+    for step in plan:
+        if not isinstance(step, Mapping):
+            continue
+        if step.get("kind") == "deferred_condition" and isinstance(
+            step.get("observation_ref"), str
+        ):
+            return True
+        bindings = step.get("bindings")
+        if not isinstance(bindings, Mapping):
+            continue
+        if any(
+            isinstance(spec, Mapping) and isinstance(spec.get("from_step"), str)
+            for spec in bindings.values()
+        ):
+            return True
+    return False
 
 
 def _repairable_report(report: Any) -> bool:

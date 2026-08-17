@@ -152,17 +152,17 @@ def render_validation_repair_manual(
             "bindings": right_bindings,
         }
         right_bindings[target] = {"from_step": 1, "path": []}
+        wrong_args = dict(right_args)
+        wrong_args[target] = "literal-value"
+        wrong_example = dict(right_example)
+        wrong_example["args"] = wrong_args
         lines.extend(
             [
                 "RIGHT: "
                 + json.dumps(right_example, ensure_ascii=False, separators=(",", ":")),
-                (
-                    'WRONG (pattern in both args and bindings): {"action":"tool","tool":"grep","args":{"path":".","pattern":"fonte_h2.txt",'
-                    '"recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}'
-                    if tool == "grep" and target == "pattern"
-                    else "WRONG: the same argument name in args and bindings is invalid."
-                ),
-                'WRONG: {"action":"tool","tool":"grep","args":{"path":".","pattern":"${1.text}"}}',
+                "WRONG (same target in args and bindings): "
+                + json.dumps(wrong_example, ensure_ascii=False, separators=(",", ":")),
+                'WRONG: {"action":"tool","tool":"consumer","args":{"value":"${1.value}"}}',
                 "from_step: 1 is the first ToolStep in this same plan; path: [] is the complete canonical data value.",
                 "Do not use ${...}, $ref, {{...}}, or custom interpolation strings.",
                 "Do not replace this step with another tool.",
@@ -198,6 +198,10 @@ def render_validation_repair_manual(
             lines.append(f"{index}. {step['tool']}")
             lines.append(f"   known input: {rendered_args or 'none'}")
             lines.append("   future result: unavailable before execution.")
+            result_data_schema = _result_data_schema_for_tool(orchestrator, step["tool"])
+            lines.append(f"   result.data shape: {_render_result_shape(result_data_schema)}")
+            if _schema_type(result_data_schema) == "string":
+                lines.append("   bindable whole-data path: []")
     return "\n".join(lines)
 
 
@@ -216,13 +220,61 @@ def _render_binding_manual() -> list[str]:
         "WHEN: use it when a later argument is unknown now but must come mechanically from prior tool data; no reasoning is needed.",
         "HOW: known-now values go in args; dependent values go in bindings (not in args).",
         "binding syntax: bindings maps each dependent argument to {from_step, path}.",
-        'RIGHT: {"tool":"grep","args":{"path":".","recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}',
-        'WRONG: {"tool":"grep","args":{"path":".","pattern":"${1.text}"}}',
+        'RIGHT: {"tool":"consumer","args":{"fixed":true},"bindings":{"value":{"from_step":1,"path":[]}}}',
+        'WRONG: {"tool":"consumer","args":{"value":"${1.text}"}}',
         "from_step: 1 means the first ToolStep in this same plan (public numbering is 1-based).",
         "path: [] means the complete canonical ToolResult.data value; a non-empty path selects a nested key or list index.",
         "Do not put a bound field in args, guess its future value, or use ${...}, $ref, {{...}}, or custom interpolation.",
         "Prefer binding for mechanical copying; use semantic continuation only when a new model decision is needed after interpreting an observation.",
     ]
+
+
+def _result_data_schema_for_tool(orchestrator: Any, tool_name: str) -> Mapping[str, Any] | None:
+    context = getattr(orchestrator, "planning_context", None)
+    for tool in getattr(context, "tools", ()) or ():
+        if getattr(tool, "name", None) == tool_name:
+            schema = getattr(tool, "result_data_schema", None)
+            if isinstance(schema, Mapping):
+                return schema
+    registry = getattr(orchestrator, "tool_registry", None)
+    descriptor = None
+    if registry is not None:
+        try:
+            descriptor = registry.descriptor(tool_name)
+        except (AttributeError, KeyError):
+            descriptor = None
+    if descriptor is None:
+        return None
+    schema = getattr(descriptor, "result_data_schema", None)
+    if isinstance(schema, Mapping):
+        return schema
+    spec = getattr(descriptor, "spec", None)
+    schema = getattr(spec, "result_data_schema", None)
+    return schema if isinstance(schema, Mapping) else None
+
+
+def _schema_type(schema: Mapping[str, Any] | None) -> str | None:
+    schema_type = schema.get("type") if isinstance(schema, Mapping) else None
+    return schema_type if isinstance(schema_type, str) else None
+
+
+def _render_result_shape(schema: Mapping[str, Any] | None, depth: int = 0) -> str:
+    if not isinstance(schema, Mapping) or depth > 8:
+        return "unknown"
+    schema_type = _schema_type(schema)
+    if schema_type == "array":
+        return f"array<{_render_result_shape(schema.get('items'), depth + 1)}>"
+    if schema_type == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, Mapping):
+            return "object"
+        rendered = ",".join(
+            f"{name}:{_render_result_shape(value, depth + 1)}"
+            for name, value in sorted(properties.items(), key=lambda item: str(item[0]))
+            if isinstance(name, str)
+        )
+        return f"object{{{rendered}}}"
+    return schema_type or "unknown"
 
 
 def _configured_positive(orchestrator: Any, key: str) -> bool:

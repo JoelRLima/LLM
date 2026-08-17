@@ -26,6 +26,7 @@ from agent.planning.result_bindings import (
     validate_result_bindings,
 )
 from agent.planning.validation_repair import repairable_fields
+from agent.skills.descriptor import result_data_schema_for_contract, target_schema_for_contract
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,14 @@ class PlanValidator:
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
 
         errors.extend(validate_deferred_items(plan, self.objective, self.canonical_deferred_references, self._validate_step_schema))
-        errors.extend(validate_result_bindings(plan, canonical_references=self.canonical_deferred_references))
+        errors.extend(
+            validate_result_bindings(
+                plan,
+                canonical_references=self.canonical_deferred_references,
+                result_data_schema_resolver=self._result_data_schema,
+                target_schema_resolver=self._target_schema,
+            )
+        )
         if errors:
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
         self._validate_schema_and_tools(plan, blocked)
@@ -241,6 +249,15 @@ class PlanValidator:
             return self.tool_registry.descriptor(tool_name)
         except KeyError:
             return None
+
+    def _contract(self, tool_name: str) -> Any:
+        if self.planning_context is not None:
+            return self._planning_tool(tool_name)
+        return self._descriptor(tool_name) or self.skills.get(tool_name)
+    def _result_data_schema(self, step: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        return result_data_schema_for_contract(self._contract(str(step.get("tool", ""))))
+    def _target_schema(self, step: Mapping[str, Any], target: str) -> Mapping[str, Any] | None:
+        return target_schema_for_contract(self._contract(str(step.get("tool", ""))), target)
 
     def _planning_tool(self, tool_name: str) -> PlanningTool | None:
         if self.planning_context is None:

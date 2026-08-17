@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from agent.planning.planning_context import PlanningContextError, PlanningTool
 from agent.planning.schema_safety import MAX_SCHEMA_DEPTH, PlanningSchemaError, validate_schema_depth
+from agent.skills.descriptor import validate_result_data_schema
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
@@ -159,6 +161,7 @@ def _tool_payload(
     schema_json = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if len(schema_json) > budget.max_schema_chars:
         raise PlanningPresentationError(f"schema da tool '{tool.name}' excede o limite")
+    result_data_schema = _validated_result_data_schema(tool.name, tool.result_data_schema, budget)
     payload: dict[str, Any] = {
         "name": tool.name,
         "description": tool.description,
@@ -171,6 +174,8 @@ def _tool_payload(
         "capabilities": sorted(tool.required_capabilities),
         "origin": tool.origin_kind.value,
     }
+    if result_data_schema is not None:
+        payload["result_data_schema"] = result_data_schema
     if tool.argument_provenance:
         payload["argument_provenance"] = {
             argument: {"allowed_origins": sorted(origins)}
@@ -184,6 +189,27 @@ def _tool_payload(
     if len(_escape_catalog(encoded_tool)) > budget.max_tool_chars:
         raise PlanningPresentationError(f"descrição estruturada da tool '{tool.name}' excede o limite")
     return payload
+
+
+def _validated_result_data_schema(
+    tool_name: str,
+    schema: Mapping[str, Any] | None,
+    budget: PlanningPresentationBudget,
+) -> Mapping[str, Any] | None:
+    if schema is None:
+        return None
+    try:
+        validate_result_data_schema(schema)
+    except (TypeError, ValueError) as exc:
+        raise PlanningPresentationError(
+            f"result_data_schema da tool '{tool_name}' é inválido"
+        ) from exc
+    encoded = json.dumps(schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if len(encoded) > budget.max_schema_chars:
+        raise PlanningPresentationError(
+            f"result_data_schema da tool '{tool_name}' excede o limite"
+        )
+    return schema
 
 
 def _escape_catalog(encoded: str) -> str:

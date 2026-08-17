@@ -104,6 +104,29 @@ def test_schema_is_defensively_copied_and_names_are_consistent() -> None:
     assert context.eligible_names == frozenset(tool.name for tool in context.tools)
 
 
+def test_result_data_schema_is_propagated_and_defensively_copied() -> None:
+    identity = RuntimeSnapshotIdentity.create("workspace")
+    result_schema = {
+        "type": "object",
+        "properties": {"payload": {"type": "string"}},
+    }
+    descriptor = ToolDescriptor("shaped", "shaped", result_data_schema=result_schema)
+    context = build_planning_context(
+        _Registry((descriptor,), identity),
+        ApplicationAuthoritySnapshot(runtime_identity=identity),
+        None,
+        None,
+    )
+
+    result_schema["properties"]["injected"] = {"type": "string"}
+    assert context.tools[0].result_data_schema == {
+        "type": "object",
+        "properties": {"payload": {"type": "string"}},
+    }
+    view = context.present("linear")
+    assert view.tools[0].result_data_schema == context.tools[0].result_data_schema
+
+
 def test_extension_without_canonical_origin_information_fails_closed() -> None:
     descriptor = ToolDescriptor("bad", "bad", adapter_id="external")
     identity = RuntimeSnapshotIdentity.create("workspace")

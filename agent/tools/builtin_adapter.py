@@ -42,6 +42,7 @@ class BuiltinToolAdapter(ToolAdapter):
             source_version="1",
             public_invocation_fields=spec.public_invocation_fields,
             argument_provenance=spec.argument_provenance,
+            result_data_schema=spec.result_data_schema,
         )
 
     @staticmethod

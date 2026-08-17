@@ -96,7 +96,7 @@ class ExecutionGateway:
             return plan
         canonical = AgentState.canonicalize_plan_steps(
             plan,
-            preserve_step_ids=False,
+            preserve_step_ids=True,
         )
         bound: List[Dict[str, Any]] = bind_result_references(canonical, AgentState._new_step_id)
         return bind_deferred_observation_references(bound)

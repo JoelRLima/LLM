@@ -17,6 +17,24 @@ def test_builtin_adapter_descriptors(tmp_path: Path) -> None:
     assert "file_reader" in names
 
 
+def test_builtin_result_data_shapes_are_projected_from_the_catalog(tmp_path: Path) -> None:
+    descriptors = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path)).descriptors()
+    by_name = {descriptor.name: descriptor for descriptor in descriptors}
+
+    assert by_name["file_reader"].result_data_schema == {"type": "string"}
+    assert by_name["grep"].result_data_schema == {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "file": {"type": "string"},
+                "line": {"type": "integer"},
+                "content": {"type": "string"},
+            },
+        },
+    }
+
+
 def test_code_task_descriptor_is_canonical_and_rejects_writer_arguments(
     tmp_path: Path,
 ) -> None:

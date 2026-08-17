@@ -39,6 +39,31 @@ def test_hierarchical_compact_view_may_omit_schema() -> None:
     assert '"schema"' not in rendered
 
 
+def test_result_data_schema_is_rendered_as_bounded_structure() -> None:
+    tool = PlanningTool(
+        name="shaped",
+        description="shaped",
+        result_data_schema={
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"content": {"type": "string"}},
+            },
+        },
+    )
+    view = PlanningPresentationSnapshot(
+        planning_context_id="ctx-1",
+        planner_kind="linear",
+        tools=(tool,),
+        presented_names=frozenset({"shaped"}),
+        runtime_identity=RuntimeSnapshotIdentity("registry-1", "workspace"),
+    )
+
+    rendered = view.render(compact=True)
+
+    assert '"result_data_schema":{"items":{"properties":{"content":{"type":"string"}' in rendered
+
+
 def test_catalog_overflow_fails_closed_without_omitting_tools() -> None:
     tool = PlanningTool(name="x", description="x" * 2_001)
     view = PlanningPresentationSnapshot(

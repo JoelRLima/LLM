@@ -213,3 +213,99 @@ def test_replan_dependency_closure_identifies_transitive_consumers() -> None:
     ]
 
     assert dependent_indices(plan, 0) == {1, 2}
+
+
+def test_known_scalar_shape_accepts_only_whole_data_path() -> None:
+    plan = _plan({"from_step": 1, "path": []})
+    schema = {"type": "string"}
+
+    def resolver(_step):
+        return schema
+
+    assert validate_result_bindings(
+        plan, result_data_schema_resolver=resolver
+    ) == []
+    for path in (["anything"], [0]):
+        invalid = _plan({"from_step": 1, "path": path})
+        assert validate_result_bindings(
+            invalid, result_data_schema_resolver=resolver
+        )
+
+
+def test_known_nested_object_and_array_shapes_validate_structurally() -> None:
+    schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string"},
+            },
+        },
+    }
+
+    def resolver(_step):
+        return schema
+
+    assert validate_result_bindings(
+        _plan({"from_step": 1, "path": [0, "content"]}),
+        result_data_schema_resolver=resolver,
+    ) == []
+    for path in (["content"], [0, "missing"]):
+        assert validate_result_bindings(
+            _plan({"from_step": 1, "path": path}),
+            result_data_schema_resolver=resolver,
+        )
+
+
+def test_known_object_shape_supports_nested_token_and_rejects_missing_property() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "payload": {
+                "type": "object",
+                "properties": {"token": {"type": "string"}},
+            }
+        },
+    }
+
+    def resolver(_step):
+        return schema
+
+    assert validate_result_bindings(
+        _plan({"from_step": 1, "path": ["payload", "token"]}),
+        result_data_schema_resolver=resolver,
+    ) == []
+    assert validate_result_bindings(
+        _plan({"from_step": 1, "path": ["payload", "missing"]}),
+        result_data_schema_resolver=resolver,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_valid"),
+    [(1, True), (2, False), (3, False), (0, False), (4, False)],
+)
+def test_symbolic_from_step_is_checked_against_the_complete_plan(
+    source: int, expected_valid: bool
+) -> None:
+    plan = [
+        {"tool": "source", "args": {}},
+        {"tool": "sink", "args": {}, "bindings": {"value": {"from_step": source, "path": []}}},
+        {"tool": "later", "args": {}},
+    ]
+
+    assert bool(validate_result_bindings(plan)) is (not expected_valid)
+
+
+def test_binding_rejects_deferred_and_cross_plan_sources() -> None:
+    deferred_source = [
+        {"kind": "deferred_condition", "observation_ref": 1},
+        {"tool": "sink", "args": {}, "bindings": {"value": {"from_step": 1, "path": []}}},
+    ]
+    assert validate_result_bindings(deferred_source)
+
+    canonical = [
+        {"tool": "source", "_step_id": "local", "args": {}},
+        {"tool": "sink", "_step_id": "consumer", "args": {}, "bindings": {"value": {"from_step": "external", "path": []}}},
+    ]
+    assert validate_result_bindings(canonical, canonical_references=True)

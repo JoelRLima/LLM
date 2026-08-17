@@ -1,11 +1,13 @@
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 
 from agent.orchestration.operations import OrchestratorOperations
 from agent.planning.capability_manifest import render_active_harness_capabilities
+from agent.planning.dependency_map import build_dependency_map
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_builder import PlanBuilder
-from agent.planning.plan_validator import PlanValidator
+from agent.planning.plan_validator import BlockedStep, PlanValidator
 from agent.planning.planning_context import (
     PlanningContextSnapshot,
     PlanningTool,
@@ -433,6 +435,7 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
         SimpleNamespace(
             context_manager=context,
             execution_gateway=SimpleNamespace(_bind_deferred_references=lambda plan: plan),
+            tool_registry=registry,
             _cached_base_prompt=catalog,
         ),
         validation_repair=True,
@@ -451,10 +454,12 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
     assert "A binding satisfies its target argument." in complete_context
     assert "If a field is in bindings, omit that field from args." in complete_context
     assert "NEVER put the same argument name in both args and bindings" in complete_context
-    assert "WRONG (pattern in both args and bindings):" in complete_context
+    assert "WRONG (same target in args and bindings):" in complete_context
     assert 'known input: file_path="fonte_h2.txt"' in complete_context
     assert "Shown inputs are not future results." in complete_context
     assert "future result: unavailable before execution." in complete_context
+    assert "result.data shape: string" in complete_context
+    assert "bindable whole-data path: []" in complete_context
     assert "do not auto-bind" in complete_context
 
     right_line = next(line for line in context.prompt.splitlines() if line.startswith("RIGHT: "))
@@ -466,8 +471,8 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
     wrong_line = next(
         line
         for line in context.prompt.splitlines()
-        if line.startswith('WRONG (pattern in both args and bindings): {"action":"tool","tool":"grep"')
-        and '"pattern":"fonte_h2.txt"' in line
+        if line.startswith("WRONG (same target in args and bindings): ")
+        and '"pattern":"literal-value"' in line
     )
     wrong = json.loads(wrong_line.split(": ", 1)[1])
     assert "pattern" in wrong["args"]
@@ -568,7 +573,7 @@ def test_h2_provenance_block_reuses_one_bounded_binding_correction(tmp_path):
     )
     assert len(calls) == 1
     assert validated is not None
-    assert validated[1].get("bindings", {}).get("pattern", {}).get("from_step") == 1
+    assert validated[1].get("bindings", {}).get("pattern", {}).get("from_step") == validated[0]["_step_id"]
 
 
 def _repair_orchestrator(tmp_path, decision):
@@ -656,7 +661,149 @@ def test_validation_repair_preserves_tool_and_frozen_arguments(tmp_path):
     assert validated is not None
     assert validated[1]["tool"] == "grep"
     assert validated[1]["args"] == {"path": ".", "recursive": True, "max_results": 20}
-    assert validated[1]["bindings"]["pattern"]["from_step"] == 1
+    assert validated[1]["bindings"]["pattern"]["from_step"] == validated[0]["_step_id"]
+
+
+def test_validation_repair_reintegrates_full_plan_and_preserves_valid_downstream(tmp_path):
+    orchestrator, prompts, executor = _repair_orchestrator(
+        tmp_path,
+        {
+            "action": "tool",
+            "tool": "grep",
+            "args": {"path": ".", "recursive": True, "max_results": 20},
+            "bindings": {"pattern": {"from_step": 1, "path": []}},
+        },
+    )
+    plan = _h2_invalid_plan() + [
+        {
+            "tool": "grep",
+            "args": {"path": "."},
+            "bindings": {"pattern": {"from_step": 2, "path": [0, "content"]}},
+        }
+    ]
+
+    validated = ExecutionGateway(orchestrator).validate_and_optimize_plan(
+        plan,
+        "Leia fonte_h2.txt e procure nos outros arquivos pela palavra que ele contém.",
+    )
+
+    assert len(prompts) == 1
+    assert executor.calls == 0
+    assert validated is not None
+    assert [step["tool"] for step in validated] == ["file_reader", "grep", "grep"]
+    assert all(isinstance(step.get("_step_id"), str) for step in validated)
+    assert validated[1]["bindings"]["pattern"]["from_step"] == validated[0]["_step_id"]
+    assert validated[2]["bindings"]["pattern"]["from_step"] == validated[1]["_step_id"]
+    assert validated[2]["args"] == {"path": "."}
+    dependencies, _ = build_dependency_map(validated)
+    assert dependencies == {1: [0], 2: [1]}
+
+
+def test_validation_repair_rejects_scalar_nested_path_atomically(tmp_path):
+    orchestrator, prompts, executor = _repair_orchestrator(
+        tmp_path,
+        {
+            "action": "tool",
+            "tool": "grep",
+            "args": {"path": ".", "recursive": True, "max_results": 20},
+            "bindings": {"pattern": {"from_step": 1, "path": ["anything"]}},
+        },
+    )
+    plan = _h2_invalid_plan()
+    original = deepcopy(plan)
+
+    validated = ExecutionGateway(orchestrator).validate_and_optimize_plan(
+        plan,
+        "Leia fonte_h2.txt e procure nos outros arquivos pela palavra que ele contém.",
+    )
+
+    assert validated is None
+    assert plan == original
+    assert len(prompts) == 1
+    assert executor.calls == 0
+    assert orchestrator.failed is True
+
+
+def test_invalid_downstream_candidate_is_not_silently_pruned(tmp_path):
+    orchestrator, _prompts, executor = _repair_orchestrator(
+        tmp_path,
+        {
+            "action": "tool",
+            "tool": "grep",
+            "args": {"path": ".", "recursive": True, "max_results": 20},
+            "bindings": {"pattern": {"from_step": 1, "path": []}},
+        },
+    )
+    plan = _h2_invalid_plan() + [{"tool": "grep", "args": {"path": "."}}]
+    original = deepcopy(plan)
+    blocked = BlockedStep(1, "pattern lacks grounded provenance", frozenset({"pattern"}))
+
+    accepted = ExecutionGateway(orchestrator)._replace_blocked_step(
+        plan,
+        "Leia fonte_h2.txt e procure nos outros arquivos pela palavra que ele contém.",
+        blocked,
+    )
+
+    assert accepted is False
+    assert plan == original
+    assert len(plan) == 3
+    assert executor.calls == 0
+
+
+def test_first_binding_canonicalization_is_idempotent_and_keeps_dependency_edge():
+    plan = [
+        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}},
+        {
+            "tool": "grep",
+            "args": {"path": "."},
+            "bindings": {"pattern": {"from_step": 1, "path": []}},
+        },
+    ]
+
+    first = ExecutionGateway._bind_deferred_references(plan)
+    second = ExecutionGateway._bind_deferred_references(first)
+
+    assert [step["_step_id"] for step in first] == [step["_step_id"] for step in second]
+    assert second[1]["bindings"]["pattern"]["from_step"] == first[0]["_step_id"]
+    assert second[1]["bindings"] == first[1]["bindings"]
+    dependencies, _ = build_dependency_map(second)
+    assert dependencies == {1: [0]}
+
+
+def test_h2_binding_resolves_concrete_args_while_symbolic_plan_survives(tmp_path):
+    orchestrator, _prompts, _executor = _repair_orchestrator(
+        tmp_path,
+        {
+            "action": "tool",
+            "tool": "grep",
+            "args": {"path": ".", "recursive": True, "max_results": 20},
+            "bindings": {"pattern": {"from_step": 1, "path": []}},
+        },
+    )
+    validated = ExecutionGateway(orchestrator).validate_and_optimize_plan(
+        _h2_invalid_plan(),
+        "Leia fonte_h2.txt e procure nos outros arquivos pela palavra que ele contém.",
+    )
+    assert validated is not None
+
+    state = AgentState()
+    state.set_plan(validated)
+    reader_id = state.plan[0]["_step_id"]
+    reader_result = _successful_observation("orion_584271")
+    reader_result["step_id"] = reader_id
+    state.tool_history.append(reader_result)
+
+    resolved = resolve_bound_args(state.plan[1], 1, state.plan, state.tool_history)
+    assert resolved["pattern"] == "orion_584271"
+    assert state.plan[1]["bindings"]["pattern"]["from_step"] == reader_id
+
+    state.record_tool_result(
+        "grep",
+        resolved,
+        {"ok": True, "executed": True, "status": "succeeded", "data": []},
+        step_id=state.plan[1]["_step_id"],
+    )
+    assert state.tool_history[-1]["args"] == resolved
 
 
 def test_validation_repair_rejects_mutation_of_valid_argument(tmp_path):
