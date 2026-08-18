@@ -264,7 +264,7 @@ class OpenAICompatibleGateway:
             elif event.type == StreamEventType.ERROR:
                 if callbacks.get("on_error"):
                     callbacks["on_error"](event.text)
-                return ""
+                raise ModelResponseError(event.text, partial_content=visible)
             elif event.type == StreamEventType.USAGE and callbacks.get("on_usage"):
                 callbacks["on_usage"](event.data)
             elif event.type == StreamEventType.DONE and callbacks.get("on_done") and event.data:

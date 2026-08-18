@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.application import AgentApplication
+from agent.llm.contracts import TokenUsage
 from agent.reporting.operational_outcome import normalize_terminal_status
 from agent.reporting.run_receipt import derive_status
 from agent.reporting.task_report import TaskReportBuilder
@@ -72,6 +73,31 @@ def test_task_report_distinguishes_real_tools_from_history_records() -> None:
     assert report["metrics"]["tool_calls"] == 1
     assert report["metrics"]["tools_called"] == 1
     assert report["metrics"]["history_records"] == 2
+
+
+def test_task_report_preserves_total_only_ledger_usage_without_metric_rows() -> None:
+    ledger = TaskBudgetLedger()
+    call_number = ledger.reserve_model_call()
+    ledger.finalize_model_call(call_number, usage=TokenUsage(total_tokens=15))
+    state = SimpleNamespace(
+        objective="report",
+        budget_ledger=ledger,
+        tool_history=[],
+        events=[],
+        last_result=None,
+    )
+
+    report = TaskReportBuilder({}).build_report(
+        state,
+        [],
+        "done",
+        canonical_outcome={"status": "succeeded", "error": None},
+    )
+
+    assert report["metrics"]["total_tokens"] == 15
+    assert report["metrics"]["reported_total_tokens"] == 15
+    assert report["metrics"]["accounted_tokens"] == 15
+    assert report["metrics"]["token_usage_complete"] is True
 
 
 def test_task_report_does_not_infer_success_from_final_answer() -> None:

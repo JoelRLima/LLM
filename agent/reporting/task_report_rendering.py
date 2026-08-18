@@ -68,9 +68,18 @@ def aggregate_metrics(
     actual_tool_calls = tool_calls if tool_calls is not None else tools_called
     actual_tool_calls = int(actual_tool_calls or 0)
     history_records = int(history_records or 0)
+    model_calls = (
+        _snapshot_number(budget_snapshot, "model_calls", len(model_entries))
+        if budget_snapshot is not None
+        else len(model_entries)
+    )
+    snapshot_total_calls = (
+        _snapshot_number(budget_snapshot, "model_calls_with_reported_total", 0)
+        if budget_snapshot is not None
+        else 0
+    )
 
     if budget_snapshot is not None:
-        model_calls = _snapshot_number(budget_snapshot, "model_calls", len(model_entries))
         actual_tool_calls = _snapshot_number(
             budget_snapshot, "tool_calls", actual_tool_calls
         )
@@ -99,6 +108,7 @@ def aggregate_metrics(
             total_tokens = (
                 reported_total_tokens
                 if all_model_totals
+                or (not model_entries and snapshot_total_calls == model_calls)
                 else derived_total_tokens
                 if model_entries
                 else reported_input_tokens + reported_output_tokens
@@ -110,11 +120,6 @@ def aggregate_metrics(
 
     duration_entries = run_entries or model_entries
     duration = sum(_first_number(entry, DURATION_KEYS) for entry in duration_entries)
-    model_calls = (
-        _snapshot_number(budget_snapshot, "model_calls", len(model_entries))
-        if budget_snapshot is not None
-        else len(model_entries)
-    )
     return {
         "total_tokens": total_tokens,
         "reported_tokens": reported_tokens,
@@ -133,7 +138,9 @@ def aggregate_metrics(
         "tool_calls": actual_tool_calls,
         "tools_called": actual_tool_calls,
         "history_records": history_records,
-        "token_usage_available": bool(token_values) or bool(reported_input_tokens or reported_output_tokens),
+        "token_usage_available": bool(token_usage_complete)
+        or bool(token_values)
+        or bool(reported_input_tokens or reported_output_tokens),
         "historical_token_fallback": historical_fallback,
     }
 

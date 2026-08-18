@@ -75,6 +75,7 @@ def test_usage_snapshot_separates_reported_and_estimated_accounting() -> None:
     assert snapshot.estimated_tokens == 7
     assert snapshot.accounted_tokens == 16
     assert snapshot.model_calls_with_reported_usage == 2
+    assert snapshot.model_calls_with_reported_total == 1
     assert snapshot.model_calls_without_reported_usage == 1
     assert snapshot.token_usage_complete is False
     assert json.loads(json.dumps(snapshot.to_dict()))["accounted_tokens"] == 16
@@ -107,6 +108,7 @@ def test_reset_clears_all_task_usage_without_replacing_ledger() -> None:
     assert snapshot.reported_input_tokens == 0
     assert snapshot.reported_output_tokens == 0
     assert snapshot.reported_total_tokens == 0
+    assert snapshot.model_calls_with_reported_total == 0
     assert snapshot.estimated_tokens == 0
     assert snapshot.accounted_tokens == 0
     assert snapshot.model_calls_with_reported_usage == 0
@@ -141,3 +143,28 @@ def test_cumulative_accounting_can_cross_token_limit_then_stops_next_call() -> N
     assert ledger.snapshot().accounted_tokens == 105
     with pytest.raises(BudgetExhausted):
         ledger.reserve_model_call()
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected_accounted", "expected_estimated", "complete"),
+    [
+        ({"total_tokens": 15}, 15, 0, True),
+        ({"total_tokens": 0}, 0, 0, True),
+        ({"input_tokens": 4, "output_tokens": 6}, 10, 0, True),
+        ({"input_tokens": 4}, 7, 7, False),
+    ],
+)
+def test_authoritative_total_normalization(
+    usage: dict[str, int],
+    expected_accounted: int,
+    expected_estimated: int,
+    complete: bool,
+) -> None:
+    ledger = TaskBudgetLedger()
+    call_number = ledger.reserve_model_call()
+    ledger.finalize_model_call(call_number, usage=usage, estimated_tokens=7)
+
+    snapshot = ledger.snapshot()
+    assert snapshot.accounted_tokens == expected_accounted
+    assert snapshot.estimated_tokens == expected_estimated
+    assert snapshot.token_usage_complete is complete

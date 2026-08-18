@@ -68,6 +68,39 @@ class TokenUsage:
     available: bool = True
 
 
+def normalize_usage(
+    usage: Any,
+) -> tuple[int | None, int | None, int | None, int | None, bool]:
+    if usage is None:
+        return None, None, None, None, False
+    available = (
+        usage.get("available", True)
+        if isinstance(usage, Mapping)
+        else getattr(usage, "available", True)
+    )
+    if available is False:
+        return None, None, None, None, False
+
+    def value(primary: str, legacy: str) -> int | None:
+        raw = (
+            usage.get(primary, usage.get(legacy))
+            if isinstance(usage, Mapping)
+            else getattr(usage, primary, None)
+        )
+        if raw is None and not isinstance(usage, Mapping):
+            raw = getattr(usage, legacy, None)
+        return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0 else None
+
+    input_tokens = value("input_tokens", "prompt_tokens")
+    output_tokens = value("output_tokens", "completion_tokens")
+    total_tokens = value("total_tokens", "total_tokens")
+    if total_tokens is not None:
+        return input_tokens, output_tokens, total_tokens, total_tokens, True
+    if input_tokens is not None and output_tokens is not None:
+        return input_tokens, output_tokens, total_tokens, input_tokens + output_tokens, True
+    return input_tokens, output_tokens, total_tokens, None, False
+
+
 @dataclass(frozen=True)
 class ModelResponse:
     content: str
@@ -126,16 +159,9 @@ def build_model_call_metric(
         else getattr(usage, "available", True) is not False
     )
 
-    def value(name: str, fallback: str | None = None) -> int | None:
-        raw = usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
-        if raw is None and fallback is not None:
-            raw = usage.get(fallback) if isinstance(usage, Mapping) else getattr(usage, fallback, None)
-        return int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw >= 0 else None
-
-    input_tokens = value("input_tokens", "prompt_tokens") if available else None
-    output_tokens = value("output_tokens", "completion_tokens") if available else None
-    total_tokens = value("total_tokens") if available else None
-    complete = input_tokens is not None and output_tokens is not None
+    input_tokens, output_tokens, total_tokens, normalized_total, complete = normalize_usage(
+        usage if available else None
+    )
     entry: Dict[str, Any] = {
         "type": "model_call",
         "metric_type": "model_call",
@@ -156,9 +182,9 @@ def build_model_call_metric(
     if total_tokens is not None:
         entry["total_tokens"] = total_tokens
     if complete:
-        assert input_tokens is not None and output_tokens is not None
         entry["estimated_tokens"] = 0
-        entry["accounted_tokens"] = total_tokens if total_tokens is not None else input_tokens + output_tokens
+        assert normalized_total is not None
+        entry["accounted_tokens"] = normalized_total
     else:
         entry["estimated_tokens"] = max(0, estimated_tokens)
         entry["accounted_tokens"] = max(0, estimated_tokens)
@@ -233,7 +259,9 @@ class ModelConnectionError(ModelGatewayError, ConnectionError):
 
 
 class ModelResponseError(ModelGatewayError, ValueError):
-    pass
+    def __init__(self, message: str, *, partial_content: str = "") -> None:
+        super().__init__(message)
+        self.partial_content = partial_content
 
 
 class UnsupportedModelCapability(ModelGatewayError):

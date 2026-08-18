@@ -276,14 +276,14 @@ class ChatSession:
                 str,
                 self.gateway.consume_stream(response.response, stream_callbacks),
             )
-        except Exception:
+        except Exception as exc:
+            partial_content = getattr(exc, "partial_content", None)
+            visible = partial_content if isinstance(partial_content, str) else visible
             estimate = estimate_payload_tokens(response.payload, visible)
             self._finalize_model_call(
-                response.call_number,
-                response.started_at,
-                success=False,
-                streaming=True,
-                estimated_tokens=estimate,
+                response.call_number, response.started_at, success=False, streaming=True,
+                response={"usage": usage} if usage is not None else None,
+                usage=usage, estimated_tokens=estimate,
             )
             raise
         estimate = estimate_payload_tokens(response.payload, visible)

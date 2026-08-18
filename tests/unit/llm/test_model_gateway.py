@@ -6,6 +6,7 @@ from agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    ModelResponseError,
     StreamEventType,
     StructuredOutputMode,
     StructuredOutputRequest,
@@ -199,6 +200,38 @@ def test_stream_exposes_provider_usage_event() -> None:
     usage_events = [event for event in events if event.type is StreamEventType.USAGE]
     assert len(usage_events) == 1
     assert usage_events[0].data["total_tokens"] == 3
+
+
+def test_consume_stream_propagates_provider_error_before_content() -> None:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
+    )
+    response = MagicMock()
+    response.iter_lines.return_value = [b'data: {"error":{"message":"upstream failed"}}']
+    errors: list[str] = []
+
+    with pytest.raises(ModelResponseError, match="upstream failed"):
+        gateway.consume_stream(response, {"on_error": errors.append})
+
+    assert errors == ["upstream failed"]
+
+
+def test_consume_stream_error_preserves_partial_content() -> None:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
+    )
+    response = MagicMock()
+    response.iter_lines.return_value = [
+        b'data: {"choices":[{"delta":{"content":"partial"}}]}',
+        b'data: {"error":{"message":"stream interrupted"}}',
+    ]
+    chunks: list[str] = []
+
+    with pytest.raises(ModelResponseError) as caught:
+        gateway.consume_stream(response, {"on_content_chunk": chunks.append})
+
+    assert chunks == ["partial"]
+    assert caught.value.partial_content == "partial"
 
 
 def test_unsupported_native_schema_fails_before_http():

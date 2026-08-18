@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from unittest.mock import MagicMock
 
 import pytest
 
 from agent.cancellation import CancellationToken
 from agent.code.workflow_proposal import _complete
-from agent.llm.contracts import ModelResponse, ProviderCapabilities, TokenUsage
+from agent.llm.contracts import ModelResponse, ModelResponseError, ProviderCapabilities, TokenUsage
 from agent.llm.model_client import ModelClient, ModelProviderError
+from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.llm.router import route_objective
 from agent.llm.session import ChatSession
 from agent.reporting.task_report_rendering import aggregate_metrics
@@ -64,6 +66,17 @@ class _UsageGateway(_Gateway):
         )
 
 
+class _TokenUsageGateway(_Gateway):
+    def __init__(self, usage: TokenUsage) -> None:
+        super().__init__()
+        self.usage = usage
+
+    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
+        del payload
+        self.calls += 1
+        return ModelResponse(content='{"action":"final"}', usage=self.usage)
+
+
 class _RetryGateway(_Gateway):
     def __init__(self, responses: list[str]) -> None:
         super().__init__()
@@ -103,16 +116,29 @@ class _ModernGateway:
     provider_name = "modern-provider"
     capabilities = ProviderCapabilities()
 
+    def __init__(self, usage: TokenUsage | None = None) -> None:
+        self.usage = usage or TokenUsage(input_tokens=2, output_tokens=3, total_tokens=5)
+
     def complete(self, request: Any) -> ModelResponse:
         del request
         return ModelResponse(
             content='{"changes": []}',
-            usage=TokenUsage(input_tokens=2, output_tokens=3, total_tokens=5),
+            usage=self.usage,
         )
 
 
 def _session(gateway: _Gateway) -> ChatSession:
     return ChatSession("system", {"model": "test-model"}, gateway=gateway)
+
+
+def _openai_stream_session(lines: list[bytes]) -> tuple[ChatSession, Any]:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
+    )
+    response = MagicMock()
+    response.iter_lines.return_value = lines
+    gateway.send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
+    return ChatSession("system", {"model": "local"}, gateway=gateway), gateway
 
 
 def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> None:
@@ -146,6 +172,41 @@ def test_legacy_transport_observes_typed_usage_before_unwrapping_text() -> None:
     assert snapshot.estimated_tokens == 0
 
 
+@pytest.mark.parametrize(
+    ("usage", "expected_total", "complete"),
+    [
+        (TokenUsage(total_tokens=15), 15, True),
+        (TokenUsage(total_tokens=0), 0, True),
+        (TokenUsage(input_tokens=4, output_tokens=6), 10, True),
+        (TokenUsage(input_tokens=4), None, False),
+    ],
+)
+def test_legacy_and_report_projection_follow_authoritative_usage(
+    usage: TokenUsage,
+    expected_total: int | None,
+    complete: bool,
+) -> None:
+    entries: list[dict[str, Any]] = []
+    session = _session(_TokenUsageGateway(usage))
+    session.set_model_call_callback(entries.append)
+
+    session.send_non_streaming_request({})
+    snapshot = session.budget_ledger.snapshot()
+    metrics = aggregate_metrics(entries, budget_snapshot=snapshot)
+
+    assert snapshot.token_usage_complete is complete
+    assert metrics["token_usage_complete"] is complete
+    assert metrics["accounted_tokens"] == snapshot.accounted_tokens
+    if complete:
+        assert snapshot.accounted_tokens == expected_total
+        assert metrics["total_tokens"] == expected_total
+        assert metrics["estimated_tokens"] == 0
+    else:
+        assert metrics["total_tokens"] is None
+        assert snapshot.estimated_tokens > 0
+        assert metrics["estimated_tokens"] == snapshot.estimated_tokens
+
+
 def test_stream_usage_is_accounted_after_consumption_as_one_call() -> None:
     gateway = _StreamingUsageGateway()
     entries: list[dict[str, Any]] = []
@@ -160,6 +221,79 @@ def test_stream_usage_is_accounted_after_consumption_as_one_call() -> None:
     assert snapshot.reported_total_tokens == 5
     assert snapshot.accounted_tokens == 5
     assert len(entries) == 1
+    assert entries[0]["total_tokens"] == 5
+
+
+def test_stream_error_before_content_is_failed_and_counted_once() -> None:
+    session, gateway = _openai_stream_session(
+        [b'data: {"error":{"message":"stream failed before content"}}']
+    )
+    entries: list[dict[str, Any]] = []
+    session.set_model_call_callback(entries.append)
+    pending = session.send_request({}, stream=True)
+
+    with pytest.raises(ModelResponseError, match="stream failed before content"):
+        session.process_stream(pending, {})
+
+    snapshot = session.budget_ledger.snapshot()
+    assert gateway.send_payload.call_count == 1
+    assert snapshot.model_calls == 1
+    assert snapshot.reported_total_tokens == 0
+    assert snapshot.token_usage_complete is False
+    assert len(entries) == 1
+    assert entries[0]["success"] is False
+    assert entries[0].get("total_tokens") is None
+
+
+def test_stream_error_after_partial_content_uses_partial_estimate() -> None:
+    session, gateway = _openai_stream_session(
+        [
+            b'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            b'data: {"error":{"message":"stream interrupted"}}',
+        ]
+    )
+    entries: list[dict[str, Any]] = []
+    session.set_model_call_callback(entries.append)
+    pending = session.send_request({}, stream=True)
+
+    with pytest.raises(ModelResponseError, match="stream interrupted"):
+        session.process_stream(pending, {})
+
+    snapshot = session.budget_ledger.snapshot()
+    expected_estimate = len("partial") // 4
+    assert gateway.send_payload.call_count == 1
+    assert snapshot.model_calls == 1
+    assert snapshot.reported_total_tokens == 0
+    assert snapshot.token_usage_complete is False
+    assert snapshot.estimated_tokens == expected_estimate
+    assert snapshot.accounted_tokens == expected_estimate
+    assert entries[0]["success"] is False
+    assert entries[0]["estimated_tokens"] == expected_estimate
+    assert entries[0]["accounted_tokens"] == expected_estimate
+
+
+def test_stream_error_after_usage_keeps_authoritative_usage_and_failed_call() -> None:
+    session, gateway = _openai_stream_session(
+        [
+            b'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            b'data: {"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}',
+            b'data: {"error":{"message":"stream interrupted"}}',
+        ]
+    )
+    entries: list[dict[str, Any]] = []
+    session.set_model_call_callback(entries.append)
+    pending = session.send_request({}, stream=True)
+
+    with pytest.raises(ModelResponseError, match="stream interrupted"):
+        session.process_stream(pending, {})
+
+    snapshot = session.budget_ledger.snapshot()
+    assert gateway.send_payload.call_count == 1
+    assert snapshot.accounted_tokens == 5
+    assert snapshot.estimated_tokens == 0
+    assert snapshot.token_usage_complete is True
+    assert entries[0]["success"] is False
+    assert entries[0]["token_usage_complete"] is True
     assert entries[0]["total_tokens"] == 5
 
 
@@ -292,6 +426,31 @@ def test_modern_gateway_call_records_one_correlated_model_metric() -> None:
     assert sink.entries[0]["metric_type"] == "model_call"
     assert sink.entries[0]["total_tokens"] == 5
     assert context.budget_snapshot().accounted_tokens == 5
+
+
+def test_modern_gateway_uses_total_only_as_authoritative() -> None:
+    class Sink:
+        def __init__(self) -> None:
+            self.entries: list[dict[str, Any]] = []
+
+        def record(self, metric: dict[str, Any]) -> None:
+            self.entries.append(metric)
+
+    sink = Sink()
+    context = TaskExecutionContext(
+        model_gateway=_ModernGateway(TokenUsage(total_tokens=15)),
+        cancellation=CancellationToken(),
+        limits=RuntimeLimits(max_model_calls=2),
+        metrics_sink=sink,
+    )
+    service = type("Service", (), {"context": context})()
+
+    _complete(service, type("Request", (), {})())
+
+    assert sink.entries[0]["token_usage_complete"] is True
+    assert sink.entries[0]["accounted_tokens"] == 15
+    assert sink.entries[0]["estimated_tokens"] == 0
+    assert context.budget_snapshot().accounted_tokens == 15
 
 
 def test_aggregate_counts_explicit_calls_without_using_metadata_for_incomplete_call() -> None:

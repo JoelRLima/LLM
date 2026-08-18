@@ -1,10 +1,12 @@
 import logging
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
 from agent.llm.model_client import ModelProviderError
+from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.llm.session import ChatSession
 from agent.reporting.operational_outcome import OperationalOutcome
 from agent.runtime.budget import BudgetExhausted
@@ -495,3 +497,26 @@ def test_final_responder_refuses_n_plus_one_provider_call() -> None:
         responder._request_answer(None)
 
     assert gateway.calls == 1
+
+
+def test_final_responder_does_not_accept_stream_error_as_successful_call() -> None:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
+    )
+    response = MagicMock()
+    response.iter_lines.return_value = [
+        b'data: {"choices":[{"delta":{"content":"partial"}}]}',
+        b'data: {"error":{"message":"final stream failed"}}',
+    ]
+    gateway.send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
+    session = ChatSession("system", {"model": "local"}, gateway=gateway)
+    entries: list[dict[str, object]] = []
+    session.set_model_call_callback(entries.append)
+    responder = FinalResponder(SimpleNamespace(session=session, agent_state=SimpleNamespace(tool_history=[])))
+
+    with pytest.raises(ModelProviderError, match="Model provider request failed"):
+        responder._request_answer(lambda _chunk: None)
+
+    assert gateway.send_payload.call_count == 1
+    assert len(entries) == 1
+    assert entries[0]["success"] is False

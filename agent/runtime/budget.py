@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any
 
+from agent.llm.contracts import normalize_usage
+
 
 class BudgetExhausted(RuntimeError):
     code = "TASK_BUDGET_EXHAUSTED"
@@ -22,6 +24,7 @@ class BudgetSnapshot:
     reported_input_tokens: int
     reported_output_tokens: int
     reported_total_tokens: int
+    model_calls_with_reported_total: int
     estimated_tokens: int
     accounted_tokens: int
     model_calls_with_reported_usage: int
@@ -38,38 +41,6 @@ def _limit(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{name} must be a positive integer")
     return value
-
-def _token_value(value: Any) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return None
-    return value
-
-def _usage_value(usage: Any, primary: str, legacy: str) -> int | None:
-    if usage is None:
-        return None
-    if isinstance(usage, Mapping):
-        value = usage.get(primary, usage.get(legacy))
-    else:
-        value = getattr(usage, primary, None)
-        if value is None:
-            value = getattr(usage, legacy, None)
-    return _token_value(value)
-
-def _usage_available(usage: Any) -> bool:
-    if isinstance(usage, Mapping):
-        return usage.get("available", True) is not False
-    return getattr(usage, "available", True) is not False
-
-def _extract_usage(usage: Any) -> tuple[int | None, int | None, int | None]:
-    if usage is None or not _usage_available(usage):
-        return None, None, None
-    return (
-        _usage_value(usage, "input_tokens", "prompt_tokens"),
-        _usage_value(usage, "output_tokens", "completion_tokens"),
-        _usage_value(usage, "total_tokens", "total_tokens"),
-    )
 
 def estimate_payload_tokens(payload: Any, response: Any = None) -> int:
     texts: list[str] = []
@@ -117,6 +88,7 @@ class TaskBudgetLedger:
         self._reported_input_tokens = 0
         self._reported_output_tokens = 0
         self._reported_total_tokens = 0
+        self._model_calls_with_reported_total = 0
         self._estimated_tokens = 0
         self._accounted_tokens = 0
         self._model_calls_with_reported_usage = 0
@@ -141,6 +113,7 @@ class TaskBudgetLedger:
             self._reported_input_tokens = 0
             self._reported_output_tokens = 0
             self._reported_total_tokens = 0
+            self._model_calls_with_reported_total = 0
             self._estimated_tokens = 0
             self._accounted_tokens = 0
             self._model_calls_with_reported_usage = 0
@@ -168,6 +141,7 @@ class TaskBudgetLedger:
         reported_input = non_negative("reported_input_tokens")
         reported_output = non_negative("reported_output_tokens")
         reported_total = non_negative("reported_total_tokens")
+        reported_total_calls = non_negative("model_calls_with_reported_total")
         estimated = non_negative("estimated_tokens")
         accounted = non_negative("accounted_tokens")
         reported_calls = non_negative("model_calls_with_reported_usage")
@@ -177,6 +151,8 @@ class TaskBudgetLedger:
             raise ValueError("budget checkpoint exceeds max_task_tool_calls")
         if reported_calls > model_calls:
             raise ValueError("budget checkpoint has invalid reported model-call count")
+        if reported_total_calls > model_calls:
+            raise ValueError("budget checkpoint has invalid reported-total count")
 
         with self._lock:
             self._model_calls = model_calls
@@ -184,6 +160,7 @@ class TaskBudgetLedger:
             self._reported_input_tokens = reported_input
             self._reported_output_tokens = reported_output
             self._reported_total_tokens = reported_total
+            self._model_calls_with_reported_total = reported_total_calls
             self._estimated_tokens = estimated
             self._accounted_tokens = accounted
             self._model_calls_with_reported_usage = reported_calls
@@ -222,8 +199,7 @@ class TaskBudgetLedger:
             raise TypeError("estimated_tokens must be an integer")
         if estimated_tokens < 0:
             raise ValueError("estimated_tokens must be non-negative")
-        input_tokens, output_tokens, total_tokens = _extract_usage(usage)
-        complete = input_tokens is not None and output_tokens is not None
+        input_tokens, output_tokens, total_tokens, normalized_total, complete = normalize_usage(usage)
         with self._lock:
             if call_number < 1 or call_number > self._model_calls:
                 raise ValueError("unknown model call reservation")
@@ -236,14 +212,9 @@ class TaskBudgetLedger:
                 self._reported_output_tokens += output_tokens
             if total_tokens is not None:
                 self._reported_total_tokens += total_tokens
+                self._model_calls_with_reported_total += 1
             if complete:
-                assert input_tokens is not None
-                assert output_tokens is not None
-                normalized_total = (
-                    total_tokens
-                    if total_tokens is not None
-                    else input_tokens + output_tokens
-                )
+                assert normalized_total is not None
                 self._accounted_tokens += normalized_total
                 self._model_calls_with_reported_usage += 1
             else:
@@ -259,6 +230,7 @@ class TaskBudgetLedger:
                 reported_input_tokens=self._reported_input_tokens,
                 reported_output_tokens=self._reported_output_tokens,
                 reported_total_tokens=self._reported_total_tokens,
+                model_calls_with_reported_total=self._model_calls_with_reported_total,
                 estimated_tokens=self._estimated_tokens,
                 accounted_tokens=self._accounted_tokens,
                 model_calls_with_reported_usage=self._model_calls_with_reported_usage,
@@ -293,5 +265,6 @@ __all__ = [
     "TaskBudgetLedger",
     "estimate_model_request_tokens",
     "estimate_payload_tokens",
+    "normalize_usage",
     "task_budget_for",
 ]

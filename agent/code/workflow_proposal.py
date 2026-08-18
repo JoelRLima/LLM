@@ -13,7 +13,7 @@ from agent.llm.structured_output import (
     StructuredOutputStrategy,
     parse_structured_response,
 )
-from agent.runtime.budget import estimate_model_request_tokens
+from agent.runtime.budget import estimate_model_request_tokens, normalize_usage
 
 CHANGESET_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -151,25 +151,8 @@ def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
         usage=usage,
         estimated_tokens=estimate,
     )
-    input_tokens = getattr(usage, "input_tokens", None)
-    output_tokens = getattr(usage, "output_tokens", None)
-    total_tokens = getattr(usage, "total_tokens", None)
-    complete = (
-        isinstance(input_tokens, int)
-        and not isinstance(input_tokens, bool)
-        and input_tokens >= 0
-        and isinstance(output_tokens, int)
-        and not isinstance(output_tokens, bool)
-        and output_tokens >= 0
-    )
-    normalized_total = estimate
-    if complete:
-        assert input_tokens is not None and output_tokens is not None
-        normalized_total = (
-            total_tokens
-            if isinstance(total_tokens, int) and not isinstance(total_tokens, bool) and total_tokens >= 0
-            else input_tokens + output_tokens
-        )
+    input_tokens, output_tokens, total_tokens, authoritative_total, complete = normalize_usage(usage)
+    accounted_total = authoritative_total if authoritative_total is not None else estimate
     data = {
         "operation": "propose_changes",
         "provider": service.context.model_gateway.provider_name,
@@ -178,7 +161,7 @@ def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
         "success": True,
         "token_usage_complete": complete,
         "estimated_tokens": 0 if complete else estimate,
-        "accounted_tokens": normalized_total,
+        "accounted_tokens": accounted_total,
     }
     for field in ("input_tokens", "output_tokens", "total_tokens"):
         value = getattr(usage, field, None)
