@@ -808,7 +808,7 @@ def test_parallel_replan_and_terminal_use_first_decisive_logical_slot(
     assert {entry["logical_slot"] for entry in state.tool_history} == {0, 1}
 
 
-@pytest.mark.parametrize("terminal_status", ["blocked", "cancelled", "unverified"])
+@pytest.mark.parametrize("terminal_status", ["blocked", "cancelled", "unverified", "permission_denied"])
 @pytest.mark.parametrize("later_slot_completes_first", [True, False])
 def test_parallel_terminal_plus_success_projects_terminal_result(
     monkeypatch, terminal_status, later_slot_completes_first
@@ -823,13 +823,13 @@ def test_parallel_terminal_plus_success_projects_terminal_result(
     )
     assert executor.last_projection is not None
     assert executor.last_projection.outcome.kind in {
-        StepOutcomeKind.BLOCKED, StepOutcomeKind.CANCELLED, StepOutcomeKind.UNVERIFIED
+        StepOutcomeKind.BLOCKED, StepOutcomeKind.CANCELLED, StepOutcomeKind.UNVERIFIED, StepOutcomeKind.PERMISSION_DENIED
     }
     assert state.last_result["status"] == terminal_status
     assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
 
 
-@pytest.mark.parametrize("failure_status", ["failed", "timed_out", "permission_denied"])
+@pytest.mark.parametrize("failure_status", ["failed", "timed_out"])
 @pytest.mark.parametrize("later_slot_completes_first", [True, False])
 def test_parallel_continue_failure_matches_sequential_order(
     monkeypatch, failure_status, later_slot_completes_first
@@ -861,3 +861,99 @@ def test_parallel_success_then_continue_failure_projects_logical_failure(
     assert executor.last_projection.result["status"] == "failed"
     assert state.last_result["status"] == "failed"
     assert all(record.status is not StepStatus.RUNNING for record in state.step_records.values())
+
+
+def test_sequential_permission_denied_stops_and_does_not_invoke_later_steps(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "echo", "args": {"text": "step-1"}},
+            {"tool": "echo", "args": {"text": "step-2"}},
+        ]
+    )
+    context = _Context(state)
+    context.run_tool_impl = lambda tool, args: (
+        {
+            "ok": False,
+            "executed": False,
+            "status": "permission_denied",
+            "error_code": "AUTH_DENIED",
+            "error": "AUTH_DENIED",
+            "message": "Acesso negado",
+        }
+        if args.get("text") == "step-1"
+        else {"ok": True, "done": True, "data": "success"}
+    )
+    replan_called = False
+
+    def mock_handle_step_failure(*_args, **_kwargs):
+        nonlocal replan_called
+        replan_called = True
+        return "continue"
+
+    context._handle_step_failure = mock_handle_step_failure
+
+    answer = PlanExecutor(context).execute("executar plano com negacao", {})
+
+    assert answer == "Acesso negado"
+    assert context.calls == ["step-1"]
+    assert replan_called is False
+    assert state.get_step_status(0) is StepStatus.FAILED
+    assert state.get_step_status(1) is StepStatus.PENDING
+    assert state.last_result["status"] == "permission_denied"
+    assert state.last_result["executed"] is False
+
+
+def test_parallel_permission_denied_stops_subsequent_step_and_preserves_denial(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_reader", "args": {"file_path": "slot0.txt"}},
+            {"tool": "file_reader", "args": {"file_path": "slot1.txt"}},
+            {"tool": "echo", "args": {"text": "subsequent.txt"}},
+        ]
+    )
+    context = _Context(state)
+    context.tool_invocation_gateway = object()
+
+    def run_tool(tool, args):
+        del tool
+        target = args.get("file_path") or args.get("text")
+        if target == "slot0.txt":
+            return {
+                "ok": False,
+                "executed": False,
+                "status": "permission_denied",
+                "error_code": "DENIED",
+                "error": "permissao negada",
+                "message": "Sem permissao para slot0",
+            }
+        if target == "slot1.txt":
+            return {
+                "ok": True,
+                "executed": True,
+                "status": "succeeded",
+                "data": "slot1 content",
+            }
+        return {"ok": True, "done": True, "data": "subsequent content"}
+
+    context.run_tool_impl = run_tool
+    replan_called = False
+
+    def mock_handle_step_failure(*_args, **_kwargs):
+        nonlocal replan_called
+        replan_called = True
+        return "continue"
+
+    context._handle_step_failure = mock_handle_step_failure
+
+    answer = PlanExecutor(context).execute("executar paralelo com negacao", {})
+
+    assert answer == "Sem permissao para slot0"
+    assert replan_called is False
+    assert context.calls == ["slot0.txt", "slot1.txt"]
+    assert state.get_step_status(0) is StepStatus.FAILED
+    assert state.get_step_status(1) is StepStatus.COMPLETED
+    assert state.get_step_status(2) is StepStatus.PENDING
+    assert state.last_result["status"] == "permission_denied"
+    assert state.last_result["executed"] is False

@@ -68,6 +68,7 @@ class PlanExecutor:
             StepOutcomeKind.CANCELLED,
             StepOutcomeKind.BLOCKED,
             StepOutcomeKind.UNVERIFIED,
+            StepOutcomeKind.PERMISSION_DENIED,
         ):
             return StepLoopResult(index, outcome.result, outcome.final_answer, True)
         if outcome.kind is StepOutcomeKind.REPLAN:

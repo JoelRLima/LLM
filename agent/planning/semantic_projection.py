@@ -15,6 +15,7 @@ DECISIVE_OUTCOMES = frozenset(
         StepOutcomeKind.CANCELLED,
         StepOutcomeKind.BLOCKED,
         StepOutcomeKind.UNVERIFIED,
+        StepOutcomeKind.PERMISSION_DENIED,
     }
 )
 

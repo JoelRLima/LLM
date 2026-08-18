@@ -16,6 +16,7 @@ class StepOutcomeKind(str, Enum):
     CANCELLED = "cancelled"
     BLOCKED = "blocked"
     UNVERIFIED = "unverified"
+    PERMISSION_DENIED = "permission_denied"
 
 
 @dataclass

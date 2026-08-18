@@ -133,6 +133,8 @@ class StepExecutor:
                 error=reason,
                 final_answer=str(result.get("message") or "Operação cancelada."),
             )
+        if status == "permission_denied":
+            return self.finish_permission_denied(index, result)
         if not result.get("ok"):
             return self._finish_tool_failure(index, tool, args, result)
         if not self.policies.post_process(index + 1, tool, args, result, file_path, objective, usage):
@@ -140,6 +142,18 @@ class StepExecutor:
         self.context.agent_state.mark_step_completed(index)
         self._emit_terminal("step_completed", index)
         return StepExecutionOutcome(StepOutcomeKind.COMPLETED, result=result)
+
+    def finish_permission_denied(self, index: int, result: ToolResult) -> StepExecutionOutcome:
+        reason = str(result.get("error") or result.get("message") or "permissão negada")
+        self.context.agent_state.mark_step_failed(index, reason)
+        self._emit_terminal("step_failed", index, reason)
+        return StepExecutionOutcome(
+            StepOutcomeKind.PERMISSION_DENIED,
+            result=result,
+            error=reason,
+            final_answer=str(result.get("message") or reason),
+            decisive=True,
+        )
 
     def _finish_tool_failure(self, index: int, tool: str, args: ToolArgs, result: ToolResult) -> StepExecutionOutcome:
         error = str(result.get("error") or "falha da ferramenta")
