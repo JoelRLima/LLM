@@ -1,6 +1,8 @@
 import json
 from typing import Any
 
+from agent.runtime.budget import BudgetExhausted
+
 from .base import BaseSkill
 
 
@@ -63,6 +65,8 @@ class SummarizeSkill(BaseSkill):
             else:
                 # Fallback: resumo simples por truncamento (caso não tenha acesso ao modelo)
                 summary = text[:500] + "..." if len(text) > 500 else text
+        except BudgetExhausted:
+            raise
         except Exception as e:
             return {"ok": False, "done": True, "error": str(e), "message": "Erro ao chamar o modelo para resumo."}
 

@@ -59,6 +59,8 @@ def build_code_context(
         ),
         max_steps=int(config.get("max_task_steps", 30)),
         max_model_calls=int(config.get("max_model_calls", 20)),
+        max_task_tool_calls=int(config.get("max_task_tool_calls", 60)),
+        max_task_tokens=int(config.get("max_task_tokens", 200_000)),
         max_output_tokens=max(1, int(configured_output)),
         max_repair_attempts=hardware.max_repair_attempts,
     )

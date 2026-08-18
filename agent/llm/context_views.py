@@ -9,6 +9,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Dict, List
 
+from agent.runtime.budget import BudgetExhausted
+
 
 def build_compact_view(
     messages: Sequence[Mapping[str, Any]],
@@ -89,6 +91,8 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
     payload.update({"max_tokens": 1024, "stream": False})
     try:
         response = session.send_non_streaming_request(payload)
+    except BudgetExhausted:
+        raise
     except Exception:
         return
     if not isinstance(response, str) or not response.strip():

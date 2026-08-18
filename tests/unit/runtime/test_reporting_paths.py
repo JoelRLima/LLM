@@ -6,6 +6,7 @@ from agent.application import AgentApplication
 from agent.reporting.operational_outcome import normalize_terminal_status
 from agent.reporting.run_receipt import derive_status
 from agent.reporting.task_report import TaskReportBuilder
+from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.paths import REPORTS_DIR
 
 
@@ -48,6 +49,29 @@ def test_task_report_projects_invocation_and_output_bounds() -> None:
     assert step["result"]["status"] == "succeeded"
     assert step["result"]["output_chars"] == 5
     assert step["result"]["truncated"] is False
+
+
+def test_task_report_distinguishes_real_tools_from_history_records() -> None:
+    ledger = TaskBudgetLedger(max_task_tool_calls=3)
+    ledger.reserve_tool_call()
+    state = SimpleNamespace(
+        objective="read",
+        budget_ledger=ledger,
+        tool_history=[{"tool": "synthetic"}, {"tool": "file_reader"}],
+        events=[],
+        last_result=None,
+    )
+
+    report = TaskReportBuilder({}).build_report(
+        state,
+        [],
+        "done",
+        canonical_outcome={"status": "succeeded", "error": None},
+    )
+
+    assert report["metrics"]["tool_calls"] == 1
+    assert report["metrics"]["tools_called"] == 1
+    assert report["metrics"]["history_records"] == 2
 
 
 def test_task_report_does_not_infer_success_from_final_answer() -> None:

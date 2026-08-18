@@ -1,5 +1,3 @@
-"""Single controlled invocation gateway for every tool execution."""
-
 from __future__ import annotations
 
 import concurrent.futures
@@ -12,6 +10,7 @@ from agent.approval import (
     ApprovalPort,
     RequireExplicitApproval,
 )
+from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
 from agent.runtime.logging import logger
 from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
@@ -40,7 +39,6 @@ from agent.tools.tool_registry import ToolRegistry
 
 
 class ToolInvocationGateway(InvocationActivityMixin):
-    """Canonical boundary for request, authority, approval and adapter calls."""
     def __init__(
         self,
         registry: ToolRegistry,
@@ -50,6 +48,7 @@ class ToolInvocationGateway(InvocationActivityMixin):
         approval_port: ApprovalPort | None = None,
         application_authority: ApplicationAuthoritySnapshot | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
+        budget_ledger: TaskBudgetLedger | None = None,
     ) -> None:
         self.registry = registry
         self.event_emitter = event_emitter
@@ -57,10 +56,14 @@ class ToolInvocationGateway(InvocationActivityMixin):
         self.approval_port = approval_port or RequireExplicitApproval()
         self.application_authority = application_authority
         self.task_authority = task_authority
+        self.budget_ledger = budget_ledger
         self._capability_ceiling: frozenset[str] | None = None
         self._ceiling_mode: str | None = None
         self._invocation_lock = threading.Lock()
         self._active_invocations: set[str] = set()
+
+    def set_budget_ledger(self, budget_ledger: TaskBudgetLedger) -> None:
+        self.budget_ledger = budget_ledger
     def set_capability_ceiling(self, capabilities: frozenset[str] | None, *, mode: str | None = None) -> None:
         self._capability_ceiling, self._ceiling_mode = (None if capabilities is None else frozenset(capabilities), mode)
     def run(
@@ -110,6 +113,25 @@ class ToolInvocationGateway(InvocationActivityMixin):
             self._emit_denial(duplicate, record_result, invocation.tool_name, invocation.args)
             return duplicate
         try:
+            if self.budget_ledger is not None:
+                try:
+                    self.budget_ledger.reserve_tool_call()
+                except BudgetExhausted as exc:
+                    exhausted = denial(
+                        invocation,
+                        ToolStatus.BLOCKED,
+                        BudgetExhausted.code,
+                        str(exc),
+                        executed=False,
+                    )
+                    self._complete_denial(
+                        attempt,
+                        exhausted,
+                        False,
+                        invocation.tool_name,
+                        invocation.args,
+                    )
+                    return exhausted
             descriptor, authorization_error = self._authorize(
                 invocation,
                 active_skills,
@@ -184,6 +206,8 @@ class ToolInvocationGateway(InvocationActivityMixin):
         try:
             result = self.registry._invoke_from_gateway(invocation)
             return replace(result, executed=True) if isinstance(result, ToolResult) else result
+        except BudgetExhausted:
+            raise
         except Exception as exc:
             logger.warning("[GATEWAY] Adapter failed: %s", type(exc).__name__)
             return denial(invocation, ToolStatus.FAILED, "ADAPTER_FAILED", "Adapter invocation failed.", executed=True)
@@ -227,6 +251,10 @@ class ToolInvocationGateway(InvocationActivityMixin):
                     return validated
                 except concurrent.futures.TimeoutError:
                     continue
+        except BudgetExhausted:
+            executor.shutdown(wait=True, cancel_futures=True)
+            self._worker_finished(attempt)
+            raise
         except Exception as exc:
             executor.shutdown(wait=True, cancel_futures=True)
             self._worker_finished(attempt)
@@ -238,14 +266,7 @@ class ToolInvocationGateway(InvocationActivityMixin):
     def _emit_denial(self, result: ToolResult, record_result: bool, tool_name: str, args: Dict[str, Any]) -> None:
         self._emit("tool_denied", {"invocation_id": result.invocation_id, "status": result.status.value, "reason": result.error.code if result.error else "DENIED"})
         self._record(tool_name, args, result, record_result)
-    def _complete_denial(
-        self,
-        attempt: _InvocationAttempt,
-        result: ToolResult,
-        record_result: bool,
-        tool_name: str,
-        args: Dict[str, Any],
-    ) -> None:
+    def _complete_denial(self, attempt: _InvocationAttempt, result: ToolResult, record_result: bool, tool_name: str, args: Dict[str, Any]) -> None:
         if not attempt.claim_terminal():
             return
         self._emit_denial(result, record_result, tool_name, args)

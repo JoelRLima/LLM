@@ -40,6 +40,21 @@ def _structured_modes(raw: Any) -> tuple[StructuredOutputMode, ...]:
     return tuple(modes)
 
 
+def _token_value(data: Dict[str, Any], primary: str, legacy: str) -> int | None:
+    for key in (primary, legacy):
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
 class OpenAICompatibleGateway:
     provider_name = "openai_compatible"
 
@@ -140,12 +155,16 @@ class OpenAICompatibleGateway:
             reasoning = message.get("reasoning_content") or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelResponseError("Resposta do servidor em formato inesperado.") from exc
-        usage_raw = data.get("usage") or {}
-        usage = TokenUsage(
-            input_tokens=int(usage_raw.get("prompt_tokens", 0) or 0),
-            output_tokens=int(usage_raw.get("completion_tokens", 0) or 0),
-            total_tokens=int(usage_raw.get("total_tokens", 0) or 0),
-        )
+        usage_raw = data.get("usage")
+        if isinstance(usage_raw, dict):
+            usage = TokenUsage(
+                input_tokens=_token_value(usage_raw, "input_tokens", "prompt_tokens"),
+                output_tokens=_token_value(usage_raw, "output_tokens", "completion_tokens"),
+                total_tokens=_token_value(usage_raw, "total_tokens", "total_tokens"),
+                available=True,
+            )
+        else:
+            usage = TokenUsage(available=False)
         return ModelResponse(
             content=str(content),
             reasoning=str(reasoning),
@@ -154,13 +173,13 @@ class OpenAICompatibleGateway:
             provider_metadata={"timings": data.get("timings")},
         )
 
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
+    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
         response = self.send_payload(payload, stream=False)
         try:
             data = response.json()
         except ValueError as exc:
             raise ModelResponseError("Resposta do servidor não contém JSON válido.") from exc
-        return self.parse_response(data).content
+        return self.parse_response(data)
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         response = self.send_payload(self.build_payload(request), stream=False)
@@ -185,15 +204,18 @@ class OpenAICompatibleGateway:
 
     @staticmethod
     def _events_from_stream_data(data: Dict[str, Any]) -> list[StreamEvent]:
+        events: list[StreamEvent] = []
+        usage = data.get("usage")
+        if isinstance(usage, dict):
+            events.append(StreamEvent(StreamEventType.USAGE, data=usage))
         if "error" in data:
             raw_error = data["error"]
             message = raw_error.get("message", str(raw_error)) if isinstance(raw_error, dict) else str(raw_error)
             return [StreamEvent(StreamEventType.ERROR, text=message)]
         choices = data.get("choices")
         if not choices:
-            return []
+            return events
         delta = choices[0].get("delta", {})
-        events: list[StreamEvent] = []
         if delta.get("reasoning_content"):
             events.append(StreamEvent(StreamEventType.REASONING, text=str(delta["reasoning_content"])))
         if delta.get("content"):
@@ -243,6 +265,8 @@ class OpenAICompatibleGateway:
                 if callbacks.get("on_error"):
                     callbacks["on_error"](event.text)
                 return ""
+            elif event.type == StreamEventType.USAGE and callbacks.get("on_usage"):
+                callbacks["on_usage"](event.data)
             elif event.type == StreamEventType.DONE and callbacks.get("on_done") and event.data:
                 callbacks["on_done"](event.data)
         return visible.strip()

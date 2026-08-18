@@ -27,6 +27,7 @@ from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
+from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.paths import WorkspacePaths
 from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
 from agent.skills.registry import SkillRegistry
@@ -45,7 +46,6 @@ from agent.workspace import WorkspaceManager
 
 
 class Orchestrator(OperationalModeMixin, OrchestratorOperations):
-    """Public composition facade for the agent runtime."""
     def __init__(
         self,
         session: ChatSession,
@@ -63,6 +63,12 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         task_authority: TaskAuthoritySnapshot | None = None,
     ) -> None:
         self.session = session
+        self.task_budget = getattr(session, "budget_ledger", None)
+        if not isinstance(self.task_budget, TaskBudgetLedger):
+            self.task_budget = TaskBudgetLedger.from_config(session.config)
+            session.budget_ledger = self.task_budget
+        else:
+            session.budget_ledger = self.task_budget
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.workspace_paths = workspace_paths
         self.analysis_notes_file = (
@@ -114,7 +120,7 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self.checkpoint_manager = CheckpointManager(self.checkpoint_file)
         self.metrics_recorder = MetricsRecorder(selected_metrics)
         self.session.set_model_call_callback(self._log_metric)
-        self.agent_state = AgentState(memory=memory)
+        self.agent_state = AgentState(memory=memory, budget_ledger=self.task_budget)
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:
@@ -127,6 +133,8 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
             )
         if self.tool_invocation_gateway is None and self.tool_registry is None and not selected_skills:
             self.legacy_tool_invoker = LegacyToolInvoker(self)
+        if self.tool_invocation_gateway is not None:
+            self.tool_invocation_gateway.set_budget_ledger(self.task_budget)
     @property
     def workspace(self) -> WorkspaceManager:
         return self.subsystems.workspace
@@ -148,33 +156,28 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
     @property
     def final_responder(self) -> FinalResponder:
         return self.subsystems.final_responder
-
     @property
     def tool_executor(self) -> ToolExecutor:
         return self.subsystems.tool_executor
-
     @property
     def watchdog(self) -> Watchdog:
         return self.subsystems.watchdog
-
     @property
     def execution_gateway(self) -> ExecutionGateway:
         return cast(ExecutionGateway, self.subsystems.execution_gateway)
-
     def resolve_user_path(self, file_path: str | Path) -> Path:
         """Resolve a user file through the standalone workspace boundary.
-
         Direct ``Orchestrator`` consumers without ``WorkspacePaths`` retain the
         legacy relative-path behavior.  The standalone composition always
         supplies ``WorkspacePaths`` and therefore confines the result to the
         injected workspace.
         """
-
         if self.workspace_paths is None:
             return Path(file_path)
         return cast(Path, self.workspace.resolve_path(file_path))
-
     def _reset_task_state(self, objective: str) -> None:
+        assert isinstance(self.task_budget, TaskBudgetLedger)
+        self.task_budget.reset()
         self.agent_state.objective = objective
         self.agent_state.reset_execution()
         self.agent_state.reset_task_progression()
@@ -188,7 +191,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self._planning_context = None
         self._task_failed = False
         self.cancellation_token.reset()
-
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
             print("Consultando roteador de persona...", end="", flush=True)
@@ -224,7 +226,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
             self.current_persona_prompt,
             self._build_tools_description(compact=False),
         )
-
     def _answer_trivial(self, objective: str) -> str:
         normalized = objective.strip().lower().rstrip("!?.")
         greetings = {"oi", "olá", "ola", "oie", "oii", "hey", "hello"}
@@ -241,7 +242,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self._emit("final", {"answer": answer[:100]})
         self.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
-
     def _get_valid_tool_names(self) -> List[str]:
         view = self.get_planning_view("linear")
         if view is not None:

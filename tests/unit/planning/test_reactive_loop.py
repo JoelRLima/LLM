@@ -8,6 +8,7 @@ from agent.llm.grammars import TOOL_DECISION_GRAMMAR
 from agent.llm.session import ChatSession
 from agent.parsers import validate_decision
 from agent.planning.reactive_loop import ReactiveLoop
+from agent.runtime.budget import task_budget_for
 
 
 class _ContextManager:
@@ -134,6 +135,24 @@ def test_reactive_loop_executes_tool_through_full_gateway(monkeypatch):
     plan, objective, _ = orchestrator.execution_gateway.calls[0]
     assert plan == [{"tool": "echo", "args": {"text": "oi"}}]
     assert objective == "responda"
+
+
+def test_reactive_budget_stop_reuses_ledger_without_reset(monkeypatch):
+    monkeypatch.setattr("agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
+    orchestrator = _Orchestrator()
+    orchestrator.session.config = {"max_task_tool_calls": 1}
+    orchestrator.fail_task = lambda: None
+    ledger = task_budget_for(orchestrator, orchestrator.session.config)
+    ledger.reserve_tool_call()
+    loop = ReactiveLoop(orchestrator)
+
+    first = loop._limit_answer("responda", 1)
+    second = loop._limit_answer("responda", 1)
+
+    assert first is not None
+    assert second is not None
+    assert task_budget_for(orchestrator, orchestrator.session.config) is ledger
+    assert ledger.snapshot().tool_calls == 1
 
 
 def test_real_shaped_reactive_tool_decision_reaches_runtime_gateway():

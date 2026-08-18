@@ -57,7 +57,7 @@ class TaskReportBuilder:
             "planner_outcome": self._project_planner_outcome(events),
             "event_summary": self._project_events(events),
             "replan_events": self._extract_replan_events(events),
-            "metrics": aggregate_metrics(metrics_entries, len(history)),
+            "metrics": self._aggregate_task_metrics(agent_state, metrics_entries, len(history)),
             "errors": self._collect_errors(steps),
             "final_answer_preview": answer[:MAX_PREVIEW_CHARS],
         }
@@ -69,6 +69,21 @@ class TaskReportBuilder:
             report["receipt"] = receipt
             report["operational_outcome"] = receipt.get("operational_outcome")
         return report
+
+    @staticmethod
+    def _aggregate_task_metrics(
+        agent_state: Any,
+        metrics_entries: List[Dict[str, Any]],
+        history_records: int,
+    ) -> Dict[str, Any]:
+        ledger = getattr(agent_state, "budget_ledger", None)
+        snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
+        return aggregate_metrics(
+            metrics_entries,
+            tool_calls=(getattr(snapshot, "tool_calls", None) if snapshot is not None else None),
+            history_records=history_records,
+            budget_snapshot=snapshot,
+        )
 
     def save_report(
         self, report: Dict[str, Any], format: str = "json", path: Optional[str] = None

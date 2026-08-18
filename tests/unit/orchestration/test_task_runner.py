@@ -6,6 +6,7 @@ from agent.memory.json_persistence import AtomicJsonWriteError
 from agent.orchestration import task_runner as task_runner_module
 from agent.orchestration.task_runner import TaskInputs, TaskRunner
 from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from agent.runtime.budget import TaskBudgetLedger
 from agent.state import AgentState
 
 
@@ -105,3 +106,63 @@ def test_initial_planner_block_uses_canonical_completion_owner(monkeypatch) -> N
     assert completion_calls == [(orchestrator, "objetivo")]
     assert state.terminal_disposition == "block"
     assert state.last_result["status"] == "blocked"
+
+
+def test_new_task_boundary_resets_shared_ledger_once() -> None:
+    class CountingLedger(TaskBudgetLedger):
+        reset_calls = 0
+
+        def reset(self) -> None:
+            self.reset_calls += 1
+            super().reset()
+
+    ledger = CountingLedger()
+    call_number = ledger.reserve_model_call()
+    ledger.finalize_model_call(call_number, estimated_tokens=7)
+    ledger.reserve_tool_call()
+    state = AgentState()
+    orchestrator = SimpleNamespace(
+        task_budget=ledger,
+        agent_state=state,
+        context_manager=SimpleNamespace(_cached_project_context="cached"),
+        workspace=SimpleNamespace(restore_points={"restore": object()}),
+        _planning_context="planning",
+        _task_failed=True,
+        cancellation_token=_CancellationToken(),
+    )
+
+    from agent.orchestrator import Orchestrator
+
+    Orchestrator._reset_task_state(orchestrator, "task B")
+
+    assert ledger.reset_calls == 1
+    assert ledger.snapshot().model_calls == 0
+    assert ledger.snapshot().tool_calls == 0
+    assert state.objective == "task B"
+
+
+def test_resume_prepare_does_not_reset_shared_ledger() -> None:
+    class CountingLedger(TaskBudgetLedger):
+        reset_calls = 0
+
+        def reset(self) -> None:
+            self.reset_calls += 1
+            super().reset()
+
+    ledger = CountingLedger()
+    call_number = ledger.reserve_model_call()
+    ledger.finalize_model_call(call_number, estimated_tokens=7)
+    orchestrator = SimpleNamespace(
+        task_budget=ledger,
+        _task_failed=True,
+        _task_start_time=0.0,
+        _run_id=None,
+        _run_metric_recorded=False,
+        _metrics_start_line=0,
+        _count_metrics_lines=lambda: 0,
+    )
+
+    TaskRunner(orchestrator)._prepare(TaskInputs("resumed", True, 0))
+
+    assert ledger.reset_calls == 0
+    assert ledger.snapshot().accounted_tokens == 7

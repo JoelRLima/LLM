@@ -5,7 +5,9 @@ import pytest
 
 from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
 from agent.llm.model_client import ModelProviderError
+from agent.llm.session import ChatSession
 from agent.reporting.operational_outcome import OperationalOutcome
+from agent.runtime.budget import BudgetExhausted
 from agent.tools.contracts import ToolDescriptor
 
 
@@ -59,6 +61,22 @@ class GroundingSession:
 class ForbiddenOperationalSession:
     def __getattr__(self, name):
         raise AssertionError(f"model session must not be used for operational truth: {name}")
+
+
+class _FinalGateway:
+    provider_name = "final-provider"
+    model = "final-model"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def build_payload(self, request):
+        return {"messages": list(request.messages)}
+
+    def complete_payload(self, payload):
+        del payload
+        self.calls += 1
+        return "resposta"
 
 
 def _outcome(**overrides):
@@ -459,3 +477,21 @@ def test_final_provider_failure_does_not_log_secret(caplog, streaming):
 
     for marker in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
         assert marker not in caplog.text
+
+
+def test_final_responder_refuses_n_plus_one_provider_call() -> None:
+    gateway = _FinalGateway()
+    session = ChatSession(
+        "system",
+        {"model": "final-model", "max_model_calls": 1},
+        gateway=gateway,
+    )
+    session.send_non_streaming_request({})
+    responder = FinalResponder(
+        SimpleNamespace(session=session, agent_state=SimpleNamespace(tool_history=[]))
+    )
+
+    with pytest.raises(BudgetExhausted):
+        responder._request_answer(None)
+
+    assert gateway.calls == 1

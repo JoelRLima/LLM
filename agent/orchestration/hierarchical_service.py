@@ -10,6 +10,7 @@ from agent.planning.hierarchical_planner import HierarchicalPlanner
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
 from agent.reporting.task_tracker import TaskTracker
 from agent.runtime import paths
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 
@@ -29,6 +30,8 @@ class HierarchicalExecutionService:
         )
         try:
             macro_plan = planner.build_plan(objective)
+        except BudgetExhausted:
+            raise
         except Exception as exc:
             logger.warning("Falha ao gerar MacroPlan, usando fallback linear: %s", exc)
             self.orchestrator._emit("hierarchical_fallback", {"reason": str(exc)})

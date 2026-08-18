@@ -12,6 +12,7 @@ from agent.contracts import (
 )
 from agent.execution_state import TERMINAL_STEP_STATUSES, StepExecutionRecord, StepStatus
 from agent.memory.memory import AgentMemory
+from agent.runtime.budget import TaskBudgetLedger
 from agent.state_checkpoint import progression_checkpoint, restore_progression
 from agent.state_plan import canonicalize_plan_steps
 from agent.state_progression import (
@@ -26,7 +27,11 @@ from agent.state_progression import (
 class AgentState:
     """Estado completo e unificado do agente."""
 
-    def __init__(self, memory: AgentMemory | None = None) -> None:
+    def __init__(
+        self,
+        memory: AgentMemory | None = None,
+        budget_ledger: TaskBudgetLedger | None = None,
+    ) -> None:
         # Dados da execução atual
         self.objective: Optional[str] = None
         self.plan: List[PlanStep] = []
@@ -48,13 +53,13 @@ class AgentState:
         self.reasoning_last_progress_token: Optional[str] = None
         self.continue_after_plan: bool = False
         self.terminal_disposition: Optional[str] = None
+        self.budget_ledger = budget_ledger
 
         # Componentes de memória e histórico
         self.memory = memory or AgentMemory()
         self.events: List[AgentEvent] = []
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history_turns: int = 6
-
     def record_tool_result(
         self,
         tool_name: str,
@@ -128,14 +133,11 @@ class AgentState:
         waive_effect(self, effect)
     def pending_effects(self) -> tuple[str, ...]:
         return pending_effects(self)
-
     def current_result_for_step(self, step_id: str) -> tuple[int, ToolHistoryEntry] | None:
         current = current_result_for_step(self.tool_history, step_id)
         return cast(tuple[int, ToolHistoryEntry] | None, current)
-
     def clear_plan(self) -> None:
         self.reset_execution()
-
     def insert_plan_step(self, index: int, step: Mapping[str, Any]) -> None:
         prepared = cast(PlanStep, dict(step))
         step_id = str(prepared.get("_step_id") or self._new_step_id())
@@ -145,31 +147,25 @@ class AgentState:
             prepared["args"] = dict(args) if isinstance(args, dict) else {}
         self.plan.insert(index, prepared)
         self.step_records[step_id] = StepExecutionRecord(step_id=step_id)
-
     def remove_plan_step(self, index: int) -> None:
         step = self.plan.pop(index)
         step_id = str(step.get("_step_id", ""))
         self.step_records.pop(step_id, None)
-
     def replace_plan_step(
         self, index: int, new_steps: Sequence[Mapping[str, Any]]
     ) -> None:
         self.remove_plan_step(index)
         for offset, step in enumerate(new_steps):
             self.insert_plan_step(index + offset, step)
-
     def get_step_id(self, index: int) -> str:
         return str(self.plan[index]["_step_id"])
-
     def get_step_status(self, index: int) -> StepStatus:
         return self.step_records[self.get_step_id(index)].status
-
     def next_pending_index(self, start: int = 0) -> Optional[int]:
         for index in range(max(0, start), len(self.plan)):
             if self.get_step_status(index) is StepStatus.PENDING:
                 return index
         return None
-
     def mark_step_running(self, index: int) -> None:
         step_id = self.get_step_id(index)
         record = self.step_records[step_id]
@@ -215,7 +211,6 @@ class AgentState:
         return bool(self.step_records) and all(
             record.status in TERMINAL_STEP_STATUSES for record in self.step_records.values()
         )
-
     def add_event(self, event: AgentEvent) -> None:
         """Adiciona um evento ao histórico de telemetria."""
         self.events.append(event)
@@ -223,7 +218,6 @@ class AgentState:
     def add_conversation_turn(self, user: str, agent: str) -> None:
         """Adiciona uma nova entrada ao histórico de conversa."""
         self.conversation_history.append({"user": user, "agent": agent})
-
     def to_checkpoint_dict(self) -> CheckpointData:
         """Serializa os campos necessários para retomar a tarefa atual.
 
@@ -251,6 +245,8 @@ class AgentState:
             "persona_prompt": self.persona_prompt,
             **progression_checkpoint(self),
         }
+        if self.budget_ledger is not None:
+            raw["budget"] = self.budget_ledger.snapshot().to_dict()
 
         # Round-trip via json para sanitizar tipos não serializáveis
         # (ex.: datetime) usando default=str, mantendo o retorno como dict.
@@ -293,6 +289,10 @@ class AgentState:
         self.conversation_history = data.get("conversation_history", self.conversation_history) or []
         self.persona = data.get("persona", self.persona)
         self.persona_prompt = data.get("persona_prompt", self.persona_prompt)
+
+        raw_budget = data.get("budget")
+        if self.budget_ledger is not None and isinstance(raw_budget, Mapping):
+            self.budget_ledger.restore_snapshot(raw_budget)
 
         memory_state = data.get("memory_state")
         if memory_state is not None and hasattr(self.memory, "state"):

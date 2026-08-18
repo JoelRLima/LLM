@@ -6,6 +6,7 @@ com valores de fallback divergentes. Este módulo é a única fonte de verdade p
 """
 from typing import Any, Dict, List
 
+from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.config import DEFAULT_COST_WATCHDOG
 
 DEFAULT_MAX_TASK_STEPS = DEFAULT_COST_WATCHDOG["max_task_steps"]
@@ -22,6 +23,7 @@ class CostGuard:
         tool_history: List[Dict[str, Any]],
         estimated_tokens: int,
         config: Dict[str, Any],
+        ledger: TaskBudgetLedger,
     ) -> bool:
         """Retorna True se algum limite de custo foi ultrapassado.
 
@@ -32,13 +34,15 @@ class CostGuard:
             config: Dicionário de configuração com as chaves max_task_*.
         """
         max_steps = config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
-        max_tokens = config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
-        max_tool_calls = config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
+        del tool_history, estimated_tokens
+        snapshot = ledger.snapshot()
+        max_tokens = snapshot.max_task_tokens
+        max_tool_calls = snapshot.max_task_tool_calls
 
         return bool(
             plan_step > max_steps
-            or estimated_tokens > max_tokens
-            or len(tool_history) >= max_tool_calls
+            or snapshot.accounted_tokens >= max_tokens
+            or snapshot.tool_calls >= max_tool_calls
         )
 
     @staticmethod
@@ -47,20 +51,38 @@ class CostGuard:
         tool_history: List[Dict[str, Any]],
         estimated_tokens: int,
         config: Dict[str, Any],
+        ledger: TaskBudgetLedger,
     ) -> Dict[str, Any]:
         """Monta o payload do evento de telemetria 'cost_limit'."""
+        del tool_history, estimated_tokens
+        snapshot = ledger.snapshot()
         max_steps = config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
-        max_tokens = config.get("max_task_tokens", DEFAULT_MAX_TASK_TOKENS)
-        max_tool_calls = config.get("max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS)
-        return {
+        max_tokens = snapshot.max_task_tokens
+        max_tool_calls = snapshot.max_task_tool_calls
+        event = {
             "reason": "Limite de custo da tarefa atingido",
             "steps": plan_step,
             "max_steps": max_steps,
-            "estimated_tokens": estimated_tokens,
+            "estimated_tokens": snapshot.estimated_tokens,
+            "accounted_tokens": snapshot.accounted_tokens,
             "max_tokens": max_tokens,
-            "tool_calls": len(tool_history),
+            "reported_tokens": snapshot.reported_total_tokens,
+            "tool_calls": snapshot.tool_calls,
             "max_tool_calls": max_tool_calls,
+            "model_calls": snapshot.model_calls,
+            "max_model_calls": snapshot.max_model_calls,
         }
+        event.update(
+            {
+                "reported_input_tokens": snapshot.reported_input_tokens,
+                "reported_output_tokens": snapshot.reported_output_tokens,
+                "reported_total_tokens": snapshot.reported_total_tokens,
+                "model_calls_with_reported_usage": snapshot.model_calls_with_reported_usage,
+                "model_calls_without_reported_usage": snapshot.model_calls_without_reported_usage,
+                "token_usage_complete": snapshot.token_usage_complete,
+            }
+        )
+        return event
 
     @staticmethod
     def build_limit_summary(

@@ -9,6 +9,7 @@ from agent.execution_state import StepStatus
 from agent.planning.plan_executor import PlanExecutor
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.planning.step_policies import StepPolicies
+from agent.runtime.budget import task_budget_for
 from agent.state import AgentState
 
 
@@ -503,7 +504,11 @@ def test_parallel_cache_and_live_results_share_the_finalizer_owner(monkeypatch, 
     source = tmp_path / "cached.py"
     source.write_text("value = 1\n", encoding="utf-8")
     state.memory.state = {
-        "file_hashes": {"cached.py": __import__("hashlib").sha256(source.read_bytes()).hexdigest()},
+        "file_hashes": {
+            "cached.py": __import__("hashlib")
+            .sha256(source.read_text(encoding="utf-8").encode("utf-8"))
+            .hexdigest()
+        },
         "file_summaries": {"cached.py": "cached summary"},
     }
     state.set_plan(
@@ -515,6 +520,13 @@ def test_parallel_cache_and_live_results_share_the_finalizer_owner(monkeypatch, 
     context = _Context(state)
     context.resolve_user_path = lambda path: source if path == "cached.py" else tmp_path / path
     context.run_tool_impl = lambda _tool, args: {"ok": True, "done": True, "data": args["file_path"]}
+    ledger = task_budget_for(context, context.session.config)
+    cache_hit, _ = StepExecutor(context).try_cache(
+        "file_reader", {"file_path": "cached.py"}, "cached.py", record_result=False
+    )
+
+    assert cache_hit is True
+    assert ledger.snapshot().tool_calls == 0
 
     PlanExecutor(context).execute("ler", {})
 
@@ -579,10 +591,43 @@ def test_parallel_budget_is_checked_before_dispatch(monkeypatch):
     )
     context = _Context(state)
     context.session.config["max_task_tool_calls"] = 1
+    ledger = task_budget_for(context, context.session.config)
+    original_run_tool = context.tool_executor.run_tool
+
+    def counted_run_tool(tool_name, args, record_result=True):
+        ledger.reserve_tool_call()
+        return original_run_tool(tool_name, args, record_result)
+
+    context.tool_executor.run_tool = counted_run_tool
     PlanExecutor(context).execute("ler", {})
 
     assert len(context.calls) == 1
     assert len(state.tool_history) == 1
+
+
+def test_synthetic_dependency_record_does_not_consume_tool_budget(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {"tool": "file_writer", "args": {"file_path": "one.py"}},
+            {"tool": "file_reader", "args": {"file_path": "one.py"}},
+        ]
+    )
+    context = _Context(state)
+    ledger = task_budget_for(context, context.session.config)
+    ledger.reserve_tool_call()
+    state.record_tool_result(
+        "file_writer",
+        {"file_path": "one.py"},
+        {"ok": False, "error": "write failed"},
+        step_id=state.get_step_id(0),
+    )
+    executor = PlanExecutor(context)
+    executor._step_dependencies = {1: [0]}
+
+    assert executor._check_dependencies_ok(1) is False
+    assert len(state.tool_history) == 2
+    assert ledger.snapshot().tool_calls == 1
 
 
 def test_parallel_replan_settles_sibling_before_replacing_step(monkeypatch):

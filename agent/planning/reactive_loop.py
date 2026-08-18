@@ -10,6 +10,7 @@ from agent.reporting.observation_evidence import (
     serialize_tool_observations,
 )
 from agent.reporting.operational_outcome import project_operational_outcome
+from agent.runtime.budget import task_budget_for
 from agent.watchdog import Watchdog
 
 
@@ -39,9 +40,12 @@ class ReactiveLoop:
     def _limit_answer(self, objective: str, step_number: int) -> str | None:
         history = self.orchestrator.agent_state.tool_history
         config = self.orchestrator.session.config
-        tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
-        if CostGuard.check_limits(step_number, history, tokens, config):
-            self.orchestrator._emit("cost_limit", CostGuard.build_limit_reached_event(step_number, history, tokens, config))
+        ledger = task_budget_for(self.orchestrator, config)
+        if CostGuard.check_limits(step_number, history, 0, config, ledger):
+            self.orchestrator._emit(
+                "cost_limit",
+                CostGuard.build_limit_reached_event(step_number, history, 0, config, ledger),
+            )
             answer = str(CostGuard.build_limit_summary(objective, history, self.orchestrator.agent_state.last_result))
         else:
             reason = Watchdog.check_all(self.orchestrator._task_start_time, history, config)

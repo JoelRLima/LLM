@@ -1,9 +1,12 @@
 from types import SimpleNamespace
 
+import pytest
+
 from agent.execution_state import StepExecutionRecord, StepStatus
 from agent.planning.hierarchical_executor import HierarchicalExecutor
-from agent.planning.hierarchical_planner import MacroPlan, MacroStep
+from agent.planning.hierarchical_planner import HierarchicalPlanner, MacroPlan, MacroStep
 from agent.planning.plan_builder import PlanBuildResult
+from agent.runtime.budget import BudgetExhausted
 
 
 class _State:
@@ -108,6 +111,18 @@ def test_hierarchical_microstep_failure_is_not_overwritten_by_later_success():
     )
 
     assert HierarchicalExecutor._has_failed_execution_record(state) is True
+
+
+def test_hierarchical_planner_does_not_swallow_budget_exhaustion() -> None:
+    planner = HierarchicalPlanner(
+        ask_model=lambda *_args: (_ for _ in ()).throw(
+            BudgetExhausted("model_calls", 1, 1)
+        ),
+        valid_tools=[],
+    )
+
+    with pytest.raises(BudgetExhausted):
+        planner.build_plan("objetivo")
 
 
 def test_hierarchical_reasoning_boundary_rejects_before_gateway_prefix() -> None:

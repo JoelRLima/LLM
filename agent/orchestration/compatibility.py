@@ -34,6 +34,7 @@ def install_compatibility_gateway(
     orchestrator.tool_registry = registry
     orchestrator.tool_invocation_gateway = ToolInvocationGateway(
         registry,
+        budget_ledger=orchestrator.task_budget,
         approval_port=RequireExplicitApproval(),
         event_emitter=orchestrator._emit,
         state_recorder=lambda name, args, result: orchestrator.agent_state.record_tool_result(

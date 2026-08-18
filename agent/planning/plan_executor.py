@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional, cast
 
 from agent.contracts import ToolArgs, ToolResult
-from agent.cost_guard import DEFAULT_MAX_TASK_TOOL_CALLS, CostGuard
+from agent.cost_guard import CostGuard
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_execution import execute_deferred_condition
 from agent.planning.dependency_map import build_dependency_map, dependency_succeeded, dependent_indices
@@ -17,6 +17,7 @@ from agent.planning.semantic_projection import (
     projection_for_outcome,
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from agent.runtime.budget import task_budget_for
 from agent.watchdog import Watchdog
 
 
@@ -238,20 +239,23 @@ class PlanExecutor:
 
     def _check_cost_limits(self, step_number: int) -> Optional[str]:
         state, config = self.orchestrator.agent_state, self.orchestrator.session.config
-        tokens = self.orchestrator.context_manager.estimate_conversation_tokens()
-        if not CostGuard.check_limits(step_number, state.tool_history, tokens, config):
+        ledger = task_budget_for(self.orchestrator, config)
+        if not CostGuard.check_limits(step_number, state.tool_history, 0, config, ledger):
             return None
-        self.orchestrator._emit("cost_limit", CostGuard.build_limit_reached_event(step_number, state.tool_history, tokens, config))
+        self.orchestrator._emit(
+            "cost_limit",
+            CostGuard.build_limit_reached_event(
+                step_number, state.tool_history, 0, config, ledger
+            ),
+        )
         answer = str(CostGuard.build_limit_summary(state.objective, state.tool_history, state.last_result))
         state.add_conversation_turn(str(state.objective), answer)
         self.orchestrator.fail_task()
         return answer
 
     def _remaining_tool_call_budget(self) -> int:
-        configured = self.orchestrator.session.config.get(
-            "max_task_tool_calls", DEFAULT_MAX_TASK_TOOL_CALLS,
-        )
-        return max(0, int(configured) - len(self.orchestrator.agent_state.tool_history))
+        ledger = task_budget_for(self.orchestrator, self.orchestrator.session.config)
+        return ledger.remaining_tool_calls
 
     def _check_watchdog(self) -> Optional[str]:
         state = self.orchestrator.agent_state

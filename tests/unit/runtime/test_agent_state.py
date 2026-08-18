@@ -1,4 +1,7 @@
+import json
+
 from agent.execution_state import StepStatus
+from agent.runtime.budget import TaskBudgetLedger
 from agent.state import AgentState
 
 
@@ -145,3 +148,25 @@ def test_resume_retry_policy_is_opt_in_for_terminal_failures(monkeypatch):
     )
     assert retrying.get_step_status(0) is StepStatus.PENDING
     assert retrying.get_step_status(1) is StepStatus.PENDING
+
+
+def test_checkpoint_preserves_task_budget_snapshot(monkeypatch):
+    ledger = TaskBudgetLedger(max_model_calls=3, max_task_tool_calls=3)
+    call_number = ledger.reserve_model_call()
+    ledger.finalize_model_call(
+        call_number,
+        usage={"input_tokens": 4, "output_tokens": 6},
+    )
+    ledger.reserve_tool_call()
+    state = AgentState(memory=_Memory(), budget_ledger=ledger)
+    state.objective = "continuar"
+
+    checkpoint = state.to_checkpoint_dict()
+    json.dumps(checkpoint)
+
+    restored_ledger = TaskBudgetLedger(max_model_calls=3, max_task_tool_calls=3)
+    restored = AgentState(memory=_Memory(), budget_ledger=restored_ledger)
+    restored.from_checkpoint_dict(checkpoint)
+
+    assert restored_ledger.snapshot() == ledger.snapshot()
+    assert restored_ledger.reserve_tool_call() == 2

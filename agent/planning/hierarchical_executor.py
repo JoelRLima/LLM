@@ -12,17 +12,13 @@ from agent.reporting.incremental_summarizer import IncrementalSummarizer
 from agent.reporting.observation_evidence import serialize_tool_observations
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.task_tracker import TaskTracker
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
-# Tamanho máximo (em caracteres) do resumo de resultados de um único passo
-# antes de ser truncado, evitando que um passo com resultados muito
-# extensos domine o conteúdo acumulado pelo summarizer.
 _STEP_SUMMARY_MAX_CHARS = 3000
 
 
 class HierarchicalExecutor:
-    """Execute macro steps and consolidate one final answer."""
-
     def __init__(
         self,
         plan_builder: Any,
@@ -146,6 +142,8 @@ class HierarchicalExecutor:
                     operational_outcome=outcome,
                 )
             )
+        except BudgetExhausted:
+            raise
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao gerar resposta final consolidada: {e}")
             return accumulated_content or "Não foi possível gerar a resposta final consolidada."
@@ -222,6 +220,8 @@ class HierarchicalExecutor:
                     summary_text = self._summarize_step_results(
                         step_results, descriptor_lookup=registry
                     )
+        except BudgetExhausted:
+            raise
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao executar sub-objetivo '{step.id}': {e}")
             summary_text = f"Erro durante a execução deste sub-objetivo: {e}"

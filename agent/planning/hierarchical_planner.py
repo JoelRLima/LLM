@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_graph import task_graph_from_macro_plan
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 
@@ -101,6 +102,8 @@ class HierarchicalPlanner:
         prompt = self._build_prompt(objective)
         try:
             response = self.ask_model(prompt, "macro_plan")
+        except BudgetExhausted:
+            raise
         except Exception as e:
             logger.warning(f"HierarchicalPlanner: falha ao consultar o modelo: {e}")
             return None

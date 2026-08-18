@@ -12,6 +12,7 @@ from agent.reporting.observation_evidence import (
     serialize_tool_observations,
 )
 from agent.reporting.operational_outcome import OperationalOutcome
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 # Backwards-compatible names for callers/tests that imported the existing
@@ -185,7 +186,7 @@ class FinalResponder:
             else:
                 final_payload["stream"] = False
                 response = self.orchestrator.session.send_non_streaming_request(final_payload)
-        except ModelProviderError:
+        except (ModelProviderError, BudgetExhausted):
             raise
         except Exception as exc:
             logger.error("Model provider final response failed (%s).", type(exc).__name__)

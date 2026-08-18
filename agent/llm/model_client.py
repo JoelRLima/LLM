@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any, Dict, Optional, cast
 
 from agent.parsers import extract_json, extract_json_from_end
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 FALLBACK_AGENT_MAX_TOKENS = 4096
@@ -84,6 +85,8 @@ class ModelClient:
                 cls._set_grammar_support(session, True)
             return response
         except Exception as exc:
+            if isinstance(exc, BudgetExhausted):
+                raise
             can_fallback = (
                 "grammar" in request_payload
                 and cls._grammar_support(session) is None
@@ -98,6 +101,8 @@ class ModelClient:
         try:
             return session.send_non_streaming_request(fallback_payload)
         except Exception as exc:
+            if isinstance(exc, BudgetExhausted):
+                raise
             logger.error("Model provider fallback request failed (%s).", type(exc).__name__)
             raise ModelProviderError(str(exc), cause=exc) from exc
 
@@ -152,7 +157,7 @@ class ModelClient:
         retry_payload["stream"] = False
         try:
             response = session.send_non_streaming_request(retry_payload)
-        except ModelProviderError:
+        except (ModelProviderError, BudgetExhausted):
             raise
         except Exception as exc:
             logger.error("Model provider retry failed (%s).", type(exc).__name__)

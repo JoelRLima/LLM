@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterator, Optional, Protocol, Sequence
 
@@ -59,18 +62,107 @@ class ModelRequest:
 
 @dataclass(frozen=True)
 class TokenUsage:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    available: bool = True
 
 
 @dataclass(frozen=True)
 class ModelResponse:
     content: str
     reasoning: str = ""
-    usage: TokenUsage = field(default_factory=TokenUsage)
+    usage: TokenUsage = field(default_factory=lambda: TokenUsage(available=False))
     finish_reason: Optional[str] = None
     provider_metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class PendingStream:
+    """Legacy stream response carrying its task-budget reservation."""
+
+    __slots__ = ("response", "call_number", "payload", "started_at")
+
+    def __init__(self, response: Any, call_number: int, payload: Dict[str, Any], started_at: float) -> None:
+        self.response = response
+        self.call_number = call_number
+        self.payload = payload
+        self.started_at = started_at
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.response, name)
+
+
+def response_usage(response: Any) -> Any:
+    if isinstance(response, ModelResponse):
+        return response.usage
+    return response.get("usage") if isinstance(response, Mapping) else None
+
+
+def response_text(response: Any) -> str:
+    if isinstance(response, ModelResponse):
+        return response.content
+    if isinstance(response, Mapping):
+        content = response.get("content")
+        if isinstance(content, str):
+            return content
+    return response if isinstance(response, str) else str(response)
+
+
+def build_model_call_metric(
+    gateway: Any,
+    config: Mapping[str, Any],
+    started_at: float,
+    *,
+    success: bool,
+    streaming: bool,
+    response: Any = None,
+    call_number: int | None = None,
+    estimated_tokens: int = 0,
+) -> Dict[str, Any]:
+    usage = response_usage(response)
+    available = usage is not None and (
+        usage.get("available", True) is not False
+        if isinstance(usage, Mapping)
+        else getattr(usage, "available", True) is not False
+    )
+
+    def value(name: str, fallback: str | None = None) -> int | None:
+        raw = usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
+        if raw is None and fallback is not None:
+            raw = usage.get(fallback) if isinstance(usage, Mapping) else getattr(usage, fallback, None)
+        return int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw >= 0 else None
+
+    input_tokens = value("input_tokens", "prompt_tokens") if available else None
+    output_tokens = value("output_tokens", "completion_tokens") if available else None
+    total_tokens = value("total_tokens") if available else None
+    complete = input_tokens is not None and output_tokens is not None
+    entry: Dict[str, Any] = {
+        "type": "model_call",
+        "metric_type": "model_call",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
+        "success": bool(success),
+        "streaming": bool(streaming),
+        "provider": getattr(gateway, "provider_name", None),
+        "model": getattr(gateway, "model", config.get("model")),
+        "token_usage_complete": complete,
+    }
+    if call_number is not None:
+        entry["call_number"] = call_number
+    if input_tokens is not None:
+        entry["input_tokens"] = entry["prompt_tokens"] = input_tokens
+    if output_tokens is not None:
+        entry["output_tokens"] = entry["completion_tokens"] = output_tokens
+    if total_tokens is not None:
+        entry["total_tokens"] = total_tokens
+    if complete:
+        assert input_tokens is not None and output_tokens is not None
+        entry["estimated_tokens"] = 0
+        entry["accounted_tokens"] = total_tokens if total_tokens is not None else input_tokens + output_tokens
+    else:
+        entry["estimated_tokens"] = max(0, estimated_tokens)
+        entry["accounted_tokens"] = max(0, estimated_tokens)
+    return entry
 
 
 class StreamEventType(str, Enum):
@@ -119,7 +211,7 @@ class LegacyPayloadGateway(ModelGateway, Protocol):
     def send_payload(self, payload: Dict[str, Any], stream: bool) -> Any:
         ...
 
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
+    def complete_payload(self, payload: Dict[str, Any]) -> str | ModelResponse:
         ...
 
     def consume_stream(self, response: Any, callbacks: Dict[str, Callable[..., Any]]) -> str:

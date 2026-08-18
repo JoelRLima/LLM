@@ -23,6 +23,7 @@ from agent.planning.replan_models import (
     classify_error,
 )
 from agent.planning.tool_metadata import TOOL_METADATA
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 __all__ = [
@@ -133,6 +134,8 @@ def ask_llm_for_alternative(
             base_prompt=getattr(orchestrator, "_cached_base_prompt", None),
             log_metric_callback=orchestrator._log_metric if hasattr(orchestrator, "_log_metric") else None,
         )
+    except BudgetExhausted:
+        raise
     except Exception as exc:
         logger.warning("Replanner provider request failed (%s).", type(exc).__name__)
         return None

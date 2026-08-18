@@ -5,6 +5,7 @@ from typing import List, Tuple
 from agent.llm.model_client import ModelProviderError
 from agent.llm.prompts import CODER_PROMPT, GENERAL_PROMPT, RESEARCHER_PROMPT, SECURITY_AUDITOR_PROMPT
 from agent.llm.session import ChatSession
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.skills.policy import builtin_skills_for_persona
 
@@ -97,7 +98,7 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
 
     try:
         response = session.send_non_streaming_request(payload)
-    except ModelProviderError:
+    except (ModelProviderError, BudgetExhausted):
         raise
     except Exception as exc:
         logger.error("Model provider router request failed (%s).", type(exc).__name__)

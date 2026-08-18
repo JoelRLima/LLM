@@ -74,7 +74,12 @@ class AgentApplicationScenarioExecutor:
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 metadata = metadata if isinstance(metadata, dict) else {}
                 task_metrics = application.orchestrator._get_metrics_for_task()
-                canonical_metrics = aggregate_metrics(task_metrics, len(history))
+                canonical_metrics = aggregate_metrics(
+                    task_metrics,
+                    tool_calls=application.orchestrator.task_budget.snapshot().tool_calls,
+                    history_records=len(history),
+                    budget_snapshot=application.orchestrator.task_budget.snapshot(),
+                )
                 measurement = {
                     "task_id": f"eval:{objective.split(':', 1)[0].strip()}",
                     "duration_ms": int((time.monotonic() - started) * 1000),

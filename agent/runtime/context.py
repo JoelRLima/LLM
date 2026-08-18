@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore
 from typing import Any, Dict, Optional, Protocol
 from uuid import uuid4
 
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelGateway
+from agent.runtime.budget import BudgetSnapshot, TaskBudgetLedger
 
 
 class EventSink(Protocol):
@@ -51,25 +52,7 @@ class ProcessConcurrencyGate(ModelConcurrencyGate):
     """Semáforo compartilhado para processos de validação."""
 
 
-class ModelCallBudget:
-    """Contador thread-safe compartilhado por uma árvore de tarefas."""
-
-    def __init__(self, limit: int) -> None:
-        self.limit = max(1, limit)
-        self._calls = 0
-        self._lock = Lock()
-
-    @property
-    def calls(self) -> int:
-        with self._lock:
-            return self._calls
-
-    def consume(self) -> int:
-        with self._lock:
-            if self._calls >= self.limit:
-                raise RuntimeError(f"Orçamento de chamadas ao modelo excedido ({self.limit}).")
-            self._calls += 1
-            return self._calls
+ModelCallBudget = TaskBudgetLedger
 
 
 @dataclass(frozen=True)
@@ -79,6 +62,8 @@ class RuntimeLimits:
     max_process_concurrency: int = 1
     max_steps: int = 30
     max_model_calls: int = 20
+    max_task_tool_calls: int = 60
+    max_task_tokens: int = 200_000
     max_output_tokens: int = 2048
     max_repair_attempts: int = 2
 
@@ -93,6 +78,7 @@ class TaskExecutionContext:
     model_gate: Optional[ModelConcurrencyGate] = None
     process_gate: Optional[ProcessConcurrencyGate] = None
     model_call_budget: Optional[ModelCallBudget] = None
+    budget_ledger: Optional[TaskBudgetLedger] = None
     task_id: str = field(default_factory=lambda: uuid4().hex)
     parent_task_id: Optional[str] = None
     node_id: Optional[str] = None
@@ -112,12 +98,18 @@ class TaskExecutionContext:
                 "process_gate",
                 ProcessConcurrencyGate(self.limits.max_process_concurrency),
             )
-        if self.model_call_budget is None:
-            object.__setattr__(
-                self,
-                "model_call_budget",
-                ModelCallBudget(self.limits.max_model_calls),
+        if self.model_call_budget is not None and self.budget_ledger is not None:
+            if self.model_call_budget is not self.budget_ledger:
+                raise ValueError("model_call_budget and budget_ledger must be the same object")
+        ledger = self.budget_ledger or self.model_call_budget
+        if ledger is None:
+            ledger = TaskBudgetLedger(
+                max_model_calls=self.limits.max_model_calls,
+                max_task_tool_calls=self.limits.max_task_tool_calls,
+                max_task_tokens=self.limits.max_task_tokens,
             )
+        object.__setattr__(self, "budget_ledger", ledger)
+        object.__setattr__(self, "model_call_budget", ledger)
 
     def child(self, node_id: str, permissions: Optional[frozenset[str]] = None) -> "TaskExecutionContext":
         return replace(
@@ -150,10 +142,34 @@ class TaskExecutionContext:
         )
 
     def consume_model_call(self) -> int:
-        budget = self.model_call_budget
-        if budget is None:  # Apenas para estreitar o tipo após __post_init__.
+        ledger = self.budget_ledger
+        if ledger is None:  # Apenas para estreitar o tipo após __post_init__.
             raise RuntimeError("Orçamento de modelo não inicializado.")
-        return budget.consume()
+        return ledger.reserve_model_call()
+
+    def finalize_model_call(
+        self, call_number: int, *, usage: Any = None, estimated_tokens: int = 0
+    ) -> None:
+        ledger = self.budget_ledger
+        if ledger is None:
+            raise RuntimeError("Ledger de tarefa não inicializado.")
+        ledger.finalize_model_call(
+            call_number,
+            usage=usage,
+            estimated_tokens=estimated_tokens,
+        )
+
+    def reserve_tool_call(self) -> int:
+        ledger = self.budget_ledger
+        if ledger is None:
+            raise RuntimeError("Ledger de tarefa não inicializado.")
+        return ledger.reserve_tool_call()
+
+    def budget_snapshot(self) -> BudgetSnapshot:
+        ledger = self.budget_ledger
+        if ledger is None:
+            raise RuntimeError("Ledger de tarefa não inicializado.")
+        return ledger.snapshot()
 
     def model_slot(self) -> ModelConcurrencyGate:
         gate = self.model_gate

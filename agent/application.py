@@ -170,6 +170,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
             )
             tool_invocation_gateway = ToolInvocationGateway(
                 tool_registry,
+                budget_ledger=orchestrator.task_budget,
                 application_authority=extension_bootstrap.authority,
                 task_authority=selected_task_authority,
                 approval_port=selected_approval,

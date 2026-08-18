@@ -1,6 +1,7 @@
 import pytest
 
 from agent.cancellation import CancellationToken
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
 from agent.runtime.hardware import LOW_VRAM_8GB, resolve_hardware_profile
 
@@ -53,6 +54,8 @@ def test_child_context_is_correlated_and_keeps_limits():
     assert sink.events[0][1]["node_id"] == "analysis"
     assert child.model_gate is parent.model_gate
     assert child.process_gate is parent.process_gate
+    assert child.budget_ledger is parent.budget_ledger
+    assert child.model_call_budget is parent.budget_ledger
 
 
 def test_model_budget_and_metrics_are_shared_and_correlated():
@@ -67,7 +70,7 @@ def test_model_budget_and_metrics_are_shared_and_correlated():
 
     assert parent.consume_model_call() == 1
     assert child.consume_model_call() == 2
-    with pytest.raises(RuntimeError, match="Orçamento"):
+    with pytest.raises(BudgetExhausted):
         child.consume_model_call()
 
     child.record_metric("model_call", {"tokens": 3})

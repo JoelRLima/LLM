@@ -7,9 +7,11 @@ import pytest
 from agent.cancellation import CancellationToken
 from agent.code.workflow_proposal import _complete
 from agent.llm.contracts import ModelResponse, ProviderCapabilities, TokenUsage
-from agent.llm.model_client import ModelClient
+from agent.llm.model_client import ModelClient, ModelProviderError
+from agent.llm.router import route_objective
 from agent.llm.session import ChatSession
 from agent.reporting.task_report_rendering import aggregate_metrics
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
 
 
@@ -52,6 +54,51 @@ class _FallbackGateway(_Gateway):
         return '{"action":"final"}'
 
 
+class _UsageGateway(_Gateway):
+    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
+        del payload
+        self.calls += 1
+        return ModelResponse(
+            content='{"action":"final"}',
+            usage=TokenUsage(input_tokens=4, output_tokens=6, total_tokens=10),
+        )
+
+
+class _RetryGateway(_Gateway):
+    def __init__(self, responses: list[str]) -> None:
+        super().__init__()
+        self.responses = iter(responses)
+
+    def build_payload(self, request: Any) -> Dict[str, Any]:
+        del request
+        return {"messages": []}
+
+    def complete_payload(self, payload: Dict[str, Any]) -> str:
+        del payload
+        self.calls += 1
+        return next(self.responses)
+
+
+class _RouterGateway(_Gateway):
+    def build_payload(self, request: Any) -> Dict[str, Any]:
+        del request
+        return {"messages": []}
+
+    def complete_payload(self, payload: Dict[str, Any]) -> str:
+        del payload
+        self.calls += 1
+        return '{"persona":"coder"}'
+
+
+class _StreamingUsageGateway(_Gateway):
+    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
+        del response
+        callbacks["on_usage"](
+            {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
+        )
+        return "done"
+
+
 class _ModernGateway:
     provider_name = "modern-provider"
     capabilities = ProviderCapabilities()
@@ -85,6 +132,37 @@ def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> N
     assert entries[1]["streaming"] is True
 
 
+def test_legacy_transport_observes_typed_usage_before_unwrapping_text() -> None:
+    session = _session(_UsageGateway())
+
+    assert session.send_non_streaming_request({}) == '{"action":"final"}'
+    snapshot = session.budget_ledger.snapshot()
+
+    assert snapshot.reported_input_tokens == 4
+    assert snapshot.reported_output_tokens == 6
+    assert snapshot.reported_total_tokens == 10
+    assert snapshot.accounted_tokens == 10
+    assert snapshot.model_calls_with_reported_usage == 1
+    assert snapshot.estimated_tokens == 0
+
+
+def test_stream_usage_is_accounted_after_consumption_as_one_call() -> None:
+    gateway = _StreamingUsageGateway()
+    entries: list[dict[str, Any]] = []
+    session = _session(gateway)
+    session.set_model_call_callback(entries.append)
+
+    response = session.send_request({}, stream=True)
+    assert session.budget_ledger.snapshot().model_calls == 1
+    assert session.process_stream(response, {}) == "done"
+
+    snapshot = session.budget_ledger.snapshot()
+    assert snapshot.reported_total_tokens == 5
+    assert snapshot.accounted_tokens == 5
+    assert len(entries) == 1
+    assert entries[0]["total_tokens"] == 5
+
+
 def test_provider_failure_is_counted_at_the_transport_boundary() -> None:
     gateway = _Gateway(fail=True)
     entries: list[dict[str, Any]] = []
@@ -97,6 +175,27 @@ def test_provider_failure_is_counted_at_the_transport_boundary() -> None:
     assert gateway.calls == 1
     assert len(entries) == 1
     assert entries[0]["success"] is False
+    assert entries[0]["token_usage_complete"] is False
+    assert entries[0]["accounted_tokens"] == entries[0]["estimated_tokens"]
+
+
+def test_model_budget_refuses_n_plus_one_before_provider_io() -> None:
+    gateway = _Gateway()
+    entries: list[dict[str, Any]] = []
+    session = ChatSession(
+        "system",
+        {"model": "test-model", "max_model_calls": 1},
+        gateway=gateway,
+    )
+    session.set_model_call_callback(entries.append)
+
+    session.send_non_streaming_request({})
+    with pytest.raises(BudgetExhausted):
+        ModelClient.request(session, {})
+
+    assert gateway.calls == 1
+    assert len(entries) == 1
+    assert session.budget_ledger.snapshot().model_calls == 1
 
 
 def test_grammar_fallback_records_each_real_provider_request() -> None:
@@ -114,6 +213,58 @@ def test_grammar_fallback_records_each_real_provider_request() -> None:
     assert entries[0]["success"] is False
     assert entries[1]["success"] is True
     assert session._grammar_supports_grammar is False
+    assert session.budget_ledger.snapshot().model_calls == 2
+
+
+def test_grammar_fallback_refuses_second_provider_attempt_at_model_limit() -> None:
+    gateway = _FallbackGateway()
+    session = ChatSession(
+        "system",
+        {"model": "test-model", "max_model_calls": 1},
+        gateway=gateway,
+    )
+
+    with pytest.raises(BudgetExhausted) as caught:
+        ModelClient.request(session, {"max_tokens": 10}, grammar="grammar")
+
+    assert not isinstance(caught.value, ModelProviderError)
+    assert gateway.calls == 1
+    assert session.budget_ledger.snapshot().model_calls == 1
+
+
+def test_parse_retry_gets_a_new_reservation_and_can_be_refused() -> None:
+    gateway = _RetryGateway(["not json", '{"action":"final"}'])
+    session = _session(gateway)
+
+    assert ModelClient.request(session, {}) == {"action": "final"}
+    assert gateway.calls == 2
+    assert session.budget_ledger.snapshot().model_calls == 2
+
+    limited_gateway = _RetryGateway(["not json", '{"action":"final"}'])
+    limited_session = ChatSession(
+        "system",
+        {"model": "test-model", "max_model_calls": 1},
+        gateway=limited_gateway,
+    )
+    with pytest.raises(BudgetExhausted):
+        ModelClient.request(limited_session, {})
+    assert limited_gateway.calls == 1
+
+
+def test_router_and_planner_share_legacy_session_ledger() -> None:
+    gateway = _RouterGateway()
+    session = ChatSession(
+        "system",
+        {"model": "test-model", "max_model_calls": 1},
+        gateway=gateway,
+    )
+
+    _, _, persona = route_objective("Crie um módulo de autenticação", session)
+
+    assert persona == "coder"
+    with pytest.raises(BudgetExhausted):
+        ModelClient.request(session, {})
+    assert gateway.calls == 1
 
 
 def test_modern_gateway_call_records_one_correlated_model_metric() -> None:
@@ -140,9 +291,10 @@ def test_modern_gateway_call_records_one_correlated_model_metric() -> None:
     assert len(sink.entries) == 1
     assert sink.entries[0]["metric_type"] == "model_call"
     assert sink.entries[0]["total_tokens"] == 5
+    assert context.budget_snapshot().accounted_tokens == 5
 
 
-def test_aggregate_counts_explicit_calls_and_keeps_unknown_tokens_null() -> None:
+def test_aggregate_counts_explicit_calls_without_using_metadata_for_incomplete_call() -> None:
     metrics = aggregate_metrics(
         [
             {"type": "model_call", "duration_ms": 3},
@@ -155,8 +307,99 @@ def test_aggregate_counts_explicit_calls_and_keeps_unknown_tokens_null() -> None
 
     assert metrics["model_calls"] == 1
     assert metrics["total_duration_ms"] == 12
-    assert metrics["total_tokens"] == 4
-    assert metrics["token_usage_available"] is True
+    assert metrics["total_tokens"] is None
+    assert metrics["token_usage_complete"] is False
+    assert metrics["historical_token_fallback"] is False
+
+
+def test_model_metadata_does_not_double_count_authoritative_provider_total() -> None:
+    metrics = aggregate_metrics(
+        [
+            {
+                "type": "model_call",
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "token_usage_complete": True,
+            },
+            {"type": "model_metadata", "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        ],
+        tool_calls=0,
+    )
+
+    assert metrics["model_calls"] == 1
+    assert metrics["total_tokens"] == 15
+    assert metrics["reported_tokens"] == 15
+    assert metrics["token_usage_complete"] is True
+
+
+def test_authoritative_input_and_output_can_form_exact_total_without_provider_total_field() -> None:
+    metrics = aggregate_metrics(
+        [
+            {
+                "type": "model_call",
+                "input_tokens": 4,
+                "output_tokens": 6,
+                "token_usage_complete": True,
+            }
+        ],
+        tool_calls=0,
+    )
+
+    assert metrics["total_tokens"] == 10
+    assert metrics["token_usage_complete"] is True
+
+
+def test_incomplete_and_estimated_model_call_is_explicitly_labeled() -> None:
+    metrics = aggregate_metrics(
+        [
+            {
+                "type": "model_call",
+                "success": False,
+                "token_usage_complete": False,
+                "estimated_tokens": 7,
+                "accounted_tokens": 7,
+            }
+        ],
+        tool_calls=0,
+    )
+
+    assert metrics["total_tokens"] is None
+    assert metrics["estimated_tokens"] == 7
+    assert metrics["accounted_tokens"] == 7
+    assert metrics["token_usage_complete"] is False
+
+
+def test_historical_metadata_rows_remain_readable_without_becoming_model_calls() -> None:
+    metrics = aggregate_metrics(
+        [
+            {
+                "type": "model_metadata",
+                "prompt_tokens": 4,
+                "completion_tokens": 2,
+            }
+        ],
+        tool_calls=0,
+    )
+
+    assert metrics["model_calls"] == 0
+    assert metrics["total_tokens"] == 6
+    assert metrics["historical_token_fallback"] is True
+    assert metrics["token_usage_complete"] is False
+
+
+def test_metrics_write_failure_does_not_change_ledger_truth() -> None:
+    session = _session(_UsageGateway())
+
+    def fail(_entry: dict[str, Any]) -> None:
+        raise OSError("metrics unavailable")
+
+    session.set_model_call_callback(fail)
+    assert session.send_non_streaming_request({}) == '{"action":"final"}'
+
+    snapshot = session.budget_ledger.snapshot()
+    assert snapshot.model_calls == 1
+    assert snapshot.accounted_tokens == 10
 
 
 def test_aggregate_no_model_is_zero_not_inferred_from_tools() -> None:

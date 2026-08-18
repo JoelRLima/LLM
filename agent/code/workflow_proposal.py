@@ -13,6 +13,7 @@ from agent.llm.structured_output import (
     StructuredOutputStrategy,
     parse_structured_response,
 )
+from agent.runtime.budget import estimate_model_request_tokens
 
 CHANGESET_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -127,25 +128,61 @@ def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
         with service.context.model_slot():
             response = service.context.model_gateway.complete(request)
     except Exception:
+        estimate = estimate_model_request_tokens(request)
+        service.context.finalize_model_call(
+            call_number,
+            estimated_tokens=estimate,
+        )
         service.context.record_metric("model_call", {
             "operation": "propose_changes",
             "provider": service.context.model_gateway.provider_name,
             "call_number": call_number,
             "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
             "success": False,
+            "token_usage_complete": False,
+            "estimated_tokens": estimate,
+            "accounted_tokens": estimate,
         })
         raise
     usage = getattr(response, "usage", None)
+    estimate = estimate_model_request_tokens(request, response)
+    service.context.finalize_model_call(
+        call_number,
+        usage=usage,
+        estimated_tokens=estimate,
+    )
+    input_tokens = getattr(usage, "input_tokens", None)
+    output_tokens = getattr(usage, "output_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    complete = (
+        isinstance(input_tokens, int)
+        and not isinstance(input_tokens, bool)
+        and input_tokens >= 0
+        and isinstance(output_tokens, int)
+        and not isinstance(output_tokens, bool)
+        and output_tokens >= 0
+    )
+    normalized_total = estimate
+    if complete:
+        assert input_tokens is not None and output_tokens is not None
+        normalized_total = (
+            total_tokens
+            if isinstance(total_tokens, int) and not isinstance(total_tokens, bool) and total_tokens >= 0
+            else input_tokens + output_tokens
+        )
     data = {
         "operation": "propose_changes",
         "provider": service.context.model_gateway.provider_name,
         "call_number": call_number,
         "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
         "success": True,
+        "token_usage_complete": complete,
+        "estimated_tokens": 0 if complete else estimate,
+        "accounted_tokens": normalized_total,
     }
     for field in ("input_tokens", "output_tokens", "total_tokens"):
         value = getattr(usage, field, None)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
             data[field] = int(value)
     service.context.record_metric("model_call", data)
     service.context.emit("model_call_completed", {

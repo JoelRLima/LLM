@@ -1,3 +1,4 @@
+import concurrent.futures
 import threading
 import time
 from copy import deepcopy
@@ -8,6 +9,7 @@ import pytest
 from agent.approval import ApprovalDecision
 from agent.cancellation import CancellationToken
 from agent.interfaces.cli.approval import ConsoleApproval
+from agent.runtime.budget import TaskBudgetLedger
 from agent.skills import load_skill_registry
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
@@ -36,6 +38,84 @@ def test_gateway_run_success(tmp_path: Path) -> None:
     assert events[1][0] == "tool_end"
     assert events[0][1]["invocation_id"] == result.invocation_id
     assert events[1][1]["invocation_id"] == result.invocation_id
+
+
+def test_gateway_budget_refuses_adapter_before_n_plus_one(tmp_path: Path) -> None:
+    del tmp_path
+    calls = []
+    recorded = []
+
+    class Adapter:
+        def descriptors(self) -> tuple[ToolDescriptor, ...]:
+            return (ToolDescriptor("counted", "counted"),)
+
+        def invoke(self, invocation: ToolInvocation) -> ToolResult:
+            calls.append(invocation.invocation_id)
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED)
+
+    registry = ToolRegistry()
+    registry.register_adapter(Adapter())
+    ledger = TaskBudgetLedger(max_task_tool_calls=1)
+    gateway = ToolInvocationGateway(
+        registry,
+        budget_ledger=ledger,
+        state_recorder=lambda name, args, result: recorded.append((name, args, result)),
+    )
+
+    first = gateway.run("counted", {})
+    second = gateway.run("counted", {})
+
+    assert first.status is ToolStatus.SUCCEEDED
+    assert second.status is ToolStatus.BLOCKED
+    assert second.error is not None
+    assert second.error.code == "TASK_BUDGET_EXHAUSTED"
+    assert len(calls) == 1
+    assert len(recorded) == 1
+    assert ledger.snapshot().tool_calls == 1
+
+
+def test_gateway_budget_reservation_is_atomic_under_parallel_dispatch() -> None:
+    calls = []
+    recorded = []
+    started = threading.Event()
+    release = threading.Event()
+
+    class Adapter:
+        def descriptors(self) -> tuple[ToolDescriptor, ...]:
+            return (ToolDescriptor("counted", "counted"),)
+
+        def invoke(self, invocation: ToolInvocation) -> ToolResult:
+            calls.append(invocation.invocation_id)
+            started.set()
+            release.wait(timeout=2)
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED)
+
+    registry = ToolRegistry()
+    registry.register_adapter(Adapter())
+    ledger = TaskBudgetLedger(max_task_tool_calls=1)
+    gateway = ToolInvocationGateway(
+        registry,
+        budget_ledger=ledger,
+        state_recorder=lambda name, args, result: recorded.append((name, args, result)),
+    )
+    request_a = ToolInvocationRequest("parallel-a", "counted")
+    request_b = ToolInvocationRequest("parallel-b", "counted")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(gateway.run, request_a)
+        assert started.wait(timeout=2)
+        second = pool.submit(gateway.run, request_b)
+        blocked = second.result(timeout=2)
+        release.set()
+        admitted = first.result(timeout=2)
+
+    assert admitted.status is ToolStatus.SUCCEEDED
+    assert blocked.status is ToolStatus.BLOCKED
+    assert blocked.error is not None
+    assert blocked.error.code == "TASK_BUDGET_EXHAUSTED"
+    assert len(calls) == 1
+    assert len(recorded) == 1
+    assert ledger.snapshot().tool_calls == 1
 
 
 def test_gateway_permission_denied(tmp_path: Path) -> None:
