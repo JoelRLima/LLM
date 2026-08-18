@@ -1,6 +1,33 @@
 from types import SimpleNamespace
 
-from agent.reporting.operational_outcome import project_operational_outcome
+from agent.planning.completion_observations import publish_outcome
+from agent.reporting.operational_outcome import (
+    normalize_terminal_status,
+    project_operational_outcome,
+)
+
+
+def test_pristine_and_tool_only_success_are_unverified() -> None:
+    assert normalize_terminal_status() == "unverified"
+    assert normalize_terminal_status(last_result_status="succeeded") == "unverified"
+
+
+def test_explicit_success_requires_canonical_completion() -> None:
+    assert normalize_terminal_status(explicit_status="succeeded") == "unverified"
+    assert normalize_terminal_status(
+        explicit_status="succeeded", terminal_disposition="block"
+    ) == "blocked"
+    assert normalize_terminal_status(
+        explicit_status="succeeded", last_result_status="permission_denied"
+    ) == "permission_denied"
+
+
+def test_canonical_completion_and_non_success_evidence_are_distinct() -> None:
+    assert normalize_terminal_status(terminal_disposition="complete") == "succeeded"
+    assert normalize_terminal_status(terminal_disposition="block") == "blocked"
+    assert normalize_terminal_status(terminal_disposition="fail") == "failed"
+    assert normalize_terminal_status(last_result_status="unavailable") == "unavailable"
+    assert normalize_terminal_status(cancelled=True) == "cancelled"
 
 
 def _state(metadata, *, executed=(), waived=(), pending=(), terminal="complete"):
@@ -77,3 +104,22 @@ def test_operational_outcome_distinguishes_noop_from_transient_rolled_back_mutat
     assert rolled_back.rollback_occurred is True
     assert rolled_back.files_affected == ("controle.txt",)
     assert rolled_back.executed_effects == ()
+
+
+def test_task_outcome_duplicate_is_suppressed_across_intervening_event() -> None:
+    state = _state({"applied": False}, terminal="block")
+    state.events = []
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda event_type, data=None: state.events.append(
+            {"type": event_type, "data": data or {}}
+        ),
+    )
+
+    publish_outcome(orchestrator)
+    state.events.append({"type": "unrelated", "data": {}})
+    publish_outcome(orchestrator)
+
+    assert [event["type"] for event in state.events].count("task_outcome") == 1

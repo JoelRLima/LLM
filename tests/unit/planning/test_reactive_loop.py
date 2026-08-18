@@ -155,6 +155,58 @@ def test_reactive_budget_stop_reuses_ledger_without_reset(monkeypatch):
     assert ledger.snapshot().tool_calls == 1
 
 
+def test_reactive_cost_limit_establishes_blocked_terminal_truth(monkeypatch):
+    monkeypatch.setattr("agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: True)
+    monkeypatch.setattr("agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
+    orchestrator = _Orchestrator()
+    orchestrator.fail_task = lambda: None
+
+    answer = ReactiveLoop(orchestrator)._limit_answer("responda", 1)
+
+    assert answer
+    assert orchestrator.agent_state.terminal_disposition == "block"
+    assert orchestrator.agent_state.last_result["error_code"] == "TASK_COST_LIMIT_REACHED"
+    assert any(kind == "task_outcome" for kind, _data in orchestrator.events)
+
+
+def test_reactive_watchdog_timeout_preserves_timeout_status(monkeypatch):
+    monkeypatch.setattr("agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
+    monkeypatch.setattr(
+        "agent.planning.reactive_loop.Watchdog.check_all",
+        lambda *args: "Timeout global da tarefa atingido.",
+    )
+    orchestrator = _Orchestrator()
+    orchestrator.fail_task = lambda: None
+
+    answer = ReactiveLoop(orchestrator)._limit_answer("responda", 1)
+
+    assert answer
+    assert orchestrator.agent_state.terminal_disposition == "timed_out"
+    assert orchestrator.agent_state.last_result["error_code"] == "WATCHDOG_TIMEOUT"
+
+
+def test_reactive_aborted_gateway_result_cannot_complete_task():
+    orchestrator = _Orchestrator()
+    orchestrator.fail_task = lambda: None
+    orchestrator.execution_gateway = SimpleNamespace(
+        execute_validated_plan=lambda *_args, **_kwargs: SimpleNamespace(
+            aborted=True,
+            final_answer="plano abortado",
+        )
+    )
+
+    answer = ReactiveLoop(orchestrator)._handle_decision(
+        {"action": "tool", "tool": "echo", "args": {}},
+        "responda",
+        {},
+        1,
+    )
+
+    assert answer
+    assert orchestrator.agent_state.terminal_disposition == "block"
+    assert orchestrator.agent_state.last_result["error_code"] == "EXECUTION_ABORTED"
+
+
 def test_real_shaped_reactive_tool_decision_reaches_runtime_gateway():
     orchestrator = _Orchestrator()
     context_manager, gateway = _real_context_manager(

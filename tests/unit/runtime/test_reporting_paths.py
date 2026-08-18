@@ -5,10 +5,12 @@ import pytest
 from agent.application import AgentApplication
 from agent.llm.contracts import TokenUsage
 from agent.reporting.operational_outcome import normalize_terminal_status
-from agent.reporting.run_receipt import derive_status
+from agent.reporting.run_receipt import build_run_diagnostics, derive_status, public_exception_message
 from agent.reporting.task_report import TaskReportBuilder
-from agent.runtime.budget import TaskBudgetLedger
+from agent.reporting.task_report_rendering import render_markdown
+from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
 from agent.runtime.paths import REPORTS_DIR
+from agent.state import AgentState
 
 
 def test_task_report_default_stays_under_the_canonical_runtime_directory() -> None:
@@ -141,6 +143,172 @@ def test_public_status_honors_canonical_terminal_disposition(
     )
 
     assert derive_status(orchestrator) == expected
+
+
+def test_public_result_cannot_promote_canonical_block_to_success(tmp_path) -> None:
+    raw = {
+        "ok": False,
+        "done": True,
+        "status": "blocked",
+        "error": "approval required",
+        "error_code": "APPROVAL_REQUIRED",
+        "executed": False,
+    }
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = SimpleNamespace(
+        agent_state=SimpleNamespace(
+            terminal_disposition="block",
+            last_result=raw,
+            tool_history=[],
+            events=[],
+        ),
+        _cancelled=False,
+        _task_failed=False,
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+
+    result = app._result("succeeded", "claimed success")
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert result.receipt["status"] == "blocked"
+    assert result.receipt["operational_outcome"]["terminal_status"] == "blocked"
+
+
+def test_application_budget_exception_is_blocked_and_preserves_reason(tmp_path) -> None:
+    state = AgentState()
+    events = []
+
+    def raise_budget(_objective):
+        raise BudgetExhausted("model_calls", 1, 1)
+
+    orchestrator = SimpleNamespace(
+        run=raise_budget,
+        agent_state=state,
+        _cancelled=False,
+        _task_failed=False,
+        _last_failure_code=None,
+        _last_failure_layer=None,
+        _emit=lambda event_type, data=None: events.append(
+            {"type": event_type, "data": data or {}}
+        ),
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+    app = object.__new__(AgentApplication)
+    app._closed = False
+    app._task_attempted = False
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = orchestrator
+
+    result = app._run_locked("objective")
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert result.receipt["status"] == "blocked"
+    assert result.receipt["operational_outcome"]["terminal_status"] == "blocked"
+    assert result.receipt["error"]["code"] == "TASK_BUDGET_EXHAUSTED"
+    assert any(event["type"] == "task_outcome" for event in events)
+
+
+def test_run_metric_uses_canonical_status_before_finalization(tmp_path) -> None:
+    recorded = []
+    state = SimpleNamespace(
+        terminal_disposition="block",
+        last_result={"status": "blocked", "error": "blocked"},
+        tool_history=[],
+        events=[],
+    )
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        _cancelled=False,
+        _task_failed=False,
+        _record_canonical_run_metric=lambda success: recorded.append(success),
+        _generate_task_report=lambda *args, **kwargs: None,
+    )
+    app = object.__new__(AgentApplication)
+    app.workspace = SimpleNamespace(root=tmp_path)
+    app.orchestrator = orchestrator
+
+    result = app._result("succeeded", "claimed success")
+
+    assert result.status == "blocked"
+    assert recorded == [False]
+
+
+def test_report_receipt_status_parity_fails_closed_on_mismatch() -> None:
+    report = TaskReportBuilder({}).build_report(
+        SimpleNamespace(objective="objective", tool_history=[], events=[], last_result=None),
+        [],
+        "blocked",
+        canonical_outcome={"status": "blocked", "error": "denied"},
+        receipt={
+            "status": "succeeded",
+            "operational_outcome": {"terminal_status": "succeeded"},
+        },
+    )
+
+    assert report["status"] == "blocked"
+    assert report["receipt"]["status"] == "blocked"
+    assert report["operational_outcome"]["terminal_status"] == "blocked"
+
+
+def test_exception_diagnostics_redact_common_secret_forms() -> None:
+    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET password=TOPSECRET"
+    message = public_exception_message(RuntimeError(secret))
+    diagnostics = build_run_diagnostics(
+        SimpleNamespace(
+            last_result={"status": "failed", "error_code": "RUNTIME_ERROR", "error": secret}
+        ),
+        None,
+    )
+
+    assert "TOPSECRET" not in message
+    assert "TOPSECRET" not in repr(diagnostics)
+
+
+def test_task_report_redacts_tool_and_answer_secret_forms() -> None:
+    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET password=TOPSECRET"
+    report = TaskReportBuilder({}).build_report(
+        SimpleNamespace(
+            objective="read",
+            tool_history=[
+                {
+                    "tool": "demo",
+                    "result": {
+                        "ok": False,
+                        "status": "failed",
+                        "error": secret,
+                        "data": {"details": secret},
+                    },
+                }
+            ],
+            events=[],
+            last_result={"status": "failed"},
+        ),
+        [],
+        secret,
+        canonical_outcome={"status": "failed", "error": secret},
+    )
+
+    assert "TOPSECRET" not in repr(report)
+
+
+def test_markdown_report_keeps_operational_status_and_reason_code() -> None:
+    report = TaskReportBuilder({}).build_report(
+        SimpleNamespace(objective="audit", tool_history=[], events=[], last_result=None),
+        [],
+        "blocked",
+        canonical_outcome={"status": "permission_denied", "error": "denied"},
+        receipt={"error": {"code": "TASK_AUTHORITY_DENIED"}},
+    )
+
+    markdown = render_markdown(report)
+
+    assert "permission_denied" in markdown
+    assert "TASK_AUTHORITY_DENIED" in markdown
 
 
 @pytest.mark.parametrize(

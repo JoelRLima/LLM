@@ -220,12 +220,19 @@ def _metric_type(entry: Dict[str, Any]) -> str:
 
 
 def render_markdown(report: Dict[str, Any]) -> str:
+    raw_receipt = report.get("receipt")
+    receipt = raw_receipt if isinstance(raw_receipt, dict) else {}
+    raw_cause = receipt.get("error")
+    cause = raw_cause if isinstance(raw_cause, dict) else {}
+    reason_code = cause.get("code") or report.get("error")
     lines = [
         f"# Relatório da Tarefa {report.get('task_id', '')}", "",
         f"- **Objetivo:** {report.get('objective')}",
         f"- **Sucesso:** {'sim' if report.get('success') else 'não'}",
         f"- **Início:** {report.get('start_time')}", f"- **Fim:** {report.get('end_time')}", "",
     ]
+    lines.insert(3, f"- **Status operacional:** {report.get('status', 'unverified')}")
+    lines.insert(5, f"- **Codigo de resultado:** {reason_code or 'nenhum'}")
     _append_metrics(lines, report.get("metrics") or {})
     _append_steps(lines, report.get("steps") or [])
     _append_replans(lines, report.get("replan_events") or [])

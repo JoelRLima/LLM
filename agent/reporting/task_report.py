@@ -8,6 +8,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
+from agent.reporting.public_projection import (
+    reconcile_receipt_projection,
+    reconcile_report_status,
+)
+from agent.reporting.public_safety import sanitize_public_text
 from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
 from agent.runtime.paths import REPORTS_DIR
 
@@ -33,9 +38,10 @@ class TaskReportBuilder:
         canonical_outcome: Dict[str, Any],
         receipt: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
-        status = canonical_outcome.get("status")
-        if not isinstance(status, str) or not status:
+        requested_status = canonical_outcome.get("status")
+        if not isinstance(requested_status, str) or not requested_status:
             raise ValueError("canonical_outcome.status is required")
+        status = reconcile_report_status(agent_state, requested_status)
         metrics_entries = metrics_entries or []
         history = getattr(agent_state, "tool_history", None) or []
         events = getattr(agent_state, "events", None) or []
@@ -59,15 +65,21 @@ class TaskReportBuilder:
             "replan_events": self._extract_replan_events(events),
             "metrics": self._aggregate_task_metrics(agent_state, metrics_entries, len(history)),
             "errors": self._collect_errors(steps),
-            "final_answer_preview": answer[:MAX_PREVIEW_CHARS],
+            "final_answer_preview": sanitize_public_text(answer[:MAX_PREVIEW_CHARS]),
         }
         report["status"] = status
-        report["error"] = canonical_outcome.get("error")
+        raw_error = canonical_outcome.get("error")
+        report["error"] = (
+            sanitize_public_text(raw_error) if raw_error is not None else None
+        )
         if len(run_ids) == 1:
             report["run_id"] = run_ids[0]
         if receipt is not None:
-            report["receipt"] = receipt
-            report["operational_outcome"] = receipt.get("operational_outcome")
+            receipt_projection = reconcile_receipt_projection(agent_state, status, receipt)
+            nested_projection = receipt_projection.get("operational_outcome")
+            if isinstance(nested_projection, dict):
+                report["operational_outcome"] = nested_projection
+            report["receipt"] = receipt_projection
         return report
 
     @staticmethod
@@ -98,6 +110,9 @@ class TaskReportBuilder:
         if directory:
             os.makedirs(directory, exist_ok=True)
         report["report_path"] = str(path)
+        receipt = report.get("receipt")
+        if isinstance(receipt, dict):
+            receipt["report_path"] = str(path)
         content = json.dumps(report, indent=2, ensure_ascii=False, default=str) if selected == "json" else render_markdown(report)
         temporary = f"{path}.tmp"
         with open(temporary, "w", encoding="utf-8") as stream:
@@ -121,6 +136,7 @@ class TaskReportBuilder:
                 text = json.dumps(value, ensure_ascii=False, default=str)
             except (TypeError, ValueError):
                 text = str(value)
+        text = sanitize_public_text(text)
         return text[:max_chars] + "…" if len(text) > max_chars else text
 
     def _build_steps(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -222,13 +238,22 @@ class TaskReportBuilder:
             elif event_type == "hard_block":
                 summary["reason_code"] = data.get("reason_code") or "PLAN_BLOCKED"
             return summary
+        if event_type == "route_transition":
+            return {
+                "type": event_type,
+                "route": data.get("route"),
+                "disposition": data.get("disposition"),
+                "reason_code": data.get("reason_code"),
+                "next_route": data.get("next_route"),
+                "action": data.get("action"),
+            }
         if event_type not in {"tool_start", "tool_end", "tool_denied"}:
             return None
         summary = {"type": event_type, "invocation_id": data.get("invocation_id")}
         if event_type != "tool_start":
             summary["status"] = data.get("status")
         if event_type == "tool_denied":
-            summary["reason_code"] = data.get("reason")
+            summary["reason_code"] = data.get("reason_code") or data.get("reason")
         return summary
 
     @staticmethod
@@ -239,7 +264,7 @@ class TaskReportBuilder:
                 continue
             data = event.get("data") or {}
             replans.append({
-                "original_step": data.get("original_step"), "error": data.get("error", ""),
+                "original_step": data.get("original_step"), "error": sanitize_public_text(data.get("error", "")),
                 "strategy": data.get("strategy", ""), "replacement_steps": data.get("replacement_steps", 0),
             })
         return replans

@@ -16,6 +16,7 @@ from agent.orchestration.compatibility import install_compatibility_gateway
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
 from agent.orchestration.operational_modes import OperationalModeMixin, refresh_capability_projection
 from agent.orchestration.operations import OrchestratorOperations
+from agent.orchestration.route_result import RouteResult
 from agent.orchestration.security_service import SecurityAnalysisService
 from agent.orchestration.subsystems import AgentSubsystems
 from agent.orchestration.task_runner import TaskRunner
@@ -190,6 +191,7 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self.workspace.restore_points.clear()
         self._planning_context = None
         self._task_failed = False
+        self._cancelled = False
         self.cancellation_token.reset()
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
@@ -208,7 +210,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         )
         if self.verbose:
             print(f" concluído ({len(self.active_skills)} skills permitidas)")
-
     def _restore_persona_from_state(self) -> None:
         persona = getattr(self.agent_state, "persona", None)
         persona_prompt = getattr(self.agent_state, "persona_prompt", None)
@@ -247,7 +248,6 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         if view is not None:
             return sorted(view.presented_names)
         return list(self.skills)
-
     @property
     def planning_context(self) -> PlanningContextSnapshot | None:
         """Contexto semântico criado uma vez para a tarefa atual."""
@@ -285,13 +285,13 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
 
     def _handle_security_analysis(
         self, objective: str, stream_callback: Callable[[str], None] | None = None
-    ) -> Optional[str]:
-        return cast(Optional[str], SecurityAnalysisService(self).run(objective, stream_callback))
+    ) -> RouteResult:
+        return SecurityAnalysisService(self).run(objective, stream_callback)
 
     def _run_hierarchical(
         self, objective: str, on_chunk: Callable[[str], None] | None = None
-    ) -> Optional[str]:
-        return cast(Optional[str], HierarchicalExecutionService(self).run(objective, on_chunk))
+    ) -> RouteResult:
+        return HierarchicalExecutionService(self).run(objective, on_chunk)
     def run(
         self,
         objective: Optional[str] = None,

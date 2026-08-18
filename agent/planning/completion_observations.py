@@ -30,7 +30,7 @@ def tool_capabilities(orchestrator: Any, tool_name: str) -> frozenset[str]:
 
 def refresh_executed_effects(orchestrator: Any) -> None:
     state = orchestrator.agent_state
-    for item in state.tool_history:
+    for item in getattr(state, "tool_history", ()) or ():
         if not isinstance(item, dict) or not isinstance(item.get("result"), dict):
             continue
         result = item["result"]
@@ -80,16 +80,18 @@ def publish_outcome(orchestrator: Any) -> None:
         task_failed=bool(getattr(orchestrator, "_task_failed", False)),
         cancelled=bool(getattr(orchestrator, "_cancelled", False)),
     ).debug_projection()
-    events = orchestrator.agent_state.events
-    if events:
-        last = events[-1]
-        if (
-            isinstance(last, dict)
-            and last.get("type") == "task_outcome"
-            and last.get("data") == projection
-        ):
-            return
-    orchestrator._emit("task_outcome", projection)
+    events = getattr(orchestrator.agent_state, "events", None) or ()
+    emit = getattr(orchestrator, "_emit", None)
+    if not callable(emit):
+        return
+    if any(
+        isinstance(event, dict)
+        and event.get("type") == "task_outcome"
+        and event.get("data") == projection
+        for event in events
+    ):
+        return
+    emit("task_outcome", projection)
 
 
 def terminal_failure(orchestrator: Any) -> bool:
@@ -102,7 +104,7 @@ def terminal_failure(orchestrator: Any) -> bool:
         for record in records.values()
     ):
         return True
-    result = orchestrator.agent_state.last_result
+    result = getattr(orchestrator.agent_state, "last_result", None)
     if not isinstance(result, dict):
         return False
     return str(result.get("status") or "") in TERMINAL_FAILURE_STATUSES

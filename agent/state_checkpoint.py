@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.reporting.operational_outcome import PUBLIC_TERMINAL_STATUSES
+
+_VALID_TERMINAL_DISPOSITIONS = frozenset({"complete", "block", "fail"}) | (
+    PUBLIC_TERMINAL_STATUSES - {"succeeded"}
+)
+
 
 def progression_checkpoint(state: Any) -> dict[str, Any]:
     return {
@@ -35,4 +41,10 @@ def restore_progression(state: Any, data: dict[str, Any]) -> None:
     state.reasoning_last_progress_token = str(token) if token is not None else None
     state.continue_after_plan = bool(data.get("continue_after_plan", False))
     terminal = data.get("terminal_disposition")
-    state.terminal_disposition = str(terminal) if terminal is not None else None
+    if terminal is None:
+        state.terminal_disposition = None
+        return
+    normalized_terminal = str(terminal)
+    if normalized_terminal not in _VALID_TERMINAL_DISPOSITIONS:
+        raise ValueError("Checkpoint contains an unsupported terminal disposition.")
+    state.terminal_disposition = normalized_terminal

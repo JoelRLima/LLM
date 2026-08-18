@@ -12,6 +12,7 @@ from agent.reporting.observation_evidence import (
     serialize_tool_observations,
 )
 from agent.reporting.operational_outcome import OperationalOutcome
+from agent.reporting.public_safety import sanitize_public_text
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
@@ -23,8 +24,43 @@ PUBLIC_TOOL_ERROR_CODES = _observation_evidence.PUBLIC_TOOL_ERROR_CODES
 PUBLIC_TOOL_STATUSES = _observation_evidence.PUBLIC_TOOL_STATUSES
 
 
+def _render_non_success_status(status: str, outcome: OperationalOutcome) -> str:
+    if status == "failed":
+        reason = sanitize_public_text(str(outcome.failure_reason or "")).strip()
+        return (
+            f"A tarefa não pôde ser concluída: {reason}."
+            if reason
+            else "A tarefa não pôde ser concluída."
+        )
+    if status == "permission_denied":
+        return "A tarefa foi negada (status operacional: permission_denied)."
+    return f"A tarefa terminou com status operacional: {status}."
+
+
+def _render_pending_effects(effects: tuple[str, ...]) -> str:
+    if len(effects) == 1:
+        return (
+            "A tarefa não foi concluída: o efeito solicitado permanece pendente "
+            f"(efeitos pendentes: {', '.join(effects)})."
+        )
+    return (
+        "A tarefa não foi concluída: os efeitos solicitados permanecem "
+        f"pendentes ({', '.join(effects)})."
+    )
+
+
 def render_operational_answer(outcome: OperationalOutcome) -> str | None:
     """Render canonical operational truth when the outcome contains effects."""
+
+    terminal_status = str(outcome.terminal_status or "unverified")
+    successful_statuses = {"complete", "succeeded"}
+
+    if (
+        terminal_status not in successful_statuses
+        and not outcome.pending_effects
+        and not outcome.rollback_occurred
+    ):
+        return _render_non_success_status(terminal_status, outcome)
 
     if not any(
         (
@@ -38,12 +74,11 @@ def render_operational_answer(outcome: OperationalOutcome) -> str | None:
     ):
         return None
     if outcome.pending_effects:
-        return (
-            "A tarefa não foi concluída: os efeitos solicitados permanecem "
-            f"pendentes ({', '.join(outcome.pending_effects)})."
-        )
+        return _render_pending_effects(outcome.pending_effects)
     if outcome.rollback_occurred:
         return "A alteração tentada foi revertida; nenhuma escrita persistiu no estado final."
+    if terminal_status not in successful_statuses:
+        return f"A tarefa terminou com status operacional: {terminal_status}."
     if "write" in outcome.executed_effects and outcome.mutation_occurred:
         files = (
             f" Arquivos afetados: {', '.join(outcome.files_affected)}."

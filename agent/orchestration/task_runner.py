@@ -5,16 +5,32 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from agent.final_response import render_operational_answer
 from agent.llm.router import _is_clearly_trivial
+from agent.orchestration.route_coordinator import (
+    LINEAR_ROUTE as _LINEAR_ROUTE,
+)
+from agent.orchestration.route_coordinator import (
+    REACTIVE_ROUTE as _REACTIVE_ROUTE,
+)
+from agent.orchestration.route_coordinator import (
+    SECURITY_ROUTE as _SECURITY_ROUTE,
+)
+from agent.orchestration.route_coordinator import (
+    RouteCoordinatorMixin,
+)
+from agent.orchestration.route_result import RouteResult
+from agent.orchestration.task_lifecycle import TaskLifecycleMixin
 from agent.planning.complexity import is_hierarchical
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_completion import (
     allow_linear_completion,
     complete_direct_answer,
     initialize_task_progression,
-    mark_terminal_failure,
+    mark_terminal_blocked,
 )
 from agent.reporting.operational_outcome import project_operational_outcome
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.watchdog import Watchdog
 
@@ -26,29 +42,52 @@ class TaskInputs:
     original_message_count: int
 
 
-class TaskRunner:
+class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
     """Coordinates one task lifecycle around the public Orchestrator facade."""
 
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator = orchestrator
+
+    @staticmethod
+    def _route_is_hierarchical(objective: str) -> bool:
+        return is_hierarchical(objective)
 
     def run(
         self, objective: Optional[str], stream_callback: Callable[[str], None] | None
     ) -> str:
         original_count = len(self.orchestrator.session.messages)
         self.orchestrator._cancelled = False
+        self.orchestrator._preserve_checkpoint = False
         self.orchestrator.cancellation_token.reset()
         try:
             inputs = self._resolve_inputs(objective, original_count)
             if inputs is None:
-                return "Nenhum objetivo foi fornecido e nenhum checkpoint válido foi encontrado."
+                self._reset_missing_input_state()
+                return mark_terminal_blocked(
+                    self.orchestrator,
+                    reason_code="MISSING_REQUIRED_INPUT",
+                    message="Nenhum objetivo foi fornecido e nenhum checkpoint valido foi encontrado.",
+                )
+            if inputs.resumed and self._has_terminal_disposition():
+                return self._resume_terminal_checkpoint(inputs.objective)
             self._prepare(inputs)
             if not inputs.resumed and _is_clearly_trivial(inputs.objective):
-                return str(self.orchestrator._answer_trivial(inputs.objective))
+                answer = str(self.orchestrator._answer_trivial(inputs.objective))
+                return complete_direct_answer(self.orchestrator, inputs.objective, answer)
             answer = self._execute(inputs, stream_callback)
             return answer
         except KeyboardInterrupt:
             return self._handle_interrupt()
+        except BudgetExhausted:
+            self.orchestrator._preserve_checkpoint = True
+            message = mark_terminal_blocked(
+                self.orchestrator,
+                reason_code=BudgetExhausted.code,
+                message="A tarefa atingiu o limite de execucao e nao pode prosseguir agora.",
+                status="block",
+            )
+            self.orchestrator._save_checkpoint()
+            return message
         finally:
             self._cleanup(original_count)
 
@@ -58,11 +97,21 @@ class TaskRunner:
         checkpoint = self.orchestrator._load_checkpoint()
         if not checkpoint:
             return None
-        self.orchestrator.agent_state.from_checkpoint_dict(
-            checkpoint,
-            retry_failed=bool(self.orchestrator.session.config.get("resume_retry_failed", False)),
-            retry_skipped=bool(self.orchestrator.session.config.get("resume_retry_skipped", False)),
-        )
+        try:
+            self.orchestrator.agent_state.from_checkpoint_dict(
+                checkpoint,
+                retry_failed=bool(self.orchestrator.session.config.get("resume_retry_failed", False)),
+                retry_skipped=bool(self.orchestrator.session.config.get("resume_retry_skipped", False)),
+            )
+        except ValueError:
+            self.orchestrator._preserve_checkpoint = True
+            objective = str(checkpoint.get("objective") or "checkpoint invalido")
+            mark_terminal_blocked(
+                self.orchestrator,
+                reason_code="CHECKPOINT_INVALID_TERMINAL_DISPOSITION",
+                message="O checkpoint contem um estado terminal incompatível e foi preservado.",
+            )
+            return TaskInputs(objective, True, original_count)
         restored = self.orchestrator.agent_state.objective
         if not restored:
             self.orchestrator._delete_checkpoint()
@@ -102,13 +151,27 @@ class TaskRunner:
         self.orchestrator._route_persona(inputs.objective)
         self.orchestrator._save_checkpoint()
         hierarchical = self._try_hierarchical(inputs.objective, on_chunk)
-        if hierarchical is not None:
-            return hierarchical
+        route_answer = self._consume_route_result(
+            hierarchical,
+            inputs.objective,
+            next_route=_SECURITY_ROUTE,
+        )
+        if route_answer is not None:
+            return route_answer
         security = self._try_security(inputs.objective, on_chunk)
-        if security is not None:
-            return security
+        route_answer = self._consume_route_result(
+            security,
+            inputs.objective,
+            next_route=_LINEAR_ROUTE,
+        )
+        if route_answer is not None:
+            return route_answer
         decision = self.orchestrator.plan_builder.build_plan(inputs.objective)
-        if decision.kind is PlanningDecisionKind.BLOCK and decision.blocked_answer:
+        if decision.kind is PlanningDecisionKind.BLOCK:
+            blocked_answer = str(
+                decision.blocked_answer
+                or "O planejamento bloqueou a tarefa antes da execucao."
+            )
             self.orchestrator.agent_state.project_last_result(
                 "planner",
                 {},
@@ -117,11 +180,11 @@ class TaskRunner:
                     "done": True,
                     "status": "blocked",
                     "executed": False,
-                    "error": decision.blocked_answer,
-                    "message": decision.blocked_answer,
+                    "error": blocked_answer,
+                    "message": blocked_answer,
                 },
             )
-            blocked = allow_linear_completion(self.orchestrator, inputs.objective) or decision.blocked_answer
+            blocked = allow_linear_completion(self.orchestrator, inputs.objective) or blocked_answer
             self.orchestrator.agent_state.conversation_history.append(
                 {"user": inputs.objective, "agent": blocked}
             )
@@ -135,7 +198,34 @@ class TaskRunner:
             )
             return answer
         if decision.kind is PlanningDecisionKind.REPLAN or not decision.plan:
-            return str(self.orchestrator._run_reactive(inputs.objective, usage, inputs.original_message_count))
+            self._emit_route_transition(
+                RouteResult.fallback(
+                    _LINEAR_ROUTE,
+                    reason_code=(
+                        "PLANNER_REPLAN"
+                        if decision.kind is PlanningDecisionKind.REPLAN
+                        else "PLANNER_NO_PLAN"
+                    ),
+                ),
+                reason_code=(
+                    "PLANNER_REPLAN"
+                    if decision.kind is PlanningDecisionKind.REPLAN
+                    else "PLANNER_NO_PLAN"
+                ),
+                next_route=_REACTIVE_ROUTE,
+                action="continue",
+            )
+            reactive_answer = str(
+                self.orchestrator._run_reactive(
+                    inputs.objective, usage, inputs.original_message_count
+                )
+            )
+            outcome = project_operational_outcome(
+                self.orchestrator.agent_state,
+                task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
+                cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
+            )
+            return str(render_operational_answer(outcome) or reactive_answer)
         return self._execute_plan(
             decision.plan,
             inputs.objective,
@@ -147,19 +237,6 @@ class TaskRunner:
     def _resume_plan(self) -> List[Dict[str, Any]]:
         self.orchestrator._restore_persona_from_state()
         return [dict(step) for step in self.orchestrator.agent_state.plan]
-
-    def _try_hierarchical(
-        self, objective: str, on_chunk: Callable[[str], None] | None
-    ) -> str | None:
-        return self.orchestrator._run_hierarchical(objective, on_chunk) if is_hierarchical(objective) else None
-
-    def _try_security(
-        self, objective: str, on_chunk: Callable[[str], None] | None
-    ) -> str | None:
-        if not self.orchestrator._is_security_objective(objective):
-            return None
-        answer = self.orchestrator._handle_security_analysis(objective, on_chunk)
-        return str(answer) if answer is not None else None
 
     def _execute_plan(
         self, plan: List[Dict[str, Any]], objective: str, usage: Dict[str, int],
@@ -177,10 +254,16 @@ class TaskRunner:
                 plan, objective, usage
             )
         if result.aborted:
-            mark_terminal_failure(self.orchestrator)
             answer = result.final_answer or "A execução foi interrompida."
+            mark_terminal_blocked(
+                self.orchestrator,
+                reason_code="EXECUTION_ABORTED",
+                message=str(answer),
+                status="block",
+            )
             self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
-            return answer
+            blocker = allow_linear_completion(self.orchestrator, objective)
+            return str(blocker or answer)
         self.orchestrator.agent_state.set_plan(result.validated_plan)
         self.orchestrator._save_checkpoint()
         if result.final_answer:
@@ -214,30 +297,3 @@ class TaskRunner:
                 operational_outcome=outcome,
             )
         )
-
-    def _handle_interrupt(self) -> str:
-        self.orchestrator._cancelled = True
-        self.orchestrator.cancellation_token.cancel()
-        self.orchestrator._save_checkpoint()
-        return "Tarefa cancelada pelo usuário. O progresso foi salvo e pode ser retomado posteriormente."
-
-    def _cleanup(self, original_count: int) -> None:
-        orchestrator = self.orchestrator
-        try:
-            if orchestrator._task_failed:
-                orchestrator.workspace.rollback()
-            while len(orchestrator.session.messages) > original_count:
-                orchestrator.session.messages.pop()
-            maximum = orchestrator.agent_state.max_history_turns
-            orchestrator.agent_state.conversation_history = orchestrator.agent_state.conversation_history[-maximum:]
-            orchestrator.context_manager.maybe_compress_context()
-            try:
-                orchestrator._persist_memory_to_file()
-            except Exception:
-                orchestrator._task_failed = True
-                logger.exception("Falha ao persistir memória ao finalizar a tarefa.")
-                raise
-            if not orchestrator._cancelled:
-                orchestrator._delete_checkpoint()
-        except Exception:
-            raise

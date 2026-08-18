@@ -9,6 +9,7 @@ injetada via `summarize_fn`.
 """
 from typing import Callable, List
 
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 
@@ -63,6 +64,8 @@ class IncrementalSummarizer:
             result = self.summarize_fn(combined)
             if result:
                 summary = result
+        except BudgetExhausted:
+            raise
         except Exception as e:
             logger.warning(f"IncrementalSummarizer: falha ao sumarizar, mantendo texto bruto: {e}")
 

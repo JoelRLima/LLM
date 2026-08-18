@@ -10,6 +10,7 @@ from agent.reporting.operational_outcome import (
     normalize_terminal_status,
     project_operational_outcome,
 )
+from agent.reporting.public_safety import sanitize_public_text
 
 
 def failure_layer_for_code(code: str | None) -> str:
@@ -73,6 +74,34 @@ def _collect_artifact_state(
             rollback["outcome"] = str(item.get("final_state") or "restored")
 
 
+def _canonical_public_status(
+    state: Any,
+    requested_status: str,
+    *,
+    task_failed: bool = False,
+    cancelled: bool = False,
+) -> str:
+    last_result = getattr(state, "last_result", None) or {}
+    return normalize_terminal_status(
+        explicit_status=requested_status,
+        last_result_status=last_result.get("status") if isinstance(last_result, dict) else None,
+        terminal_disposition=getattr(state, "terminal_disposition", None),
+        task_failed=task_failed,
+        cancelled=cancelled,
+    )
+
+
+def canonical_public_status(orchestrator: Any, requested_status: str) -> str:
+    """Return the public status after applying the canonical run facts."""
+
+    return _canonical_public_status(
+        orchestrator.agent_state,
+        requested_status,
+        task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+        cancelled=bool(getattr(orchestrator, "_cancelled", False)),
+    )
+
+
 def build_run_receipt(
     workspace: str | Path,
     state: Any,
@@ -82,6 +111,7 @@ def build_run_receipt(
     failure_code: str | None = None,
     failure_layer: str | None = None,
 ) -> dict[str, Any]:
+    status = _canonical_public_status(state, status)
     history = [
         item for item in (getattr(state, "tool_history", None) or [])
         if isinstance(item, dict)
@@ -110,17 +140,14 @@ def build_run_receipt(
     )
     last_result = getattr(state, "last_result", None) or {}
     raw_code = last_result.get("error_code") if isinstance(last_result, dict) else None
-    raw_detail = last_result.get("error_detail") if isinstance(last_result, dict) else None
     code = failure_code or raw_code
     cause = None
     if error or code:
         cause = {
-            "message": error or str(last_result.get("error") or ""),
+            "message": sanitize_public_text(error or str(last_result.get("error") or "")),
             "code": code or "RUN_FAILED",
             "layer": failure_layer or failure_layer_for_code(code),
         }
-        if isinstance(raw_detail, dict):
-            cause["detail"] = dict(raw_detail)
     executed: bool | None = (
         effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
     )
@@ -161,10 +188,13 @@ def build_run_diagnostics(
     observed_code = last.get("error_code") if isinstance(last, dict) else None
     code = failure_code or observed_code
     if error or code:
+        observed_error = last.get("error") if isinstance(last, dict) else None
         diagnostics.append({
             "layer": failure_layer or failure_layer_for_code(code),
             "code": code or "RUN_FAILED",
-            "message": error or "A execucao nao foi concluida.",
+            "message": sanitize_public_text(
+                error or observed_error or "A execucao nao foi concluida."
+            ),
             "executed": last.get("executed") if isinstance(last.get("executed"), bool) else None,
         })
     last_result = getattr(state, "last_result", None) or {}
@@ -174,9 +204,11 @@ def build_run_diagnostics(
         if isinstance(item, dict):
             projected = {
                 key: item[key]
-                for key in ("code", "message", "severity", "file_path", "source")
+                for key in ("code", "message", "severity", "file_path", "source", "layer")
                 if key in item
             }
+            if "message" in projected:
+                projected["message"] = sanitize_public_text(projected["message"])
             if projected:
                 diagnostics.append(projected)
     return tuple(diagnostics)
@@ -205,7 +237,8 @@ def public_exception_message(exc: BaseException) -> str:
     if isinstance(exc, ModelProviderError):
         return str(exc.public_message)
     text = str(exc).strip()
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    safe = sanitize_public_text(text)
+    return f"{type(exc).__name__}: {safe}" if safe else type(exc).__name__
 
 
 def finalize_run_result(
@@ -221,12 +254,28 @@ def finalize_run_result(
     receipt: dict[str, Any] | None = None,
     report_path: str | None = None,
 ) -> Any:
+    effective_status = canonical_public_status(orchestrator, status)
     failure_code = getattr(orchestrator, "_last_failure_code", None)
     failure_layer = getattr(orchestrator, "_last_failure_layer", None)
-    effective_receipt = receipt or build_run_receipt(
-        workspace, orchestrator.agent_state, status, error,
+    del receipt
+    effective_receipt = build_run_receipt(
+        workspace, orchestrator.agent_state, effective_status, error,
         failure_code=failure_code, failure_layer=failure_layer,
     )
+    effective_receipt["status"] = effective_status
+    outcome = project_operational_outcome(
+        orchestrator.agent_state,
+        terminal_status=effective_status,
+        task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+        cancelled=bool(getattr(orchestrator, "_cancelled", False)),
+    )
+    effective_receipt["operational_outcome"] = outcome.to_dict()
+    public_answer = answer
+    if outcome.terminal_status != "succeeded":
+        from agent.final_response import render_operational_answer
+        public_answer = render_operational_answer(outcome) or (
+            f"A tarefa terminou com status operacional: {outcome.terminal_status}."
+        )
     effective_diagnostics = diagnostics or build_run_diagnostics(
         orchestrator.agent_state, error,
         failure_code=failure_code, failure_layer=failure_layer,
@@ -235,13 +284,13 @@ def finalize_run_result(
     report_builder = getattr(orchestrator, "_generate_task_report", None)
     if effective_report_path is None and callable(report_builder):
         effective_report_path = report_builder(
-            answer, status=status, error=error, receipt=effective_receipt,
+            public_answer, status=effective_status, error=error, receipt=effective_receipt,
         )
     if effective_report_path:
         effective_receipt["report_path"] = effective_report_path
     return result_type(
-        status=status,
-        answer=answer,
+        status=effective_status,
+        answer=public_answer,
         workspace=str(workspace),
         error=error,
         diagnostics=effective_diagnostics,

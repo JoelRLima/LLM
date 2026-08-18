@@ -113,6 +113,25 @@ def test_failed_step_record_cannot_be_overwritten_by_later_success() -> None:
     assert state.terminal_disposition == "fail"
 
 
+def test_complete_disposition_cannot_bypass_pending_effect() -> None:
+    state = AgentState()
+    state.requested_effects = ["write"]
+    state.terminal_disposition = "complete"
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        tool_registry=None,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+
+    answer = allow_linear_completion(orchestrator, "altere o arquivo")
+
+    assert "permanece pendente" in answer
+    assert state.terminal_disposition == "block"
+    assert state.last_result["status"] == "blocked"
+
+
 def test_continuation_owner_failure_is_bounded_and_blocks_pending_effect() -> None:
     state = AgentState()
     state.requested_effects = ["write"]

@@ -4,7 +4,7 @@ from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
 from agent.final_response import render_operational_answer
 from agent.planning.plan_builder import build_planner_tools_description
-from agent.planning.task_completion import allow_linear_completion
+from agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
 from agent.reporting.observation_evidence import (
     observation_contract_instructions,
     serialize_tool_observations,
@@ -47,15 +47,28 @@ class ReactiveLoop:
                 CostGuard.build_limit_reached_event(step_number, history, 0, config, ledger),
             )
             answer = str(CostGuard.build_limit_summary(objective, history, self.orchestrator.agent_state.last_result))
+            reason_code = "TASK_COST_LIMIT_REACHED"
+            status = "block"
         else:
             reason = Watchdog.check_all(self.orchestrator._task_start_time, history, config)
             if not reason:
                 return None
             self.orchestrator._emit("watchdog", Watchdog.build_watchdog_event(reason, self.orchestrator._task_start_time))
             answer = str(Watchdog.build_watchdog_summary(history, reason))
+            if reason.startswith("Timeout global"):
+                reason_code, status = "WATCHDOG_TIMEOUT", "timed_out"
+            elif reason.startswith("Loop sem progresso"):
+                reason_code, status = "WATCHDOG_NO_PROGRESS", "unverified"
+            else:
+                reason_code, status = "WATCHDOG_REPEATED_FAILURE", "failed"
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
         self.orchestrator.fail_task()
-        return answer
+        return mark_terminal_blocked(
+            self.orchestrator,
+            reason_code=reason_code,
+            message=answer,
+            status=status,
+        )
 
     def _build_prompt(self, objective: str) -> str:
         tools = build_planner_tools_description(
@@ -126,7 +139,17 @@ class ReactiveLoop:
         )
         self.orchestrator.agent_state.plan_step = reactive_step
         if result.aborted:
-            return result.final_answer or "A tarefa falhou e foi abortada."
+            answer = result.final_answer or "A tarefa falhou e foi abortada."
+            self.orchestrator.fail_task()
+            blocker = allow_linear_completion(self.orchestrator, objective)
+            if blocker is None:
+                blocker = mark_terminal_blocked(
+                    self.orchestrator,
+                    reason_code="EXECUTION_ABORTED",
+                    message=answer,
+                    status="block",
+                )
+            return str(blocker or answer)
         if result.final_answer:
             return self._canonical_answer(str(result.final_answer), objective)
         return None

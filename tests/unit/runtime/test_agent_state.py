@@ -114,6 +114,31 @@ def test_checkpoint_preserves_canonical_task_progression(monkeypatch):
     assert restored.terminal_disposition == "complete"
 
 
+def test_checkpoint_json_round_trip_preserves_terminal_disposition(monkeypatch):
+    state = _state(monkeypatch)
+    state.terminal_disposition = "block"
+    state.last_result = {
+        "status": "blocked",
+        "error_code": "MISSING_REQUIRED_INPUT",
+    }
+
+    checkpoint = json.loads(json.dumps(state.to_checkpoint_dict()))
+    restored = _state(monkeypatch)
+    restored.from_checkpoint_dict(checkpoint)
+
+    assert restored.terminal_disposition == "block"
+    assert restored.last_result["error_code"] == "MISSING_REQUIRED_INPUT"
+
+
+def test_fresh_progression_reset_clears_terminal_disposition(monkeypatch):
+    state = _state(monkeypatch)
+    state.terminal_disposition = "complete"
+
+    state.reset_task_progression()
+
+    assert state.terminal_disposition is None
+
+
 def test_replan_replaces_step_and_its_execution_record(monkeypatch):
     state = _state(monkeypatch)
     state.set_plan([{"tool": "missing", "args": {}}])

@@ -16,8 +16,6 @@ from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
 _STEP_SUMMARY_MAX_CHARS = 3000
-
-
 class HierarchicalExecutor:
     def __init__(
         self,
@@ -82,13 +80,11 @@ class HierarchicalExecutor:
             outcomes[step.id] = step_ok
             any_step_failed = any_step_failed or not step_ok
             if self._hard_aborted:
-                # O ExecutionGateway determinou que o plano deste
                 # sub-objetivo era inseguro e não pôde ser recuperado via
                 # replanejamento (ex.: esvaziaria analysis_notes.md). Isso
                 # já aciona orchestrator.fail_task() dentro do próprio
                 # gateway — continuar executando os demais sub-objetivos
                 # contra um estado já marcado como falho não é seguro, então
-                # interrompemos o MacroPlan inteiro aqui.
                 logger.warning(
                     f"HierarchicalExecutor: sub-objetivo '{step.id}' abortado pelo "
                     f"ExecutionGateway (plano inseguro); interrompendo o restante do MacroPlan."
@@ -100,7 +96,11 @@ class HierarchicalExecutor:
         if any_step_failed and orchestrator is not None:
             orchestrator.fail_task()
         final_answer = self._build_final_answer(macro_plan.objective, accumulated, on_chunk)
-        if any_step_failed:
+        canonical_failed = any_step_failed or (
+            orchestrator is not None
+            and getattr(orchestrator.agent_state, "terminal_disposition", None) != "complete"
+        )
+        if canonical_failed:
             self.tracker.finish_failure("Um ou mais sub-objetivos falharam durante a execução.")
         else:
             self.tracker.finish_success((final_answer or "")[:1000])

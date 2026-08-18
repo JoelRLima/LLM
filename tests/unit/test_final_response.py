@@ -116,6 +116,68 @@ def test_operational_outcome_cannot_be_overridden_by_model_prose() -> None:
     assert state.conversation_history[-1]["agent"] == answer
 
 
+@pytest.mark.parametrize("status", ["blocked", "unavailable", "unverified"])
+def test_non_success_operational_status_cannot_render_applied_effect(status: str) -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "altere o arquivo",
+        operational_outcome=_outcome(
+            terminal_status=status,
+            executed_effects=("write",),
+            waived_effects=(),
+            mutation_occurred=True,
+        ),
+    )
+
+    assert status in answer
+    assert "aplicada" not in answer.casefold()
+    assert "conclu" not in answer.casefold()
+
+
+@pytest.mark.parametrize("status", ["blocked", "unavailable", "unverified"])
+def test_non_success_without_effects_never_defers_to_model_prose(status: str) -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "descreva o estado",
+        operational_outcome=_outcome(
+            terminal_status=status,
+            requested_effects=(),
+            executed_effects=(),
+            waived_effects=(),
+            pending_effects=(),
+        ),
+    )
+
+    assert status in answer
+    assert "conclu" not in answer.casefold()
+
+
+def test_pending_effect_remains_pending_for_non_success_outcome() -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "altere o arquivo",
+        operational_outcome=_outcome(
+            terminal_status="blocked",
+            pending_effects=("write",),
+        ),
+    )
+
+    assert "pendentes" in answer
+    assert "aplicada" not in answer.casefold()
+
+
 def test_operational_outcome_renders_real_write_and_unavailable_validation() -> None:
     state = SimpleNamespace(conversation_history=[])
     responder = FinalResponder(

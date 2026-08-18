@@ -23,6 +23,11 @@ _DISPOSITION_TO_STATUS = {
     "block": "blocked",
     "fail": "failed",
 }
+_DISPOSITION_TO_STATUS.update({
+    status: status
+    for status in PUBLIC_TERMINAL_STATUSES
+    if status != "succeeded"
+})
 _STATUS_TO_DISPOSITION = {
     "succeeded": "complete",
     "blocked": "block",
@@ -40,30 +45,32 @@ def normalize_terminal_status(
 ) -> str:
     """Reduce established run facts to one public terminal status.
 
-    Failure/cancellation flags are lifecycle facts and therefore outrank an
-    earlier completion disposition.  Otherwise the terminal tool result keeps
-    its existing precedence over the task disposition.
+    Success is intentionally asymmetric: only the canonical ``complete``
+    disposition can establish it. Explicit or tool-reported success remains
+    evidence until completion has been established.
     """
 
     disposition = _DISPOSITION_TO_STATUS.get(str(terminal_disposition or ""))
-    if explicit_status is not None:
-        status = str(explicit_status or "")
-        if status in PUBLIC_TERMINAL_STATUSES:
-            return status
-    status = str(last_result_status or "")
-    if status in PUBLIC_TERMINAL_STATUSES and status != "succeeded":
-        return status
-    if disposition in {"blocked", "failed"}:
-        return disposition
     if cancelled:
         return "cancelled"
+
+    explicit = str(explicit_status or "")
+    observed = str(last_result_status or "")
+    non_success = PUBLIC_TERMINAL_STATUSES - {"succeeded"}
+
+    # Preserve established non-success boundaries, but never manufacture
+    # success merely because a caller supplied explicit_status="succeeded".
+    if explicit in non_success:
+        return explicit
+    if observed in non_success:
+        return observed
+    if disposition in non_success:
+        return disposition
     if task_failed:
         return "failed"
-    if status == "succeeded":
-        return status
-    if disposition is not None:
-        return disposition
-    return "succeeded"
+    if disposition == "succeeded":
+        return "succeeded"
+    return "unverified"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +142,18 @@ def metadata_is_persisted_mutation(metadata: dict[str, Any]) -> bool:
     )
 
 
+def _project_artifact_metadata(
+    metadata: dict[str, Any], files: set[str]
+) -> tuple[str | None, bool, bool]:
+    validation = str(metadata["validation"]) if metadata.get("validation") is not None else None
+    rollback = metadata.get("rollback_occurred") is True or metadata.get("final_state") == "restored"
+    mutation = metadata.get("applied") is True and metadata.get("mutation_occurred") is True
+    affected = metadata.get("affected_files")
+    if mutation and isinstance(affected, (list, tuple)):
+        files.update(str(path) for path in affected)
+    return validation, rollback, mutation
+
+
 def project_operational_outcome(
     state: Any,
     *,
@@ -157,18 +176,12 @@ def project_operational_outcome(
         if invocation_id is not None:
             evidence.append(str(invocation_id))
         for metadata in artifact_metadata(result):
-            if metadata.get("validation") is not None:
-                validation_status = str(metadata["validation"])
-            if metadata.get("rollback_occurred") is True:
-                rollback_occurred = True
-            if (
-                metadata.get("applied") is True
-                and metadata.get("mutation_occurred") is True
-            ):
-                mutation_occurred = True
-                affected = metadata.get("affected_files")
-                if isinstance(affected, (list, tuple)):
-                    files.update(str(path) for path in affected)
+            validation, metadata_rollback, metadata_mutation = _project_artifact_metadata(
+                metadata, files
+            )
+            validation_status = validation or validation_status
+            rollback_occurred = rollback_occurred or metadata_rollback
+            mutation_occurred = mutation_occurred or metadata_mutation
 
     last = getattr(state, "last_result", None)
     last_result = last if isinstance(last, dict) else {}

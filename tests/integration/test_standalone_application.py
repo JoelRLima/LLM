@@ -546,7 +546,7 @@ def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
     assert result.status == "unverified", result.error
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
     assert history == ["file_reader", "code_task"]
-    assert result.answer.startswith("Uma alteração foi aplicada.")
+    assert result.answer.startswith("A tarefa terminou com status operacional: unverified.")
     assert result.receipt["mutation_occurred"] is True
     assert result.receipt["operational_outcome"]["executed_effects"] == ["write"]
     assert progression["executed"] == ["write"]
@@ -1320,19 +1320,23 @@ def test_process_stdout_capture_serializes_concurrent_applications(tmp_path: Pat
     active = 0
     maximum_active = 0
 
-    def instrumented_run(_: str) -> str:
-        nonlocal active, maximum_active
-        with guard:
-            active += 1
-            maximum_active = max(maximum_active, active)
-        time.sleep(0.03)
-        with guard:
-            active -= 1
-        return "ok"
+    def instrumented_run(application: AgentApplication):
+        def run(_: str) -> str:
+            nonlocal active, maximum_active
+            with guard:
+                active += 1
+                maximum_active = max(maximum_active, active)
+            time.sleep(0.03)
+            with guard:
+                active -= 1
+            application.orchestrator.agent_state.terminal_disposition = "complete"
+            return "ok"
+
+        return run
 
     try:
         for application in applications:
-            application.orchestrator.run = instrumented_run
+            application.orchestrator.run = instrumented_run(application)
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(
                 pool.map(

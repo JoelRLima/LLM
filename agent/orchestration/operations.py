@@ -7,6 +7,7 @@ from agent.contracts import AgentEvent, EventData, ToolArgs, ToolResult
 from agent.error_handler import ErrorHandler
 from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.presentation import PlanningPresentationSnapshot
+from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.logging import logger
 
@@ -181,10 +182,12 @@ class OrchestratorOperations:
             return None
 
     def _is_task_solved(self) -> bool:
-        if not self.agent_state.tool_history:
-            return True
-        result = self.agent_state.last_result
-        return isinstance(result, dict) and result.get("ok") is True and result.get("done") is True
+        outcome = project_operational_outcome(
+            self.agent_state,
+            task_failed=bool(getattr(self, "_task_failed", False)),
+            cancelled=bool(getattr(self, "_cancelled", False)),
+        )
+        return outcome.terminal_status == "succeeded" and not outcome.pending_effects
 
     @staticmethod
     def _sanitize_error(error_message: str) -> str:
@@ -204,8 +207,10 @@ class OrchestratorOperations:
         self._task_failed = True
 
     def cancel_task(self) -> None:
-        self._cancelled = True
         self.cancellation_token.cancel()
+        from agent.planning.task_completion import mark_terminal_cancelled
+
+        mark_terminal_cancelled(self)
         self._save_checkpoint()
 
     def _summarize_text(self, text: str, context: str = "") -> str:
