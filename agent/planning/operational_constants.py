@@ -12,5 +12,6 @@ TERMINAL_FAILURE_STATUSES = frozenset(
         "protocol_error",
         "timed_out",
         "unavailable",
+        "unverified",
     }
 )

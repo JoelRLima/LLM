@@ -100,7 +100,7 @@ def terminal_failure(orchestrator: Any) -> bool:
     records = getattr(orchestrator.agent_state, "step_records", {})
     if isinstance(records, dict) and any(
         getattr(record, "status", None)
-        in {StepStatus.FAILED, StepStatus.BLOCKED}
+        in {StepStatus.FAILED, StepStatus.BLOCKED, StepStatus.UNVERIFIED}
         for record in records.values()
     ):
         return True

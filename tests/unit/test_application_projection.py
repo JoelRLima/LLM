@@ -8,7 +8,7 @@ from agent.application import AgentApplication
 
 @pytest.mark.parametrize(
     "status",
-    ["failed", "blocked", "cancelled", "unverified", "timed_out", "permission_denied"],
+    ["failed", "blocked", "cancelled", "unverified", "timed_out", "permission_denied", "protocol_error", "unavailable"],
 )
 def test_application_preserves_projected_terminal_status(status: str) -> None:
     app = AgentApplication.__new__(AgentApplication)

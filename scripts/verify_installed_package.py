@@ -354,21 +354,25 @@ def run_shell_journeys(app_home, workspace, failure_workspace):
             measurement["status"] = result.status
             measurements.append(measurement)
             history = application.orchestrator.agent_state.tool_history
-            if not history:
-                if name == "c2_unsupported" and result.status not in {"failed", "blocked"}:
-                    raise AssertionError(f"capability removida sem resposta coerente: {measurement!r}")
-                if name == "c2_unsupported" and "bloqueada" not in result.answer.casefold():
-                    raise AssertionError(f"request unsupported não foi bloqueado: {measurement!r}")
+            if name == "c2_unsupported":
+                if history or measurement.get("tools") or measurement.get("tool_history_count") != 0:
+                    raise AssertionError(
+                        f"capability removida produziu execução inesperada: {measurement!r}"
+                    )
+                if result.status != "blocked":
+                    raise AssertionError(
+                        f"capability removida sem status canônico blocked: {measurement!r}"
+                    )
+                if measurement.get("terminal_outcome") != "BLOCKED":
+                    raise AssertionError(
+                        f"capability removida sem outcome canônico BLOCKED: {measurement!r}"
+                    )
                 continue
-            history_result = history[-1]["result"]
+            if not history:
+                continue
             if name == "c1_history":
                 if result.status != "succeeded" or "initial" not in result.answer:
                     raise AssertionError(f"histórico instalado não consumido: {measurement!r}")
-            elif name == "c2_unsupported":
-                if history_result.get("ok") is not False or "permitido" not in str(history_result.get("error", "")).casefold():
-                    raise AssertionError(f"capability removida executada: {measurement!r}")
-                if result.receipt.get("executed") is not False:
-                    raise AssertionError(f"capability removida indicou execucao: {result.to_dict()!r}")
             elif name == "c3_failure" and result.receipt.get("executed") is not True:
                 raise AssertionError(f"failure de shell nao marcou fronteira executada: {result.to_dict()!r}")
             elif result.status == "succeeded" or not result.answer:

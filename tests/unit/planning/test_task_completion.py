@@ -533,6 +533,36 @@ def test_completion_policy_is_idempotent_after_terminal_projection() -> None:
     assert [kind for kind, _ in events].count("task_outcome") == 1
 
 
+def test_unverified_step_cannot_be_marked_complete() -> None:
+    state = AgentState()
+    state.set_plan(
+        [{"tool": "file_reader", "args": {"file_path": "x.txt"}}]
+    )
+    state.mark_step_unverified(0, "evidence incomplete")
+    state.last_result = {
+        "ok": False,
+        "done": True,
+        "status": "unverified",
+        "executed": False,
+        "error": "evidence incomplete",
+        "message": "evidence incomplete",
+    }
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        tool_registry=None,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+
+    answer = allow_linear_completion(orchestrator, "objective")
+
+    assert answer is not None
+    assert state.terminal_disposition != "complete"
+    assert state.terminal_disposition == "unverified"
+    assert state.last_result["status"] == "unverified"
+
+
 def test_reasoning_policy_has_no_completion_import_cycle() -> None:
     source = Path("agent/planning/reasoning_boundary.py").read_text(encoding="utf-8")
 
