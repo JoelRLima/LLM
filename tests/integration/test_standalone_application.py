@@ -293,6 +293,7 @@ def _run_manual_deferred_task(
             "waived": list(state.waived_effects),
             "pending": list(state.pending_effects()),
             "continuations": state.continuation_attempts,
+            "terminal": state.terminal_disposition,
             "step_statuses": [
                 state.get_step_status(index).value for index in range(len(state.plan))
             ],
@@ -320,13 +321,15 @@ def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) 
     )
 
     assert execution.aborted is False
-    assert blocker is None
+    assert blocker is not None
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
     assert snapshot["history"] == ["file_reader", "code_task"]
     assert snapshot["executed"] == ["write"]
     assert snapshot["waived"] == []
     assert snapshot["pending"] == []
     assert snapshot["continuations"] == 0
+    assert snapshot["terminal"] == "unverified"
+    assert snapshot["step_statuses"][-1] == "unverified"
     assert approval.requests
     assert len(gateway.payloads) == 1  # persona routing happened before plan acceptance
     assert len(gateway.calls) == 1  # code proposal, not conditional resolution
@@ -551,10 +554,11 @@ def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
     assert result.receipt["operational_outcome"]["executed_effects"] == ["write"]
     assert progression["executed"] == ["write"]
     assert progression["pending"] == []
-    assert progression["terminal"] == "complete"
+    assert progression["terminal"] == "unverified"
     outcome_event = next(
         event for event in progression["events"] if event.get("type") == "task_outcome"
     )
+    assert outcome_event["data"]["status"] == "unverified"
     assert outcome_event["data"]["mutation_occurred"] is True
     assert outcome_event["data"]["executed_effects"] == ["write"]
     assert len(gateway.payloads) == 3  # router, initial plan, bounded continuation
@@ -640,20 +644,20 @@ def test_noop_code_task_does_not_prove_a_pending_write(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.status == "blocked"
-    assert result.error == "requested_effect_pending"
+    assert result.status == "unverified"
+    assert result.success is False
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
     assert history == ["file_reader", "code_task"]
     assert progression["executed"] == []
     assert progression["waived"] == []
     assert progression["pending"] == ["write"]
-    assert progression["terminal"] == "block"
+    assert progression["terminal"] == "unverified"
     assert result.receipt["mutation_occurred"] is False
     assert result.receipt["operational_outcome"]["pending_effects"] == ["write"]
     outcome_event = next(
         event for event in progression["events"] if event.get("type") == "task_outcome"
     )
-    assert outcome_event["data"]["status"] == "block"
+    assert outcome_event["data"]["status"] == "unverified"
     assert outcome_event["data"]["pending_effects"] == ["write"]
 
 
