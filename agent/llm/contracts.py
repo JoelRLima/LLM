@@ -9,6 +9,25 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterator, Optional, Protocol, Sequence
 
+from agent.llm.errors import (
+    ModelConnectionError as ModelConnectionError,
+)
+from agent.llm.errors import (
+    ModelGatewayError as ModelGatewayError,
+)
+from agent.llm.errors import (
+    ModelProviderError as ModelProviderError,
+)
+from agent.llm.errors import (
+    ModelResponseError as ModelResponseError,
+)
+from agent.llm.errors import (
+    ModelTimeoutError as ModelTimeoutError,
+)
+from agent.llm.errors import (
+    UnsupportedModelCapability as UnsupportedModelCapability,
+)
+
 
 class StructuredOutputMode(str, Enum):
     NONE = "none"
@@ -242,30 +261,6 @@ class LegacyPayloadGateway(ModelGateway, Protocol):
 
     def consume_stream(self, response: Any, callbacks: Dict[str, Callable[..., Any]]) -> str:
         ...
-
-
-class ModelGatewayError(RuntimeError):
-    """Erro normalizado na fronteira de provider."""
-
-
-class ModelTimeoutError(ModelGatewayError, TimeoutError):
-    pass
-
-
-class ModelConnectionError(ModelGatewayError, ConnectionError):
-    def __init__(self, message: str, response: Any = None) -> None:
-        super().__init__(message)
-        self.response = response
-
-
-class ModelResponseError(ModelGatewayError, ValueError):
-    def __init__(self, message: str, *, partial_content: str = "") -> None:
-        super().__init__(message)
-        self.partial_content = partial_content
-
-
-class UnsupportedModelCapability(ModelGatewayError):
-    pass
 
 
 class UnavailableModelGateway:

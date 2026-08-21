@@ -54,14 +54,22 @@ class SummarizeSkill(BaseSkill):
                     "Always think in English, but respond in Portuguese."
                 )
                 self.orchestrator.session.add_user_message(prompt)
-                payload = self.orchestrator.session.build_payload()
-                payload["stream"] = False
-                payload["max_tokens"] = 1024  # resumos não precisam de muitos tokens
-                response = self.orchestrator.session.send_non_streaming_request(payload)
-                # Restaura o system prompt original
-                self.orchestrator.session.messages[0]["content"] = original
-                self.orchestrator.session.remove_last_user_message()
-                summary = response.strip()
+                session = self.orchestrator.session
+                try:
+                    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
+                        request = session.build_request(
+                            stream=False, max_output_tokens=1024
+                        )
+                        response = session.complete_request(request).content
+                    else:
+                        payload = session.build_payload()
+                        payload["stream"] = False
+                        payload["max_tokens"] = 1024
+                        response = session.send_non_streaming_request(payload)
+                    summary = response.strip()
+                finally:
+                    session.messages[0]["content"] = original
+                    session.remove_last_user_message()
             else:
                 # Fallback: resumo simples por truncamento (caso não tenha acesso ao modelo)
                 summary = text[:500] + "..." if len(text) > 500 else text

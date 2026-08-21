@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -84,13 +85,34 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
         )
     )
     original_system = session.messages[0]["content"] if session.messages else ""
-    temporary = type(session)("", session.config)
-    temporary.set_system_prompt("Resuma o histórico de forma concisa e técnica.")
-    temporary.add_user_message(prompt)
-    payload = temporary.build_payload()
-    payload.update({"max_tokens": 1024, "stream": False})
+    canonical_request = None
+    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
+        original_messages = session.messages
+        session.messages = [
+            {
+                "role": "system",
+                "content": "Resuma o histórico de forma concisa e técnica.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            canonical_request = session.build_request(
+                stream=False, max_output_tokens=1024
+            )
+            canonical_request = replace(canonical_request, reasoning_budget=0)
+        finally:
+            session.messages = original_messages
+    if canonical_request is None:
+        temporary = type(session)("", session.config)
+        temporary.set_system_prompt("Resuma o histórico de forma concisa e técnica.")
+        temporary.add_user_message(prompt)
+        payload = temporary.build_payload()
+        payload.update({"max_tokens": 1024, "stream": False})
     try:
-        response = session.send_non_streaming_request(payload)
+        if canonical_request is not None:
+            response = session.complete_request(canonical_request).content
+        else:
+            response = session.send_non_streaming_request(payload)
     except BudgetExhausted:
         raise
     except Exception:

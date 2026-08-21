@@ -26,7 +26,9 @@ mas não substitui `PlanValidator`, authority ou schema de tools.
   disponível é serializada como contexto; o caminho atual não seleciona memória
   por um orçamento separado. O budget explícito cobre a saída do modelo e a
   compressão do histórico.
-- `ModelClient` adapta decisões estruturadas do planejador sobre a sessão.
+- `ContextManager` resolve decisões estruturadas via `ModelGateway` e
+  `structured_output`; `ModelClient` permanece como fachada de compatibilidade
+  que traduz payloads legados e delega a mesma política canônica de decisão.
 - o router escolhe entre `coder`, `researcher`, `general` e
   `security_auditor`: saudações e pedidos de listagem/consulta têm heurísticas
   determinísticas; keywords de segurança selecionam o auditor e os demais casos

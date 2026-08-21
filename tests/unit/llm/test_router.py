@@ -1,6 +1,7 @@
 import json
 
 from agent.llm import router
+from agent.llm.contracts import ModelResponse
 from agent.llm.session import ChatSession
 
 
@@ -16,6 +17,10 @@ class DummySession(ChatSession):
 
     def send_non_streaming_request(self, payload):
         return json.dumps({"persona": "coder"})
+
+    def complete_request(self, request):
+        del request
+        return ModelResponse(content=json.dumps({"persona": "coder"}))
 
 
 def test_is_clearly_trivial_matches_greetings():
@@ -43,8 +48,9 @@ def test_route_objective_fallbacks_to_llm_when_not_trivial(monkeypatch):
 
 def test_route_objective_handles_invalid_llm_response(monkeypatch):
     class BrokenSession(DummySession):
-        def send_non_streaming_request(self, payload):
-            return "não é json"
+        def complete_request(self, request):
+            del request
+            return ModelResponse(content="não é json")
 
     sess = BrokenSession()
     persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)

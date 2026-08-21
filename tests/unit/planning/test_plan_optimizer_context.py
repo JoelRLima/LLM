@@ -1,5 +1,6 @@
 import pytest
 
+from agent.planning.dependency_map import build_dependency_map
 from agent.planning.plan_optimizer import PlanningOptimizationError, PlanOptimizer
 from agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
 from agent.tools.contracts import ToolOriginKind
@@ -76,3 +77,24 @@ def test_optimizer_preserves_deferred_producer_until_dedup_is_dependency_aware()
     assert report.optimized_steps == plan
     assert report.removed_duplicates == 0
     assert report.changed is False
+
+
+def test_optimizer_keeps_file_reader_after_writer_without_explicit_binding() -> None:
+    plan = [
+        {"tool": "file_writer", "args": {"file_path": "sample.py"}},
+        {"tool": "file_reader", "args": {"file_path": "sample.py"}},
+    ]
+
+    report = PlanOptimizer().optimize(plan)
+
+    assert report.optimized_steps == plan
+    assert not any("reagrup" in item for item in report.transformations)
+
+
+def test_dependency_map_has_no_implicit_file_path_edges() -> None:
+    plan = [
+        {"tool": "file_writer", "_step_id": "write", "args": {"file_path": "a"}},
+        {"tool": "file_reader", "_step_id": "read", "args": {"file_path": "a"}},
+    ]
+
+    assert build_dependency_map(plan) == ({}, {})

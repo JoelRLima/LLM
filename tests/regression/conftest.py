@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from agent.llm.model_client import ModelClient  # noqa: E402
+from agent.llm.contracts import ModelRequest, ModelResponse  # noqa: E402
 from agent.llm.session import ChatSession  # noqa: E402
 from agent.orchestrator import Orchestrator  # noqa: E402
 
@@ -51,6 +51,43 @@ class FakeModelClient:
     def set_response(self, task_id: str, step_type: str, response: Dict[str, Any]):
         """Configura uma resposta para um par (task_id, step_type)."""
         self.responses[f"{task_id}|{step_type}"] = response
+
+    @staticmethod
+    def _canonical_step_type(request: ModelRequest, prompt: str) -> str:
+        if "Router Agent" in request.messages[0].content:
+            return "router"
+        structured = request.structured_output
+        grammar = structured.grammar if structured is not None else ""
+        if "plan-response" in grammar:
+            return "plan"
+        if "execute-response" in grammar:
+            return "continuation_plan"
+        if "root ::= tool-decision" in grammar and "final-decision" not in grammar:
+            return "replan"
+        if "tool-decision" in grammar:
+            return "tool_decision"
+        del prompt
+        return "final"
+
+    def complete_request(self, session, request: ModelRequest) -> ModelResponse:
+        prompt = next(
+            (
+                message.content
+                for message in reversed(request.messages)
+                if message.role == "user"
+            ),
+            "",
+        )
+        step_type = self._canonical_step_type(request, prompt)
+        if step_type == "router":
+            response: Dict[str, Any] = {"persona": "coder"}
+        else:
+            response = self.request(
+                session,
+                {"messages": [message.__dict__ for message in request.messages]},
+                step_type=step_type,
+            )
+        return ModelResponse(content=json.dumps(response, ensure_ascii=False))
 
     def request(
         self,
@@ -144,19 +181,13 @@ def agent(monkeypatch, fake_model: FakeModelClient) -> Orchestrator:
     from agent.skills import load_all_skills
     skills = load_all_skills(model_gateway=session.gateway, config=config)
 
-    # Patch permanente durante o teste
-    monkeypatch.setattr(ModelClient, "request", fake_model.request)
-
-    def fake_send_non_streaming(self_session, payload: Dict[str, Any]) -> str:
-        sys_prompt = payload["messages"][0]["content"] if payload["messages"] else ""
-        if "persona" in sys_prompt.lower() or "router" in sys_prompt.lower():
-            return '{"persona": "coder", "reasoning": "fake router"}'
-
-        # Pega a resposta simulada para 'final'
-        resp = fake_model.request(self_session, payload, step_type="final")
-        return resp.get("answer", "")
-
-    monkeypatch.setattr(ChatSession, "send_non_streaming_request", fake_send_non_streaming)
+    monkeypatch.setattr(
+        ChatSession,
+        "complete_request",
+        lambda self_session, request: fake_model.complete_request(
+            self_session, request
+        ),
+    )
 
     orchestrator = Orchestrator(session, skills, verbose=False)
     return orchestrator

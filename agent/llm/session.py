@@ -1,22 +1,17 @@
 import json
-import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agent.llm.contracts import (
     LegacyPayloadGateway,
     ModelConnectionError,
-    ModelMessage,
     ModelRequest,
+    ModelResponse,
     ModelTimeoutError,
-    PendingStream,
-    StructuredOutputMode,
-    StructuredOutputRequest,
     build_model_call_metric,
-    response_text,
-    response_usage,
 )
 from agent.llm.providers import create_model_gateway
-from agent.runtime.budget import TaskBudgetLedger, estimate_payload_tokens
+from agent.llm.session_legacy import LegacySessionMixin
+from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.hardware import HardwareProfile, resolve_hardware_profile
 from agent.runtime.logging import logger
 
@@ -24,7 +19,7 @@ SessionTimeoutError = ModelTimeoutError
 SessionConnectionError = ModelConnectionError
 
 
-class ChatSession:
+class ChatSession(LegacySessionMixin):
     """Gerencia o histórico, o orçamento de pensamento e a comunicação com o servidor."""
 
     def __init__(
@@ -152,149 +147,36 @@ class ChatSession:
         except Exception as e:
             logger.error(f"Erro ao carregar histórico de {caminho}: {e}")
             return False, str(e)
-    def build_payload(
+    def build_request(
         self,
         response_format: Optional[str] = None,
         grammar: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        system_content = self.get_effective_system_prompt()
-        if response_format:
-            system_content += "\n\n" + response_format
+        *,
+        stream: bool = True,
+        max_output_tokens: int | None = None,
+    ) -> ModelRequest:
+        from agent.llm.session_requests import build_model_request
 
-        payload_messages = [{"role": "system", "content": system_content}] + self.messages[1:]
-        structured = None
-        if grammar is not None:
-            structured = StructuredOutputRequest(
-                mode=StructuredOutputMode.GBNF,
-                grammar=grammar,
-            )
-        request = ModelRequest(
-            messages=tuple(
-                ModelMessage(role=message["role"], content=message["content"])
-                for message in payload_messages
-            ),
-            model=str(getattr(self.gateway, "model", self.config.get("model", "default"))),
-            temperature=float(
-                getattr(self.gateway, "profile", {}).get(
-                    "temperature", self.config.get("temperature", 0.6)
-                )
-            ),
-            max_output_tokens=int(
-                getattr(self.gateway, "profile", {}).get(
-                    "max_tokens",
-                    self.config.get(
-                        "max_tokens", self.hardware_profile.default_output_tokens
-                    ),
-                )
-            ),
-            stream=True,
-            reasoning_budget=self.thinking_budget,
-            structured_output=structured,
+        return build_model_request(
+            self,
+            response_format,
+            grammar,
+            stream=stream,
+            max_output_tokens=max_output_tokens,
         )
-        return cast(Dict[str, Any], self.gateway.build_payload(request))
 
-    def send_request(self, payload: Dict[str, Any], stream: bool = True) -> Any:
-        """Fachada legada; transporte pertence ao adapter de provider."""
-        call_number = self.budget_ledger.reserve_model_call()
-        started_at = time.monotonic()
-        try:
-            response = self.gateway.send_payload(payload, stream=stream)
-        except Exception:
-            estimate = estimate_payload_tokens(payload)
-            self._finalize_model_call(
-                call_number,
-                started_at,
-                success=False,
-                streaming=stream,
-                estimated_tokens=estimate,
-            )
-            raise
-        if stream:
-            return PendingStream(response, call_number, payload, started_at)
-        usage = response_usage(response)
-        estimate = estimate_payload_tokens(payload)
-        self._finalize_model_call(
-            call_number,
-            started_at,
-            success=True,
-            streaming=stream,
-            response=response,
-            usage=usage,
-            estimated_tokens=estimate,
-        )
-        return response
+    def complete_request(self, request: ModelRequest) -> ModelResponse:
+        """Complete one canonical request with task-budget accounting."""
+        from agent.llm.session_requests import complete_model_request
 
-    def send_non_streaming_request(self, payload: Dict[str, Any]) -> str:
-        """Envia sem streaming e retorna o texto, propagando falhas do adapter."""
-        call_number = self.budget_ledger.reserve_model_call()
-        started_at = time.monotonic()
-        try:
-            response = self.gateway.complete_payload(payload)
-        except Exception:
-            estimate = estimate_payload_tokens(payload)
-            self._finalize_model_call(
-                call_number,
-                started_at,
-                success=False,
-                streaming=False,
-                estimated_tokens=estimate,
-            )
-            raise
-        usage = response_usage(response)
-        content = response_text(response)
-        estimate = estimate_payload_tokens(payload, content)
-        self._finalize_model_call(
-            call_number,
-            started_at,
-            success=True,
-            streaming=False,
-            response=response,
-            usage=usage,
-            estimated_tokens=estimate,
-        )
-        return content
+        return complete_model_request(self, request)
 
-    def process_stream(self, response: Any, callbacks: Dict[str, Callable]) -> str:
-        """Consome o stream e encaminha chunks aos callbacks fornecidos."""
-        if not isinstance(response, PendingStream):
-            return cast(str, self.gateway.consume_stream(response, callbacks))
+    def consume_stream_request(
+        self,
+        request: ModelRequest,
+        callbacks: Dict[str, Callable[..., Any]],
+    ) -> str:
+        """Consume a canonical stream with the same accounting as completion."""
+        from agent.llm.session_requests import consume_model_stream
 
-        usage: Any = None
-
-        def capture_usage(value: Any) -> None:
-            nonlocal usage
-            usage = value
-            callback = callbacks.get("on_usage")
-            if callback is not None:
-                callback(value)
-
-        stream_callbacks = dict(callbacks)
-        stream_callbacks["on_usage"] = capture_usage
-        visible = ""
-        try:
-            visible = cast(
-                str,
-                self.gateway.consume_stream(response.response, stream_callbacks),
-            )
-        except Exception as exc:
-            partial_content = getattr(exc, "partial_content", None)
-            visible = partial_content if isinstance(partial_content, str) else visible
-            estimate = estimate_payload_tokens(response.payload, visible)
-            self._finalize_model_call(
-                response.call_number, response.started_at, success=False, streaming=True,
-                response={"usage": usage} if usage is not None else None,
-                usage=usage, estimated_tokens=estimate,
-            )
-            raise
-        estimate = estimate_payload_tokens(response.payload, visible)
-        observed = {"usage": usage} if usage is not None else visible
-        self._finalize_model_call(
-            response.call_number,
-            response.started_at,
-            success=True,
-            streaming=True,
-            response=observed,
-            usage=usage,
-            estimated_tokens=estimate,
-        )
-        return visible
+        return consume_model_stream(self, request, callbacks)

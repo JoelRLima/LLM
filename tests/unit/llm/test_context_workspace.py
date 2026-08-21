@@ -11,6 +11,13 @@ from agent.llm.context_views import (
     discover_project_context,
     get_file_hints,
 )
+from agent.llm.contracts import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    StructuredOutputMode,
+    StructuredOutputRequest,
+)
 from agent.memory.prompt_context import build_memory_prompt_context
 
 
@@ -186,6 +193,7 @@ class _AskSession:
         self.gateway = MagicMock()
         self.messages = [{"role": "system", "content": "original system"}]
         self.payloads = []
+        self.requests = []
 
     def add_user_message(self, content):
         self.messages.append({"role": "user", "content": content})
@@ -194,6 +202,39 @@ class _AskSession:
         payload = {"messages": [message.copy() for message in self.messages]}
         self.payloads.append(payload)
         return payload
+
+    def build_request(
+        self,
+        response_format=None,
+        grammar=None,
+        *,
+        stream=True,
+        max_output_tokens=None,
+    ):
+        del response_format
+        request = ModelRequest(
+            messages=tuple(
+                ModelMessage(role=message["role"], content=message["content"])
+                for message in self.messages
+            ),
+            model="test",
+            temperature=0.0,
+            max_output_tokens=max_output_tokens or 128,
+            stream=stream,
+            structured_output=(
+                StructuredOutputRequest(
+                    mode=StructuredOutputMode.GBNF, grammar=grammar
+                )
+                if grammar is not None
+                else None
+            ),
+        )
+        self.requests.append(request)
+        return request
+
+    def complete_request(self, request):
+        del request
+        return ModelResponse(content='{"action":"final","answer":"ok"}')
 
 
 def test_ask_model_preserves_current_user_prompt_when_compact_path_runs():
@@ -213,11 +254,11 @@ def test_ask_model_preserves_current_user_prompt_when_compact_path_runs():
     manager = ContextManager(session, state)
     captured = {}
 
-    def request(**kwargs):
-        captured["payload"] = kwargs["payload"]
-        return {"action": "final", "answer": "ok"}
+    def request(request):
+        captured["request"] = request
+        return ModelResponse(content='{"action":"final","answer":"ok"}')
 
-    manager.model_client.request = request
+    session.complete_request = request
     prompt = "current human request " + "z" * 30000
     original = [message.copy() for message in session.messages]
 
@@ -225,7 +266,7 @@ def test_ask_model_preserves_current_user_prompt_when_compact_path_runs():
         "action": "final",
         "answer": "ok",
     }
-    assert captured["payload"]["messages"][-1]["content"] == prompt
+    assert captured["request"].messages[-1].content == prompt
     assert session.messages == original
 
 
@@ -238,16 +279,16 @@ def test_ask_model_restores_messages_on_normal_large_and_error_paths(
     original = [message.copy() for message in session.messages]
     manager = ContextManager(session, _context_state())
 
-    def request(**_kwargs):
+    def request(_request):
         if provider_error:
             raise RuntimeError("provider failed")
-        return {"action": "final", "answer": "ok"}
+        return ModelResponse(content='{"action":"final","answer":"ok"}')
 
-    manager.model_client.request = request
+    session.complete_request = request
     prompt = "p" * (30000 if large else 10)
 
     if provider_error:
-        with pytest.raises(RuntimeError, match="provider failed"):
+        with pytest.raises(Exception, match="Model provider request failed"):
             manager.ask_model(prompt, base_prompt="BASE", grammar=None)
     else:
         manager.ask_model(prompt, base_prompt="BASE", grammar=None)
@@ -280,10 +321,9 @@ def test_effective_context_limit_controls_compact_threshold():
         manager.build_compact_view = lambda profile=profile, current_session=session: calls.append(profile) or [
             message.copy() for message in current_session.messages
         ]
-        manager.model_client.request = lambda **_kwargs: {
-            "action": "final",
-            "answer": "ok",
-        }
+        session.complete_request = lambda _request: ModelResponse(
+            content='{"action":"final","answer":"ok"}'
+        )
 
         manager.ask_model("p" * 30000, base_prompt="BASE", grammar=None)
 
@@ -365,6 +405,56 @@ class _CompressionSession:
 
     def add_message(self, role: str, content: str) -> None:
         self.messages.append({"role": role, "content": content})
+
+
+class _CanonicalCompressionSession:
+    def __init__(self) -> None:
+        self.messages = [{"role": "system", "content": "static policy"}]
+        self.config: dict[str, object] = {}
+        self.thinking_budget = 900
+        self.requests: list[ModelRequest] = []
+
+    def build_request(
+        self,
+        response_format=None,
+        grammar=None,
+        *,
+        stream=True,
+        max_output_tokens=None,
+    ) -> ModelRequest:
+        del response_format, grammar
+        request = ModelRequest(
+            messages=tuple(
+                ModelMessage(role=message["role"], content=message["content"])
+                for message in self.messages
+            ),
+            model="test",
+            temperature=0.0,
+            max_output_tokens=max_output_tokens or 128,
+            stream=stream,
+            reasoning_budget=self.thinking_budget,
+        )
+        self.requests.append(request)
+        return request
+
+    def complete_request(self, request: ModelRequest) -> ModelResponse:
+        self.completed_request = request
+        return ModelResponse(content="technical summary")
+
+    def add_message(self, role: str, content: str) -> None:
+        self.messages.append({"role": role, "content": content})
+
+
+def test_compression_disables_thinking_budget_on_canonical_request() -> None:
+    session = _CanonicalCompressionSession()
+    session.messages.append({"role": "user", "content": "x" * 100})
+
+    compress_conversation(session, context_limit=1, verbose=False)
+
+    assert session.requests[0].stream is False
+    assert session.requests[0].max_output_tokens == 1024
+    assert session.completed_request.reasoning_budget == 0
+    assert session.thinking_budget == 900
 
 
 def test_compressed_summary_keeps_untrusted_provenance() -> None:

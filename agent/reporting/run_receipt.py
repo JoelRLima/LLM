@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
-from agent.llm.model_client import ModelProviderError
+from agent.llm.contracts import ModelProviderError
 from agent.reporting.operational_outcome import (
     normalize_terminal_status,
     project_operational_outcome,

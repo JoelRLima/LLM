@@ -155,11 +155,11 @@ class RecoveringGateway(JourneyGateway):
         super().__init__(objective)
         self.fail_once = True
 
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
+    def complete(self, request: ModelRequest) -> ModelResponse:
         if self.fail_once:
             self.fail_once = False
             raise RuntimeError("transient provider failure")
-        return super().complete_payload(payload)
+        return super().complete(request)
 
 
 def _initialized_paths(tmp_path: Path) -> AppPaths:

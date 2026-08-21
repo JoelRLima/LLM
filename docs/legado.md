@@ -15,9 +15,28 @@ arquitetural rejeita imports dos aliases da raiz dentro de `agent/`.
 | `logger.py`, `paths.py` | `agent.runtime.logging`, `agent.runtime.paths` | extensões antigas | extensões usarem as portas canônicas |
 | `session.py` | `agent.llm.session` | integrações antigas | consumidores usarem `ModelGateway` ou a sessão canônica |
 | `benchmark.py` | `scripts.benchmark` | comando manual documentado | documentação usar somente o módulo |
-| `ModelClient` | `ModelGateway` | planejador linear/reativo | executores consumirem respostas tipadas do gateway |
-| `AutoCoder` | `agent.code` e `code_task` | executor de plano legado | toda alteração passar por `ChangeSet` e validação |
+| `ModelClient` | `ModelGateway` + `structured_output` | integrações externas, testes e planos antigos | janela pública de compatibilidade encerrada e consumidores externos migrados |
+| `AutoCoder` | `agent.code` e `code_task` | gerador de conteúdo legado e callers explícitos de correção | toda alteração passar por `ChangeSet` e validação, com janela pública encerrada |
 | alias `git` | skill `git_reader` | planos persistidos antigos | checkpoints incompatíveis anteriores deixarem de ser suportados |
+
+## Disposições do Block 6
+
+| Candidato | Disposição | Evidência e condição de fechamento |
+| :--- | :--- | :--- |
+| `ModelClient` e `ModelProviderError` reexportado | `RETAIN_COMPAT` | símbolos públicos antigos continuam disponíveis; `ModelClient` só traduz payload e delega parsing, fallback, retry e métricas ao boundary canônico; retirar quando consumidores externos migrarem |
+| `LegacyPayloadGateway`, `ChatSession.build_payload`, `build_legacy_request` e `send_non_streaming_request` | `RETAIN_COMPAT` | CLI, integrações externas e adapters antigos ainda dependem das fachadas; essas superfícies traduzem para `ModelRequest`/`ModelResponse` canônicos |
+| `ChatSession.send_request(stream=False)` | `DEFER_WITH_EVIDENCE` | contrato público retorna o objeto raw de `gateway.send_payload`; a boundary usa a mesma `TaskBudgetLedger`, contabiliza uma tentativa e registra falhas; retirar após migração dos consumidores públicos |
+| `PendingStream`, `send_request(stream=True)` e `ChatSession.process_stream` | `DEFER_WITH_EVIDENCE` | contrato público de stream legado em duas fases ainda exige envelope raw e consumo posterior; retirar após migração da CLI e callers públicos |
+| `AutoCoder` e correção direta | `DEFER_WITH_EVIDENCE` | `file_writer` legado e teste de compatibilidade ainda exercitam a superfície; novos writes usam `code_task`/`ChangeSet` |
+| `file_writer` de baixo nível | `RETAIN_COMPAT` | excluído do conjunto model-actionable; permanece para administração/callers explícitos com aprovação e limites de workspace |
+| arestas implícitas `file_writer` → `file_reader`/`code_analyzer` no grafo/optimizer | `REMOVE` | removidas de `dependency_map` e `PlanOptimizer`; dependências causais exigem `ResultBinding` explícito |
+| `check_inverted_dependencies` do `PlanValidator` | `RETAIN_COMPAT` | política de segurança que rejeita leitura anterior a uma escrita declarada; não cria aresta de execução nem substitui `ResultBinding` |
+| reordenação de leituras por caminho no `PlanOptimizer` | `REMOVE` | removida; o optimizer mantém a ordem declarada e só deduplica operações cacheáveis sem bindings |
+| alias de skill `git` | `RETAIN_COMPAT` | alias explícito para `git_reader`; retenção até expirar o suporte a planos/checkpoints históricos |
+| `CheckpointManager` e schema de checkpoint | `RETAIN_COMPAT` | schema v2, bindings, cursor e estados terminais continuam públicos; não há novo formato introduzido |
+| `compress_conversation` / `maybe_compress_context` | `DEFER_WITH_EVIDENCE` | cadeia viva de memória/contexto; usa request canônico sem alterar a semântica de resumo não confiável |
+| `model_metadata` histórico e leitores de métricas | `RETAIN_COMPAT` | writer autoritativo é `model_call`; leitores históricos continuam necessários sem dupla contagem |
+| `LegacyToolInvoker` e ponte de compatibilidade de invocação | `RETAIN_COMPAT` | reservado a callers administrativos/legados; standalone não o instala no caminho model-actionable |
 
 ## Regras de migração
 

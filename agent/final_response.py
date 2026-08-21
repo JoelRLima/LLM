@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-from agent.llm.model_client import ModelProviderError
+from agent.llm.contracts import ModelProviderError
 from agent.llm.router import is_security_objective
 from agent.reporting import observation_evidence as _observation_evidence
 from agent.reporting.observation_evidence import (
@@ -209,18 +209,33 @@ class FinalResponder:
         )
 
     def _request_answer(self, on_chunk: Optional[Callable[[str], None]]) -> str:
-        final_payload = self.orchestrator.session.build_payload()
-        final_payload["max_tokens"] = 4096
+        session = self.orchestrator.session
 
         try:
-            if on_chunk is not None:
-                final_payload["stream"] = True
-                resp = self.orchestrator.session.send_request(final_payload, stream=True)
-                resp.raise_for_status()
-                response = self.orchestrator.session.process_stream(resp, {"on_content_chunk": on_chunk})
+            if hasattr(session, "build_request") and hasattr(session, "complete_request"):
+                request = session.build_request(
+                    stream=on_chunk is not None,
+                    max_output_tokens=4096,
+                )
+                if on_chunk is not None:
+                    response = session.consume_stream_request(
+                        request, {"on_content_chunk": on_chunk}
+                    )
+                else:
+                    response = session.complete_request(request).content
             else:
-                final_payload["stream"] = False
-                response = self.orchestrator.session.send_non_streaming_request(final_payload)
+                final_payload = session.build_payload()
+                final_payload["max_tokens"] = 4096
+                if on_chunk is not None:
+                    final_payload["stream"] = True
+                    resp = session.send_request(final_payload, stream=True)
+                    resp.raise_for_status()
+                    response = session.process_stream(
+                        resp, {"on_content_chunk": on_chunk}
+                    )
+                else:
+                    final_payload["stream"] = False
+                    response = session.send_non_streaming_request(final_payload)
         except (ModelProviderError, BudgetExhausted):
             raise
         except Exception as exc:

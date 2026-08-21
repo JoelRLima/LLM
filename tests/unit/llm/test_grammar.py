@@ -14,6 +14,7 @@ import pytest
 
 from agent.llm import grammars
 from agent.llm.context_manager import ContextManager
+from agent.llm.contracts import ModelResponse
 from agent.llm.grammars import AUTO_GRAMMAR, get_grammar
 from agent.llm.model_client import ModelClient, ModelProviderError
 from agent.llm.session import ChatSession
@@ -158,48 +159,57 @@ def test_plan_grammar_exposes_only_closed_mechanical_deferred_shape(monkeypatch)
 
 def test_ask_model_auto_selects_grammar_by_step_type():
     cm = make_context_manager()
-    cm.model_client = MagicMock()
-    cm.model_client.request.return_value = {"action": "plan"}
+    cm.session.complete_request = MagicMock(
+        return_value=ModelResponse(content='{"action":"plan"}')
+    )
 
     cm.ask_model("faça algo", step_type="plan")
 
-    _, kwargs = cm.model_client.request.call_args
-    assert kwargs["grammar"] == grammars.PLAN_GRAMMAR
+    request = cm.session.complete_request.call_args.args[0]
+    assert request.structured_output is not None
+    assert request.structured_output.grammar == grammars.PLAN_GRAMMAR
 
 
 def test_ask_model_uses_session_config_over_default_config(monkeypatch):
     monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", False)
     cm = make_context_manager()
-    cm.model_client = MagicMock()
-    cm.model_client.request.return_value = {"action": "tool", "tool": "echo", "args": {}}
+    cm.session.complete_request = MagicMock(
+        return_value=ModelResponse(
+            content='{"action":"tool","tool":"echo","args":{}}'
+        )
+    )
 
     cm.ask_model("faça algo", step_type="tool_decision")
 
-    _, kwargs = cm.model_client.request.call_args
-    assert kwargs["grammar"] == grammars.TOOL_DECISION_GRAMMAR
+    request = cm.session.complete_request.call_args.args[0]
+    assert request.structured_output is not None
+    assert request.structured_output.grammar == grammars.TOOL_DECISION_GRAMMAR
 
 
 def test_ask_model_grammar_none_disables_grammar():
     cm = make_context_manager()
-    cm.model_client = MagicMock()
-    cm.model_client.request.return_value = {"action": "plan"}
+    cm.session.complete_request = MagicMock(
+        return_value=ModelResponse(content='{"action":"plan"}')
+    )
 
     cm.ask_model("faça algo", step_type="plan", grammar=None)
 
-    _, kwargs = cm.model_client.request.call_args
-    assert kwargs["grammar"] is None
+    request = cm.session.complete_request.call_args.args[0]
+    assert request.structured_output is None
 
 
 def test_ask_model_explicit_grammar_overrides_auto():
     cm = make_context_manager()
-    cm.model_client = MagicMock()
-    cm.model_client.request.return_value = {"action": "plan"}
+    cm.session.complete_request = MagicMock(
+        return_value=ModelResponse(content='{"action":"plan"}')
+    )
     custom_grammar = '{"custom": true}'
 
     cm.ask_model("faça algo", step_type="plan", grammar=custom_grammar)
 
-    _, kwargs = cm.model_client.request.call_args
-    assert kwargs["grammar"] == custom_grammar
+    request = cm.session.complete_request.call_args.args[0]
+    assert request.structured_output is not None
+    assert request.structured_output.grammar == custom_grammar
 
 
 def test_ask_model_default_is_auto_grammar_sentinel():

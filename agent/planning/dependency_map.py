@@ -19,7 +19,7 @@ def _add_dependency(edges: Dict[int, List[int]], consumer: int, producer: int) -
 def build_dependency_map(
     plan: Sequence[Mapping[str, Any]],
 ) -> tuple[Dict[int, List[int]], Dict[tuple[int, int], str]]:
-    """Derive stable binding and legacy file-production edges for one plan."""
+    """Derive stable causal edges from explicit result bindings."""
 
     edges: Dict[int, List[int]] = {}
     dependency_files: Dict[tuple[int, int], str] = {}
@@ -37,17 +37,6 @@ def build_dependency_map(
             if producer is not None:
                 _add_dependency(edges, index, producer)
 
-    producers: Dict[str, int] = {}
-    for index, step in enumerate(plan):
-        args = step.get("args") if isinstance(step, Mapping) else {}
-        args = args if isinstance(args, Mapping) else {}
-        file_path = str(args.get("file_path") or args.get("target") or "")
-        if step.get("tool") == "file_writer" and file_path:
-            producers[file_path] = index
-        elif step.get("tool") in ("file_reader", "code_analyzer") and file_path in producers:
-            producer = producers[file_path]
-            _add_dependency(edges, index, producer)
-            dependency_files[(index, producer)] = file_path
     return edges, dependency_files
 
 
@@ -56,22 +45,19 @@ def dependency_succeeded(
     producer_id: str,
     file_path: str | None = None,
 ) -> bool:
-    """Check the current producer result without scanning unrelated steps."""
+    """Check the current producer result through its explicit step identity.
+
+    ``file_path`` remains an ignored compatibility parameter for callers that
+    used the removed implicit file-production edge.
+    """
 
     current = current_result_for_step(history, producer_id)
     if current is not None:
         _, item = current
         result = item.get("result")
         return isinstance(result, Mapping) and result.get("ok") is True
-    if not file_path:
-        return False
-    by_file = [
-        item
-        for item in history
-        if item.get("tool") == "file_writer"
-        and (item.get("args") or {}).get("file_path") == file_path
-    ]
-    return bool(by_file and by_file[-1].get("result", {}).get("ok"))
+    del file_path
+    return False
 
 
 def dependent_indices(plan: Sequence[Mapping[str, Any]], producer: int) -> set[int]:

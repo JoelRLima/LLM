@@ -1,37 +1,33 @@
-"""Fachada de decisões estruturadas do planejador legado.
+"""Legacy facade over the canonical structured-decision boundary."""
 
-O transporte e o protocolo pertencem ao ``ModelGateway`` configurado na
-``ChatSession``. Este módulo preserva parsing, retry e métricas exigidos pelo
-executor antigo; workflows novos usam os contratos normalizados diretamente.
-"""
-import datetime as dt
+from __future__ import annotations
+
 import time
-from collections.abc import Callable
-from typing import Any, Dict, Optional, cast
+from collections.abc import Callable, Mapping
+from dataclasses import replace
+from typing import Any, Dict, Optional
 
-from agent.parsers import extract_json, extract_json_from_end
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.logging import logger
+from agent.llm.contracts import ModelProviderError
+from agent.llm.decision_compat import (
+    build_legacy_retry_request,
+    complete_legacy_retry,
+    record_legacy_metadata,
+)
+from agent.llm.legacy_payload import (
+    build_legacy_model_request,
+    complete_legacy_payload_request,
+)
+from agent.llm.structured_output import (
+    is_grammar_unsupported_error,
+    normalize_model_decision,
+    resolve_model_decision,
+)
 
 FALLBACK_AGENT_MAX_TOKENS = 4096
 
 
-class ModelProviderError(RuntimeError):
-    """Public-safe causal failure for one model/provider request."""
-
-    code = "MODEL_PROVIDER_ERROR"
-    layer = "provider"
-
-    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
-        del message
-        self.public_message = "Model provider request failed."
-        super().__init__(self.public_message)
-        if cause is not None:
-            self.__cause__ = cause
-
-
 class ModelClient:
-    """Compatibilidade de parsing e retry para consumidores legados."""
+    """Compatibility symbol that delegates decision semantics to one resolver."""
 
     _GRAMMAR_SUPPORT_ATTR = "_grammar_supports_grammar"
 
@@ -46,125 +42,44 @@ class ModelClient:
 
     @staticmethod
     def _is_grammar_unsupported_error(error: Exception) -> bool:
-        """
-        Verifica se a exceção capturada indica que o backend não suporta
-        o parâmetro `grammar` (GBNF) — e não um erro genérico (500,
-        timeout, falha de conexão, etc.).
+        """Compatibility alias for the canonical provider-capability predicate."""
 
-        Args:
-            error: exceção capturada ao enviar a requisição.
-
-        Returns:
-            True se a condição indicar claramente falta de suporte ao
-            parâmetro `grammar`.
-        """
-        response = getattr(error, "response", None)
-        if response is None:
-            return False
-
-        status_code = getattr(response, "status_code", None)
-        if status_code != 400:
-            return False
-
-        try:
-            body_text = response.text or ""
-        except Exception:
-            body_text = ""
-
-        return "grammar" in body_text.lower()
-
-    @classmethod
-    def _send_with_grammar_fallback(
-        cls,
-        session: Any,
-        request_payload: Dict[str, Any],
-    ) -> Any:
-        try:
-            response = session.send_non_streaming_request(request_payload)
-            if "grammar" in request_payload:
-                cls._set_grammar_support(session, True)
-            return response
-        except Exception as exc:
-            if isinstance(exc, BudgetExhausted):
-                raise
-            can_fallback = (
-                "grammar" in request_payload
-                and cls._grammar_support(session) is None
-                and cls._is_grammar_unsupported_error(exc)
-            )
-            if not can_fallback:
-                logger.error("Model provider request failed (%s).", type(exc).__name__)
-                raise ModelProviderError(str(exc), cause=exc) from exc
-        cls._set_grammar_support(session, False)
-        fallback_payload = dict(request_payload)
-        fallback_payload.pop("grammar", None)
-        try:
-            return session.send_non_streaming_request(fallback_payload)
-        except Exception as exc:
-            if isinstance(exc, BudgetExhausted):
-                raise
-            logger.error("Model provider fallback request failed (%s).", type(exc).__name__)
-            raise ModelProviderError(str(exc), cause=exc) from exc
+        return is_grammar_unsupported_error(error)
 
     @staticmethod
     def _extract_decision(response: Any) -> Optional[Dict[str, Any]]:
-        decision = extract_json(response) or extract_json_from_end(response)
-        if not isinstance(decision, dict):
-            return None
-        if "action" not in decision and "tool" in decision:
-            return {"action": "tool", **decision}
-        return cast(Dict[str, Any], decision)
+        """Compatibility alias for the canonical structured parser."""
+
+        return normalize_model_decision(response)
 
     @staticmethod
-    def _record_metric(
-        callback: Callable[[Dict[str, Any]], None] | None,
-        response: Any,
-        decision: Optional[Dict[str, Any]],
-        payload: Dict[str, Any],
-        step_type: str,
-        started_at: float,
-    ) -> None:
-        if callback is None:
-            return
-        usage = response.get("usage") or {} if isinstance(response, dict) else {}
-        callback({
-            "type": "model_metadata",
-            "metric_type": "model_metadata",
-            "timestamp": dt.datetime.now().isoformat(),
-            "step_type": step_type,
-            "tool": decision.get("tool") if decision else None,
-            "budget": payload.get("max_tokens"),
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-            "duration_ms": int((time.time() - started_at) * 1000),
-            "success": bool(decision and "action" in decision),
-        })
+    def _canonical_session(session: Any) -> bool:
+        """Detect the concrete ChatSession bridge without trusting mock attributes."""
 
-    @staticmethod
+        return callable(getattr(type(session), "build_legacy_request", None)) and callable(
+            getattr(type(session), "complete_request", None)
+        )
+
+    @classmethod
     def _retry(
+        cls,
         session: Any,
         verbose: bool,
         grammar: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        retry_payload = session.build_payload()
-        if grammar is not None and ModelClient._grammar_support(session) is not False:
-            retry_payload["grammar"] = grammar
-        hardware_profile = getattr(session, "hardware_profile", None)
-        retry_payload["max_tokens"] = session.config.get("agent_max_tokens") or min(
+        """Deprecated one-shot adapter retained for callers of the old private hook."""
+
+        del verbose
+        raw_payload: Any = getattr(session, "build_payload", lambda: {})()
+        payload = dict(raw_payload) if isinstance(raw_payload, Mapping) else {}
+        request = build_legacy_retry_request(
+            session,
+            payload,
+            grammar,
+            getattr(session, "hardware_profile", None),
             FALLBACK_AGENT_MAX_TOKENS,
-            hardware_profile.default_output_tokens if hardware_profile is not None else FALLBACK_AGENT_MAX_TOKENS,
         )
-        retry_payload["stream"] = False
-        try:
-            response = session.send_non_streaming_request(retry_payload)
-        except (ModelProviderError, BudgetExhausted):
-            raise
-        except Exception as exc:
-            logger.error("Model provider retry failed (%s).", type(exc).__name__)
-            raise ModelProviderError(str(exc), cause=exc) from exc
-        if verbose:
-            print(" ✓")
-        return ModelClient._extract_decision(response)
+        return complete_legacy_retry(session, payload, request)
 
     @classmethod
     def request(
@@ -176,49 +91,67 @@ class ModelClient:
         verbose: bool = False,
         grammar: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Envia uma requisição ao modelo e retorna a decisão parseada.
+        """Resolve one legacy request through the canonical request/decision path."""
 
-        Args:
-            session: instância de ChatSession (fornece send_non_streaming_request e config).
-            payload: dicionário completo do payload da requisição.
-            step_type: tipo do passo (plan, final, tool_decision).
-            log_metric_callback: função para registrar métricas.
-            verbose: se True, imprime logs de depuração.
-            grammar: gramática GBNF a ser enviada (campo "grammar" do payload),
-                ou None para não usar gramática. Ignorada se o backend já
-                tiver sinalizado que não suporta o parâmetro.
+        started_at = time.monotonic()
+        known_grammar = payload.get("grammar") if isinstance(payload, Mapping) else None
+        requested_grammar = grammar if grammar is not None else (
+            known_grammar if isinstance(known_grammar, str) else None
+        )
+        effective_grammar = (
+            requested_grammar
+            if cls._grammar_support(session) is not False
+            else None
+        )
+        hardware_profile = getattr(session, "hardware_profile", None)
 
-        Returns:
-            Dicionário com a decisão (action, tool, args, etc.) ou erro.
-        """
-        started_at = time.time()
-        request_payload = dict(payload)
-        if grammar is not None and cls._grammar_support(session) is not False:
-            request_payload["grammar"] = grammar
-        if verbose:
-            has_grammar = "grammar" in request_payload
-            print(f"[DEBUG] GBNF na requisição: {'SIM' if has_grammar else 'NÃO'} (step_type={step_type})")
-        response = cls._send_with_grammar_fallback(session, request_payload)
-        if verbose:
-            print(" ✓")
-            print(f"[DEBUG] Resposta bruta: {str(response)[:300]}")
-        decision = cls._extract_decision(response)
-        cls._record_metric(log_metric_callback, response, decision, payload, step_type, started_at)
-        if decision is not None:
-            return decision
-        if verbose:
-            print(
-                "[DEBUG] Resposta possivelmente truncada. Retentando com mais tokens...",
-                end="",
-                flush=True,
+        if cls._canonical_session(session):
+            request = session.build_legacy_request(payload, grammar=effective_grammar)
+            complete = session.complete_request
+        else:
+            request = build_legacy_model_request(
+                session, payload, grammar=effective_grammar
             )
 
-        decision = cls._retry(session, verbose, grammar=grammar)
-        if decision:
-            return decision
-        return {
-            "action": "error",
-            "message": "Falha ao extrair JSON da resposta.",
-            "raw_response": str(response),
-        }
+            def complete(current_request: Any) -> Any:
+                return complete_legacy_payload_request(session, payload, current_request)
+
+        def retry_request() -> Any:
+            return build_legacy_retry_request(
+                session,
+                payload,
+                requested_grammar,
+                hardware_profile,
+                FALLBACK_AGENT_MAX_TOKENS,
+            )
+
+        if verbose:
+            has_grammar = effective_grammar is not None
+            print(
+                f"[DEBUG] GBNF request: {'YES' if has_grammar else 'NO'} "
+                f"(step_type={step_type})"
+            )
+
+        decision = resolve_model_decision(
+            request,
+            complete=complete,
+            retry_request=retry_request,
+            grammar=effective_grammar,
+            grammar_supported=cls._grammar_support(session),
+            set_grammar_supported=lambda value: cls._set_grammar_support(session, value),
+            fallback_request=lambda current: replace(current, structured_output=None),
+            on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
+                log_metric_callback,
+                response,
+                parsed,
+                active_request,
+                step_type,
+                started_at,
+            ),
+        )
+        if verbose:
+            print("OK")
+        return decision
+
+
+__all__ = ["FALLBACK_AGENT_MAX_TOKENS", "ModelClient", "ModelProviderError"]

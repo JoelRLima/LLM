@@ -1,5 +1,7 @@
 import datetime as dt
+import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -10,10 +12,11 @@ from agent.llm.context_views import (
     discover_project_context,
     get_file_hints,
 )
+from agent.llm.decision_compat import build_retry_request, record_legacy_metadata
 from agent.llm.grammars import AUTO_GRAMMAR, AutoGrammar, get_grammar
-from agent.llm.model_client import ModelClient
 from agent.llm.prompts import AGENT_SYSTEM_PROMPT
 from agent.llm.session import ChatSession
+from agent.llm.structured_output import resolve_model_decision
 from agent.memory.prompt_context import (
     DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS,
     build_memory_prompt_context,
@@ -46,7 +49,6 @@ class ContextManager:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.hardware_profile = resolve_hardware_profile(self.session.config)
         self._cached_project_context: Optional[str] = None
-        self.model_client = ModelClient()
         self.semantic: SemanticMemory | None = None
         if bool(self.session.config.get("semantic_memory_enabled", False)):
             try:
@@ -180,7 +182,7 @@ class ContextManager:
         grammar: str | None | AutoGrammar = AUTO_GRAMMAR,
     ) -> Dict[str, Any]:
         """
-        Prepara o contexto e delega a comunicação HTTP ao ModelClient.
+        Prepara o contexto e resolve a decisão no ModelGateway canônico.
 
         Args:
             grammar: gramática GBNF a usar. Por padrão (AUTO_GRAMMAR), a
@@ -217,22 +219,32 @@ class ContextManager:
             self.session.add_user_message(prompt)
 
             estimated = self.estimate_conversation_tokens()
-            if estimated > int(self.hardware_profile.context_limit * 0.75):
-                compact_messages = self.build_compact_view()
-                original_messages_in_session = self.session.messages
-                self.session.messages = compact_messages
-                payload = self.session.build_payload()
-                self.session.messages = original_messages_in_session
-            else:
-                payload = self.session.build_payload()
-
             config_max = self.session.config.get("agent_max_tokens")
             budget = config_max if config_max is not None else min(
                 STEP_BUDGETS.get(step_type, DEFAULT_AGENT_MAX_TOKENS),
                 self.hardware_profile.default_output_tokens,
             )
-            payload["max_tokens"] = budget
-            payload["stream"] = False
+            grammar_for_request = (
+                effective_grammar
+                if getattr(self.session, "_grammar_supports_grammar", None) is not False
+                else None
+            )
+            if estimated > int(self.hardware_profile.context_limit * 0.75):
+                compact_messages = self.build_compact_view()
+                original_messages_in_session = self.session.messages
+                self.session.messages = compact_messages
+                request = self.session.build_request(
+                    grammar=grammar_for_request,
+                    stream=False,
+                    max_output_tokens=int(budget),
+                )
+                self.session.messages = original_messages_in_session
+            else:
+                request = self.session.build_request(
+                    grammar=grammar_for_request,
+                    stream=False,
+                    max_output_tokens=int(budget),
+                )
 
             if self.verbose:
                 print(
@@ -241,13 +253,35 @@ class ContextManager:
                     flush=True,
                 )
 
-            decision = self.model_client.request(
-                session=self.session,
-                payload=payload,
-                step_type=step_type,
-                log_metric_callback=log_metric_callback,
-                verbose=self.verbose,
-                grammar=effective_grammar,
+            started_at = time.monotonic()
+
+            decision = resolve_model_decision(
+                request,
+                complete=self.session.complete_request,
+                retry_request=lambda: build_retry_request(
+                    self.session,
+                    effective_grammar,
+                    self.hardware_profile,
+                    DEFAULT_AGENT_MAX_TOKENS,
+                ),
+                grammar=grammar_for_request,
+                grammar_supported=getattr(
+                    self.session, "_grammar_supports_grammar", None
+                ),
+                set_grammar_supported=lambda value: setattr(
+                    self.session, "_grammar_supports_grammar", value
+                ),
+                fallback_request=lambda current: replace(
+                    current, structured_output=None
+                ),
+                on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
+                    log_metric_callback,
+                    response,
+                    parsed,
+                    active_request,
+                    step_type,
+                    started_at,
+                ),
             )
 
             return decision

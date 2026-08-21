@@ -9,7 +9,6 @@ from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.result_bindings import has_result_bindings, referenced_step_ids
 from agent.planning.tool_metadata import TOOL_METADATA, ToolMetadata, estimate_step_cost, get_tool_metadata
 
-_MOVABLE_CATEGORIES = {"READ", "SEARCH", "ANALYZE"}
 
 class PlanningOptimizationError(ValueError):
     """Raised when a canonical planning plan references unknown metadata."""
@@ -95,7 +94,7 @@ class PlanOptimizer:
         transformations: List[str] = []
 
         deduped, removed_duplicates = self._remove_exact_duplicates(original, transformations)
-        reordered = self._group_reads(deduped, transformations)
+        reordered = deduped
 
         cost_details_after = self._cost_details(reordered)
         cost_after = self._total_cost(cost_details_after)
@@ -200,75 +199,3 @@ class PlanOptimizer:
             result.append(step)
 
         return result, removed
-
-    # ------------------------------------------------------------------
-    # (c) ReordenaÃ§Ã£o segura de leituras/buscas/anÃ¡lises independentes
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _depends_on(step: Dict[str, Any], producer_step: Dict[str, Any]) -> bool:
-        """True se `step` (leitura/busca/anÃ¡lise) depende do arquivo
-        produzido por `producer_step` (um file_writer)."""
-        if not isinstance(producer_step, dict) or producer_step.get("tool") != "file_writer":
-            return False
-        raw_producer_args = producer_step.get("args")
-        p_args = raw_producer_args if isinstance(raw_producer_args, dict) else {}
-        p_fp = p_args.get("file_path")
-        if not p_fp:
-            return False
-        raw_step_args = step.get("args")
-        s_args = raw_step_args if isinstance(raw_step_args, dict) else {}
-        s_fp = s_args.get("file_path") or s_args.get("target")
-        return bool(s_fp == p_fp)
-
-    def _group_reads(self, plan: List[Dict[str, Any]], transformations: List[str]) -> List[Dict[str, Any]]:
-        """Aproxima passos de leitura/busca/anÃ¡lise independentes uns dos
-        outros atravÃ©s de passes sucessivos de troca entre posiÃ§Ãµes
-        adjacentes (similar a um bubble sort), deslocando um passo de
-        leitura para antes de um passo com efeitos colaterais sempre que
-        ele nÃ£o depender do resultado desse passo.
-
-        Ferramentas com `side_effects=True` nunca sÃ£o movidas: apenas os
-        passos de leitura independentes "ultrapassam" elas, uma posiÃ§Ã£o
-        por vez, atÃ© nÃ£o haver mais trocas seguras possÃ­veis.
-        """
-        result = list(plan)
-        n = len(result)
-        moved_any = False
-
-        for _ in range(n):
-            swapped_this_pass = False
-            for i in range(1, n):
-                prev_step = result[i - 1]
-                cur_step = result[i]
-                if not isinstance(prev_step, dict) or not isinstance(cur_step, dict):
-                    continue
-                if is_deferred_condition(prev_step) or is_deferred_condition(cur_step):
-                    continue
-
-                prev_meta = self._meta(prev_step.get("tool", ""))
-                cur_meta = self._meta(cur_step.get("tool", ""))
-
-                movable = (
-                    cur_meta.category in _MOVABLE_CATEGORIES
-                    and not cur_meta.side_effects
-                    and prev_meta.side_effects
-                    and not self._depends_on(cur_step, prev_step)
-                    and not has_result_bindings(cur_step)
-                    and not has_result_bindings(prev_step)
-                )
-                if movable:
-                    result[i - 1], result[i] = result[i], result[i - 1]
-                    swapped_this_pass = True
-                    moved_any = True
-
-            if not swapped_this_pass:
-                break
-
-        if moved_any:
-            transformations.append(
-                "Passos de leitura/busca/anÃ¡lise independentes foram reagrupados, "
-                "sem ultrapassar ferramentas com efeitos colaterais das quais dependem."
-            )
-
-        return result

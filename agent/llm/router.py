@@ -2,7 +2,7 @@ import json
 import re
 from typing import List, Tuple
 
-from agent.llm.model_client import ModelProviderError
+from agent.llm.contracts import ModelProviderError
 from agent.llm.prompts import CODER_PROMPT, GENERAL_PROMPT, RESEARCHER_PROMPT, SECURITY_AUDITOR_PROMPT
 from agent.llm.session import ChatSession
 from agent.runtime.budget import BudgetExhausted
@@ -70,6 +70,16 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
     else:
         return GENERAL_PROMPT, builtin_skills_for_persona("general")
 
+
+def _request_router_response(session: ChatSession) -> str:
+    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
+        request = session.build_request(stream=False)
+        return session.complete_request(request).content
+    payload = session.build_payload()
+    payload["stream"] = False
+    return session.send_non_streaming_request(payload)
+
+
 def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str], str]:
     if _is_clearly_trivial(objective):
         logger.info("Router (trivial) → general")
@@ -92,16 +102,16 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
     original_prompt = session.messages[0]["content"]
     session.messages[0]["content"] = ROUTER_PROMPT
     session.add_user_message(f"Objective: {objective}")
-
-    payload = session.build_payload()
-    payload["stream"] = False
-
     try:
-        response = session.send_non_streaming_request(payload)
+        response = _request_router_response(session)
     except (ModelProviderError, BudgetExhausted):
+        session.messages[0]["content"] = original_prompt
+        session.remove_last_user_message()
         raise
     except Exception as exc:
         logger.error("Model provider router request failed (%s).", type(exc).__name__)
+        session.messages[0]["content"] = original_prompt
+        session.remove_last_user_message()
         raise ModelProviderError(str(exc), cause=exc) from exc
 
     try:
@@ -120,8 +130,9 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         logger.error(f"Resposta invÃ¡lida no roteamento LLM: {e}")
         persona = "general"
 
-    session.messages[0]["content"] = original_prompt
-    session.remove_last_user_message()
+    finally:
+        session.messages[0]["content"] = original_prompt
+        session.remove_last_user_message()
 
     if persona not in ["coder", "researcher", "general", "security_auditor"]:
         persona = "general"

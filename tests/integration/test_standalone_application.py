@@ -9,6 +9,7 @@ import pytest
 
 from agent.application import AgentApplication
 from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
+from agent.llm.contracts import ModelRequest
 from agent.memory.memory import MemoryLoadError
 from agent.planning.step_policies import StepPolicies
 from agent.planning.task_completion import (
@@ -41,6 +42,22 @@ class _QueuedLegacyGateway(OfflineLegacyGateway):
     def __init__(self, responses: list[str]) -> None:
         OfflineModelGateway.__init__(self, responses)
         self.payloads = []
+
+    def complete(self, request: ModelRequest):
+        payload = {
+            "model": request.model,
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in request.messages
+            ],
+            "max_tokens": request.max_output_tokens,
+            "stream": request.stream,
+        }
+        if request.structured_output is not None:
+            if request.structured_output.grammar is not None:
+                payload["grammar"] = request.structured_output.grammar
+        self.payloads.append(payload)
+        return super().complete(request)
 
 
 class _CountingApproval:
@@ -331,8 +348,8 @@ def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) 
     assert snapshot["terminal"] == "unverified"
     assert snapshot["step_statuses"][-1] == "unverified"
     assert approval.requests
-    assert len(gateway.payloads) == 1  # persona routing happened before plan acceptance
-    assert len(gateway.calls) == 1  # code proposal, not conditional resolution
+    assert len(gateway.payloads) == 2  # router plus the canonical code proposal
+    assert len(gateway.calls) == 2
     resolved = next(
         event
         for event in snapshot["events"]
@@ -361,7 +378,7 @@ def test_manual_deferred_equals_false_binds_existing_write_waiver(tmp_path: Path
     assert snapshot["continuations"] == 0
     assert approval.requests == []
     assert len(gateway.payloads) == 1
-    assert gateway.calls == []
+    assert len(gateway.calls) == 1
     resolved = next(
         event
         for event in snapshot["events"]
@@ -397,7 +414,7 @@ def test_manual_deferred_blocks_when_file_observation_is_only_a_summary(
     assert snapshot["pending"] == ["write"]
     assert approval.requests == []
     assert len(gateway.payloads) == 1
-    assert gateway.calls == []
+    assert len(gateway.calls) == 1
     blocked = next(
         event
         for event in snapshot["events"]
@@ -441,8 +458,8 @@ def test_real_initial_planner_deferred_true_promotes_write_without_continuation(
         "code_task",
         "apply_changeset",
     ]
-    assert len(gateway.payloads) == 2  # router + one initial planning decision
-    assert len(gateway.calls) == 1  # code_task proposal is not a branch decision
+    assert len(gateway.payloads) == 3  # router, plan, and canonical code proposal
+    assert len(gateway.calls) == 3
     assert "continuation_plan" not in str(gateway.payloads)
     assert not any(event.get("type") == "replan" for event in progression["events"])
 
@@ -478,7 +495,7 @@ def test_real_initial_planner_deferred_false_waives_without_effect_or_continuati
     assert progression["continuations"] == 0
     assert approval.requests == []
     assert len(gateway.payloads) == 2  # router + one initial planning decision
-    assert gateway.calls == []
+    assert len(gateway.calls) == 2
     assert "continuation_plan" not in str(gateway.payloads)
     assert not any(event.get("type") == "replan" for event in progression["events"])
 
@@ -528,8 +545,8 @@ def test_simple_edit_executes_from_initial_plan_without_rediscovery(tmp_path: Pa
     assert history == ["code_task"]
     assert progression["step_statuses"] == ["unverified"]
     assert progression["continuations"] == 0
-    assert len(gateway.payloads) == 2  # router and one initial plan
-    assert len(gateway.calls) == 1  # code proposal through the canonical gateway
+    assert len(gateway.payloads) == 3  # router, plan, and canonical code proposal
+    assert len(gateway.calls) == 3
     assert "continuation_plan" not in str(gateway.payloads)
 
 
@@ -561,7 +578,7 @@ def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
     assert outcome_event["data"]["status"] == "unverified"
     assert outcome_event["data"]["mutation_occurred"] is True
     assert outcome_event["data"]["executed_effects"] == ["write"]
-    assert len(gateway.payloads) == 3  # router, initial plan, bounded continuation
+    assert len(gateway.payloads) == 4  # router, plan, continuation, code proposal
     continuation_grammar = gateway.payloads[2]["grammar"]
     assert "complete_without_effect" in continuation_grammar
     assert "observation_index" in continuation_grammar
