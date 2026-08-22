@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_evidence import (
@@ -14,6 +15,7 @@ from agent.planning.task_semantics_evidence import (
     result_is_successful,
     same_identity,
 )
+from agent.planning.task_semantics_terminal import validate_terminal_evidence
 from agent.planning.task_semantics_types import (
     ObligationStatus,
     TaskIntent,
@@ -31,150 +33,104 @@ def transition(
     *,
     evidence_ref: int | str | None,
     allow_legacy: bool = False,
+    effect_authority: Any = None,
+) -> None:
+    refs = () if evidence_ref is None else (_eligible_evidence_ref(evidence_ref),)
+    transition_with_evidence(
+        owner,
+        obligation_id,
+        status,
+        evidence_refs=refs,
+        allow_legacy=allow_legacy,
+        effect_authority=effect_authority,
+    )
+
+
+def transition_with_evidence(
+    owner: Any,
+    obligation_id: str,
+    status: ObligationStatus,
+    *,
+    evidence_refs: Sequence[int | str],
+    allow_legacy: bool = False,
+    effect_authority: Any = None,
 ) -> None:
     if obligation_id not in owner._statuses:
         raise TaskSemanticsError("obrigacao desconhecida")
-    ref = None if evidence_ref is None else _eligible_evidence_ref(evidence_ref)
-    if ref is not None:
-        _require_evidence_provenance(
-            owner,
-            obligation_id,
-            ref,
-            allow_legacy=allow_legacy,
-        )
+    refs = tuple(_eligible_evidence_ref(ref) for ref in evidence_refs)
     current = owner._statuses[obligation_id]
+    existing = tuple(owner._evidence[obligation_id])
     if current is not ObligationStatus.PENDING:
-        if current is status and ref is not None:
-            if ref not in owner._evidence[obligation_id]:
-                owner._evidence[obligation_id].append(ref)
+        if current is not status:
+            raise TaskSemanticsError("transicao de obrigacao terminal invalida")
+        new_refs = tuple(ref for ref in refs if ref not in existing)
+        if not new_refs:
             return
-        if current is status:
-            return
-        raise TaskSemanticsError("transicao de obrigacao terminal invalida")
-    if ref is None:
+        candidate = existing + new_refs
+    else:
+        candidate = refs
+    if not candidate:
         if not allow_legacy:
             raise TaskSemanticsError("transicao operacional requer evidencia")
-        ref = f"legacy:{obligation_id}"
+        candidate = (f"legacy:{obligation_id}",)
+    if getattr(owner, "_strict_evidence", False) and not allow_legacy:
+        validate_terminal_evidence(
+            owner,
+            obligation_id,
+            status,
+            candidate,
+            effect_authority=effect_authority,
+        )
     owner._statuses[obligation_id] = status
-    owner._evidence[obligation_id].append(ref)
+    owner._evidence[obligation_id] = list(candidate)
 
 
-def _require_evidence_provenance(
+def satisfy(
     owner: Any,
     obligation_id: str,
     evidence_ref: int | str,
     *,
-    allow_legacy: bool,
+    effect_authority: Any = None,
 ) -> None:
-    if allow_legacy or not getattr(owner, "_strict_evidence", False):
-        return
-    observation = getattr(owner, "_evidence_catalog", {}).get(evidence_ref)
-    if observation is None:
-        raise TaskSemanticsError("referencia de evidencia nao pertence ao historico canonico")
-    obligation = next(
-        (item for item in owner._obligations if item.id == obligation_id),
-        None,
-    )
-    if obligation is None:
-        raise TaskSemanticsError("obrigacao desconhecida")
-    if obligation.kind == "effect":
-        return
-    result = observation.get("result")
-    if not isinstance(result, Mapping) or not _evidence_proves_requirement(
-        owner,
-        obligation,
-        str(observation.get("tool", "")),
-        result,
-        observation.get("args"),
-        evidence_ref,
-    ):
-        raise TaskSemanticsError("evidencia nao prova a obrigacao especifica")
-
-
-def _evidence_proves_requirement(
-    owner: Any,
-    obligation: Any,
-    tool: str,
-    result: Mapping[str, Any],
-    args: Mapping[str, Any] | None,
-    evidence_ref: int | str | None = None,
-) -> bool:
-    if (
-        obligation.kind == "read"
-        and classify_failure(result) is FailureClass.LOCAL
-        and evidence_ref is not None
-        and any(
-            item.kind == "fallback"
-            and owner._statuses[item.id] is ObligationStatus.SATISFIED
-            and evidence_ref in owner._evidence[item.id]
-            and same_identity(item.fallback_target, arg_path(args))
-            for item in owner._obligations
-        )
-    ):
-        return True
-    if matches_requirement(owner, obligation, tool, result, args):
-        return True
-    if obligation.kind == "compare" and complete_observation(result) and tool in _READ_TOOLS:
-        return any(same_identity(operand, arg_path(args)) for operand in obligation.operands)
-    if obligation.kind == "fallback":
-        return matches_fallback(obligation, tool, result, args)
-    return False
-
-
-def satisfy(owner: Any, obligation_id: str, evidence_ref: int | str) -> None:
-    transition(owner, obligation_id, ObligationStatus.SATISFIED, evidence_ref=evidence_ref)
-
-
-def waive(owner: Any, obligation_id: str, evidence_ref: int | str) -> None:
-    transition(owner, obligation_id, ObligationStatus.WAIVED, evidence_ref=evidence_ref)
-
-
-def block(owner: Any, obligation_id: str, evidence_ref: int | str) -> None:
-    transition(owner, obligation_id, ObligationStatus.BLOCKED, evidence_ref=evidence_ref)
-
-
-def record_effect(owner: Any, effect: str, *, evidence_ref: int | str | None, allow_legacy: bool) -> None:
-    normalized = _normalize_effect(effect)
-    match = next(
-        (item for item in owner._obligations if item.kind == "effect" and item.effect == normalized),
-        None,
-    )
-    if match is None:
-        if normalized not in owner._executed_effects:
-            owner._executed_effects.append(normalized)
-        return
     transition(
         owner,
-        match.id,
+        obligation_id,
         ObligationStatus.SATISFIED,
         evidence_ref=evidence_ref,
-        allow_legacy=allow_legacy,
+        effect_authority=effect_authority,
     )
-    if normalized not in owner._executed_effects:
-        owner._executed_effects.append(normalized)
 
 
-def waive_effect(owner: Any, effect: str, *, evidence_ref: int | str | None, allow_legacy: bool) -> None:
-    normalized = _normalize_effect(effect)
-    match = next(
-        (item for item in owner._obligations if item.kind == "effect" and item.effect == normalized),
-        None,
-    )
-    if match is None:
-        if normalized not in owner.requested_effects:
-            raise TaskSemanticsError("efeito nao solicitado")
-        if normalized not in owner._waived_effects:
-            owner._waived_effects.append(normalized)
-        return
+def waive(
+    owner: Any,
+    obligation_id: str,
+    evidence_ref: int | str,
+    *,
+    effect_authority: Any = None,
+) -> None:
     transition(
         owner,
-        match.id,
+        obligation_id,
         ObligationStatus.WAIVED,
         evidence_ref=evidence_ref,
-        allow_legacy=allow_legacy,
+        effect_authority=effect_authority,
     )
-    if normalized not in owner._waived_effects:
-        owner._waived_effects.append(normalized)
+
+
+def block(
+    owner: Any,
+    obligation_id: str,
+    evidence_ref: int | str,
+    *,
+    effect_authority: Any = None,
+) -> None:
+    transition(
+        owner,
+        obligation_id,
+        ObligationStatus.BLOCKED,
+        evidence_ref=evidence_ref,
+        effect_authority=effect_authority,
+    )
 
 
 def register_observation(
@@ -208,45 +164,43 @@ def observe_tool(
     args: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     register_observation(owner, tool_name, result, evidence_ref, args=args)
+    ref = _eligible_evidence_ref(evidence_ref)
     if not result_is_successful(result):
-        ref = _eligible_evidence_ref(evidence_ref)
-        satisfied_failures: list[str] = []
         if classify_failure(result) is not FailureClass.LOCAL:
             return ()
+        satisfied_ids: list[str] = []
         for item in owner.pending_obligations():
             if item.kind == "fallback" and matches_fallback(item, tool_name, result, args):
                 satisfy(owner, item.id, ref)
-                satisfied_failures.append(item.id)
+                satisfied_ids.append(item.id)
                 for required_read in owner.pending_obligations():
-                    if (
-                        required_read.kind == "read"
-                        and same_identity(required_read.target, item.fallback_target)
+                    if required_read.kind == "read" and same_identity(
+                        required_read.target,
+                        item.fallback_target,
                     ):
                         waive(owner, required_read.id, ref)
-                        satisfied_failures.append(required_read.id)
-        return tuple(satisfied_failures)
-    ref = _eligible_evidence_ref(evidence_ref)
+                        satisfied_ids.append(required_read.id)
+        return tuple(satisfied_ids)
     tool = str(tool_name).strip().casefold()
     satisfied: list[str] = []
     for item in owner.pending_obligations():
-        if item.kind != "effect" and matches_requirement(owner, item, tool, result, args):
-            satisfy(owner, item.id, ref)
-            satisfied.append(item.id)
-    satisfied.extend(_satisfy_comparisons_from_reads(owner))
+        if item.kind == "effect" or not matches_requirement(owner, item, tool, result, args):
+            continue
+        satisfy(owner, item.id, ref)
+        satisfied.append(item.id)
+    for obligation_id in _satisfy_comparisons_from_reads(owner):
+        satisfied.append(obligation_id)
     return tuple(satisfied)
 
 
 def _satisfy_comparisons_from_reads(owner: Any) -> list[str]:
     reads: dict[str, tuple[int | str, Mapping[str, Any]]] = {}
     for ref, item in getattr(owner, "_evidence_catalog", {}).items():
-        if item.get("tool") not in _READ_TOOLS:
-            continue
         result = item.get("result")
-        if not isinstance(result, Mapping) or not complete_observation(result):
-            continue
         path = arg_path(item.get("args"))
-        if path is not None:
-            reads[path.casefold()] = (ref, result)
+        if item.get("tool") in _READ_TOOLS and isinstance(result, Mapping) and path is not None:
+            if complete_observation(result):
+                reads[path.casefold()] = (ref, result)
     satisfied: list[str] = []
     for item in owner.pending_obligations():
         if item.kind != "compare" or len(item.operands) != 2:
@@ -255,8 +209,12 @@ def _satisfy_comparisons_from_reads(owner: Any) -> list[str]:
         right = reads.get(item.operands[1].casefold())
         if left is None or right is None:
             continue
-        satisfy(owner, item.id, evidence_ref=left[0])
-        transition(owner, item.id, ObligationStatus.SATISFIED, evidence_ref=right[0])
+        transition_with_evidence(
+            owner,
+            item.id,
+            ObligationStatus.SATISFIED,
+            evidence_refs=(left[0], right[0]),
+        )
         satisfied.append(item.id)
     return satisfied
 

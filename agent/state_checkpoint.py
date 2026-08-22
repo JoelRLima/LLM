@@ -14,10 +14,14 @@ _VALID_TERMINAL_DISPOSITIONS = frozenset({"complete", "block", "fail"}) | (
 
 def progression_checkpoint(state: Any) -> dict[str, Any]:
     semantics = getattr(state, "task_semantics", None)
+    objective = getattr(state, "objective", None)
     semantic_checkpoint = (
         semantics.to_checkpoint_dict()
         if isinstance(semantics, TaskSemantics)
-        and getattr(state, "objective", None) == semantics.objective
+        and (
+            objective == semantics.objective
+            or (objective is None and semantics.objective == "")
+        )
         else None
     )
     return {

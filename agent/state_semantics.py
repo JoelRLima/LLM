@@ -102,11 +102,41 @@ class TaskSemanticsStateMixin:
     def obligation_status(self, obligation_id: str) -> ObligationStatus:
         return self._task_semantics.obligation_status(obligation_id)
 
-    def satisfy_obligation(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        self._task_semantics.satisfy(obligation_id, evidence_ref=evidence_ref)
+    def satisfy_obligation(
+        self,
+        obligation_id: str,
+        *,
+        evidence_ref: int | str,
+        effect_authority: Any = None,
+    ) -> None:
+        self._task_semantics.satisfy(
+            obligation_id,
+            evidence_ref=evidence_ref,
+            effect_authority=effect_authority,
+        )
 
-    def waive_obligation(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        self._task_semantics.waive(obligation_id, evidence_ref=evidence_ref)
+    def waive_obligation(
+        self,
+        obligation_id: str,
+        *,
+        evidence_ref: int | str,
+        effect_authority: Any = None,
+    ) -> None:
+        self._task_semantics.waive(
+            obligation_id,
+            evidence_ref=evidence_ref,
+            effect_authority=effect_authority,
+        )
 
-    def block_obligation(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        self._task_semantics.block(obligation_id, evidence_ref=evidence_ref)
+    def block_obligation(
+        self,
+        obligation_id: str,
+        *,
+        evidence_ref: int | str,
+        effect_authority: Any = None,
+    ) -> None:
+        self._task_semantics.block(
+            obligation_id,
+            evidence_ref=evidence_ref,
+            effect_authority=effect_authority,
+        )

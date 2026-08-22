@@ -57,8 +57,10 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
         definitions,
         statuses=data.get("statuses"),
         evidence=data.get("evidence"),
-        executed_effects=data.get("executed_effects") or (),
-        waived_effects=data.get("waived_effects") or (),
+        # These projections are derived from terminal evidence after restore;
+        # serialized lists are not independent authority.
+        executed_effects=(),
+        waived_effects=(),
         _strict_evidence=True,
     )
 
