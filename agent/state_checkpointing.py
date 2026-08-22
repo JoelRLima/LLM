@@ -7,6 +7,8 @@ from typing import Any, Dict, Mapping, cast
 
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
+from agent.planning.task_semantics import TaskSemanticsError
+from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
 from agent.state_checkpoint import progression_checkpoint, restore_progression
 
 
@@ -131,6 +133,13 @@ def _restore_histories(state: Any, data: Mapping[str, Any]) -> None:
                     evidence_ref=index,
                     args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
                 )
+    if isinstance(data.get("task_semantics"), Mapping):
+        try:
+            revalidate_restored_terminal_evidence(semantics)
+        except (TaskSemanticsError, TypeError, AttributeError) as exc:
+            raise ValueError(
+                "Checkpoint task semantics evidence does not match canonical history."
+            ) from exc
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
