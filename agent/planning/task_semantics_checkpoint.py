@@ -28,6 +28,25 @@ def snapshot(owner: Any) -> tuple[dict[str, Any], ...]:
 
 
 def to_checkpoint_dict(owner: Any) -> dict[str, Any]:
+    statuses = {key: value.value for key, value in owner._statuses.items()}
+    statuses.update(
+        {
+            key: value.value
+            for key, value in getattr(owner, "_status_claims", {}).items()
+        }
+    )
+    evidence = {
+        key: list(value)
+        for key, value in owner._evidence.items()
+        if value
+    }
+    evidence.update(
+        {
+            key: list(value)
+            for key, value in getattr(owner, "_evidence_claims", {}).items()
+            if value
+        }
+    )
     return {
         "schema_version": TASK_SEMANTICS_SCHEMA_VERSION,
         "objective": owner.objective,
@@ -36,8 +55,8 @@ def to_checkpoint_dict(owner: Any) -> dict[str, Any]:
         "executed_effects": list(owner.executed_effects()),
         "waived_effects": list(owner.waived_effects()),
         "obligations": [item.to_dict() for item in owner._obligations],
-        "statuses": {key: value.value for key, value in owner._statuses.items()},
-        "evidence": {key: list(value) for key, value in owner._evidence.items() if value},
+        "statuses": statuses,
+        "evidence": evidence,
     }
 
 

@@ -463,6 +463,112 @@ def test_strict_constructor_rejects_synthetic_effect_status() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("obligation", "intent"),
+    (
+        (
+            TaskObligation("read:b", "read", "Ler b.txt.", target="b.txt"),
+            TaskIntent("Leia b.txt."),
+        ),
+        (
+            TaskObligation("search:x", "search", "Buscar X.", query="X"),
+            TaskIntent("Busque X."),
+        ),
+        (
+            TaskObligation(
+                "compare:ab",
+                "compare",
+                "Comparar a.txt e b.txt.",
+                operands=("a.txt", "b.txt"),
+            ),
+            TaskIntent("Compare a.txt e b.txt."),
+        ),
+        (
+            TaskObligation("analyze:b", "analyze", "Analisar b.txt.", target="b.txt"),
+            TaskIntent("Analise b.txt."),
+        ),
+        (
+            TaskObligation(
+                "fallback:b",
+                "fallback",
+                "Relatar a falha de b.txt.",
+                fallback_target="b.txt",
+            ),
+            TaskIntent("Leia b.txt e relate a falha."),
+        ),
+        (
+            TaskObligation("effect:write", "effect", "Escrever.", effect="write"),
+            TaskIntent("write", ("write",)),
+        ),
+    ),
+)
+def test_strict_constructor_stages_numeric_terminal_claim_without_authority(
+    obligation: TaskObligation,
+    intent: TaskIntent,
+) -> None:
+    semantics = TaskSemantics(
+        intent,
+        [obligation],
+        statuses={obligation.id: "satisfied"},
+        evidence={obligation.id: [1]},
+        _strict_evidence=True,
+    )
+
+    assert semantics.obligation_status(obligation.id) is ObligationStatus.PENDING
+    assert semantics.obligation_evidence(obligation.id) == ()
+    assert semantics.pending_obligations() == (obligation,)
+    assert semantics.terminal_evidence_complete() is False
+    assert semantics._evidence_catalog == {}
+
+    restored = TaskSemantics.from_checkpoint_dict(semantics.to_checkpoint_dict())
+    assert restored.obligation_status(obligation.id) is ObligationStatus.PENDING
+    assert restored.obligation_evidence(obligation.id) == ()
+    assert restored.terminal_evidence_complete() is False
+
+
+@pytest.mark.parametrize("status", ("waived", "blocked"))
+def test_isolated_checkpoint_stages_non_satisfied_terminal_claims(status: str) -> None:
+    obligation = TaskObligation("read:b", "read", "Ler b.txt.", target="b.txt")
+    checkpoint = TaskSemantics(
+        TaskIntent("Leia b.txt."),
+        [obligation],
+        statuses={obligation.id: status},
+        evidence={obligation.id: [1]},
+        _strict_evidence=True,
+    ).to_checkpoint_dict()
+
+    restored = TaskSemantics.from_checkpoint_dict(checkpoint)
+
+    assert restored.obligation_status(obligation.id) is ObligationStatus.PENDING
+    assert restored.pending_obligations() == (obligation,)
+    assert restored.terminal_evidence_complete() is False
+
+
+def test_agent_state_rejects_non_strict_semantics_owner() -> None:
+    state = _state()
+    non_strict = TaskSemantics(
+        TaskIntent("Leia b.txt."),
+        [TaskObligation("read:b", "read", "Ler b.txt.", target="b.txt")],
+    )
+
+    with pytest.raises(TypeError):
+        state.set_task_semantics(non_strict)
+
+    assert state.task_semantics._strict_evidence is True
+
+
+def test_replacing_effect_contract_cannot_reuse_old_terminal_projection() -> None:
+    state, authority = _effect_state("code_task", _write_result(), {"write"})
+    refresh_executed_effects(authority)
+    assert state.pending_effects() == ()
+
+    state.requested_effects = []
+    state.requested_effects = ["write"]
+
+    assert state.obligation_status("effect:write") is ObligationStatus.PENDING
+    assert state.pending_effects() == ("write",)
+
+
 def test_effect_refresh_requires_write_capability_and_execution() -> None:
     not_write, not_write_authority = _effect_state("file_reader", _write_result(), {"read"})
     refresh_executed_effects(not_write_authority)

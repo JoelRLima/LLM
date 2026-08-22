@@ -60,8 +60,7 @@ def _validate_unbound_effect(
     allow_legacy: bool,
     effect_authority: Any,
 ) -> None:
-    if not getattr(owner, "_strict_evidence", False):
-        return
+    del allow_legacy
     if evidence_ref is None or effect_authority is None:
         raise TaskSemanticsError("autoridade operacional de efeito ausente")
     observation = getattr(owner, "_evidence_catalog", {}).get(evidence_ref)
@@ -115,8 +114,7 @@ def _validate_unbound_waiver(
     allow_legacy: bool,
     effect_authority: Any,
 ) -> None:
-    if not getattr(owner, "_strict_evidence", False):
-        return
+    del allow_legacy
     if evidence_ref is None or effect_authority is None:
         raise TaskSemanticsError("autoridade operacional de efeito ausente")
     observation = getattr(owner, "_evidence_catalog", {}).get(evidence_ref)
@@ -130,8 +128,7 @@ def _validate_unbound_waiver(
 
 def _reject_synthetic_effect_ref(owner: Any, evidence_ref: int | str | None) -> None:
     if (
-        getattr(owner, "_strict_evidence", False)
-        and isinstance(evidence_ref, str)
+        isinstance(evidence_ref, str)
         and evidence_ref.startswith("legacy:")
     ):
         raise TaskSemanticsError("evidencia sintetica nao pode provar efeito operacional")

@@ -48,6 +48,8 @@ class TaskSemantics:
     _obligations: tuple[TaskObligation, ...]
     _statuses: dict[str, ObligationStatus]
     _evidence: dict[str, list[int | str]]
+    _status_claims: dict[str, ObligationStatus]
+    _evidence_claims: dict[str, list[int | str]]
     _evidence_catalog: dict[int | str, dict[str, Any]]
     _executed_effects: list[str]
     _waived_effects: list[str]
@@ -78,7 +80,7 @@ class TaskSemantics:
 
     @classmethod
     def empty(cls, objective: str = "") -> "TaskSemantics":
-        return cls(TaskIntent(str(objective or "")))
+        return cls(TaskIntent(str(objective or "")), _strict_evidence=True)
 
     @classmethod
     def from_objective(cls, objective: str) -> "TaskSemantics":
@@ -161,13 +163,24 @@ class TaskSemantics:
         )
 
     def terminal_evidence_complete(self) -> bool:
+        if self._status_claims or any(self._evidence_claims.values()):
+            return False
         return all(
             self._statuses[item.id] is ObligationStatus.PENDING or bool(self._evidence[item.id])
             for item in self._obligations
         )
 
     def pending_effects(self) -> tuple[str, ...]:
-        completed = set(self._executed_effects) | set(self._waived_effects)
+        completed = {
+            item.effect
+            for item in self._obligations
+            if item.kind == "effect"
+            and item.effect is not None
+            and self._statuses[item.id] in {
+                ObligationStatus.SATISFIED,
+                ObligationStatus.WAIVED,
+            }
+        }
         return tuple(effect for effect in self.requested_effects if effect not in completed)
 
     def executed_effects(self) -> tuple[str, ...]:

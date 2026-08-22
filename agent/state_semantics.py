@@ -34,7 +34,9 @@ class TaskSemanticsStateMixin:
         self.set_terminal_disposition(None)
 
     def set_task_semantics(self, semantics: TaskSemantics) -> None:
-        if not isinstance(semantics, TaskSemantics):
+        if not isinstance(semantics, TaskSemantics) or not getattr(
+            semantics, "_strict_evidence", False
+        ):
             raise TypeError("semantics de tarefa invalida")
         self._task_semantics = semantics
 

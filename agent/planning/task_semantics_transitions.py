@@ -57,10 +57,9 @@ def transition_with_evidence(
 ) -> None:
     if obligation_id not in owner._statuses:
         raise TaskSemanticsError("obrigacao desconhecida")
-    if getattr(owner, "_strict_evidence", False):
-        # Legacy is a compatibility input only; it never bypasses strict
-        # terminal-evidence validation or fabricates an operational ref.
-        allow_legacy = False
+    # Compatibility is a source of claims only.  It never fabricates a
+    # terminal evidence reference or bypasses the canonical validator.
+    del allow_legacy
     refs = tuple(_eligible_evidence_ref(ref) for ref in evidence_refs)
     current = owner._statuses[obligation_id]
     existing = tuple(owner._evidence[obligation_id])
@@ -74,17 +73,16 @@ def transition_with_evidence(
     else:
         candidate = refs
     if not candidate:
-        if not allow_legacy:
-            raise TaskSemanticsError("transicao operacional requer evidencia")
-        candidate = (f"legacy:{obligation_id}",)
-    if getattr(owner, "_strict_evidence", False) and not allow_legacy:
-        validate_terminal_evidence(
-            owner,
-            obligation_id,
-            status,
-            candidate,
-            effect_authority=effect_authority,
-        )
+        raise TaskSemanticsError("transicao operacional requer evidencia")
+    validate_terminal_evidence(
+        owner,
+        obligation_id,
+        status,
+        candidate,
+        effect_authority=effect_authority,
+    )
+    getattr(owner, "_status_claims", {}).pop(obligation_id, None)
+    getattr(owner, "_evidence_claims", {}).pop(obligation_id, None)
     owner._statuses[obligation_id] = status
     owner._evidence[obligation_id] = list(candidate)
 
@@ -233,6 +231,15 @@ def _satisfy_comparisons_from_reads(owner: Any) -> list[str]:
 def replace_effects(owner: Any, requested_effects: Sequence[str], prohibited_effects: Sequence[str]) -> None:
     requested = tuple(dict.fromkeys(_normalize_effect(item) for item in requested_effects))
     prohibited = tuple(dict.fromkeys(_normalize_effect(item) for item in prohibited_effects))
+    previous_requested = set(owner.requested_effects)
+    removed = previous_requested - set(requested)
+    if removed:
+        owner._executed_effects = [
+            effect for effect in owner._executed_effects if effect not in removed
+        ]
+        owner._waived_effects = [
+            effect for effect in owner._waived_effects if effect not in removed
+        ]
     non_effect = tuple(item for item in owner._obligations if item.kind != "effect")
     owner._intent = TaskIntent(owner.objective, requested, prohibited)
     owner._obligations = non_effect + tuple(
@@ -246,13 +253,27 @@ def replace_effects(owner: Any, requested_effects: Sequence[str], prohibited_eff
     )
     previous = owner._statuses
     previous_evidence = owner._evidence
+    previous_status_claims = getattr(owner, "_status_claims", {})
+    previous_evidence_claims = getattr(owner, "_evidence_claims", {})
     owner._statuses = {item.id: previous.get(item.id, ObligationStatus.PENDING) for item in owner._obligations}
     owner._evidence = {item.id: list(previous_evidence.get(item.id, ())) for item in owner._obligations}
+    owner._status_claims = {
+        item.id: previous_status_claims[item.id]
+        for item in owner._obligations
+        if item.id in previous_status_claims
+    }
+    owner._evidence_claims = {
+        item.id: list(previous_evidence_claims[item.id])
+        for item in owner._obligations
+        if item.id in previous_evidence_claims
+    }
 
 
 def reset_progress(owner: Any) -> None:
     owner._statuses = {item.id: ObligationStatus.PENDING for item in owner._obligations}
     owner._evidence = {item.id: [] for item in owner._obligations}
+    owner._status_claims = {}
+    owner._evidence_claims = {}
     owner._executed_effects = []
     owner._waived_effects = []
     owner._evidence_catalog = {}
