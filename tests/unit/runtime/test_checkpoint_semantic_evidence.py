@@ -367,6 +367,102 @@ def test_effect_waiver_rejects_known_write_tool() -> None:
         )
 
 
+@pytest.mark.parametrize("method", ("record_executed_effect", "waive_effect"))
+def test_strict_effect_progression_rejects_synthetic_terminal_claims(method: str) -> None:
+    for kwargs in ({}, {"allow_legacy": True}):
+        state = _state()
+        state.reset_task_progression(["write"])
+
+        with pytest.raises(TaskSemanticsError):
+            getattr(state, method)("write", **kwargs)
+
+        assert state.obligation_status("effect:write") is ObligationStatus.PENDING
+        assert state.executed_effects == []
+        assert state.waived_effects == []
+        assert state.pending_effects() == ("write",)
+
+
+@pytest.mark.parametrize("attribute", ("executed_effects", "waived_effects"))
+def test_strict_compatibility_setters_do_not_promote_effect_truth(attribute: str) -> None:
+    state = _state()
+    state.reset_task_progression(["write"])
+
+    with pytest.raises(TaskSemanticsError):
+        setattr(state, attribute, ["write"])
+
+    assert state.obligation_status("effect:write") is ObligationStatus.PENDING
+    assert state.executed_effects == []
+    assert state.waived_effects == []
+    assert state.pending_effects() == ("write",)
+
+
+@pytest.mark.parametrize("method", ("record_effect", "waive_effect"))
+def test_direct_strict_legacy_api_does_not_promote_effect_truth(method: str) -> None:
+    semantics = TaskSemantics.from_legacy(
+        "",
+        ["write"],
+        executed_effects=["write"],
+        waived_effects=["write"],
+    )
+
+    with pytest.raises(TaskSemanticsError):
+        getattr(semantics, method)("write", allow_legacy=True)
+
+    assert semantics.obligation_status("effect:write") is ObligationStatus.PENDING
+    assert semantics.executed_effects() == ()
+    assert semantics.waived_effects() == ()
+    assert semantics.pending_effects() == ("write",)
+
+
+@pytest.mark.parametrize("method", ("record_executed_effect", "waive_effect"))
+def test_strict_effect_rejects_legacy_ref_even_with_matching_observation(method: str) -> None:
+    state, authority = _effect_state("code_task", _write_result(), {"write"})
+    synthetic_ref = "legacy:effect:write"
+    state.task_semantics.register_observation(
+        "code_task",
+        _write_result(),
+        evidence_ref=synthetic_ref,
+        args={},
+    )
+
+    with pytest.raises(TaskSemanticsError, match="sintetica"):
+        getattr(state, method)(
+            "write",
+            evidence_ref=synthetic_ref,
+            effect_authority=authority,
+        )
+
+    assert state.obligation_status("effect:write") is ObligationStatus.PENDING
+    assert state.executed_effects == []
+    assert state.waived_effects == []
+
+
+def test_strict_constructor_does_not_promote_compatibility_effect_lists() -> None:
+    semantics = TaskSemantics(
+        TaskIntent("", ("write",)),
+        [TaskObligation("effect:write", "effect", "write", effect="write")],
+        executed_effects=["write"],
+        waived_effects=["write"],
+        _strict_evidence=True,
+    )
+
+    assert semantics.obligation_status("effect:write") is ObligationStatus.PENDING
+    assert semantics.executed_effects() == ()
+    assert semantics.waived_effects() == ()
+    assert semantics.pending_effects() == ("write",)
+
+
+def test_strict_constructor_rejects_synthetic_effect_status() -> None:
+    with pytest.raises(TaskSemanticsError, match="sintetica"):
+        TaskSemantics(
+            TaskIntent("", ("write",)),
+            [TaskObligation("effect:write", "effect", "write", effect="write")],
+            statuses={"effect:write": "satisfied"},
+            evidence={"effect:write": ["legacy:effect:write"]},
+            _strict_evidence=True,
+        )
+
+
 def test_effect_refresh_requires_write_capability_and_execution() -> None:
     not_write, not_write_authority = _effect_state("file_reader", _write_result(), {"read"})
     refresh_executed_effects(not_write_authority)
@@ -608,10 +704,15 @@ def test_legacy_previous_read_replay_does_not_use_future_history() -> None:
 def test_synthetic_effect_checkpoint_is_rejected_before_reentry() -> None:
     state = _state()
     state.reset_task_progression(["write"])
-    state.record_executed_effect("write")
+    checkpoint = state.task_semantics.to_checkpoint_dict()
+    statuses = checkpoint["statuses"]
+    evidence = checkpoint["evidence"]
+    assert isinstance(statuses, dict) and isinstance(evidence, dict)
+    statuses["effect:write"] = "satisfied"
+    evidence["effect:write"] = ["legacy:effect:write"]
 
     with pytest.raises(TaskSemanticsError, match="sintetica"):
-        TaskSemantics.from_checkpoint_dict(state.task_semantics.to_checkpoint_dict())
+        TaskSemantics.from_checkpoint_dict(checkpoint)
 
 
 def test_rejected_checkpoint_does_not_publish_partial_authoritative_state() -> None:

@@ -52,7 +52,7 @@ def record_executed_effect(
             semantics.record_effect(
                 effect,
                 evidence_ref=evidence_ref,
-                allow_legacy=allow_legacy or evidence_ref is None,
+                allow_legacy=allow_legacy,
                 effect_authority=effect_authority,
             )
         return
@@ -74,7 +74,7 @@ def waive_effect(
             semantics.waive_effect(
                 effect,
                 evidence_ref=evidence_ref,
-                allow_legacy=allow_legacy or evidence_ref is None,
+                allow_legacy=allow_legacy,
                 effect_authority=effect_authority,
             )
         return

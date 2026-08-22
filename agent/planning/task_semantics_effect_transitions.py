@@ -21,6 +21,7 @@ def record_effect(
     allow_legacy: bool,
     effect_authority: Any = None,
 ) -> None:
+    _reject_synthetic_effect_ref(owner, evidence_ref)
     normalized = _normalize_effect(effect)
     match = _effect_obligation(owner, normalized)
     if match is None:
@@ -59,7 +60,7 @@ def _validate_unbound_effect(
     allow_legacy: bool,
     effect_authority: Any,
 ) -> None:
-    if not getattr(owner, "_strict_evidence", False) or allow_legacy:
+    if not getattr(owner, "_strict_evidence", False):
         return
     if evidence_ref is None or effect_authority is None:
         raise TaskSemanticsError("autoridade operacional de efeito ausente")
@@ -80,6 +81,7 @@ def waive_effect(
     allow_legacy: bool,
     effect_authority: Any = None,
 ) -> None:
+    _reject_synthetic_effect_ref(owner, evidence_ref)
     normalized = _normalize_effect(effect)
     match = _effect_obligation(owner, normalized)
     if match is None:
@@ -113,7 +115,7 @@ def _validate_unbound_waiver(
     allow_legacy: bool,
     effect_authority: Any,
 ) -> None:
-    if not getattr(owner, "_strict_evidence", False) or allow_legacy:
+    if not getattr(owner, "_strict_evidence", False):
         return
     if evidence_ref is None or effect_authority is None:
         raise TaskSemanticsError("autoridade operacional de efeito ausente")
@@ -124,6 +126,15 @@ def _validate_unbound_waiver(
         observation,
     ):
         raise TaskSemanticsError("evidencia nao prova o efeito operacional")
+
+
+def _reject_synthetic_effect_ref(owner: Any, evidence_ref: int | str | None) -> None:
+    if (
+        getattr(owner, "_strict_evidence", False)
+        and isinstance(evidence_ref, str)
+        and evidence_ref.startswith("legacy:")
+    ):
+        raise TaskSemanticsError("evidencia sintetica nao pode provar efeito operacional")
 
 
 def _transition(*args: Any, **kwargs: Any) -> None:

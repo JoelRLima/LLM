@@ -39,8 +39,16 @@ def initialize_semantics(
     owner._statuses = {item.id: ObligationStatus.PENDING for item in owner._obligations}
     owner._evidence = {item.id: [] for item in owner._obligations}
     owner._evidence_catalog = {}
-    owner._executed_effects = list(dict.fromkeys(_normalize_effect(item) for item in executed_effects))
-    owner._waived_effects = list(dict.fromkeys(_normalize_effect(item) for item in waived_effects))
+    owner._executed_effects = (
+        []
+        if owner._strict_evidence
+        else list(dict.fromkeys(_normalize_effect(item) for item in executed_effects))
+    )
+    owner._waived_effects = (
+        []
+        if owner._strict_evidence
+        else list(dict.fromkeys(_normalize_effect(item) for item in waived_effects))
+    )
     _restore_statuses(owner, statuses or {}, evidence or {})
     for refs in owner._evidence.values():
         for ref in refs:
@@ -60,8 +68,19 @@ def _restore_statuses(
             status = raw_status if isinstance(raw_status, ObligationStatus) else ObligationStatus(str(raw_status))
         except ValueError as exc:
             raise TaskSemanticsError("status de obrigacao invalido") from exc
+        obligation = next(item for item in owner._obligations if item.id == obligation_id)
         if status is not ObligationStatus.PENDING and not evidence.get(obligation_id):
             raise TaskSemanticsError("status terminal requer transicao com evidencia")
+        if (
+            owner._strict_evidence
+            and obligation.kind == "effect"
+            and status is not ObligationStatus.PENDING
+            and any(
+                isinstance(ref, str) and ref.startswith("legacy:")
+                for ref in evidence.get(obligation_id, ())
+            )
+        ):
+            raise TaskSemanticsError("evidencia sintetica nao pode provar efeito operacional")
         owner._statuses[obligation_id] = status
     for obligation_id, refs in evidence.items():
         if obligation_id not in owner._evidence or not isinstance(refs, (list, tuple)):

@@ -46,6 +46,11 @@ def validate_terminal_evidence(
     )
     if obligation is None:
         raise TaskSemanticsError("obrigacao desconhecida")
+    if obligation.kind == "effect" and any(
+        isinstance(ref, str) and ref.startswith("legacy:")
+        for ref in refs
+    ):
+        raise TaskSemanticsError("evidencia sintetica nao pode provar efeito operacional")
     observations = _catalog_observations(owner, refs)
     if obligation.kind == "effect":
         _validate_effect_observations(

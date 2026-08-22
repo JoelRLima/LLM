@@ -57,6 +57,10 @@ def transition_with_evidence(
 ) -> None:
     if obligation_id not in owner._statuses:
         raise TaskSemanticsError("obrigacao desconhecida")
+    if getattr(owner, "_strict_evidence", False):
+        # Legacy is a compatibility input only; it never bypasses strict
+        # terminal-evidence validation or fabricates an operational ref.
+        allow_legacy = False
     refs = tuple(_eligible_evidence_ref(ref) for ref in evidence_refs)
     current = owner._statuses[obligation_id]
     existing = tuple(owner._evidence[obligation_id])
