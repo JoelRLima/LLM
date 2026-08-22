@@ -9,6 +9,7 @@ from agent.planning.task_semantics_checkpoint import (
     snapshot,
     to_checkpoint_dict,
 )
+from agent.planning.task_semantics_effect_transitions import record_effect, waive_effect
 from agent.planning.task_semantics_inference import (
     infer_effect_semantics,
     infer_prohibited_effects,
@@ -20,13 +21,11 @@ from agent.planning.task_semantics_storage import initialize_semantics
 from agent.planning.task_semantics_transitions import (
     block,
     observe_tool,
-    record_effect,
     register_observation,
     replace_effects,
     reset_progress,
     satisfy,
     waive,
-    waive_effect,
 )
 from agent.planning.task_semantics_types import (
     MAX_OBLIGATIONS,
@@ -99,12 +98,16 @@ class TaskSemantics:
         waived_effects: Sequence[str] = (),
         prohibited_effects: Sequence[str] = (),
     ) -> "TaskSemantics":
-        base = cls.from_objective(objective) if objective else cls.empty()
+        base = (
+            cls.from_objective(objective)
+            if objective
+            else cls(TaskIntent(""), _strict_evidence=True)
+        )
         base.replace_effects(requested_effects, prohibited_effects)
-        for effect in executed_effects:
-            base.record_effect(effect, evidence_ref=f"legacy:executed:{effect}", allow_legacy=True)
-        for effect in waived_effects:
-            base.waive_effect(effect, evidence_ref=f"legacy:waived:{effect}", allow_legacy=True)
+        # Legacy effect lists are claims, not operational evidence.  They are
+        # intentionally ignored here; a restore may rebuild them only from the
+        # canonical observation history and live effect authority.
+        del executed_effects, waived_effects
         return base
 
     @property
@@ -184,32 +187,20 @@ class TaskSemantics:
         prohibited = set(self.prohibited_effects) - set(self.requested_effects)
         return tuple(effect for effect in self.executed_effects() if effect in prohibited)
 
-    def satisfy(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        satisfy(self, _normalize_id(obligation_id), evidence_ref)
+    def satisfy(self, obligation_id: str, *, evidence_ref: int | str, effect_authority: Any = None) -> None:
+        satisfy(self, _normalize_id(obligation_id), evidence_ref, effect_authority=effect_authority)
 
-    def waive(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        waive(self, _normalize_id(obligation_id), evidence_ref)
+    def waive(self, obligation_id: str, *, evidence_ref: int | str, effect_authority: Any = None) -> None:
+        waive(self, _normalize_id(obligation_id), evidence_ref, effect_authority=effect_authority)
 
-    def block(self, obligation_id: str, *, evidence_ref: int | str) -> None:
-        block(self, _normalize_id(obligation_id), evidence_ref)
+    def block(self, obligation_id: str, *, evidence_ref: int | str, effect_authority: Any = None) -> None:
+        block(self, _normalize_id(obligation_id), evidence_ref, effect_authority=effect_authority)
 
-    def record_effect(
-        self,
-        effect: str,
-        *,
-        evidence_ref: int | str | None = None,
-        allow_legacy: bool = False,
-    ) -> None:
-        record_effect(self, effect, evidence_ref=evidence_ref, allow_legacy=allow_legacy)
+    def record_effect(self, effect: str, *, evidence_ref: int | str | None = None, allow_legacy: bool = False, effect_authority: Any = None) -> None:
+        record_effect(self, effect, evidence_ref=evidence_ref, allow_legacy=allow_legacy, effect_authority=effect_authority)
 
-    def waive_effect(
-        self,
-        effect: str,
-        *,
-        evidence_ref: int | str | None = None,
-        allow_legacy: bool = False,
-    ) -> None:
-        waive_effect(self, effect, evidence_ref=evidence_ref, allow_legacy=allow_legacy)
+    def waive_effect(self, effect: str, *, evidence_ref: int | str | None = None, allow_legacy: bool = False, effect_authority: Any = None) -> None:
+        waive_effect(self, effect, evidence_ref=evidence_ref, allow_legacy=allow_legacy, effect_authority=effect_authority)
 
     def observe_tool(
         self,

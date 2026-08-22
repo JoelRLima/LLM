@@ -166,12 +166,14 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
         evidence_ref: int | str | None = None,
         *,
         allow_legacy: bool = False,
+        effect_authority: Any = None,
     ) -> None:
         record_executed_effect(
             self,
             effect,
             evidence_ref=evidence_ref,
             allow_legacy=allow_legacy,
+            effect_authority=effect_authority,
         )
     def waive_effect(
         self,
@@ -179,12 +181,14 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
         evidence_ref: int | str | None = None,
         *,
         allow_legacy: bool = False,
+        effect_authority: Any = None,
     ) -> None:
         waive_effect(
             self,
             effect,
             evidence_ref=evidence_ref,
             allow_legacy=allow_legacy,
+            effect_authority=effect_authority,
         )
     def pending_effects(self) -> tuple[str, ...]:
         return pending_effects(self)
