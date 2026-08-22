@@ -74,7 +74,11 @@ def _resolve_observation(
         return "identidade canônica da observação não existe no plano"
     if state.get_step_status(observation_index) is not StepStatus.COMPLETED:
         return "a observação referenciada não foi concluída com sucesso"
-    history_match = current_result_for_step(state.tool_history, reference)
+    history_match = current_result_for_step(
+        state.tool_history,
+        reference,
+        plan_id=getattr(state, "plan_identity", None),
+    )
     if history_match is None:
         return "resultado canônico da observação indisponível"
     history_index, history_item = history_match

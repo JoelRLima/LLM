@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, cast
 from uuid import uuid4
 
+from agent.application_cleanup import abort_startup, release_resources
 from agent.application_result import AgentRunResult
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
@@ -29,7 +30,7 @@ from agent.reporting.run_receipt import (
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
-from agent.runtime.logging import setup_logger, teardown_logger
+from agent.runtime.logging import setup_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
@@ -40,11 +41,8 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 _RUN_LOCK = threading.RLock()
-
-
 class AgentApplication(ApplicationOperationalModeMixin):
     """Owns one configured assistant runtime and its resources."""
-
     def __init__(
         self,
         *,
@@ -184,9 +182,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 app.orchestrator.set_operational_mode(operational_mode)
             return app
         except Exception:
-            instance_lock.release()
-            if logging_acquired:
-                teardown_logger()
+            abort_startup(instance_lock, logging_acquired)
             raise
     @staticmethod
     def _apply_workspace_paths(
@@ -201,7 +197,6 @@ class AgentApplication(ApplicationOperationalModeMixin):
     def run(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         with _RUN_LOCK:
             return self._run_locked(objective, stream_callback=stream_callback)
-
     def _run_locked(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         if self._closed:
             raise RuntimeError("A aplicação já foi encerrada.")
@@ -281,14 +276,21 @@ class AgentApplication(ApplicationOperationalModeMixin):
         with _RUN_LOCK:
             if self._closed:
                 return
+            primary_error: BaseException | None = None
+            cleanup_error: BaseException | None = None
             try:
                 if not self._task_attempted:
                     self.orchestrator._persist_memory_to_file()
+            except BaseException as exc:
+                primary_error = exc
             finally:
-                self._instance_lock.release()
-                if self._owns_logging:
-                    teardown_logger()
+                cleanup_error = release_resources(self._instance_lock, self._owns_logging)
                 self._closed = True
+            if primary_error is not None:
+                raise primary_error
+            if cleanup_error is not None:
+                raise cleanup_error
+
     def __enter__(self) -> "AgentApplication":
         return self
 

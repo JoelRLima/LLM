@@ -5,6 +5,7 @@ import pytest
 
 from agent.execution_state import StepExecutionRecord, StepStatus
 from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from agent.planning.plan_execution_loop import run_plan_loop
 from agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as run_reasoning_boundary,
 )
@@ -16,6 +17,27 @@ from agent.planning.task_completion import (
     refresh_executed_effects,
 )
 from agent.state import AgentState
+
+
+@pytest.mark.parametrize(
+    "objective",
+    [
+        "Não altere nenhum arquivo.",
+        "Leia a.txt. Não modifique nada.",
+        "Do not modify any files.",
+        "Se X for verdadeiro, escreva Y; caso contrário, não altere nada.",
+        "Escreva exatamente o texto abaixo.",
+        "Write exactly the text below.",
+    ],
+)
+def test_initialize_task_progression_uses_canonical_effect_inference(objective):
+    state = AgentState()
+    orchestrator = SimpleNamespace(agent_state=state)
+
+    initialize_task_progression(orchestrator, objective)
+
+    expected = ["write"] if "escreva Y" in objective else []
+    assert state.requested_effects == expected
 
 
 class _Registry:
@@ -561,6 +583,247 @@ def test_unverified_step_cannot_be_marked_complete() -> None:
     assert state.terminal_disposition != "complete"
     assert state.terminal_disposition == "unverified"
     assert state.last_result["status"] == "unverified"
+
+
+def test_prohibited_observed_write_blocks_canonical_completion() -> None:
+    state = AgentState()
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        tool_registry=_Registry(),
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+    initialize_task_progression(orchestrator, "Nao altere nenhum arquivo.")
+    state.tool_history = [
+        {
+            "tool": "code_task",
+            "result": {
+                "ok": True,
+                "status": "succeeded",
+                "executed": True,
+                "data": {
+                    "artifacts": [
+                        {
+                            "metadata": {
+                                "applied": True,
+                                "mutation_occurred": True,
+                                "final_state": "applied",
+                            }
+                        }
+                    ]
+                },
+            },
+        }
+    ]
+
+    answer = allow_linear_completion(orchestrator, "Nao altere nenhum arquivo.")
+
+    assert answer == "A tarefa foi bloqueada: ocorreu um efeito proibido."
+    assert state.terminal_disposition == "block"
+    assert state.executed_effects == ["write"]
+
+
+def test_reasoning_boundary_complete_rejects_pending_search_obligation() -> None:
+    state = AgentState()
+    initialize_task_progression(
+        SimpleNamespace(agent_state=state),
+        "Leia a fonte e procure o valor nos arquivos.",
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        {"ok": True, "done": True, "status": "succeeded", "data": "valor"},
+    )
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        session=SimpleNamespace(config={}),
+        plan_builder=SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                kind=PlanningDecisionKind.COMPLETE,
+            )
+        ),
+        _emit=lambda *_args, **_kwargs: None,
+        _task_failed=False,
+        _cancelled=False,
+    )
+
+    outcome = continue_after_reasoning_boundary(orchestrator, "Leia a fonte e procure o valor nos arquivos.")
+
+    assert outcome.answer is not None
+    assert outcome.completed is False
+    assert state.terminal_disposition == "block"
+    assert state.pending_obligations()
+
+
+def test_reasoning_boundary_complete_accepts_satisfied_obligation() -> None:
+    state = AgentState()
+    initialize_task_progression(
+        SimpleNamespace(agent_state=state),
+        "Procure o valor nos arquivos.",
+    )
+    state.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "valor"},
+        {"ok": True, "done": True, "status": "succeeded", "data": []},
+    )
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        session=SimpleNamespace(config={}),
+        plan_builder=SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                kind=PlanningDecisionKind.COMPLETE,
+            )
+        ),
+        _emit=lambda *_args, **_kwargs: None,
+        _task_failed=False,
+        _cancelled=False,
+    )
+
+    outcome = continue_after_reasoning_boundary(orchestrator, "Procure o valor nos arquivos.")
+
+    assert outcome.completed is True
+    assert outcome.answer is None
+    assert state.terminal_disposition == "complete"
+
+
+def test_same_operation_recovery_can_complete_after_failed_invocation() -> None:
+    state = AgentState()
+    state.step_records = {
+        "step-a": StepExecutionRecord("step-a", status=StepStatus.FAILED),
+    }
+    args = {"file_path": "missing.txt"}
+    state.tool_history = [
+        {
+            "step_id": "step-a",
+            "tool": "file_reader",
+            "args": args,
+            "result": {"ok": False, "status": "failed", "error": "temporary"},
+        },
+        {
+            "step_id": "step-a",
+            "tool": "file_reader",
+            "args": args,
+            "result": {"ok": True, "done": True, "status": "succeeded", "data": "ok"},
+        },
+    ]
+    state.last_result = state.tool_history[-1]["result"]
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        tool_registry=None,
+        _task_failed=True,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+
+    assert allow_linear_completion(orchestrator, "objetivo") is None
+    assert state.terminal_disposition == "complete"
+
+
+def test_unrelated_success_does_not_erase_failed_invocation() -> None:
+    state = AgentState()
+    state.step_records = {
+        "step-a": StepExecutionRecord("step-a", status=StepStatus.FAILED),
+    }
+    state.tool_history = [
+        {
+            "step_id": "step-a",
+            "tool": "file_reader",
+            "args": {"file_path": "missing.txt"},
+            "result": {"ok": False, "status": "failed", "error": "missing"},
+        },
+        {
+            "step_id": "step-b",
+            "tool": "echo",
+            "args": {"text": "done"},
+            "result": {"ok": True, "done": True, "status": "succeeded", "data": "done"},
+        },
+    ]
+    state.last_result = state.tool_history[-1]["result"]
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        tool_registry=None,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+
+    answer = allow_linear_completion(orchestrator, "objetivo")
+
+    assert answer == "A tarefa não pôde ser concluída."
+    assert state.terminal_disposition == "fail"
+
+
+def test_empty_plan_still_crosses_boundary_before_success() -> None:
+    state = AgentState()
+    objective = "Procure o valor nos arquivos."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "valor"},
+        {"ok": True, "done": True, "status": "succeeded", "data": []},
+    )
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        session=SimpleNamespace(config={}),
+        plan_builder=SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                kind=PlanningDecisionKind.COMPLETE,
+            )
+        ),
+        execution_gateway=SimpleNamespace(),
+        _emit=lambda *_args, **_kwargs: None,
+        _task_failed=False,
+        _cancelled=False,
+    )
+
+    class _Executor:
+        def __init__(self) -> None:
+            self.orchestrator = orchestrator
+
+        def _rebuild_dependency_map(self) -> None:
+            return None
+
+    assert run_plan_loop(_Executor(), objective, {}, False) is None
+    assert state.terminal_disposition == "complete"
+
+
+def test_boundary_extension_with_no_persisted_steps_blocks_instead_of_succeeding() -> None:
+    state = AgentState()
+    objective = "explique o resultado"
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "a.txt"},
+        {"ok": True, "done": True, "status": "succeeded", "data": "x"},
+    )
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        session=SimpleNamespace(config={}),
+        plan_builder=SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                plan=[{"tool": "grep", "args": {}}],
+            )
+        ),
+        execution_gateway=SimpleNamespace(
+            extend_validated_plan=lambda _plan, _objective: [{"tool": "grep", "args": {}}],
+        ),
+        _emit=lambda *_args, **_kwargs: None,
+        _task_failed=False,
+        _cancelled=False,
+    )
+
+    class _Executor:
+        def __init__(self) -> None:
+            self.orchestrator = orchestrator
+
+        def _rebuild_dependency_map(self) -> None:
+            return None
+
+    answer = run_plan_loop(_Executor(), objective, {}, False)
+
+    assert answer is not None
+    assert state.terminal_disposition == "block"
 
 
 def test_reasoning_policy_has_no_completion_import_cycle() -> None:

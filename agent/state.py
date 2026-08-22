@@ -1,10 +1,8 @@
-import json
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
 from agent.contracts import (
     AgentEvent,
-    CheckpointData,
     PlanStep,
     ToolArgs,
     ToolHistoryEntry,
@@ -12,8 +10,10 @@ from agent.contracts import (
 )
 from agent.execution_state import TERMINAL_STEP_STATUSES, StepExecutionRecord, StepStatus
 from agent.memory.memory import AgentMemory
+from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
-from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_checkpointing import StateCheckpointMixin
+from agent.state_failure_recovery import StateFailureRecoveryMixin
 from agent.state_plan import canonicalize_plan_steps
 from agent.state_progression import (
     current_result_for_step,
@@ -22,9 +22,10 @@ from agent.state_progression import (
     reset_task_progression,
     waive_effect,
 )
+from agent.state_semantics import TaskSemanticsStateMixin
 
 
-class AgentState:
+class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckpointMixin):
     """Estado completo e unificado do agente."""
 
     def __init__(
@@ -35,6 +36,10 @@ class AgentState:
         # Dados da execução atual
         self.objective: Optional[str] = None
         self.plan: List[PlanStep] = []
+        # Scope for causal observations. Step IDs are stable within a plan,
+        # but old plans may remain in memory during hierarchical execution or
+        # checkpoint migration.
+        self.plan_identity: Optional[str] = None
         self.plan_step: int = 0
         self.current_step_id: Optional[str] = None
         self.step_records: Dict[str, StepExecutionRecord] = {}
@@ -44,15 +49,13 @@ class AgentState:
         self.tool_history: List[ToolHistoryEntry] = []
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
-        self.requested_effects: List[str] = []
-        self.executed_effects: List[str] = []
-        self.waived_effects: List[str] = []
+        self._task_semantics = TaskSemantics.empty()
         self.continuation_attempts: int = 0
         self.reasoning_turns_used: int = 0
         self.reasoning_last_history_count: int = -1
         self.reasoning_last_progress_token: Optional[str] = None
         self.continue_after_plan: bool = False
-        self.terminal_disposition: Optional[str] = None
+        self._terminal_disposition: Optional[str] = None
         self.budget_ledger = budget_ledger
 
         # Componentes de memória e histórico
@@ -60,6 +63,7 @@ class AgentState:
         self.events: List[AgentEvent] = []
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history_turns: int = 6
+
     def record_tool_result(
         self,
         tool_name: str,
@@ -67,6 +71,8 @@ class AgentState:
         result: ToolResult,
         step_id: Optional[str] = None,
         logical_slot: Optional[int] = None,
+        *,
+        plan_id: Optional[str] = None,
     ) -> None:
         """Registra o resultado de uma execução de ferramenta no estado global.
 
@@ -77,11 +83,14 @@ class AgentState:
         self.last_args = args
         self.last_result = result
         entry: ToolHistoryEntry = {
-                "step_id": step_id or self.current_step_id,
-                "tool": tool_name,
-                "args": args,
-                "result": result,
-            }
+            "step_id": step_id or self.current_step_id,
+            "tool": tool_name,
+            "args": args,
+            "result": result,
+        }
+        active_plan_id = self.plan_identity if plan_id is None else plan_id
+        if active_plan_id is not None:
+            entry["plan_id"] = str(active_plan_id)
         if result.get("invocation_id") is not None:
             entry["invocation_id"] = str(result["invocation_id"])
         if result.get("status") is not None:
@@ -89,6 +98,11 @@ class AgentState:
         if logical_slot is not None:
             entry["logical_slot"] = logical_slot
         self.tool_history.append(entry)
+        self._task_semantics.observe_tool(
+            tool_name,
+            result,
+            evidence_ref=len(self.tool_history),
+        )
     def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
         """Project a canonical terminal result without appending history again."""
         self.last_tool = tool_name
@@ -112,6 +126,14 @@ class AgentState:
     def set_plan(self, plan: Sequence[Mapping[str, Any]]) -> None:
         """Substitui o plano e preserva registros de IDs que sobreviveram à transformação."""
         normalized = self.canonicalize_plan_steps(plan)
+        if not normalized:
+            self.plan_identity = None
+        elif (
+            self.plan_identity is None
+            or not self.plan
+            or self.plan != normalized
+        ):
+            self.plan_identity = f"plan-{uuid.uuid4().hex}"
         records: Dict[str, StepExecutionRecord] = {}
         for step in normalized:
             step_id = str(step["_step_id"])
@@ -122,23 +144,61 @@ class AgentState:
             self.current_step_id = None
     def reset_execution(self) -> None:
         self.plan = []
+        self.plan_identity = None
         self.plan_step = 0
         self.current_step_id = None
         self.step_records = {}
-    def reset_task_progression(self, requested_effects: Sequence[str] = ()) -> None:
-        reset_task_progression(self, requested_effects)
-    def record_executed_effect(self, effect: str) -> None:
-        record_executed_effect(self, effect)
-    def waive_effect(self, effect: str) -> None:
-        waive_effect(self, effect)
+    def reset_task_progression(
+        self,
+        requested_effects: Sequence[str] = (),
+        *,
+        preserve_semantics: bool = False,
+    ) -> None:
+        reset_task_progression(
+            self,
+            requested_effects,
+            preserve_semantics=preserve_semantics,
+        )
+    def record_executed_effect(
+        self,
+        effect: str,
+        evidence_ref: int | str | None = None,
+        *,
+        allow_legacy: bool = False,
+    ) -> None:
+        record_executed_effect(
+            self,
+            effect,
+            evidence_ref=evidence_ref,
+            allow_legacy=allow_legacy,
+        )
+    def waive_effect(
+        self,
+        effect: str,
+        evidence_ref: int | str | None = None,
+        *,
+        allow_legacy: bool = False,
+    ) -> None:
+        waive_effect(
+            self,
+            effect,
+            evidence_ref=evidence_ref,
+            allow_legacy=allow_legacy,
+        )
     def pending_effects(self) -> tuple[str, ...]:
         return pending_effects(self)
     def current_result_for_step(self, step_id: str) -> tuple[int, ToolHistoryEntry] | None:
-        current = current_result_for_step(self.tool_history, step_id)
+        current = current_result_for_step(
+            self.tool_history,
+            step_id,
+            plan_id=self.plan_identity,
+        )
         return cast(tuple[int, ToolHistoryEntry] | None, current)
     def clear_plan(self) -> None:
         self.reset_execution()
     def insert_plan_step(self, index: int, step: Mapping[str, Any]) -> None:
+        if self.plan_identity is None:
+            self.plan_identity = f"plan-{uuid.uuid4().hex}"
         prepared = cast(PlanStep, dict(step))
         step_id = str(prepared.get("_step_id") or self._new_step_id())
         prepared["_step_id"] = step_id
@@ -218,83 +278,3 @@ class AgentState:
     def add_conversation_turn(self, user: str, agent: str) -> None:
         """Adiciona uma nova entrada ao histórico de conversa."""
         self.conversation_history.append({"user": user, "agent": agent})
-    def to_checkpoint_dict(self) -> CheckpointData:
-        """Serializa os campos necessários para retomar a tarefa atual.
-
-        Usa `json.dumps`/`json.loads` com `default=str` como uma "ida e volta"
-        de sanitização, garantindo que somente dados JSON-serializáveis
-        (convertendo tipos exóticos, como datetime, para string) acabem no
-        dicionário retornado.
-        """
-        memory_state = getattr(self.memory, "state", None)
-
-        raw: Dict[str, Any] = {
-            "objective": self.objective,
-            "plan": self.plan,
-            "plan_step": self.plan_step,
-            "current_step_id": self.current_step_id,
-            "step_records": [record.to_dict() for record in self.step_records.values()],
-            "last_tool": self.last_tool,
-            "last_args": self.last_args,
-            "last_result": self.last_result,
-            "tool_history": self.tool_history,
-            "events": self.events,
-            "conversation_history": self.conversation_history,
-            "memory_state": memory_state,
-            "persona": self.persona,
-            "persona_prompt": self.persona_prompt,
-            **progression_checkpoint(self),
-        }
-        if self.budget_ledger is not None:
-            raw["budget"] = self.budget_ledger.snapshot().to_dict()
-
-        # Round-trip via json para sanitizar tipos não serializáveis
-        # (ex.: datetime) usando default=str, mantendo o retorno como dict.
-        sanitized_text = json.dumps(raw, ensure_ascii=False, default=str)
-        return cast(CheckpointData, json.loads(sanitized_text))
-
-    def from_checkpoint_dict(
-        self,
-        data: Mapping[str, Any],
-        retry_failed: bool = False,
-        retry_skipped: bool = False,
-    ) -> None:
-        """Restaura o estado a partir de um dicionário de checkpoint.
-
-        Espera-se que `data` já tenha sido carregado (e validado) a partir de
-        um arquivo JSON. Chaves ausentes preservam os valores padrão/atuais.
-        """
-        if not isinstance(data, dict):
-            return
-
-        self.objective = data.get("objective", self.objective)
-        raw_plan = data.get("plan", self.plan) or []
-        self.set_plan(raw_plan if isinstance(raw_plan, list) else [])
-        self.plan_step = data.get("plan_step", self.plan_step) or 0
-        restore_progression(self, dict(data))
-        raw_records = data.get("step_records") or []
-        if isinstance(raw_records, list):
-            for raw_record in raw_records:
-                if not isinstance(raw_record, dict):
-                    continue
-                record = StepExecutionRecord.from_dict(raw_record)
-                if record.step_id in self.step_records:
-                    self.step_records[record.step_id] = record
-        self.current_step_id = data.get("current_step_id")
-        self.last_tool = data.get("last_tool", self.last_tool)
-        self.last_args = data.get("last_args", self.last_args)
-        self.last_result = data.get("last_result", self.last_result)
-        self.tool_history = data.get("tool_history", self.tool_history) or []
-        self.events = data.get("events", self.events) or []
-        self.conversation_history = data.get("conversation_history", self.conversation_history) or []
-        self.persona = data.get("persona", self.persona)
-        self.persona_prompt = data.get("persona_prompt", self.persona_prompt)
-
-        raw_budget = data.get("budget")
-        if self.budget_ledger is not None and isinstance(raw_budget, Mapping):
-            self.budget_ledger.restore_snapshot(raw_budget)
-
-        memory_state = data.get("memory_state")
-        if memory_state is not None and hasattr(self.memory, "state"):
-            self.memory.state = memory_state
-        self.prepare_for_resume(retry_failed=retry_failed, retry_skipped=retry_skipped)

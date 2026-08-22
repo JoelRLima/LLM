@@ -400,7 +400,7 @@ def test_unsupported_grammar_parse_retry_stays_without_grammar():
 
 
 def test_provider_secrets_are_not_logged_on_normal_or_fallback_requests(caplog):
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
     session = MagicMock()
     session.send_non_streaming_request.side_effect = [
         FakeHTTPError(400, f"unknown parameter: grammar ({secret})"),
@@ -421,7 +421,7 @@ def test_provider_secrets_are_not_logged_on_normal_or_fallback_requests(caplog):
 
 
 def test_provider_secrets_are_not_logged_on_retry(caplog):
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
     session = MagicMock()
     session.build_payload.return_value = {"messages": []}
     session.config = {"agent_max_tokens": 100}

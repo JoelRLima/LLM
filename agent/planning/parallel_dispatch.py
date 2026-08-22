@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import uuid
+from dataclasses import replace
 from typing import Any, Dict, List
 
 from agent.contracts import ToolResult
@@ -54,12 +55,15 @@ def run_parallel_tools(
                 continue
             tool, args, file_path = prepared.tool, prepared.args, prepared.file_path
             invocation_id = str(uuid.uuid4())
+            prepared_for_dispatch = replace(prepared, invocation_id=invocation_id)
             correlation = ParallelInvocation(
                 index=index,
                 step_id=state.get_step_id(index),
                 invocation_id=invocation_id,
-                request=ToolInvocationRequest(invocation_id, tool, args),
-                prepared=prepared,
+                request=ToolInvocationRequest(
+                    invocation_id, tool, prepared_for_dispatch.args
+                ),
+                prepared=prepared_for_dispatch,
             )
             correlations[index] = correlation
             state.mark_step_running(index)
@@ -72,7 +76,16 @@ def run_parallel_tools(
             if not getattr(plan_executor.orchestrator, "tool_invocation_gateway", None):
                 plan_executor.orchestrator._emit("tool_start", {"tool": tool, "args": args})
             runner = getattr(plan_executor.orchestrator.tool_executor, "run_tool_invocation", None)
-            if callable(runner):
+            prepared_runner = getattr(
+                plan_executor.orchestrator.tool_executor,
+                "run_prepared_invocation",
+                None,
+            )
+            if callable(prepared_runner):
+                future = pool.submit(
+                    prepared_runner, prepared_for_dispatch, False
+                )
+            elif callable(runner):
                 future = pool.submit(runner, correlation.request, False)
             else:
                 future = pool.submit(

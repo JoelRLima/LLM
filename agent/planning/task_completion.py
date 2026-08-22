@@ -2,46 +2,65 @@
 
 from __future__ import annotations
 
-import re
-from enum import Enum
+from dataclasses import dataclass
 from typing import Any
 
 from agent.planning.completion_observations import (
     eligible_waiver_observations,
     observation_references,
-    publish_outcome,
     refresh_executed_effects,
     terminal_failure,
 )
-from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.reasoning_boundary import BoundaryContinuationResult
 from agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as _reasoning_boundary,
 )
-from agent.reporting.operational_outcome import PUBLIC_TERMINAL_STATUSES
+from agent.planning.requested_effects import infer_requested_effects
+from agent.planning.task_completion_dispatch import accept_review, reject_review
+from agent.planning.task_completion_types import CompletionDisposition
+from agent.planning.task_semantics import TaskObligation, TaskSemantics
+from agent.planning.task_terminal import (
+    _set_terminal,
+    mark_reasoning_boundary_blocked,
+    mark_terminal_blocked,
+    mark_terminal_cancelled,
+    mark_terminal_failure,
+    mark_unfinished_effect,
+    mark_unfinished_obligation,
+)
 
 
-class CompletionDisposition(str, Enum):
-    COMPLETE = "complete"
-    BLOCK = "block"
-    FAIL = "fail"
+@dataclass(frozen=True, slots=True)
+class CompletionReview:
+    """Read-only decision produced by the canonical completion owner."""
+
+    accepted: bool
+    reason_code: str | None = None
+    existing_disposition: str | None = None
+    pending_effects: tuple[str, ...] = ()
+    pending_obligations: tuple[TaskObligation, ...] = ()
+    blocked_obligations: tuple[TaskObligation, ...] = ()
+    prohibited_effects: tuple[str, ...] = ()
+    unrecovered_failure: bool = False
 
 
 MAX_CONTINUATION_ATTEMPTS = 1
-_NON_SUCCESS_STATUSES = PUBLIC_TERMINAL_STATUSES - {"succeeded"}
-
-
-_EFFECT_TERMS = frozenset(
-    "adicione adicionar ajuste ajustar altere alterar change corrija corrigir create crie criar delete edit edite editar escreva escrever fix modifique modificar modify refactor remova remover replace substitua substituir update write".split()
-)
-_DIRECT_TEXT_REQUEST = re.compile(r"\b(?:escreva|write)\s+exatamente\b", re.IGNORECASE)
 
 
 def initialize_task_progression(orchestrator: Any, objective: str) -> None:
-    terms = set(re.findall(r"\w+", objective.casefold()))
-    requested = ("write",) if terms & _EFFECT_TERMS and not _DIRECT_TEXT_REQUEST.search(objective) else ()
-    orchestrator.agent_state.reset_task_progression(requested)
+    state = orchestrator.agent_state
+    if hasattr(state, "initialize_task_semantics") and isinstance(
+        getattr(state, "task_semantics", None), TaskSemantics
+    ):
+        state.initialize_task_semantics(objective)
+        state.reset_task_progression(
+            state.task_semantics.requested_effects,
+            preserve_semantics=True,
+        )
+    else:
+        requested = infer_requested_effects(objective)
+        state.reset_task_progression(requested)
     orchestrator.agent_state.reasoning_last_history_count = len(
         orchestrator.agent_state.tool_history
     )
@@ -56,7 +75,10 @@ def bind_effect_waiver(orchestrator: Any, observation_index: int, *, effects: tu
     if not selected or any(effect not in pending for effect in selected):
         return False
     for effect in selected:
-        orchestrator.agent_state.waive_effect(effect)
+        if isinstance(getattr(orchestrator.agent_state, "task_semantics", None), TaskSemantics):
+            orchestrator.agent_state.waive_effect(effect, evidence_ref=observation_index)
+        else:
+            orchestrator.agent_state.waive_effect(effect)
     orchestrator._emit("effect_waiver_bound", {"effects": list(selected), "observation_index": observation_index, "invocation_id": match.get("invocation_id"), "source": source})
     return True
 
@@ -68,30 +90,52 @@ def needs_effect_continuation(orchestrator: Any, objective: str) -> bool:
     return not terminal_failure(orchestrator) and bool(state.pending_effects()) and state.continuation_attempts < MAX_CONTINUATION_ATTEMPTS
 
 
-def mark_unfinished_effect(orchestrator: Any, objective: str) -> str:
-    state = orchestrator.agent_state
-    if state.terminal_disposition not in (None, CompletionDisposition.COMPLETE.value):
-        return _terminal_message(state)
-    message = "A tarefa não foi concluída: o efeito solicitado permanece pendente."
-    state = orchestrator.agent_state
-    state.terminal_disposition = CompletionDisposition.BLOCK.value
-    state.project_last_result("planner", {}, {"ok": False, "done": True, "status": "blocked", "executed": False, "error": "requested_effect_pending", "error_code": "requested_effect_pending", "message": message})
-    orchestrator._emit("task_blocked", {"reason": "requested_effect_pending", "objective": objective})
-    publish_outcome(orchestrator)
-    return message
+def review_task_completion(orchestrator: Any) -> CompletionReview:
+    """Evaluate completion without mutating terminal lifecycle state."""
 
-
-def mark_reasoning_boundary_blocked(orchestrator: Any, objective: str) -> str:
+    refresh_executed_effects(orchestrator)
     state = orchestrator.agent_state
-    if state.terminal_disposition is not None:
-        return _terminal_message(state)
-    message = "A tarefa não pôde prosseguir após a fronteira de raciocínio."
-    state = orchestrator.agent_state
-    state.terminal_disposition = CompletionDisposition.BLOCK.value
-    state.project_last_result("planner", {}, {"ok": False, "done": True, "status": "blocked", "executed": False, "error": "reasoning_boundary_blocked", "error_code": "reasoning_boundary_blocked", "message": message})
-    orchestrator._emit("task_blocked", {"reason": "reasoning_boundary_blocked", "objective": objective})
-    publish_outcome(orchestrator)
-    return message
+    existing = getattr(state, "terminal_disposition", None)
+    if existing == "succeeded":
+        existing = None
+    pending_effects = tuple(getattr(state, "pending_effects", lambda: ())())
+    pending_obligations = tuple(getattr(state, "pending_obligations", lambda: ())())
+    blocked_obligations = tuple(getattr(state, "blocked_obligations", lambda: ())())
+    prohibited = tuple(
+        getattr(state, "prohibited_effects_occurred", lambda: ())()
+    )
+    unrecovered = terminal_failure(orchestrator, include_invocation_history=True)
+    if getattr(orchestrator, "_cancelled", False):
+        reason = "cancelled"
+    elif unrecovered:
+        reason = "terminal_failure"
+    elif prohibited:
+        reason = "prohibited_effect_occurred"
+    elif existing is not None and existing != CompletionDisposition.COMPLETE.value:
+        reason = "existing_terminal"
+    elif not getattr(state, "terminal_evidence_complete", lambda: True)():
+        reason = "obligation_evidence_missing"
+    elif blocked_obligations:
+        reason = "task_obligation_blocked"
+    elif pending_effects:
+        reason = "requested_effect_pending"
+    elif pending_obligations:
+        reason = "task_obligation_pending"
+    else:
+        return CompletionReview(
+            accepted=True,
+            existing_disposition=existing,
+        )
+    return CompletionReview(
+        accepted=False,
+        reason_code=reason,
+        existing_disposition=existing,
+        pending_effects=pending_effects,
+        pending_obligations=pending_obligations,
+        blocked_obligations=blocked_obligations,
+        prohibited_effects=prohibited,
+        unrecovered_failure=unrecovered,
+    )
 
 
 def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:
@@ -107,154 +151,15 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
         blocker = allow_linear_completion(orchestrator, objective)
         return BoundaryContinuationResult(answer=blocker, completed=blocker is None)
     return boundary
-
-
-def mark_terminal_failure(orchestrator: Any) -> None:
-    state = orchestrator.agent_state
-    existing = getattr(state, "terminal_disposition", None)
-    if existing == "succeeded":
-        existing = None
-        state.terminal_disposition = None
-    if existing not in (None, CompletionDisposition.COMPLETE.value):
-        return
-    result = getattr(state, "last_result", None)
-    status = str(result.get("status") or "") if isinstance(result, dict) else ""
-    if status == "blocked":
-        state.terminal_disposition = CompletionDisposition.BLOCK.value
-    elif status == "permission_denied":
-        state.terminal_disposition = "permission_denied"
-    elif status == "failed":
-        state.terminal_disposition = CompletionDisposition.FAIL.value
-    elif status in _NON_SUCCESS_STATUSES:
-        state.terminal_disposition = status
-    else:
-        state.terminal_disposition = CompletionDisposition.FAIL.value
-
-
-def mark_terminal_blocked(
-    orchestrator: Any,
-    *,
-    reason_code: str,
-    message: str,
-    status: str = CompletionDisposition.BLOCK.value,
-) -> str:
-    """Establish a non-executable terminal boundary with machine-readable evidence."""
-
-    refresh_executed_effects(orchestrator)
-    state = orchestrator.agent_state
-    if getattr(state, "terminal_disposition", None) == "succeeded":
-        state.terminal_disposition = None
-    if getattr(state, "terminal_disposition", None) in (None, CompletionDisposition.COMPLETE.value):
-        state.terminal_disposition = (
-            status if status in _NON_SUCCESS_STATUSES else CompletionDisposition.BLOCK.value
-        )
-        project = getattr(state, "project_last_result", None)
-        if callable(project):
-            project(
-                "planner",
-                {},
-                {
-                    "ok": False,
-                    "done": True,
-                    "status": state.terminal_disposition,
-                    "executed": False,
-                    "error": reason_code,
-                    "error_code": reason_code,
-                    "message": message,
-                },
-            )
-    publish_outcome(orchestrator)
-    return _terminal_message(state) or message
-
-
-def mark_terminal_cancelled(
-    orchestrator: Any,
-    message: str = "Tarefa cancelada pelo usuario.",
-) -> str:
-    """Record cancellation through the same canonical terminal boundary."""
-
-    refresh_executed_effects(orchestrator)
-    state = orchestrator.agent_state
-    if getattr(state, "terminal_disposition", None) == CompletionDisposition.COMPLETE.value:
-        orchestrator._cancelled = False
-        return message
-    orchestrator._cancelled = True
-    state.terminal_disposition = "cancelled"
-    project = getattr(state, "project_last_result", None)
-    if callable(project):
-        project(
-            "orchestrator",
-            {},
-            {
-                "ok": False,
-                "done": True,
-                "status": "cancelled",
-                "executed": False,
-                "error": "CANCELLED",
-                "error_code": "CANCELLED",
-                "message": message,
-            },
-        )
-    publish_outcome(orchestrator)
-    return _terminal_message(state) or message
-
-
-def _terminal_message(state: Any) -> str:
-    disposition = getattr(state, "terminal_disposition", None)
-    if disposition == CompletionDisposition.COMPLETE.value:
-        return ""
-    result = getattr(state, "last_result", None)
-    if isinstance(result, dict):
-        error = result.get("error")
-        message = result.get("message")
-        if (
-            result.get("error_code") == error
-            and isinstance(message, str)
-            and message.strip()
-        ):
-            return message.strip()
-        message = error or message
-        if isinstance(message, str) and message.strip():
-            return message.strip()
-    if disposition == CompletionDisposition.BLOCK.value:
-        return "A tarefa foi bloqueada antes de concluir todos os efeitos."
-    if disposition == CompletionDisposition.FAIL.value:
-        return "A tarefa nÃ£o pÃ´de ser concluÃ­da."
-    if disposition == "cancelled":
-        return "Tarefa cancelada pelo usuario."
-    if disposition in _NON_SUCCESS_STATUSES:
-        return f"A tarefa terminou com status operacional: {disposition}."
-    return ""
-
-
 def allow_linear_completion(orchestrator: Any, objective: str) -> str | None:
     existing = getattr(orchestrator.agent_state, "terminal_disposition", None)
     if existing == "succeeded":
-        orchestrator.agent_state.terminal_disposition = None
+        _set_terminal(orchestrator.agent_state, None)
         existing = None
-    refresh_executed_effects(orchestrator)
-    if getattr(orchestrator, "_cancelled", False):
-        mark_terminal_cancelled(orchestrator)
-        return _terminal_message(orchestrator.agent_state) or "Tarefa cancelada pelo usuario."
-    if terminal_failure(orchestrator):
-        mark_terminal_failure(orchestrator)
-        publish_outcome(orchestrator)
-        result = getattr(orchestrator.agent_state, "last_result", None)
-        if isinstance(result, dict) and str(result.get("status") or "") in TERMINAL_FAILURE_STATUSES:
-            return _terminal_message(orchestrator.agent_state) or "A tarefa não pôde ser concluída."
-        return "A tarefa não pôde ser concluída."
-    if existing is not None and existing != CompletionDisposition.COMPLETE.value:
-        return _terminal_message(orchestrator.agent_state) or None
-    pending = getattr(orchestrator.agent_state, "pending_effects", lambda: ())()
-    if pending:
-        return mark_unfinished_effect(orchestrator, objective)
-    if existing == CompletionDisposition.COMPLETE.value:
-        return None
-    orchestrator.agent_state.terminal_disposition = CompletionDisposition.COMPLETE.value
-    publish_outcome(orchestrator)
-    return None
-
-
+    review = review_task_completion(orchestrator)
+    if review.accepted:
+        return accept_review(orchestrator, existing)
+    return reject_review(orchestrator, objective, review)
 def complete_direct_answer(orchestrator: Any, objective: str, answer: str) -> str:
     return allow_linear_completion(orchestrator, objective) or answer
 
@@ -272,7 +177,10 @@ def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
         index = continuation.waiver_observation_index
         if index is None or not bind_effect_waiver(orchestrator, index):
             return mark_unfinished_effect(orchestrator, objective)
-        return allow_linear_completion(orchestrator, objective)
+        # Waiving the effect resolves only the effect obligation.  Overall
+        # task completion must still pass through the post-plan reasoning
+        # boundary in the execution loop.
+        return None
     if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
         return mark_unfinished_effect(orchestrator, objective)
     orchestrator._emit("continuation_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
@@ -284,10 +192,12 @@ def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
 
 
 __all__ = [
-    "CompletionDisposition", "BoundaryContinuationResult", "MAX_CONTINUATION_ATTEMPTS",
+    "CompletionDisposition", "CompletionReview", "BoundaryContinuationResult", "MAX_CONTINUATION_ATTEMPTS",
     "allow_linear_completion", "bind_effect_waiver", "complete_direct_answer",
-    "continue_after_observation", "continue_after_reasoning_boundary", "initialize_task_progression",
+    "continue_after_observation", "continue_after_reasoning_boundary", "infer_requested_effects",
+    "initialize_task_progression",
     "mark_terminal_failure", "mark_terminal_blocked", "mark_terminal_cancelled",
     "mark_unfinished_effect", "mark_reasoning_boundary_blocked",
-    "needs_effect_continuation", "refresh_executed_effects",
+    "mark_unfinished_obligation",
+    "needs_effect_continuation", "refresh_executed_effects", "review_task_completion",
 ]

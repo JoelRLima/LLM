@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.verify_installed_package import (
+    INSTALLED_ACCEPTANCE_PROPERTIES,
     INSTALLED_PROBE_SOURCE,
     CommandResult,
     VerificationError,
@@ -15,6 +16,7 @@ from scripts.verify_installed_package import (
     _validate_slice_c_payload,
     _validate_slice_d_payload,
     installation_mode,
+    installed_acceptance_summary,
     installed_cli_commands,
     parse_json_output,
     snapshot_tree,
@@ -109,6 +111,18 @@ def test_clean_install_resolves_declared_dependencies() -> None:
     assert "--force-reinstall" not in clean_command
     assert "--no-deps" in offline_command
     assert "--force-reinstall" in offline_command
+
+
+def test_block7_installed_summary_is_bounded_and_maps_existing_properties() -> None:
+    summary = installed_acceptance_summary(status="passed", mode="clean-acceptance")
+
+    assert summary["evidence_level"] == "installed_deterministic"
+    assert summary["acceptance"] is True
+    assert summary["task_files_in_wheel"] is False
+    assert {item["id"] for item in summary["properties"]} == {
+        item["id"] for item in INSTALLED_ACCEPTANCE_PROPERTIES
+    }
+    assert len(summary["ci_matrix"]) == 4
 
 
 def test_gate_closes_stdin_for_subprocesses(
@@ -208,3 +222,9 @@ def test_installed_probe_covers_external_stdio_slice_d() -> None:
     source = inspect.getsource(_validate_slice_d_payload)
     assert 'payload.get("slice_d")' in source
     assert "spawned" in source
+
+
+def test_installed_probe_covers_stale_workspace_lock_recovery() -> None:
+    assert "run_lock_recovery_journey" in INSTALLED_PROBE_SOURCE
+    assert "os._exit(0)" in INSTALLED_PROBE_SOURCE
+    assert "InstanceLock.create(lock_path)" in INSTALLED_PROBE_SOURCE

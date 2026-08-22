@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from agent.llm.contracts import ModelProviderError
+from agent.reporting.observation_evidence import (
+    project_artifact_evidence,
+    project_tool_observation,
+    result_error_code,
+)
 from agent.reporting.operational_outcome import (
     normalize_terminal_status,
     project_operational_outcome,
@@ -28,50 +33,16 @@ def failure_layer_for_code(code: str | None) -> str:
     return "runtime"
 
 
-def _artifact_metadata(data: Any) -> list[dict[str, Any]]:
-    if not isinstance(data, dict):
-        return []
-    artifacts = data.get("artifacts")
-    if not isinstance(artifacts, (list, tuple)):
-        return []
-    return [
-        item["metadata"]
-        for item in artifacts
-        if isinstance(item, dict) and isinstance(item.get("metadata"), dict)
-    ]
-
-
-def _project_tool(entry: dict[str, Any]) -> tuple[dict[str, Any], bool | None, list[dict[str, Any]]]:
-    raw = cast(dict[str, Any], entry.get("result") if isinstance(entry.get("result"), dict) else {})
-    status = str(raw.get("status") or entry.get("status") or "")
-    executed = raw.get("executed")
+def _project_tool(entry: dict[str, Any]) -> dict[str, Any]:
+    evidence = project_tool_observation(entry)
     tool = {
-        "tool": str(entry.get("tool") or ""),
-        "invocation_id": entry.get("invocation_id") or raw.get("invocation_id"),
-        "status": status,
-        "executed": executed,
-        "error_code": raw.get("error_code"),
+        "tool": evidence.tool,
+        "invocation_id": evidence.invocation_id,
+        "status": evidence.status,
+        "executed": evidence.executed,
+        "error_code": evidence.error_code,
     }
-    metadata = _artifact_metadata(raw.get("data"))
-    return tool, executed, metadata
-
-
-def _collect_artifact_state(
-    metadata: list[dict[str, Any]],
-    proposed: set[str],
-    validation: dict[str, Any],
-    rollback: dict[str, Any],
-) -> None:
-    for item in metadata:
-        affected = item.get("affected_files")
-        if isinstance(affected, (list, tuple)):
-            proposed.update(str(path) for path in affected)
-        if item.get("validation") is not None:
-            validation["ran"] = True
-            validation["outcome"] = str(item["validation"])
-        if item.get("rollback_occurred") is True:
-            rollback["occurred"] = True
-            rollback["outcome"] = str(item.get("final_state") or "restored")
+    return tool
 
 
 def _canonical_public_status(
@@ -86,8 +57,8 @@ def _canonical_public_status(
         explicit_status=requested_status,
         last_result_status=last_result.get("status") if isinstance(last_result, dict) else None,
         terminal_disposition=getattr(state, "terminal_disposition", None),
-        task_failed=task_failed,
-        cancelled=cancelled,
+        task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
+        cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
     )
 
 
@@ -118,15 +89,24 @@ def build_run_receipt(
     ]
     tools: list[dict[str, Any]] = []
     proposed: set[str] = set()
-    validation = {"ran": False, "outcome": None}
-    rollback = {"occurred": False, "outcome": None}
+    validation: dict[str, Any] = {"ran": False, "outcome": None}
+    rollback: dict[str, Any] = {"occurred": False, "outcome": None}
     effects: list[bool] = []
     for entry in history:
-        tool, effect, metadata = _project_tool(entry)
+        tool = _project_tool(entry)
         tools.append(tool)
+        raw_result = entry.get("result")
+        artifact = project_artifact_evidence(raw_result)
+        effect = tool["executed"]
         if isinstance(effect, bool):
             effects.append(effect)
-        _collect_artifact_state(metadata, proposed, validation, rollback)
+        proposed.update(artifact.affected_files)
+        if artifact.validation_status is not None:
+            validation["ran"] = True
+            validation["outcome"] = artifact.validation_status
+        if artifact.rollback_occurred:
+            rollback["occurred"] = True
+            rollback["outcome"] = "restored"
 
     events = getattr(state, "events", None) or []
     replan_count = sum(
@@ -139,7 +119,7 @@ def build_run_receipt(
         and entry["args"].get("action") == "repair"
     )
     last_result = getattr(state, "last_result", None) or {}
-    raw_code = last_result.get("error_code") if isinstance(last_result, dict) else None
+    raw_code = result_error_code(last_result) if isinstance(last_result, dict) else None
     code = failure_code or raw_code
     cause = None
     if error or code:
@@ -152,7 +132,12 @@ def build_run_receipt(
         effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
     )
     replan = {"occurred": True, "count": replan_count} if replan_count else None
-    outcome = project_operational_outcome(state, terminal_status=status)
+    outcome = project_operational_outcome(
+        state,
+        terminal_status=status,
+        task_failed=bool(getattr(state, "_task_failed", False)),
+        cancelled=bool(getattr(state, "_cancelled", False)),
+    )
     final_state = (
         "restored"
         if outcome.rollback_occurred
@@ -185,7 +170,7 @@ def build_run_diagnostics(
 ) -> tuple[dict[str, Any], ...]:
     diagnostics: list[dict[str, Any]] = []
     last = getattr(state, "last_result", None) or {}
-    observed_code = last.get("error_code") if isinstance(last, dict) else None
+    observed_code = result_error_code(last) if isinstance(last, dict) else None
     code = failure_code or observed_code
     if error or code:
         observed_error = last.get("error") if isinstance(last, dict) else None
@@ -257,7 +242,6 @@ def finalize_run_result(
     effective_status = canonical_public_status(orchestrator, status)
     failure_code = getattr(orchestrator, "_last_failure_code", None)
     failure_layer = getattr(orchestrator, "_last_failure_layer", None)
-    del receipt
     effective_receipt = build_run_receipt(
         workspace, orchestrator.agent_state, effective_status, error,
         failure_code=failure_code, failure_layer=failure_layer,
@@ -272,13 +256,14 @@ def finalize_run_result(
     effective_receipt["operational_outcome"] = outcome.to_dict()
     public_answer = answer
     if outcome.terminal_status != "succeeded":
-        from agent.final_response import render_operational_answer
-        public_answer = render_operational_answer(outcome) or (
-            f"A tarefa terminou com status operacional: {outcome.terminal_status}."
+        from agent.final_response import compose_operational_answer
+        public_answer = compose_operational_answer(
+            outcome, answer,
+            getattr(orchestrator.agent_state, "tool_history", ()),
+            getattr(orchestrator, "tool_registry", None),
         )
     effective_diagnostics = diagnostics or build_run_diagnostics(
-        orchestrator.agent_state, error,
-        failure_code=failure_code, failure_layer=failure_layer,
+        orchestrator.agent_state, error, failure_code=failure_code, failure_layer=failure_layer,
     )
     effective_report_path = report_path
     report_builder = getattr(orchestrator, "_generate_task_report", None)

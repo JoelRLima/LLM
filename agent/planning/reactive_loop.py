@@ -2,7 +2,10 @@ from typing import Any, Dict, cast
 
 from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
-from agent.final_response import render_operational_answer
+from agent.final_response import (
+    compose_operational_answer,
+    has_usable_partial_evidence,
+)
 from agent.planning.plan_builder import build_planner_tools_description
 from agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
 from agent.reporting.observation_evidence import (
@@ -109,14 +112,20 @@ class ReactiveLoop:
 
     def _canonical_answer(self, answer: str, objective: str) -> str:
         blocker = allow_linear_completion(self.orchestrator, objective)
-        if blocker is not None:
-            return cast(str, blocker)
         outcome = project_operational_outcome(
             self.orchestrator.agent_state,
             task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
             cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
         )
-        return render_operational_answer(outcome) or answer
+        history = self.orchestrator.agent_state.tool_history
+        if blocker is not None and not has_usable_partial_evidence(outcome, history):
+            return cast(str, blocker)
+        return compose_operational_answer(
+            outcome,
+            str(blocker) if blocker is not None else answer,
+            history,
+            getattr(self.orchestrator, "tool_registry", None),
+        )
 
     def _handle_decision(
         self, decision: ModelDecision, objective: str, usage: Dict[str, int], reactive_step: int

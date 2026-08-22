@@ -8,7 +8,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
+from agent.reporting.observation_evidence import project_tool_observation
 from agent.reporting.public_projection import (
+    canonical_effect_projection,
     reconcile_receipt_projection,
     reconcile_report_status,
 )
@@ -72,13 +74,14 @@ class TaskReportBuilder:
         report["error"] = (
             sanitize_public_text(raw_error) if raw_error is not None else None
         )
+        report["operational_outcome"] = canonical_effect_projection(
+            agent_state, status
+        )["operational_outcome"]
         if len(run_ids) == 1:
             report["run_id"] = run_ids[0]
         if receipt is not None:
             receipt_projection = reconcile_receipt_projection(agent_state, status, receipt)
-            nested_projection = receipt_projection.get("operational_outcome")
-            if isinstance(nested_projection, dict):
-                report["operational_outcome"] = nested_projection
+            report["operational_outcome"] = receipt_projection["operational_outcome"]
             report["receipt"] = receipt_projection
         return report
 
@@ -144,23 +147,23 @@ class TaskReportBuilder:
 
     def _build_step(self, index: int, entry: Dict[str, Any]) -> Dict[str, Any]:
         raw_result = entry.get("result")
+        evidence = project_tool_observation(entry) if isinstance(raw_result, dict) else None
         if isinstance(raw_result, dict):
-            data = raw_result.get("data", raw_result)
-            metadata = raw_result.get("metadata")
-            output_text = self._truncate(data)
+            assert evidence is not None
+            data = evidence.value if evidence.present else None
+            output_text = self._truncate(data) if evidence.present else ""
             result = {
-                "ok": bool(raw_result.get("ok")),
+                "ok": evidence.ok is True,
                 "error": self._truncate(raw_result.get("error") or ""),
                 "data_summary": output_text,
-                "status": str(raw_result.get("status") or ""),
-                "executed": raw_result.get("executed"),
-                "reason_code": raw_result.get("error_code"),
+                "status": evidence.status,
+                "executed": evidence.executed,
+                "reason_code": evidence.error_code,
                 "output_chars": len(output_text),
-                "truncated": bool(
-                    metadata.get("truncated", False)
-                    if isinstance(metadata, dict)
-                    else raw_result.get("truncated", False)
-                ),
+                "present": evidence.present,
+                "complete": evidence.complete,
+                "truncated": evidence.truncated,
+                "value_type": evidence.value_type,
             }
             cache_hit = raw_result.get("cache_hit")
         else:
@@ -176,9 +179,7 @@ class TaskReportBuilder:
             "args": self._project_args(entry.get("args")),
             "result": result,
         }
-        invocation_id = entry.get("invocation_id") or (
-            raw_result.get("invocation_id") if isinstance(raw_result, dict) else None
-        )
+        invocation_id = evidence.invocation_id if evidence is not None else None
         if invocation_id:
             step["invocation_id"] = str(invocation_id)
         if cache_hit is not None:

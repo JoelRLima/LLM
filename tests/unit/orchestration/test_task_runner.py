@@ -1,7 +1,9 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from agent.checkpoint_manager import CheckpointLoadError
 from agent.memory.json_persistence import AtomicJsonWriteError
 from agent.orchestration import task_runner as task_runner_module
 from agent.orchestration.route_result import RouteDisposition, RouteResult
@@ -484,3 +486,74 @@ def test_missing_objective_discards_stale_terminal_evidence() -> None:
     assert state.terminal_disposition == "block"
     assert state.last_result["error_code"] == "MISSING_REQUIRED_INPUT"
     assert deleted == [True]
+
+
+def test_invalid_checkpoint_is_explicit_non_success_and_preserved() -> None:
+    state = AgentState()
+    deleted = []
+    orchestrator = SimpleNamespace(
+        session=SimpleNamespace(messages=[], config={}),
+        agent_state=state,
+        cancellation_token=_CancellationToken(),
+        _load_checkpoint=lambda: (_ for _ in ()).throw(
+            CheckpointLoadError(
+                Path("checkpoint.json"),
+                "versão incompatível",
+                reason_code="CHECKPOINT_INCOMPATIBLE_SCHEMA",
+            )
+        ),
+        _delete_checkpoint=lambda: deleted.append(True),
+        _persist_memory_to_file=lambda: None,
+        _task_failed=False,
+        _cancelled=False,
+        _preserve_checkpoint=False,
+        workspace=SimpleNamespace(rollback=lambda: None),
+        context_manager=SimpleNamespace(maybe_compress_context=lambda: None),
+        _emit=lambda event_type, data=None: state.events.append(
+            {"type": event_type, "data": data or {}}
+        ),
+    )
+
+    answer = TaskRunner(orchestrator).run(None, None)
+
+    assert answer
+    assert state.terminal_disposition == "block"
+    assert state.last_result["error_code"] == "CHECKPOINT_INCOMPATIBLE_SCHEMA"
+    assert orchestrator._preserve_checkpoint is True
+    assert deleted == []
+
+
+def test_terminal_complete_checkpoint_without_success_evidence_is_blocked() -> None:
+    checkpoint_state = AgentState()
+    checkpoint_state.objective = "tarefa terminal"
+    checkpoint_state.terminal_disposition = "complete"
+    checkpoint = checkpoint_state.to_checkpoint_dict()
+    restored = AgentState()
+    executed = []
+    orchestrator = SimpleNamespace(
+        session=SimpleNamespace(messages=[], config={}),
+        agent_state=restored,
+        cancellation_token=_CancellationToken(),
+        _load_checkpoint=lambda: checkpoint,
+        _delete_checkpoint=lambda: None,
+        _save_checkpoint=lambda: None,
+        _persist_memory_to_file=lambda: None,
+        _task_failed=False,
+        _cancelled=False,
+        _preserve_checkpoint=False,
+        workspace=SimpleNamespace(rollback=lambda: None),
+        context_manager=SimpleNamespace(maybe_compress_context=lambda: None),
+        _emit=lambda event_type, data=None: restored.events.append(
+            {"type": event_type, "data": data or {}}
+        ),
+    )
+    runner = TaskRunner(orchestrator)
+    runner._execute = lambda *_args, **_kwargs: executed.append(True)
+
+    answer = runner.run(None, None)
+
+    assert answer
+    assert executed == []
+    assert restored.terminal_disposition == "block"
+    assert restored.last_result["error_code"] == "CHECKPOINT_TERMINAL_EVIDENCE_MISSING"
+    assert orchestrator._preserve_checkpoint is True

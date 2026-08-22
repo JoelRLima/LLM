@@ -43,19 +43,26 @@ class StepExecutionRecord:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StepExecutionRecord":
+        if not isinstance(data, dict):
+            raise ValueError("step execution record must be an object")
         step_id = str(data.get("step_id", ""))
+        if not step_id.strip():
+            raise ValueError("step execution record requires a step_id")
         try:
             status = StepStatus(str(data.get("status", StepStatus.PENDING.value)))
-        except ValueError:
-            status = StepStatus.PENDING
+        except ValueError as exc:
+            raise ValueError("step execution record has an invalid status") from exc
         attempts = data.get("attempts", 0)
-        if not isinstance(attempts, int) or attempts < 0:
-            attempts = 0
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 0:
+            raise ValueError("step execution record has invalid attempts")
+        last_error = data.get("last_error", "")
+        if not isinstance(last_error, str):
+            raise ValueError("step execution record has invalid last_error")
         return cls(
             step_id=step_id,
             status=status,
             attempts=attempts,
-            last_error=str(data.get("last_error", "") or ""),
+            last_error=last_error,
         )
 
     def prepare_for_resume(

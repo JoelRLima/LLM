@@ -664,6 +664,41 @@ def test_validation_repair_preserves_tool_and_frozen_arguments(tmp_path):
     assert validated[1]["bindings"]["pattern"]["from_step"] == validated[0]["_step_id"]
 
 
+def test_contaminated_h2_plan_fails_closed_before_residual_placeholder_invocation(
+    tmp_path,
+):
+    orchestrator, prompts, executor = _repair_orchestrator(
+        tmp_path,
+        {
+            "action": "tool",
+            "tool": "grep",
+            "args": {"path": ".", "recursive": True, "max_results": 20},
+            "bindings": {"pattern": {"from_step": 1, "path": []}},
+        },
+    )
+    plan = [
+        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}},
+        {
+            "tool": "grep",
+            "args": {"path": ".", "pattern": "${1.text}"},
+        },
+        {"tool": "file_reader", "args": {"file_path": "${2.file}"}},
+        {"tool": "file_reader", "args": {"file_path": "${2.file}"}},
+    ]
+
+    validated = ExecutionGateway(orchestrator).validate_and_optimize_plan(
+        plan,
+        "Leia fonte_h2.txt e procure nos arquivos do workspace pelo valor observado.",
+    )
+
+    assert validated is None
+    assert executor.calls == 0
+    assert orchestrator.failed is True
+    assert orchestrator.agent_state.tool_history == []
+    assert all("${2.file}" not in str(event) for event in orchestrator.events)
+    assert orchestrator.agent_state.last_result["status"] == "blocked"
+
+
 def test_validation_repair_reintegrates_full_plan_and_preserves_valid_downstream(tmp_path):
     orchestrator, prompts, executor = _repair_orchestrator(
         tmp_path,

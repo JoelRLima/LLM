@@ -57,6 +57,7 @@ class ExecutionObservation:
     artifacts: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
     measurement: Dict[str, Any] = field(default_factory=dict)
+    evidence: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

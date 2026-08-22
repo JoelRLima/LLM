@@ -139,6 +139,7 @@ def test_result_binding_executes_exact_observed_value_without_replanning(tmp_pat
         [
             '{"persona":"coder"}',
                 '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"grep","args":{"path":"."},"bindings":{"pattern":{"from_step":1,"path":[]}}}]}',
+                '{"action":"complete","reason":"a busca foi executada"}',
             "A busca encontrou a palavra observada.",
         ],
     )
@@ -148,7 +149,7 @@ def test_result_binding_executes_exact_observed_value_without_replanning(tmp_pat
     grep_entry = next(entry for entry in progression["history_entries"] if entry["tool"] == "grep")
     assert grep_entry["args"]["pattern"] == "modificado"
     assert "bindings" not in grep_entry["args"]
-    assert len(gateway.payloads) == 3
+    assert len(gateway.payloads) == 4
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
     assert progression["continuations"] == 0
 
@@ -162,6 +163,7 @@ def test_invalid_provenance_gets_same_tool_binding_repair_and_executes(tmp_path:
             '{"persona":"coder"}',
             '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"fonte_h2.txt"}},{"tool":"grep","args":{"path":".","pattern":"${1.text}","recursive":true,"max_results":20}}]}',
             '{"tool":"grep","args":{"path":".","recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}',
+            '{"action":"complete","reason":"a busca foi executada"}',
             "A busca foi executada com a palavra observada.",
         ],
         extra_files={"fonte_h2.txt": "orion_584271", "other.txt": "orion_584271"},
@@ -171,7 +173,7 @@ def test_invalid_provenance_gets_same_tool_binding_repair_and_executes(tmp_path:
     assert history == ["file_reader", "grep"]
     grep_entry = next(entry for entry in progression["history_entries"] if entry["tool"] == "grep")
     assert grep_entry["args"]["pattern"] == "orion_584271"
-    assert len(gateway.payloads) == 4
+    assert len(gateway.payloads) == 5
     assert "binding syntax" in gateway.payloads[1]["messages"][-1]["content"]
     assert "CONSTRAINED VALIDATION REPAIR" in gateway.payloads[2]["messages"][-1]["content"]
     assert "${...}" in gateway.payloads[2]["messages"][-1]["content"]
@@ -186,6 +188,7 @@ def test_parallel_read_batch_prepares_bound_consumer_after_producer(tmp_path: Pa
         [
             '{"persona":"coder"}',
             '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"file_reader","args":{"file_path":"outro.txt"}},{"tool":"grep","args":{"path":"."},"bindings":{"pattern":{"from_step":1,"path":[]}}}]}',
+            '{"action":"complete","reason":"as leituras e a busca foram executadas"}',
             "A busca usou o valor observado.",
         ],
         extra_files={"outro.txt": "independente"},
@@ -198,7 +201,7 @@ def test_parallel_read_batch_prepares_bound_consumer_after_producer(tmp_path: Pa
     assert grep_entry["tool"] == "grep"
     assert grep_entry["args"]["pattern"] == "modificado"
     assert "bindings" not in grep_entry["args"]
-    assert len(gateway.payloads) == 3
+    assert len(gateway.payloads) == 4
 
 
 def test_bound_path_keeps_confinement_on_consumer_dispatch(tmp_path: Path) -> None:
@@ -364,7 +367,7 @@ def test_manual_deferred_equals_false_binds_existing_write_waiver(tmp_path: Path
         _run_manual_deferred_task(
             tmp_path,
             "modificado",
-            ['{"persona":"coder"}'],
+            ['{"persona":"coder"}', '{"action":"complete","reason":"a dispensa foi registrada"}'],
         )
     )
 
@@ -377,8 +380,8 @@ def test_manual_deferred_equals_false_binds_existing_write_waiver(tmp_path: Path
     assert snapshot["pending"] == []
     assert snapshot["continuations"] == 0
     assert approval.requests == []
-    assert len(gateway.payloads) == 1
-    assert len(gateway.calls) == 1
+    assert len(gateway.payloads) == 2
+    assert len(gateway.calls) == 2
     resolved = next(
         event
         for event in snapshot["events"]
@@ -476,6 +479,7 @@ def test_real_initial_planner_deferred_false_waives_without_effect_or_continuati
         [
             '{"persona":"coder"}',
             _planner_deferred_response(),
+            '{"action":"complete","reason":"a observacao confirma o estado final"}',
         ],
         approval_policy=approval,
     )
@@ -494,9 +498,9 @@ def test_real_initial_planner_deferred_false_waives_without_effect_or_continuati
     assert progression["pending"] == []
     assert progression["continuations"] == 0
     assert approval.requests == []
-    assert len(gateway.payloads) == 2  # router + one initial planning decision
-    assert len(gateway.calls) == 2
-    assert "continuation_plan" not in str(gateway.payloads)
+    assert len(gateway.payloads) == 3  # router, initial plan, and post-plan boundary
+    assert len(gateway.calls) == 3
+    assert "Uma fronteira semântica explícita" in gateway.payloads[2]["messages"][-1]["content"]
     assert not any(event.get("type") == "replan" for event in progression["events"])
 
 
@@ -510,6 +514,7 @@ def test_initial_multi_step_plan_is_persisted_and_executed_without_replanning(
         [
             '{"persona":"coder"}',
             '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},{"tool":"file_reader","args":{"file_path":"outro.txt"}}]}',
+            '{"action":"complete","reason":"as duas leituras foram executadas"}',
             "Os arquivos contem alpha e beta.",
         ],
         extra_files={"outro.txt": "beta"},
@@ -523,7 +528,7 @@ def test_initial_multi_step_plan_is_persisted_and_executed_without_replanning(
     ]
     assert progression["step_statuses"] == ["completed", "completed"]
     assert progression["continuations"] == 0
-    assert len(gateway.payloads) == 3  # router, one initial plan, final synthesis
+    assert len(gateway.payloads) == 4  # router, initial plan, boundary, final synthesis
     assert "plano executavel completo" in gateway.payloads[1]["messages"][-1]["content"]
     assert "continuation_plan" not in str(gateway.payloads)
 
@@ -594,6 +599,7 @@ def test_observation_only_request_does_not_continue_to_write(tmp_path: Path) -> 
         [
             '{"persona":"coder"}',
             '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"a leitura basta"}',
             "O arquivo contem original.",
         ],
     )
@@ -605,6 +611,177 @@ def test_observation_only_request_does_not_continue_to_write(tmp_path: Path) -> 
     assert progression["terminal"] == "complete"
 
 
+def test_negated_read_request_answers_observation_without_phantom_write(
+    tmp_path: Path,
+) -> None:
+    result, _, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Qual é o conteúdo atual de controle.txt? Não altere nenhum arquivo.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"a observacao responde ao pedido"}',
+            "O conteúdo atual de controle.txt é modificado.",
+        ],
+    )
+
+    assert result.status == "succeeded"
+    assert "modificado" in result.answer.casefold()
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader"]
+    assert progression["requested"] == []
+    assert progression["pending"] == []
+    assert progression["waived"] == []
+    assert progression["continuations"] == 0
+    assert progression["terminal"] == "complete"
+    assert result.receipt["mutation_occurred"] is False
+
+
+def test_blocked_partial_read_preserves_canonical_evidence_in_public_answer(
+    tmp_path: Path,
+) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e arquivo_parcial_inexistente_731904.txt. "
+        "Diga o conteúdo de cada um; se algum não puder ser lido, diga claramente "
+        "qual e por quê. Não altere nada.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}},'
+            '{"tool":"file_reader","args":{"file_path":"arquivo_parcial_inexistente_731904.txt"}}]}',
+            '{"action":"blocked","reason":"a leitura parcial falhou"}',
+            "controle.txt: modificado. "
+            "arquivo_parcial_inexistente_731904.txt: não foi possível ler; "
+            "arquivo não encontrado.",
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert "status operacional: blocked" in result.answer
+    assert "controle.txt" in result.answer
+    assert "modificado" in result.answer
+    assert "arquivo_parcial_inexistente_731904.txt" in result.answer
+    assert "arquivo não encontrado" in result.answer
+    assert "sucesso" not in result.answer.casefold()
+    assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
+    assert history == ["file_reader", "file_reader", "directory_lister"]
+    assert progression["terminal"] == "block"
+    assert progression["requested"] == []
+    assert progression["pending"] == []
+    assert result.receipt["operational_outcome"]["terminal_status"] == "blocked"
+    assert len(gateway.payloads) == 4
+
+
+def test_missing_file_task_keeps_non_success_and_explains_file_not_found(
+    tmp_path: Path,
+) -> None:
+    result, _, _, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia o arquivo arquivo_que_nao_existe_583921.txt e me diga qual é o "
+        "conteúdo dele. Não altere nada.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"arquivo_que_nao_existe_583921.txt"}}]}',
+            '{"action":"blocked","reason":"arquivo ausente"}',
+            "Não foi possível fornecer o conteúdo porque o arquivo não foi encontrado.",
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert "arquivo_que_nao_existe_583921.txt" in result.answer
+    assert "não foi encontrado" in result.answer
+    assert "sucesso" not in result.answer.casefold()
+    assert history == ["file_reader", "directory_lister"]
+    assert progression["terminal"] == "block"
+
+
+def test_incomplete_read_only_plan_must_cross_boundary_and_search_bound_value(
+    tmp_path: Path,
+) -> None:
+    result, gateway, workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "unrelated",
+        "Leia fonte_h2.txt. Depois procure esse valor nos arquivos do workspace e me diga em quais arquivos ele aparece. Não altere nada.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"fonte_h2.txt"}}]}',
+            '{"action":"execute","plan":[{"tool":"grep","args":{"path":".","recursive":true,"max_results":20},"bindings":{"pattern":{"from_step":1,"path":[]}}}]}',
+            '{"action":"complete","reason":"a busca confirmou os arquivos encontrados"}',
+            "O valor orion_584271 aparece em alvo_h2_a.txt, fonte_h2.txt e alvo_h2_b.txt.",
+        ],
+        extra_files={
+            "fonte_h2.txt": "orion_584271",
+            "alvo_h2_a.txt": "orion_584271",
+            "alvo_h2_b.txt": "orion_584271",
+            "sem_match.txt": "outro valor",
+        },
+    )
+
+    assert result.status == "succeeded"
+    assert history == ["file_reader", "grep"]
+    grep_entry = next(entry for entry in progression["history_entries"] if entry["tool"] == "grep")
+    assert grep_entry["args"]["pattern"] == "orion_584271"
+    assert "bindings" not in grep_entry["args"]
+    assert "${" not in str(grep_entry["args"])
+    assert progression["reasoning_turns"] == 2
+    assert progression["requested"] == []
+    assert progression["pending"] == []
+    assert progression["waived"] == []
+    assert result.receipt["mutation_occurred"] is False
+    boundary_prompt = gateway.payloads[2]["messages"][-1]["content"]
+    assert "orion_584271" in boundary_prompt
+    assert "fonte_h2.txt" in boundary_prompt
+    assert "Uma fronteira semântica explícita" in boundary_prompt
+    assert workspace.joinpath("fonte_h2.txt").read_text(encoding="utf-8") == "orion_584271"
+
+
+def test_post_plan_boundary_block_cannot_be_reported_as_success(tmp_path: Path) -> None:
+    result, gateway, _workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e avalie se a observacao basta.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"blocked","reason":"evidencia insuficiente"}',
+            "A leitura foi observada, mas a tarefa foi bloqueada antes da conclusão.",
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert history == ["file_reader"]
+    assert progression["terminal"] == "block"
+    assert progression["reasoning_turns"] == 1
+    assert len(gateway.payloads) == 4
+    assert "status operacional: blocked" in result.answer
+    assert "controle.txt" in result.answer
+
+
+def test_invalid_post_plan_boundary_fails_closed(tmp_path: Path) -> None:
+    result, _gateway, _workspace, history, progression = _run_queued_task(
+        tmp_path,
+        "modificado",
+        "Leia controle.txt e responda com evidencia.",
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{}',
+        ],
+    )
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert history == ["file_reader"]
+    assert progression["terminal"] == "block"
+    assert progression["reasoning_turns"] == 1
+
+
 def test_already_satisfied_mutation_request_avoids_write(tmp_path: Path) -> None:
     result, gateway, workspace, history, progression = _run_queued_task(
         tmp_path,
@@ -614,6 +791,7 @@ def test_already_satisfied_mutation_request_avoids_write(tmp_path: Path) -> None
             '{"persona":"coder"}',
             '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
             '{"action":"complete_without_effect","observation_index":1}',
+            '{"action":"complete","reason":"a dispensa foi confirmada"}',
         ],
     )
 
@@ -639,7 +817,7 @@ def test_already_satisfied_mutation_request_avoids_write(tmp_path: Path) -> None
         if event.get("type") == "effect_waiver_bound"
     )
     assert waiver["data"]["observation_index"] == 1
-    assert len(gateway.payloads) == 3
+    assert len(gateway.payloads) == 4
     continuation_prompt = gateway.payloads[2]["messages"][-1]["content"]
     assert "obrigacao ainda nao resolvida" in continuation_prompt
     assert "nao uma ordem para executar" in continuation_prompt
@@ -903,18 +1081,20 @@ def test_hierarchical_failure_is_not_overwritten_by_later_success(tmp_path: Path
             '{"persona":"coder"}',
             json.dumps(macro),
             '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"missing.txt"}}]}',
-            '{"action":"final","answer":"sem replanning"}',
+            '{"action":"blocked","reason":"o subobjetivo falhou antes da conclusao"}',
             '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
-            "summary flush",
-            "final answer",
+            '{"action":"complete","reason":"a segunda leitura foi concluida"}',
         ],
-    )
+        )
 
-    assert result.status == "failed"
+    assert result.status == "blocked"
     assert result.success is False
-    assert result.answer == "A tarefa não pôde ser concluída."
+    assert "status operacional: blocked" in result.answer
+    assert "controle.txt" in result.answer
+    assert "original" in result.answer
+    assert "sucesso" not in result.answer.casefold()
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "original"
-    assert progression["terminal"] == "fail"
+    assert progression["terminal"] == "block"
     assert any(event.get("type") == "step_failed" for event in progression["events"])
 
 
@@ -1243,6 +1423,153 @@ def test_application_rejects_corrupt_memory_json_and_releases_bootstrap_lock(
         configure_logging=False,
     ):
         pass
+
+
+def test_startup_failure_releases_only_owned_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    context = WorkspaceContext.create(workspace)
+    workspace_paths = paths.for_workspace(context.workspace_id)
+
+    def fail_bootstrap(*_args, **_kwargs):
+        raise RuntimeError("falha de bootstrap")
+
+    monkeypatch.setattr(
+        "agent.application.ApplicationExtensionBootstrap.build",
+        fail_bootstrap,
+    )
+    with pytest.raises(RuntimeError, match="falha de bootstrap"):
+        AgentApplication.create(
+            paths=paths,
+            workspace=workspace,
+            gateway=OfflineLegacyGateway("unused"),
+            configure_logging=False,
+        )
+
+    assert not workspace_paths.lock_file.exists()
+
+
+def test_close_releases_lock_when_memory_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    application = AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    )
+    monkeypatch.setattr(
+        application.orchestrator,
+        "_persist_memory_to_file",
+        lambda: (_ for _ in ()).throw(RuntimeError("persistência indisponível")),
+    )
+
+    with pytest.raises(RuntimeError, match="persistência indisponível"):
+        application.close()
+
+    assert application._closed is True
+    assert not application.workspace_paths.lock_file.exists()
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ):
+        pass
+
+
+def test_workspace_identity_is_stable_across_path_alias_and_projections(
+    tmp_path: Path,
+) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    alias = tmp_path / "workspace-alias"
+    try:
+        alias.symlink_to(workspace, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink indisponível no ambiente: {exc}")
+
+    direct = WorkspaceContext.create(workspace)
+    aliased = WorkspaceContext.create(alias)
+    assert direct.root == aliased.root
+    assert direct.workspace_id == aliased.workspace_id
+    assert paths.for_workspace(direct.workspace_id) == paths.for_workspace(
+        aliased.workspace_id
+    )
+
+
+def test_terminal_checkpoint_cannot_resume_as_fresh_success(tmp_path: Path) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ) as application:
+        state = application.orchestrator.agent_state
+        state.objective = "tarefa terminal"
+        state.terminal_disposition = "complete"
+        application.orchestrator._save_checkpoint()
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ) as resumed:
+        result = resumed.run(None)
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert result.receipt["operational_outcome"]["terminal_status"] == "blocked"
+
+
+def test_incompatible_checkpoint_fails_safely_without_starting_new_task(
+    tmp_path: Path,
+) -> None:
+    paths = _initialized_paths(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    context = WorkspaceContext.create(workspace)
+    workspace_paths = paths.for_workspace(context.workspace_id)
+    workspace_paths.ensure_directories()
+    checkpoint = workspace_paths.checkpoint_file
+    checkpoint.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "objective": "tarefa antiga",
+                "plan": [],
+                "step_records": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        gateway=OfflineLegacyGateway("unused"),
+        configure_logging=False,
+    ) as application:
+        result = application.run(None)
+
+    assert result.status == "blocked"
+    assert result.success is False
+    assert "CHECKPOINT_INCOMPATIBLE_SCHEMA" in result.error
+    assert checkpoint.exists()
 
 
 def test_close_is_idempotent(tmp_path: Path) -> None:

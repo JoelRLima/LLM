@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from agent.reporting.observation_evidence import (
+    artifact_metadata,
+    metadata_is_persisted_mutation,
+    project_artifact_evidence,
+)
+
 PUBLIC_TERMINAL_STATUSES = frozenset(
     {
         "succeeded",
@@ -119,41 +125,6 @@ class OperationalOutcome:
         }
 
 
-def artifact_metadata(result: Any) -> tuple[dict[str, Any], ...]:
-    if not isinstance(result, dict):
-        return ()
-    data = result.get("data")
-    artifacts = data.get("artifacts") if isinstance(data, dict) else None
-    if not isinstance(artifacts, (list, tuple)):
-        return ()
-    return tuple(
-        item["metadata"]
-        for item in artifacts
-        if isinstance(item, dict) and isinstance(item.get("metadata"), dict)
-    )
-
-
-def metadata_is_persisted_mutation(metadata: dict[str, Any]) -> bool:
-    return (
-        metadata.get("applied") is True
-        and metadata.get("mutation_occurred") is True
-        and metadata.get("rollback_occurred") is not True
-        and metadata.get("final_state") == "applied"
-    )
-
-
-def _project_artifact_metadata(
-    metadata: dict[str, Any], files: set[str]
-) -> tuple[str | None, bool, bool]:
-    validation = str(metadata["validation"]) if metadata.get("validation") is not None else None
-    rollback = metadata.get("rollback_occurred") is True or metadata.get("final_state") == "restored"
-    mutation = metadata.get("applied") is True and metadata.get("mutation_occurred") is True
-    affected = metadata.get("affected_files")
-    if mutation and isinstance(affected, (list, tuple)):
-        files.update(str(path) for path in affected)
-    return validation, rollback, mutation
-
-
 def project_operational_outcome(
     state: Any,
     *,
@@ -175,13 +146,11 @@ def project_operational_outcome(
         invocation_id = entry.get("invocation_id") or result.get("invocation_id")
         if invocation_id is not None:
             evidence.append(str(invocation_id))
-        for metadata in artifact_metadata(result):
-            validation, metadata_rollback, metadata_mutation = _project_artifact_metadata(
-                metadata, files
-            )
-            validation_status = validation or validation_status
-            rollback_occurred = rollback_occurred or metadata_rollback
-            mutation_occurred = mutation_occurred or metadata_mutation
+        artifact = project_artifact_evidence(result)
+        files.update(artifact.mutated_files)
+        validation_status = artifact.validation_status or validation_status
+        rollback_occurred = rollback_occurred or artifact.rollback_occurred
+        mutation_occurred = mutation_occurred or artifact.mutation_occurred
 
     last = getattr(state, "last_result", None)
     last_result = last if isinstance(last, dict) else {}
@@ -189,19 +158,22 @@ def project_operational_outcome(
         explicit_status=terminal_status,
         last_result_status=last_result.get("status"),
         terminal_disposition=getattr(state, "terminal_disposition", None),
-        task_failed=task_failed,
-        cancelled=cancelled,
+        task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
+        cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
     )
     reason = last_result.get("error")
     reason_text = str(reason) if reason else None
     blocked_reason = reason_text if normalized_status == "blocked" else None
     failure_reason = reason_text if normalized_status == "failed" else None
+    pending_value = getattr(state, "pending_effects", ())
+    if callable(pending_value):
+        pending_value = pending_value()
     return OperationalOutcome(
         terminal_status=normalized_status,
         requested_effects=tuple(getattr(state, "requested_effects", ()) or ()),
         executed_effects=tuple(getattr(state, "executed_effects", ()) or ()),
         waived_effects=tuple(getattr(state, "waived_effects", ()) or ()),
-        pending_effects=tuple(getattr(state, "pending_effects", lambda: ())()),
+        pending_effects=tuple(pending_value or ()),
         mutation_occurred=mutation_occurred,
         validation_status=validation_status,
         rollback_occurred=rollback_occurred,

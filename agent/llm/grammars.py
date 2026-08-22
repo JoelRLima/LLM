@@ -54,8 +54,8 @@ array  ::= "[" ws (value ("," ws value)*)? ws "]"
 PLAN_GRAMMAR = (
     r"""
 root      ::= plan-response | continue-after-plan-response | direct-response
-plan-response ::= "{" ws "\"action\"" ws ":" ws "\"use_tools\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" ws "}"
-continue-after-plan-response ::= "{" ws "\"action\"" ws ":" ws "\"continue_after_plan\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" ws "}"
+plan-response ::= "{" ws "\"action\"" ws ":" ws "\"use_tools\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
+continue-after-plan-response ::= "{" ws "\"action\"" ws ":" ws "\"continue_after_plan\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
 direct-response ::= "{" ws "\"action\"" ws ":" ws "\"direct_response\"" ws "," ws "\"answer\"" ws ":" ws string ws "}"
 plan-item ::= tool-step | deferred-condition
 tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"

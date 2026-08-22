@@ -189,9 +189,10 @@ de stdout é serializada dentro do processo. Logging permite múltiplos owners
 somente quando usam o mesmo destino; configurações incompatíveis falham
 explicitamente.
 
-O lock atual é conservador: um arquivo abandonado após término abrupto não é
-removido automaticamente, porque apenas PID não prova propriedade com segurança.
-Recuperação auditável de lock é trabalho futuro.
+O lock do workspace mantém exclusão entre processos e recupera automaticamente
+um registro abandonado quando a morte do proprietário pode ser provada. Um
+registro inválido ou uma identidade indeterminada permanece bloqueado para
+evitar dupla posse e pode exigir intervenção manual.
 
 O timeout do benchmark é cooperativo. Após solicitar cancelamento, o script
 aguarda a tarefa em voo terminar e não reutiliza a aplicação.

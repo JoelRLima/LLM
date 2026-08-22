@@ -14,6 +14,7 @@ from agent.planning.plan_prompts import (
     build_plan_prompt,
     build_reasoning_boundary_prompt,
 )
+from agent.planning.task_semantics import TaskSemanticsError
 
 
 class PlanningDecisionKind(str, Enum):
@@ -27,6 +28,7 @@ class PlanningDecisionKind(str, Enum):
 @dataclass(frozen=True)
 class PlanBuildResult:
     plan: Optional[List[Dict[str, Any]]] = None
+    obligations: Optional[List[Dict[str, Any]]] = None
     blocked_answer: Optional[str] = None
     direct_answer: Optional[str] = None
     waiver_observation_index: Optional[int] = None
@@ -79,6 +81,11 @@ class PlanBuilder:
         )
         if self.orchestrator.verbose:
             print(f"[DEBUG] plan_decision bruto: {decision}")
+        if not isinstance(decision, dict):
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        obligations_ok, reviewed_obligations = self._review_obligations(decision)
+        if not obligations_ok:
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         direct_answer = self._direct_answer(decision)
         if direct_answer is not None:
             self.orchestrator._emit("direct_response", {})
@@ -90,7 +97,35 @@ class PlanBuilder:
             print(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
         return PlanBuildResult(
             plan=cast(List[Dict[str, Any]], plan),
+            obligations=reviewed_obligations,
             continue_after_plan=decision.get("action") == "continue_after_plan",
+        )
+
+    def _review_obligations(
+        self, decision: Dict[str, Any]
+    ) -> tuple[bool, Optional[List[Dict[str, Any]]]]:
+        if "obligations" not in decision:
+            return True, None
+        state = getattr(self.orchestrator, "agent_state", None)
+        reviewer = getattr(state, "review_task_obligations", None)
+        if not callable(reviewer):
+            return False, None
+        try:
+            reviewed = reviewer(decision["obligations"], source="initial_plan")
+        except (TaskSemanticsError, TypeError, ValueError):
+            return False, None
+        return (
+            True,
+            [
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "description": item.description,
+                    **({"effect": item.effect} if item.effect is not None else {}),
+                    **({"condition": item.condition} if item.condition is not None else {}),
+                }
+                for item in reviewed
+            ],
         )
 
     def continue_after_observation(self, objective: str, effect_evidence: str, observation_references: str) -> PlanBuildResult:
@@ -172,10 +207,25 @@ class PlanBuilder:
 
     def _plan_progress(self) -> str:
         state = self.orchestrator.agent_state
-        return "\n".join(
+        lines = [
             f"{index + 1}: status={state.get_step_status(index).value}, tool={json.dumps(str(step.get('tool', '')), ensure_ascii=True)}"
             for index, step in enumerate(state.plan)
-        )
+        ]
+        semantics = getattr(state, "task_semantics", None)
+        snapshot = getattr(semantics, "snapshot", None)
+        if callable(snapshot):
+            lines.append("Obrigacoes canonicas e evidencias:")
+            for item in snapshot():
+                lines.append(
+                    "- id={id}; kind={kind}; status={status}; evidence={evidence}; description={description}".format(
+                        id=item.get("id", ""),
+                        kind=item.get("kind", ""),
+                        status=item.get("status", "pending"),
+                        evidence=json.dumps(item.get("evidence_refs", []), ensure_ascii=True),
+                        description=item.get("description", ""),
+                    )
+                )
+        return "\n".join(lines)
 
     @staticmethod
     def _direct_answer(decision: Dict[str, Any]) -> Optional[str]:

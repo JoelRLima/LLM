@@ -6,6 +6,7 @@ import pytest
 
 from agent.cancellation import CancellationToken
 from agent.execution_state import StepStatus
+from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
 from agent.planning.plan_executor import PlanExecutor
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.planning.step_policies import StepPolicies
@@ -54,6 +55,11 @@ class _Context:
         self.verbose = False
         self.workspace = _Workspace()
         self.context_manager = _ContextManager()
+        self.plan_builder = SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                kind=PlanningDecisionKind.COMPLETE
+            )
+        )
         self.cancellation_token = CancellationToken()
         self.session = SimpleNamespace(
             config={
@@ -166,6 +172,48 @@ def test_prepare_invocation_resolves_symbolic_args_before_dispatch(monkeypatch):
     assert prepared.tool == "echo"
     assert prepared.args == {"text": "observed"}
     assert prepared.step_id == state.get_step_id(1)
+
+
+def test_execute_dispatches_only_the_owned_prepared_invocation(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan([{"tool": "echo", "args": {"text": "concreto"}}])
+    context = _Context(state)
+    prepared_calls = []
+
+    def run_prepared(prepared):
+        prepared_calls.append(prepared)
+        return {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "executed": True,
+            "data": "concreto",
+        }
+
+    context._run_prepared_invocation = run_prepared
+    context._run_tool = lambda *_args: pytest.fail("raw plan step reached dispatch")
+
+    outcome = StepExecutor(context).execute(0, "executar", {})
+
+    assert outcome.kind is StepOutcomeKind.COMPLETED
+    assert len(prepared_calls) == 1
+    assert prepared_calls[0].args == {"text": "concreto"}
+    assert prepared_calls[0].plan_id == state.plan_identity
+
+
+def test_unresolved_symbolic_argument_is_blocked_before_tool_dispatch(monkeypatch):
+    state = _state(monkeypatch)
+    state.set_plan([{"tool": "file_reader", "args": {"file_path": "${2.file}"}}])
+    context = _Context(state)
+
+    outcome = StepExecutor(context).execute(0, "Leia um arquivo.", {})
+
+    assert outcome.kind is StepOutcomeKind.BLOCKED
+    assert context.calls == []
+    assert state.tool_history == []
+    assert state.get_step_status(0) is StepStatus.BLOCKED
+    assert outcome.result["executed"] is False
+    assert outcome.result["error_code"] == "unresolved_symbolic_argument"
 
 
 def test_deferred_condition_blocks_when_referenced_observation_is_not_completed(

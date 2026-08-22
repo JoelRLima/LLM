@@ -8,6 +8,8 @@ from typing import Any, cast
 from agent.contracts import ToolArgs, ToolResult
 from agent.parsers import stringify
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
+from agent.planning.step_contracts import PreparedInvocation
 from agent.runtime.logging import logger
 from agent.tools.contracts import ToolInvocationRequest
 
@@ -78,6 +80,94 @@ class ToolExecutor:
         if getattr(self.orchestrator, "verbose", False):
             print(f"[DEBUG] Resultado completo: {stringify(result)}")
         return result
+
+    def run_prepared_invocation(
+        self, prepared: PreparedInvocation, record_result: bool = True
+    ) -> ToolResult:
+        """Dispatch only the concrete preparation boundary.
+
+        The planner owns resolution and preparation; this adapter preserves
+        that boundary while the gateway remains responsible for the final
+        schema, authority, mode, grant, approval, and confinement checks.
+        """
+
+        invocation_id = prepared.invocation_id or str(uuid.uuid4())
+        state = getattr(self.orchestrator, "agent_state", None)
+        current_plan_id = getattr(state, "plan_identity", None)
+        if prepared.plan_id is not None and current_plan_id != prepared.plan_id:
+            return self._prepared_block(
+                invocation_id,
+                "prepared_invocation_stale",
+                "A invocacao preparada pertence a outro plano canonico.",
+            )
+        current_plan = getattr(state, "plan", None)
+        if (
+            prepared.plan_id is not None
+            and isinstance(current_plan, list)
+            and not any(
+                isinstance(step, Mapping)
+                and step.get("_step_id") == prepared.step_id
+                for step in current_plan
+            )
+        ):
+            return self._prepared_block(
+                invocation_id,
+                "prepared_invocation_stale",
+                "A invocacao preparada nao pertence ao plano atual.",
+            )
+        observations = getattr(state, "tool_history", ())
+        if current_plan_id is not None:
+            observations = tuple(
+                item
+                for item in observations
+                if not isinstance(item, Mapping)
+                or item.get("plan_id") in (None, current_plan_id)
+            )
+        symbolic_error = validate_unresolved_symbolic_arguments(
+            args=dict(prepared.args),
+            objective=str(getattr(state, "objective", "") or ""),
+            available_observations=observations,
+        )
+        if symbolic_error is not None:
+            return self._prepared_block(
+                invocation_id,
+                "unresolved_symbolic_argument",
+                symbolic_error,
+            )
+        # Explicit test/admin seams may replace ``run_tool`` on this
+        # instance.  Preserve that injection with already-concrete args;
+        # the production class method below still goes through the gateway.
+        overridden_run_tool = self.run_tool
+        if getattr(overridden_run_tool, "__func__", None) is not ToolExecutor.run_tool:
+            return cast(
+                ToolResult,
+                overridden_run_tool(
+                    prepared.tool,
+                    dict(prepared.args),
+                    record_result,
+                ),
+            )
+        request = ToolInvocationRequest(
+            invocation_id,
+            prepared.tool,
+            dict(prepared.args),
+        )
+        return self.run_tool_invocation(request, record_result=record_result)
+
+    @staticmethod
+    def _prepared_block(
+        invocation_id: str, error_code: str, message: str
+    ) -> ToolResult:
+        return {
+            "invocation_id": invocation_id,
+            "ok": False,
+            "done": True,
+            "executed": False,
+            "status": "blocked",
+            "error": message,
+            "error_code": error_code,
+            "message": message,
+        }
 
     @staticmethod
     def _primary_resource(args: Mapping[str, Any]) -> str | None:

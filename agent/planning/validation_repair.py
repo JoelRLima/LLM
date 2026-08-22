@@ -225,6 +225,23 @@ def _validate_reintegrated_candidate(
             logger.warning("Candidate de reparo não pôde ser canonicalizado: %s", exc)
             return None
 
+    state = getattr(gateway.orchestrator, "agent_state", None)
+    current_ids = {
+        str(step.get("_step_id"))
+        for step in getattr(state, "plan", ())
+        if isinstance(step, Mapping) and step.get("_step_id")
+    }
+    candidate_ids = {
+        str(step.get("_step_id"))
+        for step in prepared
+        if isinstance(step, Mapping) and step.get("_step_id")
+    }
+    scoped_plan_id = getattr(state, "plan_identity", None)
+    if not scoped_plan_id or not current_ids.intersection(candidate_ids):
+        scoped_plan_id = None
+        scoped_observations = ()
+    else:
+        scoped_observations = getattr(state, "tool_history", ())
     validator = PlanValidator(
         getattr(gateway.orchestrator, "skills", {}) or {},
         getattr(gateway.orchestrator, "active_skills", []) or [],
@@ -235,9 +252,8 @@ def _validate_reintegrated_candidate(
         planning_view=presentation,
         objective=objective,
         canonical_deferred_references=canonical,
-        available_observations=getattr(
-            getattr(gateway.orchestrator, "agent_state", None), "tool_history", ()
-        ),
+        available_observations=scoped_observations,
+        plan_identity=scoped_plan_id,
     )
     report = validator.validate(prepared)
     for error in report.errors:

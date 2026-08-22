@@ -2,11 +2,31 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agent.tools.provenance import ArgumentOrigin
 from agent.tools.result_completeness import canonical_completeness
+
+_SYMBOLIC_REFERENCE_PATTERNS = (
+    re.compile(r"\$\{[^{}\r\n]*\}"),
+    re.compile(r"\$\{"),
+    re.compile(r"\{\{[^{}\r\n]*\}\}"),
+    re.compile(r"\{\{"),
+    re.compile(r"(?<![\w])\$ref(?:\b|[.:/\[\]_-])", re.IGNORECASE),
+    re.compile(
+        r"(?<![\w])(?:ref|result|previous|prior|step)\([^()\r\n]+\)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"@[\{\[][^{}\[\]\r\n]+[\}\]]"),
+    re.compile(r"<<[^<>\r\n]+>>"),
+    re.compile(r"\[\[[^\[\]\r\n]+\]\]"),
+    re.compile(
+        r"(?<![\w])\{(?:step|result|ref|previous|prior|\d+)[^{}\r\n]*\}",
+        re.IGNORECASE,
+    ),
+)
 
 
 def validate_argument_provenance(
@@ -35,6 +55,109 @@ def validate_argument_provenance(
         if _observation_literal_allowed(value, allowed, available_observations):
             continue
         return provenance_error(argument, allowed)
+    return None
+
+
+def validate_planner_arguments(
+    args: Mapping[str, Any],
+    bound_fields: set[str],
+    descriptor: Any,
+    objective: str,
+    available_observations: Sequence[Mapping[str, Any]],
+) -> str | None:
+    """Apply provenance and unresolved-reference checks in canonical order."""
+
+    provenance_problem = validate_argument_provenance(
+        args=args,
+        bound_fields=bound_fields,
+        descriptor=descriptor,
+        objective=objective,
+        available_observations=available_observations,
+    )
+    if provenance_problem is not None:
+        return provenance_problem
+    return validate_unresolved_symbolic_arguments(
+        args=args,
+        objective=objective,
+        available_observations=available_observations,
+    )
+
+
+def validate_unresolved_symbolic_arguments(
+    *,
+    args: Mapping[str, Any],
+    objective: str,
+    available_observations: Sequence[Mapping[str, Any]],
+) -> str | None:
+    """Reject model-authored interpolation text before tool dispatch.
+
+    A string is a legitimate literal when it is explicitly present in the
+    user objective or is an exact value in a complete prior observation.
+    Everything else that matches a model-facing placeholder family is
+    unresolved and must not become a concrete tool argument.
+    """
+
+    found = _find_unresolved_symbolic_value(
+        args, objective=objective, observations=available_observations
+    )
+    if found is None:
+        return None
+    path, value, marker = found
+    return (
+        "Argumento planner contém referência simbólica não resolvida "
+        f"em '{path}': {marker} ({value!r})."
+    )
+
+
+def find_unresolved_symbolic_reference(value: Any) -> str | None:
+    """Return the prohibited reference marker in one value, if present."""
+
+    if type(value) is not str:
+        return None
+    for pattern in _SYMBOLIC_REFERENCE_PATTERNS:
+        match = pattern.search(value)
+        if match is not None:
+            return match.group(0)
+    return None
+
+
+def _find_unresolved_symbolic_value(
+    value: Any,
+    *,
+    objective: str,
+    observations: Sequence[Mapping[str, Any]],
+    path: str = "args",
+    depth: int = 0,
+) -> tuple[str, str, str] | None:
+    if depth > 16:
+        return None
+    if type(value) is str:
+        marker = find_unresolved_symbolic_reference(value)
+        if marker is None or value in objective or observation_contains(observations, value):
+            return None
+        return path, value, marker
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            found = _find_unresolved_symbolic_value(
+                item,
+                objective=objective,
+                observations=observations,
+                path=f"{path}.{key}",
+                depth=depth + 1,
+            )
+            if found is not None:
+                return found
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            found = _find_unresolved_symbolic_value(
+                item,
+                objective=objective,
+                observations=observations,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+            )
+            if found is not None:
+                return found
     return None
 
 
@@ -126,8 +249,11 @@ def value_contains(value: Any, candidate: str, depth: int = 0) -> bool:
 
 
 __all__ = [
+    "find_unresolved_symbolic_reference",
     "observation_contains",
     "provenance_error",
     "validate_argument_provenance",
+    "validate_planner_arguments",
+    "validate_unresolved_symbolic_arguments",
     "value_contains",
 ]

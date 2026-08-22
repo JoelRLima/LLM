@@ -65,6 +65,27 @@ class ForbiddenOperationalSession:
         raise AssertionError(f"model session must not be used for operational truth: {name}")
 
 
+class PartialEvidenceSession:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.messages = [{"role": "system", "content": "system"}]
+        self.final_prompt = ""
+
+    def add_user_message(self, content: str) -> None:
+        self.messages.append({"role": "user", "content": content})
+
+    def build_payload(self):
+        return {"messages": list(self.messages)}
+
+    def send_non_streaming_request(self, payload):
+        self.final_prompt = payload["messages"][-1]["content"]
+        return self.response
+
+    def remove_last_user_message(self) -> None:
+        if self.messages and self.messages[-1]["role"] == "user":
+            self.messages.pop()
+
+
 class _FinalGateway:
     provider_name = "final-provider"
     model = "final-model"
@@ -98,6 +119,42 @@ def _outcome(**overrides):
     }
     values.update(overrides)
     return OperationalOutcome(**values)
+
+
+def _partial_history() -> list[dict[str, object]]:
+    return [
+        {
+            "tool": "file_reader",
+            "invocation_id": "read-control",
+            "args": {"file_path": "controle.txt"},
+            "result": {
+                "ok": True,
+                "status": "succeeded",
+                "executed": True,
+                "data": "modificado",
+                "complete": True,
+            },
+        },
+        {
+            "tool": "file_reader",
+            "invocation_id": "read-missing",
+            "args": {"file_path": "arquivo_parcial_inexistente_731904.txt"},
+            "result": {
+                "ok": False,
+                "status": "failed",
+                "executed": True,
+                "data": None,
+                "error": "arquivo não encontrado",
+            },
+        },
+    ]
+
+
+def _file_reader_registry():
+    descriptor = ToolDescriptor(
+        "file_reader", "file_reader", public_invocation_fields={"file_path"}
+    )
+    return SimpleNamespace(descriptor=lambda _name: descriptor)
 
 
 def test_operational_outcome_cannot_be_overridden_by_model_prose() -> None:
@@ -176,6 +233,202 @@ def test_pending_effect_remains_pending_for_non_success_outcome() -> None:
 
     assert "pendentes" in answer
     assert "aplicada" not in answer.casefold()
+
+
+def test_blocked_task_preserves_grounded_partial_evidence() -> None:
+    history = _partial_history()
+    session = PartialEvidenceSession(
+        "controle.txt: modificado; arquivo_parcial_inexistente_731904.txt "
+        "não pôde ser lido porque o arquivo não foi encontrado."
+    )
+    state = SimpleNamespace(tool_history=history, conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(
+            session=session,
+            agent_state=state,
+            tool_registry=_file_reader_registry(),
+        )
+    )
+
+    answer = responder.build_final_answer(
+        "Leia os dois arquivos e relate o conteúdo ou a falha.",
+        operational_outcome=_outcome(
+            terminal_status="blocked",
+            requested_effects=(),
+            waived_effects=(),
+            blocked_reason="reasoning_boundary_blocked",
+        ),
+    )
+
+    assert "status operacional: blocked" in answer
+    assert "controle.txt" in answer
+    assert "modificado" in answer
+    assert "arquivo_parcial_inexistente_731904.txt" in answer
+    assert "não foi encontrado" in answer
+    assert "sucesso" not in answer.casefold()
+    assert "authoritative_tool_observation" in session.final_prompt
+    assert "status terminal canonico" in session.final_prompt
+
+
+def test_partial_response_model_cannot_promote_status_or_fabricate_content() -> None:
+    history = _partial_history()
+    session = PartialEvidenceSession(
+        "A tarefa foi concluída com sucesso; o arquivo ausente contém segredo."
+    )
+    state = SimpleNamespace(tool_history=history, conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(
+            session=session,
+            agent_state=state,
+            tool_registry=_file_reader_registry(),
+        )
+    )
+
+    answer = responder.build_final_answer(
+        "Leia os dois arquivos.",
+        operational_outcome=_outcome(
+            terminal_status="blocked",
+            requested_effects=(),
+            waived_effects=(),
+            blocked_reason="reasoning_boundary_blocked",
+        ),
+    )
+
+    assert "status operacional: blocked" in answer
+    assert "foi concluída com sucesso" not in answer.casefold()
+    assert "segredo" not in answer.casefold()
+    assert '"value":"modificado"' in answer
+    assert '"status":"failed"' in answer
+
+
+def test_partial_response_provider_failure_keeps_deterministic_evidence_fallback() -> None:
+    history = _partial_history()
+    state = SimpleNamespace(tool_history=history, conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(
+            session=FailingSession("api_key=TOPSECRET"),
+            agent_state=state,
+            tool_registry=_file_reader_registry(),
+        )
+    )
+
+    answer = responder.build_final_answer(
+        "Leia os dois arquivos.",
+        operational_outcome=_outcome(
+            terminal_status="blocked",
+            requested_effects=(),
+            waived_effects=(),
+            blocked_reason="reasoning_boundary_blocked",
+        ),
+    )
+
+    assert "status operacional: blocked" in answer
+    assert '"value":"modificado"' in answer
+    assert "arquivo não encontrado" in answer
+    assert "TOPSECRET" not in answer
+
+
+def test_missing_file_failure_explains_absence_without_inventing_content() -> None:
+    state = SimpleNamespace(conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer(
+        "Leia arquivo_que_nao_existe_583921.txt.",
+        operational_outcome=_outcome(
+            terminal_status="failed",
+            requested_effects=(),
+            executed_effects=(),
+            waived_effects=(),
+            failure_reason="arquivo não encontrado",
+        ),
+    )
+
+    assert "não encontrado" in answer
+    assert "conteúdo" not in answer.casefold()
+
+
+def test_truncated_observation_is_preserved_as_preview_not_exhaustive_claim() -> None:
+    history = [
+        {
+            "tool": "file_reader",
+            "invocation_id": "partial-read",
+            "result": {
+                "ok": True,
+                "status": "succeeded",
+                "executed": True,
+                "data": "prefix-only",
+                "artifacts": [{"metadata": {"complete": False, "truncated": True}}],
+            },
+        }
+    ]
+    responder = FinalResponder(
+        SimpleNamespace(
+            session=ForbiddenOperationalSession(),
+            agent_state=SimpleNamespace(tool_history=history, conversation_history=[]),
+        )
+    )
+
+    answer = responder.build_final_answer(
+        "Leia o arquivo e relate todo o conteudo.",
+        operational_outcome=_outcome(
+            terminal_status="blocked",
+            requested_effects=(),
+            waived_effects=(),
+            blocked_reason="reasoning_boundary_blocked",
+        ),
+    )
+
+    assert "status operacional: blocked" in answer
+    assert '"complete":false' in answer
+    assert '"preview":"prefix-only"' in answer
+    assert "exaustivo" not in answer.casefold()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        _outcome(
+            terminal_status="permission_denied",
+            requested_effects=(),
+            waived_effects=(),
+        ),
+        _outcome(
+            terminal_status="blocked",
+            requested_effects=(),
+            waived_effects=(),
+            blocked_reason="APPROVAL_REQUIRED",
+        ),
+        _outcome(
+            terminal_status="blocked",
+            requested_effects=("write",),
+            waived_effects=(),
+            pending_effects=("write",),
+        ),
+        _outcome(
+            terminal_status="failed",
+            requested_effects=(),
+            waived_effects=(),
+            rollback_occurred=True,
+        ),
+    ],
+)
+def test_partial_evidence_does_not_bypass_fail_closed_operational_boundaries(outcome) -> None:
+    state = SimpleNamespace(tool_history=_partial_history(), conversation_history=[])
+    responder = FinalResponder(
+        SimpleNamespace(session=ForbiddenOperationalSession(), agent_state=state)
+    )
+
+    answer = responder.build_final_answer("Leia os arquivos.", operational_outcome=outcome)
+
+    assert "modificado" not in answer
+    if outcome.pending_effects:
+        assert "pendente" in answer
+    elif outcome.rollback_occurred:
+        assert "revertida" in answer
+    else:
+        assert outcome.terminal_status in answer
 
 
 def test_operational_outcome_renders_real_write_and_unavailable_validation() -> None:
@@ -415,7 +668,7 @@ def test_tool_summary_preserves_multiple_results_in_order() -> None:
 
 
 def test_tool_summary_does_not_forward_raw_error_or_message_secrets() -> None:
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
     state = SimpleNamespace(
         tool_history=[
             {
@@ -531,7 +784,7 @@ def test_final_grounding_exposes_actual_query_not_objective_text() -> None:
 
 @pytest.mark.parametrize("streaming", [False, True])
 def test_final_provider_failure_does_not_log_secret(caplog, streaming):
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET token=TOPSECRET password=TOPSECRET"
     session = FailingSession(secret)
     responder = FinalResponder(SimpleNamespace(session=session, agent_state=SimpleNamespace(tool_history=[])))
     caplog.set_level(logging.ERROR)

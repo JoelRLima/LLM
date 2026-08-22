@@ -1,6 +1,12 @@
 import json
 
-from agent.checkpoint_manager import CHECKPOINT_SCHEMA_VERSION, CheckpointManager
+import pytest
+
+from agent.checkpoint_manager import (
+    CHECKPOINT_SCHEMA_VERSION,
+    CheckpointLoadError,
+    CheckpointManager,
+)
 
 
 class _State:
@@ -16,6 +22,10 @@ class _State:
                     "last_error": "",
                 }
             ],
+            "requested_effects": [],
+            "executed_effects": [],
+            "waived_effects": [],
+            "prohibited_effects": [],
         }
 
 
@@ -38,14 +48,17 @@ def test_checkpoint_rejects_incompatible_version(tmp_path):
         encoding="utf-8",
     )
 
-    assert CheckpointManager(str(path)).load() is None
+    with pytest.raises(CheckpointLoadError) as failure:
+        CheckpointManager(str(path)).load()
+    assert failure.value.reason_code == "CHECKPOINT_INCOMPATIBLE_SCHEMA"
 
 
 def test_checkpoint_rejects_legacy_file_without_version(tmp_path):
     path = tmp_path / "checkpoint.json"
     path.write_text(json.dumps({"objective": "x", "plan": []}), encoding="utf-8")
 
-    assert CheckpointManager(str(path)).load() is None
+    with pytest.raises(CheckpointLoadError):
+        CheckpointManager(str(path)).load()
 
 
 def test_checkpoint_rejects_schema_v1_instead_of_inferring_progress(tmp_path):
@@ -63,7 +76,9 @@ def test_checkpoint_rejects_schema_v1_instead_of_inferring_progress(tmp_path):
         encoding="utf-8",
     )
 
-    assert CheckpointManager(str(path)).load() is None
+    with pytest.raises(CheckpointLoadError) as failure:
+        CheckpointManager(str(path)).load()
+    assert failure.value.reason_code == "CHECKPOINT_INCOMPATIBLE_SCHEMA"
 
 
 def test_checkpoint_rejects_malformed_plan(tmp_path):
@@ -73,4 +88,39 @@ def test_checkpoint_rejects_malformed_plan(tmp_path):
         encoding="utf-8",
     )
 
-    assert CheckpointManager(str(path)).load() is None
+    with pytest.raises(CheckpointLoadError):
+        CheckpointManager(str(path)).load()
+
+
+def test_checkpoint_absence_is_distinct_from_invalid_state(tmp_path):
+    assert CheckpointManager(str(tmp_path / "missing.json")).load() is None
+
+
+def test_checkpoint_rejects_ambiguous_v2_migration(tmp_path):
+    path = tmp_path / "checkpoint.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": CHECKPOINT_SCHEMA_VERSION,
+                "objective": "escreva",
+                "plan": [],
+                "step_records": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CheckpointLoadError) as failure:
+        CheckpointManager(str(path)).load()
+    assert failure.value.reason_code == "CHECKPOINT_MIGRATION_AMBIGUOUS"
+
+
+def test_checkpoint_rejects_invalid_step_status_instead_of_requeuing(tmp_path):
+    path = tmp_path / "checkpoint.json"
+    payload = _State().to_checkpoint_dict()
+    payload["schema_version"] = CHECKPOINT_SCHEMA_VERSION
+    payload["step_records"][0]["status"] = "invented"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(CheckpointLoadError, match="status de passo"):
+        CheckpointManager(str(path)).load()

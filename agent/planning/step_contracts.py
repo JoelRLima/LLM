@@ -37,6 +37,12 @@ class PreparedInvocation:
     tool: str
     args: ToolArgs
     file_path: str
+    # Parallel dispatch may allocate an ID before submitting the worker.
+    # Sequential callers leave it unset and let ToolExecutor allocate one.
+    invocation_id: Optional[str] = None
+    # A prepared value must not outlive the canonical plan that produced it.
+    # This is boundary metadata, not a second causal dependency language.
+    plan_id: Optional[str] = None
 
 
 class MemoryPort(Protocol):
@@ -80,6 +86,7 @@ class CancellationPort(Protocol):
 class StepRuntimePort(Protocol):
     def _emit(self, event_type: str, data: Optional[EventData] = None) -> None: ...
     def _run_tool(self, tool_name: str, args: ToolArgs) -> ToolResult: ...
+    def _run_prepared_invocation(self, prepared: PreparedInvocation) -> ToolResult: ...
     def _handle_step_failure(self, step_index: int, reason: str, tool: str = "", args: Optional[ToolArgs] = None) -> str: ...
     def _purge_stale_context(self) -> None: ...
     def _generate_content(self, tool: str, args: ToolArgs, objective: str) -> Optional[str]: ...

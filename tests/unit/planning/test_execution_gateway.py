@@ -110,6 +110,64 @@ def test_gateway_does_not_execute_invalid_plan():
     assert orchestrator.plan_executor.calls == 0
 
 
+def test_gateway_rejects_duplicate_step_identity_before_execution():
+    orchestrator = _Orchestrator()
+    gateway = ExecutionGateway(orchestrator)
+
+    result = gateway.execute_validated_plan(
+        [
+            {"tool": "echo", "_step_id": "same", "args": {}},
+            {"tool": "echo", "_step_id": "same", "args": {}},
+        ],
+        "objetivo",
+        {},
+    )
+
+    assert result.aborted is True
+    assert orchestrator.failed is True
+    assert orchestrator.plan_executor.calls == 0
+
+
+def test_extension_binds_to_persisted_prefix_without_replaying_it():
+    orchestrator = _Orchestrator()
+    state = AgentState()
+    state.set_plan(
+        [{"tool": "echo", "_step_id": "producer", "args": {}}]
+    )
+    state.mark_step_running(0)
+    state.record_tool_result(
+        "echo",
+        {},
+        {
+            "ok": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": "observed",
+        },
+        step_id="producer",
+    )
+    state.mark_step_completed(0)
+    orchestrator.agent_state = state
+
+    extension = ExecutionGateway(orchestrator).extend_validated_plan(
+        [
+            {
+                "tool": "echo",
+                "args": {},
+                "bindings": {"text": {"from_step": 1, "path": []}},
+            }
+        ],
+        "objetivo",
+    )
+
+    assert extension is not None
+    assert len(extension) == 1
+    assert extension[0]["bindings"]["text"]["from_step"] == "producer"
+    assert len(state.tool_history) == 1
+    assert state.get_step_status(0).value == "completed"
+    assert state.get_step_status(1).value == "pending"
+
+
 def _deferred_plan(*, reference=1, operator="equals", literal="original"):
     return [
         {"tool": "echo", "args": {}, "_step_id": "observation"},

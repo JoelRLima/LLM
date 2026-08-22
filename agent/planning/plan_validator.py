@@ -1,17 +1,18 @@
 """Read-only plan schema and policy validator."""
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import validate_tool_args
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_validation import validate_deferred_items
+from agent.planning.plan_identity_validation import validate_plan_identities
 from agent.planning.plan_policy_checks import (
     check_analysis_notes,
     check_consecutive_writes,
     check_inverted_dependencies,
     check_patch_without_read,
 )
+from agent.planning.plan_validation_types import BlockedStep, ValidationReport
 from agent.planning.planning_context import (
     PlanningContextError,
     PlanningContextSnapshot,
@@ -19,7 +20,9 @@ from agent.planning.planning_context import (
     validate_planning_tool_arguments,
 )
 from agent.planning.presentation import PlanningPresentationSnapshot
-from agent.planning.provenance_validation import validate_argument_provenance
+from agent.planning.provenance_validation import (
+    validate_planner_arguments,
+)
 from agent.planning.result_bindings import (
     ResultBindingError,
     binding_targets,
@@ -28,27 +31,6 @@ from agent.planning.result_bindings import (
 from agent.planning.validation_repair import repairable_fields
 from agent.skills.descriptor import result_data_schema_for_contract, target_schema_for_contract
 
-
-@dataclass(frozen=True)
-class BlockedStep:
-    """Um passo do plano que nÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£o pode ser executado como estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡."""
-    index: int
-    reason: str
-    repairable_fields: frozenset[str] = frozenset()
-
-    @property
-    def is_validation_repair(self) -> bool:
-        """Whether this is a deterministic, field-scoped pre-execution repair."""
-
-        return bool(self.repairable_fields)
-
-@dataclass
-class ValidationReport:
-    """Resultado de uma chamada a `PlanValidator.validate()`."""
-    is_valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    blocked_steps: List[BlockedStep] = field(default_factory=list)
 
 class PlanValidator:
     """Valida planos contra o schema das ferramentas, a lista de
@@ -71,6 +53,7 @@ class PlanValidator:
         objective: str = "",
         canonical_deferred_references: bool = False,
         available_observations: Sequence[Mapping[str, Any]] | None = None,
+        plan_identity: str | None = None,
     ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
@@ -80,7 +63,16 @@ class PlanValidator:
         self.planning_view = planning_view
         self.objective = objective
         self.canonical_deferred_references = canonical_deferred_references
-        self.available_observations = tuple(available_observations or ())
+        self.plan_identity = plan_identity
+        observations = tuple(available_observations or ())
+        if plan_identity is not None:
+            observations = tuple(
+                item
+                for item in observations
+                if not isinstance(item, Mapping)
+                or item.get("plan_id") in (None, plan_identity)
+            )
+        self.available_observations = observations
         if planning_context is not None and planning_view is not None:
             if planning_view.planning_context_id != planning_context.snapshot_id:
                 raise PlanningContextError("planning context e view divergem")
@@ -117,6 +109,7 @@ class PlanValidator:
             errors.append("Plano vazio: nenhum passo para executar.")
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
 
+        errors.extend(validate_plan_identities(plan))
         errors.extend(validate_deferred_items(plan, self.objective, self.canonical_deferred_references, self._validate_step_schema))
         errors.extend(
             validate_result_bindings(
@@ -188,12 +181,9 @@ class PlanValidator:
         problem = self._validate_context_step(tool_name, args, bound_fields)
         if problem:
             return problem
-        return validate_argument_provenance(
-            args=args,
-            bound_fields=bound_fields,
-            descriptor=self._planning_tool(tool_name),
-            objective=self.objective,
-            available_observations=self.available_observations,
+        return validate_planner_arguments(
+            args, bound_fields, self._planning_tool(tool_name), self.objective,
+            self.available_observations,
         )
 
     def _validate_descriptor_step(
@@ -206,12 +196,8 @@ class PlanValidator:
             validate_planning_tool_arguments(descriptor, args, bound_fields)
         except ValueError as exc:
             return f"Schema inv\u00e1lido para '{tool_name}': {exc}"
-        return validate_argument_provenance(
-            args=args,
-            bound_fields=bound_fields,
-            descriptor=descriptor,
-            objective=self.objective,
-            available_observations=self.available_observations,
+        return validate_planner_arguments(
+            args, bound_fields, descriptor, self.objective, self.available_observations,
         )
 
     def _validate_skill_step(
@@ -220,12 +206,9 @@ class PlanValidator:
         valid, error = validate_tool_args(tool_name, args, self.skills, bound_fields)
         if not valid:
             return f"Schema inv\u00e1lido para '{tool_name}': {error or ''}"
-        return validate_argument_provenance(
-            args=args,
-            bound_fields=bound_fields,
-            descriptor=self.skills.get(tool_name),
-            objective=self.objective,
-            available_observations=self.available_observations,
+        return validate_planner_arguments(
+            args, bound_fields, self.skills.get(tool_name), self.objective,
+            self.available_observations,
         )
 
     def _validate_context_step(

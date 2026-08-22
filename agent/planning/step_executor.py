@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from agent.contracts import ToolArgs, ToolResult
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.result_bindings import ResultBindingError, resolve_bound_args
 from agent.planning.step_contracts import (
     ExecutionContext,
@@ -37,7 +38,9 @@ class StepExecutor:
         generated = self._ensure_writer_content(index, tool, args, objective)
         if generated is not None:
             return generated
-        result_or_outcome = self._obtain_result(index, tool, args, file_path)
+        result_or_outcome = self._obtain_result(
+            index, tool, args, file_path, prepared=prepared
+        )
         if isinstance(result_or_outcome, StepExecutionOutcome):
             return result_or_outcome
         return self.finalize_result(index, tool, args, result_or_outcome, file_path, objective, usage)
@@ -56,6 +59,7 @@ class StepExecutor:
             tool=tool,
             args=dict(args),
             file_path=file_path,
+            plan_id=getattr(self.context.agent_state, "plan_identity", None),
         )
 
     def _prepare(self, index: int) -> tuple[str, ToolArgs, str] | StepExecutionOutcome:
@@ -66,11 +70,47 @@ class StepExecutor:
         file_path = str(args.get("target") or args.get("file_path") or "")
         state.mark_step_running(index)
         try:
-            args = resolve_bound_args(step, index, state.plan, state.tool_history)
+            args = resolve_bound_args(
+                step,
+                index,
+                state.plan,
+                state.tool_history,
+                plan_id=getattr(state, "plan_identity", None),
+            )
         except ResultBindingError as exc:
             return self.finish_failed(index, f"binding inválido: {exc}", decisive=True)
+        plan_id = getattr(state, "plan_identity", None)
+        observations = getattr(state, "tool_history", ())
+        if plan_id is not None:
+            observations = tuple(
+                item
+                for item in observations
+                if not isinstance(item, dict)
+                or item.get("plan_id") in (None, plan_id)
+            )
+        symbolic_error = validate_unresolved_symbolic_arguments(
+            args=args,
+            objective=str(getattr(state, "objective", "") or ""),
+            available_observations=observations,
+        )
+        if symbolic_error is not None:
+            return self._finish_unresolved_symbolic(index, symbolic_error)
         file_path = str(args.get("target") or args.get("file_path") or "")
         return str(step.get("tool", "")), args, file_path
+
+    def _finish_unresolved_symbolic(
+        self, index: int, error: str
+    ) -> StepExecutionOutcome:
+        result: ToolResult = {
+            "ok": False,
+            "done": True,
+            "executed": False,
+            "status": "blocked",
+            "error": "unresolved_symbolic_argument",
+            "error_code": "unresolved_symbolic_argument",
+            "message": error,
+        }
+        return self.finish_blocked(index, result)
 
     def _validate(self, index: int, tool: str, args: ToolArgs) -> StepExecutionOutcome | None:
         try:
@@ -94,7 +134,13 @@ class StepExecutor:
         return self.finish_failed(index, "conteúdo não gerado")
 
     def _obtain_result(
-        self, index: int, tool: str, args: ToolArgs, file_path: str
+        self,
+        index: int,
+        tool: str,
+        args: ToolArgs,
+        file_path: str,
+        *,
+        prepared: PreparedInvocation | None = None,
     ) -> ToolResult | StepExecutionOutcome:
         cache_hit, cached = self.try_cache(tool, args, file_path, self.context.agent_state.get_step_id(index))
         if tool == "file_writer" and args.get("content") and file_path:
@@ -104,7 +150,15 @@ class StepExecutor:
         if not getattr(self.context, "tool_invocation_gateway", None):
             self.context._emit("tool_start", {"tool": tool, "args": args})
         try:
-            result = self.context._run_tool(tool, args)
+            prepared_runner = getattr(self.context, "_run_prepared_invocation", None)
+            if callable(prepared_runner) and prepared is not None:
+                result = prepared_runner(prepared)
+            else:
+                # Small test/compatibility contexts may not expose the owned
+                # preparation adapter.  The production Orchestrator does, so
+                # its model-actionable path never reconstructs a raw plan
+                # step at dispatch time.
+                result = self.context._run_tool(tool, args)
         except ToolNotFoundError as exc:
             self.context._emit("error", {"step": index + 1, "error": str(exc)})
             self.finish_failed(index, str(exc))
@@ -112,7 +166,7 @@ class StepExecutor:
         if not getattr(self.context, "tool_invocation_gateway", None):
             self.context._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
         self.context._maybe_summarize_and_store(tool, args, result)
-        return result
+        return cast(ToolResult, result)
 
     def finalize_result(
         self, index: int, tool: str, args: ToolArgs, result: ToolResult,

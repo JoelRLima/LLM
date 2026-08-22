@@ -311,3 +311,39 @@ def test_reactive_final_cannot_replace_canonical_write_waiver() -> None:
 
     assert answer.startswith("Nenhuma escrita foi executada.")
     assert "alterado com sucesso" not in answer
+
+
+def test_reactive_fallback_preserves_prior_failure_and_safe_observation_evidence() -> None:
+    orchestrator = _Orchestrator()
+    orchestrator.agent_state.tool_history = [
+        {
+            "tool": "file_reader",
+            "invocation_id": "read-1",
+            "args": {"file_path": "controle.txt"},
+            "result": {
+                "ok": True,
+                "status": "succeeded",
+                "executed": True,
+                "data": "FACT_FROM_FILE",
+                "complete": True,
+                "truncated": False,
+            },
+        }
+    ]
+    orchestrator.agent_state.last_result = {
+        "ok": False,
+        "status": "failed",
+        "error": "arquivo nao encontrado",
+        "message": "arquivo nao encontrado",
+    }
+
+    answer = ReactiveLoop(orchestrator)._canonical_answer(
+        "A tarefa foi concluida com sucesso.",
+        "Leia controle.txt.",
+    )
+
+    assert "tarefa" in answer.casefold()
+    assert "arquivo" in answer.casefold()
+    assert "FACT_FROM_FILE" in answer
+    assert "evidência canônica das ferramentas" in answer.casefold()
+    assert "concluida com sucesso" not in answer.casefold()

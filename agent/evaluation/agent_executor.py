@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from agent.application import AgentApplication
 from agent.approval import ApprovalPort
+from agent.evaluation.block7_identity import normalize_endpoint_identity
 from agent.evaluation.contracts import ExecutionObservation
 from agent.reporting.task_report_rendering import aggregate_metrics
 from agent.runtime.config_repository import ConfigRepository
@@ -106,7 +107,77 @@ class AgentApplicationScenarioExecutor:
                         None,
                     ),
                     "status": result.status,
+                    "estimated_tokens": canonical_metrics.get("estimated_tokens", 0),
+                    "accounted_tokens": canonical_metrics.get("accounted_tokens", 0),
+                    "token_usage_complete": bool(canonical_metrics.get("token_usage_complete", False)),
+                    "reported_input_tokens": canonical_metrics.get("reported_input_tokens", 0),
+                    "reported_output_tokens": canonical_metrics.get("reported_output_tokens", 0),
+                    "total_tokens": canonical_metrics.get("total_tokens"),
                 }
+                raw_profile = getattr(gateway, "profile", {})
+                profile = raw_profile if isinstance(raw_profile, dict) else {}
+                capabilities = getattr(gateway, "capabilities", None)
+                measurement["provider_identity"] = {
+                    "provider": str(getattr(gateway, "provider_name", "")),
+                    "model": str(getattr(gateway, "model", "")),
+                    "profile": {
+                        key: value
+                        for key, value in profile.items()
+                        if str(key).casefold() not in {"authorization", "api_key", "password", "token", "secret"}
+                    },
+                    "capabilities": {
+                        "streaming": bool(getattr(capabilities, "streaming", False)),
+                        "structured_output_modes": [
+                            str(getattr(mode, "value", mode))
+                            for mode in getattr(capabilities, "structured_output_modes", ())
+                        ],
+                        "reasoning": bool(getattr(capabilities, "reasoning", False)),
+                        "token_counting": bool(getattr(capabilities, "token_counting", False)),
+                        "tool_calls": bool(getattr(capabilities, "tool_calls", False)),
+                    },
+                    "endpoint_identity": normalize_endpoint_identity(
+                        profile.get("base_url") or profile.get("api_url") or getattr(gateway, "endpoint_identity", None)
+                    ),
+                    "actual_provider_model_id": getattr(gateway, "provider_model_id", None),
+                }
+                events = list(application.orchestrator.agent_state.events)
+                gateway_evidence = {}
+                export_evidence = getattr(gateway, "export_evidence", None)
+                if callable(export_evidence):
+                    raw_gateway_evidence = export_evidence()
+                    if isinstance(raw_gateway_evidence, dict):
+                        gateway_evidence = raw_gateway_evidence
+                gateway_evidence.update(
+                    {
+                        "canonical_plan": list(application.orchestrator.agent_state.plan),
+                        "invocation_evidence": list(history),
+                        "route_events": [
+                            event
+                            for event in application.orchestrator.agent_state.events
+                            if isinstance(event, dict)
+                            and event.get("type") in {
+                                "hierarchical_started",
+                                "hierarchical_completed",
+                                "hierarchical_fallback",
+                                "continuation_plan_proposed",
+                                "hard_block",
+                                "task_outcome",
+                            }
+                        ],
+                        "validation_evidence": [
+                            event
+                            for event in events
+                            if isinstance(event, dict)
+                            and event.get("type") in {
+                                "hard_block", "plan_created", "plan_extended", "replan",
+                                "tool_denied", "error",
+                            }
+                        ],
+                        "terminal_status": result.status,
+                        "final_answer": result.answer,
+                        "receipt": dict(result.receipt),
+                    }
+                )
                 return ExecutionObservation(
                     success=result.success,
                     answer=result.answer,
@@ -114,4 +185,5 @@ class AgentApplicationScenarioExecutor:
                     diagnostics=list(result.diagnostics),
                     error=result.error,
                     measurement=measurement,
+                    evidence=gateway_evidence,
                 )

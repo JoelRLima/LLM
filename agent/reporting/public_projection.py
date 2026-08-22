@@ -13,8 +13,6 @@ def reconcile_report_status(state: Any, requested_status: str) -> str:
     disposition = getattr(state, "terminal_disposition", None)
     task_failed = bool(getattr(state, "_task_failed", False))
     cancelled = bool(getattr(state, "_cancelled", False))
-    if disposition is None and last_status is None and not task_failed and not cancelled:
-        return requested_status
     return normalize_terminal_status(
         explicit_status=requested_status,
         last_result_status=last_status,
@@ -46,24 +44,12 @@ def canonical_effect_projection(state: Any, status: str) -> dict[str, Any]:
 def reconcile_receipt_projection(
     state: Any, status: str, receipt: dict[str, Any]
 ) -> dict[str, Any]:
+    status = reconcile_report_status(state, status)
     projection = dict(receipt)
     projection["status"] = status
     effects = canonical_effect_projection(state, status)
-    has_facts = (
-        getattr(state, "terminal_disposition", None) is not None
-        or isinstance(getattr(state, "last_result", None), dict)
-        or bool(getattr(state, "_task_failed", False))
-        or bool(getattr(state, "_cancelled", False))
-    )
-    if has_facts:
-        projection.update({key: value for key, value in effects.items() if key != "operational_outcome"})
-        nested = effects["operational_outcome"]
-    else:
-        nested = projection.get("operational_outcome")
-    if isinstance(nested, dict):
-        nested = dict(nested)
-        nested["terminal_status"] = status
-        projection["operational_outcome"] = nested
+    projection.update({key: value for key, value in effects.items() if key != "operational_outcome"})
+    projection["operational_outcome"] = effects["operational_outcome"]
     return projection
 
 

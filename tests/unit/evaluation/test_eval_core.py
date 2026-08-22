@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent.evaluation import (
     CapabilityEvaluator,
@@ -10,6 +11,7 @@ from agent.evaluation import (
     ExecutionObservation,
     ScenarioExpectation,
 )
+from agent.evaluation.block7_execution_evidence import critical_incidents
 from agent.evaluation.regressions import CURATED_REGRESSION_SET
 
 
@@ -80,6 +82,24 @@ def test_negative_harness_proof_fails_when_observed_outcome_is_wrong(tmp_path: P
 
     assert report.passed is False
     assert {failure.code for failure in report.failures} == {"unexpected_success"}
+
+
+def test_evaluation_observes_non_success_terminal_truth_without_promoting_it() -> None:
+    observation = ExecutionObservation(
+        success=True,
+        answer="modelo afirmou sucesso",
+        evidence={
+            "terminal_status": "failed",
+            "invocation_evidence": (),
+        },
+    )
+    report = SimpleNamespace(observation=observation)
+
+    incidents = critical_incidents(report, {})
+
+    assert "false_public_success" in incidents
+    assert observation.success is True
+    assert observation.evidence["terminal_status"] == "failed"
 
 
 def test_curated_regression_set_is_focused_and_excludes_historical_ci_debt() -> None:

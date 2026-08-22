@@ -7,10 +7,15 @@ from typing import Any
 from agent.planning.task_completion import continue_after_reasoning_boundary
 
 
-def handle_boundary(executor: Any, objective: str, enabled: bool) -> tuple[bool, str | None, bool]:
-    """Return ``(handled, answer, extended)`` without creating a loop budget."""
-    if not enabled:
-        return False, None, False
+def handle_boundary(executor: Any, objective: str, enabled: bool = True) -> tuple[bool, str | None, bool]:
+    """Run the canonical post-plan boundary.
+
+    ``enabled`` remains in the signature for checkpoint and caller
+    compatibility, but it is intentionally not a completion bypass.  A
+    model-owned continuation flag may describe the initial plan; it cannot
+    suppress the completion decision after a tool plan is exhausted.
+    """
+    del enabled
     boundary = continue_after_reasoning_boundary(executor.orchestrator, objective)
     state = executor.orchestrator.agent_state
     if boundary.answer:

@@ -35,6 +35,7 @@ class ToolResult(TypedDict, total=False):
     executed: Optional[bool]
     data: Any
     error: Optional[str]
+    error_code: Optional[str]
     message: Optional[str]
     artifacts: List[Any]
     total_lines: int
@@ -42,6 +43,7 @@ class ToolResult(TypedDict, total=False):
 
 class ToolHistoryEntry(TypedDict, total=False):
     step_id: Optional[str]
+    plan_id: Optional[str]
     invocation_id: str
     status: str
     logical_slot: int
@@ -77,6 +79,7 @@ class CheckpointData(TypedDict, total=False):
     schema_version: int
     objective: Optional[str]
     plan: List[PlanStep]
+    plan_identity: Optional[str]
     plan_step: int
     current_step_id: Optional[str]
     step_records: List[StepRecordData]

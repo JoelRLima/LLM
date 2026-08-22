@@ -182,12 +182,21 @@ class OrchestratorOperations:
             return None
 
     def _is_task_solved(self) -> bool:
+        from agent.planning.task_completion import review_task_completion
+
+        review = review_task_completion(self)
         outcome = project_operational_outcome(
             self.agent_state,
             task_failed=bool(getattr(self, "_task_failed", False)),
             cancelled=bool(getattr(self, "_cancelled", False)),
         )
-        return outcome.terminal_status == "succeeded" and not outcome.pending_effects
+        return (
+            review.accepted
+            and getattr(self.agent_state, "terminal_disposition", None)
+            in {"complete", "succeeded"}
+            and outcome.terminal_status == "succeeded"
+            and not outcome.pending_effects
+        )
 
     @staticmethod
     def _sanitize_error(error_message: str) -> str:
@@ -231,3 +240,8 @@ class OrchestratorOperations:
 
     def _run_tool(self, tool_name: str, args: ToolArgs) -> ToolResult:
         return cast(ToolResult, self.tool_executor.run_tool(tool_name, args))
+
+    def _run_prepared_invocation(self, prepared: Any) -> ToolResult:
+        """Dispatch the owned concrete preparation boundary."""
+
+        return cast(ToolResult, self.tool_executor.run_prepared_invocation(prepared))

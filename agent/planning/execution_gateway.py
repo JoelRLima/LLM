@@ -106,18 +106,32 @@ class ExecutionGateway:
         plan: List[Dict[str, Any]],
         objective: str,
     ) -> Optional[List[Dict[str, Any]]]:
-        """Validate a continuation through this gateway before state insertion."""
+        """Validate a continuation before appending it to the canonical plan.
 
-        validated = self.validate_and_optimize_plan(plan, objective)
-        if validated is None:
-            return None
+        A boundary extension may bind an argument to an observation in the
+        already-executed prefix.  Validate the persisted prefix and proposed
+        suffix as one canonical plan so ordinal bindings can be resolved
+        against that real history before anything is inserted.
+        """
+
         state = self.orchestrator.agent_state
-        for step in validated:
+        prefix = [dict(step) for step in state.plan]
+        combined = [*prefix, *[dict(step) for step in plan]]
+        validated = self.validate_and_optimize_plan(combined, objective)
+        if validated is None or len(validated) <= len(prefix):
+            return None
+        prefix_ids = [str(step.get("_step_id", "")) for step in prefix]
+        validated_prefix_ids = [str(step.get("_step_id", "")) for step in validated[: len(prefix)]]
+        if prefix_ids != validated_prefix_ids:
+            self._abort("prefixo do plano alterado durante a extensao")
+            return None
+        extension = validated[len(prefix):]
+        for step in extension:
             state.insert_plan_step(len(state.plan), step)
         self.orchestrator._emit(
-            "plan_extended", {"steps": len(validated), "plan": validated}
+            "plan_extended", {"steps": len(extension), "plan": extension}
         )
-        return validated
+        return extension
 
     @staticmethod
     def _log_validation(report: Any, phase: str = "validação") -> None:

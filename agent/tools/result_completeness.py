@@ -12,14 +12,23 @@ def canonical_completeness(result: Mapping[str, Any]) -> tuple[bool, bool]:
     truncated = result.get("truncated") is True
     explicit_complete = result.get("complete")
     complete = explicit_complete if type(explicit_complete) is bool else not truncated
-    artifacts = result.get("artifacts")
-    if isinstance(artifacts, Sequence) and not isinstance(artifacts, (str, bytes, bytearray)):
+    containers: list[Mapping[str, Any]] = [result]
+    data = result.get("data")
+    if isinstance(data, Mapping):
+        containers.append(data)
+    metadata = result.get("metadata")
+    if isinstance(metadata, Mapping):
+        containers.append({"artifacts": [{"metadata": metadata}]})
+    for container in containers:
+        artifacts = container.get("artifacts")
+        if not isinstance(artifacts, Sequence) or isinstance(artifacts, (str, bytes, bytearray)):
+            continue
         for artifact in artifacts:
-            metadata = artifact.get("metadata") if isinstance(artifact, Mapping) else None
-            if not isinstance(metadata, Mapping):
+            artifact_metadata = artifact.get("metadata") if isinstance(artifact, Mapping) else None
+            if not isinstance(artifact_metadata, Mapping):
                 continue
-            if type(metadata.get("complete")) is bool:
-                complete = complete and metadata["complete"]
-            if metadata.get("truncated") is True:
+            if type(artifact_metadata.get("complete")) is bool:
+                complete = complete and artifact_metadata["complete"]
+            if artifact_metadata.get("truncated") is True:
                 complete, truncated = False, True
     return bool(complete and not truncated), truncated

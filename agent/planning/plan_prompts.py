@@ -30,14 +30,21 @@ de fronteira descrita logo abaixo:
 {{"action": "continue_after_plan", "plan": [{{"tool": "ferramenta", "args": {{}}}}]}}
 Nesta chamada produza nesta unica decisao o plano executavel completo e limitado.
 O runtime persiste o plano e executa seus passos sem pedir nova decisão entre eles.
-Use a fronteira
-somente quando a observação exigir interpretação semântica; exaustão do prefixo
-não significa conclusão. Para uma dependência mecânica use bindings separados:
+A exaustão de qualquer plano de ferramentas sempre passa por uma fronteira
+canônica de conclusão; nenhuma escolha desta resposta pode dispensar essa
+verificação. `continue_after_plan` permanece aceito apenas por compatibilidade
+de checkpoint/telemetria e não autoriza o sucesso. Para uma dependência
+mecânica use bindings separados:
 {{"tool":"grep","args":{{"path":"."}},"bindings":{{"pattern":{{"from_step":1,"path":[]}}}}}}
 Cada from_step aponta apenas para um ToolStep anterior. Valores falsy presentes
 são válidos; campo ausente ou observação incompleta bloqueia o passo.
 Cada ToolStep contém exatamente uma ferramenta da lista e args como objeto.
 Exemplo multi-passo: {{"action":"use_tools","plan":[{{"tool":"file_reader","args":{{"file_path":"a.txt"}}}},{{"tool":"file_reader","args":{{"file_path":"b.txt"}}}}]}}
+Quando o plano revelar um requisito duravel que nao esteja no objetivo inicial,
+voce pode incluir opcionalmente `obligations` como uma lista curta de objetos
+com `id`, `kind` e `description` (e `effect` apenas para efeito ja solicitado).
+Nao inclua status, terminal, success, satisfied, waived, blocked, result, data,
+tool ou instructions: a revisao canonica controla todas as transicoes.
 Para uma condição mecânica use:
 {{"kind":"deferred_condition","observation_ref":1,"predicate":{{"op":"equals","value":"original"}},"on_true":{{"tool":"code_task","args":{{}}}},"on_false":{{"waive_effect":"write"}}}}
 Nunca esconda a condicao apenas no objective de uma ferramenta de efeito. este contrato substitui exemplos legados de action=tool, action=final ou plan como lista de strings.
@@ -90,6 +97,9 @@ Observações reais e limitadas:
 Ferramentas disponíveis:
 {tools}
 
+As obrigacoes canonicas, seus status e referencias de evidencia no progresso acima
+sao dados do runtime. Nao marque sucesso por exaustao do plano ou por prosa;
+uma decisao complete sera revisada novamente pelo runtime.
 Decida somente a próxima transição, sem escrever a resposta final. Use um único
 plano concreto com action=execute, action=complete com reason, ou action=blocked
 com reason. Esta é a única continuação desta fronteira; não peça outra dentro do

@@ -126,6 +126,31 @@ def test_task_report_does_not_infer_success_from_final_answer() -> None:
     assert report["success"] is False
 
 
+def test_pristine_report_cannot_promote_requested_success() -> None:
+    state = SimpleNamespace(
+        objective="pristine",
+        tool_history=[],
+        events=[],
+        last_result=None,
+    )
+
+    report = TaskReportBuilder({}).build_report(
+        state,
+        [],
+        "claimed success",
+        canonical_outcome={"status": "succeeded", "error": None},
+        receipt={
+            "status": "succeeded",
+            "operational_outcome": {"terminal_status": "succeeded"},
+        },
+    )
+
+    assert report["status"] == "unverified"
+    assert report["success"] is False
+    assert report["receipt"]["status"] == "unverified"
+    assert report["operational_outcome"]["terminal_status"] == "unverified"
+
+
 @pytest.mark.parametrize(
     ("disposition", "expected"),
     (("block", "blocked"), ("fail", "failed")),
@@ -256,7 +281,7 @@ def test_report_receipt_status_parity_fails_closed_on_mismatch() -> None:
 
 
 def test_exception_diagnostics_redact_common_secret_forms() -> None:
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET password=TOPSECRET"
     message = public_exception_message(RuntimeError(secret))
     diagnostics = build_run_diagnostics(
         SimpleNamespace(
@@ -270,7 +295,7 @@ def test_exception_diagnostics_redact_common_secret_forms() -> None:
 
 
 def test_task_report_redacts_tool_and_answer_secret_forms() -> None:
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET password=TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET password=TOPSECRET"
     report = TaskReportBuilder({}).build_report(
         SimpleNamespace(
             objective="read",

@@ -1,5 +1,6 @@
 /config.json
 /.venv/
+/.mypy_cache/
 *.egg-info/
 build/
 dist/
@@ -27,3 +28,22 @@ __pycache__/
 /%TEMP%/
 /.tmp/
 /tmp_pytest/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Test environments
+.tox/
+.nox/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Operating system metadata
+.DS_Store
+Thumbs.db

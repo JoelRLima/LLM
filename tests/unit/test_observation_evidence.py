@@ -230,7 +230,7 @@ def test_multiple_observations_keep_order_and_provenance() -> None:
 
 
 def test_failed_result_without_data_has_no_observation_value_or_raw_error() -> None:
-    secret = "api_key=TOPSECRET Authorization: Bearer TOPSECRET"
+    secret = "api_key=SYNTHETIC_TEST_VALUE Authorization: Bearer TOPSECRET"
     entry = {
         "tool": "failed",
         "result": {

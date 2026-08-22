@@ -52,6 +52,70 @@ nem na planning view, que nenhuma tool é invocada e que o workspace não muda.
 O caminho positivo de modificação é protegido separadamente pelos testes de
 `code_task`.
 
+## Block 7 installed acceptance projection
+
+O gate canônico continua sendo `scripts/verify_installed_package.py`, que
+constrói e executa o wheel fora do checkout. Com `--summary-json`, ele também
+emite uma projeção limitada em `schema_version=1` para o relatório do Block 7;
+essa projeção mapeia import/entry point, leitura/busca, resposta direta, shell e
+Git, `code_task`, rollback, bypass do writer, stdio/authority, terminalidade,
+measurement e isolamento do checkout. Ela não cria uma segunda jornada nem
+reinterpreta o status canônico da aplicação.
+
+## Block 7 H-series real-model acceptance
+
+O conjunto versionado `B7-HSERIES-V1.0` contém exatamente H1–H12 e é executado
+pelo mesmo `CapabilityEvaluator` usado pelos cenários existentes. O recorder de
+modelo é observacional: não altera requests, respostas, retries, orçamento ou
+status canônico. Cada repetição usa workspace, home e identidade de tarefa
+novos, com fixture determinístico e evidência limitada/sanitizada.
+
+A política final exige cinco repetições válidas para H2. H1 e H3–H12 começam
+com três; cenários unânimes terminam em três e cenários mistos recebem
+exatamente duas repetições adicionais, sem rerun-until-pass. Falhas válidas são
+classificadas como `MODEL_VARIANCE`, `MODEL_CAPABILITY`, `HARNESS_DEFECT`,
+`RUNTIME_DEFECT`, `ENVIRONMENTAL` ou `UNKNOWN`; a análise final deve deixar
+`UNKNOWN` em zero para falhas.
+
+O epoch `B7-REAL-MODEL-EPOCH-1` avaliou o perfil Qwen local declarado
+`local_8gb` (`openai_compatible`, modelo `default`, temperatura `0.2`,
+`max_tokens=2048`, timeout de 300 segundos). Foram registrados 43 runs válidos:
+14 passaram e 29 foram classificados como `MODEL_CAPABILITY`; o veredicto
+foi `NOT_RELEASE_READY_MODEL`. Esse resultado é específico ao fingerprint do
+modelo/configuração testado e não declara portabilidade para outros provedores,
+modelos ou classes de tarefas.
+
+O diagnóstico instalado offline passou fora do checkout, mas a aceitação limpa
+foi limitada localmente por timeout de 180 segundos durante a construção do
+wheel; o diagnóstico offline não substitui a aceitação com dependências limpas.
+Os relatórios bounded ficam em `.audit-local/out/` e o rerun 7B autorizado é:
+
+```powershell
+.venv\Scripts\python.exe scripts\run_block7.py --phase 5 --qwen-loaded --profile local_8gb --epoch B7-REAL-MODEL-EPOCH-2 --output reports\acceptance\block7\epoch-2.json
+```
+
+## Block 7 corrective campaign contract
+
+The Sol corrective runner is the canonical adaptive state machine: H1 counts
+paired scenario repetitions separately from arm executions; H2 always has five
+valid repetitions; other scenarios stop after unanimous three or extend mixed
+three-of-three samples by exactly two. Environmental attempts are preserved but
+excluded from the valid denominator. Failure attribution requires explicit
+evidence and never defaults a real-model failure to `MODEL_CAPABILITY`.
+
+The report carries a semantic candidate manifest for runtime, evaluation,
+fixtures, provider configuration, and the campaign runner, plus a stable
+non-secret model/config fingerprint. The deterministic analyzer computes rates,
+incidents, causal counts, and one policy verdict from the preserved records;
+it does not call an LLM judge. `B7-REAL-MODEL-EPOCH-1` remains
+`DIAGNOSTIC / SUPERSEDED_FOR_FINAL_SCORING` and is never combined with
+`B7-REAL-MODEL-EPOCH-2`.
+
+The command above is authorization-gated. Deterministic preparation must stop
+at `BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`; the command is not run
+until the user confirms that Qwen has been reloaded and explicitly authorizes
+the new epoch.
+
 ## Contratos e execução
 
 - `CapabilityScenario` declara objetivo, arquivos iniciais, expectativas e

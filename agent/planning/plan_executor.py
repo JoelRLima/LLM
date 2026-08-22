@@ -187,6 +187,7 @@ class PlanExecutor:
         return dependency_succeeded(
             self.orchestrator.agent_state.tool_history,
             self.orchestrator.agent_state.get_step_id(producer),
+            plan_id=getattr(self.orchestrator.agent_state, "plan_identity", None),
         )
 
     def _attempt_replan(

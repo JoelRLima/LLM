@@ -96,10 +96,9 @@ class HierarchicalExecutor:
         if any_step_failed and orchestrator is not None:
             orchestrator.fail_task()
         final_answer = self._build_final_answer(macro_plan.objective, accumulated, on_chunk)
-        canonical_failed = any_step_failed or (
-            orchestrator is not None
-            and getattr(orchestrator.agent_state, "terminal_disposition", None) != "complete"
-        )
+        canonical_failed = any_step_failed
+        if orchestrator is not None:
+            canonical_failed = project_operational_outcome(orchestrator.agent_state, task_failed=bool(getattr(orchestrator, "_task_failed", False)), cancelled=bool(getattr(orchestrator, "_cancelled", False))).terminal_status != "succeeded"
         if canonical_failed:
             self.tracker.finish_failure("Um ou mais sub-objetivos falharam durante a execução.")
         else:

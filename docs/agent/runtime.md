@@ -64,7 +64,10 @@ Promoções JSON usam tempfile, fsync e `os.replace`; corrupção falha fechado.
 Checkpoint v2 persiste IDs/estados de passos; `running` volta a `pending`, e
 somente `failed`/`skipped` podem ser reabertos por flags explícitas. Estados
 `completed`, `blocked` e `unverified` permanecem terminais. O lock por workspace
-é conservador e um lock abandonado pode exigir inspeção manual.
+mantém um guard advisory durante a vida do processo, registra PID e identidade
+de início quando o sistema fornece essa prova e recupera registros stale após
+uma morte anormal. JSON inválido ou identidade indeterminada falha fechado e
+pode exigir intervenção manual.
 
 ## Não garantias
 

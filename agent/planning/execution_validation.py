@@ -28,7 +28,15 @@ def validate_and_optimize_plan(
     presentation = gateway._planning_view(
         context, "linear", planning_view, explicit_context
     )
-    validator = _validator(gateway, context, presentation, objective)
+    observations, plan_identity = _observation_scope(gateway, plan)
+    validator = _validator(
+        gateway,
+        context,
+        presentation,
+        objective,
+        plan_identity=plan_identity,
+        available_observations=observations,
+    )
     repair_budget = {"remaining": 1}
     report = validator.validate(plan)
     gateway._log_validation(report)
@@ -41,12 +49,17 @@ def validate_and_optimize_plan(
     blocked_steps = report.blocked_steps
     working_plan = gateway._bind_deferred_references(plan)
     if working_plan is not plan:
+        bound_observations, bound_plan_identity = _observation_scope(
+            gateway, working_plan
+        )
         validator = _validator(
             gateway,
             context,
             presentation,
             objective,
             canonical_deferred_references=True,
+            plan_identity=bound_plan_identity,
+            available_observations=bound_observations,
         )
         bound_report = validator.validate(working_plan)
         gateway._log_validation(bound_report, "binding canônico")
@@ -76,12 +89,15 @@ def validate_and_optimize_plan(
     )
     post_validator = validator
     if _has_canonical_references(optimized):
+        post_observations, post_plan_identity = _observation_scope(gateway, optimized)
         post_validator = _validator(
             gateway,
             context,
             presentation,
             objective,
             canonical_deferred_references=True,
+            plan_identity=post_plan_identity,
+            available_observations=post_observations,
         )
     post_report = post_validator.validate(optimized)
     gateway._log_validation(post_report, "pós-otimização")
@@ -138,7 +154,14 @@ def _validator(
     objective: str,
     *,
     canonical_deferred_references: bool = False,
+    plan_identity: str | None = None,
+    available_observations: Any = None,
 ) -> PlanValidator:
+    observations = (
+        getattr(gateway.orchestrator.agent_state, "tool_history", ())
+        if available_observations is None
+        else available_observations
+    )
     return PlanValidator(
         gateway.orchestrator.skills,
         gateway.orchestrator.active_skills,
@@ -149,7 +172,31 @@ def _validator(
         planning_view=presentation,
         objective=objective,
         canonical_deferred_references=canonical_deferred_references,
-        available_observations=getattr(
-            gateway.orchestrator.agent_state, "tool_history", ()
-        ),
+        available_observations=observations,
+        plan_identity=plan_identity,
     )
+
+
+def _observation_scope(gateway: Any, plan: List[Dict[str, Any]]) -> tuple[tuple[Any, ...], str | None]:
+    """Scope planner observations to the plan being validated.
+
+    A fresh plan must not inherit marker-looking literals from a previous
+    plan.  An extension or revalidation that carries a persisted step ID may
+    use only the matching plan identity.
+    """
+
+    state = getattr(gateway.orchestrator, "agent_state", None)
+    plan_identity = getattr(state, "plan_identity", None)
+    current_ids = {
+        str(step.get("_step_id"))
+        for step in getattr(state, "plan", ())
+        if isinstance(step, Mapping) and step.get("_step_id")
+    }
+    candidate_ids = {
+        str(step.get("_step_id"))
+        for step in plan
+        if isinstance(step, Mapping) and step.get("_step_id")
+    }
+    if plan_identity is None or not current_ids.intersection(candidate_ids):
+        return (), None
+    return tuple(getattr(state, "tool_history", ()) or ()), str(plan_identity)

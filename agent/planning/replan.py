@@ -22,6 +22,7 @@ from agent.planning.replan_models import (
     RetryPolicy,
     classify_error,
 )
+from agent.planning.replan_scope import scoped_replan_observations
 from agent.planning.tool_metadata import TOOL_METADATA
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
@@ -175,6 +176,7 @@ def _validate_and_optimize_new_steps(
         raise PlanningContextError("contexto explícito exige view correlacionada")
     elif context is not None:
         presentation = _planning_view(orchestrator, context)
+    scoped_plan_id, scoped_observations = scoped_replan_observations(orchestrator, action.steps)
     validator = PlanValidator(
         getattr(orchestrator, "skills", {}) or {},
         getattr(orchestrator, "active_skills", []) or [],
@@ -184,9 +186,8 @@ def _validate_and_optimize_new_steps(
         presented_names=presentation.presented_names if presentation is not None else None,
         planning_view=presentation,
         objective=objective,
-        available_observations=getattr(
-            getattr(orchestrator, "agent_state", None), "tool_history", ()
-        ),
+        available_observations=scoped_observations,
+        plan_identity=scoped_plan_id,
     )
     surviving = _surviving_steps(action.steps, validator, "replan")
     if not surviving:

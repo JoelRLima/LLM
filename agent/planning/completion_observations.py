@@ -10,11 +10,13 @@ from agent.planning.operational_constants import (
     TERMINAL_FAILURE_STATUSES,
     WRITE_CAPABILITIES,
 )
-from agent.reporting.operational_outcome import (
-    artifact_metadata,
-    metadata_is_persisted_mutation,
-    project_operational_outcome,
+from agent.reporting.observation_evidence import (
+    project_artifact_evidence,
+    result_executed,
+    result_has_data,
+    result_is_successful,
 )
+from agent.reporting.operational_outcome import project_operational_outcome
 
 
 def tool_capabilities(orchestrator: Any, tool_name: str) -> frozenset[str]:
@@ -30,18 +32,15 @@ def tool_capabilities(orchestrator: Any, tool_name: str) -> frozenset[str]:
 
 def refresh_executed_effects(orchestrator: Any) -> None:
     state = orchestrator.agent_state
-    for item in getattr(state, "tool_history", ()) or ():
+    for history_index, item in enumerate(getattr(state, "tool_history", ()) or (), start=1):
         if not isinstance(item, dict) or not isinstance(item.get("result"), dict):
             continue
         result = item["result"]
-        if result.get("executed") is not True:
+        if result_executed(result) is not True:
             continue
         capabilities = tool_capabilities(orchestrator, str(item.get("tool", "")))
-        if capabilities & WRITE_CAPABILITIES and any(
-            metadata_is_persisted_mutation(metadata)
-            for metadata in artifact_metadata(result)
-        ):
-            state.record_executed_effect("write")
+        if capabilities & WRITE_CAPABILITIES and project_artifact_evidence(result).persisted_mutation:
+            state.record_executed_effect("write", evidence_ref=history_index)
 
 
 def eligible_waiver_observations(
@@ -55,9 +54,9 @@ def eligible_waiver_observations(
         if not isinstance(result, dict):
             continue
         if (
-            result.get("executed") is not True
-            or result.get("status") != "succeeded"
-            or "data" not in result
+            result_executed(result) is not True
+            or not result_is_successful(result)
+            or not result_has_data(result)
         ):
             continue
         capabilities = tool_capabilities(orchestrator, str(item.get("tool", "")))
@@ -94,17 +93,31 @@ def publish_outcome(orchestrator: Any) -> None:
     emit("task_outcome", projection)
 
 
-def terminal_failure(orchestrator: Any) -> bool:
-    if getattr(orchestrator, "_task_failed", False):
+def terminal_failure(orchestrator: Any, *, include_invocation_history: bool = False) -> bool:
+    state = orchestrator.agent_state
+    failure_checker = getattr(state, "has_unrecovered_task_failures", None)
+    if callable(failure_checker):
+        try:
+            failed = failure_checker(
+                task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+                include_invocation_history=include_invocation_history,
+            )
+        except TypeError:
+            failed = failure_checker(
+                task_failed=bool(getattr(orchestrator, "_task_failed", False))
+            )
+        if failed:
+            return True
+    elif getattr(orchestrator, "_task_failed", False):
         return True
     records = getattr(orchestrator.agent_state, "step_records", {})
-    if isinstance(records, dict) and any(
+    if not callable(failure_checker) and isinstance(records, dict) and any(
         getattr(record, "status", None)
         in {StepStatus.FAILED, StepStatus.BLOCKED, StepStatus.UNVERIFIED}
         for record in records.values()
     ):
         return True
-    result = getattr(orchestrator.agent_state, "last_result", None)
+    result = getattr(state, "last_result", None)
     if not isinstance(result, dict):
         return False
     return str(result.get("status") or "") in TERMINAL_FAILURE_STATUSES

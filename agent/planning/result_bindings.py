@@ -7,13 +7,9 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable
 
+from agent.planning.result_binding_types import ResultBindingError
+from agent.planning.result_binding_values import json_detach, result_is_bindable
 from agent.state_progression import current_result_for_step
-from agent.tools.result_completeness import canonical_completeness
-
-
-class ResultBindingError(ValueError):
-    pass
-
 
 _SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _MAX_PATH, _MAX_PATH_KEY = 32, 128
@@ -245,24 +241,6 @@ def binding_targets(step: Mapping[str, Any]) -> set[str]:
     return {_safe_target(target) for target, _ in binding_items(step)}
 
 
-def _json_detach(value: Any) -> Any:
-    if value is None or type(value) in (str, int, float, bool):
-        return value
-    if isinstance(value, Mapping):
-        return {str(key): _json_detach(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_detach(item) for item in value]
-    raise ResultBindingError("resultado contém valor não JSON vinculável")
-
-
-def _complete_result(result: Mapping[str, Any]) -> bool:
-    if result.get("ok") is not True or result.get("executed") is not True or result.get("status") != "succeeded":
-        return False
-    if "data" not in result or not canonical_completeness(result)[0]:
-        return False
-    return True
-
-
 def _read_path(data: Any, path: Sequence[str | int]) -> Any:
     value = data
     for segment in path:
@@ -272,22 +250,29 @@ def _read_path(data: Any, path: Sequence[str | int]) -> Any:
             value = value[segment]
         else:
             raise ResultBindingError("binding.path não está presente no resultado")
-    return _json_detach(value)
+    return json_detach(value)
 
 
-def resolve_bound_args(step: Mapping[str, Any], index: int, plan: Sequence[Mapping[str, Any]], history: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def resolve_bound_args(
+    step: Mapping[str, Any],
+    index: int,
+    plan: Sequence[Mapping[str, Any]],
+    history: Sequence[Mapping[str, Any]],
+    *,
+    plan_id: str | None = None,
+) -> dict[str, Any]:
     raw_args = step.get("args")
     args = copy.deepcopy(dict(raw_args)) if isinstance(raw_args, Mapping) else {}
     for target, spec in binding_items(step):
         source, path = _source_and_path(spec)
         source_index = _resolve_ordinal(source, index, plan)
         source_id = plan[source_index].get("_step_id") if source_index is not None else source
-        current = current_result_for_step(history, str(source_id))
+        current = current_result_for_step(history, str(source_id), plan_id=plan_id)
         if current is None:
             raise ResultBindingError("resultado canônico do passo referenciado indisponível")
         _, entry = current
         result = entry.get("result")
-        if not isinstance(result, Mapping) or not _complete_result(result):
+        if not isinstance(result, Mapping) or not result_is_bindable(result):
             raise ResultBindingError("resultado referenciado ausente, falho ou incompleto")
         args[_safe_target(target)] = _read_path(result.get("data"), validate_path(path))
     return args
@@ -295,6 +280,6 @@ def resolve_bound_args(step: Mapping[str, Any], index: int, plan: Sequence[Mappi
 
 __all__ = [
     "ResultBindingError", "bind_result_references", "binding_items", "binding_targets", "has_result_bindings",
-    "referenced_step_ids", "resolve_bound_args", "validate_path", "validate_path_against_schema",
+    "referenced_step_ids", "resolve_bound_args", "result_is_bindable", "validate_path", "validate_path_against_schema",
     "validate_result_bindings",
 ]

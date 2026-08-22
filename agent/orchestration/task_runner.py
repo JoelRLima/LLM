@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from agent.final_response import render_operational_answer
+from agent.checkpoint_manager import CheckpointLoadError
+from agent.final_response import compose_operational_answer
 from agent.llm.router import _is_clearly_trivial
 from agent.orchestration.route_coordinator import (
     LINEAR_ROUTE as _LINEAR_ROUTE,
@@ -21,6 +22,7 @@ from agent.orchestration.route_coordinator import (
 )
 from agent.orchestration.route_result import RouteResult
 from agent.orchestration.task_lifecycle import TaskLifecycleMixin
+from agent.orchestration.task_runner_support import checkpoint_error_answer, terminal_answer
 from agent.planning.complexity import is_hierarchical
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_completion import (
@@ -72,12 +74,13 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 return self._resume_terminal_checkpoint(inputs.objective)
             self._prepare(inputs)
             if not inputs.resumed and _is_clearly_trivial(inputs.objective):
-                answer = str(self.orchestrator._answer_trivial(inputs.objective))
-                return complete_direct_answer(self.orchestrator, inputs.objective, answer)
+                return complete_direct_answer(self.orchestrator, inputs.objective, str(self.orchestrator._answer_trivial(inputs.objective)))
             answer = self._execute(inputs, stream_callback)
             return answer
         except KeyboardInterrupt:
             return self._handle_interrupt()
+        except CheckpointLoadError as exc:
+            return checkpoint_error_answer(self.orchestrator, exc)
         except BudgetExhausted:
             self.orchestrator._preserve_checkpoint = True
             message = mark_terminal_blocked(
@@ -168,10 +171,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             return route_answer
         decision = self.orchestrator.plan_builder.build_plan(inputs.objective)
         if decision.kind is PlanningDecisionKind.BLOCK:
-            blocked_answer = str(
-                decision.blocked_answer
-                or "O planejamento bloqueou a tarefa antes da execucao."
-            )
+            blocked_answer = str(decision.blocked_answer or "O planejamento bloqueou a tarefa antes da execucao.")
             self.orchestrator.agent_state.project_last_result(
                 "planner",
                 {},
@@ -185,14 +185,10 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 },
             )
             blocked = allow_linear_completion(self.orchestrator, inputs.objective) or blocked_answer
-            self.orchestrator.agent_state.conversation_history.append(
-                {"user": inputs.objective, "agent": blocked}
-            )
-            return str(blocked)
+            return terminal_answer(self.orchestrator, inputs.objective, None, str(blocked))
         if decision.kind is PlanningDecisionKind.COMPLETE and decision.direct_answer:
             answer = complete_direct_answer(
-                self.orchestrator, inputs.objective, str(decision.direct_answer)
-            )
+                self.orchestrator, inputs.objective, str(decision.direct_answer))
             self.orchestrator.agent_state.conversation_history.append(
                 {"user": inputs.objective, "agent": answer}
             )
@@ -225,7 +221,14 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
                 cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
             )
-            return str(render_operational_answer(outcome) or reactive_answer)
+            return str(
+                compose_operational_answer(
+                    outcome,
+                    reactive_answer,
+                    self.orchestrator.agent_state.tool_history,
+                    getattr(self.orchestrator, "tool_registry", None),
+                )
+            )
         return self._execute_plan(
             decision.plan,
             inputs.objective,
@@ -233,7 +236,6 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             on_chunk,
             continue_after_plan=decision.continue_after_plan,
         )
-
     def _resume_plan(self) -> List[Dict[str, Any]]:
         self.orchestrator._restore_persona_from_state()
         return [dict(step) for step in self.orchestrator.agent_state.plan]
@@ -261,15 +263,14 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 message=str(answer),
                 status="block",
             )
-            self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
             blocker = allow_linear_completion(self.orchestrator, objective)
-            return str(blocker or answer)
+            return terminal_answer(self.orchestrator, objective, on_chunk, str(blocker or answer))
         self.orchestrator.agent_state.set_plan(result.validated_plan)
         self.orchestrator._save_checkpoint()
         if result.final_answer:
             blocker = allow_linear_completion(self.orchestrator, objective)
             if blocker is not None:
-                return blocker
+                return terminal_answer(self.orchestrator, objective, on_chunk, blocker)
             outcome = project_operational_outcome(
                 self.orchestrator.agent_state,
                 task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
@@ -284,7 +285,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             )
         blocker = allow_linear_completion(self.orchestrator, objective)
         if blocker is not None:
-            return blocker
+            return terminal_answer(self.orchestrator, objective, on_chunk, blocker)
         outcome = project_operational_outcome(
             self.orchestrator.agent_state,
             task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),

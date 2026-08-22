@@ -72,6 +72,8 @@ class JourneyGateway:
             return '{"persona":"coder"}'
         if "Escolha exatamente uma das duas respostas JSON" in prompt:
             return self._plan_response()
+        if "Uma fronteira" in prompt:
+            return '{"action":"complete","reason":"a evidencia observada basta"}'
         if "Objetivo de engenharia:" in prompt and "CAP_MODIFY" in self.objective:
             return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
         if "Objetivo de engenharia:" in prompt and "CAP_RECOVERY" in self.objective:

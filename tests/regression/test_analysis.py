@@ -26,6 +26,11 @@ def test_analysis_cli_execution(agent, fake_model):
 
     # Configura as respostas do fake
     fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli",
+        "continuation_plan",
+        {"action": "complete", "reason": "as observacoes analisadas bastam"},
+    )
     fake_model.set_response("analysis_cli", "final", final_response)
 
     # Executa o agente
@@ -68,11 +73,21 @@ def test_analysis_cli_cache_hit(agent, fake_model):
 
     # Primeira execução
     fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli",
+        "continuation_plan",
+        {"action": "complete", "reason": "as observacoes analisadas bastam"},
+    )
     fake_model.set_response("analysis_cli", "final", final_response)
     agent.run("analysis_cli")
 
     # Segunda execução — deve usar cache
     fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli",
+        "continuation_plan",
+        {"action": "complete", "reason": "as observacoes analisadas bastam"},
+    )
     fake_model.set_response("analysis_cli", "final", final_response)
     result2 = agent.run("analysis_cli")
 

@@ -309,3 +309,46 @@ def test_binding_rejects_deferred_and_cross_plan_sources() -> None:
         {"tool": "sink", "_step_id": "consumer", "args": {}, "bindings": {"value": {"from_step": "external", "path": []}}},
     ]
     assert validate_result_bindings(canonical, canonical_references=True)
+
+
+def test_binding_ignores_same_step_id_from_another_plan() -> None:
+    plan = bind_result_references(
+        _plan({"from_step": 1, "path": []}), lambda: "local"
+    )
+    source_id = plan[0]["_step_id"]
+    history = [
+        {
+            "step_id": source_id,
+            "plan_id": "old-plan",
+            "result": {
+                "ok": True,
+                "executed": True,
+                "status": "succeeded",
+                "data": "stale",
+            },
+        }
+    ]
+
+    with pytest.raises(ResultBindingError):
+        resolve_bound_args(plan[1], 1, plan, history, plan_id="new-plan")
+
+
+def test_dependency_requires_the_same_complete_result_as_result_binding() -> None:
+    from agent.planning.dependency_map import dependency_succeeded
+
+    history = [
+        {
+            "step_id": "producer",
+            "plan_id": "plan-1",
+            "result": {"ok": True, "status": "succeeded", "data": "partial"},
+        }
+    ]
+    assert not dependency_succeeded(history, "producer", plan_id="plan-1")
+
+    history[0]["result"] = {
+        "ok": True,
+        "executed": True,
+        "status": "succeeded",
+        "data": "complete",
+    }
+    assert dependency_succeeded(history, "producer", plan_id="plan-1")

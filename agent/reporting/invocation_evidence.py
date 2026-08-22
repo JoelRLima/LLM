@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from .observation_evidence import PUBLIC_TOOL_STATUSES
+from .observation_evidence import result_executed, result_status
 
 MAX_INVOCATION_ARGS_CHARS = 1_000
 
@@ -90,8 +90,9 @@ def project_executed_invocation(
     projected, truncated = _bounded_args(args, fields, max_chars)
     projection_complete = not truncated and set(str(key) for key in args) <= set(fields)
     invocation_id = entry.get("invocation_id") or result.get("invocation_id")
-    raw_status = result.get("status") or entry.get("status")
-    status = raw_status if isinstance(raw_status, str) and raw_status in PUBLIC_TOOL_STATUSES else "unknown"
+    status = result_status(result)
+    if status == "unknown":
+        status = result_status({"status": entry.get("status")})
     invocation: dict[str, Any] = {
         "values": projected,
         "projection_complete": projection_complete,
@@ -100,7 +101,7 @@ def project_executed_invocation(
     }
     if invocation_id is not None:
         invocation["invocation_id"] = _safe_identity(invocation_id, 128)
-    invocation["executed"] = result.get("executed") if type(result.get("executed")) is bool else None
+    invocation["executed"] = result_executed(result)
     return invocation
 
 

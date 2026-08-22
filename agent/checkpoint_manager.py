@@ -1,100 +1,158 @@
 """
 agent/checkpoint_manager.py
 
-CheckpointManager — fonte única de responsabilidade para persistência de
-checkpoint em disco (achado C.10 / linha 1 e 2 da tabela de dívida
-técnica).
-
-Antes deste PR, a responsabilidade de checkpoint estava partida entre dois
-arquivos:
-    - `orchestrator.py`: `_save_checkpoint` / `_load_checkpoint` /
-      `_delete_checkpoint` (I/O em disco).
-    - `state.py`: `to_checkpoint_dict` / `from_checkpoint_dict`
-      (serialização/desserialização do estado).
-
-Este componente concentra a parte de I/O (leitura/escrita atômica em
-disco), continuando a delegar a serialização em si ao próprio
-`AgentState` (via `to_checkpoint_dict`/`from_checkpoint_dict`) — ou seja,
-não duplica a lógica de serialização, apenas para de estar espalhada
-entre dois arquivos por responsabilidades diferentes (I/O vs. dados).
+CheckpointManager is the single owner of checkpoint-file I/O.  The state
+object remains the owner of the serialized task fields; this module owns the
+durability, path-safety, and load-disposition boundary.
 """
+
+from __future__ import annotations
+
 import json
 import os
-from typing import Any, Dict, Optional
+import stat
+import tempfile
+from pathlib import Path
+from typing import Any, Dict, Optional, cast
 
+from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
+from agent.checkpoint_validation import validate_document
+from agent.memory.path_safety import LinkLikePathError, inspect_final_path, reject_link_like
+from agent.runtime.lock_filesystem import open_verified, sync_parent_directory
 from agent.runtime.logging import logger
-
-CHECKPOINT_SCHEMA_VERSION = 2
 
 
 class CheckpointManager:
-    """Salva, carrega e remove o checkpoint de uma tarefa em disco."""
+    """Save, load, and remove one task checkpoint."""
 
-    def __init__(self, checkpoint_file: str):
-        self.checkpoint_file = checkpoint_file
+    def __init__(self, checkpoint_file: str | Path):
+        self.checkpoint_file = str(checkpoint_file)
 
     def save(self, agent_state: Any) -> None:
-        """Salva o estado atual da tarefa em disco para possibilitar
-        retomada após uma interrupção (Ctrl+C, queda de energia, etc.).
+        """Persist a versioned checkpoint with an atomic, link-safe replace.
 
-        A escrita é feita em um arquivo temporário e depois renomeada
-        atomicamente (`os.replace`), evitando checkpoints corrompidos em
-        caso de interrupção durante a própria gravação. Falhas de
-        gravação não devem interromper a execução do agente.
+        Checkpoint writes are best-effort at this boundary, as they have been
+        historically.  A failed write is visible in logs and never replaces
+        the previous valid checkpoint; task execution is responsible for
+        deciding whether the failure itself is terminal.
         """
+
+        temporary_path: Path | None = None
+        destination = Path(self.checkpoint_file)
         try:
             checkpoint_data = agent_state.to_checkpoint_dict()
+            if not isinstance(checkpoint_data, dict):
+                raise TypeError("serialização do checkpoint não produziu um objeto")
             checkpoint_data["schema_version"] = CHECKPOINT_SCHEMA_VERSION
-            tmp_path = f"{self.checkpoint_file}.tmp"
-            os.makedirs(os.path.dirname(self.checkpoint_file) or ".", exist_ok=True)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(checkpoint_data, f, indent=2, ensure_ascii=False, default=str)
-            os.replace(tmp_path, self.checkpoint_file)
-        except Exception as e:
-            logger.warning(f"Falha ao salvar checkpoint: {e}")
+
+            reject_link_like(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                temporary_path = Path(stream.name)
+                json.dump(
+                    checkpoint_data,
+                    stream,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str,
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+
+            # Revalidate the final entry immediately before publication.  A
+            # replacement race cannot make os.replace follow a symlink, and an
+            # existing link-like entry is rejected rather than overwritten.
+            reject_link_like(destination)
+            os.replace(temporary_path, destination)
+            sync_parent_directory(destination)
+            temporary_path = None
+        except Exception as exc:
+            logger.warning("Falha ao salvar checkpoint: %s", exc)
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning(
+                        "Falha ao remover arquivo temporário de checkpoint %s: %s",
+                        temporary_path,
+                        exc,
+                    )
 
     def load(self) -> Optional[Dict[str, Any]]:
-        """Carrega o checkpoint salvo em disco, se existir e for válido.
+        """Load a checkpoint, distinguishing absence from invalid state.
 
-        Retorna `None` silenciosamente se o arquivo não existir ou
-        estiver corrompido/ilegível, garantindo que uma nova tarefa possa
-        iniciar normalmente sem que o checkpoint quebre a execução.
+        ``None`` means that no checkpoint exists.  A present but corrupt,
+        incompatible, or structurally unsafe checkpoint raises
+        :class:`CheckpointLoadError`; callers must expose that as an explicit
+        non-success and must not silently start a fresh task.
         """
-        if not os.path.exists(self.checkpoint_file):
-            return None
+
+        destination = Path(self.checkpoint_file)
         try:
-            with open(self.checkpoint_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return None
-            version = data.get("schema_version")
-            if version != CHECKPOINT_SCHEMA_VERSION:
-                logger.warning(
-                    "Checkpoint com versão incompatível (%s); esperado %s.",
-                    version,
-                    CHECKPOINT_SCHEMA_VERSION,
-                )
-                return None
-            if not isinstance(data.get("objective"), str):
-                logger.warning("Checkpoint sem objetivo textual válido; ignorando.")
-                return None
-            plan = data.get("plan")
-            if not isinstance(plan, list) or any(not isinstance(step, dict) for step in plan):
-                logger.warning("Checkpoint com plano estruturalmente inválido; ignorando.")
-                return None
-            records = data.get("step_records")
-            if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
-                logger.warning("Checkpoint sem registros de execução válidos; ignorando.")
-                return None
-            return data
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError) as e:
-            logger.warning(f"Checkpoint corrompido ou ilegível, ignorando: {e}")
+            inspection = inspect_final_path(destination)
+        except OSError as exc:
+            raise CheckpointLoadError(destination, f"falha ao inspecionar o arquivo: {exc}") from exc
+        if not inspection.exists:
             return None
 
-    def delete(self) -> None:
-        """Remove o arquivo de checkpoint ao final da tarefa (sucesso ou falha)."""
         try:
-            if os.path.exists(self.checkpoint_file):
-                os.remove(self.checkpoint_file)
-        except OSError as e:
-            logger.warning(f"Falha ao remover checkpoint: {e}")
+            data = self._read_json(destination)
+        except CheckpointLoadError:
+            raise
+        except Exception as exc:
+            raise CheckpointLoadError(
+                destination,
+                f"arquivo corrompido ou ilegível: {exc}",
+                reason_code="CHECKPOINT_CORRUPT",
+            ) from exc
+
+        validate_document(destination, data)
+        return data
+
+    @staticmethod
+    def _read_json(path: Path) -> Dict[str, Any]:
+        descriptor: int | None = None
+        try:
+            descriptor = open_verified(
+                path,
+                os.O_RDONLY | getattr(os, "O_BINARY", 0),
+            )
+            with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+                descriptor = None
+                return cast(Dict[str, Any], json.load(stream))
+        finally:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+    def delete(self) -> None:
+        """Remove only the configured regular checkpoint file."""
+
+        destination = Path(self.checkpoint_file)
+        try:
+            inspection = reject_link_like(destination)
+            if not inspection.exists:
+                return
+            if inspection.metadata is None or not stat.S_ISREG(inspection.metadata.st_mode):
+                logger.warning("Checkpoint não é um arquivo regular; preservado: %s", destination)
+                return
+            os.unlink(destination)
+            sync_parent_directory(destination)
+        except (LinkLikePathError, OSError) as exc:
+            logger.warning("Falha ao remover checkpoint: %s", exc)
+
+
+__all__ = [
+    "CHECKPOINT_SCHEMA_VERSION",
+    "CheckpointLoadError",
+    "CheckpointManager",
+]

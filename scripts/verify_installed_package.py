@@ -28,6 +28,56 @@ from typing import Any, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 DECLARED_RUNTIME_IMPORTS = ("ddgs", "requests", "rich")
+INSTALLED_ACCEPTANCE_SCHEMA_VERSION = 1
+INSTALLED_ACCEPTANCE_PROPERTIES = (
+    {"id": "installed-import-entrypoint", "proof": "wheel import origin and CLI entry point"},
+    {"id": "read-search", "proof": "installed read/search journey with bounded measurement"},
+    {"id": "direct-response", "proof": "installed no-tool/direct response"},
+    {"id": "shell-git", "proof": "allowed local shell/Git path and denial cases"},
+    {"id": "code-task-validation", "proof": "supported modification and validation"},
+    {"id": "rollback", "proof": "invalid modification is rolled back"},
+    {"id": "writer-bypass", "proof": "direct writer bypass is rejected without mutation"},
+    {"id": "extension-stdio", "proof": "stdio success, authority denial, and operational failure"},
+    {"id": "terminal-status", "proof": "canonical public terminal status"},
+    {"id": "measurement", "proof": "canonical invocation/model/output measurement projection"},
+    {"id": "outside-checkout", "proof": "wheel is exercised from outside the source checkout"},
+)
+
+
+def installed_acceptance_summary(
+    *,
+    status: str,
+    mode: str,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Return a bounded projection of the existing installed-gate contract."""
+
+    result: dict[str, Any] = {
+        "schema_version": INSTALLED_ACCEPTANCE_SCHEMA_VERSION,
+        "evidence_level": "installed_deterministic",
+        "status": status,
+        "acceptance": status == "passed",
+        "mode": mode,
+        "properties": [dict(item) for item in INSTALLED_ACCEPTANCE_PROPERTIES],
+        "ci_matrix": [
+            {"os": "ubuntu-latest", "python": "3.10"},
+            {"os": "ubuntu-latest", "python": "3.12"},
+            {"os": "windows-latest", "python": "3.10"},
+            {"os": "windows-latest", "python": "3.12"},
+        ],
+        "task_files_in_wheel": False,
+    }
+    if detail:
+        result["detail"] = detail[:500]
+    return result
+
+
+def write_installed_acceptance_summary(path: Path, summary: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 INSTALLED_PROBE_SOURCE = """\
 from __future__ import annotations
@@ -35,6 +85,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -44,6 +95,7 @@ from agent.skills import load_skill_registry
 from agent.application import AgentApplication
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
 from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.tools.authority import TaskAuthoritySnapshot
@@ -116,6 +168,8 @@ class DeterministicJourneyGateway:
                 marker = "D1_EXTERNAL_EVIDENCE" if "SLICE_D1" in self.objective else ("D3_AUTHORITY_DENIED" if "SLICE_D3" in self.objective else "D4_EXTERNAL_FAILURE")
                 return '{"plan":[{"tool":"demo_tool","args":{"text":"%s"}}]}' % marker
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
+        if "Uma fronteira sem" in prompt:
+            return '{"action":"complete","reason":"as observacoes reais bastam"}'
         if "Objetivo de engenharia:" in prompt and "SLICE_B" in self.objective:
             if "SLICE_B1" in self.objective:
                 return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
@@ -569,6 +623,35 @@ def run_extension_journeys(base_dir):
                 raise AssertionError(f"D4 nao preservou failure externo: {measurement!r}")
     return measurements
 
+def run_lock_recovery_journey(base_dir):
+    base_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = base_dir / "application.lock"
+    child_script = (
+        "import os, sys; "
+        "from agent.runtime.instance_lock import InstanceLock; "
+        "lock = InstanceLock.create(sys.argv[1]); lock.acquire(); os._exit(0)"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", child_script, str(lock_path)],
+        cwd=str(base_dir),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if child.wait(timeout=15) != 0 or not lock_path.is_file():
+        raise AssertionError("installed lock owner did not leave a recoverable stale record")
+    lock = InstanceLock.create(lock_path)
+    lock.acquire()
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+        if payload.get("pid") != os.getpid() or payload.get("token") != lock.token:
+            raise AssertionError("installed lock recovery did not create a fresh owner")
+    finally:
+        lock.release()
+    if lock_path.exists():
+        raise AssertionError("installed lock recovery did not release the fresh owner")
+    return {"stale_owner_left_record": True, "recovered": True, "released": True}
+
 registry = load_skill_registry(
     base_dir=workspace,
     scratch_dir=scratch_dir,
@@ -673,6 +756,7 @@ if modify_measurements[4].get("terminal_outcome") == "SUCCESS":
 extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
 if len(extension_measurements) != 3:
     raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
+lock_recovery = run_lock_recovery_journey(workspace.parent / "lock-recovery")
 print(
     json.dumps(
         {
@@ -684,6 +768,7 @@ print(
             "slice_c": shell_measurements,
             "slice_b": modify_measurements,
             "slice_d": extension_measurements,
+            "lock_recovery": lock_recovery,
             "status": "ok",
         },
         ensure_ascii=False,
@@ -807,6 +892,8 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
             content = '{"persona":"coder"}'
         elif "Escolha exatamente uma das duas respostas JSON" in prompt:
             content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
+        elif "Uma fronteira sem" in prompt:
+            content = '{"action":"complete","reason":"a evidencia real basta"}'
         elif "Resultados das ferramentas executadas:" in prompt:
             content = "F1_INSTALLED_EVIDENCE"
         else:
@@ -1217,6 +1304,13 @@ def _verify_installed_probe(
     _validate_slice_c_payload(payload)
     _validate_slice_b_payload(payload)
     _validate_slice_d_payload(payload)
+    lock_recovery = payload.get("lock_recovery")
+    if lock_recovery != {
+        "stale_owner_left_record": True,
+        "recovered": True,
+        "released": True,
+    }:
+        raise VerificationError("Probe instalado nÃ£o confirmou recuperaÃ§Ã£o de lock stale.")
 
 
 def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
@@ -1543,7 +1637,8 @@ def verify_installed_package(
     *,
     no_build_isolation: bool = False,
     offline_diagnostic: bool = False,
-) -> None:
+    summary_path: Path | None = None,
+) -> dict[str, Any]:
     project_root = project_root.resolve()
     mode = installation_mode(offline_diagnostic)
     with tempfile.TemporaryDirectory(prefix="llm-agent-installed-") as raw_temp:
@@ -1660,6 +1755,13 @@ def verify_installed_package(
             raise VerificationError("O artefato instalado modificou o workspace no probe.")
         if snapshot_tree(site_packages) != site_before:
             raise VerificationError("A CLI escreveu no site-packages após a instalação.")
+    summary = installed_acceptance_summary(
+        status="passed",
+        mode=mode.name,
+    )
+    if summary_path is not None:
+        write_installed_acceptance_summary(summary_path, summary)
+    return summary
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1679,6 +1781,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "diagnóstico local mais fraco, não é um gate de aceitação"
         ),
     )
+    parser.add_argument(
+        "--summary-json",
+        type=Path,
+        help="escreve uma projeção JSON limitada do gate instalado",
+    )
     arguments = parser.parse_args(argv)
     try:
         verify_installed_package(
@@ -1686,8 +1793,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.python,
             no_build_isolation=arguments.no_build_isolation,
             offline_diagnostic=arguments.offline_diagnostic,
+            summary_path=arguments.summary_json,
         )
     except VerificationError as exc:
+        if arguments.summary_json is not None:
+            write_installed_acceptance_summary(
+                arguments.summary_json,
+                installed_acceptance_summary(
+                    status="failed",
+                    mode=installation_mode(arguments.offline_diagnostic).name,
+                    detail=str(exc),
+                ),
+            )
         print(f"Installed package verification failed: {exc}", file=sys.stderr)
         _emit_failure_annotation(str(exc))
         return 1

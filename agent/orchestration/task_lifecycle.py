@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from agent.planning.completion_observations import publish_outcome
-from agent.planning.task_completion import allow_linear_completion, mark_terminal_cancelled
+from agent.planning.task_completion import (
+    allow_linear_completion,
+    mark_terminal_blocked,
+    mark_terminal_cancelled,
+    review_task_completion,
+)
 from agent.runtime.logging import logger
 
 
@@ -31,12 +36,34 @@ class TaskLifecycleMixin:
         state.last_tool = None
         state.last_args = None
         state.tool_history = []
-        state.terminal_disposition = None
+        clear_terminal = getattr(state, "clear_terminal_disposition", None)
+        if callable(clear_terminal):
+            clear_terminal()
+        else:
+            state.terminal_disposition = None
 
     def _resume_terminal_checkpoint(self, objective: str) -> str:
         """Report a terminal checkpoint without reopening a fresh route."""
 
         disposition = getattr(self.orchestrator.agent_state, "terminal_disposition", None)
+        if disposition == "complete":
+            review = review_task_completion(self.orchestrator)
+            result = getattr(self.orchestrator.agent_state, "last_result", None)
+            result_is_success = (
+                isinstance(result, dict)
+                and result.get("status") == "succeeded"
+                and result.get("ok") is True
+            )
+            if not review.accepted or not result_is_success:
+                self.orchestrator._preserve_checkpoint = True
+                return mark_terminal_blocked(
+                    self.orchestrator,
+                    reason_code="CHECKPOINT_TERMINAL_EVIDENCE_MISSING",
+                    message=(
+                        "O checkpoint terminal não contém evidência suficiente "
+                        "para iniciar uma nova tarefa com sucesso."
+                    ),
+                )
         if disposition == "cancelled":
             self.orchestrator._cancelled = True
             self.orchestrator._preserve_checkpoint = True
@@ -73,7 +100,11 @@ class TaskLifecycleMixin:
             except Exception:
                 orchestrator._task_failed = True
                 state = orchestrator.agent_state
-                state.terminal_disposition = "fail"
+                setter = getattr(state, "set_terminal_disposition", None)
+                if callable(setter):
+                    setter("fail")
+                else:
+                    state.terminal_disposition = "fail"
                 result = {
                     "ok": False,
                     "done": True,

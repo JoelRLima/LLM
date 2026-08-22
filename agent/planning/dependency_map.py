@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Sequence
 
-from agent.planning.result_bindings import referenced_step_ids
+from agent.planning.result_bindings import referenced_step_ids, result_is_bindable
 from agent.state_progression import current_result_for_step
 
 
@@ -44,6 +44,8 @@ def dependency_succeeded(
     history: Sequence[Mapping[str, Any]],
     producer_id: str,
     file_path: str | None = None,
+    *,
+    plan_id: str | None = None,
 ) -> bool:
     """Check the current producer result through its explicit step identity.
 
@@ -51,11 +53,11 @@ def dependency_succeeded(
     used the removed implicit file-production edge.
     """
 
-    current = current_result_for_step(history, producer_id)
+    current = current_result_for_step(history, producer_id, plan_id=plan_id)
     if current is not None:
         _, item = current
         result = item.get("result")
-        return isinstance(result, Mapping) and result.get("ok") is True
+        return isinstance(result, Mapping) and result_is_bindable(result)
     del file_path
     return False
 
