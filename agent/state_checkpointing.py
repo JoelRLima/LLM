@@ -7,7 +7,7 @@ from typing import Any, Dict, Mapping, cast
 
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
-from agent.planning.task_semantics import TaskSemanticsError
+from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
 from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
 from agent.state_checkpoint import progression_checkpoint, restore_progression
 
@@ -134,6 +134,8 @@ def _restore_histories(state: Any, data: Mapping[str, Any]) -> None:
                     args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
                 )
     if isinstance(data.get("task_semantics"), Mapping):
+        if not isinstance(semantics, TaskSemantics):
+            raise ValueError("Checkpoint task semantics owner is invalid after restore.")
         try:
             revalidate_restored_terminal_evidence(semantics)
         except (TaskSemanticsError, TypeError, AttributeError) as exc:
