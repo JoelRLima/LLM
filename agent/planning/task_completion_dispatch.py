@@ -20,6 +20,11 @@ from agent.planning.task_terminal import (
 
 def accept_review(orchestrator: Any, existing: str | None) -> str | None:
     if existing != CompletionDisposition.COMPLETE.value:
+        # A local invocation may have set the compatibility task-failed flag
+        # before an exact user fallback was observed.  The accepted review is
+        # the single lifecycle owner that clears that derived flag; history,
+        # receipt, and evidence still retain the failed invocation.
+        orchestrator._task_failed = False
         _set_terminal(orchestrator.agent_state, CompletionDisposition.COMPLETE.value)
         publish_outcome(orchestrator)
     return None

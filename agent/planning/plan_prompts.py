@@ -42,9 +42,13 @@ Cada ToolStep contém exatamente uma ferramenta da lista e args como objeto.
 Exemplo multi-passo: {{"action":"use_tools","plan":[{{"tool":"file_reader","args":{{"file_path":"a.txt"}}}},{{"tool":"file_reader","args":{{"file_path":"b.txt"}}}}]}}
 Quando o plano revelar um requisito duravel que nao esteja no objetivo inicial,
 voce pode incluir opcionalmente `obligations` como uma lista curta de objetos
-com `id`, `kind` e `description` (e `effect` apenas para efeito ja solicitado).
+com `id`, `kind` e `description`. Formas aceitas sao `read` com `target`,
+`search` com `query` ou `query_source="previous_read"`, `compare` com exatamente
+dois `operands`, `analyze` com `target` ou `query`, `fallback` com
+`fallback_target`, e `effect` apenas para efeito ja solicitado.
 Nao inclua status, terminal, success, satisfied, waived, blocked, result, data,
-tool ou instructions: a revisao canonica controla todas as transicoes.
+tool ou instructions: a revisao canonica controla todas as transicoes. Uma
+obrigacao fora dessas formas fechadas sera rejeitada.
 Para uma condição mecânica use:
 {{"kind":"deferred_condition","observation_ref":1,"predicate":{{"op":"equals","value":"original"}},"on_true":{{"tool":"code_task","args":{{}}}},"on_false":{{"waive_effect":"write"}}}}
 Nunca esconda a condicao apenas no objective de uma ferramenta de efeito. este contrato substitui exemplos legados de action=tool, action=final ou plan como lista de strings.
@@ -100,6 +104,11 @@ Ferramentas disponíveis:
 As obrigacoes canonicas, seus status e referencias de evidencia no progresso acima
 sao dados do runtime. Nao marque sucesso por exaustao do plano ou por prosa;
 uma decisao complete sera revisada novamente pelo runtime.
+Se o checklist inicial omitiu um requisito duravel, action=complete pode incluir
+uma lista curta `obligations` em formas fechadas; o runtime valida e aplica essa
+lista com source=canonical_review. Nao inclua status, satisfied, waived, blocked
+ou result nessa lista. Action=execute tambem pode incluir `obligations` para uma
+amendment bounded antes do trabalho continuar.
 Decida somente a próxima transição, sem escrever a resposta final. Use um único
 plano concreto com action=execute, action=complete com reason, ou action=blocked
 com reason. Esta é a única continuação desta fronteira; não peça outra dentro do

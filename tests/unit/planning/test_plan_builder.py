@@ -134,3 +134,60 @@ def test_reasoning_boundary_uses_transition_only_contract() -> None:
 
     assert decision.kind.value == "complete"
     assert decision.direct_answer is None
+
+
+def test_reasoning_boundary_accepts_bounded_canonical_review_payload() -> None:
+    class _Context(_PromptContext):
+        def ask_model(self, *_args, **_kwargs):
+            return {
+                "action": "complete",
+                "reason": "observacao suficiente",
+                "obligations": [
+                    {
+                        "id": "review:read",
+                        "kind": "read",
+                        "target": "a.txt",
+                        "description": "Ler a.txt antes da conclusao.",
+                    }
+                ],
+            }
+
+    orchestrator = _PromptOrchestrator()
+    orchestrator.context_manager = _Context()
+    orchestrator.verbose = False
+    orchestrator.final_responder = None
+    orchestrator._log_metric = lambda *_args, **_kwargs: None
+
+    decision = PlanBuilder(orchestrator).continue_after_reasoning_boundary("objetivo")
+
+    assert decision.kind.value == "complete"
+    assert decision.review_obligations[0]["kind"] == "read"
+
+
+def test_reasoning_boundary_rejects_model_owned_obligation_status() -> None:
+    class _Context(_PromptContext):
+        def ask_model(self, *_args, **_kwargs):
+            return {
+                "action": "complete",
+                "reason": "observacao suficiente",
+                "obligations": [
+                    {
+                        "id": "review:read",
+                        "kind": "read",
+                        "target": "a.txt",
+                        "description": "Ler a.txt antes da conclusao.",
+                        "status": "satisfied",
+                    }
+                ],
+            }
+
+    orchestrator = _PromptOrchestrator()
+    orchestrator.context_manager = _Context()
+    orchestrator.verbose = False
+    orchestrator.final_responder = None
+    orchestrator._log_metric = lambda *_args, **_kwargs: None
+
+    decision = PlanBuilder(orchestrator).continue_after_reasoning_boundary("objetivo")
+
+    assert decision.kind.value == "complete"
+    assert decision.review_obligations[0]["status"] == "satisfied"

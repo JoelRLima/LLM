@@ -21,6 +21,7 @@ from agent.planning.task_semantics_transitions import (
     block,
     observe_tool,
     record_effect,
+    register_observation,
     replace_effects,
     reset_progress,
     satisfy,
@@ -30,12 +31,14 @@ from agent.planning.task_semantics_transitions import (
 from agent.planning.task_semantics_types import (
     MAX_OBLIGATIONS,
     MAX_REVIEW_OBLIGATIONS,
+    OBLIGATION_KINDS,
     EffectSemantics,
     ObligationStatus,
     TaskIntent,
     TaskObligation,
     TaskSemanticsError,
     _normalize_id,
+    validate_closed_obligation,
 )
 
 
@@ -46,8 +49,10 @@ class TaskSemantics:
     _obligations: tuple[TaskObligation, ...]
     _statuses: dict[str, ObligationStatus]
     _evidence: dict[str, list[int | str]]
+    _evidence_catalog: dict[int | str, dict[str, Any]]
     _executed_effects: list[str]
     _waived_effects: list[str]
+    _strict_evidence: bool
 
     def __init__(
         self,
@@ -58,7 +63,10 @@ class TaskSemantics:
         evidence: Mapping[str, Sequence[int | str]] | None = None,
         executed_effects: Sequence[str] = (),
         waived_effects: Sequence[str] = (),
+        _strict_evidence: bool = False,
     ) -> None:
+        self._strict_evidence = _strict_evidence
+        self._evidence_catalog = {}
         initialize_semantics(
             self,
             intent,
@@ -76,7 +84,11 @@ class TaskSemantics:
     @classmethod
     def from_objective(cls, objective: str) -> "TaskSemantics":
         effects = infer_effect_semantics(objective)
-        return cls(TaskIntent(objective, effects.requested, effects.prohibited), inferred_obligations(objective, effects))
+        return cls(
+            TaskIntent(objective, effects.requested, effects.prohibited),
+            inferred_obligations(objective, effects),
+            _strict_evidence=True,
+        )
 
     @classmethod
     def from_legacy(
@@ -134,6 +146,16 @@ class TaskSemantics:
 
     def blocked_obligations(self) -> tuple[TaskObligation, ...]:
         return tuple(item for item in self._obligations if self._statuses[item.id] is ObligationStatus.BLOCKED)
+
+    def failure_observation_permitted(self, evidence_ref: int | str) -> bool:
+        """Return whether an exact local failure was accepted as a fallback."""
+
+        return any(
+            item.kind == "fallback"
+            and self._statuses[item.id] is ObligationStatus.SATISFIED
+            and evidence_ref in self._evidence[item.id]
+            for item in self._obligations
+        )
 
     def terminal_evidence_complete(self) -> bool:
         return all(
@@ -195,8 +217,19 @@ class TaskSemantics:
         result: Mapping[str, Any],
         *,
         evidence_ref: int | str,
+        args: Mapping[str, Any] | None = None,
     ) -> tuple[str, ...]:
-        return observe_tool(self, tool_name, result, evidence_ref)
+        return observe_tool(self, tool_name, result, evidence_ref, args=args)
+
+    def register_observation(
+        self,
+        tool_name: str,
+        result: Mapping[str, Any],
+        *,
+        evidence_ref: int | str,
+        args: Mapping[str, Any] | None = None,
+    ) -> None:
+        register_observation(self, tool_name, result, evidence_ref, args=args)
 
     def replace_effects(self, requested_effects: Sequence[str], prohibited_effects: Sequence[str] = ()) -> None:
         replace_effects(self, requested_effects, prohibited_effects)
@@ -225,11 +258,13 @@ __all__ = (
     "EffectSemantics",
     "MAX_OBLIGATIONS",
     "MAX_REVIEW_OBLIGATIONS",
+    "OBLIGATION_KINDS",
     "ObligationStatus",
     "TaskIntent",
     "TaskObligation",
     "TaskSemantics",
     "TaskSemanticsError",
+    "validate_closed_obligation",
     "infer_effect_semantics",
     "infer_prohibited_effects",
     "infer_requested_effects",

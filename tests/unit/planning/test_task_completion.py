@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from agent.execution_state import StepExecutionRecord, StepStatus
-from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from agent.final_response import compose_operational_answer
+from agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
 from agent.planning.plan_execution_loop import run_plan_loop
 from agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as run_reasoning_boundary,
@@ -16,6 +17,8 @@ from agent.planning.task_completion import (
     initialize_task_progression,
     refresh_executed_effects,
 )
+from agent.reporting.operational_outcome import project_operational_outcome
+from agent.reporting.run_receipt import build_run_receipt
 from agent.state import AgentState
 
 
@@ -830,3 +833,361 @@ def test_reasoning_policy_has_no_completion_import_cycle() -> None:
     source = Path("agent/planning/reasoning_boundary.py").read_text(encoding="utf-8")
 
     assert "task_completion" not in source
+
+
+def _failure_runtime_orchestrator(state: AgentState, *, task_failed: bool = True) -> SimpleNamespace:
+    return SimpleNamespace(
+        agent_state=state,
+        tool_registry=None,
+        _task_failed=task_failed,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+    )
+
+
+def test_production_canonical_review_amendment_blocks_same_completion() -> None:
+    state = AgentState()
+    objective = "Explique a situacao."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "echo",
+        {},
+        {"ok": True, "done": True, "executed": True, "status": "succeeded", "data": "observado"},
+    )
+
+    class _Context:
+        calls = 0
+
+        @staticmethod
+        def ask_model(*_args, **_kwargs):
+            _Context.calls += 1
+            return {
+                "action": "complete",
+                "reason": "parece suficiente",
+                "obligations": [
+                    {
+                        "id": "review:read",
+                        "kind": "read",
+                        "target": "a.txt",
+                        "description": "Ler a.txt antes de concluir.",
+                    }
+                ],
+            }
+
+    events = []
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        context_manager=_Context(),
+        plan_builder=None,
+        session=SimpleNamespace(config={"max_reasoning_turns": 2}),
+        final_responder=None,
+        verbose=False,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda event, data=None: events.append((event, data)),
+        _log_metric=lambda *_args, **_kwargs: None,
+        _build_tools_description=lambda **_kwargs: "echo(...); file_reader(...)",
+    )
+    orchestrator.plan_builder = PlanBuilder(orchestrator)
+
+    result = continue_after_reasoning_boundary(orchestrator, objective)
+
+    assert _Context.calls == 1
+    assert result.completed is False
+    assert result.answer is not None
+    assert state.obligation_status("review:read").value == "pending"
+    assert state.terminal_disposition == "block"
+    assert ("canonical_review_amendment", {"added": 1}) in events
+
+
+def test_canonical_review_status_payload_is_rejected_without_mutation() -> None:
+    state = AgentState()
+    objective = "Explique a situacao."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "echo",
+        {},
+        {"ok": True, "done": True, "executed": True, "status": "succeeded", "data": "observado"},
+    )
+
+    class _Context:
+        @staticmethod
+        def ask_model(*_args, **_kwargs):
+            return {
+                "action": "complete",
+                "reason": "parece suficiente",
+                "obligations": [
+                    {
+                        "id": "review:read",
+                        "kind": "read",
+                        "target": "a.txt",
+                        "description": "Ler a.txt antes de concluir.",
+                        "status": "satisfied",
+                    }
+                ],
+            }
+
+    orchestrator = SimpleNamespace(
+        agent_state=state,
+        context_manager=_Context(),
+        plan_builder=None,
+        session=SimpleNamespace(config={"max_reasoning_turns": 2}),
+        final_responder=None,
+        verbose=False,
+        _task_failed=False,
+        _cancelled=False,
+        _emit=lambda *_args, **_kwargs: None,
+        _log_metric=lambda *_args, **_kwargs: None,
+        _build_tools_description=lambda **_kwargs: "echo(...); file_reader(...)",
+    )
+    orchestrator.plan_builder = PlanBuilder(orchestrator)
+
+    result = continue_after_reasoning_boundary(orchestrator, objective)
+
+    assert result.completed is False
+    assert state.task_obligations == ()
+    assert state.terminal_disposition == "block"
+
+
+def test_d3_runtime_compare_of_two_complete_empty_files_succeeds() -> None:
+    state = AgentState()
+    objective = "Compare a.txt e b.txt e me diga se o conteudo deles e igual. Nao altere nada."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "a.txt"},
+        {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": "",
+            "complete": True,
+            "invocation_id": "read-a",
+        },
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "b.txt"},
+        {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": "",
+            "complete": True,
+            "invocation_id": "read-b",
+        },
+    )
+    orchestrator = _failure_runtime_orchestrator(state, task_failed=False)
+
+    assert allow_linear_completion(orchestrator, objective) is None
+    outcome = project_operational_outcome(state)
+    answer = compose_operational_answer(
+        outcome,
+        "O conteudo de a.txt e b.txt e igual.",
+        state.tool_history,
+    )
+
+    assert state.terminal_disposition == "complete"
+    assert state.obligation_status("read:1").value == "satisfied"
+    assert state.obligation_status("read:2").value == "satisfied"
+    assert state.task_semantics.obligation_evidence("requirement:compare") == (1, 2)
+    assert outcome.terminal_status == "succeeded"
+    assert outcome.mutation_occurred is False
+    assert "igual" in answer.casefold()
+
+
+def test_d4_zero_match_search_reaches_canonical_success() -> None:
+    state = AgentState()
+    objective = "Procure X nos arquivos."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "X"},
+        {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "complete": True,
+            "data": [],
+            "total_matches": 0,
+            "invocation_id": "grep-zero",
+        },
+    )
+
+    assert allow_linear_completion(_failure_runtime_orchestrator(state, task_failed=False), objective) is None
+    assert state.terminal_disposition == "complete"
+    assert state.obligation_status("requirement:search").value == "satisfied"
+    assert state.task_semantics.obligation_evidence("requirement:search") == (1,)
+
+
+def test_d5_missing_file_without_fallback_is_canonical_non_success() -> None:
+    state = AgentState()
+    objective = "Leia missing.txt e informe o conteudo."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+            "error_code": "FILE_NOT_FOUND",
+            "invocation_id": "missing-1",
+        },
+    )
+    orchestrator = _failure_runtime_orchestrator(state)
+
+    answer = allow_linear_completion(orchestrator, objective)
+
+    assert answer is not None
+    assert state.terminal_disposition == "fail"
+    assert state.pending_obligations()
+    assert state.last_result["status"] == "failed"
+    assert "conteudo" not in answer.casefold()
+
+
+def test_d6_success_plus_failed_read_and_exact_fallback_can_succeed() -> None:
+    state = AgentState()
+    objective = "Leia controle.txt e missing.txt e identifique o motivo se um arquivo nao puder ser lido."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.review_task_obligations(
+        [
+            {
+                "id": "fallback:missing",
+                "kind": "fallback",
+                "fallback_target": "missing.txt",
+                "description": "Identificar o motivo se missing.txt nao puder ser lido.",
+            }
+        ],
+        source="canonical_review",
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "controle.txt"},
+        {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": "modificado",
+            "complete": True,
+            "invocation_id": "controle-1",
+        },
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+            "error_code": "FILE_NOT_FOUND",
+            "invocation_id": "missing-1",
+        },
+    )
+    orchestrator = _failure_runtime_orchestrator(state)
+
+    assert allow_linear_completion(orchestrator, objective) is None
+    assert state.terminal_disposition == "complete"
+    assert state.obligation_status("fallback:missing").value == "satisfied"
+    assert state.obligation_status("read:2").value == "waived"
+    assert state.tool_history[1]["result"]["status"] == "failed"
+
+    outcome = project_operational_outcome(state, task_failed=True)
+    receipt = build_run_receipt(Path("."), state, "succeeded", None)
+    answer = compose_operational_answer(
+        outcome,
+        "controle.txt: modificado",
+        state.tool_history,
+    )
+
+    assert outcome.terminal_status == "succeeded"
+    assert outcome.failed_invocation_ids == ("missing-1",)
+    assert receipt["tools"][1]["status"] == "failed"
+    assert receipt["operational_outcome"]["failed_invocation_ids"] == ["missing-1"]
+    assert "modificado" in answer
+    assert "missing-1" in answer
+
+
+def test_fallback_subject_mismatch_cannot_soften_local_failure() -> None:
+    state = AgentState()
+    objective = "Leia missing.txt e identifique o motivo se ele nao puder ser lido."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.review_task_obligations(
+        [
+            {
+                "id": "fallback:other",
+                "kind": "fallback",
+                "fallback_target": "other.txt",
+                "description": "Identificar o motivo se other.txt nao puder ser lido.",
+            }
+        ],
+        source="canonical_review",
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {"ok": False, "status": "failed", "error": "missing", "invocation_id": "missing-2"},
+    )
+
+    answer = allow_linear_completion(_failure_runtime_orchestrator(state), objective)
+
+    assert answer is not None
+    assert state.terminal_disposition == "fail"
+    assert state.obligation_status("fallback:other").value == "pending"
+
+
+@pytest.mark.parametrize(
+    ("status", "error_code"),
+    [
+        ("permission_denied", "PERMISSION_DENIED"),
+        ("blocked", "SAFETY_BLOCK"),
+        ("failed", "TASK_AUTHORITY_DENIED"),
+        ("protocol_error", "INVALID_RESULT"),
+        ("unverified", "unverified"),
+    ],
+)
+def test_hard_boundaries_cannot_be_softened_by_matching_fallback(
+    status: str,
+    error_code: str,
+) -> None:
+    state = AgentState()
+    objective = "Leia missing.txt e identifique o motivo se ele nao puder ser lido."
+    initialize_task_progression(SimpleNamespace(agent_state=state), objective)
+    state.review_task_obligations(
+        [
+            {
+                "id": "fallback:missing",
+                "kind": "fallback",
+                "fallback_target": "missing.txt",
+                "description": "Identificar o motivo se missing.txt nao puder ser lido.",
+            }
+        ],
+        source="canonical_review",
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            "ok": False,
+            "done": True,
+            "executed": False,
+            "status": status,
+            "error": "hard boundary",
+            "error_code": error_code,
+            "invocation_id": f"hard-{status}",
+        },
+    )
+
+    answer = allow_linear_completion(_failure_runtime_orchestrator(state), objective)
+
+    assert answer is not None
+    assert state.terminal_disposition != "complete"
+    assert state.obligation_status("fallback:missing").value == "pending"

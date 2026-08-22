@@ -9,17 +9,16 @@ from agent.planning.task_semantics_types import (
     TaskObligation,
     TaskSemanticsError,
     _normalize_effect,
+    validate_closed_obligation,
 )
+
+TASK_SEMANTICS_SCHEMA_VERSION = 2
 
 
 def snapshot(owner: Any) -> tuple[dict[str, Any], ...]:
     return tuple(
         {
-            "id": item.id,
-            "kind": item.kind,
-            "description": item.description,
-            **({"effect": item.effect} if item.effect is not None else {}),
-            **({"condition": item.condition} if item.condition is not None else {}),
+            **item.to_dict(),
             "status": owner._statuses[item.id].value,
             "evidence_refs": list(owner._evidence[item.id]),
         }
@@ -29,21 +28,13 @@ def snapshot(owner: Any) -> tuple[dict[str, Any], ...]:
 
 def to_checkpoint_dict(owner: Any) -> dict[str, Any]:
     return {
+        "schema_version": TASK_SEMANTICS_SCHEMA_VERSION,
         "objective": owner.objective,
         "requested_effects": list(owner.requested_effects),
         "prohibited_effects": list(owner.prohibited_effects),
         "executed_effects": list(owner.executed_effects()),
         "waived_effects": list(owner.waived_effects()),
-        "obligations": [
-            {
-                "id": item.id,
-                "kind": item.kind,
-                "description": item.description,
-                **({"effect": item.effect} if item.effect is not None else {}),
-                **({"condition": item.condition} if item.condition is not None else {}),
-            }
-            for item in owner._obligations
-        ],
+        "obligations": [item.to_dict() for item in owner._obligations],
         "statuses": {key: value.value for key, value in owner._statuses.items()},
         "evidence": {key: list(value) for key, value in owner._evidence.items() if value},
     }
@@ -54,6 +45,8 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
         raise TaskSemanticsError("task semantics ausente ou invalido")
     objective = data.get("objective")
     raw_obligations = data.get("obligations")
+    if data.get("schema_version") != TASK_SEMANTICS_SCHEMA_VERSION:
+        raise TaskSemanticsError("checkpoint de task semantics sem versao inequívoca")
     if not isinstance(objective, str) or not isinstance(raw_obligations, list):
         raise TaskSemanticsError("checkpoint sem contrato semantico valido")
     definitions = [_obligation_from_checkpoint(raw) for raw in raw_obligations]
@@ -66,6 +59,7 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
         evidence=data.get("evidence"),
         executed_effects=data.get("executed_effects") or (),
         waived_effects=data.get("waived_effects") or (),
+        _strict_evidence=True,
     )
 
 
@@ -83,10 +77,20 @@ def _obligation_from_checkpoint(raw: Any) -> TaskObligation:
         raise TaskSemanticsError("checkpoint contem efeito de obrigacao invalido")
     if condition is not None and not isinstance(condition, str):
         raise TaskSemanticsError("checkpoint contem condition de obrigacao invalida")
-    return TaskObligation(
+    obligation = TaskObligation(
         id=identifier,
         kind=kind,
         description=description,
         effect=effect,
         condition=condition,
+        target=raw.get("target"),
+        query=raw.get("query"),
+        operands=raw.get("operands", ()),
+        fallback_target=raw.get("fallback_target"),
+        query_source=raw.get("query_source"),
     )
+    validate_closed_obligation(obligation)
+    return obligation
+
+
+__all__ = ["TASK_SEMANTICS_SCHEMA_VERSION", "snapshot", "to_checkpoint_dict", "restore_from_checkpoint"]

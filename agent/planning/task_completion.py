@@ -104,24 +104,22 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
     prohibited = tuple(
         getattr(state, "prohibited_effects_occurred", lambda: ())()
     )
-    unrecovered = terminal_failure(orchestrator, include_invocation_history=True)
-    if getattr(orchestrator, "_cancelled", False):
-        reason = "cancelled"
-    elif unrecovered:
-        reason = "terminal_failure"
-    elif prohibited:
-        reason = "prohibited_effect_occurred"
-    elif existing is not None and existing != CompletionDisposition.COMPLETE.value:
-        reason = "existing_terminal"
-    elif not getattr(state, "terminal_evidence_complete", lambda: True)():
-        reason = "obligation_evidence_missing"
-    elif blocked_obligations:
-        reason = "task_obligation_blocked"
-    elif pending_effects:
-        reason = "requested_effect_pending"
-    elif pending_obligations:
-        reason = "task_obligation_pending"
-    else:
+    hard_failure = terminal_failure(
+        orchestrator,
+        include_invocation_history=True,
+        hard_only=True,
+    )
+    reason = _completion_block_reason(
+        orchestrator,
+        state,
+        existing,
+        pending_effects,
+        pending_obligations,
+        blocked_obligations,
+        prohibited,
+        hard_failure,
+    )
+    if reason is None:
         return CompletionReview(
             accepted=True,
             existing_disposition=existing,
@@ -134,8 +132,41 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         pending_obligations=pending_obligations,
         blocked_obligations=blocked_obligations,
         prohibited_effects=prohibited,
-        unrecovered_failure=unrecovered,
+        unrecovered_failure=hard_failure or reason == "terminal_failure",
     )
+
+
+def _completion_block_reason(
+    orchestrator: Any,
+    state: Any,
+    existing: str | None,
+    pending_effects: tuple[str, ...],
+    pending_obligations: tuple[TaskObligation, ...],
+    blocked_obligations: tuple[TaskObligation, ...],
+    prohibited: tuple[str, ...],
+    hard_failure: bool,
+) -> str | None:
+    checks = (
+        ("cancelled", lambda: bool(getattr(orchestrator, "_cancelled", False))),
+        ("terminal_failure", lambda: hard_failure),
+        ("prohibited_effect_occurred", lambda: bool(prohibited)),
+        (
+            "existing_terminal",
+            lambda: existing is not None and existing != CompletionDisposition.COMPLETE.value,
+        ),
+        (
+            "obligation_evidence_missing",
+            lambda: not getattr(state, "terminal_evidence_complete", lambda: True)(),
+        ),
+        (
+            "terminal_failure",
+            lambda: terminal_failure(orchestrator, include_invocation_history=True),
+        ),
+        ("task_obligation_blocked", lambda: bool(blocked_obligations)),
+        ("requested_effect_pending", lambda: bool(pending_effects)),
+        ("task_obligation_pending", lambda: bool(pending_obligations)),
+    )
+    return next((reason for reason, condition in checks if condition()), None)
 
 
 def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:

@@ -13,6 +13,7 @@ from agent.planning.task_semantics_types import (
 )
 
 _WORD_RE = re.compile(r"[\w]+", re.UNICODE)
+_FILE_RE = re.compile(r"(?<!\w)([\w./\\-]+\.[A-Za-z0-9]{1,16})(?!\w)", re.UNICODE)
 _NEGATION_WORDS = frozenset({"nao", "sem", "never", "nunca", "without"})
 _DIRECT_TEXT_WORDS = frozenset({"exatamente", "exactly"})
 _EFFECT_TERMS = {
@@ -34,6 +35,19 @@ _OBLIGATION_TERMS = {
     "comparar": "compare", "diff": "compare", "analise": "analyze", "analisar": "analyze",
     "analyze": "analyze",
 }
+_READ_VERBS = frozenset(
+    {"leia", "ler", "read", "inspect", "inspecione", "examinar", "examine", "consulte", "consultar"}
+)
+_SEARCH_FILLER = frozenset(
+    {
+        "o", "a", "os", "as", "um", "uma", "nos", "nas", "no", "na", "em", "de", "do", "da", "dos", "das",
+        "outros", "outras", "arquivos", "arquivo", "workspace", "workspaces", "esse", "essa", "este", "esta", "pela", "pelo", "por", "para", "que", "ele", "ela",
+        "eles", "elas", "palavra", "texto", "ocorrencia", "correspondente", "contem", "contém",
+        "observado", "observada", "observados", "observadas", "observacao", "observacoes",
+        "evidencia", "evidencias", "evidaancia", "evidaancias", "resultado", "resultados",
+        "informacao", "informacoes", "conteudo", "conteudos", "e", "and", "informe", "informar", "diga", "dizer",
+    }
+)
 
 
 def _tokens(objective: str) -> tuple[str, ...]:
@@ -81,19 +95,51 @@ def infer_prohibited_effects(objective: str) -> tuple[str, ...]:
 
 
 def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskObligation]:
-    kinds: list[str] = []
-    for index, token in enumerate(_tokens(objective)):
-        kind = _OBLIGATION_TERMS.get(token)
-        if kind == "search" and not _is_negated(_tokens(objective), index) and kind not in kinds:
-            kinds.append(kind)
-    obligations = [
-        TaskObligation(
-            id=f"requirement:{kind}",
-            kind=kind,
-            description=f"Cumprir o requisito de {kind} do objetivo original.",
+    tokens = _tokens(objective)
+    paths = _file_targets(objective)
+    obligations: list[TaskObligation] = []
+    has_explicit_read = any(
+        token in _READ_VERBS and not _is_negated(tokens, index)
+        for index, token in enumerate(tokens)
+    )
+    has_compare_reads = any(
+        token == "compare" and not _is_negated(tokens, index)
+        for index, token in enumerate(tokens)
+    ) and len(paths) >= 2
+    if has_explicit_read or has_compare_reads:
+        obligations.extend(
+            TaskObligation(
+                id=f"read:{index + 1}",
+                kind="read",
+                target=path,
+                description=f"Ler o arquivo {path} do objetivo original.",
+            )
+            for index, path in enumerate(paths)
         )
-        for kind in kinds
-    ]
+
+    search_spec = _search_spec(objective, tokens)
+    if search_spec is not None:
+        query, query_source = search_spec
+        obligations.append(
+            TaskObligation(
+                id="requirement:search",
+                kind="search",
+                query=query,
+                query_source=query_source,
+                description="Cumprir o requisito de busca do objetivo original.",
+            )
+        )
+
+    if has_compare_reads:
+        obligations.append(
+            TaskObligation(
+                id="requirement:compare",
+                kind="compare",
+                operands=tuple(paths[:2]),
+                condition="equals",
+                description=f"Comparar {paths[0]} e {paths[1]} conforme o objetivo original.",
+            )
+        )
     obligations.extend(
         TaskObligation(
             id=f"effect:{effect}",
@@ -104,6 +150,41 @@ def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskO
         for effect in effects.requested
     )
     return obligations
+
+
+def _file_targets(objective: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for match in _FILE_RE.finditer(objective):
+        value = match.group(1).strip(".,;:()[]{}")
+        if value and value.casefold() not in {item.casefold() for item in values}:
+            values.append(value)
+    return tuple(values)
+
+
+def _search_spec(objective: str, tokens: Sequence[str]) -> tuple[str | None, str | None] | None:
+    normalized_objective = _normalize_text(objective)
+    for index, token in enumerate(tokens):
+        if _OBLIGATION_TERMS.get(token) != "search" or _is_negated(tokens, index):
+            continue
+        candidates = tokens[index + 1 : index + 8]
+        for candidate_index, candidate in enumerate(candidates):
+            if candidate not in _SEARCH_FILLER and candidate not in _OBLIGATION_TERMS:
+                previous = candidates[candidate_index - 1] if candidate_index else None
+                if candidate == "valor" and (
+                    "valor observado" in normalized_objective
+                    or previous in {"esse", "essa", "este", "esta"}
+                ):
+                    return None, "previous_read"
+                return candidate, None
+        if any(
+            phrase in normalized_objective
+            for phrase in ("palavra que ele contem", "texto observado", "valor observado", "use o texto observado")
+        ):
+            return None, "previous_read"
+        # A generic search request has no bounded identity to bind. Do not
+        # manufacture a previous-read obligation that the task never asked for.
+        return None
+    return None
 
 
 def stable_obligation_id(kind: str, description: str, effect: str | None = None) -> str:

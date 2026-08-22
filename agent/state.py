@@ -102,6 +102,7 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
             tool_name,
             result,
             evidence_ref=len(self.tool_history),
+            args=args,
         )
     def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
         """Project a canonical terminal result without appending history again."""

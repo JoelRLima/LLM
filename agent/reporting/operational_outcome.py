@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from agent.planning.failure_policy import (
+    FailureClass,
+    classify_failure,
+    local_failure_permitted,
+)
 from agent.reporting.observation_evidence import (
     artifact_metadata,
     metadata_is_persisted_mutation,
@@ -41,6 +46,10 @@ _STATUS_TO_DISPOSITION = {
 }
 
 
+def _status_is_local_failure(status: Any) -> bool:
+    return classify_failure({"status": status}) is FailureClass.LOCAL
+
+
 def normalize_terminal_status(
     *,
     last_result_status: Any = None,
@@ -48,6 +57,7 @@ def normalize_terminal_status(
     task_failed: bool = False,
     cancelled: bool = False,
     explicit_status: Any = None,
+    local_failure_permitted: bool = False,
 ) -> str:
     """Reduce established run facts to one public terminal status.
 
@@ -66,13 +76,17 @@ def normalize_terminal_status(
 
     # Preserve established non-success boundaries, but never manufacture
     # success merely because a caller supplied explicit_status="succeeded".
-    if explicit in non_success:
+    if explicit in non_success and not (
+        local_failure_permitted and _status_is_local_failure(explicit)
+    ):
         return explicit
-    if observed in non_success:
+    if observed in non_success and not (
+        local_failure_permitted and _status_is_local_failure(observed)
+    ):
         return observed
     if disposition in non_success:
         return disposition
-    if task_failed:
+    if task_failed and not local_failure_permitted:
         return "failed"
     if disposition == "succeeded":
         return "succeeded"
@@ -93,6 +107,8 @@ class OperationalOutcome:
     failure_reason: str | None
     files_affected: tuple[str, ...]
     evidence_invocation_ids: tuple[str, ...]
+    failed_invocation_ids: tuple[str, ...] = ()
+    failed_invocation_statuses: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +124,8 @@ class OperationalOutcome:
             "failure_reason": self.failure_reason,
             "files_affected": list(self.files_affected),
             "evidence_invocation_ids": list(self.evidence_invocation_ids),
+            "failed_invocation_ids": list(self.failed_invocation_ids),
+            "failed_invocation_statuses": list(self.failed_invocation_statuses),
         }
 
     def debug_projection(self) -> dict[str, Any]:
@@ -122,6 +140,8 @@ class OperationalOutcome:
             "mutation_occurred": self.mutation_occurred,
             "validation_status": self.validation_status,
             "rollback_occurred": self.rollback_occurred,
+            "failed_invocation_ids": list(self.failed_invocation_ids),
+            "failed_invocation_statuses": list(self.failed_invocation_statuses),
         }
 
 
@@ -134,10 +154,12 @@ def project_operational_outcome(
 ) -> OperationalOutcome:
     files: set[str] = set()
     evidence: list[str] = []
+    failed_invocations: list[str] = []
+    failed_invocation_statuses: list[str] = []
     validation_status: str | None = None
     rollback_occurred = False
     mutation_occurred = False
-    for entry in getattr(state, "tool_history", ()) or ():
+    for history_index, entry in enumerate(getattr(state, "tool_history", ()) or (), start=1):
         if not isinstance(entry, dict):
             continue
         result = entry.get("result")
@@ -146,6 +168,10 @@ def project_operational_outcome(
         invocation_id = entry.get("invocation_id") or result.get("invocation_id")
         if invocation_id is not None:
             evidence.append(str(invocation_id))
+        if classify_failure(result) in {FailureClass.LOCAL, FailureClass.HARD}:
+            failure_ref = str(invocation_id) if invocation_id is not None else f"history:{history_index}"
+            failed_invocations.append(failure_ref)
+            failed_invocation_statuses.append(str(result.get("status") or "failed"))
         artifact = project_artifact_evidence(result)
         files.update(artifact.mutated_files)
         validation_status = artifact.validation_status or validation_status
@@ -160,6 +186,7 @@ def project_operational_outcome(
         terminal_disposition=getattr(state, "terminal_disposition", None),
         task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
         cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
+        local_failure_permitted=local_failure_permitted(state),
     )
     reason = last_result.get("error")
     reason_text = str(reason) if reason else None
@@ -181,12 +208,15 @@ def project_operational_outcome(
         failure_reason=failure_reason,
         files_affected=tuple(sorted(files)),
         evidence_invocation_ids=tuple(dict.fromkeys(evidence)),
+        failed_invocation_ids=tuple(dict.fromkeys(failed_invocations)),
+        failed_invocation_statuses=tuple(failed_invocation_statuses),
     )
 
 
 __all__ = [
     "OperationalOutcome",
     "artifact_metadata",
+    "local_failure_permitted",
     "metadata_is_persisted_mutation",
     "normalize_terminal_status",
     "project_operational_outcome",

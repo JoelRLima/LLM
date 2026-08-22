@@ -9,6 +9,7 @@ from agent.planning.task_completion import (
     allow_linear_completion,
     mark_terminal_blocked,
     mark_terminal_cancelled,
+    mark_terminal_failure,
     review_task_completion,
 )
 from agent.runtime.logging import logger
@@ -100,11 +101,6 @@ class TaskLifecycleMixin:
             except Exception:
                 orchestrator._task_failed = True
                 state = orchestrator.agent_state
-                setter = getattr(state, "set_terminal_disposition", None)
-                if callable(setter):
-                    setter("fail")
-                else:
-                    state.terminal_disposition = "fail"
                 result = {
                     "ok": False,
                     "done": True,
@@ -119,6 +115,7 @@ class TaskLifecycleMixin:
                     project("orchestrator", {}, result)
                 else:
                     state.last_result = result
+                mark_terminal_failure(orchestrator)
                 publish_outcome(orchestrator)
                 logger.exception("Falha ao persistir memória ao finalizar a tarefa.")
                 raise

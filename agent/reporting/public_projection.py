@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.reporting.operational_outcome import normalize_terminal_status, project_operational_outcome
+from agent.reporting.operational_outcome import (
+    local_failure_permitted,
+    normalize_terminal_status,
+    project_operational_outcome,
+)
 
 
 def reconcile_report_status(state: Any, requested_status: str) -> str:
@@ -19,6 +23,7 @@ def reconcile_report_status(state: Any, requested_status: str) -> str:
         terminal_disposition=disposition,
         task_failed=task_failed,
         cancelled=cancelled,
+        local_failure_permitted=local_failure_permitted(state),
     )
 
 

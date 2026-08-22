@@ -192,6 +192,27 @@ def render_operational_answer(outcome: OperationalOutcome) -> str | None:
     return "A tarefa terminou sem mutação operacional comprovada."
 
 
+def _append_failed_invocation_facts(answer: str, outcome: OperationalOutcome) -> str:
+    """Keep local failure facts visible after a successful fallback."""
+
+    if not outcome.failed_invocation_ids:
+        return answer
+    details = []
+    for index, invocation_id in enumerate(outcome.failed_invocation_ids):
+        status = (
+            outcome.failed_invocation_statuses[index]
+            if index < len(outcome.failed_invocation_statuses)
+            else "failed"
+        )
+        details.append(f"{invocation_id} ({status})")
+    suffix = (
+        "A execucao tambem registrou falha de invocacao; o registro falho "
+        "permanece na evidencia canonica: " + ", ".join(details) + "."
+    )
+    base = str(answer or "").strip()
+    return f"{base}\n\n{suffix}" if base else suffix
+
+
 def _partial_fallback(outcome: OperationalOutcome, history: Any, descriptor_lookup: Any) -> str:
     status = render_non_success_status(str(outcome.terminal_status), outcome)
     reason = history_observation_reason(history)
@@ -218,16 +239,19 @@ def compose_operational_answer(
         # Keep the deterministic effect projection in that case; otherwise a
         # route-specific model answer could hide a waived, pending, or applied
         # operation.  A plain successful answer remains untouched.
-        if any((
+        effect_facts = any((
             outcome.requested_effects,
             outcome.executed_effects,
             outcome.waived_effects,
             outcome.pending_effects,
             outcome.mutation_occurred,
             outcome.rollback_occurred,
-        )):
-            return operational_renderer(outcome) or str(answer or "")
-        return str(answer or "")
+        ))
+        if effect_facts:
+            base = operational_renderer(outcome) or str(answer or "")
+        else:
+            base = str(answer or "")
+        return _append_failed_invocation_facts(base, outcome)
     if not has_usable_partial_evidence(outcome, history):
         if _partial_evidence_allowed(outcome) and history:
             return _partial_fallback(outcome, history, descriptor_lookup)

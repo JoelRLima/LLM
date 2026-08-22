@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.task_semantics import TaskSemanticsError
 from agent.runtime.config import DEFAULT_COST_WATCHDOG
 
 _EPHEMERAL_FIELDS = frozenset(
@@ -22,6 +23,23 @@ class BoundaryContinuationResult:
     extended: bool = False
     completed: bool = False
     blocked: bool = False
+
+
+def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
+    raw = getattr(continuation, "review_obligations", None)
+    if raw is None:
+        return True
+    reviewer = getattr(orchestrator.agent_state, "review_task_obligations", None)
+    if not callable(reviewer):
+        return False
+    try:
+        added = reviewer(raw, source="canonical_review")
+    except (TaskSemanticsError, TypeError, ValueError):
+        return False
+    emit = getattr(orchestrator, "_emit", None)
+    if callable(emit):
+        emit("canonical_review_amendment", {"added": len(added)})
+    return True
 
 
 def _semantic_value(value: Any, field: str | None = None) -> Any:
@@ -96,6 +114,8 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
     except Exception:
         return BoundaryContinuationResult(blocked=True)
     if not continuation or continuation.kind is PlanningDecisionKind.FAIL:
+        return BoundaryContinuationResult(blocked=True)
+    if not _apply_canonical_review(orchestrator, continuation):
         return BoundaryContinuationResult(blocked=True)
     if continuation.kind is PlanningDecisionKind.COMPLETE:
         return BoundaryContinuationResult(completed=True)

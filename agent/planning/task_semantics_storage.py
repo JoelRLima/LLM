@@ -38,9 +38,13 @@ def initialize_semantics(
     owner._obligations = tuple(obligations)
     owner._statuses = {item.id: ObligationStatus.PENDING for item in owner._obligations}
     owner._evidence = {item.id: [] for item in owner._obligations}
+    owner._evidence_catalog = {}
     owner._executed_effects = list(dict.fromkeys(_normalize_effect(item) for item in executed_effects))
     owner._waived_effects = list(dict.fromkeys(_normalize_effect(item) for item in waived_effects))
     _restore_statuses(owner, statuses or {}, evidence or {})
+    for refs in owner._evidence.values():
+        for ref in refs:
+            owner._evidence_catalog.setdefault(ref, {"tool": "", "args": {}, "result": {}})
     _project_terminal_effects(owner)
 
 

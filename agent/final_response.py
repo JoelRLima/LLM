@@ -107,8 +107,14 @@ class FinalResponder:
                 operational_outcome.pending_effects,
                 operational_outcome.mutation_occurred,
                 operational_outcome.rollback_occurred,
+                operational_outcome.failed_invocation_ids,
             )):
-                operational_answer = render_operational_answer(operational_outcome)
+                operational_answer = compose_operational_answer(
+                    operational_outcome,
+                    None,
+                    history,
+                    getattr(self.orchestrator, "tool_registry", None),
+                )
         if operational_answer is not None:
             answer = operational_answer
             self.orchestrator.agent_state.conversation_history.append(
@@ -121,6 +127,13 @@ class FinalResponder:
         answer = self._request_answer(on_chunk)
         self._cleanup_session()
         answer += self._unread_file_warning(answer)
+        if operational_outcome is not None:
+            answer = compose_operational_answer(
+                operational_outcome,
+                answer,
+                history,
+                getattr(self.orchestrator, "tool_registry", None),
+            )
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
         return answer
 

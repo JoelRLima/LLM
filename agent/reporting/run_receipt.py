@@ -12,6 +12,7 @@ from agent.reporting.observation_evidence import (
     result_error_code,
 )
 from agent.reporting.operational_outcome import (
+    local_failure_permitted,
     normalize_terminal_status,
     project_operational_outcome,
 )
@@ -59,6 +60,7 @@ def _canonical_public_status(
         terminal_disposition=getattr(state, "terminal_disposition", None),
         task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
         cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
+        local_failure_permitted=local_failure_permitted(state),
     )
 
 
@@ -254,14 +256,12 @@ def finalize_run_result(
         cancelled=bool(getattr(orchestrator, "_cancelled", False)),
     )
     effective_receipt["operational_outcome"] = outcome.to_dict()
-    public_answer = answer
-    if outcome.terminal_status != "succeeded":
-        from agent.final_response import compose_operational_answer
-        public_answer = compose_operational_answer(
-            outcome, answer,
-            getattr(orchestrator.agent_state, "tool_history", ()),
-            getattr(orchestrator, "tool_registry", None),
-        )
+    from agent.final_response import compose_operational_answer
+    public_answer = compose_operational_answer(
+        outcome, answer,
+        getattr(orchestrator.agent_state, "tool_history", ()),
+        getattr(orchestrator, "tool_registry", None),
+    )
     effective_diagnostics = diagnostics or build_run_diagnostics(
         orchestrator.agent_state, error, failure_code=failure_code, failure_layer=failure_layer,
     )

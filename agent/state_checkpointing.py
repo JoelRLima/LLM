@@ -119,6 +119,18 @@ def _restore_histories(state: Any, data: Mapping[str, Any]) -> None:
     for entry in state.tool_history:
         if state.plan_identity is not None and "plan_id" not in entry and entry.get("step_id") in plan_ids:
             entry["plan_id"] = state.plan_identity
+    semantics = getattr(state, "task_semantics", None)
+    register = getattr(semantics, "register_observation", None)
+    if callable(register):
+        for index, entry in enumerate(state.tool_history, start=1):
+            result = entry.get("result")
+            if isinstance(result, Mapping):
+                register(
+                    str(entry.get("tool", "")),
+                    result,
+                    evidence_ref=index,
+                    args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
+                )
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:

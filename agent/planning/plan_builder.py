@@ -29,6 +29,7 @@ class PlanningDecisionKind(str, Enum):
 class PlanBuildResult:
     plan: Optional[List[Dict[str, Any]]] = None
     obligations: Optional[List[Dict[str, Any]]] = None
+    review_obligations: Optional[List[Dict[str, Any]]] = None
     blocked_answer: Optional[str] = None
     direct_answer: Optional[str] = None
     waiver_observation_index: Optional[int] = None
@@ -116,16 +117,7 @@ class PlanBuilder:
             return False, None
         return (
             True,
-            [
-                {
-                    "id": item.id,
-                    "kind": item.kind,
-                    "description": item.description,
-                    **({"effect": item.effect} if item.effect is not None else {}),
-                    **({"condition": item.condition} if item.condition is not None else {}),
-                }
-                for item in reviewed
-            ],
+            [item.to_dict() for item in reviewed],
         )
 
     def continue_after_observation(self, objective: str, effect_evidence: str, observation_references: str) -> PlanBuildResult:
@@ -171,18 +163,57 @@ class PlanBuilder:
         )
         if not isinstance(decision, dict):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        terminal = self._reasoning_boundary_terminal_result(decision)
+        if terminal is not None:
+            return terminal
+        return self._reasoning_boundary_execute_result(decision)
+
+    @staticmethod
+    def _optional_boundary_obligations(
+        decision: Dict[str, Any],
+    ) -> tuple[bool, Optional[List[Dict[str, Any]]]]:
+        if "obligations" not in decision:
+            return True, None
+        obligations = decision["obligations"]
+        return (isinstance(obligations, list), obligations if isinstance(obligations, list) else None)
+
+    def _reasoning_boundary_terminal_result(
+        self, decision: Dict[str, Any]
+    ) -> Optional[PlanBuildResult]:
         action = decision.get("action")
-        if action in {"complete", "blocked"}:
-            reason = decision.get("reason")
-            if set(decision) != {"action", "reason"} or not isinstance(reason, str) or not reason.strip():
-                return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-            if action == "complete":
-                return PlanBuildResult(kind=PlanningDecisionKind.COMPLETE)
-            return PlanBuildResult(blocked_answer=reason.strip(), kind=PlanningDecisionKind.BLOCK)
-        if action != "execute" or set(decision) != {"action", "plan"}:
+        if action not in {"complete", "blocked"}:
+            return None
+        allowed = {"action", "reason"}
+        if action == "complete":
+            allowed.add("obligations")
+        if set(decision) not in ({"action", "reason"}, allowed):
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        obligations_ok, review_obligations = self._optional_boundary_obligations(decision)
+        reason = decision.get("reason")
+        if not obligations_ok or not isinstance(reason, str) or not reason.strip():
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        if action == "complete":
+            return PlanBuildResult(
+                review_obligations=review_obligations,
+                kind=PlanningDecisionKind.COMPLETE,
+            )
+        return PlanBuildResult(blocked_answer=reason.strip(), kind=PlanningDecisionKind.BLOCK)
+
+    def _reasoning_boundary_execute_result(self, decision: Dict[str, Any]) -> PlanBuildResult:
+        allowed = {"action", "plan", "obligations"}
+        if decision.get("action") != "execute" or set(decision) not in ({"action", "plan"}, allowed):
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        obligations_ok, review_obligations = self._optional_boundary_obligations(decision)
+        if not obligations_ok:
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         plan = self._normalize_decision(decision)
-        return PlanBuildResult(plan=cast(List[Dict[str, Any]], plan), kind=PlanningDecisionKind.EXECUTE) if plan else PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        if not plan:
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        return PlanBuildResult(
+            plan=cast(List[Dict[str, Any]], plan),
+            review_obligations=review_obligations,
+            kind=PlanningDecisionKind.EXECUTE,
+        )
 
     def _clear_analysis_notes(self) -> None:
         if not self.analysis_notes_file.exists():
