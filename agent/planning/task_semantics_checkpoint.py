@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from agent.planning.task_semantics_types import (
+    ObligationStatus,
     TaskIntent,
     TaskObligation,
     TaskSemanticsError,
@@ -52,7 +53,7 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
     definitions = [_obligation_from_checkpoint(raw) for raw in raw_obligations]
     requested = tuple(dict.fromkeys(_normalize_effect(item) for item in (data.get("requested_effects") or [])))
     prohibited = tuple(dict.fromkeys(_normalize_effect(item) for item in (data.get("prohibited_effects") or [])))
-    return cls(
+    semantics = cls(
         TaskIntent(objective, requested, prohibited),
         definitions,
         statuses=data.get("statuses"),
@@ -63,6 +64,17 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
         waived_effects=(),
         _strict_evidence=True,
     )
+    for obligation in semantics.obligations:
+        if (
+            obligation.kind == "effect"
+            and semantics.obligation_status(obligation.id) is not ObligationStatus.PENDING
+            and any(
+                isinstance(ref, str) and ref.startswith("legacy:")
+                for ref in semantics.obligation_evidence(obligation.id)
+            )
+        ):
+            raise TaskSemanticsError("evidencia sintetica nao pode provar efeito operacional")
+    return semantics
 
 
 def _obligation_from_checkpoint(raw: Any) -> TaskObligation:

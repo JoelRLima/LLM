@@ -16,19 +16,25 @@ from agent.reporting.observation_evidence import (
 )
 
 
-def tool_capabilities(authority: Any, tool_name: str) -> frozenset[str]:
-    """Return capabilities from the live tool authority, or none when absent."""
+def tool_capabilities(authority: Any, tool_name: str) -> frozenset[str] | None:
+    """Return known capabilities; ``None`` means the authority is unknown."""
 
     registry = getattr(authority, "tool_registry", None)
     if registry is None and callable(getattr(authority, "descriptor", None)):
         registry = authority
     if registry is None:
-        return frozenset()
+        return None
     try:
         descriptor = registry.descriptor(tool_name)
-    except (KeyError, AttributeError):
-        return frozenset()
-    return frozenset(str(item) for item in getattr(descriptor, "capabilities", ()))
+        raw_capabilities = getattr(descriptor, "capabilities", None)
+        if raw_capabilities is None or isinstance(raw_capabilities, (str, bytes, Mapping)):
+            return None
+        values = tuple(raw_capabilities)
+    except Exception:
+        return None
+    if any(type(value) is not str or not value.strip() for value in values):
+        return None
+    return frozenset(values)
 
 
 def effect_observation_proves_terminal(
@@ -48,6 +54,8 @@ def effect_observation_proves_terminal(
     if not isinstance(result, Mapping):
         return False
     capabilities = tool_capabilities(authority, tool)
+    if capabilities is None:
+        return False
 
     if status is ObligationStatus.SATISFIED:
         return (

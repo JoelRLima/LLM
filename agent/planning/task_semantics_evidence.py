@@ -63,7 +63,13 @@ def _matches_read(item: Any, tool: str, args: Mapping[str, Any] | None) -> bool:
     return tool in _READ_TOOLS and same_identity(item.target, arg_path(args))
 
 
-def _matches_search(owner: Any, item: Any, tool: str, args: Mapping[str, Any] | None) -> bool:
+def _matches_search(
+    owner: Any,
+    item: Any,
+    tool: str,
+    args: Mapping[str, Any] | None,
+    evidence_ref: int | str | None,
+) -> bool:
     if tool not in _SEARCH_TOOLS:
         return False
     query = arg_query(args)
@@ -71,12 +77,16 @@ def _matches_search(owner: Any, item: Any, tool: str, args: Mapping[str, Any] | 
         return same_identity(item.query, query)
     if item.query_source != "previous_read" or query is None:
         return False
+    if type(evidence_ref) is not int:
+        return False
     return any(
-        entry.get("tool") in _READ_TOOLS
+        type(ref) is int
+        and ref < evidence_ref
+        and entry.get("tool") in _READ_TOOLS
         and isinstance(entry.get("result"), Mapping)
         and complete_observation(entry["result"])
         and same_identity(str(entry["result"].get("data")), query)
-        for entry in getattr(owner, "_evidence_catalog", {}).values()
+        for ref, entry in getattr(owner, "_evidence_catalog", {}).items()
     )
 
 
@@ -97,6 +107,8 @@ def matches_requirement(
     tool: str,
     result: Mapping[str, Any],
     args: Mapping[str, Any] | None,
+    *,
+    evidence_ref: int | str | None = None,
 ) -> bool:
     if item.kind == "search":
         if not _search_observation_is_provable(owner, item, result):
@@ -105,7 +117,7 @@ def matches_requirement(
         return False
     matchers = {
         "read": lambda: _matches_read(item, tool, args),
-        "search": lambda: _matches_search(owner, item, tool, args),
+        "search": lambda: _matches_search(owner, item, tool, args, evidence_ref),
         "compare": lambda: _matches_compare(item, tool, args),
         "analyze": lambda: _matches_analyze(item, tool, args),
     }

@@ -5,12 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent.planning.completion_observations import eligible_waiver_observations
 from agent.planning.task_completion import refresh_executed_effects
 from agent.planning.task_semantics import (
     ObligationStatus,
     TaskIntent,
     TaskObligation,
     TaskSemantics,
+    TaskSemanticsError,
 )
 from agent.state import AgentState
 
@@ -24,7 +26,7 @@ def _state() -> AgentState:
     return AgentState(memory=_Memory())
 
 
-def _complete(data: str) -> dict[str, object]:
+def _complete(data: object) -> dict[str, object]:
     return {
         "ok": True,
         "done": True,
@@ -64,6 +66,18 @@ class _Registry:
         if tool_name not in self.capabilities:
             raise KeyError(tool_name)
         return SimpleNamespace(capabilities=frozenset(self.capabilities[tool_name]))
+
+
+class _MalformedRegistry:
+    def descriptor(self, tool_name: str) -> SimpleNamespace:
+        del tool_name
+        return SimpleNamespace()
+
+
+class _BrokenRegistry:
+    def descriptor(self, tool_name: str) -> SimpleNamespace:
+        del tool_name
+        raise RuntimeError("descriptor unavailable")
 
 
 def _effect_state(
@@ -109,6 +123,27 @@ def _legacy_checkpoint(
         "events": [],
         "conversation_history": [],
     }
+
+
+def _previous_read_state() -> AgentState:
+    objective = "Use a palavra lida para procurar nos outros arquivos."
+    state = _state()
+    state.objective = objective
+    state.set_task_semantics(
+        TaskSemantics(
+            TaskIntent(objective),
+            [
+                TaskObligation(
+                    "search:previous",
+                    "search",
+                    "Procurar o valor lido anteriormente.",
+                    query_source="previous_read",
+                )
+            ],
+            _strict_evidence=True,
+        )
+    )
+    return state
 
 
 def _canonical_read_checkpoint() -> dict[str, object]:
@@ -301,6 +336,37 @@ def test_effect_restore_rejects_file_reader_provenance() -> None:
         _state().from_checkpoint_dict(checkpoint, effect_authority=authority)
 
 
+@pytest.mark.parametrize(
+    "authority",
+    (
+        SimpleNamespace(),
+        SimpleNamespace(tool_registry=_Registry({})),
+        SimpleNamespace(tool_registry=_MalformedRegistry()),
+        SimpleNamespace(tool_registry=_BrokenRegistry()),
+    ),
+)
+def test_effect_waiver_rejects_unknown_capability(authority: SimpleNamespace) -> None:
+    state, _ = _effect_state("file_reader", _complete("A"), {"read"})
+
+    with pytest.raises(TaskSemanticsError):
+        state.waive_obligation(
+            "effect:write",
+            evidence_ref=1,
+            effect_authority=authority,
+        )
+
+
+def test_effect_waiver_rejects_known_write_tool() -> None:
+    state, authority = _effect_state("code_task", _complete("A"), {"write"})
+
+    with pytest.raises(TaskSemanticsError):
+        state.waive_obligation(
+            "effect:write",
+            evidence_ref=1,
+            effect_authority=authority,
+        )
+
+
 def test_effect_refresh_requires_write_capability_and_execution() -> None:
     not_write, not_write_authority = _effect_state("file_reader", _write_result(), {"read"})
     refresh_executed_effects(not_write_authority)
@@ -329,6 +395,7 @@ def test_effect_write_authority_survives_checkpoint_round_trip() -> None:
 
 def test_effect_waived_and_blocked_use_distinct_canonical_evidence() -> None:
     waived, waiver_authority = _effect_state("file_reader", _complete("A"), {"read"})
+    assert [index for index, _ in eligible_waiver_observations(waiver_authority)] == [1]
     waived.waive_obligation(
         "effect:write",
         evidence_ref=1,
@@ -424,6 +491,127 @@ def test_legacy_history_reconstructs_effect_only_through_live_authority() -> Non
 
     assert restored.obligation_status("effect:write") is ObligationStatus.SATISFIED
     assert restored.executed_effects == ["write"]
+
+
+def test_previous_read_runtime_and_checkpoint_require_prior_matching_read() -> None:
+    state = _previous_read_state()
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        _complete("orion"),
+    )
+    state.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "orion"},
+        _complete([]),
+    )
+
+    assert state.obligation_status("search:previous") is ObligationStatus.SATISFIED
+    restored = _state()
+    restored.from_checkpoint_dict(state.to_checkpoint_dict())
+    assert restored.obligation_status("search:previous") is ObligationStatus.SATISFIED
+
+
+def test_previous_read_does_not_use_a_future_read_on_restore() -> None:
+    state = _previous_read_state()
+    state.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "orion"},
+        _complete([]),
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        _complete("orion"),
+    )
+    checkpoint = state.to_checkpoint_dict()
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    statuses = semantics["statuses"]
+    evidence = semantics["evidence"]
+    assert isinstance(statuses, dict) and isinstance(evidence, dict)
+    statuses["search:previous"] = "satisfied"
+    evidence["search:previous"] = [1]
+
+    with pytest.raises(ValueError, match="task semantics evidence"):
+        _state().from_checkpoint_dict(checkpoint)
+
+
+def test_previous_read_rejects_different_value_and_accepts_only_matching_prior_read() -> None:
+    wrong = _previous_read_state()
+    wrong.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        _complete("andromeda"),
+    )
+    wrong.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "orion"},
+        _complete([]),
+    )
+    assert wrong.obligation_status("search:previous") is ObligationStatus.PENDING
+
+    multiple = _previous_read_state()
+    multiple.record_tool_result(
+        "file_reader",
+        {"file_path": "antiga.txt"},
+        _complete("andromeda"),
+    )
+    multiple.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        _complete("orion"),
+    )
+    multiple.record_tool_result(
+        "grep",
+        {"path": ".", "pattern": "orion"},
+        _complete([]),
+    )
+    assert multiple.obligation_status("search:previous") is ObligationStatus.SATISFIED
+
+
+def test_legacy_previous_read_replay_does_not_use_future_history() -> None:
+    objective = "Leia fonte_h2.txt e depois procure nos outros arquivos pela palavra que ele contem."
+    common = {
+        "objective": objective,
+        "requested_effects": [],
+        "executed_effects": [],
+        "waived_effects": [],
+        "prohibited_effects": [],
+        "plan": [],
+        "step_records": [],
+        "task_semantics": None,
+        "events": [],
+        "conversation_history": [],
+    }
+    valid = dict(common)
+    valid["tool_history"] = [
+        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete("orion")},
+        {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete([])},
+    ]
+    restored_valid = _state()
+    restored_valid.from_checkpoint_dict(valid)
+    valid_search = next(item for item in restored_valid.task_obligations if item.kind == "search")
+    assert restored_valid.obligation_status(valid_search.id) is ObligationStatus.SATISFIED
+
+    future = dict(common)
+    future["tool_history"] = [
+        {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete([])},
+        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete("orion")},
+    ]
+    restored_future = _state()
+    restored_future.from_checkpoint_dict(future)
+    future_search = next(item for item in restored_future.task_obligations if item.kind == "search")
+    assert restored_future.obligation_status(future_search.id) is ObligationStatus.PENDING
+
+
+def test_synthetic_effect_checkpoint_is_rejected_before_reentry() -> None:
+    state = _state()
+    state.reset_task_progression(["write"])
+    state.record_executed_effect("write")
+
+    with pytest.raises(TaskSemanticsError, match="sintetica"):
+        TaskSemantics.from_checkpoint_dict(state.task_semantics.to_checkpoint_dict())
 
 
 def test_rejected_checkpoint_does_not_publish_partial_authoritative_state() -> None:

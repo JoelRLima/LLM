@@ -229,7 +229,7 @@ def _evidence_proves_requirement(
         )
     ):
         return True
-    if matches_requirement(owner, obligation, tool, result, args):
+    if matches_requirement(owner, obligation, tool, result, args, evidence_ref=evidence_ref):
         return True
     return obligation.kind == "fallback" and matches_fallback(obligation, tool, result, args)
 

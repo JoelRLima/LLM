@@ -184,7 +184,14 @@ def observe_tool(
     tool = str(tool_name).strip().casefold()
     satisfied: list[str] = []
     for item in owner.pending_obligations():
-        if item.kind == "effect" or not matches_requirement(owner, item, tool, result, args):
+        if item.kind == "effect" or not matches_requirement(
+            owner,
+            item,
+            tool,
+            result,
+            args,
+            evidence_ref=ref,
+        ):
             continue
         satisfy(owner, item.id, ref)
         satisfied.append(item.id)
