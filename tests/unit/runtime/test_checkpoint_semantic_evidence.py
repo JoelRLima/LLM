@@ -34,13 +34,29 @@ def _complete(data: str) -> dict[str, object]:
 
 
 def _canonical_read_checkpoint() -> dict[str, object]:
+    objective = "Leia b.txt."
     state = _state()
-    state.initialize_task_semantics("Leia b.txt.")
+    state.objective = objective
+    state.set_task_semantics(
+        TaskSemantics(
+            TaskIntent(objective),
+            [
+                TaskObligation(
+                    "read:b",
+                    "read",
+                    "Ler b.txt.",
+                    target="b.txt",
+                )
+            ],
+            _strict_evidence=True,
+        )
+    )
     state.record_tool_result(
         "file_reader",
         {"file_path": "b.txt"},
         _complete("B"),
     )
+    assert state.obligation_status("read:b") is ObligationStatus.SATISFIED
     return state.to_checkpoint_dict()
 
 
@@ -50,8 +66,8 @@ def test_checkpoint_restore_revalidates_valid_terminal_evidence() -> None:
     restored = _state()
     restored.from_checkpoint_dict(checkpoint)
 
-    assert restored.obligation_status("requirement:read") is ObligationStatus.SATISFIED
-    assert restored.task_semantics.obligation_evidence("requirement:read") == (1,)
+    assert restored.obligation_status("read:b") is ObligationStatus.SATISFIED
+    assert restored.task_semantics.obligation_evidence("read:b") == (1,)
     assert restored.terminal_evidence_complete() is True
 
 
@@ -61,7 +77,7 @@ def test_checkpoint_restore_rejects_terminal_evidence_ref_missing_from_history()
     assert isinstance(semantics, dict)
     evidence = semantics["evidence"]
     assert isinstance(evidence, dict)
-    evidence["requirement:read"] = [999]
+    evidence["read:b"] = [999]
 
     restored = _state()
     with pytest.raises(
