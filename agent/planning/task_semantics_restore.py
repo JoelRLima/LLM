@@ -58,6 +58,12 @@ def revalidate_restored_terminal_evidence(
         if obligation.id not in status_claims
         and semantics._statuses[obligation.id] is not ObligationStatus.PENDING
     )
+    # A recovered read claim depends on its matching fallback claim.  Promote
+    # fallback claims first while retaining the staged, all-or-nothing passes;
+    # this makes status-specific recovery checks independent of obligation
+    # declaration order.
+    obligation_kinds = {obligation.id: obligation.kind for obligation in semantics.obligations}
+    claims.sort(key=lambda claim: obligation_kinds[claim[0]] != "fallback")
 
     remaining = list(claims)
     first_error: TaskSemanticsError | None = None

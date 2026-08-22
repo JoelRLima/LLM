@@ -104,17 +104,19 @@ def _evidence_set_proves_requirement(
 ) -> bool:
     if status is ObligationStatus.SATISFIED and obligation.kind == "compare":
         return _compare_evidence_set_proves(obligation, observations)
+    if status is ObligationStatus.SATISFIED:
+        return all(
+            _evidence_proves_satisfied(owner, obligation, observation, ref)
+            for ref, observation in zip(refs, observations, strict=True)
+        )
     if status is ObligationStatus.WAIVED:
         return all(
             _evidence_proves_waiver(owner, obligation, observation, ref)
             for ref, observation in zip(refs, observations, strict=True)
         )
     if status is ObligationStatus.BLOCKED:
-        return _blocked_evidence_set_proves(obligation, observations)
-    return all(
-        _evidence_proves_requirement(owner, obligation, observation, ref)
-        for ref, observation in zip(refs, observations, strict=True)
-    )
+        return _blocked_evidence_set_proves(owner, obligation, refs, observations)
+    return False
 
 
 def _observation_parts(
@@ -157,6 +159,20 @@ def _evidence_proves_waiver(
     observation: Mapping[str, Any],
     evidence_ref: int | str,
 ) -> bool:
+    return _failure_is_recovered_by_matching_fallback(
+        owner,
+        obligation,
+        observation,
+        evidence_ref,
+    )
+
+
+def _failure_is_recovered_by_matching_fallback(
+    owner: Any,
+    obligation: Any,
+    observation: Mapping[str, Any],
+    evidence_ref: int | str,
+) -> bool:
     _tool, result, args = _observation_parts(observation)
     if obligation.kind != "read" or classify_failure(result) is not FailureClass.LOCAL:
         return False
@@ -170,9 +186,16 @@ def _evidence_proves_waiver(
 
 
 def _blocked_evidence_set_proves(
+    owner: Any,
     obligation: Any,
+    refs: Sequence[int | str],
     observations: Sequence[Mapping[str, Any]],
 ) -> bool:
+    # A fallback is discharged by the primary local failure.  There is no
+    # canonical fallback-operation failure observation that could prove it
+    # BLOCKED, so fail closed rather than reusing the activating failure.
+    if obligation.kind == "fallback":
+        return False
     if obligation.kind == "compare":
         direct = all(
             classify_failure(result) is not FailureClass.NONE
@@ -194,7 +217,8 @@ def _blocked_evidence_set_proves(
     return all(
         classify_failure(_observation_parts(observation)[1]) is not FailureClass.NONE
         and _failure_matches_obligation(obligation, observation)
-        for observation in observations
+        and not _failure_is_recovered_by_matching_fallback(owner, obligation, observation, ref)
+        for ref, observation in zip(refs, observations, strict=True)
     )
 
 
@@ -215,25 +239,13 @@ def _failure_matches_obligation(obligation: Any, observation: Mapping[str, Any])
     return obligation.kind == "fallback" and matches_fallback(obligation, tool, result, args)
 
 
-def _evidence_proves_requirement(
+def _evidence_proves_satisfied(
     owner: Any,
     obligation: Any,
     observation: Mapping[str, Any],
     evidence_ref: int | str,
 ) -> bool:
     tool, result, args = _observation_parts(observation)
-    if (
-        obligation.kind == "read"
-        and classify_failure(result) is FailureClass.LOCAL
-        and any(
-            item.kind == "fallback"
-            and owner._statuses[item.id] is ObligationStatus.SATISFIED
-            and evidence_ref in owner._evidence[item.id]
-            and same_identity(item.fallback_target, arg_path(args))
-            for item in owner._obligations
-        )
-    ):
-        return True
     if matches_requirement(owner, obligation, tool, result, args, evidence_ref=evidence_ref):
         return True
     return obligation.kind == "fallback" and matches_fallback(obligation, tool, result, args)

@@ -263,6 +263,137 @@ def test_checkpoint_restore_preserves_exact_local_failure_fallback() -> None:
     assert restored.terminal_evidence_complete() is True
 
 
+def _local_failure_fallback_semantics() -> TaskSemantics:
+    semantics = TaskSemantics(
+        TaskIntent("Leia missing.txt; se nao puder, relate a falha."),
+        [
+            TaskObligation(
+                "read:missing",
+                "read",
+                "Ler missing.txt.",
+                target="missing.txt",
+            ),
+            TaskObligation(
+                "fallback:missing",
+                "fallback",
+                "Relatar falha local de missing.txt.",
+                fallback_target="missing.txt",
+            ),
+        ],
+        _strict_evidence=True,
+    )
+    semantics.register_observation(
+        "file_reader",
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+        },
+        evidence_ref=1,
+        args={"file_path": "missing.txt"},
+    )
+    return semantics
+
+
+@pytest.mark.parametrize("method", ("waive", "block"))
+def test_successful_read_cannot_prove_waived_or_blocked(method: str) -> None:
+    semantics = TaskSemantics(
+        TaskIntent("Leia a.txt."),
+        [TaskObligation("read:a", "read", "Ler a.txt.", target="a.txt")],
+        _strict_evidence=True,
+    )
+    semantics.register_observation(
+        "file_reader",
+        _complete("A"),
+        evidence_ref=1,
+        args={"file_path": "a.txt"},
+    )
+
+    with pytest.raises(TaskSemanticsError):
+        getattr(semantics, method)("read:a", evidence_ref=1)
+
+    semantics.satisfy("read:a", evidence_ref=1)
+    assert semantics.obligation_status("read:a") is ObligationStatus.SATISFIED
+
+
+def test_recovered_local_read_failure_is_waived_only() -> None:
+    semantics = _local_failure_fallback_semantics()
+    semantics.satisfy("fallback:missing", evidence_ref=1)
+
+    with pytest.raises(TaskSemanticsError):
+        semantics.satisfy("read:missing", evidence_ref=1)
+    with pytest.raises(TaskSemanticsError):
+        semantics.block("read:missing", evidence_ref=1)
+
+    semantics.waive("read:missing", evidence_ref=1)
+    assert semantics.obligation_status("read:missing") is ObligationStatus.WAIVED
+
+
+def test_unrecovered_local_read_failure_can_still_be_blocked() -> None:
+    semantics = _local_failure_fallback_semantics()
+
+    semantics.block("read:missing", evidence_ref=1)
+
+    assert semantics.obligation_status("read:missing") is ObligationStatus.BLOCKED
+    assert semantics.obligation_status("fallback:missing") is ObligationStatus.PENDING
+
+
+def test_primary_failure_cannot_prove_fallback_blocked() -> None:
+    semantics = _local_failure_fallback_semantics()
+
+    with pytest.raises(TaskSemanticsError):
+        semantics.block("fallback:missing", evidence_ref=1)
+
+    assert semantics.obligation_status("fallback:missing") is ObligationStatus.PENDING
+
+
+def _forged_local_failure_fallback_checkpoint(
+    *,
+    read_status: str = "waived",
+    fallback_status: str = "satisfied",
+) -> dict[str, object]:
+    objective = "Leia missing.txt; se nao puder, relate a falha."
+    state = _state()
+    state.objective = objective
+    state.set_task_semantics(_local_failure_fallback_semantics())
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+        },
+    )
+    checkpoint = state.to_checkpoint_dict()
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    statuses = semantics["statuses"]
+    assert isinstance(statuses, dict)
+    statuses["read:missing"] = read_status
+    statuses["fallback:missing"] = fallback_status
+    return checkpoint
+
+
+@pytest.mark.parametrize("forged_status", ("satisfied", "blocked"))
+def test_checkpoint_rejects_forged_recovered_read_status(forged_status: str) -> None:
+    checkpoint = _forged_local_failure_fallback_checkpoint(read_status=forged_status)
+
+    with pytest.raises(ValueError, match="task semantics evidence"):
+        _state().from_checkpoint_dict(checkpoint)
+
+
+def test_checkpoint_rejects_forged_fallback_blocked_status() -> None:
+    checkpoint = _forged_local_failure_fallback_checkpoint(fallback_status="blocked")
+
+    with pytest.raises(ValueError, match="task semantics evidence"):
+        _state().from_checkpoint_dict(checkpoint)
+
+
 def _forged_compare_checkpoint(
     history: list[tuple[str, str]],
     evidence_refs: list[int],
