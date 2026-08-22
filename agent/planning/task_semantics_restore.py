@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 from agent.planning.task_semantics import (
     ObligationStatus,
@@ -16,10 +15,10 @@ def revalidate_restored_terminal_evidence(semantics: TaskSemantics) -> None:
     """Re-prove every restored terminal obligation against canonical history.
 
     ``TaskSemantics.from_checkpoint_dict`` restores the semantic projection
-    before ``AgentState`` restores tool history.  During that first phase,
-    evidence references are identities only.  Once history has rebuilt the
+    before ``AgentState`` restores tool history. During that first phase,
+    evidence references are identities only. Once history has rebuilt the
     canonical evidence catalog, this function re-runs the normal transition
-    validator for every terminal obligation.  Missing, stale, or
+    validator for every terminal obligation. Missing, stale, or
     requirement-mismatched references therefore fail closed before resume.
     """
 
