@@ -103,6 +103,35 @@ def _effect_state(
     return state, authority
 
 
+def _unbound_write_state(
+    result: dict[str, object] | None = None,
+    *,
+    prohibited: tuple[str, ...] = ("write",),
+) -> AgentState:
+    state = _state()
+    objective = "Observe a canonical unbound write."
+    state.objective = objective
+    state.set_task_semantics(
+        TaskSemantics(
+            TaskIntent(objective, (), prohibited),
+            [],
+            _strict_evidence=True,
+        )
+    )
+    state.record_tool_result(
+        "code_task",
+        {},
+        result if result is not None else _write_result(),
+    )
+    return state
+
+
+def _write_authority() -> SimpleNamespace:
+    return SimpleNamespace(
+        tool_registry=_Registry({"code_task": {"write"}}),
+    )
+
+
 def _legacy_checkpoint(
     *,
     objective: str = "write",
@@ -297,6 +326,34 @@ def _local_failure_fallback_semantics() -> TaskSemantics:
     return semantics
 
 
+def _local_failure_read_only_semantics(target: str = "missing.txt") -> TaskSemantics:
+    semantics = TaskSemantics(
+        TaskIntent(f"Leia {target}."),
+        [
+            TaskObligation(
+                f"read:{target}",
+                "read",
+                f"Ler {target}.",
+                target=target,
+            )
+        ],
+        _strict_evidence=True,
+    )
+    semantics.register_observation(
+        "file_reader",
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+        },
+        evidence_ref=1,
+        args={"file_path": target},
+    )
+    return semantics
+
+
 @pytest.mark.parametrize("method", ("waive", "block"))
 def test_successful_read_cannot_prove_waived_or_blocked(method: str) -> None:
     semantics = TaskSemantics(
@@ -331,13 +388,61 @@ def test_recovered_local_read_failure_is_waived_only() -> None:
     assert semantics.obligation_status("read:missing") is ObligationStatus.WAIVED
 
 
-def test_unrecovered_local_read_failure_can_still_be_blocked() -> None:
+def test_local_read_failure_cannot_block_before_matching_fallback_is_satisfied() -> None:
     semantics = _local_failure_fallback_semantics()
 
-    semantics.block("read:missing", evidence_ref=1)
+    with pytest.raises(TaskSemanticsError):
+        semantics.block("read:missing", evidence_ref=1)
 
-    assert semantics.obligation_status("read:missing") is ObligationStatus.BLOCKED
+    assert semantics.obligation_status("read:missing") is ObligationStatus.PENDING
     assert semantics.obligation_status("fallback:missing") is ObligationStatus.PENDING
+
+    semantics.satisfy("fallback:missing", evidence_ref=1)
+    semantics.waive("read:missing", evidence_ref=1)
+
+    assert semantics.obligation_status("fallback:missing") is ObligationStatus.SATISFIED
+    assert semantics.obligation_status("read:missing") is ObligationStatus.WAIVED
+
+
+def test_unrecovered_local_read_failure_can_still_be_blocked() -> None:
+    semantics = _local_failure_read_only_semantics()
+
+    semantics.block("read:missing.txt", evidence_ref=1)
+
+    assert semantics.obligation_status("read:missing.txt") is ObligationStatus.BLOCKED
+
+
+def test_unrelated_fallback_does_not_suppress_legitimate_read_block() -> None:
+    semantics = TaskSemantics(
+        TaskIntent("Leia a.txt; se necessario, relate a falha de b.txt."),
+        [
+            TaskObligation("read:a", "read", "Ler a.txt.", target="a.txt"),
+            TaskObligation(
+                "fallback:b",
+                "fallback",
+                "Relatar falha de b.txt.",
+                fallback_target="b.txt",
+            ),
+        ],
+        _strict_evidence=True,
+    )
+    semantics.register_observation(
+        "file_reader",
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+        },
+        evidence_ref=1,
+        args={"file_path": "a.txt"},
+    )
+
+    semantics.block("read:a", evidence_ref=1)
+
+    assert semantics.obligation_status("read:a") is ObligationStatus.BLOCKED
+    assert semantics.obligation_status("fallback:b") is ObligationStatus.PENDING
 
 
 def test_primary_failure_cannot_prove_fallback_blocked() -> None:
@@ -724,6 +829,74 @@ def test_effect_write_authority_survives_checkpoint_round_trip() -> None:
 
     assert restored.task_semantics.obligation_status("effect:write") is ObligationStatus.SATISFIED
     assert restored.executed_effects == ["write"]
+
+
+def test_modern_restore_reconstructs_unbound_canonical_write_projection() -> None:
+    state = _unbound_write_state()
+    restored = _state()
+
+    restored.from_checkpoint_dict(
+        state.to_checkpoint_dict(),
+        effect_authority=_write_authority(),
+    )
+
+    assert restored.task_semantics.obligations == ()
+    assert restored.executed_effects == ["write"]
+    assert restored.prohibited_effects_occurred() == ("write",)
+
+
+def test_modern_complete_restore_rejects_prohibited_unbound_write_transactionally() -> None:
+    state = _unbound_write_state()
+    checkpoint = state.to_checkpoint_dict()
+    checkpoint["terminal_disposition"] = "complete"
+    target = _state()
+    target.objective = "before"
+    target.terminal_disposition = "block"
+    before = copy.deepcopy(target.to_checkpoint_dict())
+
+    with pytest.raises(ValueError, match="conflicts with pending semantics"):
+        target.from_checkpoint_dict(
+            checkpoint,
+            effect_authority=_write_authority(),
+        )
+
+    assert target.to_checkpoint_dict() == before
+
+
+@pytest.mark.parametrize(
+    ("authority", "result"),
+    (
+        (SimpleNamespace(), _write_result()),
+        (SimpleNamespace(tool_registry=_MalformedRegistry()), _write_result()),
+        (SimpleNamespace(tool_registry=_Registry({"code_task": {"read"}})), _write_result()),
+        (
+            SimpleNamespace(tool_registry=_Registry({"code_task": {"write"}})),
+            _write_result(executed=False),
+        ),
+        (
+            SimpleNamespace(tool_registry=_Registry({"code_task": {"write"}})),
+            _write_result(status="permission_denied"),
+        ),
+        (
+            SimpleNamespace(tool_registry=_Registry({"code_task": {"write"}})),
+            {"ok": True, "done": True, "executed": True, "status": "succeeded"},
+        ),
+    ),
+)
+def test_modern_restore_does_not_reconstruct_unproven_unbound_write(
+    authority: SimpleNamespace,
+    result: dict[str, object],
+) -> None:
+    state = _unbound_write_state(result)
+    restored = _state()
+
+    restored.from_checkpoint_dict(
+        state.to_checkpoint_dict(),
+        effect_authority=authority,
+    )
+
+    assert restored.executed_effects == []
+    assert restored.prohibited_effects_occurred() == ()
 
 
 def test_effect_waived_and_blocked_use_distinct_canonical_evidence() -> None:

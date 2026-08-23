@@ -173,15 +173,41 @@ def _failure_is_recovered_by_matching_fallback(
     observation: Mapping[str, Any],
     evidence_ref: int | str,
 ) -> bool:
-    _tool, result, args = _observation_parts(observation)
-    if obligation.kind != "read" or classify_failure(result) is not FailureClass.LOCAL:
-        return False
+    """Return whether the exact failure was already recovered by fallback."""
+
     return any(
-        item.kind == "fallback"
-        and owner._statuses[item.id] is ObligationStatus.SATISFIED
+        owner._statuses[item.id] is ObligationStatus.SATISFIED
         and evidence_ref in owner._evidence[item.id]
-        and same_identity(item.fallback_target, arg_path(args))
+        for item in _matching_fallbacks(owner, obligation, observation)
+    )
+
+
+def _failure_belongs_to_matching_fallback(
+    owner: Any,
+    obligation: Any,
+    observation: Mapping[str, Any],
+) -> bool:
+    """Return whether a local read failure is covered by a fallback contract."""
+
+    return bool(_matching_fallbacks(owner, obligation, observation))
+
+
+def _matching_fallbacks(
+    owner: Any,
+    obligation: Any,
+    observation: Mapping[str, Any],
+) -> tuple[Any, ...]:
+    tool, result, args = _observation_parts(observation)
+    if (
+        obligation.kind != "read"
+        or tool not in _READ_TOOLS
+        or classify_failure(result) is not FailureClass.LOCAL
+    ):
+        return ()
+    return tuple(
+        item
         for item in owner._obligations
+        if item.kind == "fallback" and same_identity(item.fallback_target, arg_path(args))
     )
 
 
@@ -193,7 +219,10 @@ def _blocked_evidence_set_proves(
 ) -> bool:
     # A fallback is discharged by the primary local failure.  There is no
     # canonical fallback-operation failure observation that could prove it
-    # BLOCKED, so fail closed rather than reusing the activating failure.
+    # BLOCKED, so fail closed rather than reusing the activating failure.  A
+    # matching fallback contract also makes the read failure recoverable
+    # before the fallback transition is requested; BLOCKED must not depend on
+    # transition order.
     if obligation.kind == "fallback":
         return False
     if obligation.kind == "compare":
@@ -217,8 +246,8 @@ def _blocked_evidence_set_proves(
     return all(
         classify_failure(_observation_parts(observation)[1]) is not FailureClass.NONE
         and _failure_matches_obligation(obligation, observation)
-        and not _failure_is_recovered_by_matching_fallback(owner, obligation, observation, ref)
-        for ref, observation in zip(refs, observations, strict=True)
+        and not _failure_belongs_to_matching_fallback(owner, obligation, observation)
+        for _ref, observation in zip(refs, observations, strict=True)
     )
 
 

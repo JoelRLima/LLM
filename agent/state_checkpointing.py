@@ -171,6 +171,12 @@ def _restore_histories(
             semantics,
             effect_authority=effect_authority,
         )
+        _reconstruct_modern_unbound_effects(
+            semantics,
+            state.tool_history,
+            legacy_semantics=legacy_semantics,
+            effect_authority=effect_authority,
+        )
     except (TaskSemanticsError, TypeError, AttributeError) as exc:
         raise ValueError(
             "Checkpoint task semantics evidence does not match canonical history."
@@ -202,6 +208,36 @@ def _rebuild_legacy_semantics(
             effect_authority,
             ObligationStatus.SATISFIED,
             entry,
+        ):
+            continue
+        semantics.record_effect(
+            "write",
+            evidence_ref=index,
+            effect_authority=effect_authority,
+        )
+
+
+def _reconstruct_modern_unbound_effects(
+    semantics: TaskSemantics,
+    history: list[dict[str, Any]],
+    *,
+    legacy_semantics: bool,
+    effect_authority: Any = None,
+) -> None:
+    """Rebuild unbound operational effects from canonical modern history."""
+
+    if legacy_semantics or effect_authority is None or any(
+        item.kind == "effect" and item.effect == "write"
+        for item in semantics.obligations
+    ):
+        return
+    catalog = getattr(semantics, "_evidence_catalog", {})
+    for index, _entry in enumerate(history, start=1):
+        observation = catalog.get(index)
+        if not isinstance(observation, Mapping) or not effect_observation_proves_terminal(
+            effect_authority,
+            ObligationStatus.SATISFIED,
+            observation,
         ):
             continue
         semantics.record_effect(
