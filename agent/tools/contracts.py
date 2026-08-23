@@ -266,6 +266,7 @@ class ToolResult:
     message: Optional[str] = None
     artifacts: Tuple[Any, ...] = ()
     executed: bool | None = None
+    evidence_provenance: str | None = None
     @property
     def ok(self) -> bool:
         return self.status == ToolStatus.SUCCEEDED
@@ -286,7 +287,8 @@ class ToolResult:
             result.update({"error_code": self.error.code if self.error else None,
                            "error_detail": self.error.detail if self.error else None,
                            "artifacts": list(self.artifacts),
-                           "executed": self.executed})
+                           "executed": self.executed,
+                           "evidence_provenance": self.evidence_provenance})
         return result
 class ToolAdapter(Protocol):
     """Protocol implemented by any tool source (builtin, stdio extension, etc.)."""

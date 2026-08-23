@@ -29,7 +29,9 @@ from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.context import TaskExecutionContext
 from agent.runtime.paths import WorkspacePaths
+from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
@@ -46,7 +48,7 @@ from agent.watchdog import Watchdog
 from agent.workspace import WorkspaceManager
 
 
-class Orchestrator(OperationalModeMixin, OrchestratorOperations):
+class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, OrchestratorOperations):
     def __init__(
         self,
         session: ChatSession,
@@ -100,6 +102,7 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         self._run_id: str | None = None
         self._run_metric_recorded = False
         self.cancellation_token = CancellationToken()
+        self._task_execution_context: TaskExecutionContext | None = None
         self.checkpoint_file = str(
             checkpoint_file
             or (workspace_paths.checkpoint_file if workspace_paths else paths.CHECKPOINT_FILE)
@@ -176,23 +179,7 @@ class Orchestrator(OperationalModeMixin, OrchestratorOperations):
         if self.workspace_paths is None:
             return Path(file_path)
         return cast(Path, self.workspace.resolve_path(file_path))
-    def _reset_task_state(self, objective: str) -> None:
-        assert isinstance(self.task_budget, TaskBudgetLedger)
-        self.task_budget.reset()
-        self.agent_state.objective = objective
-        self.agent_state.reset_execution()
-        self.agent_state.reset_task_progression()
-        self.agent_state.last_result = None
-        self.agent_state.last_tool = None
-        self.agent_state.last_args = None
-        self.agent_state.tool_history = []
-        self.agent_state.events.clear()
-        self.context_manager._cached_project_context = None
-        self.workspace.restore_points.clear()
-        self._planning_context = None
-        self._task_failed = False
-        self._cancelled = False
-        self.cancellation_token.reset()
+
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
             print("Consultando roteador de persona...", end="", flush=True)

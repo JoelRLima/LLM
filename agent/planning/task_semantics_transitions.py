@@ -9,7 +9,7 @@ from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_evidence import (
     _READ_TOOLS,
     arg_path,
-    complete_observation,
+    exact_source_observation,
     matches_fallback,
     matches_requirement,
     result_is_successful,
@@ -208,7 +208,7 @@ def _satisfy_comparisons_from_reads(owner: Any) -> list[str]:
         result = item.get("result")
         path = arg_path(item.get("args"))
         if item.get("tool") in _READ_TOOLS and isinstance(result, Mapping) and path is not None:
-            if complete_observation(result):
+            if exact_source_observation(result):
                 reads[path.casefold()] = (ref, result)
     satisfied: list[str] = []
     for item in owner.pending_obligations():
@@ -276,4 +276,5 @@ def reset_progress(owner: Any) -> None:
     owner._evidence_claims = {}
     owner._executed_effects = []
     owner._waived_effects = []
+    owner._unrequested_effects = []
     owner._evidence_catalog = {}

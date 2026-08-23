@@ -100,8 +100,23 @@ class OrchestratorOperations:
 
         self.agent_state.memory.restore_from_file(path or self.memory_file)
 
-    def _save_checkpoint(self) -> None:
+    def _save_checkpoint(self) -> bool:
+        gateway = getattr(self, "tool_invocation_gateway", None)
+        quiescent = getattr(gateway, "are_invocations_quiescent", None)
+        if callable(quiescent) and not quiescent(mutating_only=True):
+            self.agent_state.events.append(
+                {
+                    "type": "checkpoint_deferred",
+                    "step": self.agent_state.plan_step,
+                    "data": {
+                        "reason": "task-owned mutating invocation is not quiescent",
+                    },
+                }
+            )
+            logger.warning("Checkpoint deferred while a mutating invocation is active.")
+            return False
         self.checkpoint_manager.save(self.agent_state)
+        return True
 
     def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
         return cast(Optional[Dict[str, Any]], self.checkpoint_manager.load())

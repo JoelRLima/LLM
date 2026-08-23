@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Sequence
 
-from agent.planning.task_semantics import ObligationStatus, TaskObligation, TaskSemantics
+from agent.planning.task_semantics import (
+    ObligationReviewResult,
+    ObligationStatus,
+    TaskObligation,
+    TaskSemantics,
+)
 
 
 class TaskSemanticsStateMixin:
@@ -86,8 +91,44 @@ class TaskSemanticsStateMixin:
     def prohibited_effects(self, effects: Sequence[str]) -> None:
         self._task_semantics.replace_effects(self._task_semantics.requested_effects, effects)
 
-    def review_task_obligations(self, raw: Any, *, source: str) -> tuple[TaskObligation, ...]:
-        return self._task_semantics.review_and_add_obligations(raw, source=source)
+    def review_task_obligations(
+        self,
+        raw: Any,
+        *,
+        source: str,
+        collect_rejections: bool = False,
+    ) -> tuple[TaskObligation, ...] | ObligationReviewResult:
+        # Direct state callers are a trusted compatibility/control-plane path;
+        # model-facing production callers use the non-mutating report method
+        # below.  Keep this explicit so a model cannot select the source by
+        # merely including an admission field in its payload.
+        if source == "canonical_review" and not collect_rejections:
+            return self._task_semantics.admit_externally_authorized(
+                raw,
+                authorization="legacy:canonical-review",
+            )
+        return self._task_semantics.review_and_add_obligations(
+            raw,
+            source=source,
+            collect_rejections=collect_rejections,
+        )
+
+    def review_task_obligations_report(self, raw: Any, *, source: str) -> ObligationReviewResult:
+        return self._task_semantics.review_obligations(raw, source=source)
+
+    def admit_safety_required(self, raw: Any, *, reason: str) -> tuple[TaskObligation, ...]:
+        return self._task_semantics.admit_safety_required(raw, reason=reason)
+
+    def admit_externally_authorized(
+        self,
+        raw: Any,
+        *,
+        authorization: str,
+    ) -> tuple[TaskObligation, ...]:
+        return self._task_semantics.admit_externally_authorized(
+            raw,
+            authorization=authorization,
+        )
 
     def pending_obligations(self) -> tuple[TaskObligation, ...]:
         return self._task_semantics.pending_obligations()
@@ -100,6 +141,9 @@ class TaskSemanticsStateMixin:
 
     def prohibited_effects_occurred(self) -> tuple[str, ...]:
         return self._task_semantics.prohibited_effects_occurred()
+
+    def unrequested_effects(self) -> tuple[str, ...]:
+        return self._task_semantics.unrequested_effects()
 
     def obligation_status(self, obligation_id: str) -> ObligationStatus:
         return self._task_semantics.obligation_status(obligation_id)

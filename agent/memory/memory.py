@@ -53,6 +53,7 @@ class AgentMemory:
             "analyzed_files": {},   # { "caminho/arquivo.py": "resumo de uma linha" }
             "file_summaries": {},   # { "caminho/arquivo.py": "resumo detalhado" }
             "file_hashes": {},
+            "file_cache_entries": {},
         }
 
     def initialize(self) -> None:

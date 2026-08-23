@@ -9,6 +9,7 @@ from agent.planning.task_semantics_effects import effect_observation_proves_term
 from agent.planning.task_semantics_types import (
     ObligationStatus,
     TaskSemanticsError,
+    _eligible_evidence_ref,
     _normalize_effect,
 )
 
@@ -107,6 +108,30 @@ def waive_effect(
         owner._waived_effects.append(normalized)
 
 
+def record_unrequested_effect(
+    owner: Any,
+    effect: str,
+    *,
+    evidence_ref: int | str,
+    effect_authority: Any,
+) -> None:
+    """Record a durable effect proven by evidence but absent from intent."""
+
+    normalized = _normalize_effect(effect)
+    if normalized in owner.requested_effects:
+        return
+    ref = _eligible_evidence_ref(evidence_ref)
+    observation = getattr(owner, "_evidence_catalog", {}).get(ref)
+    if effect_authority is None or not isinstance(observation, Mapping) or not effect_observation_proves_terminal(
+        effect_authority,
+        ObligationStatus.SATISFIED,
+        observation,
+    ):
+        raise TaskSemanticsError("evidencia nao prova o efeito nao solicitado")
+    if normalized not in owner._unrequested_effects:
+        owner._unrequested_effects.append(normalized)
+
+
 def _validate_unbound_waiver(
     owner: Any,
     evidence_ref: int | str | None,
@@ -140,4 +165,4 @@ def _transition(*args: Any, **kwargs: Any) -> None:
     transition(*args, **kwargs)
 
 
-__all__ = ["record_effect", "waive_effect"]
+__all__ = ["record_effect", "record_unrequested_effect", "waive_effect"]

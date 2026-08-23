@@ -252,7 +252,7 @@ def _bounded(value: object, limit: int = 500) -> str:
 def _measurement_summary(measurement: dict[str, object]) -> dict[str, object]:
     allowed = {
         "task_id", "duration_ms", "tools", "invocation_id", "invocation_ids", "invocations",
-        "terminal_outcome", "error", "output_chars", "truncated", "tool_history_count", "model_calls", "gateway_calls", "run_id", "status",
+        "terminal_outcome", "error", "output_chars", "truncated", "tool_history_count", "tool_calls", "model_calls", "gateway_calls", "run_id", "status",
     }
     result: dict[str, object] = {}
     for key in allowed:

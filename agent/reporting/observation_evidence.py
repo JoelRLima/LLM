@@ -7,7 +7,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from agent.tools.result_completeness import canonical_completeness
+from agent.reporting.artifact_projection import (
+    ArtifactEvidence,
+    metadata_is_persisted_mutation,
+    project_artifact_evidence,
+)
+from agent.tools.result_completeness import (
+    EvidenceProvenance,
+    canonical_completeness,
+    canonical_evidence_provenance,
+    has_explicit_evidence_provenance,
+)
 
 MAX_OBSERVATION_EVIDENCE_CHARS = 12_000
 MAX_OBSERVATION_RECORD_CHARS = 2_000
@@ -98,73 +108,13 @@ def artifact_metadata(result: Any) -> tuple[dict[str, Any], ...]:
     data = result.get("data")
     if isinstance(data, Mapping):
         values.extend(_artifact_metadata_from(data))
+    for candidate in (result, data):
+        if not isinstance(candidate, Mapping):
+            continue
+        metadata = candidate.get("metadata")
+        if isinstance(metadata, Mapping):
+            values.append(dict(metadata))
     return tuple(values)
-
-
-def metadata_is_persisted_mutation(metadata: Mapping[str, Any]) -> bool:
-    """Whether an artifact proves a mutation persisted in the final state."""
-
-    return (
-        metadata.get("applied") is True
-        and metadata.get("mutation_occurred") is True
-        and metadata.get("rollback_occurred") is not True
-        and metadata.get("final_state") == "applied"
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class ArtifactEvidence:
-    """Read-only aggregate of mutation, validation, rollback and file facts."""
-
-    affected_files: tuple[str, ...] = ()
-    mutated_files: tuple[str, ...] = ()
-    validation_status: str | None = None
-    mutation_occurred: bool = False
-    rollback_occurred: bool = False
-    persisted_mutation: bool = False
-
-
-def project_artifact_evidence(result: Any) -> ArtifactEvidence:
-    """Project artifact facts without allowing prose or tool status to add effects."""
-
-    files: list[str] = []
-    mutated_files: list[str] = []
-    validation_status: str | None = None
-    mutation_occurred = False
-    rollback_occurred = False
-    persisted_mutation = False
-    for metadata in artifact_metadata(result):
-        affected = metadata.get("affected_files")
-        if isinstance(affected, Sequence) and not isinstance(affected, (str, bytes, bytearray)):
-            for path in affected:
-                value = str(path)
-                if value not in files:
-                    files.append(value)
-        mutation = (
-            metadata.get("applied") is True
-            and metadata.get("mutation_occurred") is True
-        )
-        if mutation and isinstance(affected, Sequence) and not isinstance(affected, (str, bytes, bytearray)):
-            for path in affected:
-                value = str(path)
-                if value not in mutated_files:
-                    mutated_files.append(value)
-        if metadata.get("validation") is not None:
-            validation_status = str(metadata["validation"])
-        rollback_occurred = rollback_occurred or (
-            metadata.get("rollback_occurred") is True
-            or metadata.get("final_state") == "restored"
-        )
-        mutation_occurred = mutation_occurred or mutation
-        persisted_mutation = persisted_mutation or metadata_is_persisted_mutation(metadata)
-    return ArtifactEvidence(
-        affected_files=tuple(files),
-        mutated_files=tuple(mutated_files),
-        validation_status=validation_status,
-        mutation_occurred=mutation_occurred,
-        rollback_occurred=rollback_occurred,
-        persisted_mutation=persisted_mutation,
-    )
 
 
 def _safe_identity(value: Any, limit: int) -> str:
@@ -201,6 +151,8 @@ class ObservationEvidence:
     chars: int | None
     source_complete: bool | None
     source_truncated: bool
+    provenance: EvidenceProvenance
+    provenance_explicit: bool = False
 
     @property
     def complete(self) -> bool:
@@ -211,15 +163,20 @@ class ObservationEvidence:
         return self.source_truncated
 
     def base_record(self) -> dict[str, Any]:
+        observation: dict[str, Any] = {
+            "present": self.present,
+            "type": self.value_type,
+            "complete": self.complete,
+            "truncated": self.truncated,
+        }
+        if self.present and (
+            self.provenance_explicit or self.provenance is not EvidenceProvenance.UNKNOWN
+        ):
+            observation["provenance"] = self.provenance.value
         record: dict[str, Any] = {
             "tool": self.tool,
             "status": self.status,
-            "observation": {
-                "present": self.present,
-                "type": self.value_type,
-                "complete": self.complete,
-                "truncated": self.truncated,
-            },
+            "observation": observation,
         }
         for key, value in (
             ("invocation_id", self.invocation_id),
@@ -242,6 +199,7 @@ def project_tool_observation(entry: Mapping[str, Any]) -> ObservationEvidence:
     present = result_has_data(result)
     value = result.get("data") if present else None
     source_complete, source_truncated = canonical_completeness(result)
+    provenance = canonical_evidence_provenance(result)
     status = result_status(result)
     error_code = result_error_code(result)
     invocation = entry.get("invocation_id") or result.get("invocation_id")
@@ -258,6 +216,8 @@ def project_tool_observation(entry: Mapping[str, Any]) -> ObservationEvidence:
         chars=len(value) if isinstance(value, str) else None,
         source_complete=source_complete if present else None,
         source_truncated=source_truncated if present else False,
+        provenance=provenance,
+        provenance_explicit=has_explicit_evidence_provenance(result),
     )
 
 
@@ -281,7 +241,8 @@ def observation_contract_instructions() -> str:
 
 __all__ = [
     "ArtifactEvidence", "MAX_INVOCATION_ARGS_CHARS", "MAX_OBSERVATION_EVIDENCE_CHARS",
-    "MAX_OBSERVATION_RECORD_CHARS", "ObservationEvidence", "PUBLIC_TOOL_ERROR_CODES",
+    "MAX_OBSERVATION_RECORD_CHARS", "ObservationEvidence", "EvidenceProvenance",
+    "PUBLIC_TOOL_ERROR_CODES",
     "PUBLIC_TOOL_STATUSES", "artifact_metadata", "metadata_is_persisted_mutation",
     "observation_contract_instructions", "project_executed_invocation", "project_tool_observation",
     "project_artifact_evidence", "result_error_code", "result_executed", "result_has_data",

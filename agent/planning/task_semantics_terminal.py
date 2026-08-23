@@ -11,7 +11,7 @@ from agent.planning.task_semantics_evidence import (
     _READ_TOOLS,
     arg_path,
     compare_args_match,
-    complete_observation,
+    exact_source_observation,
     matches_fallback,
     matches_requirement,
     same_identity,
@@ -144,7 +144,7 @@ def _compare_evidence_set_proves(
         return True
     covered: set[int] = set()
     for tool, result, args in map(_observation_parts, observations):
-        if tool not in _READ_TOOLS or not complete_observation(result):
+        if tool not in _READ_TOOLS or not exact_source_observation(result):
             return False
         for index, operand in enumerate(obligation.operands):
             if same_identity(operand, arg_path(args)):

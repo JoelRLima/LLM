@@ -42,6 +42,7 @@ class CompletionReview:
     pending_obligations: tuple[TaskObligation, ...] = ()
     blocked_obligations: tuple[TaskObligation, ...] = ()
     prohibited_effects: tuple[str, ...] = ()
+    unrequested_effects: tuple[str, ...] = ()
     unrecovered_failure: bool = False
 
 
@@ -117,6 +118,9 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
     prohibited = tuple(
         getattr(state, "prohibited_effects_occurred", lambda: ())()
     )
+    unrequested = tuple(
+        getattr(state, "unrequested_effects", lambda: ())()
+    )
     hard_failure = terminal_failure(
         orchestrator,
         include_invocation_history=True,
@@ -130,6 +134,7 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         pending_obligations,
         blocked_obligations,
         prohibited,
+        unrequested,
         hard_failure,
     )
     if reason is None:
@@ -145,6 +150,7 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         pending_obligations=pending_obligations,
         blocked_obligations=blocked_obligations,
         prohibited_effects=prohibited,
+        unrequested_effects=unrequested,
         unrecovered_failure=hard_failure or reason == "terminal_failure",
     )
 
@@ -157,12 +163,14 @@ def _completion_block_reason(
     pending_obligations: tuple[TaskObligation, ...],
     blocked_obligations: tuple[TaskObligation, ...],
     prohibited: tuple[str, ...],
+    unrequested: tuple[str, ...],
     hard_failure: bool,
 ) -> str | None:
     checks = (
         ("cancelled", lambda: bool(getattr(orchestrator, "_cancelled", False))),
         ("terminal_failure", lambda: hard_failure),
         ("prohibited_effect_occurred", lambda: bool(prohibited)),
+        ("unrequested_effect_occurred", lambda: bool(unrequested)),
         (
             "existing_terminal",
             lambda: existing is not None and existing != CompletionDisposition.COMPLETE.value,

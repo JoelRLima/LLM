@@ -71,6 +71,12 @@ No lote paralelo, o gateway continua owner do enforcement. O finalizer do
 lógica e só então aplica summarização ou decisão de replan. Completion física
 fora de ordem não altera a semântica sequencial.
 
+O caminho nested de produção não cria um ledger, token de cancelamento ou gate
+de concorrência independente. O contexto filho pode ter identidade de unidade
+de trabalho própria, mas a árvore de ownership, os limites efetivos e o
+resultado operacional continuam ligados à task pai; falhas de uma multitask
+interna não podem desaparecer na projeção externa.
+
 ## Falha, rollback e retomada
 
 Checkpoint v2 revalida o plano no resume e não persiste authority efetiva.

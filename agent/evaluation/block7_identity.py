@@ -29,6 +29,20 @@ DEFAULT_DRY_RUN_EPOCH = "B7-DRY-RUN-V2"
 DEFAULT_REAL_MODEL_EPOCH = "B7-REAL-MODEL-EPOCH-2"
 
 
+def unavailable_observed_identity() -> dict[str, Any]:
+    """Explicitly represent a backend that did not expose response identity."""
+
+    return {
+        "available": False,
+        "provider_model_id": None,
+        "actual_provider_model_id": None,
+        "provider": None,
+        "model": None,
+        "endpoint_identity": None,
+        "source": "unavailable",
+    }
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -221,6 +235,7 @@ def campaign_config(
         "semantic_manifest_hash": semantic_manifest_hash(manifest),
         "model_identity": model_identity,
         "model_config_fingerprint": model_identity["model_config_fingerprint"],
+        "observed_model_identity": unavailable_observed_identity(),
         "repetition_policy": RepetitionPolicy().to_dict(),
         "output_dir": output_label,
         "secret_policy": {
@@ -235,12 +250,31 @@ def campaign_config(
 def resume_compatible(existing: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
     """Require exact semantic and provider identity before resuming."""
 
+    def semantic_candidate(value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        # Documentation is carried for reporting, but it is not part of the
+        # semantic campaign candidate. Preserve the other candidate fields so
+        # tampered compatibility metadata cannot make a resume match.
+        return {
+            key: value.get(key)
+            for key in (
+                "head",
+                "source_fingerprint",
+                "semantic_candidate_fingerprint",
+                "semantic_manifest_hash",
+            )
+            if key in value
+        }
+
     keys = (
         "schema_version", "scenario_set_version", "fixture_identity", "epoch",
-        "candidate", "candidate_identity", "semantic_manifest_hash", "model_identity",
-        "model_config_fingerprint", "repetition_policy",
+        "candidate_identity", "semantic_manifest_hash", "model_identity",
+        "model_config_fingerprint", "repetition_policy", "observed_model_identity",
     )
-    return all(existing.get(key) == current.get(key) for key in keys)
+    return semantic_candidate(existing.get("candidate")) == semantic_candidate(current.get("candidate")) and all(
+        existing.get(key) == current.get(key) for key in keys
+    )
 
 
 __all__ = [
@@ -250,4 +284,5 @@ __all__ = [
     "fixture_identity", "model_config_identity", "normalize_endpoint_identity",
     "planned_model_profile", "resume_compatible", "semantic_candidate_fingerprint",
     "semantic_candidate_manifest", "semantic_manifest_hash", "source_fingerprint",
+    "unavailable_observed_identity",
 ]

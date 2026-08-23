@@ -20,7 +20,7 @@ from agent.code.change_models import (
     content_hash,
 )
 from agent.code.change_parsing import apply_text_edits
-from agent.code.path_safety import resolve_workspace_path
+from agent.code.path_safety import resolve_workspace_path, workspace_relative_path
 
 
 class ChangeSetTransaction:
@@ -82,7 +82,7 @@ class ChangeSetTransaction:
             raise ChangeConflictError(f"Destino já existe: {change.destination_path}")
         self._paths[change.destination_path] = destination
         self._backups[destination] = None
-        affected.append(change.destination_path)
+        affected.append(workspace_relative_path(self.root, change.destination_path))
 
     def _stage_content(self, change: FileChange, path: Path, before: bytes | None) -> tuple[str, str]:
         before_source = before.decode("utf-8", errors="replace") if before else ""
@@ -123,7 +123,7 @@ class ChangeSetTransaction:
             backup_size += len(before or b"")
             if backup_size > self.max_backup_bytes:
                 raise ChangeSetError("ChangeSet excede o limite de backup transacional.")
-            affected.append(change.path)
+            affected.append(workspace_relative_path(self.root, change.path))
             if change.kind == ChangeKind.MOVE:
                 self._stage_move(change, reserved, affected)
                 mutation_occurred = True

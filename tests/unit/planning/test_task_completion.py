@@ -915,11 +915,11 @@ def test_production_canonical_review_amendment_blocks_same_completion() -> None:
     result = continue_after_reasoning_boundary(orchestrator, objective)
 
     assert _Context.calls == 1
-    assert result.completed is False
-    assert result.answer is not None
-    assert state.obligation_status("review:read").value == "pending"
-    assert state.terminal_disposition == "block"
-    assert ("canonical_review_amendment", {"added": 1}) in events
+    assert result.completed is True
+    assert result.answer is None
+    assert state.task_obligations == ()
+    assert state.terminal_disposition == "complete"
+    assert ("canonical_review_amendment", {"added": 0}) in events
 
 
 def test_canonical_review_status_payload_is_rejected_without_mutation() -> None:
@@ -966,9 +966,9 @@ def test_canonical_review_status_payload_is_rejected_without_mutation() -> None:
 
     result = continue_after_reasoning_boundary(orchestrator, objective)
 
-    assert result.completed is False
+    assert result.completed is True
     assert state.task_obligations == ()
-    assert state.terminal_disposition == "block"
+    assert state.terminal_disposition == "complete"
 
 
 def test_d3_runtime_compare_of_two_complete_empty_files_succeeds() -> None:

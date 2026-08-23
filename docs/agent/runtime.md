@@ -27,6 +27,12 @@ Skills de subprocesso recebem cancelamento cooperativo e possuem seus próprios
 limites. Falha, timeout, cancellation, denial, protocol error e unverified não
 são convertidos em sucesso.
 
+Depois de publicar um resultado terminal, o gateway não aceita uma segunda
+publicação, evento ou record de um worker tardio. Caminhos mutáveis devem
+quiescer antes da publicação ou permanecer sob o owner da invocation; o
+contrato é terminalidade observável e ausência de mutação canônica tardia, não
+preempção universal do worker Python.
+
 ## Stdio 1.0
 
 Cada invocação externa usa um subprocesso e um request com `invocation_id` não
@@ -68,6 +74,10 @@ mantém um guard advisory durante a vida do processo, registra PID e identidade
 de início quando o sistema fornece essa prova e recupera registros stale após
 uma morte anormal. JSON inválido ou identidade indeterminada falha fechado e
 pode exigir intervenção manual.
+
+O commit de observação valida a entrada canônica antes de publicar state e
+history. Colisão ou rejeição deixa essas fontes coerentes; telemetria auxiliar
+não pode promover uma falha de commit a sucesso.
 
 ## Não garantias
 

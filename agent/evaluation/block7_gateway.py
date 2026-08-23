@@ -28,7 +28,10 @@ class ScriptedBlock7Gateway:
         self.calls.append(request)
         system = str(request.messages[0].content) if request.messages else ""
         prompt = str(request.messages[-1].content) if request.messages else ""
-        return ModelResponse(content=self._response(system, prompt))
+        return ModelResponse(
+            content=self._response(system, prompt),
+            provider_metadata={"observed_provider_model_id": self.provider_model_id},
+        )
 
     def stream(self, request: ModelRequest) -> Iterable[StreamEvent]:
         del request

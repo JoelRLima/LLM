@@ -96,6 +96,7 @@ class AgentApplicationScenarioExecutor:
                     "output_chars": int(metadata.get("total_chars", len(output))),
                     "truncated": bool(metadata.get("truncated", False)),
                     "tool_history_count": len(history),
+                    "tool_calls": canonical_metrics["tool_calls"],
                     "model_calls": canonical_metrics["model_calls"],
                     "gateway_calls": len(getattr(gateway, "calls", [])),
                     "run_id": next(
@@ -113,6 +114,11 @@ class AgentApplicationScenarioExecutor:
                     "reported_input_tokens": canonical_metrics.get("reported_input_tokens", 0),
                     "reported_output_tokens": canonical_metrics.get("reported_output_tokens", 0),
                     "total_tokens": canonical_metrics.get("total_tokens"),
+                    "canonical_metrics": {
+                        "tool_calls": canonical_metrics.get("tool_calls", 0),
+                        "model_calls": canonical_metrics.get("model_calls", 0),
+                        "history_records": canonical_metrics.get("history_records", len(history)),
+                    },
                 }
                 raw_profile = getattr(gateway, "profile", {})
                 profile = raw_profile if isinstance(raw_profile, dict) else {}
@@ -147,8 +153,32 @@ class AgentApplicationScenarioExecutor:
                     raw_gateway_evidence = export_evidence()
                     if isinstance(raw_gateway_evidence, dict):
                         gateway_evidence = raw_gateway_evidence
+                declared_provider_identity = dict(measurement["provider_identity"])
+                observed_provider_identity = gateway_evidence.get("observed_provider_identity")
+                if not isinstance(observed_provider_identity, dict):
+                    observed_provider_identity = {
+                        "available": False,
+                        "provider_model_id": None,
+                        "actual_provider_model_id": None,
+                        "model": None,
+                        "provider": None,
+                        "endpoint_identity": declared_provider_identity.get("endpoint_identity"),
+                        "source": "unavailable",
+                    }
+                measurement["declared_provider_identity"] = declared_provider_identity
+                measurement["observed_provider_identity"] = dict(observed_provider_identity)
+                measurement["provider_identity"] = {
+                    "declared": declared_provider_identity,
+                    "observed": dict(observed_provider_identity),
+                }
                 gateway_evidence.update(
                     {
+                        "declared_provider_identity": declared_provider_identity,
+                        "observed_provider_identity": dict(observed_provider_identity),
+                        "provider_identity": {
+                            "declared": declared_provider_identity,
+                            "observed": dict(observed_provider_identity),
+                        },
                         "canonical_plan": list(application.orchestrator.agent_state.plan),
                         "invocation_evidence": list(history),
                         "route_events": [

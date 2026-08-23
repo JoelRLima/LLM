@@ -65,6 +65,9 @@ def build_code_task_template(
         raise ValueError("analyze_then_modify exige objective.")
 
     analysis_nodes = _read_nodes(normalized, "analyze")
+    change_capabilities = frozenset({"read", "write", "validate"})
+    if include_tests:
+        change_capabilities |= frozenset({"process"})
     change_node = TaskNode(
         node_id="modify_after_analysis",
         objective=objective,
@@ -74,7 +77,7 @@ def build_code_task_template(
             TaskResource("model", ResourceMode.WRITE),
             *(TaskResource(target, ResourceMode.WRITE) for target in normalized),
         ),
-        capabilities=frozenset({"read", "write", "process"}),
+        capabilities=change_capabilities,
         metadata={
             "action": "modify",
             "targets": list(normalized),

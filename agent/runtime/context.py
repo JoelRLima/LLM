@@ -112,12 +112,29 @@ class TaskExecutionContext:
         object.__setattr__(self, "model_call_budget", ledger)
 
     def child(self, node_id: str, permissions: Optional[frozenset[str]] = None) -> "TaskExecutionContext":
+        requested = self.permissions if permissions is None else frozenset(permissions)
+        if not requested.issubset(self.permissions):
+            missing = ", ".join(sorted(requested - self.permissions))
+            raise PermissionError(
+                f"Child context requests capabilities outside its parent authority: {missing}"
+            )
         return replace(
             self,
             task_id=uuid4().hex,
             parent_task_id=self.task_id,
             node_id=node_id,
-            permissions=self.permissions if permissions is None else permissions,
+            permissions=requested,
+            metadata=dict(self.metadata),
+        )
+
+    def new_task(self) -> "TaskExecutionContext":
+        """Start a new task identity while preserving runtime ownership."""
+
+        return replace(
+            self,
+            task_id=uuid4().hex,
+            parent_task_id=None,
+            node_id=None,
             metadata=dict(self.metadata),
         )
 

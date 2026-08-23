@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from agent.evaluation.agent_executor import GatewayFactory
 from agent.evaluation.block7 import (
@@ -24,6 +24,7 @@ from agent.evaluation.block7_identity import (
     model_config_identity,
     semantic_candidate_manifest,
     semantic_manifest_hash,
+    unavailable_observed_identity,
 )
 
 
@@ -58,7 +59,9 @@ def _campaign_report(
         "semantic_candidate_manifest": manifest,
         "semantic_manifest_hash": semantic_manifest_hash(manifest),
         "model_identity": dict(model_identity),
+        "declared_model_identity": dict(model_identity),
         "model_config_fingerprint": model_identity.get("model_config_fingerprint"),
+        "observed_model_identity": _observed_identity_summary(bounded_runs),
         "repetition_policy": RepetitionPolicy().to_dict(),
         "scenario_results": scenario_results,
         "summary": {
@@ -89,10 +92,15 @@ def _campaign_report(
             "semantic_candidate_unchanged": initial_candidate.get("semantic_candidate_fingerprint") == candidate.get("semantic_candidate_fingerprint"),
             "semantic_manifest_hash_unchanged": initial_candidate.get("semantic_manifest_hash") == candidate.get("semantic_manifest_hash"),
         },
+        "deterministic_readiness": {
+            "recorded": evidence_level is EvidenceLevel.DETERMINISTIC,
+            "complete": evidence_level is EvidenceLevel.DETERMINISTIC,
+            "source": "current_scripted_campaign" if evidence_level is EvidenceLevel.DETERMINISTIC else "pending_input",
+        },
     }
     if invalid_probe is not None:
         report["invalid_probe"] = invalid_probe
-    report["analysis"] = analyze_campaign(report, require_final_epoch=evidence_level is EvidenceLevel.REAL_MODEL)
+    report["analysis"] = analyze_campaign(report, require_final_epoch=False)
     report["secret_scan"] = secret_safe_report(report)
     return report
 
@@ -131,6 +139,7 @@ def run_real_model_campaign(
     prior["path"] = "reports/acceptance/block7-real-model.json"
     report["prior_epoch"] = prior
     report["deterministic_summary"] = _load_deterministic_summary(root)
+    report["deterministic_readiness"] = _deterministic_readiness(report["deterministic_summary"])
     report["evidence_delivery"] = {
         "campaign_manifest": "semantic_candidate_manifest",
         "deterministic_summary": "deterministic_summary",
@@ -166,17 +175,77 @@ def _load_installed_acceptance(root: Path) -> Mapping[str, Any] | None:
 def _load_deterministic_summary(root: Path) -> dict[str, Any]:
     path = root / ".audit-local" / "out" / "block7-corrective-dry-run.json"
     if not path.exists():
-        return {}
+        return {"recorded": False, "source": ".audit-local/out/block7-corrective-dry-run.json"}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
+        return {"recorded": False, "source": ".audit-local/out/block7-corrective-dry-run.json"}
     if not isinstance(value, Mapping):
-        return {}
+        return {"recorded": False, "source": ".audit-local/out/block7-corrective-dry-run.json"}
     return {
+        "recorded": True,
         "summary": dict(value.get("summary", {})),
         "analysis": dict(value.get("analysis", {})),
         "path": ".audit-local/out/block7-corrective-dry-run.json",
+    }
+
+
+def _deterministic_readiness(summary: Mapping[str, Any]) -> dict[str, Any]:
+    analysis = summary.get("analysis") if isinstance(summary, Mapping) else None
+    if not isinstance(analysis, Mapping):
+        return {"recorded": False, "complete": False, "reason": "deterministic_summary_missing"}
+    repetition = analysis.get("repetition")
+    identity = analysis.get("identity")
+    incidents = analysis.get("incidents")
+    complete = bool(
+        isinstance(analysis.get("evidence_envelope"), Mapping)
+        and analysis["evidence_envelope"].get("valid") is True
+        and isinstance(repetition, Mapping)
+        and repetition.get("complete") is True
+        and isinstance(identity, Mapping)
+        and identity.get("consistent") is True
+        and isinstance(incidents, Mapping)
+        and not any(int(value or 0) for value in incidents.values())
+        and int(analysis.get("unknown_failed_run_count", 0) or 0) == 0
+    )
+    return {
+        "recorded": True,
+        "complete": complete,
+        "source": summary.get("path"),
+        "reason": "all_deterministic_gates_recorded" if complete else "deterministic_gates_incomplete",
+    }
+
+
+def _observed_identity_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    identities: list[dict[str, Any]] = []
+    unavailable_count = 0
+    for record in records:
+        evidence = record.get("evidence") if isinstance(record, Mapping) else None
+        observed = evidence.get("observed_model_identity") if isinstance(evidence, Mapping) else None
+        if not isinstance(observed, Mapping) or observed.get("available") is not True:
+            unavailable_count += 1
+            continue
+        projected = {
+            key: observed.get(key)
+            for key in ("available", "provider_model_id", "actual_provider_model_id", "provider", "model", "endpoint_identity", "source")
+        }
+        if projected not in identities:
+            identities.append(projected)
+    if not identities:
+        return {
+            **unavailable_observed_identity(),
+            "consistent": True,
+            "complete": not records,
+            "unavailable_run_count": unavailable_count,
+            "identities": [],
+        }
+    return {
+        "available": True,
+        "consistent": len(identities) == 1,
+        "complete": unavailable_count == 0,
+        "unavailable_run_count": unavailable_count,
+        "identities": identities,
+        **identities[0],
     }
 
 

@@ -32,6 +32,23 @@ Comandos:
 git diff --check
 ```
 
+Para a prova arquitetural PRE-B7, acrescente os gates focados R1–R8, a matriz
+cross-root e a preparação determinística do Block 7:
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q tests\unit\test_phase6_cross_root_matrix.py
+.venv\Scripts\python.exe -m pytest -q tests\unit\evaluation\test_r8_release_alignment.py tests\unit\evaluation\test_block7_corrective.py
+.venv\Scripts\python.exe scripts\verify_installed_package.py --summary-json .audit-local\installed-acceptance.json
+.venv\Scripts\python.exe scripts\run_block7.py --phase dry-run --output .audit-local\out\block7-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\run_block7.py --phase 4 --output .audit-local\out\block7-phase4.json
+.venv\Scripts\python.exe scripts\run_block7.py --phase corrective-ready --output .audit-local\out\block7-corrective-ready.json
+```
+
+O caminho scripted não chama modelo vivo. Ele deve registrar H1–H12, validar o
+envelope antes do veredicto e terminar em
+`BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`; `INCONCLUSIVE` com
+`REAL_MODEL_EPOCH_REQUIRED` é esperado nessa etapa.
+
 Para desenvolvimento sem baixar ferramentas de build, acrescente
 `--no-build-isolation`. `--offline-diagnostic` reutiliza packages do ambiente e
 instala o wheel sem dependências; é deliberadamente mais fraco e não substitui

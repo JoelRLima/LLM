@@ -32,6 +32,18 @@ class ObligationStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class AdmissionSource(str, Enum):
+    """Trusted origin of a durable task obligation."""
+
+    OBJECTIVE_DERIVED = "OBJECTIVE_DERIVED"
+    CANONICAL_EVIDENCE_DERIVED = "CANONICAL_EVIDENCE_DERIVED"
+    SAFETY_REQUIRED = "SAFETY_REQUIRED"
+    EXTERNALLY_AUTHORIZED = "EXTERNALLY_AUTHORIZED"
+
+
+ObligationAdmissionSource = AdmissionSource
+
+
 def _normalize_text(text: str) -> str:
     folded = unicodedata.normalize("NFKD", text.casefold())
     return "".join(char for char in folded if not unicodedata.combining(char))
@@ -117,6 +129,17 @@ def _normalize_query_source(value: Any) -> str | None:
     return "previous_read"
 
 
+def _normalize_admission_source(value: Any) -> AdmissionSource:
+    if isinstance(value, AdmissionSource):
+        return value
+    if not isinstance(value, str):
+        raise TaskSemanticsError("origem de admissao da obrigacao invalida")
+    try:
+        return AdmissionSource(value.strip().upper())
+    except ValueError as exc:
+        raise TaskSemanticsError("origem de admissao da obrigacao invalida") from exc
+
+
 def _eligible_evidence_ref(value: Any) -> int | str:
     if isinstance(value, bool):
         raise TaskSemanticsError("referencia de evidencia invalida")
@@ -174,6 +197,9 @@ class TaskObligation:
     operands: tuple[str, ...] = ()
     fallback_target: str | None = None
     query_source: str | None = None
+    admission_source: AdmissionSource = AdmissionSource.OBJECTIVE_DERIVED
+    admission_evidence_ref: int | str | None = None
+    admission_authorization: str | None = None
 
     def __post_init__(self) -> None:
         normalized_id = _normalize_id(self.id)
@@ -199,86 +225,31 @@ class TaskObligation:
             _normalize_optional_identity(self.fallback_target, "fallback_target"),
         )
         object.__setattr__(self, "query_source", _normalize_query_source(self.query_source))
+        from agent.planning.task_semantics_obligation import normalize_admission_fields
+
+        admission_source, admission_evidence_ref, admission_authorization = normalize_admission_fields(
+            self.admission_source,
+            self.admission_evidence_ref,
+            self.admission_authorization,
+        )
+        object.__setattr__(self, "admission_source", admission_source)
+        object.__setattr__(self, "admission_evidence_ref", admission_evidence_ref)
+        object.__setattr__(self, "admission_authorization", admission_authorization)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "kind": self.kind,
-            "description": self.description,
-            **({"effect": self.effect} if self.effect is not None else {}),
-            **({"condition": self.condition} if self.condition is not None else {}),
-            **({"target": self.target} if self.target is not None else {}),
-            **({"query": self.query} if self.query is not None else {}),
-            **({"operands": list(self.operands)} if self.operands else {}),
-            **({"fallback_target": self.fallback_target} if self.fallback_target is not None else {}),
-            **({"query_source": self.query_source} if self.query_source is not None else {}),
-        }
+        from agent.planning.task_semantics_obligation import obligation_to_dict
 
-
-def _validate_effect_obligation(item: TaskObligation) -> None:
-    if any(value for value in (item.target, item.query, item.operands, item.fallback_target, item.query_source)):
-        raise TaskSemanticsError("obrigacao de efeito contem identidade invalida")
-
-
-def _validate_read_obligation(item: TaskObligation) -> None:
-    if item.target is None or any(
-        value for value in (item.query, item.operands, item.fallback_target, item.query_source)
-    ):
-        raise TaskSemanticsError("obrigacao read requer target exclusivo")
-
-
-def _validate_search_obligation(item: TaskObligation) -> None:
-    if (item.query is None) == (item.query_source is None):
-        raise TaskSemanticsError("obrigacao search requer query ou query_source exclusivo")
-    if item.operands or item.fallback_target is not None:
-        raise TaskSemanticsError("obrigacao search contem identidade invalida")
-
-
-def _validate_compare_obligation(item: TaskObligation) -> None:
-    if len(item.operands) != 2 or any(
-        value is not None for value in (item.target, item.query, item.fallback_target, item.query_source)
-    ):
-        raise TaskSemanticsError("obrigacao compare requer exatamente dois operands")
-
-
-def _validate_analyze_obligation(item: TaskObligation) -> None:
-    if item.target is None and item.query is None:
-        raise TaskSemanticsError("obrigacao analyze requer target ou query")
-    if item.operands or item.fallback_target is not None or item.query_source is not None:
-        raise TaskSemanticsError("obrigacao analyze contem identidade invalida")
-
-
-def _validate_fallback_obligation(item: TaskObligation) -> None:
-    if (
-        item.fallback_target is None
-        or item.target is not None
-        or item.query is not None
-        or item.operands
-        or item.query_source is not None
-    ):
-        raise TaskSemanticsError("obrigacao fallback requer fallback_target exclusivo")
+        return obligation_to_dict(self)
 
 
 def validate_closed_obligation(item: TaskObligation) -> None:
-    """Reject forms for which this runtime has no bounded transition."""
+    from agent.planning.task_semantics_obligation import validate_closed_obligation as validate
 
-    if not isinstance(item, TaskObligation):
-        raise TaskSemanticsError("obrigacao invalida")
-    validators = {
-        "effect": _validate_effect_obligation,
-        "read": _validate_read_obligation,
-        "search": _validate_search_obligation,
-        "compare": _validate_compare_obligation,
-        "analyze": _validate_analyze_obligation,
-        "fallback": _validate_fallback_obligation,
-    }
-    validator = validators.get(item.kind)
-    if validator is None:
-        raise TaskSemanticsError("kind da obrigacao nao suportado")
-    validator(item)
+    validate(item)
 
 
 __all__ = (
+    "AdmissionSource",
     "EffectSemantics",
     "MAX_OBLIGATIONS",
     "MAX_OBLIGATION_TEXT",
@@ -287,6 +258,7 @@ __all__ = (
     "MAX_REVIEW_OBLIGATIONS",
     "OBLIGATION_KINDS",
     "ObligationStatus",
+    "ObligationAdmissionSource",
     "TaskIntent",
     "TaskObligation",
     "TaskSemanticsError",

@@ -109,6 +109,11 @@ class OperationalOutcome:
     evidence_invocation_ids: tuple[str, ...]
     failed_invocation_ids: tuple[str, ...] = ()
     failed_invocation_statuses: tuple[str, ...] = ()
+    unexpected_effects: tuple[str, ...] = ()
+    recovered_invocation_ids: tuple[str, ...] = ()
+    recovered_local_failure: bool = False
+    unrecovered_failure: bool = False
+    fallback_resolved: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +131,11 @@ class OperationalOutcome:
             "evidence_invocation_ids": list(self.evidence_invocation_ids),
             "failed_invocation_ids": list(self.failed_invocation_ids),
             "failed_invocation_statuses": list(self.failed_invocation_statuses),
+            "unexpected_effects": list(self.unexpected_effects),
+            "recovered_invocation_ids": list(self.recovered_invocation_ids),
+            "recovered_local_failure": self.recovered_local_failure,
+            "unrecovered_failure": self.unrecovered_failure,
+            "fallback_resolved": self.fallback_resolved,
         }
 
     def debug_projection(self) -> dict[str, Any]:
@@ -142,6 +152,11 @@ class OperationalOutcome:
             "rollback_occurred": self.rollback_occurred,
             "failed_invocation_ids": list(self.failed_invocation_ids),
             "failed_invocation_statuses": list(self.failed_invocation_statuses),
+            "unexpected_effects": list(self.unexpected_effects),
+            "recovered_invocation_ids": list(self.recovered_invocation_ids),
+            "recovered_local_failure": self.recovered_local_failure,
+            "unrecovered_failure": self.unrecovered_failure,
+            "fallback_resolved": self.fallback_resolved,
         }
 
 
@@ -156,6 +171,9 @@ def project_operational_outcome(
     evidence: list[str] = []
     failed_invocations: list[str] = []
     failed_invocation_statuses: list[str] = []
+    recovered_invocations: list[str] = []
+    unrecovered_invocations: list[str] = []
+    unrecovered_hard_invocations: list[str] = []
     validation_status: str | None = None
     rollback_occurred = False
     mutation_occurred = False
@@ -168,10 +186,17 @@ def project_operational_outcome(
         invocation_id = entry.get("invocation_id") or result.get("invocation_id")
         if invocation_id is not None:
             evidence.append(str(invocation_id))
-        if classify_failure(result) in {FailureClass.LOCAL, FailureClass.HARD}:
+        failure_class = classify_failure(result)
+        if failure_class in {FailureClass.LOCAL, FailureClass.HARD}:
             failure_ref = str(invocation_id) if invocation_id is not None else f"history:{history_index}"
             failed_invocations.append(failure_ref)
             failed_invocation_statuses.append(str(result.get("status") or "failed"))
+            if callable(getattr(state, "_later_recovery", None)) and state._later_recovery(history_index - 1, entry):
+                recovered_invocations.append(failure_ref)
+            else:
+                unrecovered_invocations.append(failure_ref)
+                if failure_class is FailureClass.HARD:
+                    unrecovered_hard_invocations.append(failure_ref)
         artifact = project_artifact_evidence(result)
         files.update(artifact.mutated_files)
         validation_status = artifact.validation_status or validation_status
@@ -195,6 +220,19 @@ def project_operational_outcome(
     pending_value = getattr(state, "pending_effects", ())
     if callable(pending_value):
         pending_value = pending_value()
+    recovered_local_failure = bool(recovered_invocations)
+    failure_permitted = local_failure_permitted(state)
+    unrecovered_failure = bool(unrecovered_hard_invocations) or (
+        bool(unrecovered_invocations)
+        and not (normalized_status == "succeeded" and failure_permitted)
+    ) or (
+        normalized_status != "succeeded" and bool(failed_invocations)
+    )
+    fallback_resolved = normalized_status == "succeeded" and (
+        recovered_local_failure
+        or bool(getattr(state, "waived_effects", ()) or ())
+        or failure_permitted
+    )
     return OperationalOutcome(
         terminal_status=normalized_status,
         requested_effects=tuple(getattr(state, "requested_effects", ()) or ()),
@@ -210,6 +248,13 @@ def project_operational_outcome(
         evidence_invocation_ids=tuple(dict.fromkeys(evidence)),
         failed_invocation_ids=tuple(dict.fromkeys(failed_invocations)),
         failed_invocation_statuses=tuple(failed_invocation_statuses),
+        unexpected_effects=tuple(
+            getattr(state, "unrequested_effects", lambda: ())() or ()
+        ),
+        recovered_invocation_ids=tuple(dict.fromkeys(recovered_invocations)),
+        recovered_local_failure=recovered_local_failure,
+        unrecovered_failure=unrecovered_failure,
+        fallback_resolved=fallback_resolved,
     )
 
 

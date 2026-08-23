@@ -29,6 +29,14 @@ def apply_changes(
     try:
         transaction.commit()
     except ChangeSetError as exc:
+        rolled_back = transaction.change_set.state.value == "rolled_back"
+        artifact = _artifact(
+            preview,
+            assessment,
+            applied=rolled_back,
+            rollback_occurred=rolled_back,
+            final_state="restored" if rolled_back else "unknown",
+        )
         return TaskResult(TaskStatus.FAILED, artifacts=(artifact,), error=str(exc))
     validation_invocation_id = str(uuid4())
     report = service.validator.validate(
@@ -82,6 +90,18 @@ def _artifact(
         "mutation_occurred": preview.mutation_occurred,
         "applied": applied,
         "rollback_occurred": rollback_occurred,
+        "persisted_mutation": (
+            applied
+            and preview.mutation_occurred
+            and not rollback_occurred
+            and final_state == "applied"
+        ),
+        "surviving_mutation": (
+            applied
+            and preview.mutation_occurred
+            and not rollback_occurred
+            and final_state == "applied"
+        ),
     }
     if final_state is not None:
         metadata["final_state"] = final_state

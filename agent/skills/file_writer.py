@@ -158,10 +158,11 @@ class FileWriterSkill(BaseSkill):
             operation_error = apply_edit(str(args.get("action", "write")), workspace, args, self._ast_patch)
             if operation_error is not None:
                 return operation_error
+            workspace_file_path = requested.relative_to(self.base_dir).as_posix()
             return review_and_commit(
                 requested,
                 workspace,
-                str(file_path),
+                workspace_file_path,
                 self.approval_policy,
                 self._invalidate_cache,
             )

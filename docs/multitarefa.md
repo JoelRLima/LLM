@@ -156,6 +156,11 @@ concedidas pelo contexto pai. O executor de código também verifica que a actio
 declarou todas as capacidades necessárias; um nó não pode ganhar permissões por
 omissão ou por metadata.
 
+O modo de recurso é derivado junto com a intenção de efeito: `read` não pode
+ser usado para mascarar uma escrita e dois footprints sobrepostos não podem
+ganhar concorrência por uma declaração enganosa. A validação de footprint e a
+observação canônica continuam sendo feitas no owner da execução.
+
 ## Checkpoint
 
 `TaskGraphState.to_checkpoint_dict()` persiste grafo, estados e erros no schema

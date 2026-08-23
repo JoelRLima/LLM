@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Mapping
 
 from agent.planning.task_semantics_types import (
+    AdmissionSource,
     ObligationStatus,
     TaskIntent,
     TaskObligation,
@@ -55,6 +58,7 @@ def to_checkpoint_dict(owner: Any) -> dict[str, Any]:
         "executed_effects": list(owner.executed_effects()),
         "waived_effects": list(owner.waived_effects()),
         "obligations": [item.to_dict() for item in owner._obligations],
+        "admission_integrity": _admission_integrity(owner),
         "statuses": statuses,
         "evidence": evidence,
     }
@@ -69,6 +73,7 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
         raise TaskSemanticsError("checkpoint de task semantics sem versao inequívoca")
     if not isinstance(objective, str) or not isinstance(raw_obligations, list):
         raise TaskSemanticsError("checkpoint sem contrato semantico valido")
+    _validate_admission_integrity(raw_obligations, data.get("admission_integrity"))
     definitions = [_obligation_from_checkpoint(raw) for raw in raw_obligations]
     requested = tuple(dict.fromkeys(_normalize_effect(item) for item in (data.get("requested_effects") or [])))
     prohibited = tuple(dict.fromkeys(_normalize_effect(item) for item in (data.get("prohibited_effects") or [])))
@@ -121,9 +126,67 @@ def _obligation_from_checkpoint(raw: Any) -> TaskObligation:
         operands=raw.get("operands", ()),
         fallback_target=raw.get("fallback_target"),
         query_source=raw.get("query_source"),
+        admission_source=raw.get("admission_source", AdmissionSource.OBJECTIVE_DERIVED),
+        admission_evidence_ref=raw.get("admission_evidence_ref"),
+        admission_authorization=raw.get("admission_authorization"),
     )
     validate_closed_obligation(obligation)
     return obligation
+
+
+def _admission_integrity(owner: Any) -> dict[str, str]:
+    return {
+        item.id: _admission_digest(item.to_dict())
+        for item in owner._obligations
+    }
+
+
+def _admission_digest(payload: Mapping[str, Any]) -> str:
+    material = json.dumps(
+        {
+            "id": payload.get("id"),
+            "kind": payload.get("kind"),
+            "target": payload.get("target"),
+            "query": payload.get("query"),
+            "operands": payload.get("operands"),
+            "fallback_target": payload.get("fallback_target"),
+            "query_source": payload.get("query_source"),
+            "effect": payload.get("effect"),
+            "admission_source": payload.get("admission_source"),
+            "admission_evidence_ref": payload.get("admission_evidence_ref"),
+            "admission_authorization": payload.get("admission_authorization"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _validate_admission_integrity(raw_obligations: list[Any], raw_integrity: Any) -> None:
+    # Checkpoints written before R7 have no integrity map; their closed
+    # obligation fields remain supported.  New checkpoints carry the map, and
+    # any changed source/reference/authorization fails closed.
+    if raw_integrity is None:
+        for raw in raw_obligations:
+            if not isinstance(raw, Mapping):
+                continue
+            source = raw.get("admission_source")
+            if source is not None and source != AdmissionSource.OBJECTIVE_DERIVED.value:
+                raise TaskSemanticsError("checkpoint sem integridade de admissao confiavel")
+        return
+    if not isinstance(raw_integrity, Mapping):
+        raise TaskSemanticsError("integridade de admissao do checkpoint invalida")
+    expected: dict[str, str] = {}
+    for raw in raw_obligations:
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("id"), str):
+            raise TaskSemanticsError("checkpoint contem obrigacao incompleta")
+        digest = raw_integrity.get(raw["id"])
+        if not isinstance(digest, str) or digest != _admission_digest(raw):
+            raise TaskSemanticsError("proveniencia de admissao do checkpoint nao confere")
+        expected[raw["id"]] = digest
+    if set(raw_integrity) != set(expected):
+        raise TaskSemanticsError("integridade de admissao do checkpoint incompleta")
 
 
 __all__ = ["TASK_SEMANTICS_SCHEMA_VERSION", "snapshot", "to_checkpoint_dict", "restore_from_checkpoint"]

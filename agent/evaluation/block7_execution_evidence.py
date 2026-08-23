@@ -6,28 +6,57 @@ from typing import Any, Mapping
 
 from agent.evaluation.block7_execution_attribution import evidence_mapping
 
+_FAILURE_STATUSES = frozenset(
+    {"failed", "blocked", "cancelled", "timed_out", "permission_denied", "protocol_error", "unavailable", "unverified"}
+)
 
-def identity_drift(expected: Mapping[str, Any], observed: Mapping[str, Any] | None) -> bool:
-    if not isinstance(observed, Mapping):
-        return True
+
+def _normalized_observed_identity(observed: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    if isinstance(observed, Mapping) and isinstance(observed.get("observed"), Mapping):
+        observed = observed["observed"]
+    return observed if isinstance(observed, Mapping) else None
+
+
+def _scalar_identity_drift(expected: Mapping[str, Any], observed: Mapping[str, Any]) -> bool:
     for key in ("provider", "model"):
-        if str(observed.get(key, "")) != str(expected.get(key, expected.get("configured_model_id", ""))):
+        observed_value = observed.get(key)
+        if key == "model":
+            observed_value = observed_value or observed.get("provider_model_id") or observed.get("actual_provider_model_id")
+        if observed_value in (None, ""):
+            continue
+        expected_value = expected.get(key, expected.get("configured_model_id", ""))
+        if str(observed_value) != str(expected_value):
             return True
     expected_endpoint = expected.get("endpoint_identity")
     observed_endpoint = observed.get("endpoint_identity")
     if expected_endpoint and observed_endpoint and str(expected_endpoint) != str(observed_endpoint):
         return True
     expected_actual = expected.get("actual_provider_model_id")
-    observed_actual = observed.get("actual_provider_model_id")
-    if expected_actual is not None and str(expected_actual) != str(observed_actual):
-        return True
+    observed_actual = observed.get("actual_provider_model_id") or observed.get("provider_model_id")
+    return expected_actual is not None and str(expected_actual) != str(observed_actual)
+
+
+def _capability_identity_drift(expected: Mapping[str, Any], observed: Mapping[str, Any]) -> bool:
     expected_caps = expected.get("capabilities")
     observed_caps = observed.get("capabilities")
-    if isinstance(expected_caps, Mapping) and isinstance(observed_caps, Mapping):
-        return any(
-            key in expected_caps and bool(expected_caps[key]) != bool(observed_caps.get(key))
-            for key in ("streaming", "reasoning", "token_counting", "tool_calls")
-        )
+    if not isinstance(expected_caps, Mapping) or not isinstance(observed_caps, Mapping):
+        return False
+    return any(
+        key in expected_caps and bool(expected_caps[key]) != bool(observed_caps.get(key))
+        for key in ("streaming", "reasoning", "token_counting", "tool_calls")
+    )
+
+
+def identity_drift(expected: Mapping[str, Any], observed: Mapping[str, Any] | None) -> bool:
+    normalized = _normalized_observed_identity(observed)
+    if normalized is None:
+        return expected.get("actual_provider_model_id") is not None
+    if normalized.get("available") is False:
+        return expected.get("actual_provider_model_id") is not None
+    if _scalar_identity_drift(expected, normalized):
+        return True
+    if _capability_identity_drift(expected, normalized):
+        return True
     return False
 
 
@@ -71,6 +100,59 @@ def h2_reporting(report: Any, oracle_evidence: Mapping[str, Any]) -> dict[str, A
     }
 
 
+def _operational_outcome(evidence: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    receipt = evidence.get("receipt")
+    operational = receipt.get("operational_outcome") if isinstance(receipt, Mapping) else None
+    if not isinstance(operational, Mapping):
+        operational = evidence.get("operational_outcome")
+    return operational if isinstance(operational, Mapping) else None
+
+
+def _operational_unrecovered(operational: Mapping[str, Any]) -> bool:
+    unrecovered = operational.get("unrecovered_failure")
+    if type(unrecovered) is not bool:
+        recovered = bool(
+            operational.get("recovered_local_failure")
+            or operational.get("fallback_resolved")
+            or operational.get("failure_resolved")
+        )
+        unrecovered = bool(operational.get("pending_effects")) or (
+            bool(operational.get("failed_invocation_ids")) and not recovered
+        )
+    return bool(
+        unrecovered
+        or operational.get("hard_failure") is True
+        or operational.get("pending_effects")
+    )
+
+
+def _history_has_failure(evidence: Mapping[str, Any]) -> bool:
+    history = evidence.get("invocation_evidence", ())
+    return any(
+        isinstance(item, Mapping)
+        and isinstance(item.get("result"), Mapping)
+        and str(item["result"].get("status") or item.get("status") or "") in _FAILURE_STATUSES
+        for item in history
+    )
+
+
+def _public_success_incident(report: Any, evidence: Mapping[str, Any]) -> bool:
+    observation = getattr(report, "observation", None)
+    operational = _operational_outcome(evidence)
+    status = (
+        operational.get("terminal_status")
+        if operational is not None
+        else evidence.get("terminal_status")
+    )
+    if status and status != "succeeded" and bool(getattr(observation, "success", False)):
+        return True
+    if status != "succeeded":
+        return False
+    if operational is not None:
+        return _operational_unrecovered(operational)
+    return _history_has_failure(evidence)
+
+
 def critical_incidents(report: Any, oracle_evidence: Mapping[str, Any]) -> tuple[str, ...]:
     incidents: list[str] = []
     if oracle_evidence.get("forbidden_effect_incident"):
@@ -78,22 +160,9 @@ def critical_incidents(report: Any, oracle_evidence: Mapping[str, Any]) -> tuple
     grounding = oracle_evidence.get("grounding")
     if isinstance(grounding, Mapping) and grounding.get("fabricated_grounding"):
         incidents.append("fabricated_grounding")
-    observation = getattr(report, "observation", None)
-    evidence = getattr(observation, "evidence", {}) if observation is not None else {}
-    status = evidence.get("terminal_status") if isinstance(evidence, Mapping) else None
-    if status and status != "succeeded" and bool(getattr(observation, "success", False)):
+    evidence = evidence_mapping(report)
+    if _public_success_incident(report, evidence):
         incidents.append("false_public_success")
-    if status == "succeeded" and isinstance(evidence, Mapping):
-        history = evidence.get("invocation_evidence", ())
-        failed = any(
-            isinstance(item, Mapping)
-            and isinstance(item.get("result"), Mapping)
-            and str(item["result"].get("status") or item.get("status") or "")
-            in {"failed", "blocked", "unverified", "timed_out"}
-            for item in history
-        )
-        if failed:
-            incidents.append("false_public_success")
     return tuple(dict.fromkeys(incidents))
 
 

@@ -18,14 +18,29 @@ _NEGATION_WORDS = frozenset({"nao", "sem", "never", "nunca", "without"})
 _DIRECT_TEXT_WORDS = frozenset({"exatamente", "exactly"})
 _EFFECT_TERMS = {
     "adicione": "write", "adicionar": "write", "ajuste": "write", "ajustar": "write",
-    "alterar": "write", "altere": "write", "change": "write", "corrija": "write",
+    "alterar": "write", "altere": "write", "alteracao": "write", "aplicar": "write",
+    "aplique": "write", "aplicacao": "write", "change": "write", "corrija": "write",
     "corrigir": "write", "create": "write", "crie": "write", "criar": "write",
     "delete": "write", "edit": "write", "edite": "write", "editar": "write",
     "escreva": "write", "escrever": "write", "fix": "write", "modifique": "write",
-    "modificar": "write", "modify": "write", "remova": "write", "remover": "write",
+    "modificar": "write", "modificacao": "write", "modify": "write", "mudanca": "write", "remova": "write", "remover": "write",
     "refactor": "write", "replace": "write", "substitua": "write", "substituir": "write",
-    "update": "write", "write": "write",
+    "update": "write", "write": "write", "produza": "write", "produzir": "write",
+    "gere": "write", "gerar": "write", "gera": "write",
 }
+_MEMORY_CONTEXT_WORDS = frozenset({"memoria", "memory"})
+_MEMORY_DIRECT_TERMS = frozenset(
+    {
+        "lembre", "lembrar", "remember", "memorize", "memorise", "memorizar",
+        "esqueca", "esquecer", "forget",
+    }
+)
+_MEMORY_CONTEXT_TERMS = frozenset(
+    {
+        "salve", "salvar", "save", "guardar", "guarde", "store", "armazenar",
+        "remova", "remover", "remove", "delete", "apague", "apagar",
+    }
+)
 _OBLIGATION_TERMS = {
     "leia": "read", "ler": "read", "read": "read", "inspect": "read",
     "inspecione": "read", "examinar": "read", "examine": "read", "consulte": "read",
@@ -51,9 +66,20 @@ _SEARCH_FILLER = frozenset(
 
 
 def _tokens(objective: str) -> tuple[str, ...]:
+    objective = _repair_mojibake(objective)
     normalized = _normalize_text(objective).replace("â€™", "'")
     normalized = normalized.replace("don't", "do not").replace("dont", "do not")
     return tuple(_WORD_RE.findall(normalized))
+
+
+def _repair_mojibake(text: str) -> str:
+    """Recover one common UTF-8-as-Latin-1 layer without changing valid text."""
+
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return text
+    return repaired if repaired != text else text
 
 
 def _is_negated(tokens: Sequence[str], index: int) -> bool:
@@ -66,6 +92,21 @@ def _is_direct_text_request(tokens: Sequence[str], index: int) -> bool:
     return index + 1 < len(tokens) and tokens[index + 1] in _DIRECT_TEXT_WORDS
 
 
+def _near_memory_context(tokens: Sequence[str], index: int) -> bool:
+    start = max(0, index - 2)
+    end = min(len(tokens), index + 5)
+    return bool(set(tokens[start:end]) & _MEMORY_CONTEXT_WORDS)
+
+
+def _memory_effect_indices(tokens: Sequence[str]) -> tuple[int, ...]:
+    return tuple(
+        index
+        for index, token in enumerate(tokens)
+        if token in _MEMORY_DIRECT_TERMS
+        or (token in _MEMORY_CONTEXT_TERMS and _near_memory_context(tokens, index))
+    )
+
+
 def infer_effect_semantics(objective: str) -> EffectSemantics:
     """Infer requested and prohibited effects from user intent only."""
 
@@ -76,13 +117,20 @@ def infer_effect_semantics(objective: str) -> EffectSemantics:
     tokens = _tokens(objective)
     requested: list[str] = []
     prohibited: list[str] = []
+    memory_indices = set(_memory_effect_indices(tokens))
     for index, token in enumerate(tokens):
         effect = _EFFECT_TERMS.get(token)
         if effect is None or _is_direct_text_request(tokens, index):
             continue
+        if effect == "write" and index in memory_indices and token in _MEMORY_CONTEXT_TERMS:
+            continue
         target = prohibited if _is_negated(tokens, index) else requested
         if effect not in target:
             target.append(effect)
+    for index in memory_indices:
+        target = prohibited if _is_negated(tokens, index) else requested
+        if "memory_write" not in target:
+            target.append("memory_write")
     return EffectSemantics(tuple(requested), tuple(prohibited))
 
 
@@ -106,6 +154,10 @@ def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskO
         token == "compare" and not _is_negated(tokens, index)
         for index, token in enumerate(tokens)
     ) and len(paths) >= 2
+    has_explicit_analyze = any(
+        token in {"analyze", "analise", "analisar"} and not _is_negated(tokens, index)
+        for index, token in enumerate(tokens)
+    )
     if has_explicit_read or has_compare_reads:
         obligations.extend(
             TaskObligation(
@@ -139,6 +191,16 @@ def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskO
                 condition="equals",
                 description=f"Comparar {paths[0]} e {paths[1]} conforme o objetivo original.",
             )
+        )
+    if has_explicit_analyze:
+        obligations.extend(
+            TaskObligation(
+                id=f"analyze:{index + 1}",
+                kind="analyze",
+                target=path,
+                description=f"Analisar o arquivo {path} conforme o objetivo original.",
+            )
+            for index, path in enumerate(paths)
         )
     obligations.extend(
         TaskObligation(

@@ -14,10 +14,13 @@ from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 ACTION_CAPABILITIES = {
     "analyze": frozenset({"read", "analyze"}),
     "review": frozenset({"read", "analyze"}),
-    "generate": frozenset({"read", "write", "process"}),
-    "modify": frozenset({"read", "write", "process"}),
-    "repair": frozenset({"read", "write", "process"}),
-    "refactor": frozenset({"read", "write", "process"}),
+    # Generation may produce non-code artifacts.  Bounded validation is an
+    # explicit capability for editor actions; requesting test execution adds
+    # PROCESS below without making PROCESS a substitute for VALIDATE.
+    "generate": frozenset({"read", "write"}),
+    "modify": frozenset({"read", "write", "validate"}),
+    "repair": frozenset({"read", "write", "validate"}),
+    "refactor": frozenset({"read", "write", "validate"}),
 }
 
 
@@ -42,6 +45,10 @@ class CodingTaskNodeExecutor:
         required = ACTION_CAPABILITIES.get(action)
         if required is None:
             return TaskResult(TaskStatus.FAILED, error=f"Ação de código inválida: {action}")
+        if action in {"generate", "modify", "repair", "refactor"} and bool(
+            node.metadata.get("include_tests", False)
+        ):
+            required = required | frozenset({"process"})
         missing = required - context.permissions
         if missing:
             return TaskResult(

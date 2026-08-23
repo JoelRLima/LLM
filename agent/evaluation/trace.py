@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from agent.evaluation.block7_model_identity import normalize_endpoint_identity
+
 
 class RecordingGateway:
     """Observe model calls while preserving the wrapped gateway contract.
@@ -117,19 +119,44 @@ class RecordingGateway:
             "token_counting": bool(getattr(capabilities, "token_counting", False)),
             "tool_calls": bool(getattr(capabilities, "tool_calls", False)),
         }
+        declared = {
+            "provider": str(provider or ""),
+            "model": str(model or ""),
+            "profile": dict(profile) if isinstance(profile, dict) else {},
+            "capabilities": capability_projection,
+            "endpoint_identity": normalize_endpoint_identity(getattr(self.gateway, "endpoint_identity", None)),
+        }
+        observed_ids: list[str] = []
+        for record in records:
+            metadata = record.get("provider_metadata")
+            if not isinstance(metadata, dict):
+                continue
+            for key in ("observed_provider_model_id", "provider_model_id", "model_id", "model"):
+                value = metadata.get(key)
+                if value not in (None, ""):
+                    observed_ids.append(str(value))
+                    break
+        observed_model_id = observed_ids[-1] if observed_ids else None
+        observed = {
+            "available": observed_model_id is not None,
+            "provider_model_id": observed_model_id,
+            "actual_provider_model_id": observed_model_id,
+            "model": observed_model_id,
+            "provider": str(provider or "") if observed_model_id is not None else None,
+            "endpoint_identity": normalize_endpoint_identity(getattr(self.gateway, "endpoint_identity", None)),
+            "source": "response.provider_metadata" if observed_model_id is not None else "unavailable",
+        }
         return {
             "model_decisions": [record for record in records if record.get("stage") == "decision"],
             "repair_decisions": [record for record in records if record.get("stage") == "repair"],
             "route_decisions": [record for record in records if record.get("stage") in {"route", "continuation"}],
             "model_calls": records,
             "provider_identity": {
-                "provider": str(provider or ""),
-                "model": str(model or ""),
-                "profile": dict(profile) if isinstance(profile, dict) else {},
-                "capabilities": capability_projection,
-                "endpoint_identity": getattr(self.gateway, "endpoint_identity", None),
+                **declared,
                 "actual_provider_model_id": getattr(self.gateway, "provider_model_id", None),
             },
+            "declared_provider_identity": declared,
+            "observed_provider_identity": observed,
         }
 
 

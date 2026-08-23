@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from agent.planning.task_resources import declared_resource_claims, effective_resource_claims
+
 
 @dataclass(frozen=True)
 class GraphValidationReport:
@@ -43,6 +45,15 @@ class TaskGraphValidator:
             errors.append(f"Nó '{node.node_id}' depende de si mesmo.")
         if any(not resource.name.strip() for resource in node.resources):
             errors.append(f"Nó '{node.node_id}' contém recurso sem nome.")
+        declared = declared_resource_claims(node)
+        if any(claim.mode not in {"read", "write"} for claim in declared):
+            errors.append(f"Nó '{node.node_id}' contém modo de recurso inválido.")
+        # Derive the trusted contract during validation as well as during
+        # scheduling.  Missing or contradictory declarations remain valid
+        # only because the scheduler will conservatively use this effective
+        # contract (workspace-wide WRITE for unknown mutators), never the
+        # model-supplied claims alone.
+        effective_resource_claims(node)
         if any(not capability.strip() for capability in node.capabilities):
             errors.append(f"Nó '{node.node_id}' contém capacidade sem nome.")
         return errors

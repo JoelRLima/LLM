@@ -31,6 +31,18 @@ H_SERIES_VERSION = "B7-HSERIES-V1.0"
 # below are safe for older readers.
 
 
+def _unavailable_observed_model_identity() -> dict[str, Any]:
+    return {
+        "available": False,
+        "provider_model_id": None,
+        "actual_provider_model_id": None,
+        "provider": None,
+        "model": None,
+        "endpoint_identity": None,
+        "source": "unavailable",
+    }
+
+
 @dataclass(frozen=True)
 class RepetitionPolicy:
     """Bounded repetition policy from the Block 7 contract."""
@@ -170,6 +182,9 @@ class HRunEvidence:
     scenario_repetition: int | None = None
     attempt: int | None = None
     valid_repetition: bool = True
+    observed_model_identity: Mapping[str, Any] = field(
+        default_factory=_unavailable_observed_model_identity
+    )
 
     def __post_init__(self) -> None:
         if not self.scenario_id.strip() or self.repetition < 1:
@@ -190,6 +205,12 @@ class HRunEvidence:
             "epoch": self.epoch,
             "candidate_identity": self.candidate_identity,
             "model_fingerprint": dict(self.model_fingerprint),
+            "declared_model_identity": dict(self.model_fingerprint),
+            "observed_model_identity": dict(self.observed_model_identity),
+            "observed_identity_available": bool(self.observed_model_identity.get("available", False)),
+            "observed_provider_model_id": self.observed_model_identity.get(
+                "provider_model_id", self.observed_model_identity.get("actual_provider_model_id")
+            ),
             "model_config_fingerprint": self.model_fingerprint.get(
                 "model_config_fingerprint", self.model_fingerprint.get("fingerprint")
             ) if isinstance(self.model_fingerprint, Mapping) else None,

@@ -170,7 +170,10 @@ class OpenAICompatibleGateway:
             reasoning=str(reasoning),
             usage=usage,
             finish_reason=choice.get("finish_reason"),
-            provider_metadata={"timings": data.get("timings")},
+            provider_metadata={
+                "timings": data.get("timings"),
+                "observed_provider_model_id": data.get("model"),
+            },
         )
 
     def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:

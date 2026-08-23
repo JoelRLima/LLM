@@ -8,6 +8,7 @@ from .contracts import (
     ToolResult,
     ToolStatus,
 )
+from .result_completeness import EvidenceProvenance
 
 __all__ = [
     "ToolAdapter",
@@ -16,4 +17,5 @@ __all__ = [
     "ToolInvocation",
     "ToolResult",
     "ToolStatus",
+    "EvidenceProvenance",
 ]

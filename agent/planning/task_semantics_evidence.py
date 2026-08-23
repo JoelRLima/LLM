@@ -7,7 +7,10 @@ from typing import Any
 
 from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_types import _normalize_text
-from agent.tools.result_completeness import canonical_completeness
+from agent.tools.result_completeness import (
+    canonical_completeness,
+    exact_source_covers_whole_result,
+)
 
 _READ_TOOLS = frozenset({"file_reader", "code_analyzer", "directory_lister"})
 _SEARCH_TOOLS = frozenset({"grep", "search"})
@@ -16,6 +19,16 @@ _COMPARE_TOOLS = frozenset({"compare", "diff", "code_analyzer"})
 
 def complete_observation(result: Mapping[str, Any]) -> bool:
     return result_is_successful(result) and "data" in result and canonical_completeness(result)[0]
+
+
+def exact_source_observation(result: Mapping[str, Any]) -> bool:
+    """Whether a result can prove a complete whole-source observation."""
+
+    return (
+        result_is_successful(result)
+        and "data" in result
+        and exact_source_covers_whole_result(result)
+    )
 
 
 def _search_observation_is_provable(owner: Any, item: Any, result: Mapping[str, Any]) -> bool:
@@ -84,7 +97,7 @@ def _matches_search(
         and ref < evidence_ref
         and entry.get("tool") in _READ_TOOLS
         and isinstance(entry.get("result"), Mapping)
-        and complete_observation(entry["result"])
+        and exact_source_observation(entry["result"])
         and same_identity(str(entry["result"].get("data")), query)
         for ref, entry in getattr(owner, "_evidence_catalog", {}).items()
     )
@@ -110,7 +123,10 @@ def matches_requirement(
     *,
     evidence_ref: int | str | None = None,
 ) -> bool:
-    if item.kind == "search":
+    if item.kind == "read":
+        if not exact_source_observation(result):
+            return False
+    elif item.kind == "search":
         if not _search_observation_is_provable(owner, item, result):
             return False
     elif not complete_observation(result):
@@ -175,6 +191,7 @@ __all__ = (
     "_READ_TOOLS",
     "arg_path",
     "complete_observation",
+    "exact_source_observation",
     "matches_fallback",
     "matches_requirement",
     "result_is_successful",

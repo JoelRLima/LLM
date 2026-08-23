@@ -50,6 +50,11 @@ def reject_review(orchestrator: Any, objective: str, review: Any) -> str | None:
             reason_code="prohibited_effect_occurred",
             message="A tarefa foi bloqueada: ocorreu um efeito proibido.",
         ),
+        "unrequested_effect_occurred": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="unrequested_effect_occurred",
+            message="A tarefa foi bloqueada: ocorreu um efeito nao solicitado.",
+        ),
         "existing_terminal": lambda: _terminal_message(orchestrator.agent_state) or None,
         "obligation_evidence_missing": lambda: mark_terminal_blocked(
             orchestrator,

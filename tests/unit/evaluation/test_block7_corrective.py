@@ -15,6 +15,7 @@ from agent.evaluation.block7 import (
     HSeriesArm,
     HSeriesScenario,
     RepetitionPolicy,
+    digest_fixture,
 )
 from agent.evaluation.block7_analysis import analyze_campaign, secret_safe_report, validate_campaign_report
 from agent.evaluation.block7_execution import CampaignRun, _run_one, classify_failure
@@ -412,10 +413,23 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
         for repetition, scenario_pass in enumerate(outcomes, start=1):
             for arm in scenario.arms:
                 evidence = {
+                    "scenario_id": f"{scenario.h_id.lower()}-{arm.arm_id}",
                     "epoch": "B7-REAL-MODEL-EPOCH-2",
                     "candidate_identity": candidate_id,
                     "model_config_fingerprint": _MODEL["model_config_fingerprint"],
                     "model_fingerprint": _MODEL,
+                    "declared_model_identity": _MODEL,
+                    "initial_fixture_digest": digest_fixture(arm.initial_files),
+                    "objective": arm.objective,
+                    "observed_model_identity": {
+                        "available": True,
+                        "provider_model_id": "block7-scripted",
+                        "actual_provider_model_id": "block7-scripted",
+                        "provider": "block7-scripted",
+                        "model": "block7-scripted",
+                        "endpoint_identity": "in-process://block7-scripted",
+                        "source": "response.provider_metadata",
+                    },
                     "scenario_set_version": H_SERIES_VERSION,
                     "scenario_repetition": repetition,
                     "valid_repetition": True,
@@ -428,6 +442,16 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
                 if identity_drift and not runs:
                     evidence["model_config_fingerprint"] = "drift"
                 runs.append({"h_id": scenario.h_id, "arm_id": arm.arm_id, "repetition": repetition, "passed": scenario_pass, "valid_repetition": True, "evidence": evidence})
+    scenario_results = [
+        {
+            "h_id": scenario.h_id,
+            "fixture_id": scenario.fixture_id,
+            "scenario_repetitions": 5 if scenario.h_id == "H2" else (5 if h3_mixed and scenario.h_id == "H3" else 3),
+            "passes": 5 if scenario.h_id == "H2" else (3 if h3_mixed and scenario.h_id == "H3" else 3),
+            "arm_executions": (5 if scenario.h_id == "H2" else (5 if h3_mixed and scenario.h_id == "H3" else 3)) * len(scenario.arms),
+        }
+        for scenario in H_SERIES
+    ]
     return {
         "schema_version": "B7-CAMPAIGN-V2.0",
         "scenario_set_version": H_SERIES_VERSION,
@@ -439,8 +463,28 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
         "semantic_candidate_manifest": manifest,
         "semantic_manifest_hash": semantic_manifest_hash(manifest),
         "model_identity": _MODEL,
+        "declared_model_identity": _MODEL,
+        "observed_model_identity": {
+            "available": True,
+            "consistent": True,
+            "provider_model_id": "block7-scripted",
+            "actual_provider_model_id": "block7-scripted",
+            "provider": "block7-scripted",
+            "model": "block7-scripted",
+            "endpoint_identity": "in-process://block7-scripted",
+            "source": "response.provider_metadata",
+            "identities": [],
+        },
         "model_config_fingerprint": _MODEL["model_config_fingerprint"],
         "repetition_policy": RepetitionPolicy().to_dict(),
+        "scenario_results": scenario_results,
+        "installed_acceptance": {
+            "status": "passed",
+            "mode": "clean-acceptance",
+            "acceptance": True,
+            "task_files_in_wheel": False,
+        },
+        "deterministic_readiness": {"recorded": True, "complete": True},
         "runs": runs,
     }
 
@@ -451,8 +495,8 @@ def test_analyzer_verdict_thresholds_and_blocker_precedence() -> None:
     assert model["release_verdict"] == "NOT_RELEASE_READY_MODEL"
     runtime = analyze_campaign(_analysis_report(h3_mixed=True, runtime_incident=True))
     assert runtime["release_verdict"] == "NOT_RELEASE_READY_RUNTIME"
-    inconclusive = analyze_campaign(_analysis_report(identity_drift=True))
-    assert inconclusive["release_verdict"] == "INCONCLUSIVE"
+    with pytest.raises(ValueError, match="campaign evidence is incomplete"):
+        analyze_campaign(_analysis_report(identity_drift=True))
 
 
 def test_semantic_candidate_changes_for_runtime_but_not_documentation(tmp_path) -> None:

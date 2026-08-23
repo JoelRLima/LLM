@@ -25,6 +25,11 @@ absorver detalhes de provider, adapter stdio ou políticas específicas de skill
 Identidades têm escopos diferentes e não são intercambiáveis. Restaurar um
 checkpoint exige revalidar o plano e reconstruir policy/authority atuais.
 
+Evidence de origem canônica permanece distinta de resumo, cache ou projeção
+lossy. Um resultado derivado pode orientar a próxima decisão, mas não pode
+criar nova authority, intenção de efeito, obrigação durável ou evidência exata;
+checkpoint/reentry repete essa validação em vez de promover a fidelidade.
+
 ## Lifecycle suportado
 
 ```text
@@ -40,6 +45,9 @@ create application
 recursos da aplicação; falhas de task não transferem ownership ao modelo.
 Cancelamento é sinalizado por `CancellationToken` e interpretado pelos pontos de
 execução que o consultam; ele não constitui preempção universal de Python.
+Execução aninhada usa um `TaskExecutionContext` filho no mesmo ownership tree:
+budget, cancelamento, gates de modelo/processo e limites efetivos continuam
+pertencendo ao contexto pai.
 
 ## Workspace e recovery
 
@@ -47,6 +55,9 @@ execução que o consultam; ele não constitui preempção universal de Python.
 fluxo de mudança suportado. Checkpoints, backups de memória e restore points têm
 propósitos diferentes. Nenhum deles equivale a transação distribuída ou sandbox
 de sistema operacional.
+O commit de observação canônica publica state/history como uma unidade; falha
+de validação não deixa append parcial nem autoriza sucesso falso. Um efeito
+físico acompanhado de falha de commit permanece reportado como falha de commit.
 
 ## Boundary ScannerCore
 

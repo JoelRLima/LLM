@@ -9,6 +9,7 @@ from agent.contracts import ToolArgs, ToolResult
 from agent.parsers import validate_tool_args
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.step_contracts import ExecutionContext
+from agent.tools.result_completeness import EvidenceProvenance
 
 
 class StepPolicies:
@@ -104,11 +105,44 @@ class StepPolicies:
         memory = self.context.agent_state.memory.state
         if not current_hash or current_hash != memory.get("file_hashes", {}).get(file_path):
             return False, None
-        summary = memory.get("file_summaries", {}).get(file_path, "")
+        cache_entry = memory.get("file_cache_entries", {}).get(file_path, {})
+        if not isinstance(cache_entry, dict):
+            cache_entry = {}
+        summary = cache_entry.get("data") or memory.get("file_summaries", {}).get(file_path, "")
         if not summary:
             return False, None
+        raw_provenance = cache_entry.get("evidence_provenance")
+        try:
+            provenance = EvidenceProvenance(str(raw_provenance))
+        except ValueError:
+            provenance = EvidenceProvenance.DERIVED_LOSSY
+        source_extent = cache_entry.get("source_extent")
+        if not isinstance(source_extent, dict):
+            source_extent = {"kind": "summary"}
+        complete = provenance is EvidenceProvenance.EXACT_SOURCE and source_extent.get("kind") == "whole"
         result: ToolResult = {
-            "ok": True, "done": True, "status": "succeeded", "data": summary,
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "executed": False,
+            "data": summary,
+            "complete": complete,
+            "truncated": False,
+            "evidence_provenance": provenance.value,
+            "source_identity": file_path,
+            "source_hash": current_hash,
+            "source_extent": source_extent,
+            "artifacts": [{
+                "kind": "cached_observation",
+                "metadata": {
+                    "complete": complete,
+                    "truncated": False,
+                    "evidence_provenance": provenance.value,
+                    "source_identity": file_path,
+                    "source_hash": current_hash,
+                    "source_extent": source_extent,
+                },
+            }],
             "message": f"Usando cache de {file_path}.",
         }
         self.context._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})

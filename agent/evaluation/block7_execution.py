@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from agent.approval import AutoApprove
 from agent.evaluation.agent_executor import AgentApplicationScenarioExecutor, GatewayFactory
@@ -31,7 +31,11 @@ from agent.evaluation.block7_execution_evidence import (
     h2_reporting,
     identity_drift,
 )
-from agent.evaluation.block7_identity import candidate_identity_string, fake_model_identity
+from agent.evaluation.block7_identity import (
+    candidate_identity_string,
+    fake_model_identity,
+    unavailable_observed_identity,
+)
 from agent.evaluation.block7_oracle import deterministic_oracle_evidence
 from agent.evaluation.runner import CapabilityEvaluator
 
@@ -130,6 +134,19 @@ def _run_one(
             )
             oracle_evidence = deterministic_oracle_evidence(report, arm)
             observation_evidence = evidence_mapping(report)
+            raw_observed_model_identity = observation_evidence.get("observed_provider_identity")
+            if isinstance(raw_observed_model_identity, Mapping):
+                observed_model_identity: Mapping[str, Any] = cast(
+                    Mapping[str, Any], raw_observed_model_identity
+                )
+            else:
+                provider_identity = observation_evidence.get("provider_identity")
+                observed_model_identity = (
+                    cast(Mapping[str, Any], provider_identity.get("observed"))
+                    if isinstance(provider_identity, Mapping)
+                    and isinstance(provider_identity.get("observed"), Mapping)
+                    else unavailable_observed_identity()
+                )
             failures = tuple(
                 [f"evaluator:{item.code}" for item in report.failures]
                 + list(oracle_evidence["failures"])
@@ -169,6 +186,7 @@ def _run_one(
                 causal_reason_codes=attribution.reason_codes,
                 causal_evidence_refs=attribution.evidence_refs,
                 attribution_evidence=attribution_evidence,
+                observed_model_identity=dict(observed_model_identity),
                 oracle_evidence=oracle_evidence,
                 receipt=dict(observation_evidence.get("receipt", {})),
                 validation_evidence=tuple(observation_evidence.get("validation_evidence", ())),
@@ -229,6 +247,14 @@ def _run_one(
             causal_reason_codes=attribution.reason_codes,
             causal_evidence_refs=attribution.evidence_refs,
             attribution_evidence=attribution_evidence,
+            observed_model_identity={
+                "available": False,
+                "provider_model_id": None,
+                "actual_provider_model_id": None,
+                "model": None,
+                "provider": None,
+                "source": "unavailable",
+            },
             scenario_repetition=scenario_repetition,
             attempt=attempt_number,
             valid_repetition=not environmental,

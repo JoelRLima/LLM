@@ -117,6 +117,16 @@ class BuiltinToolAdapter(ToolAdapter):
         error_text = raw_result.get("error")
         message_text = raw_result.get("message")
         data = raw_result.get("data")
+        artifacts = self._observation_artifacts(
+            invocation.tool_name,
+            raw_result,
+            data,
+        )
+        evidence_provenance = (
+            str(raw_result["evidence_provenance"])
+            if raw_result.get("evidence_provenance") is not None
+            else None
+        )
 
         if status == ToolStatus.SUCCEEDED:
             return ToolResult(
@@ -124,11 +134,8 @@ class BuiltinToolAdapter(ToolAdapter):
                 status=ToolStatus.SUCCEEDED,
                 data=data,
                 message=message_text,
-                artifacts=self._observation_artifacts(
-                    invocation.tool_name,
-                    raw_result,
-                    data,
-                ),
+                artifacts=artifacts,
+                evidence_provenance=evidence_provenance,
             )
 
         return ToolResult(
@@ -140,6 +147,8 @@ class BuiltinToolAdapter(ToolAdapter):
                 message=str(error_text or message_text or "Falha na execução da ferramenta."),
             ),
             message=message_text,
+            artifacts=artifacts,
+            evidence_provenance=evidence_provenance,
         )
 
     @staticmethod
@@ -152,10 +161,27 @@ class BuiltinToolAdapter(ToolAdapter):
         for key in (
             "complete",
             "truncated",
+            "evidence_provenance",
+            "provenance",
+            "source_identity",
+            "source_hash",
+            "source_extent",
+            "represented_extent",
             "total_chars",
             "total_lines",
             "total_matches",
             "output_chars",
+            "affected_files",
+            "attempted_files",
+            "mutation_occurred",
+            "persisted_mutation",
+            "surviving_mutation",
+            "rollback_occurred",
+            "validation",
+            "validation_status",
+            "final_state",
+            "effect",
+            "applied",
         ):
             if key in raw_result:
                 metadata[key] = raw_result[key]

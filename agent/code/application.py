@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agent.cancellation import CancellationToken
+from agent.code.graph_result_projection import project_graph_result
 from agent.code.multitask import MultitaskCodingService
 from agent.code.policy import ChangeApprover, change_policy_from_config
 from agent.code.task_templates import build_code_task_template
@@ -37,7 +38,15 @@ def build_code_context(
     config: Dict[str, Any],
     model_gateway: Optional[ModelGateway],
     metrics_sink: Any = None,
+    *,
+    parent_context: TaskExecutionContext | None = None,
+    permissions: frozenset[str] | None = None,
 ) -> TaskExecutionContext:
+    if parent_context is not None:
+        child_permissions = (
+            parent_context.permissions if permissions is None else frozenset(permissions)
+        )
+        return parent_context.child("code_task", permissions=child_permissions)
     hardware = resolve_hardware_profile(config)
     profiles = config.get("model_profiles")
     profile_name = config.get("default_model_profile")
@@ -69,7 +78,7 @@ def build_code_context(
         cancellation=CancellationToken(),
         limits=limits,
         metrics_sink=metrics_sink or NullMetricsSink(),
-        permissions=frozenset({"read", "write", "process", "analyze"}),
+        permissions=frozenset({"read", "write", "process", "validate", "analyze"}),
         metadata={
             "model": getattr(
                 model_gateway,
@@ -94,32 +103,7 @@ class CodingApplicationService:
 
     @staticmethod
     def _graph_result(graph_result: Any) -> TaskResult:
-        states = {state.value for state in graph_result.states.values()}
-        if graph_result.succeeded:
-            status = TaskStatus.SUCCEEDED
-        elif "failed" in states:
-            status = TaskStatus.FAILED
-        elif "blocked" in states:
-            status = TaskStatus.BLOCKED
-        elif "unverified" in states:
-            status = TaskStatus.UNVERIFIED
-        elif "cancelled" in states:
-            status = TaskStatus.CANCELLED
-        else:
-            status = TaskStatus.FAILED
-        return TaskResult(
-            status,
-            summary=(
-                f"TaskGraph concluído: "
-                f"{sum(state.value == 'succeeded' for state in graph_result.states.values())}/"
-                f"{len(graph_result.states)} nós com sucesso."
-            ),
-            metadata={
-                "states": {key: value.value for key, value in graph_result.states.items()},
-                "execution_order": graph_result.execution_order,
-                "errors": graph_result.errors,
-            },
-        )
+        return project_graph_result(graph_result)
 
     def execute(
         self,

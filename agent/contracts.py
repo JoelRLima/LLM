@@ -39,6 +39,12 @@ class ToolResult(TypedDict, total=False):
     message: Optional[str]
     artifacts: List[Any]
     total_lines: int
+    complete: bool
+    truncated: bool
+    evidence_provenance: str
+    source_identity: str
+    source_hash: str
+    source_extent: Dict[str, Any]
 
 
 class ToolHistoryEntry(TypedDict, total=False):

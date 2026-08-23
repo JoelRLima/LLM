@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from agent.evaluation.block7 import HSeriesArm
 from agent.evaluation.block7_oracle_observations import evidence, history, tool_names
@@ -74,6 +74,7 @@ def deterministic_oracle_evidence(report: Any, arm: HSeriesArm) -> dict[str, Any
     tools = tool_names(report)
     grounding, grounding_facts = grounding_failures(report, oracle, history_items)
     failures: list[str] = []
+    h12_footprint_failures, h12_footprint = _h12_footprint(report, arm)
     checks = (
         basic_failures(oracle, history_items, tools, report),
         binding_failures(report, oracle),
@@ -87,6 +88,7 @@ def deterministic_oracle_evidence(report: Any, arm: HSeriesArm) -> dict[str, Any
         rollback_failures(report, oracle),
         answer_failures(report, oracle),
         grounding,
+        h12_footprint_failures,
     )
     for result in checks:
         failures.extend(result)
@@ -107,6 +109,8 @@ def deterministic_oracle_evidence(report: Any, arm: HSeriesArm) -> dict[str, Any
             )
         ),
         "fabricated_grounding": bool(grounding_facts.get("fabricated_grounding")),
+        "changed_files": h12_footprint.get("changed_files", []),
+        "h12_footprint": h12_footprint,
     }
 
 
@@ -114,6 +118,45 @@ def deterministic_oracle_failures(report: Any, arm: HSeriesArm) -> tuple[str, ..
     """Check only facts exposed by the canonical report and receipt."""
 
     return tuple(deterministic_oracle_evidence(report, arm)["failures"])
+
+
+_TRANSIENT_WORKSPACE_CLASSES = frozenset({".git", ".pytest_cache", "__pycache__", ".temp_analysis"})
+
+
+def _h12_footprint(report: Any, arm: HSeriesArm) -> tuple[list[str], dict[str, Any]]:
+    """Grade H12 against the actual workspace delta, including collateral files."""
+
+    scenario_id = getattr(report, "scenario_id", "")
+    if isinstance(report, Mapping):
+        scenario_id = report.get("scenario_id", scenario_id)
+    if not str(scenario_id).casefold().startswith("h12-"):
+        return [], {}
+    raw_changed = getattr(report, "changed_files", ())
+    if isinstance(report, Mapping):
+        raw_changed = report.get("changed_files", raw_changed)
+    changed = {
+        str(path).replace("\\", "/").strip("/")
+        for path in raw_changed
+        if str(path).strip("/")
+    }
+    changed = {
+        path for path in changed
+        if not _TRANSIENT_WORKSPACE_CLASSES.intersection(set(path.split("/")))
+    }
+    expected = {item.path.replace("\\", "/").strip("/") for item in arm.expectation.files}
+    collateral = sorted(changed - expected)
+    failures: list[str] = []
+    if not expected.intersection(changed):
+        failures.append("h12_expected_mutation_missing")
+    if collateral:
+        failures.append("h12_collateral_mutation")
+    return failures, {
+        "changed_files": sorted(changed),
+        "expected_changed_files": sorted(expected),
+        "collateral_changed_files": collateral,
+        "transient_classes_ignored": sorted(_TRANSIENT_WORKSPACE_CLASSES),
+        "passed": not failures,
+    }
 
 
 validate_oracle_coverage()

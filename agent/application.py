@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from agent.application_cleanup import abort_startup, release_resources
 from agent.application_result import AgentRunResult
+from agent.application_shutdown import drain_application_invocations
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
 from agent.llm.session import ChatSession
@@ -279,6 +280,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
             primary_error: BaseException | None = None
             cleanup_error: BaseException | None = None
             try:
+                drain_application_invocations(self.tool_invocation_gateway)
                 if not self._task_attempted:
                     self.orchestrator._persist_memory_to_file()
             except BaseException as exc:
@@ -291,10 +293,8 @@ class AgentApplication(ApplicationOperationalModeMixin):
             if cleanup_error is not None:
                 raise cleanup_error
 
-    def __enter__(self) -> "AgentApplication":
-        return self
+    def __enter__(self) -> "AgentApplication": return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        del exc_type, exc, traceback
         self.close()
 __all__ = ["AgentApplication", "AgentRunResult"]

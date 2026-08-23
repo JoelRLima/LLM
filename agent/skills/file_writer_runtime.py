@@ -152,4 +152,16 @@ def review_and_commit(
     temporary.write_text(proposed, encoding="utf-8")
     os.replace(temporary, requested)
     invalidate(file_path)
+    mutation = original != proposed
+    return {
+        "ok": True,
+        "done": True,
+        "message": f"Changes applied in '{file_path}'.",
+        "effect": "write",
+        "affected_files": (file_path,),
+        "mutation_occurred": mutation,
+        "persisted_mutation": mutation,
+        "applied": True,
+        "final_state": "applied",
+    }
     return {"ok": True, "done": True, "message": f"Mudanças aplicadas em '{file_path}'."}

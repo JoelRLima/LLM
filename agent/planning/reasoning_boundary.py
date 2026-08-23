@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, cast
 
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_semantics import TaskSemanticsError
@@ -29,16 +29,36 @@ def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
     raw = getattr(continuation, "review_obligations", None)
     if raw is None:
         return True
-    reviewer = getattr(orchestrator.agent_state, "review_task_obligations", None)
-    if not callable(reviewer):
+    report_reviewer = getattr(orchestrator.agent_state, "review_task_obligations_report", None)
+    legacy_reviewer = getattr(orchestrator.agent_state, "review_task_obligations", None)
+    if not callable(report_reviewer) and not callable(legacy_reviewer):
         return False
     try:
-        added = reviewer(raw, source="canonical_review")
+        if callable(report_reviewer):
+            review = report_reviewer(raw, source="canonical_review")
+            added = review.accepted
+            rejected = review.rejected
+        else:
+            review = cast(Callable[..., Any], legacy_reviewer)(
+                raw,
+                source="canonical_review",
+                collect_rejections=True,
+            )
+            added = tuple(review)
+            rejected = ()
     except (TaskSemanticsError, TypeError, ValueError):
         return False
     emit = getattr(orchestrator, "_emit", None)
     if callable(emit):
         emit("canonical_review_amendment", {"added": len(added)})
+        if rejected:
+            emit(
+                "canonical_review_rejected",
+                {
+                    "rejected": len(rejected),
+                    "reasons": [item.reason for item in rejected],
+                },
+            )
     return True
 
 

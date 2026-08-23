@@ -12,6 +12,7 @@ from agent.planning.provenance_validation import validate_unresolved_symbolic_ar
 from agent.planning.step_contracts import PreparedInvocation
 from agent.runtime.logging import logger
 from agent.tools.contracts import ToolInvocationRequest
+from agent.tools.result_completeness import EvidenceProvenance
 
 
 class ToolExecutor:
@@ -32,8 +33,17 @@ class ToolExecutor:
     def run_tool(
         self, tool_name: str, args: ToolArgs, record_result: bool = True
     ) -> ToolResult:
-        request = ToolInvocationRequest(str(uuid.uuid4()), tool_name, args)
+        request = ToolInvocationRequest(
+            str(uuid.uuid4()),
+            tool_name,
+            args,
+            task_id=self._task_id(),
+        )
         return self.run_tool_invocation(request, record_result=record_result)
+
+    def _task_id(self) -> str | None:
+        context = getattr(self.orchestrator, "_task_execution_context", None)
+        return getattr(context, "task_id", None)
 
     def run_tool_invocation(
         self, request: ToolInvocationRequest, record_result: bool = True
@@ -151,6 +161,7 @@ class ToolExecutor:
             invocation_id,
             prepared.tool,
             dict(prepared.args),
+            task_id=getattr(prepared, "task_id", None) or self._task_id(),
         )
         return self.run_tool_invocation(request, record_result=record_result)
 
@@ -217,9 +228,23 @@ class ToolExecutor:
         memory_key = str(file_path)
         memory.remember(memory_key, summary, section="file_summaries")
         memory.state["analyzed_files"][memory_key] = summary[:150]
+        # The cached value is the output of a summarizer, never the source
+        # bytes.  Preserve freshness separately so a cache hit cannot be
+        # mistaken for exact source evidence.
+        cache_entry = {
+            "data": summary,
+            "evidence_provenance": EvidenceProvenance.DERIVED_LOSSY.value,
+            "source_extent": {"kind": "summary"},
+        }
         try:
             with self._resolve_user_path(file_path).open("r", encoding="utf-8") as handle:
-                file_hash = hashlib.sha256(handle.read().encode("utf-8")).hexdigest()
+                source_text = handle.read()
+                file_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
             memory.state.setdefault("file_hashes", {})[memory_key] = file_hash
+            cache_entry.update(
+                source_identity=memory_key,
+                source_hash=file_hash,
+            )
         except (OSError, ValueError):
             pass
+        memory.state.setdefault("file_cache_entries", {})[memory_key] = cache_entry

@@ -16,7 +16,9 @@ Há três níveis que não devem ser confundidos:
 - **reproducer focal**: node pytest que protege uma regressão específica;
 - **real-model evidence**: execução repetível com backend/modelo declarado.
 
-Somente o primeiro e o segundo estão cobertos pelo Block A atual.
+O primeiro e o segundo são evidência local determinística. Evidência de
+modelo real continua sendo uma etapa separada, com identidade observada,
+aceitação instalada e autorização explícita para o epoch correspondente.
 
 ## Capability Set
 
@@ -62,6 +64,35 @@ Git, `code_task`, rollback, bypass do writer, stdio/authority, terminalidade,
 measurement e isolamento do checkout. Ela não cria uma segunda jornada nem
 reinterpreta o status canônico da aplicação.
 
+O modo de aceitação limpa com resolução de dependências é obrigatório para
+qualquer veredicto final. `--offline-diagnostic` é útil para diagnóstico, mas
+não satisfaz esse gate. A execução aceita deve ocorrer fora do checkout e a
+projeção limitada deve ser preservada com `--summary-json` quando o resultado
+for consumido pelo Block 7.
+
+## Block 7 deterministic closure
+
+O envelope versionado do Block 7 é validado antes de calcular taxas,
+classificações ou veredicto. Cada relatório e cada run preservam separadamente
+`declared_model_identity` e `observed_model_identity`; identidade observada
+indisponível é explícita e mantém o resultado inconclusivo, nunca é inferida a
+partir de sucesso textual. A métrica de `tool_calls` vem do measurement/budget
+canônico do runtime, não de histórico ou cache projetado.
+
+O caminho sem modelo real é executado por:
+
+```powershell
+.venv\Scripts\python.exe scripts\run_block7.py --phase dry-run --output .audit-local\out\block7-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\run_block7.py --phase 4 --output .audit-local\out\block7-phase4.json
+.venv\Scripts\python.exe scripts\run_block7.py --phase corrective-ready --output .audit-local\out\block7-corrective-ready.json
+```
+
+Esse caminho deve concluir H1–H12 com 41 execuções válidas, sem chamada de
+modelo vivo. Seu veredicto é deliberadamente `INCONCLUSIVE` com
+`REAL_MODEL_EPOCH_REQUIRED`; a saída final da preparação é
+`BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`. O comando de Phase 5 não é
+parte da preparação determinística.
+
 ## Block 7 H-series real-model acceptance
 
 O conjunto versionado `B7-HSERIES-V1.0` contém exatamente H1–H12 e é executado
@@ -85,10 +116,10 @@ foi `NOT_RELEASE_READY_MODEL`. Esse resultado é específico ao fingerprint do
 modelo/configuração testado e não declara portabilidade para outros provedores,
 modelos ou classes de tarefas.
 
-O diagnóstico instalado offline passou fora do checkout, mas a aceitação limpa
-foi limitada localmente por timeout de 180 segundos durante a construção do
-wheel; o diagnóstico offline não substitui a aceitação com dependências limpas.
-Os relatórios bounded ficam em `.audit-local/out/` e o rerun 7B autorizado é:
+Os relatórios bounded ficam em `.audit-local/out/`. A aceitação limpa atual
+passou fora do checkout com resolução de dependências; o diagnóstico offline
+continua sendo insuficiente por si só. Um rerun de modelo real permanece
+authorization-gated:
 
 ```powershell
 .venv\Scripts\python.exe scripts\run_block7.py --phase 5 --qwen-loaded --profile local_8gb --epoch B7-REAL-MODEL-EPOCH-2 --output reports\acceptance\block7\epoch-2.json
@@ -116,6 +147,23 @@ at `BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`; the command is not run
 until the user confirms that Qwen has been reloaded and explicitly authorizes
 the new epoch.
 
+## R1–R8 closure ownership
+
+- R1: exact source evidence is distinct from derived/lossy projections and
+  checkpoint reentry cannot upgrade fidelity;
+- R2/R3: nested execution shares the parent ownership tree, budget and
+  cancellation, while the invocation gateway owns terminal publication and
+  quiescence;
+- R4/R5: scheduler resources come from declared effect intent and canonical
+  observation commit is atomic;
+- R6: requested effects, prohibited effects and observed footprints are
+  evaluated separately, including read-only shell semantics;
+- R7: model-proposed obligations require trusted admission and causal evidence
+  before they can become durable;
+- R8: the analyzer consumes the preserved envelope, installed acceptance,
+  candidate/model identities and canonical measurements without reconstructing
+  facts from history.
+
 ## Contratos e execução
 
 - `CapabilityScenario` declara objetivo, arquivos iniciais, expectativas e
@@ -141,12 +189,12 @@ grader. Veja [reporting.md](reporting.md).
 
 ```text
 Block A = GREEN LOCAL
-Block B = NOT COMPLETED
-Block C = NOT COMPLETED
+Block 7 deterministic closure = GREEN LOCAL
+Block 7 real-model epoch = GATED / NOT RUN
 Standalone V1 = NOT YET DECLARED
 ```
 
 Block A entrega core reutilizável, 9 capability scenarios, 8 regression cases,
-grading determinístico, agregação/export e reuso de measurement. Não declara
-benchmark real-model, comparação de planners/modelos, release gate final nem
-fresh-wheel de V1.
+grading determinístico, agregação/export e reuso de measurement. A preparação
+determinística do Block 7 e a aceitação fresh-wheel estão verdes localmente;
+isso não declara benchmark real-model nem release final de modelo.

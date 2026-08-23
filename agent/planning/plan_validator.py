@@ -2,9 +2,9 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, Dict, List, Optional
 
-from agent.parsers import validate_tool_args
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_validation import validate_deferred_items
+from agent.planning.plan_effect_validation import PlanEffectValidationMixin
 from agent.planning.plan_identity_validation import validate_plan_identities
 from agent.planning.plan_policy_checks import (
     check_analysis_notes,
@@ -20,9 +20,6 @@ from agent.planning.planning_context import (
     validate_planning_tool_arguments,
 )
 from agent.planning.presentation import PlanningPresentationSnapshot
-from agent.planning.provenance_validation import (
-    validate_planner_arguments,
-)
 from agent.planning.result_bindings import (
     ResultBindingError,
     binding_targets,
@@ -32,7 +29,7 @@ from agent.planning.validation_repair import repairable_fields
 from agent.skills.descriptor import result_data_schema_for_contract, target_schema_for_contract
 
 
-class PlanValidator:
+class PlanValidator(PlanEffectValidationMixin):
     """Valida planos contra o schema das ferramentas, a lista de
     ferramentas permitidas para a tarefa, e um conjunto de heurÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­sticas de
     seguranÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§a e consistÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âªncia.
@@ -110,7 +107,14 @@ class PlanValidator:
             return ValidationReport(is_valid=False, errors=errors, warnings=warnings, blocked_steps=blocked)
 
         errors.extend(validate_plan_identities(plan))
-        errors.extend(validate_deferred_items(plan, self.objective, self.canonical_deferred_references, self._validate_step_schema))
+        errors.extend(
+            validate_deferred_items(
+                plan,
+                self.objective,
+                self.canonical_deferred_references,
+                lambda step: self._validate_step_schema(step, allow_conditional_effect=True),
+            )
+        )
         errors.extend(
             validate_result_bindings(
                 plan,
@@ -154,7 +158,9 @@ class PlanValidator:
                     )
                 )
 
-    def _validate_step_schema(self, step: Any) -> str | None:
+    def _validate_step_schema(
+        self, step: Any, *, allow_conditional_effect: bool = False
+    ) -> str | None:
         if not isinstance(step, dict) or "tool" not in step:
             return "Passo malformado: falta o campo 'tool'."
         tool = step["tool"]
@@ -165,50 +171,24 @@ class PlanValidator:
         except ResultBindingError:
             return "Bindings inv\u00e1lidos"
         if self.planning_context is not None:
-            return self._validate_context_plan_step(tool_name, args, bound_fields)
+            return self._validate_context_plan_step(
+                tool_name, args, bound_fields, allow_conditional_effect=allow_conditional_effect
+            )
         descriptor = self._descriptor(tool_name)
         if tool not in self.skills and descriptor is None:
             return f"Ferramenta '{tool}' n\u00e3o existe."
         if self.active_skills and tool not in self.active_skills and descriptor is None:
             return f"Ferramenta '{tool}' n\u00e3o est\u00e1 permitida para esta tarefa."
         if descriptor is not None:
-            return self._validate_descriptor_step(tool_name, args, bound_fields, descriptor)
-        return self._validate_skill_step(tool_name, args, bound_fields)
-
-    def _validate_context_plan_step(
-        self, tool_name: str, args: Dict[str, Any], bound_fields: set[str]
-    ) -> str | None:
-        problem = self._validate_context_step(tool_name, args, bound_fields)
-        if problem:
-            return problem
-        return validate_planner_arguments(
-            args, bound_fields, self._planning_tool(tool_name), self.objective,
-            self.available_observations,
-        )
-
-    def _validate_descriptor_step(
-        self, tool_name: str, args: Dict[str, Any], bound_fields: set[str], descriptor: Any
-    ) -> str | None:
-        capability_error = self._capability_error(tool_name, descriptor)
-        if capability_error:
-            return capability_error
-        try:
-            validate_planning_tool_arguments(descriptor, args, bound_fields)
-        except ValueError as exc:
-            return f"Schema inv\u00e1lido para '{tool_name}': {exc}"
-        return validate_planner_arguments(
-            args, bound_fields, descriptor, self.objective, self.available_observations,
-        )
-
-    def _validate_skill_step(
-        self, tool_name: str, args: Dict[str, Any], bound_fields: set[str]
-    ) -> str | None:
-        valid, error = validate_tool_args(tool_name, args, self.skills, bound_fields)
-        if not valid:
-            return f"Schema inv\u00e1lido para '{tool_name}': {error or ''}"
-        return validate_planner_arguments(
-            args, bound_fields, self.skills.get(tool_name), self.objective,
-            self.available_observations,
+            return self._validate_descriptor_step(
+                tool_name,
+                args,
+                bound_fields,
+                descriptor,
+                allow_conditional_effect=allow_conditional_effect,
+            )
+        return self._validate_skill_step(
+            tool_name, args, bound_fields, allow_conditional_effect=allow_conditional_effect
         )
 
     def _validate_context_step(

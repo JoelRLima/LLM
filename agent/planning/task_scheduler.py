@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import concurrent.futures
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 from typing import Dict, Optional, Protocol
 
 from agent.planning.task_graph import (
     FailurePolicy,
     NodeState,
-    ResourceMode,
     TaskGraph,
     TaskGraphState,
     TaskGraphValidator,
     TaskNode,
     TaskResource,
+)
+from agent.planning.task_resources import (
+    ResourceClaim,
+    effective_resource_claims,
+    resource_claims_conflict,
 )
 from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 
@@ -37,22 +40,21 @@ class GraphExecutionResult:
 
 
 def _normalize_resource(name: str) -> str:
-    return name.replace("\\", "/").strip("/") or "."
+    from agent.planning.task_resources import normalize_resource_name
+
+    return normalize_resource_name(name)
 
 
 def _resource_overlap(left: str, right: str) -> bool:
-    left_name, right_name = _normalize_resource(left), _normalize_resource(right)
-    if left_name == right_name or "*" in {left_name, right_name}:
-        return True
-    left_path, right_path = PurePosixPath(left_name), PurePosixPath(right_name)
-    return left_path in right_path.parents or right_path in left_path.parents
+    from agent.planning.task_resources import claims_overlap
+
+    return claims_overlap(left, right)
 
 
 def resources_conflict(left: tuple[TaskResource, ...], right: tuple[TaskResource, ...]) -> bool:
-    return any(
-        _resource_overlap(first.name, second.name) and ResourceMode.WRITE in {first.mode, second.mode}
-        for first in left
-        for second in right
+    return resource_claims_conflict(
+        tuple(ResourceClaim(_normalize_resource(item.name), str(item.mode.value)) for item in left),
+        tuple(ResourceClaim(_normalize_resource(item.name), str(item.mode.value)) for item in right),
     )
 
 
@@ -72,7 +74,11 @@ class TaskGraphScheduler:
         for node in ready:
             if len(selected) >= self.max_workers:
                 break
-            if not any(resources_conflict(node.resources, existing.resources) for existing in selected):
+            node_resources = effective_resource_claims(node)
+            if not any(
+                resource_claims_conflict(node_resources, effective_resource_claims(existing))
+                for existing in selected
+            ):
                 selected.append(node)
         return selected or ready[:1]
 

@@ -15,6 +15,7 @@ from agent.planning.failure_policy import (
 from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
 from agent.planning.task_semantics_effects import (
     effect_observation_proves_terminal,
+    observed_effect_kinds,
 )
 from agent.planning.task_semantics_effects import (
     tool_capabilities as _tool_capabilities,
@@ -30,12 +31,11 @@ def refresh_executed_effects(orchestrator: Any) -> None:
     for history_index, item in enumerate(getattr(state, "tool_history", ()) or (), start=1):
         if not isinstance(item, dict) or not isinstance(item.get("result"), dict):
             continue
-        if effect_observation_proves_terminal(
-            orchestrator,
-            ObligationStatus.SATISFIED,
-            item,
-        ):
-            semantics = getattr(state, "task_semantics", None)
+        effects = observed_effect_kinds(orchestrator, item)
+        if not effects:
+            continue
+        semantics = getattr(state, "task_semantics", None)
+        for effect in effects:
             register = getattr(semantics, "register_observation", None)
             if callable(register):
                 register(
@@ -44,11 +44,20 @@ def refresh_executed_effects(orchestrator: Any) -> None:
                     evidence_ref=history_index,
                     args=item.get("args") if isinstance(item.get("args"), dict) else {},
                 )
+            requested = effect in tuple(getattr(state, "requested_effects", ()) or ())
             state.record_executed_effect(
-                "write",
+                effect,
                 evidence_ref=history_index,
                 effect_authority=orchestrator,
             )
+            if not requested:
+                record_unrequested = getattr(semantics, "record_unrequested_effect", None)
+                if callable(record_unrequested):
+                    record_unrequested(
+                        effect,
+                        evidence_ref=history_index,
+                        effect_authority=orchestrator,
+                    )
 
 
 def eligible_waiver_observations(

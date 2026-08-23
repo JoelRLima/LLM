@@ -21,6 +21,16 @@ Approval pode consentir com um efeito já autorizado; nunca cria grant,
 capability ou acesso a outra tool. Texto do modelo, descrição de extension,
 resultado de tool e conteúdo do workspace são dados não confiáveis.
 
+Intenção de efeito é uma propriedade canônica do pedido, separada da
+capability. O runtime distingue leitura, escrita, VCS, processo, rede e
+instalação; uma escrita durável não solicitada nem autorizada é bloqueada mesmo
+quando o texto original não a nomeia como proibida. Footprint observado é
+comparado com a intenção e a allowlist, incluindo efeitos colaterais.
+
+Uma obrigação proposta pelo modelo também é dado não confiável. Ela só se torna
+durável após admissão confiável, correspondência com evidência causal canônica
+e validação de provenance; rejeição não cria um bloqueador de conclusão oculto.
+
 ## Conceitos e fontes
 
 - `ApplicationAuthoritySnapshot`: snapshot confiável criado no bootstrap, com

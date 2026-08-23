@@ -39,6 +39,9 @@ def test_negative_mutation_language_is_effect_free(objective: str) -> None:
     "objective",
     [
         "Altere controle.txt para modificado.",
+        "Aplique a alteracao deterministica e valide.",
+        "Proponha uma modificacao sem aplicar.",
+        "Proponha uma modifica\u00c3\u00a7\u00c3\u00a3o sem aplicar.",
         "Modifique o arquivo.",
         "Write the file.",
         "Delete the temporary file.",

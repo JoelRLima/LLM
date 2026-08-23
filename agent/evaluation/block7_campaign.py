@@ -33,6 +33,7 @@ from agent.evaluation.block7_identity import (
     resume_compatible,
     semantic_candidate_manifest,
     semantic_manifest_hash,
+    unavailable_observed_identity,
 )
 
 _SCRIPTED_GATEWAY_FACTORY = cast(GatewayFactory, _scripted_factory)
@@ -197,6 +198,14 @@ def run_scripted_campaign(
     initial_candidate = candidate_identity(root)
     policy = RepetitionPolicy()
     identity = dict(model_identity or (fake_model_identity() if evidence_level is EvidenceLevel.DETERMINISTIC else {}))
+    raw_prior_observed_identity = (
+        resume_report.get("observed_model_identity") if isinstance(resume_report, Mapping) else None
+    )
+    prior_observed_identity = (
+        dict(cast(Mapping[str, Any], raw_prior_observed_identity))
+        if isinstance(raw_prior_observed_identity, Mapping)
+        else unavailable_observed_identity()
+    )
     current_resume_identity = {
         "schema_version": CAMPAIGN_SCHEMA_VERSION,
         "scenario_set_version": H_SERIES_VERSION,
@@ -207,6 +216,7 @@ def run_scripted_campaign(
         "semantic_manifest_hash": semantic_manifest_hash(semantic_candidate_manifest(root)),
         "model_identity": identity,
         "model_config_fingerprint": identity.get("model_config_fingerprint"),
+        "observed_model_identity": prior_observed_identity,
         "repetition_policy": policy.to_dict(),
     }
     existing_runs: list[Mapping[str, Any]] = [

@@ -16,6 +16,7 @@ from agent.evaluation.block7_analysis_metrics import (
 from agent.evaluation.block7_analysis_support import (
     CampaignAnalysisError,
     _evidence,
+    _is_environmental_attempt,
     _valid,
     identity_checks,
     secret_safe_report,
@@ -43,7 +44,11 @@ def analyze_campaign(
     """Mechanically analyze preserved runs; never invokes a model judge."""
 
     validate_oracle_coverage()
-    envelope = validate_campaign_report(report, require_final_epoch=False)
+    envelope = validate_campaign_report(report, require_final_epoch=require_final_epoch)
+    if not envelope["valid"]:
+        raise CampaignAnalysisError(
+            "campaign evidence is incomplete: " + ", ".join(str(item) for item in envelope["errors"])
+        )
     runs = [run for run in report.get("runs", ()) if isinstance(run, Mapping)]
     identity_consistent, identity_reasons, identity_details = identity_checks(report, runs)
     policy_value = report.get("repetition_policy")
@@ -68,6 +73,18 @@ def analyze_campaign(
     evidence_level = str(report.get("evidence_level", ""))
     if not require_final_epoch and evidence_level != "real_model":
         complete = True
+    accepted_installed = installed_acceptance
+    if accepted_installed is None and isinstance(report.get("installed_acceptance"), Mapping):
+        accepted_installed = report["installed_acceptance"]
+    deterministic_readiness = report.get("deterministic_readiness") if require_final_epoch else None
+    if require_final_epoch and not isinstance(deterministic_readiness, Mapping):
+        deterministic_readiness = {"complete": False, "reason": "missing"}
+    observed_identity = report.get("observed_model_identity")
+    observed_identity_available = (
+        bool(observed_identity.get("available")) and observed_identity.get("complete", True) is not False
+        if require_final_epoch and isinstance(observed_identity, Mapping)
+        else None
+    )
     release_verdict, verdict_reasons = verdict(
         evidence_level=evidence_level,
         identity_consistent=identity_consistent,
@@ -77,7 +94,9 @@ def analyze_campaign(
         aggregate_rate=aggregate_rate,
         incidents=incidents,
         classifications=classifications,
-        installed_acceptance=installed_acceptance,
+        installed_acceptance=accepted_installed,
+        deterministic_readiness=deterministic_readiness,
+        observed_identity_available=observed_identity_available,
     )
     return {
         "analysis_schema_version": "B7-ANALYSIS-V1.0",
@@ -97,7 +116,7 @@ def analyze_campaign(
             "reason_codes": repetition_reasons,
         },
         "valid_run_count": sum(_valid(run) for run in runs),
-        "environmental_attempt_count": sum(bool(run.get("environmental")) for run in runs),
+        "environmental_attempt_count": sum(_is_environmental_attempt(run) for run in runs),
         "unknown_failed_run_count": unknown_failures,
         "causal_failure_counts": dict(sorted(classifications.items())),
         "incidents": incidents,
@@ -113,7 +132,7 @@ def analyze_campaign(
             "unknown_failures_required": 0,
             "h2_required_valid_repetitions": 5,
         },
-        "installed_acceptance": dict(installed_acceptance or {}),
+        "installed_acceptance": dict(accepted_installed or {}),
     }
 
 

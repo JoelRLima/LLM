@@ -8,12 +8,15 @@ from typing import Any
 from agent.planning.operational_constants import WRITE_CAPABILITIES
 from agent.planning.task_semantics_types import ObligationStatus
 from agent.reporting.observation_evidence import (
+    artifact_metadata,
     project_artifact_evidence,
     result_executed,
     result_has_data,
     result_is_failed,
     result_is_successful,
 )
+
+_MEMORY_CAPABILITY = "memory"
 
 
 def tool_capabilities(authority: Any, tool_name: str) -> frozenset[str] | None:
@@ -60,7 +63,10 @@ def effect_observation_proves_terminal(
     if status is ObligationStatus.SATISFIED:
         return (
             result_executed(result) is True
-            and bool(capabilities & WRITE_CAPABILITIES)
+            and (
+                bool(capabilities & WRITE_CAPABILITIES)
+                or _is_memory_write_observation(tool, capabilities, observation)
+            )
             and project_artifact_evidence(result).persisted_mutation
         )
 
@@ -69,7 +75,7 @@ def effect_observation_proves_terminal(
             result_executed(result) is True
             and result_is_successful(result)
             and result_has_data(result)
-            and not bool(capabilities & WRITE_CAPABILITIES)
+            and not bool(capabilities & (WRITE_CAPABILITIES | {_MEMORY_CAPABILITY}))
         )
 
     if status is ObligationStatus.BLOCKED:
@@ -82,4 +88,41 @@ def effect_observation_proves_terminal(
     return False
 
 
-__all__ = ["effect_observation_proves_terminal", "tool_capabilities"]
+def _is_memory_write_observation(
+    tool: str,
+    capabilities: frozenset[str],
+    observation: Mapping[str, Any],
+) -> bool:
+    if _MEMORY_CAPABILITY not in capabilities:
+        return False
+    result = observation.get("result")
+    if not isinstance(result, Mapping):
+        return False
+    args = observation.get("args")
+    if str(tool).casefold() == "session_memory" and isinstance(args, Mapping):
+        return str(args.get("action", "")).casefold() in {"set", "delete"}
+    if result.get("effect") == "memory_write":
+        return True
+    return any(metadata.get("effect") == "memory_write" for metadata in artifact_metadata(result))
+
+
+def observed_effect_kinds(authority: Any, observation: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return only durable effects proved by one trusted observation."""
+
+    result = observation.get("result")
+    if not isinstance(result, Mapping):
+        return ()
+    capabilities = tool_capabilities(authority, str(observation.get("tool") or ""))
+    if capabilities is None or result_executed(result) is not True:
+        return ()
+    if not project_artifact_evidence(result).persisted_mutation:
+        return ()
+    effects: list[str] = []
+    if capabilities & WRITE_CAPABILITIES:
+        effects.append("write")
+    if _is_memory_write_observation(str(observation.get("tool") or ""), capabilities, observation):
+        effects.append("memory_write")
+    return tuple(effects)
+
+
+__all__ = ["effect_observation_proves_terminal", "observed_effect_kinds", "tool_capabilities"]

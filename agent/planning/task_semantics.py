@@ -4,19 +4,27 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence, cast
 
+from agent.planning.task_semantics_admission_api import TaskSemanticsAdmissionMixin
 from agent.planning.task_semantics_checkpoint import (
     restore_from_checkpoint,
     snapshot,
     to_checkpoint_dict,
 )
-from agent.planning.task_semantics_effect_transitions import record_effect, waive_effect
+from agent.planning.task_semantics_effect_transitions import (
+    record_effect,
+    record_unrequested_effect,
+    waive_effect,
+)
 from agent.planning.task_semantics_inference import (
     infer_effect_semantics,
     infer_prohibited_effects,
     infer_requested_effects,
     inferred_obligations,
 )
-from agent.planning.task_semantics_review import review_and_add
+from agent.planning.task_semantics_review import (
+    ObligationRejection,
+    ObligationReviewResult,
+)
 from agent.planning.task_semantics_storage import initialize_semantics
 from agent.planning.task_semantics_transitions import (
     block,
@@ -31,6 +39,7 @@ from agent.planning.task_semantics_types import (
     MAX_OBLIGATIONS,
     MAX_REVIEW_OBLIGATIONS,
     OBLIGATION_KINDS,
+    AdmissionSource,
     EffectSemantics,
     ObligationStatus,
     TaskIntent,
@@ -41,7 +50,7 @@ from agent.planning.task_semantics_types import (
 )
 
 
-class TaskSemantics:
+class TaskSemantics(TaskSemanticsAdmissionMixin):
     """Single mutable owner for durable task requirements and their evidence."""
 
     _intent: TaskIntent
@@ -53,6 +62,7 @@ class TaskSemantics:
     _evidence_catalog: dict[int | str, dict[str, Any]]
     _executed_effects: list[str]
     _waived_effects: list[str]
+    _unrequested_effects: list[str]
     _strict_evidence: bool
 
     def __init__(
@@ -67,6 +77,7 @@ class TaskSemantics:
         _strict_evidence: bool = False,
     ) -> None:
         self._strict_evidence = _strict_evidence
+        self._unrequested_effects = []
         self._evidence_catalog = {}
         initialize_semantics(
             self,
@@ -189,6 +200,8 @@ class TaskSemantics:
     def waived_effects(self) -> tuple[str, ...]:
         return self._effect_projection(ObligationStatus.WAIVED, self._waived_effects)
 
+    def unrequested_effects(self) -> tuple[str, ...]: return tuple(self._unrequested_effects)
+
     def _effect_projection(self, status: ObligationStatus, values: Sequence[str]) -> tuple[str, ...]:
         projected = list(values)
         for item in self._obligations:
@@ -198,7 +211,8 @@ class TaskSemantics:
 
     def prohibited_effects_occurred(self) -> tuple[str, ...]:
         prohibited = set(self.prohibited_effects) - set(self.requested_effects)
-        return tuple(effect for effect in self.executed_effects() if effect in prohibited)
+        observed = dict.fromkeys((*self.executed_effects(), *self._unrequested_effects))
+        return tuple(effect for effect in observed if effect in prohibited)
 
     def satisfy(self, obligation_id: str, *, evidence_ref: int | str, effect_authority: Any = None) -> None:
         satisfy(self, _normalize_id(obligation_id), evidence_ref, effect_authority=effect_authority)
@@ -214,6 +228,20 @@ class TaskSemantics:
 
     def waive_effect(self, effect: str, *, evidence_ref: int | str | None = None, allow_legacy: bool = False, effect_authority: Any = None) -> None:
         waive_effect(self, effect, evidence_ref=evidence_ref, allow_legacy=allow_legacy, effect_authority=effect_authority)
+
+    def record_unrequested_effect(
+        self,
+        effect: str,
+        *,
+        evidence_ref: int | str,
+        effect_authority: Any,
+    ) -> None:
+        record_unrequested_effect(
+            self,
+            effect,
+            evidence_ref=evidence_ref,
+            effect_authority=effect_authority,
+        )
 
     def observe_tool(
         self,
@@ -238,12 +266,7 @@ class TaskSemantics:
     def replace_effects(self, requested_effects: Sequence[str], prohibited_effects: Sequence[str] = ()) -> None:
         replace_effects(self, requested_effects, prohibited_effects)
 
-    def reset_progress(self) -> None:
-        reset_progress(self)
-
-    def review_and_add_obligations(self, raw: Any, *, source: str) -> tuple[TaskObligation, ...]:
-        return review_and_add(self, raw, source=source)
-
+    def reset_progress(self) -> None: reset_progress(self)
     def snapshot(self) -> tuple[dict[str, Any], ...]:
         return snapshot(self)
 
@@ -254,12 +277,14 @@ class TaskSemantics:
     def from_checkpoint_dict(cls, data: Mapping[str, Any]) -> "TaskSemantics":
         return cast("TaskSemantics", restore_from_checkpoint(cls, data))
 
-    def status_map(self) -> dict[str, str]:
-        return {key: value.value for key, value in self._statuses.items()}
+    def status_map(self) -> dict[str, str]: return {key: value.value for key, value in self._statuses.items()}
 
 
 __all__ = (
     "EffectSemantics",
+    "AdmissionSource",
+    "ObligationReviewResult",
+    "ObligationRejection",
     "MAX_OBLIGATIONS",
     "MAX_REVIEW_OBLIGATIONS",
     "OBLIGATION_KINDS",

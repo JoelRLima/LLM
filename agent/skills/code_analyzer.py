@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.code.intelligence import CodeIntelligenceService
+from agent.tools.result_completeness import EvidenceProvenance
 
 from .base import BaseSkill
 from .python_security_analysis import analyze_security_file
@@ -89,6 +90,8 @@ class CodeAnalyzerSkill(BaseSkill):
         imports = data.get("imports", [])
         mode_label = " (modo compacto)" if compact else ""
         return {
+            "evidence_provenance": EvidenceProvenance.DERIVED_LOSSY.value,
+            "source_extent": {"kind": "analysis"},
             "ok": True,
             "done": True,
             "data": data,
@@ -103,6 +106,8 @@ class CodeAnalyzerSkill(BaseSkill):
         except (OSError, ValueError) as exc:
             return self._error(str(exc), "Não foi possível analisar o arquivo.")
         return {
+            "evidence_provenance": EvidenceProvenance.DERIVED_LOSSY.value,
+            "source_extent": {"kind": "analysis"},
             "ok": True,
             "done": True,
             "data": analysis.to_dict(),
@@ -135,6 +140,8 @@ class CodeAnalyzerSkill(BaseSkill):
         if not compact:
             data["dependencies"] = dependencies
         return {
+            "evidence_provenance": EvidenceProvenance.DERIVED_LOSSY.value,
+            "source_extent": {"kind": "analysis"},
             "ok": True,
             "done": True,
             "data": data,
@@ -181,6 +188,8 @@ class CodeAnalyzerSkill(BaseSkill):
         except (OSError, ValueError) as exc:
             return self._error(str(exc), "Erro ao ler/parsear o arquivo.")
         return {
+            "evidence_provenance": EvidenceProvenance.DERIVED_LOSSY.value,
+            "source_extent": {"kind": "analysis"},
             "ok": True,
             "done": True,
             "data": data,

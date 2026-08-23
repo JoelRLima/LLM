@@ -19,20 +19,57 @@ def _precondition_reasons(
     complete: bool,
     unknown_failures: int,
     installed_acceptance: Mapping[str, Any] | None,
+    deterministic_readiness: Mapping[str, Any] | None,
 ) -> list[str]:
     reasons: list[str] = []
     if not complete:
         reasons.append("REPETITION_POLICY_INCOMPLETE")
     if unknown_failures:
         reasons.append("UNKNOWN_CAUSAL_FAILURES_REMAIN")
-    if installed_acceptance is not None and str(installed_acceptance.get("status", "")) == "failed":
-        classification = str(installed_acceptance.get("classification", "ENVIRONMENTAL"))
+    acceptance_state = installed_acceptance_state(installed_acceptance)
+    if acceptance_state == "missing":
+        reasons.append("INSTALLED_ACCEPTANCE_MISSING")
+    elif acceptance_state == "failed":
+        classification = str((installed_acceptance or {}).get("classification", "ENVIRONMENTAL"))
         reasons.append(
             "INSTALLED_ACCEPTANCE_ENVIRONMENTAL_FAILURE"
             if classification == "ENVIRONMENTAL"
             else "INSTALLED_ACCEPTANCE_FAILED"
         )
+    elif acceptance_state == "inconclusive":
+        reasons.append("INSTALLED_ACCEPTANCE_INCONCLUSIVE")
+    if deterministic_readiness is not None and deterministic_readiness.get("complete") is not True:
+        reasons.append(
+            "DETERMINISTIC_READINESS_MISSING"
+            if not deterministic_readiness or deterministic_readiness.get("reason") == "missing"
+            else "DETERMINISTIC_READINESS_INCOMPLETE"
+        )
     return reasons
+
+
+def installed_acceptance_state(value: Mapping[str, Any] | None) -> str:
+    """Classify only canonical clean-installed evidence."""
+
+    if not isinstance(value, Mapping):
+        return "missing"
+    if bool(value.get("offline")) or bool(value.get("diagnostic_only")):
+        return "inconclusive"
+    mode = str(value.get("mode", "")).casefold()
+    evidence_level = str(value.get("evidence_level", "")).casefold()
+    if mode in {"offline", "diagnostic", "offline-diagnostic", "offline_diagnostic"} or evidence_level in {"offline", "diagnostic", "offline_diagnostic"}:
+        return "inconclusive"
+    status = str(value.get("status", "")).casefold()
+    if status == "failed" or value.get("acceptance") is False:
+        return "failed"
+    if (
+        status == "passed"
+        and value.get("acceptance") is True
+        and mode in {"clean-acceptance", "clean_acceptance"}
+        and value.get("task_files_in_wheel") is False
+        and value.get("clean", True) is not False
+    ):
+        return "passed"
+    return "inconclusive"
 
 
 def _runtime_reasons(
@@ -73,14 +110,20 @@ def verdict(
     incidents: Mapping[str, int],
     classifications: Mapping[str, int],
     installed_acceptance: Mapping[str, Any] | None,
+    deterministic_readiness: Mapping[str, Any] | None = None,
+    observed_identity_available: bool | None = None,
 ) -> tuple[str, list[str]]:
+    if observed_identity_available is False:
+        return "INCONCLUSIVE", ["OBSERVED_MODEL_IDENTITY_UNAVAILABLE"]
     if not identity_consistent:
         return "INCONCLUSIVE", ["EVIDENCE_IDENTITY_INCONSISTENT"]
     if evidence_level != "real_model":
         return "INCONCLUSIVE", ["REAL_MODEL_EPOCH_REQUIRED"]
-    preconditions = _precondition_reasons(complete, unknown_failures, installed_acceptance)
+    preconditions = _precondition_reasons(
+        complete, unknown_failures, installed_acceptance, deterministic_readiness
+    )
     if preconditions:
-        if any(reason.startswith("INSTALLED_ACCEPTANCE_ENVIRONMENTAL") for reason in preconditions):
+        if any(reason.startswith("INSTALLED_ACCEPTANCE_") and reason.endswith(("FAILURE", "FAILED")) for reason in preconditions):
             return "NOT_RELEASE_READY_ENVIRONMENT", preconditions
         return "INCONCLUSIVE", preconditions
     runtime = _runtime_reasons(incidents, classifications)
@@ -92,4 +135,4 @@ def verdict(
     return "RELEASE_READY", []
 
 
-__all__ = ["VERDICTS", "verdict"]
+__all__ = ["VERDICTS", "installed_acceptance_state", "verdict"]

@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from agent.planning.plan_prompts import (
     build_continuation_prompt,
@@ -108,16 +108,26 @@ class PlanBuilder:
         if "obligations" not in decision:
             return True, None
         state = getattr(self.orchestrator, "agent_state", None)
-        reviewer = getattr(state, "review_task_obligations", None)
-        if not callable(reviewer):
+        report_reviewer = getattr(state, "review_task_obligations_report", None)
+        legacy_reviewer = getattr(state, "review_task_obligations", None)
+        if not callable(report_reviewer) and not callable(legacy_reviewer):
             return False, None
         try:
-            reviewed = reviewer(decision["obligations"], source="initial_plan")
+            if callable(report_reviewer):
+                reviewed = report_reviewer(decision["obligations"], source="initial_plan")
+                accepted = reviewed.accepted
+            else:
+                reviewed = cast(Callable[..., Any], legacy_reviewer)(
+                    decision["obligations"],
+                    source="initial_plan",
+                    collect_rejections=True,
+                )
+                accepted = tuple(reviewed)
         except (TaskSemanticsError, TypeError, ValueError):
             return False, None
         return (
             True,
-            [item.to_dict() for item in reviewed],
+            [item.to_dict() for item in accepted],
         )
 
     def continue_after_observation(self, objective: str, effect_evidence: str, observation_references: str) -> PlanBuildResult:

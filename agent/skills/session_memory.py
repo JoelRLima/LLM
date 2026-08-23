@@ -38,6 +38,11 @@ class SessionMemorySkill(BaseSkill):
             "done": True,
             "error": str(exc),
             "message": message,
+            "effect": "memory_write",
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "applied": False,
+            "final_state": "unknown",
         }
 
     def _set(self, key: str, value: str) -> dict[str, Any]:
@@ -48,7 +53,17 @@ class SessionMemorySkill(BaseSkill):
                 exc,
                 "Não foi possível persistir a memória.",
             )
-        return {"ok": True, "done": True, "message": f"Memorizado: {key}"}
+        return {
+            "ok": True,
+            "done": True,
+            "message": f"Memorizado: {key}",
+            "effect": "memory_write",
+            "mutation_occurred": True,
+            "persisted_mutation": True,
+            "applied": True,
+            "final_state": "applied",
+            "affected_files": (),
+        }
 
     def _delete(self, key: str) -> dict[str, Any]:
         try:
@@ -58,7 +73,17 @@ class SessionMemorySkill(BaseSkill):
                 exc,
                 "Não foi possível remover a memória.",
             )
-        return {"ok": True, "done": True, "message": f"Removido: {key}"}
+        return {
+            "ok": True,
+            "done": True,
+            "message": f"Removido: {key}",
+            "effect": "memory_write",
+            "mutation_occurred": True,
+            "persisted_mutation": True,
+            "applied": True,
+            "final_state": "applied",
+            "affected_files": (),
+        }
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         if not self.orchestrator:

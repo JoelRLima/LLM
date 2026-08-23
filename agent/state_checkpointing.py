@@ -7,11 +7,8 @@ from typing import Any, Dict, Mapping, cast
 
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
-from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
-from agent.planning.task_semantics_effects import effect_observation_proves_terminal
-from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
-from agent.planning.task_semantics_types import ObligationStatus
 from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_checkpoint_history import restore_histories as _restore_histories
 from agent.state_checkpoint_restore import (
     provisional_state as _provisional_state,
 )
@@ -129,122 +126,6 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
     state.last_tool = last_tool
     state.last_args = dict(last_args) if isinstance(last_args, Mapping) else last_args
     state.last_result = dict(last_result) if isinstance(last_result, Mapping) else last_result
-
-
-def _restore_histories(
-    state: Any,
-    data: Mapping[str, Any],
-    *,
-    effect_authority: Any = None,
-) -> None:
-    raw_history = data.get("tool_history", state.tool_history) or []
-    if not isinstance(raw_history, list) or any(not isinstance(entry, Mapping) for entry in raw_history):
-        raise ValueError("Checkpoint tool history is invalid.")
-    state.tool_history = [dict(entry) for entry in raw_history]
-    plan_ids = {str(step.get("_step_id")) for step in state.plan if step.get("_step_id")}
-    for entry in state.tool_history:
-        if state.plan_identity is not None and "plan_id" not in entry and entry.get("step_id") in plan_ids:
-            entry["plan_id"] = state.plan_identity
-    semantics = getattr(state, "task_semantics", None)
-    register = getattr(semantics, "register_observation", None)
-    if callable(register):
-        for index, entry in enumerate(state.tool_history, start=1):
-            result = entry.get("result")
-            if isinstance(result, Mapping):
-                register(
-                    str(entry.get("tool", "")),
-                    result,
-                    evidence_ref=index,
-                    args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
-                )
-    if not isinstance(semantics, TaskSemantics):
-        raise ValueError("Checkpoint task semantics owner is invalid after restore.")
-    legacy_semantics = not isinstance(data.get("task_semantics"), Mapping)
-    try:
-        if legacy_semantics:
-            _rebuild_legacy_semantics(
-                semantics,
-                state.tool_history,
-                effect_authority=effect_authority,
-            )
-        revalidate_restored_terminal_evidence(
-            semantics,
-            effect_authority=effect_authority,
-        )
-        _reconstruct_modern_unbound_effects(
-            semantics,
-            state.tool_history,
-            legacy_semantics=legacy_semantics,
-            effect_authority=effect_authority,
-        )
-    except (TaskSemanticsError, TypeError, AttributeError) as exc:
-        raise ValueError(
-            "Checkpoint task semantics evidence does not match canonical history."
-        ) from exc
-
-
-def _rebuild_legacy_semantics(
-    semantics: TaskSemantics,
-    history: list[dict[str, Any]],
-    *,
-    effect_authority: Any = None,
-) -> None:
-    """Derive legacy terminal facts from history, never from legacy lists."""
-
-    for index, entry in enumerate(history, start=1):
-        result = entry.get("result")
-        if not isinstance(result, Mapping):
-            continue
-        semantics.observe_tool(
-            str(entry.get("tool", "")),
-            result,
-            evidence_ref=index,
-            args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
-        )
-    if effect_authority is None:
-        return
-    for index, entry in enumerate(history, start=1):
-        if not effect_observation_proves_terminal(
-            effect_authority,
-            ObligationStatus.SATISFIED,
-            entry,
-        ):
-            continue
-        semantics.record_effect(
-            "write",
-            evidence_ref=index,
-            effect_authority=effect_authority,
-        )
-
-
-def _reconstruct_modern_unbound_effects(
-    semantics: TaskSemantics,
-    history: list[dict[str, Any]],
-    *,
-    legacy_semantics: bool,
-    effect_authority: Any = None,
-) -> None:
-    """Rebuild unbound operational effects from canonical modern history."""
-
-    if legacy_semantics or effect_authority is None or any(
-        item.kind == "effect" and item.effect == "write"
-        for item in semantics.obligations
-    ):
-        return
-    catalog = getattr(semantics, "_evidence_catalog", {})
-    for index, _entry in enumerate(history, start=1):
-        observation = catalog.get(index)
-        if not isinstance(observation, Mapping) or not effect_observation_proves_terminal(
-            effect_authority,
-            ObligationStatus.SATISFIED,
-            observation,
-        ):
-            continue
-        semantics.record_effect(
-            "write",
-            evidence_ref=index,
-            effect_authority=effect_authority,
-        )
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:

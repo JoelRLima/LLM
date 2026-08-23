@@ -136,3 +136,7 @@ def test_resume_requires_exact_candidate_and_campaign_identity(tmp_path) -> None
     changed["candidate"] = dict(config["candidate"])
     changed["candidate"]["source_fingerprint"] = "changed"
     assert not resume_compatible(config, changed)
+    documentation_only = dict(config)
+    documentation_only["candidate"] = dict(config["candidate"])
+    documentation_only["candidate"]["documentation_fingerprint"] = "changed-docs"
+    assert resume_compatible(config, documentation_only)

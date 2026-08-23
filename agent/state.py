@@ -1,3 +1,4 @@
+import copy
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
@@ -79,9 +80,6 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
         Centraliza a mutação de last_tool, last_args, last_result e tool_history,
         evitando que múltiplos componentes escrevam diretamente nesses atributos.
         """
-        self.last_tool = tool_name
-        self.last_args = args
-        self.last_result = result
         entry: ToolHistoryEntry = {
             "step_id": step_id or self.current_step_id,
             "tool": tool_name,
@@ -97,13 +95,26 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
             entry["status"] = str(result["status"])
         if logical_slot is not None:
             entry["logical_slot"] = logical_slot
-        self.tool_history.append(entry)
-        self._task_semantics.observe_tool(
+
+        # Semantic observation is the validation boundary for the complete
+        # canonical record.  Validate against a detached owner first so a
+        # collision or rejected terminal transition cannot leave last_*,
+        # history, and the evidence catalog at different points in time.
+        candidate_semantics = copy.deepcopy(self._task_semantics)
+        evidence_ref = len(self.tool_history) + 1
+        candidate_semantics.observe_tool(
             tool_name,
             result,
-            evidence_ref=len(self.tool_history),
+            evidence_ref=evidence_ref,
             args=args,
         )
+
+        next_history = [*self.tool_history, entry]
+        self._task_semantics = candidate_semantics
+        self.last_tool = tool_name
+        self.last_args = args
+        self.last_result = result
+        self.tool_history = next_history
     def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
         """Project a canonical terminal result without appending history again."""
         self.last_tool = tool_name
