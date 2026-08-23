@@ -46,7 +46,6 @@ class TaskInputs:
 
 class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
     """Coordinates one task lifecycle around the public Orchestrator facade."""
-
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator = orchestrator
 
@@ -105,6 +104,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 checkpoint,
                 retry_failed=bool(self.orchestrator.session.config.get("resume_retry_failed", False)),
                 retry_skipped=bool(self.orchestrator.session.config.get("resume_retry_skipped", False)),
+                effect_authority=self.orchestrator,
             )
         except ValueError:
             self.orchestrator._preserve_checkpoint = True

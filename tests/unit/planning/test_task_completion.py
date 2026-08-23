@@ -16,7 +16,9 @@ from agent.planning.task_completion import (
     continue_after_reasoning_boundary,
     initialize_task_progression,
     refresh_executed_effects,
+    review_task_completion,
 )
+from agent.planning.task_semantics import TaskSemanticsError
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.run_receipt import build_run_receipt
 from agent.state import AgentState
@@ -155,6 +157,26 @@ def test_complete_disposition_cannot_bypass_pending_effect() -> None:
     assert "permanece pendente" in answer
     assert state.terminal_disposition == "block"
     assert state.last_result["status"] == "blocked"
+
+
+def test_compatibility_effect_claim_cannot_pass_completion_review() -> None:
+    state = AgentState()
+    state.requested_effects = ["write"]
+    with pytest.raises(TaskSemanticsError):
+        state.executed_effects = ["write"]
+
+    review = review_task_completion(
+        SimpleNamespace(
+            agent_state=state,
+            tool_registry=None,
+            _task_failed=False,
+            _cancelled=False,
+        )
+    )
+
+    assert review.accepted is False
+    assert review.reason_code == "requested_effect_pending"
+    assert state.pending_effects() == ("write",)
 
 
 def test_continuation_owner_failure_is_bounded_and_blocks_pending_effect() -> None:

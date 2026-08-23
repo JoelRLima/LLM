@@ -123,15 +123,18 @@ def test_obligation_transitions_require_evidence_and_checkpoint_round_trip() -> 
     )
     assert semantics.obligation_status("read") is ObligationStatus.SATISFIED
     restored = TaskSemantics.from_checkpoint_dict(semantics.to_checkpoint_dict())
-    assert restored.obligation_status("read") is ObligationStatus.SATISFIED
-    assert restored.obligation_evidence("read") == (1,)
+    assert restored.obligation_status("read") is ObligationStatus.PENDING
+    assert restored.obligation_evidence("read") == ()
+    assert restored.terminal_evidence_complete() is False
+    assert restored.to_checkpoint_dict()["statuses"]["read"] == "satisfied"
 
 
-def test_unrequested_observed_effect_is_evidence_but_not_a_new_request() -> None:
+def test_unrequested_effect_requires_canonical_authority() -> None:
     state = AgentState()
-    state.record_executed_effect("write", evidence_ref=1)
+    with pytest.raises(TaskSemanticsError):
+        state.record_executed_effect("write", evidence_ref=1)
     assert state.requested_effects == []
-    assert state.executed_effects == ["write"]
+    assert state.executed_effects == []
     assert state.pending_effects() == ()
 
 
@@ -292,8 +295,9 @@ def test_structured_obligation_checkpoint_round_trip_is_exact() -> None:
     restored = TaskSemantics.from_checkpoint_dict(semantics.to_checkpoint_dict())
     comparison = next(item for item in restored.obligations if item.kind == "compare")
     assert comparison.operands == ("a.txt", "b.txt")
-    assert restored.obligation_status(comparison.id) is ObligationStatus.SATISFIED
-    assert restored.obligation_evidence(comparison.id) == (1, 2)
+    assert restored.obligation_status(comparison.id) is ObligationStatus.PENDING
+    assert restored.obligation_evidence(comparison.id) == ()
+    assert restored.terminal_evidence_complete() is False
 
 
 def test_checkpoint_without_closed_semantics_version_fails_closed() -> None:

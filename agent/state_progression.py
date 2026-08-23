@@ -44,6 +44,7 @@ def record_executed_effect(
     *,
     evidence_ref: int | str | None = None,
     allow_legacy: bool = False,
+    effect_authority: Any = None,
 ) -> None:
     semantics = getattr(state, "task_semantics", None)
     if isinstance(semantics, TaskSemantics):
@@ -51,7 +52,8 @@ def record_executed_effect(
             semantics.record_effect(
                 effect,
                 evidence_ref=evidence_ref,
-                allow_legacy=allow_legacy or evidence_ref is None,
+                allow_legacy=allow_legacy,
+                effect_authority=effect_authority,
             )
         return
     if effect and effect not in state.executed_effects:
@@ -64,6 +66,7 @@ def waive_effect(
     *,
     evidence_ref: int | str | None = None,
     allow_legacy: bool = False,
+    effect_authority: Any = None,
 ) -> None:
     semantics = getattr(state, "task_semantics", None)
     if isinstance(semantics, TaskSemantics):
@@ -71,7 +74,8 @@ def waive_effect(
             semantics.waive_effect(
                 effect,
                 evidence_ref=evidence_ref,
-                allow_legacy=allow_legacy or evidence_ref is None,
+                allow_legacy=allow_legacy,
+                effect_authority=effect_authority,
             )
         return
     if effect and effect not in state.waived_effects:

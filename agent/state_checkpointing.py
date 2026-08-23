@@ -7,7 +7,20 @@ from typing import Any, Dict, Mapping, cast
 
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
+from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
+from agent.planning.task_semantics_effects import effect_observation_proves_terminal
+from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
+from agent.planning.task_semantics_types import ObligationStatus
 from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_checkpoint_restore import (
+    provisional_state as _provisional_state,
+)
+from agent.state_checkpoint_restore import (
+    publish_provisional_state as _publish_provisional_state,
+)
+from agent.state_checkpoint_restore import (
+    validate_restored_cross_fields as _validate_restored_cross_fields,
+)
 
 
 class StateCheckpointMixin:
@@ -40,17 +53,25 @@ class StateCheckpointMixin:
         data: Mapping[str, Any],
         retry_failed: bool = False,
         retry_skipped: bool = False,
+        *,
+        effect_authority: Any = None,
     ) -> None:
         if not isinstance(data, Mapping):
             raise ValueError("Checkpoint root must be an object.")
-        self.objective = _restore_objective(self, data)
-        _restore_plan(self, data)
-        restore_progression(self, dict(data))
-        _restore_step_records(self, data)
-        _restore_last_result(self, data)
-        _restore_histories(self, data)
-        _restore_auxiliary_state(self, data)
-        self.prepare_for_resume(retry_failed=retry_failed, retry_skipped=retry_skipped)
+        provisional = _provisional_state(self)
+        provisional.objective = _restore_objective(provisional, data)
+        _restore_plan(provisional, data)
+        restore_progression(provisional, dict(data))
+        _restore_step_records(provisional, data)
+        _restore_last_result(provisional, data)
+        _restore_histories(provisional, data, effect_authority=effect_authority)
+        _restore_auxiliary_state(provisional, data)
+        provisional.prepare_for_resume(
+            retry_failed=retry_failed,
+            retry_skipped=retry_skipped,
+        )
+        _validate_restored_cross_fields(provisional)
+        _publish_provisional_state(self, provisional)
 
 
 def _restore_objective(state: Any, data: Mapping[str, Any]) -> str | None:
@@ -110,7 +131,12 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
     state.last_result = dict(last_result) if isinstance(last_result, Mapping) else last_result
 
 
-def _restore_histories(state: Any, data: Mapping[str, Any]) -> None:
+def _restore_histories(
+    state: Any,
+    data: Mapping[str, Any],
+    *,
+    effect_authority: Any = None,
+) -> None:
     raw_history = data.get("tool_history", state.tool_history) or []
     if not isinstance(raw_history, list) or any(not isinstance(entry, Mapping) for entry in raw_history):
         raise ValueError("Checkpoint tool history is invalid.")
@@ -131,6 +157,94 @@ def _restore_histories(state: Any, data: Mapping[str, Any]) -> None:
                     evidence_ref=index,
                     args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
                 )
+    if not isinstance(semantics, TaskSemantics):
+        raise ValueError("Checkpoint task semantics owner is invalid after restore.")
+    legacy_semantics = not isinstance(data.get("task_semantics"), Mapping)
+    try:
+        if legacy_semantics:
+            _rebuild_legacy_semantics(
+                semantics,
+                state.tool_history,
+                effect_authority=effect_authority,
+            )
+        revalidate_restored_terminal_evidence(
+            semantics,
+            effect_authority=effect_authority,
+        )
+        _reconstruct_modern_unbound_effects(
+            semantics,
+            state.tool_history,
+            legacy_semantics=legacy_semantics,
+            effect_authority=effect_authority,
+        )
+    except (TaskSemanticsError, TypeError, AttributeError) as exc:
+        raise ValueError(
+            "Checkpoint task semantics evidence does not match canonical history."
+        ) from exc
+
+
+def _rebuild_legacy_semantics(
+    semantics: TaskSemantics,
+    history: list[dict[str, Any]],
+    *,
+    effect_authority: Any = None,
+) -> None:
+    """Derive legacy terminal facts from history, never from legacy lists."""
+
+    for index, entry in enumerate(history, start=1):
+        result = entry.get("result")
+        if not isinstance(result, Mapping):
+            continue
+        semantics.observe_tool(
+            str(entry.get("tool", "")),
+            result,
+            evidence_ref=index,
+            args=entry.get("args") if isinstance(entry.get("args"), Mapping) else {},
+        )
+    if effect_authority is None:
+        return
+    for index, entry in enumerate(history, start=1):
+        if not effect_observation_proves_terminal(
+            effect_authority,
+            ObligationStatus.SATISFIED,
+            entry,
+        ):
+            continue
+        semantics.record_effect(
+            "write",
+            evidence_ref=index,
+            effect_authority=effect_authority,
+        )
+
+
+def _reconstruct_modern_unbound_effects(
+    semantics: TaskSemantics,
+    history: list[dict[str, Any]],
+    *,
+    legacy_semantics: bool,
+    effect_authority: Any = None,
+) -> None:
+    """Rebuild unbound operational effects from canonical modern history."""
+
+    if legacy_semantics or effect_authority is None or any(
+        item.kind == "effect" and item.effect == "write"
+        for item in semantics.obligations
+    ):
+        return
+    catalog = getattr(semantics, "_evidence_catalog", {})
+    for index, _entry in enumerate(history, start=1):
+        observation = catalog.get(index)
+        if not isinstance(observation, Mapping) or not effect_observation_proves_terminal(
+            effect_authority,
+            ObligationStatus.SATISFIED,
+            observation,
+        ):
+            continue
+        semantics.record_effect(
+            "write",
+            evidence_ref=index,
+            effect_authority=effect_authority,
+        )
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from agent.execution_state import StepStatus
 from agent.runtime.budget import TaskBudgetLedger
 from agent.state import AgentState
@@ -97,21 +99,29 @@ def test_checkpoint_preserves_persona_and_prompt(monkeypatch):
     assert restored.persona_prompt == "You are a coder persona"
 
 
-def test_checkpoint_preserves_canonical_task_progression(monkeypatch):
+def test_checkpoint_does_not_promote_synthetic_effect_progression(monkeypatch):
     state = _state(monkeypatch)
     state.reset_task_progression(["write"])
-    state.record_executed_effect("write")
     state.continuation_attempts = 1
     state.terminal_disposition = "complete"
+    checkpoint = state.to_checkpoint_dict()
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    statuses = semantics["statuses"]
+    evidence = semantics["evidence"]
+    assert isinstance(statuses, dict) and isinstance(evidence, dict)
+    statuses["effect:write"] = "satisfied"
+    evidence["effect:write"] = ["legacy:effect:write"]
 
     restored = _state(monkeypatch)
-    restored.from_checkpoint_dict(state.to_checkpoint_dict())
+    with pytest.raises(ValueError, match="invalid task semantics"):
+        restored.from_checkpoint_dict(checkpoint)
 
-    assert restored.requested_effects == ["write"]
-    assert restored.executed_effects == ["write"]
+    assert restored.requested_effects == []
+    assert restored.executed_effects == []
     assert restored.pending_effects() == ()
-    assert restored.continuation_attempts == 1
-    assert restored.terminal_disposition == "complete"
+    assert restored.continuation_attempts == 0
+    assert restored.terminal_disposition is None
 
 
 def test_checkpoint_json_round_trip_preserves_terminal_disposition(monkeypatch):

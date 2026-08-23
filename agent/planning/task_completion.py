@@ -76,7 +76,20 @@ def bind_effect_waiver(orchestrator: Any, observation_index: int, *, effects: tu
         return False
     for effect in selected:
         if isinstance(getattr(orchestrator.agent_state, "task_semantics", None), TaskSemantics):
-            orchestrator.agent_state.waive_effect(effect, evidence_ref=observation_index)
+            semantics = orchestrator.agent_state.task_semantics
+            register = getattr(semantics, "register_observation", None)
+            if callable(register):
+                register(
+                    str(match.get("tool", "")),
+                    match["result"],
+                    evidence_ref=observation_index,
+                    args=match.get("args") if isinstance(match.get("args"), dict) else {},
+                )
+            orchestrator.agent_state.waive_effect(
+                effect,
+                evidence_ref=observation_index,
+                effect_authority=orchestrator,
+            )
         else:
             orchestrator.agent_state.waive_effect(effect)
     orchestrator._emit("effect_waiver_bound", {"effects": list(selected), "observation_index": observation_index, "invocation_id": match.get("invocation_id"), "source": source})

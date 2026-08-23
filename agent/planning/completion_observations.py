@@ -12,28 +12,17 @@ from agent.planning.failure_policy import (
     local_failure_permitted,
     unrecovered_local_failure_observations,
 )
-from agent.planning.operational_constants import (
-    TERMINAL_FAILURE_STATUSES,
-    WRITE_CAPABILITIES,
+from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
+from agent.planning.task_semantics_effects import (
+    effect_observation_proves_terminal,
 )
-from agent.reporting.observation_evidence import (
-    project_artifact_evidence,
-    result_executed,
-    result_has_data,
-    result_is_successful,
+from agent.planning.task_semantics_effects import (
+    tool_capabilities as _tool_capabilities,
 )
+from agent.planning.task_semantics_types import ObligationStatus
 from agent.reporting.operational_outcome import project_operational_outcome
 
-
-def tool_capabilities(orchestrator: Any, tool_name: str) -> frozenset[str]:
-    registry = getattr(orchestrator, "tool_registry", None)
-    if registry is None:
-        return frozenset()
-    try:
-        descriptor = registry.descriptor(tool_name)
-    except KeyError:
-        return frozenset()
-    return frozenset(str(item) for item in descriptor.capabilities)
+tool_capabilities = _tool_capabilities
 
 
 def refresh_executed_effects(orchestrator: Any) -> None:
@@ -41,12 +30,25 @@ def refresh_executed_effects(orchestrator: Any) -> None:
     for history_index, item in enumerate(getattr(state, "tool_history", ()) or (), start=1):
         if not isinstance(item, dict) or not isinstance(item.get("result"), dict):
             continue
-        result = item["result"]
-        if result_executed(result) is not True:
-            continue
-        capabilities = tool_capabilities(orchestrator, str(item.get("tool", "")))
-        if capabilities & WRITE_CAPABILITIES and project_artifact_evidence(result).persisted_mutation:
-            state.record_executed_effect("write", evidence_ref=history_index)
+        if effect_observation_proves_terminal(
+            orchestrator,
+            ObligationStatus.SATISFIED,
+            item,
+        ):
+            semantics = getattr(state, "task_semantics", None)
+            register = getattr(semantics, "register_observation", None)
+            if callable(register):
+                register(
+                    str(item.get("tool", "")),
+                    item["result"],
+                    evidence_ref=history_index,
+                    args=item.get("args") if isinstance(item.get("args"), dict) else {},
+                )
+            state.record_executed_effect(
+                "write",
+                evidence_ref=history_index,
+                effect_authority=orchestrator,
+            )
 
 
 def eligible_waiver_observations(
@@ -59,16 +61,8 @@ def eligible_waiver_observations(
         result = item.get("result")
         if not isinstance(result, dict):
             continue
-        if (
-            result_executed(result) is not True
-            or not result_is_successful(result)
-            or not result_has_data(result)
-        ):
-            continue
-        capabilities = tool_capabilities(orchestrator, str(item.get("tool", "")))
-        if capabilities & WRITE_CAPABILITIES:
-            continue
-        eligible.append((index, item))
+        if effect_observation_proves_terminal(orchestrator, ObligationStatus.WAIVED, item):
+            eligible.append((index, item))
     return eligible
 
 
