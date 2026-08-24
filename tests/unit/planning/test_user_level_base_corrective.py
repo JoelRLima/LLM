@@ -2,8 +2,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent.cancellation import CancellationToken
+from agent.execution_state import StepStatus
 from agent.planning.capability_manifest import render_validation_repair_manual
 from agent.planning.execution_gateway import ExecutionGateway
+from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from agent.planning.plan_executor import PlanExecutor
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_prompts import (
     PLANNING_GUIDANCE,
@@ -378,3 +382,219 @@ def test_deterministic_grounded_repair_does_not_consume_zero_llm_budget(tmp_path
     assert plan[0]["args"]["pattern"] == "format_name"
     assert budget == {"remaining": 0}
     assert model_calls == []
+
+
+@pytest.mark.parametrize(
+    ("objective", "rejected"),
+    [
+        ("Find class Foo in project.", "^class Foo$"),
+        ("Procure alpha beta neste projeto.", "^alpha beta$"),
+    ],
+)
+def test_grounded_grep_narrowing_fails_closed_for_ambiguous_bare_literals(
+    objective: str, rejected: str
+) -> None:
+    assert grounded_user_literal_narrowing(
+        rejected_value=rejected,
+        objective=objective,
+    ) is None
+
+
+@pytest.mark.parametrize(
+    ("objective", "rejected", "expected"),
+    [
+        ("Procure format_name neste projeto.", "^format_name$", "format_name"),
+        ("Procure `alpha beta`.", "^alpha beta$", "alpha beta"),
+    ],
+)
+def test_grounded_grep_narrowing_keeps_single_bare_and_delimited_literals(
+    objective: str, rejected: str, expected: str
+) -> None:
+    assert grounded_user_literal_narrowing(
+        rejected_value=rejected,
+        objective=objective,
+    ) == expected
+
+
+def test_bound_analyzer_does_not_seed_semantic_deduplication() -> None:
+    producer = {
+        "tool": "echo",
+        "args": {"text": True},
+        "_step_id": "producer",
+    }
+    bound = _analyzer("x.py")
+    bound["_step_id"] = "bound"
+    bound["bindings"] = {
+        "include_code": {"from_step": "producer", "path": []},
+    }
+    unbound = _analyzer("x.py", include_code=False)
+    unbound["_step_id"] = "unbound"
+
+    report = PlanOptimizer().optimize([producer, bound, unbound])
+
+    assert report.optimized_steps == [producer, bound, unbound]
+    assert report.removed_duplicates == 0
+
+
+class _ExecutionSkill:
+    def get_schema(self):
+        return {}
+
+
+class _ExecutionWorkspace:
+    def create_restore_point(self, _plan):
+        return None
+
+    def show_diff(self, _file_path, _content):
+        return None
+
+    def lint_check(self, _file_path):
+        return None
+
+
+class _ExecutionContext:
+    def __init__(self, state: AgentState):
+        self.agent_state = state
+        self.skills = {
+            name: _ExecutionSkill()
+            for name in ("code_analyzer", "file_reader", "file_writer")
+        }
+        self.active_skills = list(self.skills)
+        self.verbose = False
+        self.workspace = _ExecutionWorkspace()
+        self.context_manager = SimpleNamespace(maybe_compress_context=lambda: None)
+        self.cancellation_token = CancellationToken()
+        self.session = SimpleNamespace(
+            config={
+                "max_task_steps": 100,
+                "max_task_tokens": 100_000,
+                "max_task_tool_calls": 100,
+                "max_task_wall_seconds": 3600,
+                "max_repeated_no_progress": 10,
+                "max_consecutive_same_error": 10,
+                "max_reasoning_turns": 1,
+            }
+        )
+        self._task_start_time = None
+        self.plan_builder = SimpleNamespace(
+            continue_after_reasoning_boundary=lambda _objective: PlanBuildResult(
+                kind=PlanningDecisionKind.COMPLETE
+            )
+        )
+        self.calls = []
+        self.events = []
+        self.failed = False
+
+    def _emit(self, event_type, data=None):
+        self.events.append((event_type, data or {}))
+
+    def _run_tool(self, tool_name, args):
+        self.calls.append((tool_name, dict(args)))
+        result = {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": {"tool": tool_name, "target": args.get("target") or args.get("file_path")},
+        }
+        if tool_name == "file_reader":
+            result["data"] = "fresh source"
+            result["total_lines"] = 1
+        self.agent_state.record_tool_result(tool_name, args, result)
+        return result
+
+    def _handle_step_failure(self, *_args, **_kwargs):
+        return "continue"
+
+    def _purge_stale_context(self):
+        return None
+
+    def _generate_content(self, _tool, _args, _objective):
+        return None
+
+    def _maybe_summarize_and_store(self, _tool, _args, _result):
+        return None
+
+    def fail_task(self):
+        self.failed = True
+
+
+def _execute_optimized_plan(plan: list[dict[str, object]]):
+    report = PlanOptimizer().optimize(plan)
+    state = AgentState()
+    state.set_plan(report.optimized_steps)
+    context = _ExecutionContext(state)
+    return report, state, context
+
+
+def test_mutation_invalidates_execution_repetition_and_cache_state() -> None:
+    plan = [
+        _analyzer("x.py"),
+        {
+            "tool": "file_writer",
+            "args": {"file_path": "x.txt", "action": "write", "content": "changed"},
+        },
+        _analyzer("x.py"),
+    ]
+    report, state, context = _execute_optimized_plan(plan)
+    state.memory.state["file_hashes"] = {"x.py": "stale"}
+    state.memory.state["file_cache_entries"] = {"x.py": {"data": "stale"}}
+    usage: dict[str, int] = {}
+
+    assert len(report.optimized_steps) == 3
+    assert PlanExecutor(context).execute("reanalisar depois da escrita", usage) is None
+    assert [tool for tool, _args in context.calls] == [
+        "code_analyzer",
+        "file_writer",
+        "code_analyzer",
+    ]
+    assert [state.get_step_status(index) for index in range(3)] == [
+        StepStatus.COMPLETED,
+        StepStatus.COMPLETED,
+        StepStatus.COMPLETED,
+    ]
+    assert state.memory.state["file_hashes"] == {}
+    assert state.memory.state["file_cache_entries"] == {}
+
+
+def test_reader_after_mutation_is_not_blocked_by_fully_read_marker() -> None:
+    plan = [
+        {"tool": "file_reader", "args": {"file_path": "x.py"}},
+        {
+            "tool": "file_writer",
+            "args": {"file_path": "x.txt", "action": "write", "content": "changed"},
+        },
+        {"tool": "file_reader", "args": {"file_path": "x.py"}},
+    ]
+    report, state, context = _execute_optimized_plan(plan)
+    usage: dict[str, int] = {}
+
+    assert len(report.optimized_steps) == 3
+    assert PlanExecutor(context).execute("reler depois da escrita", usage) is None
+    assert [tool for tool, _args in context.calls] == [
+        "file_reader",
+        "file_writer",
+        "file_reader",
+    ]
+    assert [state.get_step_status(index) for index in range(3)] == [
+        StepStatus.COMPLETED,
+        StepStatus.COMPLETED,
+        StepStatus.COMPLETED,
+    ]
+
+
+def test_without_mutation_optimizer_and_policy_still_block_repetition() -> None:
+    duplicate_plan = [_analyzer("x.py"), _analyzer("x.py")]
+    report, _state, context = _execute_optimized_plan(duplicate_plan)
+
+    assert len(report.optimized_steps) == 1
+    assert report.removed_duplicates == 1
+    assert PlanExecutor(context).execute("analisar", {}) is None
+    assert [tool for tool, _args in context.calls] == ["code_analyzer"]
+
+    state = AgentState()
+    state.set_plan(duplicate_plan)
+    direct_context = _ExecutionContext(state)
+    assert PlanExecutor(direct_context).execute("analisar", {}) is None
+    assert [tool for tool, _args in direct_context.calls] == ["code_analyzer"]
+    assert state.get_step_status(1) is StepStatus.SKIPPED

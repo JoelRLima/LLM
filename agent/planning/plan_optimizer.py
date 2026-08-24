@@ -186,7 +186,8 @@ class PlanOptimizer:
             key = self._step_key(step)
 
             step_id = str(step.get("_step_id") or "")
-            if meta.cacheable and key in seen and not has_result_bindings(step) and step_id not in referenced:
+            bound_step = has_result_bindings(step)
+            if meta.cacheable and key in seen and not bound_step and step_id not in referenced:
                 removed += 1
                 duplicate_kind = (
                     "duplicata semântica"
@@ -198,7 +199,7 @@ class PlanOptimizer:
                 )
                 continue
 
-            if meta.cacheable:
+            if meta.cacheable and not bound_step:
                 seen.add(key)
             result.append(step)
 

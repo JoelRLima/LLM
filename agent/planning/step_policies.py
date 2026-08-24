@@ -9,6 +9,7 @@ from agent.contracts import ToolArgs, ToolResult
 from agent.parsers import validate_tool_args
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.step_contracts import ExecutionContext
+from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
 from agent.tools.result_completeness import EvidenceProvenance
 
 
@@ -79,6 +80,44 @@ class StepPolicies:
             if usage[key] > 1:
                 return "chunk repetido"
         return "arquivo já totalmente lido" if usage.get(f"fully_read_{file_path}", 0) else None
+
+    def invalidate_observation_state(self, tool: str, usage: Dict[str, int]) -> bool:
+        """Invalidate filesystem observations after a successful effectful tool."""
+
+        metadata = self._tool_metadata(tool)
+        if not (
+            metadata.modifies_workspace
+            or metadata.writes_disk
+            or metadata.side_effects
+        ):
+            return False
+
+        for key in tuple(usage):
+            if key.startswith((
+                "code_analyzer_",
+                "file_reader_",
+                "fully_read_",
+                "fully_analyzed_",
+            )):
+                usage.pop(key, None)
+
+        memory = getattr(getattr(self.context, "agent_state", None), "memory", None)
+        memory_state = getattr(memory, "state", None)
+        if isinstance(memory_state, dict):
+            for cache_name in ("file_hashes", "file_cache_entries"):
+                cache = memory_state.get(cache_name)
+                if isinstance(cache, dict):
+                    cache.clear()
+        return True
+
+    def _tool_metadata(self, tool: str) -> ToolMetadata:
+        registry = getattr(self.context, "tool_registry", None)
+        metadata_dict = getattr(registry, "metadata_dict", None)
+        if callable(metadata_dict):
+            metadata = metadata_dict().get(tool)
+            if isinstance(metadata, ToolMetadata):
+                return metadata
+        return get_tool_metadata(tool)
 
     def is_impossible_chunk(self, tool: str, args: ToolArgs, file_path: str) -> bool:
         if tool != "file_reader" or "start_line" not in args or "end_line" not in args or not file_path:
@@ -166,6 +205,8 @@ class StepPolicies:
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> bool:
         del objective
+        if result.get("ok"):
+            self.invalidate_observation_state(tool, usage)
         if tool == "file_writer" and result.get("ok") and file_path.endswith(".py"):
             lint_error = self.context.workspace.lint_check(file_path)
             if lint_error:

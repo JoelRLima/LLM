@@ -265,36 +265,34 @@ def grounded_user_literal_narrowing(
 
     if type(rejected_value) is not str or not rejected_value or type(objective) is not str:
         return None
+    explicit_candidates: list[str] = []
+    bare_candidates: list[str] = []
 
-    candidates: list[tuple[int, int, int, int, str]] = []
-    def add_candidate(raw: str, source_priority: int, objective_index: int) -> None:
+    def add_candidate(raw: str, destination: list[str]) -> None:
         candidate = raw
         if (
             len(candidate) < 3
             or not candidate.strip()
             or not any(char.isalnum() or char == "_" for char in candidate)
-            or (source_priority == 1 and candidate.casefold() in _GENERIC_GROUNDED_WORDS)
+            or (destination is bare_candidates and candidate.casefold() in _GENERIC_GROUNDED_WORDS)
             or candidate not in objective
             or candidate not in rejected_value
         ):
             return
-        pattern_index = rejected_value.find(candidate)
-        if pattern_index < 0:
-            return
-        candidates.append((source_priority, -len(candidate), pattern_index, objective_index, candidate))
-
+        if candidate not in destination:
+            destination.append(candidate)
     delimited = tuple(_GROUNDED_DELIMITED_LITERAL.finditer(objective))
     for match in delimited:
-        add_candidate(match.group("literal"), 0, match.start("literal"))
+        add_candidate(match.group("literal"), explicit_candidates)
     for match in _GROUNDED_CODE_TOKEN.finditer(objective):
         if any(match.start() < item.end() and item.start() < match.end() for item in delimited):
             continue
-        add_candidate(match.group(0), 1, match.start())
+        add_candidate(match.group(0), bare_candidates)
 
-    if not candidates:
+    if len(explicit_candidates) > 1:
         return None
-    candidates.sort(key=lambda item: item[:4])
-    return candidates[0][4]
+    candidates = explicit_candidates or bare_candidates
+    return candidates[0] if len(candidates) == 1 else None
 
 
 __all__ = ["find_unresolved_symbolic_reference", "grounded_user_literal_narrowing", "observation_contains", "provenance_error", "validate_argument_provenance", "validate_planner_arguments", "validate_unresolved_symbolic_arguments", "value_contains"]
