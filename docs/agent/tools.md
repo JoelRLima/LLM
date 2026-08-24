@@ -36,6 +36,21 @@ modelo. Uma tool apresentada ainda pode ser negada por authority ou approval.
 | `web_search` | busca DuckDuckGo | sim para a persona com network e com approval de efeito |
 | `calculator`, `echo`, `summarize` | cálculo, infraestrutura e resumo | sim, conforme persona |
 
+### Evidência de análise e busca
+
+`code_analyzer` é uma ferramenta de estrutura, não uma fonte de conteúdo
+literal. `mode=directory` produz um mapa estrutural; `compact=true` é evidência
+`DERIVED_LOSSY`, útil para arquivos, classes e funções, mas insuficiente para
+provar valores de constantes ou conteúdo exato. Depois de localizar o alvo,
+use `file_reader` para claims de valor/conteúdo exatos. Um mapa de diretório já
+inclui a análise estrutural compatível dos descendentes Python.
+
+Para `grep`, a provenance continua fail-closed. Quando o planner decorou um
+termo explicitamente fornecido pelo usuário com texto ou regex, o runtime pode
+estreitar a busca somente para o literal exato já presente no objetivo; não
+cria regex, authority ou evidência futura. Patterns sem literal grounded
+continuam bloqueados.
+
 ### Modify + validate
 
 O caminho model-actionable do coder é:

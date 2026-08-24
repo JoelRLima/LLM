@@ -5,7 +5,16 @@ from __future__ import annotations
 PLANNING_GUIDANCE = (
     "Responder diretamente quando nenhuma observação, computação ou efeito "
     "material for necessário. Use a ferramenta de menor custo; para ler use "
-    "file_reader, para buscar grep e para modificar/validar code_task."
+    "file_reader, para buscar grep e para modificar/validar code_task. "
+    "Para tarefas read-only, planeje o smallest sufficient evidence: faça "
+    "discovery antes de fan-out, observe o resultado e só então escolha leituras "
+    "focadas; não enumere módulos especulativos nem repita análise estrutural "
+    "coberta por um mapa de diretório compatível. code_analyzer com compact=true "
+    "é evidência estrutural DERIVED_LOSSY e não prova valores literais ou "
+    "constantes; para valores/conteúdo exatos, use file_reader. Se o usuário "
+    "forneceu um símbolo ou termo explícito, comece grep.pattern pelo literal "
+    "exato, sem adicionar def, \\(, anchors ou outra decoração regex; classifique "
+    "definições e chamadas depois pelos matches."
 )
 
 
@@ -104,6 +113,9 @@ Ferramentas disponíveis:
 As obrigacoes canonicas, seus status e referencias de evidencia no progresso acima
 sao dados do runtime. Nao marque sucesso por exaustao do plano ou por prosa;
 uma decisao complete sera revisada novamente pelo runtime.
+Disciplina de evidência incremental: não repita discovery ou code_analyzer que já
+produziu uma observação; se a evidência já basta, complete; se faltar algo, peça
+somente a próxima evidência relevante, preferindo fonte exata para claims exatas.
 Se o checklist inicial omitiu um requisito duravel, action=complete pode incluir
 uma lista curta `obligations` em formas fechadas; o runtime valida e aplica essa
 lista com source=canonical_review. Nao inclua status, satisfied, waived, blocked

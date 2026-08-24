@@ -107,12 +107,6 @@ def render_validation_repair_manual(
     prior_steps: Sequence[Any] = (),
     frozen_bindings: Mapping[str, Any] | None = None,
 ) -> str:
-    """Render the narrow repair protocol for one rejected plan step.
-
-    ``prior_steps`` is only a list of structural candidates.  Showing a
-    candidate never selects or binds it automatically.
-    """
-
     fields = tuple(sorted({str(field) for field in repairable_fields if str(field)}))
     lines = [
         "VALIDATION REPAIR",
@@ -141,6 +135,8 @@ def render_validation_repair_manual(
             "Repair may move the rejected field from invalid/missing literal to canonical bindings; no replacement literal in args.",
         ]
     )
+    if tool == "grep" and "pattern" in fields:
+        lines.append("For grep.pattern, prefer an exact user literal already in the objective; never invent regex or bind an array result to this string field.")
     if _binding_available(orchestrator):
         target = fields[0] if fields else "field"
         right_args = dict(frozen_args)

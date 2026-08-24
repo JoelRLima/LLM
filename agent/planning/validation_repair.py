@@ -5,12 +5,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from copy import deepcopy
+from functools import partial
 from typing import Any, Dict, List, Optional
+
+from agent.planning.grounded_repair import try_grounded_grep_repair
 
 
 def repairable_fields(step: Any, problem: str) -> frozenset[str]:
-    """Extract only a named field from a deterministic schema failure."""
-
     if not isinstance(step, Mapping):
         return frozenset()
     patterns = (
@@ -32,8 +33,6 @@ def repairable_fields(step: Any, problem: str) -> frozenset[str]:
 def accepts_constrained_repair(
     original: Mapping[str, Any], candidate: Mapping[str, Any], fields: frozenset[str]
 ) -> bool:
-    """Keep a repair on the same operation and freeze already-valid fields."""
-
     if not fields or not isinstance(candidate, Mapping):
         return False
     if any(key not in {"tool", "args", "bindings", "_step_id"} for key in candidate):
@@ -51,7 +50,6 @@ def accepts_constrained_repair(
         return False
     if any(str(key) not in set(original_args) | set(fields) for key in candidate_args):
         return False
-
     original_bindings = original.get("bindings")
     candidate_bindings = candidate.get("bindings")
     original_bindings = original_bindings if isinstance(original_bindings, Mapping) else {}
@@ -75,8 +73,6 @@ def replan_blocked_steps(
     planning_view: Any = None,
     repair_budget: Dict[str, int] | None = None,
 ) -> Optional[List[Dict[str, Any]]]:
-    """Replace only field-scoped blocked steps through the bounded repair path."""
-
     updated = list(plan)
     allowed_blocked_indices = {item.index for item in blocked_steps}
     for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
@@ -105,8 +101,6 @@ def replace_blocked_step(
     *,
     _allowed_blocked_indices: set[int] | None = None,
 ) -> bool:
-    """Apply one same-tool, field-constrained replacement, or fail closed."""
-
     from agent.planning.replan import ReplanContext, replan
     from agent.runtime.logging import logger
 
@@ -125,6 +119,41 @@ def replace_blocked_step(
             "Passo %s rejeitado sem reparo de campo deterministico; abortando.", index + 1
         )
         return False
+    if (
+        step.get("tool") == "grep"
+        and blocked.repairable_fields == frozenset({"pattern"})
+        and try_grounded_grep_repair(
+            plan,
+            objective,
+            index,
+            blocked.repairable_fields,
+            accepts_constrained_repair,
+            partial(
+                _validate_reintegrated_candidate,
+                gateway,
+                objective=objective,
+                repaired_index=index,
+                planning_context=planning_context,
+                planning_view=planning_view,
+                allowed_blocked_indices=_allowed_blocked_indices or {index},
+            ),
+        )
+    ):
+        logger.info(
+            "Passo %s reparado por narrowing determinístico de literal grounded.",
+            index + 1,
+        )
+        gateway.orchestrator._emit(
+            "validation_repair",
+            {
+                "step": index,
+                "tool": "grep",
+                "field": "pattern",
+                "strategy": "deterministic_grounded_literal",
+                "source": "user_literal",
+            },
+        )
+        return True
     if repair_budget is not None and repair_budget.get("remaining", 0) <= 0:
         logger.warning("Orcamento de reparo de validacao esgotado para o passo %s.", index + 1)
         return False
@@ -169,9 +198,7 @@ def replace_blocked_step(
     replacement = deepcopy(action.steps[0])
     if "_step_id" in step:
         replacement["_step_id"] = step["_step_id"]
-    candidate = [deepcopy(item) for item in plan[:index]] + [replacement] + [
-        deepcopy(item) for item in plan[index + 1 :]
-    ]
+    candidate = [deepcopy(item) for item in plan[:index]] + [replacement] + [deepcopy(item) for item in plan[index + 1 :]]
     accepted = _validate_reintegrated_candidate(
         gateway,
         candidate,
@@ -200,8 +227,6 @@ def _validate_reintegrated_candidate(
     planning_view: Any,
     allowed_blocked_indices: set[int],
 ) -> Optional[List[Dict[str, Any]]]:
-    """Validate prefix + repaired slot + suffix before touching the real plan."""
-
     from agent.planning.plan_validator import PlanValidator
     from agent.planning.presentation import validate_planning_view_binding
     from agent.runtime.logging import logger
@@ -267,16 +292,7 @@ def _validate_reintegrated_candidate(
 
 
 def _has_deferred_or_result_bindings(plan: List[Dict[str, Any]]) -> bool:
-    return any(
-        isinstance(step, Mapping)
-        and (step.get("kind") == "deferred_condition" or "bindings" in step)
-        for step in plan
-    )
+    return any(isinstance(step, Mapping) and (step.get("kind") == "deferred_condition" or "bindings" in step) for step in plan)
 
 
-__all__ = [
-    "accepts_constrained_repair",
-    "repairable_fields",
-    "replan_blocked_steps",
-    "replace_blocked_step",
-]
+__all__ = ["accepts_constrained_repair", "repairable_fields", "replan_blocked_steps", "replace_blocked_step"]

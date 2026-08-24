@@ -28,6 +28,16 @@ _SYMBOLIC_REFERENCE_PATTERNS = (
     ),
 )
 
+_GROUNDED_CODE_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]*")
+_GROUNDED_DELIMITED_LITERAL = re.compile(
+    r"(?P<delimiter>`|'|\")(?P<literal>[^`'\"\r\n]+)(?P=delimiter)"
+)
+_GENERIC_GROUNDED_WORDS = frozenset(
+    "a and arquivo arquivos chamada chamadas contains contém definida definido depois ela em "
+    "find for from function função is leia neste nos onde or other outro outros palavra pela por "
+    "procure project que saber search the this uma usada usado use used where what which with quero".split()
+)
+
 
 def validate_argument_provenance(
     *,
@@ -248,12 +258,38 @@ def value_contains(value: Any, candidate: str, depth: int = 0) -> bool:
     return False
 
 
-__all__ = [
-    "find_unresolved_symbolic_reference",
-    "observation_contains",
-    "provenance_error",
-    "validate_argument_provenance",
-    "validate_planner_arguments",
-    "validate_unresolved_symbolic_arguments",
-    "value_contains",
-]
+def grounded_user_literal_narrowing(
+    *, rejected_value: object, objective: str
+) -> str | None:
+    """Narrow only to an exact literal sourced from the user objective."""
+
+    if type(rejected_value) is not str or not rejected_value or type(objective) is not str:
+        return None
+
+    candidates: list[tuple[int, int, int, int, str]] = []
+    def add_candidate(raw: str, source_priority: int, objective_index: int) -> None:
+        candidate = raw.strip()
+        if (
+            len(candidate) < 3
+            or not any(char.isalnum() or char == "_" for char in candidate)
+            or (source_priority == 1 and candidate.casefold() in _GENERIC_GROUNDED_WORDS)
+            or candidate not in objective
+            or candidate not in rejected_value
+        ):
+            return
+        pattern_index = rejected_value.find(candidate)
+        if pattern_index < 0:
+            return
+        candidates.append((source_priority, -len(candidate), pattern_index, objective_index, candidate))
+    for match in _GROUNDED_DELIMITED_LITERAL.finditer(objective):
+        add_candidate(match.group("literal"), 2, match.start("literal"))
+    for match in _GROUNDED_CODE_TOKEN.finditer(objective):
+        add_candidate(match.group(0), 1, match.start())
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[:4])
+    return candidates[0][4]
+
+
+__all__ = ["find_unresolved_symbolic_reference", "grounded_user_literal_narrowing", "observation_contains", "provenance_error", "validate_argument_provenance", "validate_planner_arguments", "validate_unresolved_symbolic_arguments", "value_contains"]

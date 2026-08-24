@@ -31,6 +31,12 @@ Uma obrigação proposta pelo modelo também é dado não confiável. Ela só se
 durável após admissão confiável, correspondência com evidência causal canônica
 e validação de provenance; rejeição não cria um bloqueador de conclusão oculto.
 
+O narrowing determinístico de `grep.pattern` é uma exceção de representação,
+não uma concessão de confiança: ele só pode retornar um literal exato já
+presente no objetivo do usuário e contido no pattern rejeitado. O resultado
+passa novamente pelo `PlanValidator`; patterns inventados, valores derivados de
+observações e bindings incompatíveis continuam fail-closed.
+
 ## Conceitos e fontes
 
 - `ApplicationAuthoritySnapshot`: snapshot confiável criado no bootstrap, com

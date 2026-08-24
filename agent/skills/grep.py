@@ -9,7 +9,13 @@ from .safe_path import resolve_confined_file, resolve_safe_path
 
 class GrepSkill(BaseSkill):
     name = "grep"
-    description = "Busca por um padrão (texto ou regex) em arquivos dentro do diretório seguro."
+    description = (
+        "Busca por um padrão (texto ou regex) em arquivos dentro do diretório "
+        "seguro. Quando o usuário fornece um termo exato, prefira esse literal; "
+        "regex derivada pode ser rejeitada pela provenance do planner. Primeiro "
+        "recupere os matches e depois distinga definição, import e chamada pela "
+        "evidência."
+    )
 
     def __init__(self, base_dir: str = ".") -> None:
         self.base_dir = Path(base_dir).resolve()
@@ -18,7 +24,11 @@ class GrepSkill(BaseSkill):
         return {
             "pattern": {
                 "type": "string",
-                "description": "Padrão a ser buscado (texto literal ou expressão regular)."
+                "description": (
+                    "Padrão a ser buscado (texto literal ou expressão regular); "
+                    "prefira o literal exato fornecido pelo usuário antes de "
+                    "decorar a busca com regex."
+                )
             },
             "path": {
                 "type": "string",

@@ -21,8 +21,13 @@ __all__ = ["CodeAnalyzerSkill", "SECURITY_SYMBOL_REGISTRY", "get_pattern_id_map"
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
     description = (
-        "Analisa código com adapter de linguagem. Python recebe análise AST; "
-        "outras linguagens têm fallback textual explicitamente identificado."
+        "Analisa estrutura de código com adapter de linguagem. mode=directory "
+        "serve para um mapa estrutural; compact=true retorna estrutura resumida "
+        "DERIVED_LOSSY e não prova valores literais ou constantes. Para conteúdo "
+        "ou valores exatos use file_reader. Uma análise de diretório já cobre a "
+        "análise estrutural compatível dos descendentes Python; não a repita. "
+        "Python recebe análise AST; outras linguagens têm fallback textual "
+        "explicitamente identificado."
     )
 
     def __init__(self, base_dir: str = ".") -> None:
@@ -38,7 +43,10 @@ class CodeAnalyzerSkill(BaseSkill):
                 "enum": ["file", "directory", "security"],
             },
             "include_code": {"type": "boolean", "description": "Inclui o código fonte completo."},
-            "compact": {"type": "boolean", "description": "Retorna somente a estrutura essencial."},
+            "compact": {
+                "type": "boolean",
+                "description": "Retorna somente a estrutura essencial (DERIVED_LOSSY); não contém valores literais.",
+            },
         }
 
     @staticmethod
