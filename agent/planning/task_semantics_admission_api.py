@@ -76,8 +76,8 @@ class TaskSemanticsAdmissionMixin:
         )
         return tuple(result)
 
-    def validate_admission_provenance(self: Any) -> None:
-        validate_admission_provenance(self)
+    def validate_admission_provenance(self: Any, *, admission_authority: Any = None) -> None:
+        validate_admission_provenance(self, admission_authority=admission_authority)
 
 
 __all__ = ["TaskSemanticsAdmissionMixin"]

@@ -7,26 +7,23 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, cast
 from uuid import uuid4
 
 from agent.planning.planning_schema import validate_argument_shape, validate_property_value
+from agent.planning.planning_tool_normalization import normalize_planning_tool
 from agent.planning.schema_safety import (
     MAX_SCHEMA_DEPTH,
     PlanningSchemaError,
     validate_planning_schema_shape,
-    validate_schema_depth,
 )
-from agent.skills.descriptor import freeze_result_data_schema
 from agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
     derive_effective_task_authority,
 )
 from agent.tools.contracts import (
+    CancellationSafetyMode,
     ToolDescriptor,
     ToolOriginKind,
-    freeze_json_like,
     thaw_json_like,
 )
-from agent.tools.extension_state import validate_extension_id
-from agent.tools.provenance import normalize_argument_provenance
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 if TYPE_CHECKING:
@@ -51,38 +48,11 @@ class PlanningTool:
     cacheable: bool = False
     idempotent: bool = False
     supports_cancellation: bool = False
+    cancellation_safety: CancellationSafetyMode = CancellationSafetyMode.UNSUPPORTED
     argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict)
     result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
-            raise PlanningContextError("PlanningTool requer nome")
-        if not isinstance(self.description, str):
-            raise PlanningContextError("PlanningTool requer descrição textual")
-        try:
-            validate_schema_depth(self.input_schema)
-            validate_planning_schema_shape(self.input_schema)
-        except PlanningSchemaError as exc:
-            raise PlanningContextError(str(exc)) from exc
-        try:
-            frozen_schema = freeze_json_like(dict(self.input_schema))
-        except RecursionError as exc:
-            raise PlanningContextError("schema de planning excede a profundidade maxima") from exc
-        object.__setattr__(self, "input_schema", frozen_schema)
-        object.__setattr__(self, "required_capabilities", frozenset(self.required_capabilities))
-        object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
-        object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
-        if not isinstance(self.origin_kind, ToolOriginKind):
-            object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
-        extension_id = self.extension_id
-        if self.origin_kind is ToolOriginKind.EXTENSION:
-            if not isinstance(extension_id, str) or not extension_id.strip():
-                raise PlanningContextError("Tool de extension requer extension_id")
-            try:
-                validate_extension_id(extension_id)
-            except ValueError as exc:
-                raise PlanningContextError("extension_id inválido") from exc
-        elif self.extension_id is not None:
-            raise PlanningContextError("Tool builtin não pode conter extension_id")
+        normalize_planning_tool(self, PlanningContextError)
 
     def __getattribute__(self, name: str) -> Any:
         if name == "input_schema":
@@ -230,6 +200,7 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         cacheable=descriptor.cacheable,
         idempotent=descriptor.idempotent,
         supports_cancellation=descriptor.supports_cancellation,
+        cancellation_safety=descriptor.cancellation_safety,
         argument_provenance=descriptor.argument_provenance,
         result_data_schema=descriptor.result_data_schema,
     )

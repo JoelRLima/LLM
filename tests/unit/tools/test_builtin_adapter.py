@@ -3,7 +3,8 @@ from pathlib import Path
 from agent.planning.planning_context import validate_planning_tool_arguments
 from agent.skills import load_skill_registry
 from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolInvocation, ToolStatus
+from agent.tools.contracts import CancellationSafetyMode, ToolInvocation, ToolStatus
+from agent.tools.invocation_gateway import ToolInvocationGateway
 
 
 def test_builtin_adapter_descriptors(tmp_path: Path) -> None:
@@ -33,6 +34,32 @@ def test_builtin_result_data_shapes_are_projected_from_the_catalog(tmp_path: Pat
             },
         },
     }
+
+
+def test_builtin_mutators_declare_cancellation_safety_and_readers_stay_read_only(
+    tmp_path: Path,
+) -> None:
+    descriptors = BuiltinToolAdapter(load_skill_registry(base_dir=tmp_path)).descriptors()
+    by_name = {descriptor.name: descriptor for descriptor in descriptors}
+
+    assert by_name["code_task"].cancellation_safety is CancellationSafetyMode.UNSUPPORTED
+    assert by_name["session_memory"].cancellation_safety is CancellationSafetyMode.BOUNDED_COOPERATIVE
+    assert by_name["file_writer"].cancellation_safety is CancellationSafetyMode.UNSUPPORTED
+    assert "write" not in by_name["shell"].capabilities
+    assert by_name["git_reader"].cancellation_safety is CancellationSafetyMode.PROCESS_KILLABLE
+    assert by_name["python_executor"].cancellation_safety is CancellationSafetyMode.PROCESS_KILLABLE
+    assert ToolInvocationGateway._descriptor_may_mutate(
+        by_name["code_task"], {"action": "analyze"}
+    ) is False
+    assert ToolInvocationGateway._descriptor_may_mutate(
+        by_name["code_task"], {"action": "modify"}
+    ) is True
+    assert ToolInvocationGateway._descriptor_may_mutate(
+        by_name["session_memory"], {"action": "get"}
+    ) is False
+    assert ToolInvocationGateway._descriptor_may_mutate(
+        by_name["session_memory"], {"action": "set"}
+    ) is True
 
 
 def test_code_task_descriptor_is_canonical_and_rejects_writer_arguments(

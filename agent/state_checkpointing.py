@@ -34,6 +34,7 @@ class StateCheckpointMixin:
             "last_args": self.last_args,
             "last_result": self.last_result,
             "tool_history": self.tool_history,
+            "execution_incidents": self.execution_incidents,
             "events": self.events,
             "conversation_history": self.conversation_history,
             "memory_state": memory_state,
@@ -52,6 +53,7 @@ class StateCheckpointMixin:
         retry_skipped: bool = False,
         *,
         effect_authority: Any = None,
+        admission_authority: Any = None,
     ) -> None:
         if not isinstance(data, Mapping):
             raise ValueError("Checkpoint root must be an object.")
@@ -61,7 +63,12 @@ class StateCheckpointMixin:
         restore_progression(provisional, dict(data))
         _restore_step_records(provisional, data)
         _restore_last_result(provisional, data)
-        _restore_histories(provisional, data, effect_authority=effect_authority)
+        _restore_histories(
+            provisional,
+            data,
+            effect_authority=effect_authority,
+            admission_authority=admission_authority,
+        )
         _restore_auxiliary_state(provisional, data)
         provisional.prepare_for_resume(
             retry_failed=retry_failed,
@@ -134,6 +141,7 @@ def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
     persona = data.get("persona", state.persona)
     persona_prompt = data.get("persona_prompt", state.persona_prompt)
     memory_state = data.get("memory_state")
+    incidents = data.get("execution_incidents", getattr(state, "execution_incidents", []))
     budget = data.get("budget")
     if not isinstance(events, list):
         raise ValueError("Checkpoint events are invalid.")
@@ -147,6 +155,7 @@ def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
         raise ValueError("Checkpoint budget snapshot is invalid.")
     if memory_state is not None and not isinstance(memory_state, Mapping):
         raise ValueError("Checkpoint memory state is invalid.")
+    _restore_execution_incidents(state, incidents)
     state.events = events
     state.conversation_history = [dict(entry) for entry in history]
     state.persona = persona
@@ -155,3 +164,13 @@ def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
         state.budget_ledger.restore_snapshot(budget)
     if memory_state is not None and hasattr(state.memory, "state"):
         state.memory.state = dict(memory_state)
+
+
+def _restore_execution_incidents(state: Any, incidents: Any) -> None:
+    restore_incidents = getattr(state, "restore_execution_incidents", None)
+    if not callable(restore_incidents):
+        raise ValueError("Checkpoint incident owner is unavailable.")
+    try:
+        restore_incidents(incidents)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Checkpoint execution incident journal is invalid.") from exc

@@ -56,6 +56,13 @@ class InvocationAttempt:
             if not self.terminal:
                 self.lifecycle = self.Lifecycle.QUIESCENT
 
+    def mark_liveness_failure(self) -> None:
+        """Close publication ownership without pretending the worker quiesced."""
+
+        with self.lock:
+            self.terminal = True
+            self.lifecycle = self.Lifecycle.COMMITTED_TERMINAL
+
     def claim_terminal(self) -> bool:
         with self.lock:
             if self.terminal:
@@ -82,6 +89,10 @@ class InvocationAttempt:
     def can_release(self) -> bool:
         with self.lock:
             return self.terminal and not self.worker_pending
+
+    def has_worker_pending(self) -> bool:
+        with self.lock:
+            return self.worker_pending
 
 
 _InvocationAttempt = InvocationAttempt

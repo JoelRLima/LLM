@@ -11,6 +11,7 @@ from agent.planning.deferred_condition import (
     validate_deferred_condition,
 )
 from agent.planning.execution_models import StepLoopResult
+from agent.planning.plan_validator import PlanValidator
 from agent.planning.task_completion import bind_effect_waiver
 from agent.state_progression import current_result_for_step
 
@@ -40,6 +41,17 @@ def execute_deferred_condition(
         return block_deferred(executor, index, str(exc))
 
     if matched:
+        materialization_problem = _validate_materialized_step(
+            executor,
+            cast(dict[str, Any], step["on_true"]),
+            objective,
+        )
+        if materialization_problem:
+            return block_deferred(
+                executor,
+                index,
+                f"on_true revalidation failed: {materialization_problem}",
+            )
         state.mark_step_completed(index)
         state.insert_plan_step(index + 1, cast(dict[str, Any], step["on_true"]))
         executor._rebuild_dependency_map()
@@ -56,6 +68,40 @@ def execute_deferred_condition(
     state.mark_step_completed(index)
     emit_deferred_resolution(executor, index, reference, "false")
     return StepLoopResult(index + 1)
+
+
+def _validate_materialized_step(
+    executor: Any,
+    step: dict[str, Any],
+    objective: str,
+) -> str | None:
+    """Re-run the canonical tool/effect gate immediately before insertion."""
+
+    orchestrator = executor.orchestrator
+    gateway = getattr(orchestrator, "execution_gateway", None)
+    context = getattr(gateway, "_active_planning_context", None)
+    if context is None:
+        context = getattr(orchestrator, "planning_context", None)
+    presentation = getattr(gateway, "_active_planning_view", None)
+    state = orchestrator.agent_state
+    validator = PlanValidator(
+        getattr(orchestrator, "skills", {}),
+        getattr(orchestrator, "active_skills", None),
+        getattr(orchestrator, "allowed_capabilities", None),
+        getattr(orchestrator, "tool_registry", None),
+        planning_context=context,
+        presented_names=(
+            presentation.presented_names
+            if presentation is not None
+            else getattr(context, "eligible_names", None)
+        ),
+        planning_view=presentation,
+        objective=objective,
+        canonical_deferred_references=True,
+        available_observations=getattr(state, "tool_history", ()),
+        plan_identity=getattr(state, "plan_identity", None),
+    )
+    return validator._validate_step_schema(step)
 
 
 def _resolve_observation(

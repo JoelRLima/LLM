@@ -176,6 +176,7 @@ def _run_one(
                 model_decisions=tuple(observation_evidence.get("model_decisions", ())),
                 repair_decisions=tuple(observation_evidence.get("repair_decisions", ())),
                 route_decisions=tuple(observation_evidence.get("route_decisions", ())),
+                model_call_identities=tuple(observation_evidence.get("model_call_identities", ())),
                 canonical_plan=observation_evidence.get("canonical_plan"),
                 invocation_evidence=tuple(observation_evidence.get("invocation_evidence", ())),
                 terminal_status=observation_evidence.get("terminal_status"),

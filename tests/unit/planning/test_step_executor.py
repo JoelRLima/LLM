@@ -252,6 +252,81 @@ def test_deferred_condition_blocks_when_referenced_observation_is_not_completed(
     assert not any(event == "replan" for event, _ in context.events)
 
 
+def test_deferred_true_branch_revalidates_effect_intent_before_materialization(
+    monkeypatch,
+    tmp_path,
+):
+    sentinel = tmp_path / "controle.txt"
+    sentinel.write_text("original", encoding="utf-8")
+    state = _state(monkeypatch)
+    state.set_plan(
+        [
+            {
+                "tool": "file_reader",
+                "args": {"file_path": "controle.txt"},
+                "_step_id": "observation-step",
+            },
+            {
+                "kind": "deferred_condition",
+                "observation_ref": "observation-step",
+                "predicate": {"op": "equals", "value": "original"},
+                "on_true": {
+                    "tool": "code_task",
+                    "args": {
+                        "action": "modify",
+                        "objective": "Altere controle.txt.",
+                        "targets": ["controle.txt"],
+                    },
+                },
+                "on_false": {"waive_effect": "write"},
+            },
+        ]
+    )
+    state.mark_step_running(0)
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "controle.txt"},
+        {
+            "ok": True,
+            "done": True,
+            "executed": True,
+            "status": "succeeded",
+            "data": "original",
+            "artifacts": [
+                {
+                    "kind": "text_observation",
+                    "metadata": {"complete": True},
+                }
+            ],
+        },
+        step_id="observation-step",
+    )
+    state.mark_step_completed(0)
+    context = _Context(state)
+    writer = _Skill()
+    writer.capabilities = frozenset({"write"})
+    context.skills["code_task"] = writer
+    context.active_skills.append("code_task")
+
+    outcome = PlanExecutor(context)._execute_deferred_condition(
+        1,
+        'Leia controle.txt e informe se contem "original".',
+    )
+
+    assert outcome.stop is True
+    assert outcome.result is not None
+    assert outcome.result["status"] == "blocked"
+    assert "revalidation" in outcome.result["message"]
+    assert context.calls == []
+    assert [item["tool"] for item in state.tool_history] == ["file_reader"]
+    assert "write" not in state.requested_effects
+    assert sentinel.read_text(encoding="utf-8") == "original"
+    assert state.get_step_status(1) is StepStatus.BLOCKED
+    assert len(state.plan) == 2
+    blocked = next(data for event, data in context.events if event == "deferred_condition_blocked")
+    assert "UNREQUESTED_EFFECT" in blocked["reason"]
+
+
 def test_plan_executor_resume_does_not_repeat_completed_step(monkeypatch):
     state = _state(monkeypatch)
     state.objective = "retomar"

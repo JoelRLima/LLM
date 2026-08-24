@@ -54,7 +54,7 @@ def test_attribution_requires_direct_model_contract_evidence() -> None:
         passed=False,
         observation=SimpleNamespace(measurement={}, evidence={}),
     )
-    model = classify_failure(
+    fabricated_model = classify_failure(
         report,
         ("required_tool_missing:grep",),
         EvidenceLevel.REAL_MODEL,
@@ -65,8 +65,33 @@ def test_attribution_requires_direct_model_contract_evidence() -> None:
                 "contract_violation": True,
                 "decision_evidence": True,
                 "canonical_runtime_evidence": True,
+                "evidence_refs": ["model_decision:1", "required_tool:grep", "canonical_plan:1", "invocation:none"],
             }
         },
+    )
+    assert fabricated_model.classification is CausalFailureClass.UNKNOWN
+
+    raw_report = SimpleNamespace(
+        passed=False,
+        observation=SimpleNamespace(
+            measurement={},
+            evidence={
+                "model_decisions": [{
+                    "call_index": 1,
+                    "decision": {
+                        "action": "use_tools",
+                        "plan": [{"tool": "file_reader", "args": {}}],
+                    },
+                }],
+                "canonical_plan": [{"tool": "file_reader", "args": {}}],
+                "invocation_evidence": [],
+            },
+        ),
+    )
+    model = classify_failure(
+        raw_report,
+        ("required_tool_missing:grep",),
+        EvidenceLevel.REAL_MODEL,
     )
     assert model.classification is CausalFailureClass.MODEL_CAPABILITY
 
@@ -156,8 +181,19 @@ def test_scripted_provider_response_captures_observed_model_id_without_probe() -
     )
     observed = recorder.export_evidence()["observed_provider_identity"]
     assert observed["available"] is True
+    assert observed["identity_sufficient"] is True
+    assert observed["observed_model_ids"] == ["observed-v1"]
+    assert observed["distinct_observed_model_ids"] == ["observed-v1"]
     assert observed["provider_model_id"] == "observed-v1"
     assert observed["source"] == "response.provider_metadata"
+    assert recorder.export_evidence()["model_call_identities"] == [{
+        "call_index": 1,
+        "provider": "provider",
+        "endpoint_identity": "in-process://provider",
+        "declared_model": "declared",
+        "observed_provider_model_id": "observed-v1",
+        "identity_source": "response.provider_metadata",
+    }]
 
 
 @pytest.mark.parametrize(

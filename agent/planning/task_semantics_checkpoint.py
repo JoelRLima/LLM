@@ -164,6 +164,8 @@ def _admission_digest(payload: Mapping[str, Any]) -> str:
 
 
 def _validate_admission_integrity(raw_obligations: list[Any], raw_integrity: Any) -> None:
+    # This digest is a corruption/integrity aid only; it is never admission
+    # authority.  Live restore validation must still re-prove every source.
     # Checkpoints written before R7 have no integrity map; their closed
     # obligation fields remain supported.  New checkpoints carry the map, and
     # any changed source/reference/authorization fails closed.

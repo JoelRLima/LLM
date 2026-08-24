@@ -248,7 +248,7 @@ def test_failure_attribution_requires_evidence_and_preserves_runtime_precedence(
     unresolved = classify_failure(report, ("scenario:mismatch",), EvidenceLevel.REAL_MODEL)
     assert unresolved.classification is CausalFailureClass.UNKNOWN
 
-    model = classify_failure(
+    fabricated_model = classify_failure(
         report,
         ("required_tool_missing:grep",),
         EvidenceLevel.REAL_MODEL,
@@ -258,13 +258,38 @@ def test_failure_attribution_requires_evidence_and_preserves_runtime_precedence(
                 "category": "capability",
                 "decision_evidence": True,
                 "canonical_runtime_evidence": True,
+                "evidence_refs": ["model_decision:1", "required_tool:grep", "canonical_plan:1", "invocation:none"],
             }
         },
+    )
+    assert fabricated_model.classification is CausalFailureClass.UNKNOWN
+
+    raw_report = SimpleNamespace(
+        passed=False,
+        observation=SimpleNamespace(
+            measurement={},
+            evidence={
+                "model_decisions": [{
+                    "call_index": 1,
+                    "decision": {
+                        "action": "use_tools",
+                        "plan": [{"tool": "file_reader", "args": {}}],
+                    },
+                }],
+                "canonical_plan": [{"tool": "file_reader", "args": {}}],
+                "invocation_evidence": [],
+            },
+        ),
+    )
+    model = classify_failure(
+        raw_report,
+        ("required_tool_missing:grep",),
+        EvidenceLevel.REAL_MODEL,
     )
     assert model.classification is CausalFailureClass.MODEL_CAPABILITY
 
     runtime = classify_failure(
-        report,
+        raw_report,
         ("required_tool_missing:grep",),
         EvidenceLevel.REAL_MODEL,
         attribution_evidence={
@@ -274,6 +299,7 @@ def test_failure_attribution_requires_evidence_and_preserves_runtime_precedence(
                 "category": "capability",
                 "decision_evidence": True,
                 "canonical_runtime_evidence": True,
+                "evidence_refs": ["model_decision:1", "required_tool:grep", "canonical_plan:1", "invocation:none"],
             },
         },
     )
@@ -423,13 +449,41 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
                     "objective": arm.objective,
                     "observed_model_identity": {
                         "available": True,
+                        "provider_observation_available": True,
+                        "identity_sufficient": True,
+                        "consistent": True,
+                        "specific": True,
+                        "complete": True,
                         "provider_model_id": "block7-scripted",
                         "actual_provider_model_id": "block7-scripted",
                         "provider": "block7-scripted",
                         "model": "block7-scripted",
                         "endpoint_identity": "in-process://block7-scripted",
                         "source": "response.provider_metadata",
+                        "identity_source": "response.provider_metadata",
+                        "observed_model_ids": ["block7-scripted"],
+                        "distinct_observed_model_ids": ["block7-scripted"],
+                        "external_identity": None,
+                        "external_identity_source": None,
+                        "provider_observation_limitation": None,
+                        "call_count": 1,
+                        "call_identities": [{
+                            "call_index": 1,
+                            "provider": "block7-scripted",
+                            "endpoint_identity": "in-process://block7-scripted",
+                            "declared_model": "block7-scripted",
+                            "observed_provider_model_id": "block7-scripted",
+                            "identity_source": "response.provider_metadata",
+                        }],
                     },
+                    "model_call_identities": [{
+                        "call_index": 1,
+                        "provider": "block7-scripted",
+                        "endpoint_identity": "in-process://block7-scripted",
+                        "declared_model": "block7-scripted",
+                        "observed_provider_model_id": "block7-scripted",
+                        "identity_source": "response.provider_metadata",
+                    }],
                     "scenario_set_version": H_SERIES_VERSION,
                     "scenario_repetition": repetition,
                     "valid_repetition": True,
@@ -466,13 +520,40 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
         "declared_model_identity": _MODEL,
         "observed_model_identity": {
             "available": True,
+            "provider_observation_available": True,
+            "identity_sufficient": True,
             "consistent": True,
+            "specific": True,
+            "complete": True,
             "provider_model_id": "block7-scripted",
             "actual_provider_model_id": "block7-scripted",
             "provider": "block7-scripted",
             "model": "block7-scripted",
             "endpoint_identity": "in-process://block7-scripted",
             "source": "response.provider_metadata",
+            "identity_source": "response.provider_metadata",
+            "observed_model_ids": ["block7-scripted"] * sum(
+                (5 if scenario.h_id == "H2" else (5 if h3_mixed and scenario.h_id == "H3" else 3))
+                * len(scenario.arms)
+                for scenario in H_SERIES
+            ),
+            "distinct_observed_model_ids": ["block7-scripted"],
+            "external_identity": None,
+            "external_identity_source": None,
+            "provider_observation_limitation": None,
+            "call_count": sum(
+                (5 if scenario.h_id == "H2" else (5 if h3_mixed and scenario.h_id == "H3" else 3))
+                * len(scenario.arms)
+                for scenario in H_SERIES
+            ),
+            "call_identities": [{
+                "call_index": 1,
+                "provider": "block7-scripted",
+                "endpoint_identity": "in-process://block7-scripted",
+                "declared_model": "block7-scripted",
+                "observed_provider_model_id": "block7-scripted",
+                "identity_source": "response.provider_metadata",
+            }],
             "identities": [],
         },
         "model_config_fingerprint": _MODEL["model_config_fingerprint"],

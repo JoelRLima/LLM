@@ -139,6 +139,9 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             self.legacy_tool_invoker = LegacyToolInvoker(self)
         if self.tool_invocation_gateway is not None:
             self.tool_invocation_gateway.set_budget_ledger(self.task_budget)
+            self.tool_invocation_gateway.set_incident_recorder(
+                self.agent_state.record_execution_incident
+            )
     @property
     def workspace(self) -> WorkspaceManager:
         return self.subsystems.workspace

@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from agent.evaluation.block7 import H_SERIES_VERSION, RepetitionPolicy
+from agent.evaluation.block7_analysis_identity_observed import (
+    _aggregate_identity_reasons,
+    _run_call_identity_reasons,
+)
 from agent.evaluation.block7_analysis_support import _evidence
 from agent.evaluation.block7_identity import (
     CAMPAIGN_SCHEMA_VERSION,
@@ -41,10 +45,15 @@ def _base_identity(report: Mapping[str, Any]) -> tuple[list[str], dict[str, str]
     observed_identity = report.get("observed_model_identity")
     if not isinstance(observed_identity, Mapping):
         reasons.append("observed_model_identity_missing")
-    elif observed_identity.get("consistent") is False:
-        reasons.append("observed_model_identity_drift")
-    elif observed_identity.get("complete") is False:
-        reasons.append("observed_model_identity_incomplete")
+    else:
+        if observed_identity.get("consistent") is False:
+            reasons.append("observed_model_identity_drift")
+        if "identity_sufficient" not in observed_identity:
+            reasons.append("observed_identity_sufficiency_missing")
+        elif observed_identity.get("identity_sufficient") is False:
+            reasons.append("observed_model_identity_insufficient")
+        if observed_identity.get("complete") is False:
+            reasons.append("observed_model_identity_incomplete")
     _check_fixture(report, reasons)
     _check_manifest(report, reasons)
     if str(report.get("scenario_set_version", "")) != H_SERIES_VERSION:
@@ -97,6 +106,10 @@ def _run_identity_reasons(
         reasons.append(f"{prefix}:observed_model_identity_missing")
     elif "available" not in observed:
         reasons.append(f"{prefix}:observed_identity_availability_missing")
+    elif not bool(run.get("environmental", False)) and bool(
+        run.get("valid_repetition", evidence.get("valid_repetition", True))
+    ):
+        reasons.extend(_run_call_identity_reasons(evidence, prefix, observed))
     return reasons
 
 
@@ -118,6 +131,7 @@ def identity_checks(
         declared = _evidence(run).get("declared_model_identity")
         if isinstance(expected_declared, Mapping) and declared != expected_declared:
             reasons.append(f"run_{index}:declared_model_identity_mismatch")
+    reasons.extend(_aggregate_identity_reasons(report, runs))
     return not reasons, reasons, {
         "expected_candidate_identity": expected["candidate"],
         "expected_model_config_fingerprint": expected["model"],
@@ -193,6 +207,8 @@ def _append_observed_self_identity_errors(
             errors.append("observed_identity_availability_missing")
         if observed.get("consistent") is False:
             errors.append("observed_model_identity_drift")
+        if "identity_sufficient" not in observed:
+            errors.append("observed_identity_sufficiency_missing")
 
 
 def _append_self_identity_errors(report: Mapping[str, Any], errors: list[str]) -> None:

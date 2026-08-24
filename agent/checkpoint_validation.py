@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
+from agent.execution_incidents import normalize_execution_incidents
 from agent.execution_state import StepStatus
 
 
@@ -78,6 +79,11 @@ def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
     for key in ("tool_history", "events", "conversation_history"):
         if key in data and not isinstance(data[key], list):
             _invalid(path, f"campo de histórico inválido: {key}")
+    if "execution_incidents" in data:
+        try:
+            normalize_execution_incidents(data["execution_incidents"])
+        except (TypeError, ValueError):
+            _invalid(path, "diário de incidentes de execução inválido")
     last_result = data.get("last_result")
     if last_result is not None and not isinstance(last_result, dict):
         _invalid(path, "último resultado inválido")

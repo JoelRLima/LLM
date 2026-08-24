@@ -81,3 +81,39 @@ def test_stale_prepared_invocation_is_blocked_before_gateway_dispatch() -> None:
     assert result["status"] == "blocked"
     assert result["error_code"] == "prepared_invocation_stale"
     assert calls == []
+
+
+def test_ambient_token_is_omitted_only_for_declared_unsupported_mutation() -> None:
+    token = SimpleNamespace(cancelled=False)
+    observed: list[object] = []
+
+    class Gateway:
+        @staticmethod
+        def supports_cancellable_execution(tool_name, args):
+            assert tool_name == "code_task"
+            assert args["action"] == "modify"
+            return False
+
+        def invoke(self, request, **kwargs):
+            observed.append(kwargs["cancellation_token"])
+            return ToolResult(
+                invocation_id=request.invocation_id,
+                status=ToolStatus.SUCCEEDED,
+                executed=True,
+            )
+
+    orchestrator = SimpleNamespace(
+        tool_invocation_gateway=Gateway(),
+        skills={"code_task": object()},
+        active_skills=[],
+        allowed_capabilities=None,
+        cancellation_token=token,
+        verbose=False,
+    )
+
+    ToolExecutor(orchestrator).run_tool(
+        "code_task",
+        {"action": "modify", "objective": "change", "targets": ["a.py"]},
+    )
+
+    assert observed == [None]

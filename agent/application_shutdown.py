@@ -10,8 +10,8 @@ def drain_application_invocations(gateway: Any) -> None:
     if callable(request_cancel):
         request_cancel()
     drain = getattr(gateway, "drain_invocations", None)
-    if callable(drain) and not drain(timeout_seconds=5.0):
-        drain(timeout_seconds=None)
+    if callable(drain):
+        drain(timeout_seconds=5.0)
 
 
 __all__ = ["drain_application_invocations"]

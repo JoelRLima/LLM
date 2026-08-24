@@ -10,8 +10,10 @@ import pytest
 
 from agent.approval import AutoApprove
 from agent.cancellation import CancellationToken
-from agent.evaluation.block7 import H_SERIES
+from agent.evaluation.block7 import H_SERIES, CausalFailureClass, EvidenceLevel
 from agent.evaluation.block7_analysis_metrics import metric_summary
+from agent.evaluation.block7_analysis_verdict import verdict
+from agent.evaluation.block7_execution_attribution import classify_failure
 from agent.evaluation.block7_oracle import deterministic_oracle_evidence
 from agent.planning.task_graph import ResourceMode, TaskNode, TaskResource
 from agent.planning.task_semantics import (
@@ -22,7 +24,13 @@ from agent.planning.task_semantics import (
     TaskSemanticsError,
 )
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from agent.tools.contracts import (
+    CancellationSafetyMode,
+    ToolDescriptor,
+    ToolInvocation,
+    ToolResult,
+    ToolStatus,
+)
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
@@ -117,7 +125,14 @@ def test_r3_r5_cancelled_mutation_commits_only_one_terminal_observation(tmp_path
 
     class Writer:
         def descriptors(self):
-            return (ToolDescriptor("writer", "writer", capabilities=frozenset({"write"})),)
+            return (
+                ToolDescriptor(
+                    "writer",
+                    "writer",
+                    capabilities=frozenset({"write"}),
+                    cancellation_safety=CancellationSafetyMode.BOUNDED_COOPERATIVE,
+                ),
+            )
 
         def invoke(self, invocation: ToolInvocation) -> ToolResult:
             started.set()
@@ -213,6 +228,43 @@ def test_r6_r8_h12_collateral_footprint_is_not_accepted() -> None:
     )
 
     assert "h12_collateral_mutation" in deterministic_oracle_evidence(report, arm)["failures"]
+
+
+def test_r8_identity_drift_cannot_be_model_capability_or_release_ready() -> None:
+    report = SimpleNamespace(
+        passed=False,
+        observation=SimpleNamespace(
+            measurement={"status": "failed"},
+            evidence={"terminal_status": "failed"},
+        ),
+    )
+    attribution = {
+        "runtime_defect": {
+            "proven": True,
+            "reason_codes": ["observed_model_identity_drift"],
+            "evidence_refs": ["model_call_identities", "observed_model_ids"],
+        }
+    }
+    classification = classify_failure(
+        report,
+        ("identity:observed_model_drift",),
+        EvidenceLevel.REAL_MODEL,
+        attribution_evidence=attribution,
+    )
+    assert classification.classification is not CausalFailureClass.MODEL_CAPABILITY
+    release_verdict, _ = verdict(
+        evidence_level="real_model",
+        identity_consistent=False,
+        complete=True,
+        unknown_failures=0,
+        scenario_summary={},
+        aggregate_rate=1.0,
+        incidents={},
+        classifications={},
+        installed_acceptance={"acceptance": True},
+        observed_identity_available=False,
+    )
+    assert release_verdict == "INCONCLUSIVE"
 
 
 def test_r7_checkpoint_cannot_upgrade_forged_admission_source() -> None:

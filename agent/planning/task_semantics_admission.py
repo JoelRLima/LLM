@@ -171,71 +171,95 @@ def previous_read_evidence_ref(owner: Any) -> int | str | None:
 
 def _validate_evidence_admission(owner: Any, obligation: TaskObligation) -> None:
     ref = obligation.admission_evidence_ref
-    entry = getattr(owner, "_evidence_catalog", {}).get(ref)
     if obligation.kind == "fallback":
-        if ref is None or not fallback_entry_matches(entry, obligation.fallback_target):
+        expected_ref = fallback_evidence_ref(owner, obligation.fallback_target)
+        if not has_required_read(owner, obligation.fallback_target):
+            raise TaskSemanticsError("fallback nao esta ligado a um read requerido")
+        if ref is None or expected_ref is None or ref != expected_ref:
             raise TaskSemanticsError("admissao de fallback nao corresponde a evidencia canonica")
         return
     if obligation.kind == "search" and obligation.query_source == "previous_read":
-        if ref is None or not previous_entry_matches(entry):
+        if not objective_identity_exists(owner, obligation):
+            raise TaskSemanticsError("busca nao esta ligada ao objetivo original")
+        expected_ref = previous_read_evidence_ref(owner)
+        if ref is None or expected_ref is None or ref != expected_ref:
             raise TaskSemanticsError("admissao de busca nao corresponde a leitura canonica")
         return
     raise TaskSemanticsError("tipo de admissao por evidencia invalido")
 
 
-def _validate_objective_admission(_: Any, obligation: TaskObligation) -> None:
+def _validate_objective_admission(owner: Any, obligation: TaskObligation) -> None:
     if obligation.admission_evidence_ref is not None or obligation.admission_authorization is not None:
         raise TaskSemanticsError("admissao derivada do objetivo contem autoridade externa")
+    if not objective_identity_exists(owner, obligation):
+        raise TaskSemanticsError("admissao derivada do objetivo nao corresponde ao objetivo original")
 
 
-def _validate_safety_admission(_: Any, obligation: TaskObligation) -> None:
+def _live_admission_authority_approves(
+    authority: Any,
+    source: AdmissionSource,
+    obligation: TaskObligation,
+) -> bool:
+    if authority is None:
+        return False
+    verifier = getattr(authority, "revalidate_admission", None)
+    if callable(verifier):
+        return bool(verifier(source, obligation))
+    if callable(authority):
+        return bool(authority(source, obligation))
+    return False
+
+
+def _validate_safety_admission(
+    owner: Any,
+    obligation: TaskObligation,
+    admission_authority: Any,
+) -> None:
     if not (obligation.admission_authorization or "").startswith("runtime:safety:"):
         raise TaskSemanticsError("admissao de seguranca sem autoridade runtime")
+    if not _live_admission_authority_approves(
+        admission_authority,
+        AdmissionSource.SAFETY_REQUIRED,
+        obligation,
+    ):
+        raise TaskSemanticsError("admissao de seguranca requer autoridade runtime viva")
 
 
-def _validate_external_admission(_: Any, obligation: TaskObligation) -> None:
+def _validate_external_admission(
+    owner: Any,
+    obligation: TaskObligation,
+    admission_authority: Any,
+) -> None:
     if not (obligation.admission_authorization or "").startswith("external:"):
         raise TaskSemanticsError("admissao externa sem autorizacao")
+    if not _live_admission_authority_approves(
+        admission_authority,
+        AdmissionSource.EXTERNALLY_AUTHORIZED,
+        obligation,
+    ):
+        raise TaskSemanticsError("admissao externa requer autoridade viva")
 
 
-def validate_admission_provenance(owner: Any) -> None:
+def validate_admission_provenance(owner: Any, *, admission_authority: Any = None) -> None:
     """Re-prove evidence-derived admission records against canonical history."""
 
-    validators = {
-        AdmissionSource.CANONICAL_EVIDENCE_DERIVED: _validate_evidence_admission,
-        AdmissionSource.OBJECTIVE_DERIVED: _validate_objective_admission,
-        AdmissionSource.SAFETY_REQUIRED: _validate_safety_admission,
-        AdmissionSource.EXTERNALLY_AUTHORIZED: _validate_external_admission,
-    }
     for obligation in owner._obligations:
-        validator = validators.get(obligation.admission_source)
-        if validator is None:
+        source = obligation.admission_source
+        if source is AdmissionSource.CANONICAL_EVIDENCE_DERIVED:
+            _validate_evidence_admission(owner, obligation)
+        elif source is AdmissionSource.OBJECTIVE_DERIVED:
+            _validate_objective_admission(owner, obligation)
+        elif source is AdmissionSource.SAFETY_REQUIRED:
+            _validate_safety_admission(owner, obligation, admission_authority)
+        elif source is AdmissionSource.EXTERNALLY_AUTHORIZED:
+            _validate_external_admission(owner, obligation, admission_authority)
+        else:
             raise TaskSemanticsError("origem de admissao desconhecida")
-        validator(owner, obligation)
-
-
-def fallback_entry_matches(entry: Any, target: str | None) -> bool:
-    return (
-        isinstance(entry, Mapping)
-        and entry.get("tool") in _READ_TOOLS
-        and isinstance(entry.get("args"), Mapping)
-        and same_identity(arg_path(entry["args"]), target)
-        and isinstance(entry.get("result"), Mapping)
-        and classify_failure(entry["result"]) is FailureClass.LOCAL
-    )
-
-
-def previous_entry_matches(entry: Any) -> bool:
-    return (
-        isinstance(entry, Mapping)
-        and entry.get("tool") in _READ_TOOLS
-        and isinstance(entry.get("result"), Mapping)
-        and exact_source_observation(entry["result"])
-    )
 
 
 __all__ = [
     "derive_admission",
+    "_live_admission_authority_approves",
     "objective_identity_exists",
     "semantic_identity",
     "trusted_authorization",

@@ -10,6 +10,7 @@ from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     AuthorizationContext,
+    CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
     ToolInvocationRequest,
@@ -38,6 +39,7 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
         *,
         event_emitter: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         state_recorder: Optional[Callable[[str, Dict[str, Any], ToolResult], None]] = None,
+        incident_recorder: Optional[Callable[[Dict[str, Any]], None]] = None,
         state_recorder_is_canonical: bool = True,
         approval_port: ApprovalPort | None = None,
         application_authority: ApplicationAuthoritySnapshot | None = None,
@@ -47,6 +49,7 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
         self.registry = registry
         self.event_emitter = event_emitter
         self.state_recorder = state_recorder
+        self.incident_recorder = incident_recorder
         self.state_recorder_is_canonical = bool(state_recorder_is_canonical)
         self.approval_port = approval_port or RequireExplicitApproval()
         self.application_authority = application_authority
@@ -62,6 +65,9 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
 
     def set_budget_ledger(self, budget_ledger: TaskBudgetLedger) -> None:
         self.budget_ledger = budget_ledger
+
+    def set_incident_recorder(self, incident_recorder: Callable[[Dict[str, Any]], None] | None) -> None:
+        self.incident_recorder = incident_recorder
 
     def set_capability_ceiling(
         self,
@@ -145,6 +151,30 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
             mutating = self._descriptor_may_mutate(descriptor, invocation.args)
             attempt.set_mutating(mutating)
             self._set_invocation_mutating(invocation.invocation_id, mutating)
+            if (
+                mutating
+                and self._requests_cancellable_execution(
+                    request,
+                    descriptor,
+                    cancellation_token,
+                )
+                and descriptor.cancellation_safety is CancellationSafetyMode.UNSUPPORTED
+            ):
+                unsupported = denial(
+                    invocation,
+                    ToolStatus.BLOCKED,
+                    "MUTATING_CANCELLATION_UNSUPPORTED",
+                    "A ferramenta mutante nao declara um modo seguro de timeout/cancelamento.",
+                    executed=False,
+                )
+                self._complete_denial(
+                    attempt,
+                    unsupported,
+                    record_result,
+                    invocation.tool_name,
+                    invocation.args,
+                )
+                return unsupported
             attempt.mark_running()
             self._emit(
                 "tool_start",
@@ -155,19 +185,42 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
                 },
             )
             timeout = request.timeout_seconds if request.timeout_seconds is not None else descriptor.timeout_seconds
-            result = validate_result(invocation, self._execute(invocation, timeout, attempt))
+            result = validate_result(
+                invocation,
+                self._execute(
+                    invocation,
+                    timeout,
+                    attempt,
+                    descriptor.cancellation_safety,
+                ),
+            )
             if result.error and result.error.code in {"INVALID_RESULT", "INVOCATION_ID_MISMATCH"}:
                 result = replace(result, executed=True)
             return self._complete_result(attempt, invocation, result, record_result)
         except Exception:
-            self._finish_invocation(invocation.invocation_id)
+            if not attempt.has_worker_pending():
+                self._finish_invocation(invocation.invocation_id)
             raise
+
+    @staticmethod
+    def _requests_cancellable_execution(
+        request: ToolInvocationRequest,
+        descriptor: ToolDescriptor,
+        cancellation_token: Any | None,
+    ) -> bool:
+        return bool(
+            request.timeout_seconds is not None
+            or descriptor.timeout_seconds is not None
+            or cancellation_token is not None
+        )
 
     def _workspace_id(self) -> str | None:
         if self.application_authority is not None:
-            return self.application_authority.workspace_id
+            workspace_id = self.application_authority.workspace_id
+            return str(workspace_id) if workspace_id is not None else None
         if self.registry.runtime_identity is not None:
-            return self.registry.runtime_identity.workspace_id
+            workspace_id = self.registry.runtime_identity.workspace_id
+            return str(workspace_id) if workspace_id is not None else None
         return None
 
     def _duplicate_or_retry_block(self, invocation: ToolInvocation, record_result: bool) -> ToolResult:

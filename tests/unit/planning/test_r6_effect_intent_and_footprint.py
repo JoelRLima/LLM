@@ -289,12 +289,21 @@ class _MemoryOwner:
         self.agent_state = state
         self.fail = fail
 
-    def remember(self, key: str, value: str, *, section: str) -> None:
+    def remember(
+        self,
+        key: str,
+        value: str,
+        *,
+        section: str,
+        **context,
+    ) -> None:
+        del context
         if self.fail:
             raise MemoryDatabaseError("database unavailable")
         self.agent_state.memory.state.setdefault(section, {})[key] = value
 
-    def forget(self, key: str) -> None:
+    def forget(self, key: str, **context) -> None:
+        del context
         if self.fail:
             raise MemoryDatabaseError("database unavailable")
         self.agent_state.memory.state.setdefault("key_findings", {}).pop(key, None)

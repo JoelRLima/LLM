@@ -10,6 +10,7 @@ from agent.planning.task_completion import (
     initialize_task_progression,
 )
 from agent.planning.task_semantics import AdmissionSource, TaskSemantics, TaskSemanticsError
+from agent.planning.task_semantics_checkpoint import _admission_digest
 from agent.state import AgentState
 
 
@@ -33,6 +34,28 @@ def _local_failure() -> dict[str, object]:
         "error": "arquivo nao encontrado",
         "error_code": "FILE_NOT_FOUND",
     }
+
+
+def _exact_source(data: object, source: str) -> dict[str, object]:
+    result = _complete(data)
+    result.update(
+        {
+            "evidence_provenance": "EXACT_SOURCE",
+            "source_identity": source,
+            "source_hash": "test-source-hash",
+            "source_extent": {"kind": "whole"},
+        }
+    )
+    return result
+
+
+def _recompute_admission_integrity(semantics: dict[str, object]) -> None:
+    obligations = semantics["obligations"]
+    integrity = semantics["admission_integrity"]
+    assert isinstance(obligations, list) and isinstance(integrity, dict)
+    for obligation in obligations:
+        assert isinstance(obligation, dict)
+        integrity[obligation["id"]] = _admission_digest(obligation)
 
 
 def _runtime(state: AgentState) -> SimpleNamespace:
@@ -240,6 +263,210 @@ def test_checkpoint_integrity_rejects_forged_admission_source() -> None:
 
     with pytest.raises(TaskSemanticsError, match="proveniencia|autorizacao"):
         TaskSemantics.from_checkpoint_dict(checkpoint)
+
+
+def test_state_restore_rejects_rehashed_objective_derived_target() -> None:
+    state = AgentState()
+    state.initialize_task_semantics("Leia a.txt.")
+    state.task_semantics.review_obligations(
+        [
+            {
+                "id": "read-a",
+                "kind": "read",
+                "target": "a.txt",
+                "description": "Ler a.txt.",
+            }
+        ],
+        source="initial_plan",
+    )
+    checkpoint = copy.deepcopy(state.to_checkpoint_dict())
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    obligation = semantics["obligations"][0]
+    obligation["target"] = "secret_unrelated.txt"
+    semantics["admission_integrity"][obligation["id"]] = _admission_digest(obligation)
+
+    with pytest.raises(ValueError, match="objetivo original"):
+        AgentState().from_checkpoint_dict(checkpoint)
+
+
+def test_legitimate_objective_derived_obligation_restores() -> None:
+    state = AgentState()
+    state.initialize_task_semantics("Leia a.txt.")
+    state.task_semantics.review_obligations(
+        [
+            {
+                "id": "read-a",
+                "kind": "read",
+                "target": "a.txt",
+                "description": "Ler a.txt.",
+            }
+        ],
+        source="initial_plan",
+    )
+
+    restored = AgentState()
+    restored.from_checkpoint_dict(state.to_checkpoint_dict())
+
+    assert restored.task_obligations[0].target == "a.txt"
+    assert restored.task_obligations[0].admission_source is AdmissionSource.OBJECTIVE_DERIVED
+
+
+def test_legitimate_evidence_derived_fallback_restores_after_history_rebuild() -> None:
+    state = AgentState()
+    state.initialize_task_semantics(
+        "Leia missing.txt e explique o motivo se nao puder ser lido."
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            "ok": False,
+            "done": True,
+            "executed": True,
+            "status": "failed",
+            "error": "arquivo nao encontrado",
+            "error_code": "FILE_NOT_FOUND",
+            "invocation_id": "missing-1",
+        },
+    )
+    report = state.task_semantics.review_obligations(
+        [
+            {
+                "id": "fallback-missing",
+                "kind": "fallback",
+                "fallback_target": "missing.txt",
+                "description": "Explicar a falha local de missing.txt.",
+            }
+        ],
+        source="initial_plan",
+    )
+    assert report.accepted[0].admission_source is AdmissionSource.CANONICAL_EVIDENCE_DERIVED
+
+    restored = AgentState()
+    restored.from_checkpoint_dict(state.to_checkpoint_dict())
+
+    fallback = next(item for item in restored.task_obligations if item.id == "fallback-missing")
+    assert fallback.admission_source is AdmissionSource.CANONICAL_EVIDENCE_DERIVED
+    assert fallback.admission_evidence_ref == 1
+
+
+def test_rehashed_fallback_without_required_read_is_rejected() -> None:
+    state = AgentState()
+    state.initialize_task_semantics(
+        "Leia missing.txt e explique o motivo se nao puder ser lido."
+    )
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "missing.txt"},
+        {
+            **_local_failure(),
+            "invocation_id": "missing-1",
+        },
+    )
+    report = state.task_semantics.review_obligations(
+        [
+            {
+                "id": "fallback-missing",
+                "kind": "fallback",
+                "fallback_target": "missing.txt",
+                "description": "Explicar a falha local de missing.txt.",
+            }
+        ],
+        source="initial_plan",
+    )
+    assert report.accepted
+    checkpoint = copy.deepcopy(state.to_checkpoint_dict())
+    checkpoint["objective"] = "Leia unrelated.txt."
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    semantics["objective"] = "Leia unrelated.txt."
+    obligations = semantics["obligations"]
+    statuses = semantics["statuses"]
+    assert isinstance(obligations, list) and isinstance(statuses, dict)
+    for obligation in obligations:
+        assert isinstance(obligation, dict)
+        if obligation["kind"] == "read":
+            obligation["target"] = "unrelated.txt"
+        statuses[obligation["id"]] = "pending"
+    semantics["evidence"] = {}
+    _recompute_admission_integrity(semantics)
+
+    with pytest.raises(ValueError, match="read requerido"):
+        AgentState().from_checkpoint_dict(checkpoint)
+
+
+def test_rehashed_previous_read_without_objective_entailment_is_rejected() -> None:
+    objective = "Leia fonte.txt e procure nos outros arquivos pela palavra que ele contem."
+    state = AgentState()
+    state.objective = objective
+    state.set_task_semantics(TaskSemantics.empty(objective))
+    state.record_tool_result(
+        "file_reader",
+        {"file_path": "fonte.txt"},
+        {
+            **_exact_source("orion", "fonte.txt"),
+            "invocation_id": "source-1",
+        },
+    )
+    report = state.task_semantics.review_obligations(
+        [
+            {
+                "id": "search-previous",
+                "kind": "search",
+                "query_source": "previous_read",
+                "description": "Procurar o valor da leitura anterior.",
+            }
+        ],
+        source="initial_plan",
+    )
+    assert report.accepted[0].admission_source is AdmissionSource.CANONICAL_EVIDENCE_DERIVED
+    checkpoint = copy.deepcopy(state.to_checkpoint_dict())
+
+    restored = AgentState()
+    restored.from_checkpoint_dict(checkpoint)
+    assert restored.task_obligations[0].admission_evidence_ref == 1
+
+    checkpoint["objective"] = "Leia fonte.txt."
+    semantics = checkpoint["task_semantics"]
+    assert isinstance(semantics, dict)
+    semantics["objective"] = "Leia fonte.txt."
+    _recompute_admission_integrity(semantics)
+
+    with pytest.raises(ValueError, match="objetivo original"):
+        AgentState().from_checkpoint_dict(checkpoint)
+
+
+@pytest.mark.parametrize("source", (AdmissionSource.SAFETY_REQUIRED, AdmissionSource.EXTERNALLY_AUTHORIZED))
+def test_trusted_admission_restore_requires_live_authority_and_accepts_reauthorization(
+    source: AdmissionSource,
+) -> None:
+    state = AgentState()
+    state.initialize_task_semantics("Explique a situacao.")
+    raw = [
+        {
+            "id": f"trusted-{source.value.casefold()}",
+            "kind": "read",
+            "target": "policy.txt",
+            "description": "Ler o arquivo autorizado.",
+        }
+    ]
+    if source is AdmissionSource.SAFETY_REQUIRED:
+        state.admit_safety_required(raw, reason="policy")
+    else:
+        state.admit_externally_authorized(raw, authorization="ticket-42")
+    checkpoint = state.to_checkpoint_dict()
+
+    with pytest.raises(ValueError, match="autoridade viva|autoridade runtime viva"):
+        AgentState().from_checkpoint_dict(checkpoint)
+
+    def live_authority(observed_source: AdmissionSource, obligation: object) -> bool:
+        return observed_source is source and getattr(obligation, "target", None) == "policy.txt"
+
+    restored = AgentState()
+    restored.from_checkpoint_dict(checkpoint, admission_authority=live_authority)
+
+    assert restored.task_obligations[0].admission_source is source
 
 
 def test_rejected_model_obligation_is_not_a_hidden_completion_blocker() -> None:

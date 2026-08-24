@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from agent.evaluation.agent_executor import GatewayFactory
 from agent.evaluation.block7 import (
@@ -15,6 +15,7 @@ from agent.evaluation.block7 import (
     sanitize_evidence,
 )
 from agent.evaluation.block7_analysis import analyze_campaign, prior_epoch_disposition, secret_safe_report
+from agent.evaluation.block7_campaign_identity import _observed_identity_summary
 from agent.evaluation.block7_execution import CampaignRun
 from agent.evaluation.block7_identity import (
     CAMPAIGN_SCHEMA_VERSION,
@@ -24,7 +25,6 @@ from agent.evaluation.block7_identity import (
     model_config_identity,
     semantic_candidate_manifest,
     semantic_manifest_hash,
-    unavailable_observed_identity,
 )
 
 
@@ -61,7 +61,10 @@ def _campaign_report(
         "model_identity": dict(model_identity),
         "declared_model_identity": dict(model_identity),
         "model_config_fingerprint": model_identity.get("model_config_fingerprint"),
-        "observed_model_identity": _observed_identity_summary(bounded_runs),
+        "observed_model_identity": _observed_identity_summary(
+            bounded_runs,
+            declared_model_identity=model_identity,
+        ),
         "repetition_policy": RepetitionPolicy().to_dict(),
         "scenario_results": scenario_results,
         "summary": {
@@ -213,39 +216,6 @@ def _deterministic_readiness(summary: Mapping[str, Any]) -> dict[str, Any]:
         "complete": complete,
         "source": summary.get("path"),
         "reason": "all_deterministic_gates_recorded" if complete else "deterministic_gates_incomplete",
-    }
-
-
-def _observed_identity_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    identities: list[dict[str, Any]] = []
-    unavailable_count = 0
-    for record in records:
-        evidence = record.get("evidence") if isinstance(record, Mapping) else None
-        observed = evidence.get("observed_model_identity") if isinstance(evidence, Mapping) else None
-        if not isinstance(observed, Mapping) or observed.get("available") is not True:
-            unavailable_count += 1
-            continue
-        projected = {
-            key: observed.get(key)
-            for key in ("available", "provider_model_id", "actual_provider_model_id", "provider", "model", "endpoint_identity", "source")
-        }
-        if projected not in identities:
-            identities.append(projected)
-    if not identities:
-        return {
-            **unavailable_observed_identity(),
-            "consistent": True,
-            "complete": not records,
-            "unavailable_run_count": unavailable_count,
-            "identities": [],
-        }
-    return {
-        "available": True,
-        "consistent": len(identities) == 1,
-        "complete": unavailable_count == 0,
-        "unavailable_run_count": unavailable_count,
-        "identities": identities,
-        **identities[0],
     }
 
 

@@ -11,13 +11,27 @@ from agent.planning.task_semantics_effects import (
 )
 from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
 from agent.planning.task_semantics_types import ObligationStatus
+from agent.tools.result_completeness import EvidenceProvenance, has_explicit_evidence_provenance
 
 
 def _validated_tool_history(state: Any, data: Mapping[str, Any]) -> list[dict[str, Any]]:
     raw_history = data.get("tool_history", state.tool_history) or []
     if not isinstance(raw_history, list) or any(not isinstance(entry, Mapping) for entry in raw_history):
         raise ValueError("Checkpoint tool history is invalid.")
-    return [dict(entry) for entry in raw_history]
+    history: list[dict[str, Any]] = []
+    for raw_entry in raw_history:
+        entry = dict(raw_entry)
+        result = entry.get("result")
+        if isinstance(result, Mapping) and not has_explicit_evidence_provenance(result):
+            # A serialized completeness bit is historical context, not live
+            # source authority.  Preserve the record while making the
+            # restored provenance boundary explicit before any semantic
+            # replay or binding validation can inspect it.
+            restored_result = dict(result)
+            restored_result["evidence_provenance"] = EvidenceProvenance.UNKNOWN.value
+            entry["result"] = restored_result
+        history.append(entry)
+    return history
 
 
 def _restore_history_plan_ids(state: Any) -> None:
@@ -47,6 +61,7 @@ def _rebuild_legacy_semantics(
     history: list[dict[str, Any]],
     *,
     effect_authority: Any = None,
+    admission_authority: Any = None,
 ) -> None:
     """Derive legacy terminal facts from history, never from legacy lists."""
 
@@ -112,6 +127,7 @@ def _restore_history_semantics(
     semantics: TaskSemantics,
     *,
     effect_authority: Any = None,
+    admission_authority: Any = None,
 ) -> None:
     legacy_semantics = not isinstance(data.get("task_semantics"), Mapping)
     try:
@@ -142,6 +158,7 @@ def restore_histories(
     data: Mapping[str, Any],
     *,
     effect_authority: Any = None,
+    admission_authority: Any = None,
 ) -> None:
     state.tool_history = _validated_tool_history(state, data)
     _restore_history_plan_ids(state)
@@ -151,12 +168,18 @@ def restore_histories(
         raise ValueError("Checkpoint task semantics owner is invalid after restore.")
     validate_admission = getattr(semantics, "validate_admission_provenance", None)
     if callable(validate_admission):
-        validate_admission()
+        try:
+            validate_admission(admission_authority=admission_authority)
+        except (TaskSemanticsError, TypeError, AttributeError) as exc:
+            raise ValueError(
+                f"Checkpoint task semantics evidence/admission is invalid: {exc}"
+            ) from exc
     _restore_history_semantics(
         state,
         data,
         semantics,
         effect_authority=effect_authority,
+        admission_authority=admission_authority,
     )
 
 

@@ -79,10 +79,10 @@ def trusted_resource_claims(node: Any) -> tuple[ResourceClaim, ...]:
     if action in _CODE_READ_ACTIONS:
         return _target_claims(node, mode="read")
     if action in _CODE_WRITE_ACTIONS:
-        claims = list(_target_claims(node, mode="write"))
-        if bool(getattr(node, "metadata", {}).get("include_tests", False)):
-            claims.append(ResourceClaim(WORKSPACE_RESOURCE, "write"))
-        return tuple(dict.fromkeys(claims))
+        # Model-generated ChangeSets may write outside requested targets.  The
+        # target list remains task intent/approval context, never a physical
+        # scheduling boundary for this corrective.
+        return (ResourceClaim(WORKSPACE_RESOURCE, "write"),)
     if node_is_mutating(node):
         # A generic mutating node has no trusted footprint contract.  It must
         # serialize against every workspace write rather than trust omission.

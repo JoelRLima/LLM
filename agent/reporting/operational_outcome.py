@@ -13,7 +13,10 @@ from agent.planning.failure_policy import (
 from agent.reporting.observation_evidence import (
     artifact_metadata,
     metadata_is_persisted_mutation,
-    project_artifact_evidence,
+)
+from agent.reporting.operational_outcome_evidence import (
+    collect_operational_evidence,
+    has_canonical_commit_incident,
 )
 
 PUBLIC_TERMINAL_STATUSES = frozenset(
@@ -114,6 +117,7 @@ class OperationalOutcome:
     recovered_local_failure: bool = False
     unrecovered_failure: bool = False
     fallback_resolved: bool = False
+    physical_effect_unknown: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -136,6 +140,7 @@ class OperationalOutcome:
             "recovered_local_failure": self.recovered_local_failure,
             "unrecovered_failure": self.unrecovered_failure,
             "fallback_resolved": self.fallback_resolved,
+            "physical_effect_unknown": self.physical_effect_unknown,
         }
 
     def debug_projection(self) -> dict[str, Any]:
@@ -157,6 +162,7 @@ class OperationalOutcome:
             "recovered_local_failure": self.recovered_local_failure,
             "unrecovered_failure": self.unrecovered_failure,
             "fallback_resolved": self.fallback_resolved,
+            "physical_effect_unknown": self.physical_effect_unknown,
         }
 
 
@@ -167,41 +173,7 @@ def project_operational_outcome(
     task_failed: bool = False,
     cancelled: bool = False,
 ) -> OperationalOutcome:
-    files: set[str] = set()
-    evidence: list[str] = []
-    failed_invocations: list[str] = []
-    failed_invocation_statuses: list[str] = []
-    recovered_invocations: list[str] = []
-    unrecovered_invocations: list[str] = []
-    unrecovered_hard_invocations: list[str] = []
-    validation_status: str | None = None
-    rollback_occurred = False
-    mutation_occurred = False
-    for history_index, entry in enumerate(getattr(state, "tool_history", ()) or (), start=1):
-        if not isinstance(entry, dict):
-            continue
-        result = entry.get("result")
-        if not isinstance(result, dict):
-            continue
-        invocation_id = entry.get("invocation_id") or result.get("invocation_id")
-        if invocation_id is not None:
-            evidence.append(str(invocation_id))
-        failure_class = classify_failure(result)
-        if failure_class in {FailureClass.LOCAL, FailureClass.HARD}:
-            failure_ref = str(invocation_id) if invocation_id is not None else f"history:{history_index}"
-            failed_invocations.append(failure_ref)
-            failed_invocation_statuses.append(str(result.get("status") or "failed"))
-            if callable(getattr(state, "_later_recovery", None)) and state._later_recovery(history_index - 1, entry):
-                recovered_invocations.append(failure_ref)
-            else:
-                unrecovered_invocations.append(failure_ref)
-                if failure_class is FailureClass.HARD:
-                    unrecovered_hard_invocations.append(failure_ref)
-        artifact = project_artifact_evidence(result)
-        files.update(artifact.mutated_files)
-        validation_status = artifact.validation_status or validation_status
-        rollback_occurred = rollback_occurred or artifact.rollback_occurred
-        mutation_occurred = mutation_occurred or artifact.mutation_occurred
+    facts = collect_operational_evidence(state)
 
     last = getattr(state, "last_result", None)
     last_result = last if isinstance(last, dict) else {}
@@ -213,6 +185,8 @@ def project_operational_outcome(
         cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
         local_failure_permitted=local_failure_permitted(state),
     )
+    if facts.incident_present and normalized_status == "succeeded":
+        normalized_status = "unverified"
     reason = last_result.get("error")
     reason_text = str(reason) if reason else None
     blocked_reason = reason_text if normalized_status == "blocked" else None
@@ -220,14 +194,14 @@ def project_operational_outcome(
     pending_value = getattr(state, "pending_effects", ())
     if callable(pending_value):
         pending_value = pending_value()
-    recovered_local_failure = bool(recovered_invocations)
+    recovered_local_failure = bool(facts.recovered_invocations)
     failure_permitted = local_failure_permitted(state)
-    unrecovered_failure = bool(unrecovered_hard_invocations) or (
-        bool(unrecovered_invocations)
+    unrecovered_failure = bool(facts.unrecovered_hard_invocations) or (
+        bool(facts.unrecovered_invocations)
         and not (normalized_status == "succeeded" and failure_permitted)
     ) or (
-        normalized_status != "succeeded" and bool(failed_invocations)
-    )
+        normalized_status != "succeeded" and bool(facts.failed_invocations)
+    ) or facts.incident_present
     fallback_resolved = normalized_status == "succeeded" and (
         recovered_local_failure
         or bool(getattr(state, "waived_effects", ()) or ())
@@ -239,22 +213,23 @@ def project_operational_outcome(
         executed_effects=tuple(getattr(state, "executed_effects", ()) or ()),
         waived_effects=tuple(getattr(state, "waived_effects", ()) or ()),
         pending_effects=tuple(pending_value or ()),
-        mutation_occurred=mutation_occurred,
-        validation_status=validation_status,
-        rollback_occurred=rollback_occurred,
+        mutation_occurred=facts.mutation_occurred,
+        validation_status=facts.validation_status,
+        rollback_occurred=facts.rollback_occurred,
         blocked_reason=blocked_reason,
         failure_reason=failure_reason,
-        files_affected=tuple(sorted(files)),
-        evidence_invocation_ids=tuple(dict.fromkeys(evidence)),
-        failed_invocation_ids=tuple(dict.fromkeys(failed_invocations)),
-        failed_invocation_statuses=tuple(failed_invocation_statuses),
+        files_affected=tuple(sorted(facts.files)),
+        evidence_invocation_ids=tuple(dict.fromkeys(facts.invocation_ids)),
+        failed_invocation_ids=tuple(dict.fromkeys(facts.failed_invocations)),
+        failed_invocation_statuses=tuple(facts.failed_statuses),
         unexpected_effects=tuple(
             getattr(state, "unrequested_effects", lambda: ())() or ()
         ),
-        recovered_invocation_ids=tuple(dict.fromkeys(recovered_invocations)),
+        recovered_invocation_ids=tuple(dict.fromkeys(facts.recovered_invocations)),
         recovered_local_failure=recovered_local_failure,
         unrecovered_failure=unrecovered_failure,
         fallback_resolved=fallback_resolved,
+        physical_effect_unknown=facts.physical_effect_unknown,
     )
 
 
@@ -262,6 +237,7 @@ __all__ = [
     "OperationalOutcome",
     "artifact_metadata",
     "local_failure_permitted",
+    "has_canonical_commit_incident",
     "metadata_is_persisted_mutation",
     "normalize_terminal_status",
     "project_operational_outcome",

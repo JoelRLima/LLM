@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from agent.cancellation import CancellationToken
 from agent.memory.memory import AgentMemory
 from agent.skills.session_memory import SessionMemorySkill
 from agent.state import AgentState
@@ -52,6 +53,22 @@ def test_session_memory_keys_empty(tmp_path: Path, monkeypatch):
     result = skill.execute({"action": "keys"})
     assert result["ok"] is True
     assert result["data"] == []
+
+
+def test_session_memory_context_cancellation_blocks_before_mutation() -> None:
+    orch = DummyOrchestrator()
+    token = CancellationToken()
+    token.cancel()
+    skill = SessionMemorySkill(orchestrator=orch)
+
+    result = skill.execute_with_context(
+        {"action": "set", "key": "x", "value": "1"},
+        cancellation_token=token,
+    )
+
+    assert result["status"] == "cancelled"
+    assert result["persisted_mutation"] is False
+    assert "x" not in orch.agent_state.memory.state["key_findings"]
 
 
 def test_session_memory_reports_sqlite_insert_failure(

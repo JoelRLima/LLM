@@ -5,12 +5,10 @@ from __future__ import annotations
 import posixpath
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agent.approval import (
-    ApprovalDecision,
     ApprovalPort,
-    ApprovalRequest,
     AutoApprove,
     RequireExplicitApproval,
 )
@@ -19,42 +17,11 @@ from agent.code.application import (
     CodingApplicationService,
     build_code_context,
 )
-from agent.code.changes import ChangePreview
-from agent.code.policy import ProposalAssessment
 from agent.llm.contracts import ModelGateway
+from agent.runtime.context import TaskExecutionContext
 from agent.skills.base import BaseSkill
-
-
-class _PolicyApprover:
-    requires_explicit_approval = True
-
-    def __init__(self, policy: ApprovalPort) -> None:
-        self.policy = policy
-
-    def approve(
-        self,
-        preview: ChangePreview,
-        assessment: ProposalAssessment,
-    ) -> ApprovalDecision:
-        return self.policy.request(
-            ApprovalRequest(
-                action="apply_changeset",
-                resource=", ".join(preview.affected_files),
-                prompt=f"Aplicar ChangeSet em {len(preview.affected_files)} arquivo(s)?",
-                metadata={
-                    "confidence": assessment.confidence,
-                    "reasons": assessment.reasons,
-                },
-            )
-        )
-
-
-class _OrchestratorMetricsSink:
-    def __init__(self, callback: Any) -> None:
-        self._callback = callback
-
-    def record(self, metric: Dict[str, Any]) -> None:
-        self._callback(metric)
+from agent.skills.code_task_support import OrchestratorMetricsSink, PolicyApprover
+from agent.skills.invocation_cancellation import with_invocation_cancellation
 
 
 class CodeTaskSkill(BaseSkill):
@@ -203,6 +170,30 @@ class CodeTaskSkill(BaseSkill):
         }
 
     def execute(self, args: dict) -> dict:
+        return self._execute(args)
+
+    def execute_with_context(
+        self,
+        args: dict,
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict:
+        """Carry the gateway cancellation boundary into the code workflow."""
+
+        return self._execute(
+            args,
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )
+
+    def _execute(
+        self,
+        args: dict,
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict:
         action = str(args.get("action", "analyze"))
         objective = str(args.get("objective", ""))
         targets_raw = args.get("targets", [])
@@ -210,7 +201,7 @@ class CodeTaskSkill(BaseSkill):
         include_tests = bool(args.get("include_tests", False))
         try:
             metrics_sink = (
-                _OrchestratorMetricsSink(self.orchestrator._log_metric)
+                OrchestratorMetricsSink(self.orchestrator._log_metric)
                 if self.orchestrator is not None
                 else None
             )
@@ -219,6 +210,11 @@ class CodeTaskSkill(BaseSkill):
                 if self.orchestrator is not None
                 and hasattr(self.orchestrator, "task_execution_context")
                 else None
+            )
+            parent_context = with_invocation_cancellation(
+                parent_context,
+                cancellation_token,
+                cancellation_event,
             )
             child_permissions = frozenset({"read", "write", "validate", "analyze"})
             if include_tests:
@@ -234,6 +230,15 @@ class CodeTaskSkill(BaseSkill):
                 parent_context=parent_context,
                 permissions=child_permissions if parent_context is not None else None,
             )
+            if parent_context is None:
+                context = cast(
+                    TaskExecutionContext,
+                    with_invocation_cancellation(
+                        context,
+                        cancellation_token,
+                        cancellation_event,
+                    ),
+                )
             graph = args.get("graph")
             result = CodingApplicationService(
                 self.base_dir,
@@ -248,7 +253,7 @@ class CodeTaskSkill(BaseSkill):
                     graph=graph if isinstance(graph, dict) else None,
                     template=str(args["template"]) if isinstance(args.get("template"), str) else None,
                 ),
-                approver=_PolicyApprover(self.approval_policy),
+                approver=PolicyApprover(self.approval_policy),
             )
         except Exception as exc:
             return {"ok": False, "done": True, "error": str(exc), "message": str(exc)}

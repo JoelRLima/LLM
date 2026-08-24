@@ -34,12 +34,25 @@ def unavailable_observed_identity() -> dict[str, Any]:
 
     return {
         "available": False,
+        "provider_observation_available": False,
+        "identity_sufficient": False,
+        "consistent": True,
+        "specific": False,
+        "complete": False,
         "provider_model_id": None,
         "actual_provider_model_id": None,
         "provider": None,
         "model": None,
         "endpoint_identity": None,
         "source": "unavailable",
+        "identity_source": "unavailable",
+        "observed_model_ids": [],
+        "distinct_observed_model_ids": [],
+        "external_identity": None,
+        "external_identity_source": None,
+        "provider_observation_limitation": "backend_identity_unavailable",
+        "call_count": 0,
+        "call_identities": [],
     }
 
 
@@ -278,9 +291,8 @@ def resume_compatible(existing: Mapping[str, Any], current: Mapping[str, Any]) -
 
 
 __all__ = [
-    "CAMPAIGN_SCHEMA_VERSION", "DEFAULT_DRY_RUN_EPOCH", "DEFAULT_PROFILE",
-    "DEFAULT_REAL_MODEL_EPOCH", "campaign_config", "candidate_identity",
-    "candidate_identity_string", "documentation_fingerprint", "fake_model_identity",
+    "CAMPAIGN_SCHEMA_VERSION", "DEFAULT_DRY_RUN_EPOCH", "DEFAULT_PROFILE", "DEFAULT_REAL_MODEL_EPOCH",
+    "campaign_config", "candidate_identity", "candidate_identity_string", "documentation_fingerprint", "fake_model_identity",
     "fixture_identity", "model_config_identity", "normalize_endpoint_identity",
     "planned_model_profile", "resume_compatible", "semantic_candidate_fingerprint",
     "semantic_candidate_manifest", "semantic_manifest_hash", "source_fingerprint",

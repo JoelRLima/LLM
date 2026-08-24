@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from agent.execution_incidents import CANONICAL_COMMIT_FAILED
 from agent.llm.contracts import ModelProviderError
 from agent.reporting.observation_evidence import (
     project_artifact_evidence,
@@ -12,26 +13,18 @@ from agent.reporting.observation_evidence import (
     result_error_code,
 )
 from agent.reporting.operational_outcome import (
+    has_canonical_commit_incident,
     local_failure_permitted,
     normalize_terminal_status,
     project_operational_outcome,
 )
 from agent.reporting.public_safety import sanitize_public_text
-
-
-def failure_layer_for_code(code: str | None) -> str:
-    if code == "MODEL_PROVIDER_ERROR":
-        return "provider"
-    if code in {
-        "APPLICATION_AUTHORITY_MISSING", "APPLICATION_AUTHORITY_DENIED",
-        "TASK_AUTHORITY_MISSING", "TASK_AUTHORITY_DENIED",
-        "WORKSPACE_GRANT_DENIED", "RUNTIME_MISMATCH", "APPROVAL_REQUIRED",
-        "APPROVAL_DENIED", "PERMISSION_DENIED",
-    }:
-        return "gateway"
-    if code in {"TOOL_ERROR", "EXECUTION_ERROR", "TOOL_NOT_FOUND"}:
-        return "tool"
-    return "runtime"
+from agent.reporting.run_receipt_support import (
+    executed_projection,
+    execution_incidents,
+    failure_layer_for_code,
+    receipt_cause,
+)
 
 
 def _project_tool(entry: dict[str, Any]) -> dict[str, Any]:
@@ -54,7 +47,7 @@ def _canonical_public_status(
     cancelled: bool = False,
 ) -> str:
     last_result = getattr(state, "last_result", None) or {}
-    return normalize_terminal_status(
+    normalized = normalize_terminal_status(
         explicit_status=requested_status,
         last_result_status=last_result.get("status") if isinstance(last_result, dict) else None,
         terminal_disposition=getattr(state, "terminal_disposition", None),
@@ -62,17 +55,23 @@ def _canonical_public_status(
         cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
         local_failure_permitted=local_failure_permitted(state),
     )
+    if normalized == "succeeded" and has_canonical_commit_incident(state):
+        return "unverified"
+    return normalized
 
 
 def canonical_public_status(orchestrator: Any, requested_status: str) -> str:
     """Return the public status after applying the canonical run facts."""
 
-    return _canonical_public_status(
+    normalized = _canonical_public_status(
         orchestrator.agent_state,
         requested_status,
         task_failed=bool(getattr(orchestrator, "_task_failed", False)),
         cancelled=bool(getattr(orchestrator, "_cancelled", False)),
     )
+    if normalized == "succeeded" and has_canonical_commit_incident(orchestrator.agent_state):
+        return "unverified"
+    return normalized
 
 
 def build_run_receipt(
@@ -89,6 +88,7 @@ def build_run_receipt(
         item for item in (getattr(state, "tool_history", None) or [])
         if isinstance(item, dict)
     ]
+    incidents = execution_incidents(state)
     tools: list[dict[str, Any]] = []
     proposed: set[str] = set()
     validation: dict[str, Any] = {"ran": False, "outcome": None}
@@ -109,6 +109,9 @@ def build_run_receipt(
         if artifact.rollback_occurred:
             rollback["occurred"] = True
             rollback["outcome"] = "restored"
+    if any(item.get("rollback_occurred") is True for item in incidents):
+        rollback["occurred"] = True
+        rollback["outcome"] = "restored"
 
     events = getattr(state, "events", None) or []
     replan_count = sum(
@@ -122,17 +125,11 @@ def build_run_receipt(
     )
     last_result = getattr(state, "last_result", None) or {}
     raw_code = result_error_code(last_result) if isinstance(last_result, dict) else None
+    if raw_code is None and incidents:
+        raw_code = CANONICAL_COMMIT_FAILED
     code = failure_code or raw_code
-    cause = None
-    if error or code:
-        cause = {
-            "message": sanitize_public_text(error or str(last_result.get("error") or "")),
-            "code": code or "RUN_FAILED",
-            "layer": failure_layer or failure_layer_for_code(code),
-        }
-    executed: bool | None = (
-        effects[-1] if len(effects) == 1 else (any(effects) if effects else None)
-    )
+    cause = receipt_cause(error, code, last_result, failure_layer)
+    executed = executed_projection(effects, incidents)
     replan = {"occurred": True, "count": replan_count} if replan_count else None
     outcome = project_operational_outcome(
         state,
@@ -148,6 +145,7 @@ def build_run_receipt(
     return {
         "workspace": str(workspace),
         "tools": tools,
+        "execution_incidents": incidents,
         "files_affected": list(outcome.files_affected),
         "proposed_files": sorted(proposed - set(outcome.files_affected)),
         "validation": validation,

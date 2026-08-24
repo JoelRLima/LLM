@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from agent.skills.descriptor import SkillCapability as C
 from agent.skills.descriptor import SkillSpec
+from agent.tools.contracts import CancellationSafetyMode as S
 from agent.tools.provenance import ArgumentOrigin
 
 BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
@@ -45,8 +46,11 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         },
         capabilities=frozenset({C.READ, C.WRITE, C.VALIDATE, C.ANALYZE}),
         cost=8,
-        timeout_seconds=120,
         category="WRITE",
+        # Proposal generation calls a synchronous model gateway that cannot
+        # be cancelled or process-killed. Mutating actions therefore fail
+        # closed whenever timeout/cancellation is requested.
+        cancellation_safety=S.UNSUPPORTED,
     ),
     SkillSpec(
         "agent.skills.directory_reader",
@@ -96,6 +100,8 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         capabilities=frozenset({C.READ, C.WRITE}),
         cost=8,
         category="WRITE",
+        # In-process filesystem writes have no bounded cancellation fence.
+        cancellation_safety=S.UNSUPPORTED,
     ),
     SkillSpec(
         "agent.skills.git",
@@ -107,6 +113,8 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         idempotent=True,
         timeout_seconds=20,
         category="EXECUTE",
+        # Commands run in the existing owned process-tree boundary.
+        cancellation_safety=S.PROCESS_KILLABLE,
     ),
     SkillSpec(
         "agent.skills.grep",
@@ -149,6 +157,8 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         cost=6,
         timeout_seconds=10,
         category="EXECUTE",
+        # Python execution uses the existing owned process-tree boundary.
+        cancellation_safety=S.PROCESS_KILLABLE,
     ),
     SkillSpec(
         "agent.skills.session_memory",
@@ -158,16 +168,21 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         capabilities=frozenset({C.MEMORY}),
         cost=2,
         category="MEMORY",
+        # SQLite lock waits and statements poll invocation cancellation,
+        # roll back before commit, and terminate within gateway grace.
+        cancellation_safety=S.BOUNDED_COOPERATIVE,
     ),
     SkillSpec(
         "agent.skills.shell",
         "ShellSkill",
         "shell",
         kwargs={"base_dir": ".", "timeout": 30, "approval_policy": None},
-        capabilities=frozenset({C.READ, C.WRITE, C.PROCESS, C.VCS_READ}),
+        capabilities=frozenset({C.READ, C.PROCESS, C.VCS_READ}),
         cost=7,
         timeout_seconds=30,
         category="EXECUTE",
+        # The read-only shell surface still owns and kills its process tree.
+        cancellation_safety=S.PROCESS_KILLABLE,
     ),
     SkillSpec(
         "agent.skills.summarize",

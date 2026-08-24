@@ -4,9 +4,12 @@ from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.planning_context import PlanningContextError, PlanningContextSnapshot, PlanningTool
 from agent.planning.replan import _validate_and_optimize_new_steps
 from agent.planning.replan_models import ReplanAction
+from agent.skills import load_skill_registry
 from agent.state import AgentState
+from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.contracts import ToolOriginKind
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from agent.tools.tool_registry import ToolRegistry
 
 
 class _Skill:
@@ -29,6 +32,7 @@ class _State:
     def __init__(self):
         self.plan = []
         self.tool_history = []
+        self.requested_effects = []
 
     def set_plan(self, plan):
         self.plan = plan
@@ -237,6 +241,48 @@ def test_gateway_rejects_invalid_deferred_condition_without_execution(
     assert orchestrator.plan_executor.calls == 0
     hard_block = next(data for event, data in orchestrator.events if event == "hard_block")
     assert error_fragment in str(hard_block["errors"])
+
+
+def test_read_only_objective_rejects_deferred_write_before_any_execution(tmp_path) -> None:
+    skill_registry = load_skill_registry(base_dir=tmp_path)
+    tool_registry = ToolRegistry()
+    tool_registry.register_adapter(BuiltinToolAdapter(skill_registry))
+    tool_registry.freeze()
+    orchestrator = _Orchestrator()
+    orchestrator.skills = skill_registry.as_dict()
+    orchestrator.active_skills = list(skill_registry.names())
+    orchestrator.allowed_capabilities = frozenset(
+        {"read", "write", "validate", "analyze", "memory", "process"}
+    )
+    orchestrator.tool_registry = tool_registry
+
+    plan = [
+        {"tool": "file_reader", "args": {"file_path": "controle.txt"}},
+        {
+            "kind": "deferred_condition",
+            "observation_ref": 1,
+            "predicate": {"op": "equals", "value": "original"},
+            "on_true": {
+                "tool": "code_task",
+                "args": {
+                    "action": "modify",
+                    "objective": "Altere controle.txt.",
+                    "targets": ["controle.txt"],
+                },
+            },
+            "on_false": {"waive_effect": "write"},
+        },
+    ]
+    objective = 'Leia controle.txt e informe se contem "original".'
+
+    result = ExecutionGateway(orchestrator).execute_validated_plan(plan, objective, {})
+
+    assert result.aborted is True
+    assert orchestrator.plan_executor.calls == 0
+    assert orchestrator.agent_state.tool_history == []
+    hard_block = next(data for event, data in orchestrator.events if event == "hard_block")
+    assert "UNREQUESTED_EFFECT" in str(hard_block["errors"])
+    assert "write" not in orchestrator.agent_state.requested_effects
 
 
 def test_context_validation_does_not_execute_extension() -> None:

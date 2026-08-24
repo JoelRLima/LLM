@@ -114,6 +114,17 @@ def test_recording_gateway_is_observational_and_keeps_call_identity() -> None:
     exported = recorder.export_evidence()
     assert len(exported["route_decisions"]) == 1
     assert exported["model_calls"][0]["response"] == '{"action":"final"}'
+    call_identity = exported["model_call_identities"][0]
+    assert set(call_identity) == {
+        "call_index",
+        "provider",
+        "endpoint_identity",
+        "declared_model",
+        "observed_provider_model_id",
+        "identity_source",
+    }
+    assert call_identity["call_index"] == 1
+    assert exported["observed_provider_identity"]["identity_sufficient"] is False
 
 
 def test_phase4_audit_covers_every_arm_with_sixteen_answers() -> None:

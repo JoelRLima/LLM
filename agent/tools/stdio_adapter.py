@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from agent.tools.contracts import (
+    CancellationSafetyMode,
     FrozenJsonObject,
     ToolAdapter,
     ToolDescriptor,
@@ -282,6 +283,7 @@ class StdioToolAdapter(ToolAdapter):
             source_version=self._manifest_snapshot.version,
             protocol_version=self._manifest_snapshot.protocol_version,
             supports_cancellation=False,
+            cancellation_safety=CancellationSafetyMode.PROCESS_KILLABLE,
         )
 
     def _descriptor_for(self, tool_name: str) -> Optional[ToolDescriptor]:

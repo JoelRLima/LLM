@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from agent.planning.schema_safety import PlanningSchemaError, validate_schema_depth
-from agent.tools.contracts import freeze_json_like, thaw_json_like
+from agent.tools.contracts import CancellationSafetyMode, freeze_json_like, thaw_json_like
 from agent.tools.provenance import ArgumentOrigin
 
 
@@ -158,9 +158,19 @@ class SkillSpec:
         default_factory=dict
     )
     result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
+    cancellation_safety: CancellationSafetyMode = field(
+        default=CancellationSafetyMode.UNSUPPORTED,
+        kw_only=True,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
+        if not isinstance(self.cancellation_safety, CancellationSafetyMode):
+            object.__setattr__(
+                self,
+                "cancellation_safety",
+                CancellationSafetyMode(str(self.cancellation_safety)),
+            )
 
     def __getattribute__(self, name: str) -> Any:
         if name == "result_data_schema":

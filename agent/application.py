@@ -156,6 +156,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
                     name, args, res.to_legacy_dict(include_details=True)
                 ),
+                incident_recorder=orchestrator.agent_state.record_execution_incident,
             )
             orchestrator.tool_registry = tool_registry
             orchestrator.tool_invocation_gateway = tool_invocation_gateway
@@ -295,6 +296,5 @@ class AgentApplication(ApplicationOperationalModeMixin):
 
     def __enter__(self) -> "AgentApplication": return self
 
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        self.close()
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None: self.close()
 __all__ = ["AgentApplication", "AgentRunResult"]

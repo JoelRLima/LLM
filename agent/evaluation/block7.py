@@ -164,6 +164,7 @@ class HRunEvidence:
     model_decisions: tuple[Any, ...] = ()
     repair_decisions: tuple[Any, ...] = ()
     route_decisions: tuple[Any, ...] = ()
+    model_call_identities: tuple[Any, ...] = ()
     canonical_plan: Any = None
     invocation_evidence: tuple[Any, ...] = ()
     terminal_status: str | None = None
@@ -208,6 +209,9 @@ class HRunEvidence:
             "declared_model_identity": dict(self.model_fingerprint),
             "observed_model_identity": dict(self.observed_model_identity),
             "observed_identity_available": bool(self.observed_model_identity.get("available", False)),
+            "observed_identity_sufficient": bool(
+                self.observed_model_identity.get("identity_sufficient", False)
+            ),
             "observed_provider_model_id": self.observed_model_identity.get(
                 "provider_model_id", self.observed_model_identity.get("actual_provider_model_id")
             ),
@@ -220,6 +224,7 @@ class HRunEvidence:
             "model_decisions": list(self.model_decisions),
             "repair_decisions": list(self.repair_decisions),
             "route_decisions": list(self.route_decisions),
+            "model_call_identities": list(self.model_call_identities),
             "canonical_plan": self.canonical_plan,
             "invocation_evidence": list(self.invocation_evidence),
             "terminal_status": self.terminal_status,

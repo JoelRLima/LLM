@@ -36,14 +36,26 @@ def test_incomplete_h2_plan_keeps_search_obligation_pending() -> None:
     state.record_tool_result(
         "file_reader",
         {"file_path": "fonte_h2.txt"},
-        {"ok": True, "done": True, "status": "succeeded", "data": "orion"},
+        {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "complete": True,
+            "data": "orion",
+        },
     )
     assert [item.kind for item in state.pending_obligations()] == ["search"]
 
     state.record_tool_result(
         "grep",
         {"path": ".", "pattern": "orion"},
-        {"ok": True, "done": True, "status": "succeeded", "data": []},
+        {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "complete": True,
+            "data": [],
+        },
     )
     assert state.pending_obligations() == ()
 
@@ -117,7 +129,13 @@ def test_obligation_transitions_require_evidence_and_checkpoint_round_trip() -> 
         semantics.satisfy("read", evidence_ref=None)  # type: ignore[arg-type]
     semantics.observe_tool(
         "file_reader",
-        {"ok": True, "done": True, "status": "succeeded", "data": "conteudo"},
+        {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "complete": True,
+            "data": "conteudo",
+        },
         evidence_ref=1,
         args={"file_path": "fonte.txt"},
     )

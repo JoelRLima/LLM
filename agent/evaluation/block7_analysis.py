@@ -80,8 +80,16 @@ def analyze_campaign(
     if require_final_epoch and not isinstance(deterministic_readiness, Mapping):
         deterministic_readiness = {"complete": False, "reason": "missing"}
     observed_identity = report.get("observed_model_identity")
+    observed_identity_reason: str | None = None
+    if require_final_epoch and isinstance(observed_identity, Mapping):
+        if not bool(observed_identity.get("available")):
+            observed_identity_reason = "OBSERVED_MODEL_IDENTITY_UNAVAILABLE"
+        elif not bool(observed_identity.get("identity_sufficient")):
+            observed_identity_reason = "OBSERVED_MODEL_IDENTITY_INSUFFICIENT"
     observed_identity_available = (
-        bool(observed_identity.get("available")) and observed_identity.get("complete", True) is not False
+        bool(observed_identity.get("identity_sufficient"))
+        and observed_identity.get("consistent") is not False
+        and observed_identity.get("complete") is not False
         if require_final_epoch and isinstance(observed_identity, Mapping)
         else None
     )
@@ -97,6 +105,7 @@ def analyze_campaign(
         installed_acceptance=accepted_installed,
         deterministic_readiness=deterministic_readiness,
         observed_identity_available=observed_identity_available,
+        observed_identity_reason=observed_identity_reason,
     )
     return {
         "analysis_schema_version": "B7-ANALYSIS-V1.0",

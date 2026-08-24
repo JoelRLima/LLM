@@ -112,9 +112,10 @@ def verdict(
     installed_acceptance: Mapping[str, Any] | None,
     deterministic_readiness: Mapping[str, Any] | None = None,
     observed_identity_available: bool | None = None,
+    observed_identity_reason: str | None = None,
 ) -> tuple[str, list[str]]:
     if observed_identity_available is False:
-        return "INCONCLUSIVE", ["OBSERVED_MODEL_IDENTITY_UNAVAILABLE"]
+        return "INCONCLUSIVE", [observed_identity_reason or "OBSERVED_MODEL_IDENTITY_UNAVAILABLE"]
     if not identity_consistent:
         return "INCONCLUSIVE", ["EVIDENCE_IDENTITY_INCONSISTENT"]
     if evidence_level != "real_model":

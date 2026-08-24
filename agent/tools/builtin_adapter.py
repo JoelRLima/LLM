@@ -43,6 +43,7 @@ class BuiltinToolAdapter(ToolAdapter):
             public_invocation_fields=spec.public_invocation_fields,
             argument_provenance=spec.argument_provenance,
             result_data_schema=spec.result_data_schema,
+            cancellation_safety=spec.cancellation_safety,
         )
 
     @staticmethod

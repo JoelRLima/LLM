@@ -171,6 +171,7 @@ def _tool_payload(
         "cacheable": tool.cacheable,
         "idempotent": tool.idempotent,
         "supports_cancellation": tool.supports_cancellation,
+        "cancellation_safety": tool.cancellation_safety.value,
         "capabilities": sorted(tool.required_capabilities),
         "origin": tool.origin_kind.value,
     }

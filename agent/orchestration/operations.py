@@ -72,11 +72,35 @@ class OrchestratorOperations:
                 descriptions.append(f"- {skill.name}: {skill.description}\nArgs: {schema}")
         return "\n".join(descriptions)
 
-    def remember(self, key: str, value: Any, section: str = "key_findings") -> None:
-        self.agent_state.memory.remember(key, value, section)
+    def remember(
+        self,
+        key: str,
+        value: Any,
+        section: str = "key_findings",
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        self.agent_state.memory.remember(
+            key,
+            value,
+            section,
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )
 
-    def forget(self, key: str) -> None:
-        self.agent_state.memory.forget(key)
+    def forget(
+        self,
+        key: str,
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        self.agent_state.memory.forget(
+            key,
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )
 
     def clear_memory(self) -> None:
         self.agent_state.memory.clear()

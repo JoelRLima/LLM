@@ -15,6 +15,7 @@ from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
 from agent.state_checkpointing import StateCheckpointMixin
 from agent.state_failure_recovery import StateFailureRecoveryMixin
+from agent.state_incidents import StateIncidentMixin
 from agent.state_plan import canonicalize_plan_steps
 from agent.state_progression import (
     current_result_for_step,
@@ -26,7 +27,7 @@ from agent.state_progression import (
 from agent.state_semantics import TaskSemanticsStateMixin
 
 
-class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckpointMixin):
+class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckpointMixin, StateIncidentMixin):
     """Estado completo e unificado do agente."""
 
     def __init__(
@@ -48,6 +49,7 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
         self.last_tool: Optional[str] = None
         self.last_args: Optional[ToolArgs] = None
         self.tool_history: List[ToolHistoryEntry] = []
+        self.execution_incidents: List[Dict[str, Any]] = []
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
         self._task_semantics = TaskSemantics.empty()
@@ -115,6 +117,7 @@ class AgentState(TaskSemanticsStateMixin, StateFailureRecoveryMixin, StateCheckp
         self.last_args = args
         self.last_result = result
         self.tool_history = next_history
+
     def project_last_result(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
         """Project a canonical terminal result without appending history again."""
         self.last_tool = tool_name

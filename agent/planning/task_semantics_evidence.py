@@ -180,10 +180,11 @@ def compare_args_match(operands: Sequence[str], args: Mapping[str, Any] | None) 
 def result_is_successful(result: Mapping[str, Any]) -> bool:
     if not isinstance(result, Mapping):
         return False
-    if result.get("status") in {"failed", "blocked", "unverified", "permission_denied", "cancelled"}:
+    status = result.get("status")
+    if status not in (None, "", "succeeded"):
         return False
     return result.get("ok") is True and (
-        result.get("status") == "succeeded" or result.get("done") is True or result.get("executed") is True
+        status == "succeeded" or result.get("done") is True or result.get("executed") is True
     )
 
 

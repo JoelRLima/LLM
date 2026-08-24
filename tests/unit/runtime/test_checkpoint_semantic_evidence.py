@@ -8,6 +8,7 @@ import pytest
 from agent.planning.completion_observations import eligible_waiver_observations
 from agent.planning.task_completion import refresh_executed_effects
 from agent.planning.task_semantics import (
+    AdmissionSource,
     ObligationStatus,
     TaskIntent,
     TaskObligation,
@@ -35,6 +36,19 @@ def _complete(data: object) -> dict[str, object]:
         "complete": True,
         "data": data,
     }
+
+
+def _complete_source(data: object, source: str) -> dict[str, object]:
+    result = _complete(data)
+    result.update(
+        {
+            "evidence_provenance": "EXACT_SOURCE",
+            "source_identity": source,
+            "source_hash": "test-source-hash",
+            "source_extent": {"kind": "whole"},
+        }
+    )
+    return result
 
 
 def _write_result(*, executed: bool = True, status: str = "succeeded") -> dict[str, object]:
@@ -155,7 +169,7 @@ def _legacy_checkpoint(
 
 
 def _previous_read_state() -> AgentState:
-    objective = "Use a palavra lida para procurar nos outros arquivos."
+    objective = "Leia fonte.txt e procure nos outros arquivos pela palavra que ele contem."
     state = _state()
     state.objective = objective
     state.set_task_semantics(
@@ -167,6 +181,8 @@ def _previous_read_state() -> AgentState:
                     "search",
                     "Procurar o valor lido anteriormente.",
                     query_source="previous_read",
+                    admission_source=AdmissionSource.CANONICAL_EVIDENCE_DERIVED,
+                    admission_evidence_ref=1,
                 )
             ],
             _strict_evidence=True,
@@ -196,7 +212,7 @@ def _canonical_read_checkpoint() -> dict[str, object]:
     state.record_tool_result(
         "file_reader",
         {"file_path": "b.txt"},
-        _complete("B"),
+        _complete_source("B", "b.txt"),
     )
     assert state.obligation_status("read:b") is ObligationStatus.SATISFIED
     return state.to_checkpoint_dict()
@@ -264,6 +280,8 @@ def test_checkpoint_restore_preserves_exact_local_failure_fallback() -> None:
                     "fallback",
                     "Relatar falha local de missing.txt.",
                     fallback_target="missing.txt",
+                    admission_source=AdmissionSource.CANONICAL_EVIDENCE_DERIVED,
+                    admission_evidence_ref=1,
                 ),
             ],
             _strict_evidence=True,
@@ -307,6 +325,8 @@ def _local_failure_fallback_semantics() -> TaskSemantics:
                 "fallback",
                 "Relatar falha local de missing.txt.",
                 fallback_target="missing.txt",
+                admission_source=AdmissionSource.CANONICAL_EVIDENCE_DERIVED,
+                admission_evidence_ref=1,
             ),
         ],
         _strict_evidence=True,
@@ -511,7 +531,7 @@ def _forged_compare_checkpoint(
         state.record_tool_result(
             "file_reader",
             {"file_path": path},
-            _complete(value),
+            _complete_source(value, path),
         )
     checkpoint = state.to_checkpoint_dict()
     semantics = checkpoint["task_semantics"]
@@ -967,7 +987,7 @@ def test_legacy_history_reconstructs_non_effect_terminal_state() -> None:
             {
                 "tool": "file_reader",
                 "args": {"file_path": "a.txt"},
-                "result": _complete("A"),
+                "result": _complete_source("A", "a.txt"),
             }
         ],
     )
@@ -1004,12 +1024,12 @@ def test_previous_read_runtime_and_checkpoint_require_prior_matching_read() -> N
     state.record_tool_result(
         "file_reader",
         {"file_path": "fonte.txt"},
-        _complete("orion"),
+        _complete_source("orion", "fonte.txt"),
     )
     state.record_tool_result(
         "grep",
         {"path": ".", "pattern": "orion"},
-        _complete([]),
+        _complete_source([], "."),
     )
 
     assert state.obligation_status("search:previous") is ObligationStatus.SATISFIED
@@ -1028,7 +1048,7 @@ def test_previous_read_does_not_use_a_future_read_on_restore() -> None:
     state.record_tool_result(
         "file_reader",
         {"file_path": "fonte.txt"},
-        _complete("orion"),
+        _complete_source("orion", "fonte.txt"),
     )
     checkpoint = state.to_checkpoint_dict()
     semantics = checkpoint["task_semantics"]
@@ -1053,7 +1073,7 @@ def test_previous_read_rejects_different_value_and_accepts_only_matching_prior_r
     wrong.record_tool_result(
         "grep",
         {"path": ".", "pattern": "orion"},
-        _complete([]),
+        _complete_source([], "."),
     )
     assert wrong.obligation_status("search:previous") is ObligationStatus.PENDING
 
@@ -1061,17 +1081,17 @@ def test_previous_read_rejects_different_value_and_accepts_only_matching_prior_r
     multiple.record_tool_result(
         "file_reader",
         {"file_path": "antiga.txt"},
-        _complete("andromeda"),
+        _complete_source("andromeda", "antiga.txt"),
     )
     multiple.record_tool_result(
         "file_reader",
         {"file_path": "fonte.txt"},
-        _complete("orion"),
+        _complete_source("orion", "fonte.txt"),
     )
     multiple.record_tool_result(
         "grep",
         {"path": ".", "pattern": "orion"},
-        _complete([]),
+        _complete_source([], "."),
     )
     assert multiple.obligation_status("search:previous") is ObligationStatus.SATISFIED
 
@@ -1092,8 +1112,8 @@ def test_legacy_previous_read_replay_does_not_use_future_history() -> None:
     }
     valid = dict(common)
     valid["tool_history"] = [
-        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete("orion")},
-        {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete([])},
+            {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete_source("orion", "fonte_h2.txt")},
+            {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete_source([], ".")},
     ]
     restored_valid = _state()
     restored_valid.from_checkpoint_dict(valid)
@@ -1102,8 +1122,8 @@ def test_legacy_previous_read_replay_does_not_use_future_history() -> None:
 
     future = dict(common)
     future["tool_history"] = [
-        {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete([])},
-        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete("orion")},
+        {"tool": "grep", "args": {"path": ".", "pattern": "orion"}, "result": _complete_source([], ".")},
+        {"tool": "file_reader", "args": {"file_path": "fonte_h2.txt"}, "result": _complete_source("orion", "fonte_h2.txt")},
     ]
     restored_future = _state()
     restored_future.from_checkpoint_dict(future)

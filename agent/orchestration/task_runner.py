@@ -105,6 +105,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 retry_failed=bool(self.orchestrator.session.config.get("resume_retry_failed", False)),
                 retry_skipped=bool(self.orchestrator.session.config.get("resume_retry_skipped", False)),
                 effect_authority=self.orchestrator,
+                admission_authority=getattr(self.orchestrator, "admission_authority", None),
             )
         except ValueError:
             self.orchestrator._preserve_checkpoint = True
@@ -286,8 +287,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         blocker = allow_linear_completion(self.orchestrator, objective)
         if blocker is not None:
             return terminal_answer(self.orchestrator, objective, on_chunk, blocker)
-        outcome = project_operational_outcome(
-            self.orchestrator.agent_state,
+        outcome = project_operational_outcome(self.orchestrator.agent_state,
             task_failed=bool(getattr(self.orchestrator, "_task_failed", False)),
             cancelled=bool(getattr(self.orchestrator, "_cancelled", False)),
         )

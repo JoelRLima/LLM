@@ -130,11 +130,25 @@ def is_legacy_complete_result(result: Mapping[str, Any]) -> bool:
     """Compatibility predicate for old in-memory test/admin result shapes.
 
     This is intentionally narrower than success: an explicit ``complete``
-    declaration is required and no untrusted provenance declaration may be
-    present.  Production source tools now always emit explicit provenance.
+    declaration is required, the result must otherwise have the canonical
+    successful shape, and no untrusted provenance declaration may be present.
+    Production source tools now always emit explicit provenance.
     """
 
-    return not has_explicit_evidence_provenance(result) and canonical_completeness(result)[0]
+    status = result.get("status")
+    return (
+        not has_explicit_evidence_provenance(result)
+        and result.get("complete") is True
+        and result.get("truncated") is not True
+        and result.get("ok") is True
+        and "data" in result
+        and status in (None, "", "succeeded")
+        and (
+            status == "succeeded"
+            or result.get("done") is True
+            or result.get("executed") is True
+        )
+    )
 
 
 def exact_source_covers_whole_result(result: Mapping[str, Any]) -> bool:

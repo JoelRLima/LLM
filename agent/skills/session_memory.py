@@ -1,6 +1,7 @@
 from typing import Any
 
-from agent.memory.memory import MemoryDatabaseError
+from agent.cancellation import is_cancellation_requested
+from agent.memory.memory import MemoryDatabaseError, MemoryOperationCancelled
 
 from .base import BaseSkill
 
@@ -45,9 +46,45 @@ class SessionMemorySkill(BaseSkill):
             "final_state": "unknown",
         }
 
-    def _set(self, key: str, value: str) -> dict[str, Any]:
+    @staticmethod
+    def _cancelled_result() -> dict[str, Any]:
+        effect = {
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "applied": False,
+            "final_state": "unchanged",
+        }
+        return {
+            "ok": False,
+            "done": True,
+            "status": "cancelled",
+            "error": "Execucao cancelada antes do commit da memoria.",
+            "message": "Execucao cancelada antes do commit da memoria.",
+            "effect": "memory_write",
+            "data": effect,
+            **effect,
+        }
+
+    def _set(
+        self,
+        key: str,
+        value: str,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict[str, Any]:
         try:
-            self.orchestrator.remember(key, value, section="key_findings")
+            if cancellation_token is None and cancellation_event is None:
+                self.orchestrator.remember(key, value, section="key_findings")
+            else:
+                self.orchestrator.remember(
+                    key,
+                    value,
+                    section="key_findings",
+                    cancellation_token=cancellation_token,
+                    cancellation_event=cancellation_event,
+                )
+        except MemoryOperationCancelled:
+            return self._cancelled_result()
         except MemoryDatabaseError as exc:
             return self._database_failure(
                 exc,
@@ -65,9 +102,23 @@ class SessionMemorySkill(BaseSkill):
             "affected_files": (),
         }
 
-    def _delete(self, key: str) -> dict[str, Any]:
+    def _delete(
+        self,
+        key: str,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict[str, Any]:
         try:
-            self.orchestrator.forget(key)
+            if cancellation_token is None and cancellation_event is None:
+                self.orchestrator.forget(key)
+            else:
+                self.orchestrator.forget(
+                    key,
+                    cancellation_token=cancellation_token,
+                    cancellation_event=cancellation_event,
+                )
+        except MemoryOperationCancelled:
+            return self._cancelled_result()
         except MemoryDatabaseError as exc:
             return self._database_failure(
                 exc,
@@ -86,6 +137,15 @@ class SessionMemorySkill(BaseSkill):
         }
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self._execute(args)
+
+    def _execute(
+        self,
+        args: dict[str, Any],
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict[str, Any]:
         if not self.orchestrator:
             return {"ok": False, "done": True, "error": "Sem orquestrador vinculado."}
 
@@ -99,7 +159,12 @@ class SessionMemorySkill(BaseSkill):
         if action == "set":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            return self._set(key, value)
+            return self._set(
+                key,
+                value,
+                cancellation_token,
+                cancellation_event,
+            )
         elif action == "get":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
@@ -111,6 +176,27 @@ class SessionMemorySkill(BaseSkill):
         elif action == "delete":
             if not key:
                 return {"ok": False, "done": True, "error": "Chave vazia."}
-            return self._delete(key)
+            return self._delete(
+                key,
+                cancellation_token,
+                cancellation_event,
+            )
         else:
             return {"ok": False, "done": True, "error": f"Ação desconhecida: {action}"}
+
+    def execute_with_context(
+        self,
+        args: dict[str, Any],
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> dict[str, Any]:
+        """Carry cancellation through the owned SQLite commit boundary."""
+
+        if is_cancellation_requested(cancellation_token, cancellation_event):
+            return self._cancelled_result()
+        return self._execute(
+            args,
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )

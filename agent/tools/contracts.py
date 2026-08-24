@@ -2,97 +2,24 @@
 
 from __future__ import annotations
 
-import math
 import uuid
-from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, Mapping, Optional, Protocol, Tuple
+from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
 
 from agent.tools.extension_state import validate_extension_id
+from agent.tools.json_snapshot import (
+    FrozenJsonObject as FrozenJsonObject,
+)
+from agent.tools.json_snapshot import (
+    freeze_json_like,
+    thaw_json_like,
+)
 from agent.tools.provenance import normalize_argument_provenance
 from agent.tools.public_invocation import normalize_public_invocation_fields
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnapshotIdentity
 
 RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
-
-
-@dataclass(frozen=True, slots=True)
-class FrozenJsonObject(MappingABC[str, Any]):
-    """Immutable JSON-like mapping."""
-
-    _items: tuple[tuple[str, Any], ...]
-
-    def __getitem__(self, key: str) -> Any:
-        for item_key, value in self._items:
-            if item_key == key:
-                return value
-        raise KeyError(key)
-    def __iter__(self) -> Iterator[str]:
-        return (key for key, _ in self._items)
-    def __len__(self) -> int:
-        return len(self._items)
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, MappingABC):
-            return dict(self.items()) == dict(other.items())
-        return NotImplemented
-def thaw_json_like(value: Any) -> Any:
-    """Rebuild a fresh mutable public JSON value from an internal snapshot."""
-
-    if isinstance(value, FrozenJsonObject):
-        return {key: thaw_json_like(item) for key, item in value._items}
-    if isinstance(value, tuple):
-        return [thaw_json_like(item) for item in value]
-    return value
-
-
-def _freeze_scalar(value: Any) -> tuple[bool, Any]:
-    if value is None:
-        return True, value
-    if type(value) is str or type(value) is bool or type(value) is int:
-        return True, value
-    if type(value) is float:
-        if not math.isfinite(value):
-            raise ValueError("float is not finite JSON")
-        return True, value
-    return False, None
-
-
-def _freeze_mapping(value: MappingABC[str, Any], active: set[int]) -> FrozenJsonObject:
-    identity = id(value)
-    if identity in active:
-        raise ValueError("cyclic JSON structure is not supported")
-    active.add(identity)
-    try:
-        frozen_items = []
-        for key, item in value.items():
-            if type(key) is not str:
-                raise TypeError("JSON object keys must be strings")
-            frozen_items.append((key, freeze_json_like(item, _active=active)))
-        return FrozenJsonObject(tuple(frozen_items))
-    finally:
-        active.remove(identity)
-def _freeze_sequence(value: list[Any] | tuple[Any, ...], active: set[int]) -> tuple[Any, ...]:
-    identity = id(value)
-    if identity in active:
-        raise ValueError("cyclic JSON structure is not supported")
-    active.add(identity)
-    try:
-        return tuple(freeze_json_like(item, _active=active) for item in value)
-    finally:
-        active.remove(identity)
-def freeze_json_like(value: Any, *, _active: set[int] | None = None) -> Any:
-    """Copy and recursively freeze strict JSON-like values."""
-
-    is_scalar, frozen_scalar = _freeze_scalar(value)
-    if is_scalar:
-        return frozen_scalar
-    active = _active if _active is not None else set()
-    if isinstance(value, MappingABC):
-        return _freeze_mapping(value, active)
-    if isinstance(value, (list, tuple)):
-        return _freeze_sequence(value, active)
-    raise TypeError(f"valor nao e JSON-like: {type(value).__name__}")
 
 
 class ToolStatus(str, Enum):
@@ -112,6 +39,50 @@ class ToolOriginKind(str, Enum):
 
     BUILTIN = "builtin"
     EXTENSION = "extension"
+
+
+class CancellationSafetyMode(str, Enum):
+    """How an adapter closes its lifetime after timeout/cancellation."""
+
+    BOUNDED_COOPERATIVE = "bounded_cooperative"
+    PROCESS_KILLABLE = "process_killable"
+    UNSUPPORTED = "unsupported"
+
+
+def _normalized_capabilities(value: Any) -> frozenset[str]:
+    if isinstance(value, str):
+        raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings")
+    try:
+        capabilities = frozenset(value)
+    except TypeError as exc:
+        raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings") from exc
+    if any(type(item) is not str or not item.strip() for item in capabilities):
+        raise ValueError("capabilities contÃ©m valor invÃ¡lido")
+    return capabilities
+
+
+def _normalize_descriptor_enums(descriptor: Any) -> None:
+    if not isinstance(descriptor.origin_kind, ToolOriginKind):
+        object.__setattr__(
+            descriptor, "origin_kind", ToolOriginKind(str(descriptor.origin_kind))
+        )
+    if not isinstance(descriptor.cancellation_safety, CancellationSafetyMode):
+        object.__setattr__(
+            descriptor,
+            "cancellation_safety",
+            CancellationSafetyMode(str(descriptor.cancellation_safety)),
+        )
+
+
+def _validate_descriptor_origin(descriptor: Any, public_fields: frozenset[str]) -> None:
+    if descriptor.origin_kind is ToolOriginKind.EXTENSION and public_fields:
+        raise ValueError("Tools de extension nao podem publicar campos de invocacao")
+    if descriptor.origin_kind is ToolOriginKind.EXTENSION:
+        if not isinstance(descriptor.extension_id, str) or not descriptor.extension_id.strip():
+            raise ValueError("Tool de extension requer extension_id")
+        validate_extension_id(descriptor.extension_id)
+    elif descriptor.extension_id is not None:
+        raise ValueError("Tool builtin nÃ£o pode conter extension_id")
 
 
 @dataclass(frozen=True)
@@ -139,6 +110,10 @@ class ToolDescriptor:
     public_invocation_fields: frozenset[str] = field(default_factory=frozenset, kw_only=True)
     argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict, kw_only=True)
     result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
+    cancellation_safety: CancellationSafetyMode = field(
+        default=CancellationSafetyMode.UNSUPPORTED,
+        kw_only=True,
+    )
 
     def __post_init__(self) -> None:
         try:
@@ -146,30 +121,14 @@ class ToolDescriptor:
         except RecursionError as exc:
             raise ValueError("schema excede a profundidade estrutural") from exc
         object.__setattr__(self, "schema", frozen_schema)
-        if isinstance(self.capabilities, str):
-            raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings")
-        try:
-            capabilities = frozenset(self.capabilities)
-        except TypeError as exc:
-            raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings") from exc
-        if any(type(value) is not str or not value.strip() for value in capabilities):
-            raise ValueError("capabilities contÃ©m valor invÃ¡lido")
-        object.__setattr__(self, "capabilities", capabilities)
+        object.__setattr__(self, "capabilities", _normalized_capabilities(self.capabilities))
         public_fields = normalize_public_invocation_fields(self.public_invocation_fields)
         object.__setattr__(self, "public_invocation_fields", public_fields)
         object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
         from agent.skills.descriptor import freeze_result_data_schema
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
-        if not isinstance(self.origin_kind, ToolOriginKind):
-            object.__setattr__(self, "origin_kind", ToolOriginKind(str(self.origin_kind)))
-        if self.origin_kind is ToolOriginKind.EXTENSION and public_fields:
-            raise ValueError("Tools de extension nao podem publicar campos de invocacao")
-        if self.origin_kind is ToolOriginKind.EXTENSION:
-            if not isinstance(self.extension_id, str) or not self.extension_id.strip():
-                raise ValueError("Tool de extension requer extension_id")
-            validate_extension_id(self.extension_id)
-        elif self.extension_id is not None:
-            raise ValueError("Tool builtin nÃ£o pode conter extension_id")
+        _normalize_descriptor_enums(self)
+        _validate_descriptor_origin(self, public_fields)
     def __getattribute__(self, name: str) -> Any:
         if name == "schema":
             return thaw_json_like(object.__getattribute__(self, "schema"))

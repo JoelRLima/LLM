@@ -40,6 +40,7 @@ def install_compatibility_gateway(
         state_recorder=lambda name, args, result: orchestrator.agent_state.record_tool_result(
             name, args, result.to_legacy_dict(include_details=True)
         ),
+        incident_recorder=orchestrator.agent_state.record_execution_incident,
     )
     return True
 

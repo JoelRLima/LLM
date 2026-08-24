@@ -29,6 +29,7 @@ def _run_envelope_errors(run: Any, index: int) -> list[str]:
             "causal_classification",
             "declared_model_identity",
             "observed_model_identity",
+            "model_call_identities",
         )
         if key not in evidence
     ]

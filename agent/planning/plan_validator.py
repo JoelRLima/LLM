@@ -112,7 +112,7 @@ class PlanValidator(PlanEffectValidationMixin):
                 plan,
                 self.objective,
                 self.canonical_deferred_references,
-                lambda step: self._validate_step_schema(step, allow_conditional_effect=True),
+                self._validate_step_schema,
             )
         )
         errors.extend(

@@ -93,6 +93,7 @@ class CheckpointData(TypedDict, total=False):
     last_args: Optional[ToolArgs]
     last_result: Optional[ToolResult]
     tool_history: List[ToolHistoryEntry]
+    execution_incidents: List[Dict[str, Any]]
     events: List[AgentEvent]
     conversation_history: List[Dict[str, str]]
     memory_state: Dict[str, Any]

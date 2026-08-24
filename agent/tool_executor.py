@@ -77,7 +77,7 @@ class ToolExecutor:
             active_skills=self.orchestrator.active_skills or None,
             allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
             record_result=record_result,
-            cancellation_token=getattr(self.orchestrator, "cancellation_token", None),
+            cancellation_token=self._cancellation_token(gateway, request),
         )
         # The executor facade is also used by parallel plan slots, where the
         # gateway state recorder is intentionally disabled and the finalizer
@@ -90,6 +90,24 @@ class ToolExecutor:
         if getattr(self.orchestrator, "verbose", False):
             print(f"[DEBUG] Resultado completo: {stringify(result)}")
         return result
+
+    def _cancellation_token(
+        self,
+        gateway: Any,
+        request: ToolInvocationRequest,
+    ) -> Any | None:
+        """Attach the ambient token only to an invocation that can honor it."""
+
+        token = getattr(self.orchestrator, "cancellation_token", None)
+        if token is None or bool(getattr(token, "cancelled", False)):
+            return token
+        supports = getattr(gateway, "supports_cancellable_execution", None)
+        if callable(supports) and not supports(
+            request.tool_name,
+            dict(request.arguments),
+        ):
+            return None
+        return token
 
     def run_prepared_invocation(
         self, prepared: PreparedInvocation, record_result: bool = True

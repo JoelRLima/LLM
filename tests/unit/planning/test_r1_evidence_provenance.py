@@ -11,10 +11,12 @@ from agent.planning.task_semantics import (
     TaskObligation,
     TaskSemantics,
 )
+from agent.state import AgentState
 from agent.tools.result_completeness import (
     EvidenceProvenance,
     canonical_completeness,
     exact_source_covers_whole_result,
+    is_legacy_complete_result,
 )
 
 
@@ -56,6 +58,97 @@ def test_exact_full_source_read_satisfies_read_obligation() -> None:
 
     assert semantics.obligation_status("read:a") is ObligationStatus.SATISFIED
     assert exact_source_covers_whole_result(_source_result("conteudo")) is True
+
+
+def test_missing_complete_cannot_be_promoted_to_exact_source() -> None:
+    result = {
+        "ok": True,
+        "done": True,
+        "status": "succeeded",
+        "executed": True,
+        "data": "SOURCE",
+    }
+    semantics = TaskSemantics(
+        TaskIntent("Leia a.txt."),
+        [TaskObligation("read:a", "read", "Ler a.txt.", target="a.txt")],
+        _strict_evidence=True,
+    )
+
+    semantics.observe_tool(
+        "file_reader",
+        result,
+        evidence_ref=1,
+        args={"file_path": "a.txt"},
+    )
+
+    assert is_legacy_complete_result(result) is False
+    assert exact_source_covers_whole_result(result) is False
+    assert semantics.obligation_status("read:a") is ObligationStatus.PENDING
+
+
+def test_legacy_complete_rejects_contradictory_non_success_status() -> None:
+    for status in ("timed_out", "protocol_error", "unavailable"):
+        result = {
+            "ok": True,
+            "done": True,
+            "status": status,
+            "executed": True,
+            "data": "SOURCE",
+            "complete": True,
+        }
+        semantics = TaskSemantics(
+            TaskIntent("Leia a.txt."),
+            [TaskObligation("read:a", "read", "Ler a.txt.", target="a.txt")],
+            _strict_evidence=True,
+        )
+
+        semantics.observe_tool(
+            "file_reader",
+            result,
+            evidence_ref=1,
+            args={"file_path": "a.txt"},
+        )
+
+        assert is_legacy_complete_result(result) is False
+        assert exact_source_covers_whole_result(result) is False
+        assert semantics.obligation_status("read:a") is ObligationStatus.PENDING
+
+
+def test_restored_no_provenance_result_is_unknown_even_with_complete_true() -> None:
+    result = {
+        "ok": True,
+        "done": True,
+        "status": "succeeded",
+        "executed": True,
+        "data": "SOURCE",
+        "complete": True,
+    }
+    source = AgentState()
+    source.initialize_task_semantics("Leia a.txt.")
+    checkpoint = source.to_checkpoint_dict()
+    # Exercise the legacy checkpoint replay path with an internally coherent
+    # document.  No checksum corruption is involved; only the serialized
+    # history lacks source provenance.
+    checkpoint["task_semantics"] = None
+    checkpoint["requested_effects"] = []
+    checkpoint["executed_effects"] = []
+    checkpoint["waived_effects"] = []
+    checkpoint["prohibited_effects"] = []
+    checkpoint["tool_history"] = [
+        {
+            "tool": "file_reader",
+            "args": {"file_path": "a.txt"},
+            "result": result,
+        }
+    ]
+
+    restored = AgentState()
+    restored.from_checkpoint_dict(checkpoint)
+    restored_result = restored.tool_history[0]["result"]
+
+    assert restored_result["evidence_provenance"] == EvidenceProvenance.UNKNOWN.value
+    assert exact_source_covers_whole_result(restored_result) is False
+    assert restored.obligation_status("read:1") is ObligationStatus.PENDING
 
 
 def test_stale_source_invalidates_a_freshness_based_cache_hit(tmp_path) -> None:
