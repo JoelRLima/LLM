@@ -30,11 +30,18 @@ def _run_call_identity_reasons(
     aliases = identity_aliases(evidence.get("declared_model_identity"))
     specific = len(distinct_ids) == 1 and distinct_ids[0].casefold() not in aliases
     raw_calls = evidence.get("model_call_identities")
+    call_records = raw_calls if isinstance(raw_calls, (list, tuple)) else ()
+    provider_observation_complete = bool(raw_calls) and all(
+        isinstance(call, Mapping)
+        and call.get("observed_provider_model_id") not in (None, "")
+        for call in call_records
+    )
     expected_sufficient = bool(
         raw_calls
         and len(distinct_ids) <= 1
         and len(set(providers)) <= 1
         and len(set(endpoints)) <= 1
+        and (provider_observation_complete or external)
         and (specific or external)
     )
     reasons.extend(_sufficiency_reasons(observed, expected_sufficient, prefix))

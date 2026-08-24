@@ -141,18 +141,25 @@ def aggregate_identity_inputs(runs: list[Mapping[str, Any]]) -> dict[str, Any]:
             state["complete"] = False
         if observed.get("identity_sufficient") is not True:
             state["run_sufficient"] = False
-        complete, ids, providers, endpoints = _aggregate_call_values(raw_calls)
+        external = observed.get("external_identity")
+        complete, ids, providers, endpoints = _aggregate_call_values(
+            raw_calls,
+            allow_missing_observed_id=external not in (None, ""),
+        )
         state["complete"] = state["complete"] and complete
         state["observed_ids"].extend(ids)
         state["providers"].extend(providers)
         state["endpoints"].extend(endpoints)
-        external = observed.get("external_identity")
         if external not in (None, ""):
             state["external_identities"].append(str(external).strip()[:256])
     return state
 
 
-def _aggregate_call_values(raw_calls: list[Any] | tuple[Any, ...]) -> tuple[bool, list[str], list[str], list[str]]:
+def _aggregate_call_values(
+    raw_calls: list[Any] | tuple[Any, ...],
+    *,
+    allow_missing_observed_id: bool = False,
+) -> tuple[bool, list[str], list[str], list[str]]:
     complete = True
     ids: list[str] = []
     providers: list[str] = []
@@ -164,6 +171,8 @@ def _aggregate_call_values(raw_calls: list[Any] | tuple[Any, ...]) -> tuple[bool
         value = raw_call.get("observed_provider_model_id")
         if value not in (None, ""):
             ids.append(str(value))
+        elif not allow_missing_observed_id:
+            complete = False
         provider = raw_call.get("provider")
         if provider not in (None, ""):
             providers.append(str(provider))

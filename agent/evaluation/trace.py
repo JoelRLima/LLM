@@ -215,7 +215,7 @@ class RecordingGateway:
         ))
         consistent = len(distinct_observed_ids) <= 1 and len(providers) <= 1 and len(endpoints) <= 1
         provider_observed = bool(distinct_observed_ids)
-        complete = bool(call_identities) and all(
+        fields_complete = bool(call_identities) and all(
             all(key in identity for key in (
                 "call_index",
                 "provider",
@@ -225,6 +225,14 @@ class RecordingGateway:
                 "identity_source",
             ))
             for identity in call_identities
+        )
+        provider_observation_complete = bool(call_identities) and all(
+            identity.get("observed_provider_model_id") not in (None, "")
+            for identity in call_identities
+        )
+        complete = bool(
+            fields_complete
+            and (provider_observation_complete or external_identity is not None)
         )
         sufficient = bool(complete and consistent and (specific or external_identity))
         observed_model_id = distinct_observed_ids[0] if len(distinct_observed_ids) == 1 else None
@@ -246,6 +254,7 @@ class RecordingGateway:
             "consistent": consistent,
             "specific": specific,
             "complete": complete,
+            "provider_observation_complete": provider_observation_complete,
             "provider_model_id": observed_model_id,
             "actual_provider_model_id": observed_model_id,
             "model": observed_model_id if provider_observed else None,

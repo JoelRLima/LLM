@@ -96,6 +96,19 @@ def test_c6b_intra_run_drift_is_preserved_and_has_no_last_id_projection() -> Non
     assert aggregate["observed_model_ids"] == ["model-A", "model-B", "model-A"]
 
 
+def test_c6b_missing_per_call_provider_identity_is_insufficient_without_external_fallback() -> None:
+    run = _record(["model-A", None])
+    observed = run["evidence"]["observed_model_identity"]
+    aggregate = _observed_identity_summary([run], {"model": "default"})
+
+    assert observed["observed_model_ids"] == ["model-A"]
+    assert observed["provider_observation_complete"] is False
+    assert observed["complete"] is False
+    assert observed["identity_sufficient"] is False
+    assert aggregate["complete"] is False
+    assert aggregate["identity_sufficient"] is False
+
+
 def test_c6b_generic_default_is_available_but_insufficient() -> None:
     run = _record(["default", "default"])
     observed = run["evidence"]["observed_model_identity"]

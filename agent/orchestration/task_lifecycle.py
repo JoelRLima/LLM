@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.application_shutdown import require_application_invocations_drained
 from agent.planning.completion_observations import publish_outcome
 from agent.planning.task_completion import (
     allow_linear_completion,
@@ -80,13 +81,20 @@ class TaskLifecycleMixin:
 
     def _handle_interrupt(self) -> str:
         self.orchestrator.cancellation_token.cancel()
+        self._require_invocation_lifetime_closed()
         message = mark_terminal_cancelled(self.orchestrator)
         self.orchestrator._save_checkpoint()
         return f"{message} O progresso foi salvo e pode ser retomado posteriormente."
 
+    def _require_invocation_lifetime_closed(self) -> None:
+        gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
+        if gateway is not None:
+            require_application_invocations_drained(gateway)
+
     def _cleanup(self, original_count: int) -> None:
         orchestrator = self.orchestrator
         try:
+            self._require_invocation_lifetime_closed()
             if orchestrator._task_failed:
                 orchestrator.workspace.rollback()
             while len(orchestrator.session.messages) > original_count:

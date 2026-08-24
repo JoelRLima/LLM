@@ -203,7 +203,17 @@ def _record_identity(record: Mapping[str, Any]) -> IdentityRecord:
     ):
         if value not in (None, ""):
             target.append(str(value))
-    complete = lossless and bool(calls) and calls_complete
+    external = observed.get("external_identity")
+    provider_observation_complete = bool(valid_calls) and all(
+        call.get("observed_provider_model_id") not in (None, "")
+        for call in valid_calls
+    )
+    complete = bool(
+        lossless
+        and bool(calls)
+        and calls_complete
+        and (provider_observation_complete or external not in (None, ""))
+    )
     expected_ids = [
         str(value)
         for value in ordered_values(observed.get("observed_model_ids"))
@@ -213,7 +223,6 @@ def _record_identity(record: Mapping[str, Any]) -> IdentityRecord:
         complete = False
     if observed.get("complete") is False:
         complete = False
-    external = observed.get("external_identity")
     consistent = observed.get("consistent") is not False
     sufficient = observed.get("identity_sufficient") is True
     unavailable = not ids and not external

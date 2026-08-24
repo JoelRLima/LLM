@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from agent.application import AgentApplication
 from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
 from agent.llm.contracts import ModelRequest
 from agent.memory.memory import MemoryLoadError
+from agent.orchestration.task_runner import TaskRunner
 from agent.planning.step_policies import StepPolicies
 from agent.planning.task_completion import (
     allow_linear_completion,
@@ -77,6 +79,65 @@ class _CountingApproval:
     def request(self, request: ApprovalRequest) -> ApprovalDecision:
         self.requests.append(request)
         return ApprovalDecision.APPROVED
+
+
+class _TaskRunnerLivenessWriter:
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        self.started = started
+        self.release = release
+
+    def descriptors(self):
+        return (
+            ToolDescriptor(
+                "task_runner_liveness_writer",
+                "writer",
+                capabilities=frozenset({"write"}),
+                cancellation_safety=CancellationSafetyMode.BOUNDED_COOPERATIVE,
+            ),
+        )
+
+    def invoke(self, invocation: ToolInvocation) -> ToolResult:
+        self.started.set()
+        self.release.wait(timeout=5)
+        return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, executed=True)
+
+
+def _invoke_task_runner_mutator(gateway, errors: list[BaseException]) -> None:
+    try:
+        gateway.run(
+            ToolInvocationRequest(
+                "task-runner-liveness",
+                "task_runner_liveness_writer",
+                timeout_seconds=30,
+            )
+        )
+    except BaseException as exc:
+        errors.append(exc)
+
+
+def _interrupting_task_runner_execute(
+    runner,
+    inputs,
+    on_chunk,
+    *,
+    target_orchestrator,
+    original_execute,
+    started: threading.Event,
+    gateway,
+    errors: list[BaseException],
+    mutator_threads: list[threading.Thread],
+):
+    if runner.orchestrator is not target_orchestrator:
+        return original_execute(runner, inputs, on_chunk)
+    thread = threading.Thread(
+        target=_invoke_task_runner_mutator,
+        args=(gateway, errors),
+        daemon=True,
+    )
+    mutator_threads.append(thread)
+    thread.start()
+    assert started.wait(timeout=2)
+    raise KeyboardInterrupt
 
 
 def test_application_does_not_publish_or_close_while_mutator_is_alive(tmp_path: Path, monkeypatch) -> None:
@@ -163,6 +224,74 @@ def test_application_does_not_publish_or_close_while_mutator_is_alive(tmp_path: 
                 original_drain,
             )
             application.tool_invocation_gateway.drain_invocations(timeout_seconds=2)
+            application.close()
+
+
+def test_real_task_runner_defers_interrupt_terminal_and_cleanup_until_quiescent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    paths = _initialized_paths(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    mutator_threads: list[threading.Thread] = []
+    mutator_errors: list[BaseException] = []
+    cleanup_while_active: list[bool] = []
+
+    application = AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        approval_policy=AutoApprove(),
+        configure_logging=False,
+    )
+    registry = ToolRegistry(runtime_identity=application.tool_registry.runtime_identity)
+    registry.register_adapter(_TaskRunnerLivenessWriter(started, release))
+    registry.freeze()
+    gateway = application.tool_invocation_gateway
+    gateway.registry = registry
+    original_drain = gateway.drain_invocations
+
+    def bounded_test_drain(**_kwargs):
+        return original_drain(timeout_seconds=0.05)
+
+    original_persist = application.orchestrator._persist_memory_to_file
+
+    def track_persist() -> None:
+        cleanup_while_active.append(not release.is_set())
+        original_persist()
+
+    original_execute = TaskRunner._execute
+    monkeypatch.setattr(
+        TaskRunner,
+        "_execute",
+        partial(
+            _interrupting_task_runner_execute,
+            target_orchestrator=application.orchestrator,
+            original_execute=original_execute,
+            started=started,
+            gateway=gateway,
+            errors=mutator_errors,
+            mutator_threads=mutator_threads,
+        ),
+    )
+    monkeypatch.setattr(gateway, "drain_invocations", bounded_test_drain)
+    monkeypatch.setattr(application.orchestrator, "_persist_memory_to_file", track_persist)
+
+    try:
+        with pytest.raises(InvocationLivenessError):
+            application.run("interrupt while the mutator is active")
+        assert application.orchestrator.agent_state.terminal_disposition is None
+        assert application.orchestrator._cancelled is False
+        assert cleanup_while_active == []
+    finally:
+        release.set()
+        for mutator_thread in mutator_threads:
+            mutator_thread.join(timeout=3)
+            assert not mutator_thread.is_alive()
+        assert mutator_errors == []
+        monkeypatch.setattr(gateway, "drain_invocations", original_drain)
+        if not application._closed:
             application.close()
 
 
