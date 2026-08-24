@@ -173,6 +173,8 @@ class StepExecutor:
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> StepExecutionOutcome:
         status = str(result.get("status") or "")
+        if status != "succeeded" or not result.get("ok"):
+            self.policies.invalidate_observation_state(tool, usage, args=args, result=result)
         if status == "blocked":
             return self.finish_blocked(index, result)
         if status == "unverified":

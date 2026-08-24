@@ -4,6 +4,8 @@ import pytest
 
 from agent.cancellation import CancellationToken
 from agent.execution_state import StepStatus
+from agent.memory.memory import AgentMemory
+from agent.memory.prompt_context import build_memory_prompt_context
 from agent.planning.capability_manifest import render_validation_repair_manual
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
@@ -15,6 +17,7 @@ from agent.planning.plan_prompts import (
 )
 from agent.planning.plan_validator import BlockedStep
 from agent.planning.provenance_validation import grounded_user_literal_narrowing
+from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.skills import load_skill_registry
 from agent.skills.code_analyzer import CodeAnalyzerSkill
 from agent.skills.grep import GrepSkill
@@ -598,3 +601,302 @@ def test_without_mutation_optimizer_and_policy_still_block_repetition() -> None:
     assert PlanExecutor(direct_context).execute("analisar", {}) is None
     assert [tool for tool, _args in direct_context.calls] == ["code_analyzer"]
     assert state.get_step_status(1) is StepStatus.SKIPPED
+
+
+class _ObservationMemory:
+    def __init__(self) -> None:
+        self.state = {
+            "file_summaries": {
+                "x.py": "old summary x",
+                "y.py": "old summary y",
+            },
+            "analyzed_files": {
+                "x.py": "old index x",
+                "y.py": "old index y",
+            },
+            "file_hashes": {"x.py": "hash-x", "y.py": "hash-y"},
+            "file_cache_entries": {
+                "x.py": {"data": "cache-x"},
+                "y.py": {"data": "cache-y"},
+            },
+        }
+        self.forget_calls: list[tuple[str, str]] = []
+
+    def forget(self, key: str, section: str = "key_findings") -> None:
+        self.forget_calls.append((key, section))
+        self.state.setdefault(section, {}).pop(key, None)
+
+
+def _observation_context(
+    memory: object, tool: str, args: dict[str, object]
+) -> tuple[AgentState, _ExecutionContext]:
+    state = AgentState(memory=memory)  # type: ignore[arg-type]
+    state.set_plan([{"tool": tool, "args": args}])
+    state.mark_step_running(0)
+    return state, _ExecutionContext(state)
+
+
+def _observation_usage() -> dict[str, int]:
+    return {
+        "code_analyzer_x.py": 1,
+        "file_reader_x.py_1_2": 1,
+        "fully_read_x.py": 1,
+        "fully_analyzed_x.py": 1,
+        "code_analyzer_y.py": 1,
+        "file_reader_y.py_1_2": 1,
+        "fully_read_y.py": 1,
+        "fully_analyzed_y.py": 1,
+    }
+
+
+def test_successful_persisted_mutation_invalidates_derived_memory_and_prompt(
+    tmp_path,
+) -> None:
+    memory = AgentMemory(
+        db_path=tmp_path / "memory.db",
+        default_file=tmp_path / "memory.json",
+        backup_dir=tmp_path / "backups",
+    )
+    memory.remember("x.py", "old summary x", section="file_summaries")
+    memory.remember("y.py", "old summary y", section="file_summaries")
+    memory.state["analyzed_files"] = {"x.py": "old index x", "y.py": "old index y"}
+    memory.state["file_hashes"] = {"x.py": "hash-x", "y.py": "hash-y"}
+    memory.state["file_cache_entries"] = {
+        "x.py": {"data": "cache-x"},
+        "y.py": {"data": "cache-y"},
+    }
+    state, context = _observation_context(
+        memory,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+    )
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+        {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "mutation_occurred": True,
+            "persisted_mutation": True,
+            "surviving_mutation": True,
+            "affected_files": ["x.py"],
+        },
+        "",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.COMPLETED
+    assert "x.py" not in state.memory.state["file_summaries"]
+    assert "x.py" not in state.memory.state["analyzed_files"]
+    assert "x.py" not in state.memory.state["file_hashes"]
+    assert "x.py" not in state.memory.state["file_cache_entries"]
+    assert "y.py" in state.memory.state["file_summaries"]
+    assert "y.py" in state.memory.state["analyzed_files"]
+    assert "y.py" in state.memory.state["file_hashes"]
+    assert "y.py" in state.memory.state["file_cache_entries"]
+    assert not any("x.py" in key for key in usage)
+    assert any("y.py" in key for key in usage)
+
+    prompt = build_memory_prompt_context(state.memory.state, "x.py", 800)
+    assert "old summary x" not in prompt
+    assert "old index x" not in prompt
+
+    reloaded = AgentMemory(
+        db_path=tmp_path / "memory.db",
+        default_file=tmp_path / "memory.json",
+        backup_dir=tmp_path / "backups",
+    )
+    reloaded.initialize()
+    assert "x.py" not in reloaded.state["file_summaries"]
+    assert reloaded.state["file_summaries"]["y.py"] == "old summary y"
+
+
+def test_unverified_surviving_mutation_invalidates_only_affected_observations() -> None:
+    memory = _ObservationMemory()
+    state, context = _observation_context(
+        memory,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+    )
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+        {
+            "ok": False,
+            "done": True,
+            "status": "unverified",
+            "persisted_mutation": True,
+            "surviving_mutation": True,
+            "affected_files": ["x.py"],
+            "error": "validation unavailable",
+        },
+        "",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.UNVERIFIED
+    assert memory.forget_calls == [("x.py", "file_summaries")]
+    assert "x.py" not in memory.state["file_summaries"]
+    assert "x.py" not in memory.state["analyzed_files"]
+    assert "x.py" not in memory.state["file_hashes"]
+    assert "x.py" not in memory.state["file_cache_entries"]
+    assert not any("x.py" in key for key in usage)
+    assert any("y.py" in key for key in usage)
+    assert "old summary x" not in build_memory_prompt_context(
+        state.memory.state, "x.py", 800
+    )
+
+
+def test_unverified_gateway_artifact_projection_invalidates_affected_observations() -> None:
+    memory = _ObservationMemory()
+    _state, context = _observation_context(
+        memory,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+    )
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+        {
+            "ok": False,
+            "done": True,
+            "status": "unverified",
+            "artifacts": [{
+                "metadata": {
+                    "persisted_mutation": True,
+                    "surviving_mutation": True,
+                    "affected_files": ["x.py"],
+                }
+            }],
+        },
+        "",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.UNVERIFIED
+    assert "x.py" not in memory.state["file_summaries"]
+    assert "y.py" in memory.state["file_summaries"]
+    assert not any("x.py" in key for key in usage)
+    assert any("y.py" in key for key in usage)
+
+
+def test_unverified_rollback_does_not_invalidate_restored_observations() -> None:
+    memory = _ObservationMemory()
+    state, context = _observation_context(
+        memory,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+    )
+    before = {
+        section: dict(values)
+        for section, values in memory.state.items()
+        if isinstance(values, dict)
+    }
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "code_task",
+        {"action": "modify", "targets": ["x.py"]},
+        {
+            "ok": False,
+            "done": True,
+            "status": "unverified",
+            "mutation_occurred": True,
+            "rollback_occurred": True,
+            "persisted_mutation": False,
+            "surviving_mutation": False,
+            "affected_files": ["x.py"],
+            "final_state": "restored",
+        },
+        "",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.UNVERIFIED
+    assert memory.state == before
+    assert memory.forget_calls == []
+    assert usage == _observation_usage()
+
+
+@pytest.mark.parametrize("action", ["analyze", "review"])
+def test_read_only_code_task_effect_projection_does_not_invalidate(
+    action: str,
+) -> None:
+    memory = _ObservationMemory()
+    state, context = _observation_context(
+        memory,
+        "code_task",
+        {"action": action, "targets": ["x.py"]},
+    )
+    before = {
+        section: dict(values)
+        for section, values in memory.state.items()
+        if isinstance(values, dict)
+    }
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "code_task",
+        {"action": action, "targets": ["x.py"]},
+        {
+            "ok": True,
+            "done": True,
+            "status": "succeeded",
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "surviving_mutation": False,
+            "affected_files": [],
+        },
+        "",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.COMPLETED
+    assert memory.state == before
+    assert memory.forget_calls == []
+    assert usage == _observation_usage()
+
+
+def test_legacy_writer_success_keeps_conservative_invalidation_fallback() -> None:
+    memory = _ObservationMemory()
+    state, context = _observation_context(
+        memory,
+        "file_writer",
+        {"action": "write", "file_path": "x.py", "content": "new"},
+    )
+    usage = _observation_usage()
+
+    outcome = StepExecutor(context).finalize_result(
+        0,
+        "file_writer",
+        {"action": "write", "file_path": "x.py", "content": "new"},
+        {"ok": True, "done": True, "status": "succeeded"},
+        "x.py",
+        "x.py",
+        usage,
+    )
+
+    assert outcome.kind is StepOutcomeKind.COMPLETED
+    assert all(not memory.state.get(section) for section in memory.state)
+    assert sorted(memory.forget_calls) == [
+        ("x.py", "file_summaries"),
+        ("y.py", "file_summaries"),
+    ]
+    assert usage == {}
