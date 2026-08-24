@@ -24,8 +24,9 @@ class CodeAnalyzerSkill(BaseSkill):
         "Analisa estrutura de código com adapter de linguagem. mode=directory "
         "serve para um mapa estrutural; compact=true retorna estrutura resumida "
         "DERIVED_LOSSY e não prova valores literais ou constantes. Para conteúdo "
-        "ou valores exatos use file_reader. Uma análise de diretório já cobre a "
-        "análise estrutural compatível dos descendentes Python; não a repita. "
+        "ou valores exatos use file_reader. O mapa de diretório pode omitir "
+        "subdiretórios excluídos e arquivos cuja análise falhou; use mode=file "
+        "quando a observação de um descendente específico for necessária. "
         "Python recebe análise AST; outras linguagens têm fallback textual "
         "explicitamente identificado."
     )
@@ -39,7 +40,10 @@ class CodeAnalyzerSkill(BaseSkill):
             "target": {"type": "string", "description": "Caminho relativo do arquivo ou diretório."},
             "mode": {
                 "type": "string",
-                "description": "Modo file, directory ou security.",
+                "description": (
+                    "Modo file, directory ou security; directory é um mapa "
+                    "agregado e não substitui automaticamente a análise de um child."
+                ),
                 "enum": ["file", "directory", "security"],
             },
             "include_code": {"type": "boolean", "description": "Inclui o código fonte completo."},

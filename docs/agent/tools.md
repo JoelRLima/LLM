@@ -42,8 +42,10 @@ modelo. Uma tool apresentada ainda pode ser negada por authority ou approval.
 literal. `mode=directory` produz um mapa estrutural; `compact=true` é evidência
 `DERIVED_LOSSY`, útil para arquivos, classes e funções, mas insuficiente para
 provar valores de constantes ou conteúdo exato. Depois de localizar o alvo,
-use `file_reader` para claims de valor/conteúdo exatos. Um mapa de diretório já
-inclui a análise estrutural compatível dos descendentes Python.
+use `file_reader` para claims de valor/conteúdo exatos. O mapa pode omitir
+subdiretórios excluídos e arquivos cuja análise falhou; portanto não é prova
+canônica de que todo descendente Python foi observado. Use `mode=file` quando
+a observação de um child específico for necessária.
 
 Para `grep`, a provenance continua fail-closed. Quando o planner decorou um
 termo explicitamente fornecido pelo usuário com texto ou regex, o runtime pode

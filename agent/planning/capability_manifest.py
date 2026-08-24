@@ -132,11 +132,11 @@ def render_validation_repair_manual(
             "SOURCES: known concrete value -> args; value supplied by ResultBinding -> bindings.",
             "A binding satisfies its target argument. If a field is in bindings, omit that field from args.",
             "NEVER put the same argument name in both args and bindings; same target in both is INVALID.",
-            "Repair may move the rejected field from invalid/missing literal to canonical bindings; no replacement literal in args.",
+            "If a canonical binding repairs the field, omit that field from args; keep canonical bindings type-compatible.",
         ]
     )
     if tool == "grep" and "pattern" in fields:
-        lines.append("For grep.pattern, prefer an exact user literal already in the objective; never invent regex or bind an array result to this string field.")
+        lines.append("For grep.pattern, never invent regex; use only a type-compatible string binding when available, never an array result.")
     if _binding_available(orchestrator):
         target = fields[0] if fields else "field"
         right_args = dict(frozen_args)

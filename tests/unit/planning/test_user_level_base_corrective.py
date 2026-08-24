@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent.planning.capability_manifest import render_validation_repair_manual
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_prompts import (
@@ -43,37 +44,20 @@ def test_code_analyzer_default_is_semantic_for_deduplication() -> None:
     assert "duplicata semântica" in report.transformations[0]
 
 
-def test_directory_analysis_dominates_compatible_python_child() -> None:
-    plan = [
-        _analyzer("project/atlas", mode="directory", compact=True),
-        _analyzer("project/atlas/config.py", mode="file", compact=True),
-    ]
-
-    report = PlanOptimizer().optimize(plan)
-
-    assert report.optimized_steps == plan[:1]
-    assert report.removed_duplicates == 1
-    assert "coberta" in report.transformations[0]
-
-
 @pytest.mark.parametrize(
-    "child",
+    "child_target",
     [
-        _analyzer("project/atlas/config.py", mode="file", compact=False),
-        _analyzer(
-            "project/atlas/config.py",
-            mode="file",
-            compact=True,
-            include_code=True,
-        ),
-        _analyzer("project/main.py", mode="file", compact=True),
-        _analyzer("project/atlas/config.txt", mode="file", compact=True),
-        _analyzer("project/atlas/config.py", mode="security", compact=True),
-        _analyzer("project/atlas/../config.py", mode="file", compact=True),
+        "project/build/generated.py",
+        "project/.hidden/hidden.py",
+        "project/broken.py",
+        "project/missing.py",
     ],
 )
-def test_directory_dominance_is_conservative(child: dict[str, object]) -> None:
-    directory = _analyzer("project/atlas", mode="directory", compact=True)
+def test_directory_analysis_never_dominates_runtime_specific_child(
+    child_target: str,
+) -> None:
+    directory = _analyzer("project", mode="directory", compact=True)
+    child = _analyzer(child_target, mode="file", compact=True)
 
     report = PlanOptimizer().optimize([directory, child])
 
@@ -81,16 +65,73 @@ def test_directory_dominance_is_conservative(child: dict[str, object]) -> None:
     assert report.removed_duplicates == 0
 
 
-def test_directory_dominance_handles_windows_separators_without_filesystem_access() -> None:
-    directory = _analyzer(r"project\atlas", mode="directory", compact=True)
-    child = _analyzer(r"project\atlas\config.py", mode="file", compact=True)
+def test_directory_child_is_not_removed_across_mutation() -> None:
+    directory = _analyzer("project", mode="directory", compact=True)
+    mutation = {
+        "tool": "file_writer",
+        "args": {"action": "write", "file_path": "project/config.py"},
+    }
+    child = _analyzer("project/config.py", mode="file", compact=True)
 
-    report = PlanOptimizer().optimize([directory, child])
+    report = PlanOptimizer().optimize([directory, mutation, child])
 
-    assert report.optimized_steps == [directory]
+    assert report.optimized_steps == [directory, mutation, child]
+    assert report.removed_duplicates == 0
 
 
-def test_directory_dominance_preserves_referenced_child_producer() -> None:
+def test_equal_analyzer_after_mutation_is_not_deduplicated() -> None:
+    first = _analyzer("project/config.py", mode="file", compact=True)
+    mutation = {
+        "tool": "file_writer",
+        "args": {"action": "write", "file_path": "project/config.py"},
+    }
+    second = _analyzer("project/config.py", mode="file", compact=True)
+
+    report = PlanOptimizer().optimize([first, mutation, second])
+
+    assert report.optimized_steps == [first, mutation, second]
+    assert report.removed_duplicates == 0
+
+
+def test_equal_analyzer_separated_by_read_only_step_can_be_deduplicated() -> None:
+    first = _analyzer("project/config.py", mode="file", compact=True)
+    unrelated = {"tool": "file_reader", "args": {"file_path": "project/README.md"}}
+    second = _analyzer("project/config.py", mode="file", compact=True)
+
+    report = PlanOptimizer().optimize([first, unrelated, second])
+
+    assert report.optimized_steps == [first, unrelated]
+    assert report.removed_duplicates == 1
+
+
+def test_code_analyzer_runtime_directory_map_omits_noncanonical_children(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    project.mkdir(parents=True)
+    (project / "visible.py").write_text("def visible():\n    return True\n", encoding="utf-8")
+    (project / "build").mkdir()
+    (project / "build" / "generated.py").write_text("def generated():\n    return True\n", encoding="utf-8")
+    (project / ".hidden").mkdir()
+    (project / ".hidden" / "hidden.py").write_text("def hidden():\n    return True\n", encoding="utf-8")
+    (project / "broken.py").write_text("def broken(:\n    return False\n", encoding="utf-8")
+
+    skill = CodeAnalyzerSkill(str(workspace))
+    directory = skill.execute({"target": "project", "mode": "directory", "compact": True})
+    generated = skill.execute({"target": "project/build/generated.py", "mode": "file", "compact": True})
+    hidden = skill.execute({"target": "project/.hidden/hidden.py", "mode": "file", "compact": True})
+    broken = skill.execute({"target": "project/broken.py", "mode": "file", "compact": True})
+    missing = skill.execute({"target": "project/missing.py", "mode": "file", "compact": True})
+
+    assert {item.replace("\\", "/") for item in directory["data"]["files"]} == {
+        "project/visible.py"
+    }
+    assert generated["ok"] is True
+    assert hidden["ok"] is True
+    assert broken["ok"] is False
+    assert missing["ok"] is False
+
+
+def test_referenced_child_producer_remains_present() -> None:
     directory = _analyzer("project/atlas", mode="directory", compact=True)
     child = _analyzer(
         "project/atlas/config.py",
@@ -110,7 +151,7 @@ def test_directory_dominance_preserves_referenced_child_producer() -> None:
     assert report.removed_duplicates == 0
 
 
-def test_directory_dominance_preserves_child_with_own_binding() -> None:
+def test_child_with_own_binding_remains_present() -> None:
     directory = _analyzer("project/atlas", mode="directory", compact=True)
     child = _analyzer(
         "project/atlas/config.py",
@@ -124,7 +165,7 @@ def test_directory_dominance_preserves_child_with_own_binding() -> None:
     assert report.optimized_steps == [directory, child]
 
 
-def test_optimizer_keeps_order_when_directory_dominance_removes_child() -> None:
+def test_optimizer_keeps_order_without_directory_child_elimination() -> None:
     directory = _analyzer("project/atlas", mode="directory", compact=True)
     unrelated = {"tool": "file_reader", "args": {"file_path": "project/main.py"}}
     child = _analyzer("project/atlas/config.py", mode="file", compact=True)
@@ -134,6 +175,7 @@ def test_optimizer_keeps_order_when_directory_dominance_removes_child() -> None:
     assert [step["tool"] for step in report.optimized_steps] == [
         "code_analyzer",
         "file_reader",
+        "code_analyzer",
     ]
     assert report.optimized_steps[1] == unrelated
 
@@ -155,6 +197,26 @@ def test_grounded_grep_narrowing_returns_only_user_literal(
 ) -> None:
     objective = "Onde a função format_name é usada neste projeto?"
 
+    assert grounded_user_literal_narrowing(
+        rejected_value=rejected,
+        objective=objective,
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    ("objective", "rejected", "expected"),
+    [
+        ("Onde a função format_name é usada?", "def format_name", "format_name"),
+        ("Onde a função format_name é usada?", r"format_name\(", "format_name"),
+        ('Procure "alpha beta" neste projeto.', "^alpha beta$", "alpha beta"),
+        ("Procure `foo.*bar`.", "^foo.*bar$", "foo.*bar"),
+        ("Procure função_média no projeto.", "^função_média$", "função_média"),
+        ('Procure "alpha beta gamma".', "^alpha beta gamma$", "alpha beta gamma"),
+    ],
+)
+def test_grounded_grep_narrowing_prefers_complete_explicit_or_unicode_literal(
+    objective: str, rejected: str, expected: str
+) -> None:
     assert grounded_user_literal_narrowing(
         rejected_value=rejected,
         objective=objective,
@@ -185,6 +247,13 @@ def test_grounded_grep_narrowing_does_not_use_generic_sentence_word() -> None:
     ) is None
 
 
+def test_grounded_grep_narrowing_rejects_unrelated_pattern() -> None:
+    assert grounded_user_literal_narrowing(
+        rejected_value="password|secret",
+        objective="Onde format_name é usada?",
+    ) is None
+
+
 def test_planning_guidance_teaches_smallest_sufficient_evidence() -> None:
     assert "smallest sufficient evidence" in PLANNING_GUIDANCE
     assert "discovery antes de fan-out" in PLANNING_GUIDANCE
@@ -204,6 +273,19 @@ def test_tool_descriptions_expose_evidence_boundaries() -> None:
     assert "file_reader" in CodeAnalyzerSkill.description
     assert "literal" in GrepSkill.description
     assert "provenance" in GrepSkill.description
+
+
+def test_validation_repair_manual_does_not_require_unavailable_objective_context() -> None:
+    manual = render_validation_repair_manual(
+        SimpleNamespace(operational_mode_label="FULL"),
+        tool="grep",
+        frozen_args={"path": "."},
+        repairable_fields={"pattern"},
+    )
+
+    assert "objective" not in manual.lower()
+    assert "never invent regex" in manual
+    assert "array result" in manual
 
 
 def _repair_orchestrator(tmp_path: object) -> tuple[SimpleNamespace, list[str]]:

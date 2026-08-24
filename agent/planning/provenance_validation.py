@@ -28,7 +28,7 @@ _SYMBOLIC_REFERENCE_PATTERNS = (
     ),
 )
 
-_GROUNDED_CODE_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]*")
+_GROUNDED_CODE_TOKEN = re.compile(r"(?<!\w)(?:[^\W\d]|_)\w*(?:[.:-](?:[^\W\d]|_)\w*)*(?!\w)", re.UNICODE)
 _GROUNDED_DELIMITED_LITERAL = re.compile(
     r"(?P<delimiter>`|'|\")(?P<literal>[^`'\"\r\n]+)(?P=delimiter)"
 )
@@ -268,9 +268,10 @@ def grounded_user_literal_narrowing(
 
     candidates: list[tuple[int, int, int, int, str]] = []
     def add_candidate(raw: str, source_priority: int, objective_index: int) -> None:
-        candidate = raw.strip()
+        candidate = raw
         if (
             len(candidate) < 3
+            or not candidate.strip()
             or not any(char.isalnum() or char == "_" for char in candidate)
             or (source_priority == 1 and candidate.casefold() in _GENERIC_GROUNDED_WORDS)
             or candidate not in objective
@@ -281,9 +282,13 @@ def grounded_user_literal_narrowing(
         if pattern_index < 0:
             return
         candidates.append((source_priority, -len(candidate), pattern_index, objective_index, candidate))
-    for match in _GROUNDED_DELIMITED_LITERAL.finditer(objective):
-        add_candidate(match.group("literal"), 2, match.start("literal"))
+
+    delimited = tuple(_GROUNDED_DELIMITED_LITERAL.finditer(objective))
+    for match in delimited:
+        add_candidate(match.group("literal"), 0, match.start("literal"))
     for match in _GROUNDED_CODE_TOKEN.finditer(objective):
+        if any(match.start() < item.end() and item.start() < match.end() for item in delimited):
+            continue
         add_candidate(match.group(0), 1, match.start())
 
     if not candidates:

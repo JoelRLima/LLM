@@ -1,6 +1,5 @@
 """Safe metadata-guided plan optimizer."""
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -86,14 +85,7 @@ class PlanOptimizer:
 
         transformations: List[str] = []
 
-        deduped, removed_duplicates = self._remove_exact_duplicates(original, transformations)
-        optimized, dominated = self._remove_dominated_code_analyzers(
-            deduped,
-            referenced_step_ids(original),
-            transformations,
-        )
-        removed_duplicates += dominated
-        reordered = optimized
+        reordered, removed_duplicates = self._remove_exact_duplicates(original, transformations)
 
         cost_details_after = self._cost_details(reordered)
         cost_after = self._total_cost(cost_details_after)
@@ -164,102 +156,15 @@ class PlanOptimizer:
         normalized.setdefault("include_code", False)
         normalized.setdefault("compact", False)
         return normalized
-    @staticmethod
-    def _safe_relative_path(value: Any) -> tuple[str, ...] | None:
-        if not isinstance(value, str) or not value:
-            return None
-        normalized = value.replace("\\", "/")
-        if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
-            return None
-        parts = normalized.split("/")
-        if not parts or any(not part or part in {".", ".."} for part in parts):
-            if normalized != ".":
-                return None
-        if normalized == ".":
-            return ()
-        return tuple(parts)
-    @classmethod
-    def _directory_dominates_child(
-        cls,
-        directory_step: Dict[str, Any],
-        child_step: Dict[str, Any],
-    ) -> bool:
-        if directory_step.get("tool") != "code_analyzer" or child_step.get("tool") != "code_analyzer":
-            return False
-        if has_result_bindings(directory_step) or has_result_bindings(child_step):
-            return False
-        directory_args = directory_step.get("args")
-        child_args = child_step.get("args")
-        if not isinstance(directory_args, dict) or not isinstance(child_args, dict):
-            return False
-        directory_mode = directory_args.get("mode", "file")
-        child_mode = child_args.get("mode", "file")
-        if directory_mode != "directory" or child_mode != "file":
-            return False
-        directory_target = cls._safe_relative_path(directory_args.get("target"))
-        child_target = child_args.get("target")
-        child_parts = cls._safe_relative_path(child_target)
-        if (
-            directory_target is None
-            or child_parts is None
-            or not isinstance(child_target, str)
-            or not child_target.endswith(".py")
-            or len(child_parts) <= len(directory_target)
-            or child_parts[: len(directory_target)] != directory_target
-        ):
-            return False
-        directory_flags = cls._code_analyzer_semantic_args(directory_args)
-        child_flags = cls._code_analyzer_semantic_args(child_args)
-        if not isinstance(directory_flags, dict) or not isinstance(child_flags, dict):
-            return False
-        for args in (directory_flags, child_flags):
-            args.pop("target", None)
-            args.pop("mode", None)
-        try:
-            return json.dumps(directory_flags, sort_keys=True, ensure_ascii=False) == json.dumps(
-                child_flags, sort_keys=True, ensure_ascii=False
-            )
-        except TypeError:
-            return False
-    def _remove_dominated_code_analyzers(
-        self,
-        plan: List[Dict[str, Any]],
-        referenced: set[str],
-        transformations: List[str],
-    ) -> tuple[List[Dict[str, Any]], int]:
-        result: List[Dict[str, Any]] = []
-        removed = 0
-        if not any(isinstance(step, dict) and step.get("tool") == "code_analyzer" for step in plan):
-            return list(plan), 0
-        directory_meta = self._meta("code_analyzer")
-        if not directory_meta.cacheable:
-            return list(plan), 0
-        for index, step in enumerate(plan):
-            if not isinstance(step, dict):
-                result.append(step)
-                continue
-            if step.get("tool") != "code_analyzer":
-                result.append(step)
-                continue
-            step_id = str(step.get("_step_id") or "")
-            if has_result_bindings(step) or step_id in referenced:
-                result.append(step)
-                continue
-            if any(self._directory_dominates_child(previous, step) for previous in result if isinstance(previous, dict)):
-                removed += 1
-                transformations.append(
-                    f"Passo {index + 1} ('code_analyzer') removido: análise de arquivo Python coberta por análise de diretório compatível."
-                )
-                continue
-            result.append(step)
-        return result, removed
+    # Directory output is not a canonical observation of every descendant:
+    # discovery exclusions and per-file failures are observable at runtime.
     def _remove_exact_duplicates(
         self, plan: List[Dict[str, Any]], transformations: List[str]
     ) -> tuple:
         """Remove passos duplicados exatos, restrito a ferramentas
         `cacheable=True` (sem efeitos colaterais, resultado determinÃ­stico).
         Retorna (novo_plano, quantidade_removida)."""
-        seen = set()
+        seen: set[tuple[Any, ...]] = set()
         result: List[Dict[str, Any]] = []
         removed = 0
         # Never drop a producer/consumer identity while bindings are present.
@@ -276,6 +181,8 @@ class PlanOptimizer:
 
             tool = step.get("tool", "")
             meta = self._meta(tool)
+            if meta.modifies_workspace or meta.writes_disk or meta.side_effects:
+                seen.clear()
             key = self._step_key(step)
 
             step_id = str(step.get("_step_id") or "")
