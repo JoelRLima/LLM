@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from agent.approval import AutoApprove
-from agent.execution_incidents import MAX_EXECUTION_INCIDENTS
+from agent.execution_incidents import MAX_EXECUTION_INCIDENTS, MAX_INCIDENT_FILES
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.run_receipt import build_run_receipt
 from agent.state import AgentState
@@ -191,6 +191,55 @@ def test_unknown_effect_after_canonical_commit_failure_remains_publicly_uncertai
     assert receipt["execution_incidents"][0]["effect_state"] == "UNKNOWN"
 
 
+def test_oversized_incident_footprint_truncates_detail_without_dropping_proven_effect() -> None:
+    state = AgentState()
+    files = [f"file-{index}.txt" for index in range(MAX_INCIDENT_FILES + 1)]
+
+    state.record_execution_incident(
+        {
+            "incident_type": "CANONICAL_COMMIT_FAILED",
+            "invocation_id": "oversized-footprint",
+            "tool": "writer",
+            "original_tool_status": "succeeded",
+            "executed": True,
+            "effect_state": "PROVEN",
+            "affected_files": files,
+            "rollback_occurred": False,
+            "error_code": "CANONICAL_COMMIT_FAILED",
+        }
+    )
+
+    incident = state.execution_incidents[0]
+    assert incident["effect_state"] == "PROVEN"
+    assert len(incident["affected_files"]) == MAX_INCIDENT_FILES
+    assert incident["detail_truncated"] is True
+    outcome = project_operational_outcome(state)
+    assert outcome.mutation_occurred is True
+
+
+def test_incident_normalization_failure_falls_back_to_bounded_effect_truth() -> None:
+    state = AgentState()
+
+    state.record_execution_incident(
+        {
+            "incident_type": "CANONICAL_COMMIT_FAILED",
+            "invocation_id": "normalization-failure",
+            "tool": "writer",
+            "original_tool_status": "succeeded",
+            "executed": True,
+            "effect_state": "PROVEN",
+            "affected_files": object(),
+            "rollback_occurred": False,
+            "error_code": "CANONICAL_COMMIT_FAILED",
+        }
+    )
+
+    incident = state.execution_incidents[0]
+    assert incident["normalization_failed"] is True
+    assert incident["effect_state"] == "PROVEN"
+    assert project_operational_outcome(state).mutation_occurred is True
+
+
 def test_execution_incidents_restore_as_uncertain_reporting_only() -> None:
     state = AgentState()
     state.record_execution_incident(
@@ -298,10 +347,38 @@ def test_execution_incident_journal_is_bounded_and_oversized_restore_fails() -> 
 
     assert len(state.execution_incidents) == MAX_EXECUTION_INCIDENTS
     assert state.execution_incidents[0]["invocation_id"] == "incident-2"
+    assert state.execution_incidents[0]["journal_overflow"] is True
+    assert state.execution_incidents[0]["omitted_incidents"] == 2
+    assert state.execution_incidents[0]["omitted_effect_states"] == ["UNKNOWN"]
+    assert project_operational_outcome(state).physical_effect_unknown is True
     oversized = state.to_checkpoint_dict()
     oversized["execution_incidents"].append(dict(oversized["execution_incidents"][-1]))
     with pytest.raises(ValueError, match="incident"):
         AgentState().from_checkpoint_dict(oversized)
+
+
+def test_incident_overflow_preserves_omitted_proven_and_unknown_states() -> None:
+    state = AgentState()
+    for index in range(MAX_EXECUTION_INCIDENTS + 2):
+        state.record_execution_incident(
+            {
+                "incident_type": "CANONICAL_COMMIT_FAILED",
+                "invocation_id": f"mixed-{index}",
+                "tool": "writer",
+                "original_tool_status": "succeeded",
+                "executed": True,
+                "effect_state": "PROVEN" if index == 0 else "UNKNOWN",
+                "affected_files": ["proven.txt"] if index == 0 else [],
+                "rollback_occurred": False,
+                "error_code": "CANONICAL_COMMIT_FAILED",
+            }
+        )
+
+    summary = state.execution_incidents[0]
+    assert summary["omitted_effect_states"] == ["PROVEN", "UNKNOWN"]
+    outcome = project_operational_outcome(state)
+    assert outcome.mutation_occurred is True
+    assert outcome.physical_effect_unknown is True
 
 
 def test_agent_state_checkpoint_has_no_partial_observation_after_gateway_failure() -> None:

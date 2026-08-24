@@ -40,11 +40,15 @@ def _identity_limitation(
     return None
 
 
-def _identity_source(provider_observed: bool, stable_external: str | None) -> str:
-    if provider_observed:
+def _identity_source(
+    provider_observed: bool, specific: bool, stable_external: str | None
+) -> str:
+    if provider_observed and specific:
         return "response.provider_metadata"
     if stable_external:
         return "external_identity"
+    if provider_observed:
+        return "response.provider_metadata"
     return "unavailable"
 
 
@@ -69,7 +73,7 @@ def _identity_projection(
     observed_model_id = distinct_ids[0] if len(distinct_ids) == 1 else None
     provider = distinct_providers[0] if len(distinct_providers) == 1 else None
     endpoint = distinct_endpoints[0] if len(distinct_endpoints) == 1 else None
-    source = _identity_source(provider_observed, stable_external)
+    source = _identity_source(provider_observed, specific, stable_external)
     limitation = _identity_limitation(distinct_ids, provider_observed, specific)
     sufficient = bool(
         state.eligible_count

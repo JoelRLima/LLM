@@ -24,9 +24,19 @@ from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
 from agent.tools.authority import OperationalMode
 from agent.tools.builtin_adapter import BuiltinToolAdapter
+from agent.tools.contracts import (
+    CancellationSafetyMode,
+    ToolDescriptor,
+    ToolInvocation,
+    ToolInvocationRequest,
+    ToolResult,
+    ToolStatus,
+)
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from agent.tools.invocation_execution import InvocationLivenessError
+from agent.tools.tool_registry import ToolRegistry
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 from agent.watchdog import Watchdog
 from tests.support.offline_scenarios import OfflineLegacyGateway, OfflineModelGateway
@@ -67,6 +77,93 @@ class _CountingApproval:
     def request(self, request: ApprovalRequest) -> ApprovalDecision:
         self.requests.append(request)
         return ApprovalDecision.APPROVED
+
+
+def test_application_does_not_publish_or_close_while_mutator_is_alive(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    paths = _initialized_paths(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    class ViolatingWriter:
+        def descriptors(self):
+            return (
+                ToolDescriptor(
+                    "application_liveness_writer",
+                    "writer",
+                    capabilities=frozenset({"write"}),
+                    cancellation_safety=CancellationSafetyMode.BOUNDED_COOPERATIVE,
+                ),
+            )
+
+        def invoke(self, invocation: ToolInvocation) -> ToolResult:
+            started.set()
+            release.wait(timeout=5)
+            return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, executed=True)
+
+    application = AgentApplication.create(
+        paths=paths,
+        workspace=workspace,
+        approval_policy=AutoApprove(),
+        configure_logging=False,
+    )
+    registry = ToolRegistry(runtime_identity=application.tool_registry.runtime_identity)
+    registry.register_adapter(ViolatingWriter())
+    registry.freeze()
+    application.tool_invocation_gateway.registry = registry
+    original_drain = application.tool_invocation_gateway.drain_invocations
+
+    def invoke_mutator(_objective: str | None, stream_callback=None):
+        del stream_callback
+        return application.tool_invocation_gateway.run(
+            ToolInvocationRequest(
+                "application-liveness",
+                "application_liveness_writer",
+                timeout_seconds=1,
+            )
+        )
+
+    monkeypatch.setattr(application.orchestrator, "run", invoke_mutator)
+    monkeypatch.setattr(
+        "agent.tools.invocation_quiescence.CANCELLATION_GRACE_SECONDS", 0.05
+    )
+
+    try:
+        with pytest.raises(InvocationLivenessError):
+            application.run("invoke the mutator")
+        assert started.is_set()
+        assert application.orchestrator.agent_state.terminal_disposition is None
+        assert application._closed is False
+
+        monkeypatch.setattr(
+            application.tool_invocation_gateway,
+            "drain_invocations",
+            lambda **_kwargs: False,
+        )
+        with pytest.raises(InvocationLivenessError):
+            application.close()
+        assert application._closed is False
+
+        monkeypatch.setattr(
+            application.tool_invocation_gateway,
+            "drain_invocations",
+            original_drain,
+        )
+        release.set()
+        assert original_drain(timeout_seconds=2) is True
+        application.close()
+        assert application._closed is True
+    finally:
+        release.set()
+        if not application._closed:
+            monkeypatch.setattr(
+                application.tool_invocation_gateway,
+                "drain_invocations",
+                original_drain,
+            )
+            application.tool_invocation_gateway.drain_invocations(timeout_seconds=2)
+            application.close()
 
 
 def _run_queued_task(

@@ -32,6 +32,7 @@ from agent.evaluation.block7_identity import (
     semantic_manifest_hash,
     source_fingerprint,
 )
+from agent.evaluation.block7_model_identity import normalize_external_identity
 
 __all__ = [
     "ADVERSARIAL_AUDIT_QUESTIONS",
@@ -53,6 +54,7 @@ __all__ = [
     "planned_model_profile",
     "model_config_identity",
     "normalize_endpoint_identity",
+    "normalize_external_identity",
     "prior_epoch_disposition",
     "resume_compatible",
     "run_real_model_campaign",

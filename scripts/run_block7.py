@@ -14,6 +14,7 @@ from agent.evaluation.block7_runner import (
     DEFAULT_REAL_MODEL_EPOCH,
     build_corrective_readiness,
     campaign_config,
+    normalize_external_identity,
     phase4_audit,
     run_real_model_campaign,
     run_scripted_campaign,
@@ -37,6 +38,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--qwen-loaded",
         action="store_true",
         help="explicit authorization gate for Phase 5; never needed by dry-run",
+    )
+    parser.add_argument(
+        "--external-identity",
+        default=None,
+        help="frozen non-generic provider identity for Phase 5 when response identity is unavailable",
     )
     parser.add_argument(
         "--write-config",
@@ -71,9 +77,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         profile = dict(profiles.get(arguments.profile, {})) if isinstance(profiles, dict) else {}
         from agent.evaluation.trace import RecordingGateway
         from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+        frozen_external_identity = normalize_external_identity(arguments.external_identity)
 
         def live_factory(_objective: str, _workspace: Path) -> Any:
-            return RecordingGateway(OpenAICompatibleGateway(profile))
+            return RecordingGateway(
+                OpenAICompatibleGateway(profile),
+                external_identity=frozen_external_identity,
+            )
 
         run_real_model_campaign(
             ROOT,
@@ -81,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             gateway_factory=cast(GatewayFactory, live_factory),
             profile_name=arguments.profile,
             epoch=arguments.epoch,
+            external_identity=frozen_external_identity,
         )
         print(json.dumps({"status": "passed", "phase": 5, "report": str(output)}))
         return 0
@@ -105,6 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     output_dir=output.parent,
                     profile_name=arguments.profile,
                     epoch=DEFAULT_DRY_RUN_EPOCH,
+                    external_identity=normalize_external_identity(arguments.external_identity),
                 ),
                 ensure_ascii=False,
                 indent=2,

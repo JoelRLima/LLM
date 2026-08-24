@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from agent.evaluation.block7_model_identity import normalize_endpoint_identity
+from agent.evaluation.block7_model_identity import (
+    GENERIC_MODEL_ALIASES,
+    normalize_endpoint_identity,
+    normalize_external_identity,
+)
 from agent.evaluation.block7_trace_identity import (
-    bounded_identity_text,
     call_identity,
     observed_provider_model_id,
 )
@@ -28,7 +31,7 @@ class RecordingGateway:
             if external_identity is not None
             else getattr(gateway, "external_identity", None)
         )
-        self.external_identity = bounded_identity_text(configured_external_identity)
+        self.external_identity = normalize_external_identity(configured_external_identity)
         self._records: list[dict[str, Any]] = []
 
     def __getattr__(self, name: str) -> Any:
@@ -197,11 +200,9 @@ class RecordingGateway:
             if identity.get("observed_provider_model_id") not in (None, "")
         ]
         distinct_observed_ids = list(dict.fromkeys(observed_ids))
-        generic_aliases = {"default"}
+        generic_aliases = GENERIC_MODEL_ALIASES
         specific = len(distinct_observed_ids) == 1 and distinct_observed_ids[0].casefold() not in generic_aliases
         external_identity = self.external_identity
-        if external_identity and external_identity.casefold() in generic_aliases:
-            external_identity = None
         providers = list(dict.fromkeys(
             str(identity["provider"]).strip()
             for identity in call_identities
@@ -231,9 +232,11 @@ class RecordingGateway:
         endpoint_identity = endpoints[0] if len(endpoints) == 1 else None
         observed_source = (
             "response.provider_metadata"
-            if provider_observed
+            if provider_observed and specific
             else "external_identity"
             if external_identity
+            else "response.provider_metadata"
+            if provider_observed
             else "unavailable"
         )
         observed = {

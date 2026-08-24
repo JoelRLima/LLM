@@ -128,6 +128,12 @@ def _add_incident(facts: OperationalEvidence, incident: Mapping[str, Any]) -> No
             facts.files.update(str(path) for path in raw_files)
     elif effect_state == EFFECT_UNKNOWN:
         facts.physical_effect_unknown = True
+    omitted_states = incident.get("omitted_effect_states")
+    if isinstance(omitted_states, (list, tuple)):
+        if EFFECT_PROVEN in omitted_states:
+            facts.mutation_occurred = True
+        if EFFECT_UNKNOWN in omitted_states:
+            facts.physical_effect_unknown = True
     if incident.get("rollback_occurred") is True:
         facts.rollback_occurred = True
 

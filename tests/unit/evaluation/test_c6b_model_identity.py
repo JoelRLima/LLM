@@ -5,7 +5,8 @@ from pathlib import Path
 
 from agent.evaluation.block7_analysis_verdict import verdict
 from agent.evaluation.block7_campaign_report import _observed_identity_summary
-from agent.evaluation.block7_identity import campaign_config, resume_compatible
+from agent.evaluation.block7_execution_evidence import identity_drift
+from agent.evaluation.block7_identity import campaign_config, model_config_identity, resume_compatible
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 
@@ -120,6 +121,22 @@ def test_c6b_generic_default_is_available_but_insufficient() -> None:
     )[0] == "INCONCLUSIVE"
 
 
+def test_c6b_generic_configured_alias_does_not_drift_specific_observed_id() -> None:
+    run = _record(["Qwen-specific-id"])
+    observed = run["evidence"]["observed_model_identity"]
+
+    assert identity_drift(
+        {
+            "provider": "scripted-provider",
+            "model": "default",
+            "configured_model_id": "default",
+            "endpoint_identity": "http://identity.example/v1",
+        },
+        observed,
+    ) is False
+    assert observed["identity_sufficient"] is True
+
+
 def test_c6b_external_identity_is_separate_and_preserves_limitation() -> None:
     run = _record([None, None], external_identity="Qwen-frozen-test")
     observed = run["evidence"]["observed_model_identity"]
@@ -130,6 +147,18 @@ def test_c6b_external_identity_is_separate_and_preserves_limitation() -> None:
     assert observed["source"] == "external_identity"
     assert observed["external_identity"] == "Qwen-frozen-test"
     assert observed["provider_observation_limitation"] == "backend_identity_unavailable"
+
+
+def test_c6b_external_identity_reaches_generic_provider_projection() -> None:
+    run = _record(["default", "default"], external_identity="frozen-provider-id")
+    observed = run["evidence"]["observed_model_identity"]
+    aggregate = _observed_identity_summary([run], {"model": "default"})
+
+    assert observed["identity_sufficient"] is True
+    assert observed["source"] == "external_identity"
+    assert observed["provider_observation_limitation"] == "generic_provider_model_id"
+    assert aggregate["identity_sufficient"] is True
+    assert aggregate["source"] == "external_identity"
 
 
 def test_c6b_campaign_summary_keeps_large_ordered_identity_lossless() -> None:
@@ -172,3 +201,61 @@ def test_c6b_resume_rejects_changed_external_identity(tmp_path: Path) -> None:
     )["evidence"]["observed_model_identity"]
 
     assert not resume_compatible(existing, current)
+
+
+def test_c6b_frozen_external_identity_is_part_of_phase5_model_config_resume_identity(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).parents[3]
+    existing_identity = model_config_identity(root, external_identity="frozen-provider-A")
+    current_identity = model_config_identity(root, external_identity="frozen-provider-B")
+    existing = {
+        **campaign_config(root, output_dir=tmp_path / "block7"),
+        "model_identity": existing_identity,
+        "model_config_fingerprint": existing_identity["model_config_fingerprint"],
+    }
+    current = {
+        **campaign_config(root, output_dir=tmp_path / "block7"),
+        "model_identity": current_identity,
+        "model_config_fingerprint": current_identity["model_config_fingerprint"],
+    }
+
+    assert existing_identity["external_identity"] == "frozen-provider-A"
+    assert existing_identity["external_identity_source"] == "external_identity"
+    assert not resume_compatible(existing, current)
+
+
+def test_c6b_phase5_cli_freezes_external_identity_without_provider_probe(tmp_path: Path, monkeypatch) -> None:
+    import scripts.run_block7 as run_block7
+    from agent.llm.providers import openai_compatible
+
+    class StubProvider:
+        def __init__(self, profile: dict) -> None:
+            self.profile = profile
+
+    captured: dict[str, object] = {}
+
+    def fake_real_campaign(_root: Path, **kwargs):
+        captured["external_identity"] = kwargs["external_identity"]
+        gateway = kwargs["gateway_factory"]("objective", tmp_path)
+        captured["gateway_external_identity"] = gateway.external_identity
+        return {}
+
+    monkeypatch.setattr(openai_compatible, "OpenAICompatibleGateway", StubProvider)
+    monkeypatch.setattr(run_block7, "run_real_model_campaign", fake_real_campaign)
+
+    assert run_block7.main(
+        [
+            "--phase",
+            "5",
+            "--qwen-loaded",
+            "--external-identity",
+            "frozen-phase5-provider",
+            "--output",
+            str(tmp_path / "phase5.json"),
+        ]
+    ) == 0
+    assert captured == {
+        "external_identity": "frozen-phase5-provider",
+        "gateway_external_identity": "frozen-phase5-provider",
+    }

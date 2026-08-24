@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from agent.application_cleanup import abort_startup, release_resources
 from agent.application_result import AgentRunResult
-from agent.application_shutdown import drain_application_invocations
+from agent.application_shutdown import require_application_invocations_drained
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
 from agent.llm.session import ChatSession
@@ -38,6 +38,7 @@ from agent.skills import load_skill_registry
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot, bind_task_authority
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+from agent.tools.invocation_execution import InvocationLivenessError
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
@@ -204,12 +205,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
             raise RuntimeError("A aplicação já foi encerrada.")
         captured = io.StringIO()
         self._task_attempted = True
-        vars(self.orchestrator)["_last_failure_code"] = None
-        vars(self.orchestrator)["_last_failure_layer"] = None
-        vars(self.orchestrator)["_run_id"] = None
-        vars(self.orchestrator)["_task_start_time"] = 0.0
-        vars(self.orchestrator)["_run_metric_recorded"] = False
-        vars(self.orchestrator)["_metrics_start_line"] = None
+        vars(self.orchestrator).update({"_last_failure_code": None, "_last_failure_layer": None, "_run_id": None, "_task_start_time": 0.0, "_run_metric_recorded": False, "_metrics_start_line": None})
         try:
             output_context = redirect_stdout(captured) if stream_callback is None else nullcontext()
             callback_args = {} if stream_callback is None else {"stream_callback": stream_callback}
@@ -228,6 +224,8 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 status="block",
             )
             return self._result("blocked", "", error=message or public_exception_message(exc))
+        except InvocationLivenessError:
+            raise
         except Exception as exc:
             vars(self.orchestrator)["_last_failure_code"] = getattr(exc, "code", None)
             vars(self.orchestrator)["_last_failure_layer"] = getattr(exc, "layer", None)
@@ -280,13 +278,15 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 return
             primary_error: BaseException | None = None
             cleanup_error: BaseException | None = None
+            drained = False
             try:
-                drain_application_invocations(self.tool_invocation_gateway)
+                require_application_invocations_drained(self.tool_invocation_gateway)
+                drained = True
                 if not self._task_attempted:
                     self.orchestrator._persist_memory_to_file()
             except BaseException as exc:
                 primary_error = exc
-            finally:
+            if drained:
                 cleanup_error = release_resources(self._instance_lock, self._owns_logging)
                 self._closed = True
             if primary_error is not None:
@@ -295,6 +295,5 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 raise cleanup_error
 
     def __enter__(self) -> "AgentApplication": return self
-
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None: self.close()
 __all__ = ["AgentApplication", "AgentRunResult"]

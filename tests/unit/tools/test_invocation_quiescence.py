@@ -340,7 +340,7 @@ def test_application_shutdown_uses_only_bounded_drain() -> None:
             calls.append(timeout_seconds)
             return False
 
-    drain_application_invocations(Gateway())
+    assert drain_application_invocations(Gateway()) is False
     assert calls == [5.0]
 
 

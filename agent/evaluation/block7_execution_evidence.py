@@ -9,6 +9,7 @@ from agent.evaluation.block7_execution_attribution import evidence_mapping
 _FAILURE_STATUSES = frozenset(
     {"failed", "blocked", "cancelled", "timed_out", "permission_denied", "protocol_error", "unavailable", "unverified"}
 )
+_GENERIC_MODEL_ALIASES = frozenset({"default"})
 
 
 def _normalized_observed_identity(observed: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
@@ -24,16 +25,32 @@ def _scalar_identity_drift(expected: Mapping[str, Any], observed: Mapping[str, A
             observed_value = observed_value or observed.get("provider_model_id") or observed.get("actual_provider_model_id")
         if observed_value in (None, ""):
             continue
-        expected_value = expected.get(key, expected.get("configured_model_id", ""))
+        if key == "model":
+            expected_value = _specific_expected_model_id(expected)
+            if expected_value is not None and str(observed_value) != expected_value:
+                return True
+            continue
+        expected_value = expected.get(key)
+        if expected_value in (None, ""):
+            continue
         if str(observed_value) != str(expected_value):
             return True
     expected_endpoint = expected.get("endpoint_identity")
     observed_endpoint = observed.get("endpoint_identity")
     if expected_endpoint and observed_endpoint and str(expected_endpoint) != str(observed_endpoint):
         return True
-    expected_actual = expected.get("actual_provider_model_id")
-    observed_actual = observed.get("actual_provider_model_id") or observed.get("provider_model_id")
-    return expected_actual is not None and str(expected_actual) != str(observed_actual)
+    return False
+
+
+def _specific_expected_model_id(expected: Mapping[str, Any]) -> str | None:
+    for key in ("actual_provider_model_id", "model", "configured_model_id"):
+        value = expected.get(key)
+        if value in (None, ""):
+            continue
+        normalized = str(value)
+        if normalized.casefold() not in _GENERIC_MODEL_ALIASES:
+            return normalized
+    return None
 
 
 def _capability_identity_drift(expected: Mapping[str, Any], observed: Mapping[str, Any]) -> bool:

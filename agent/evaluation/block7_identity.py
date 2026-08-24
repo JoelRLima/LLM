@@ -225,13 +225,13 @@ def campaign_config(
     repo_root: str | Path,
     *,
     output_dir: str | Path,
-    profile_name: str = DEFAULT_PROFILE,
-    epoch: str = DEFAULT_REAL_MODEL_EPOCH,
+    profile_name: str = DEFAULT_PROFILE, epoch: str = DEFAULT_REAL_MODEL_EPOCH,
+    external_identity: str | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     candidate = candidate_identity(root)
     manifest = semantic_candidate_manifest(root)
-    model_identity = model_config_identity(root, profile_name=profile_name)
+    model_identity = model_config_identity(root, profile_name=profile_name, external_identity=external_identity)
     output = Path(output_dir)
     try:
         output_label = output.resolve().relative_to(root).as_posix()

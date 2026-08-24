@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_PROFILE = "local_8gb"
+GENERIC_MODEL_ALIASES = frozenset({"default"})
 
 
 def _canonical_json(value: Any) -> str:
@@ -46,6 +47,17 @@ def normalize_endpoint_identity(value: Any) -> str | None:
         netloc = f"{netloc}:{port}"
     path = parsed.path.rstrip("/")
     return urlunsplit((parsed.scheme.casefold(), netloc, path, "", ""))
+
+
+def normalize_external_identity(value: Any) -> str | None:
+    """Bound an explicit non-provider identity without probing an endpoint."""
+
+    if value in (None, ""):
+        return None
+    identity = str(value).strip()[:256]
+    if not identity or identity.casefold() in GENERIC_MODEL_ALIASES:
+        return None
+    return identity
 
 
 def planned_model_profile(repo_root: str | Path, profile_name: str = DEFAULT_PROFILE) -> dict[str, Any]:
@@ -94,11 +106,16 @@ def model_config_identity(
     profile_name: str = DEFAULT_PROFILE,
     evidence_level: str = "real_model",
     actual_provider_model_id: str | None = None,
+    external_identity: str | None = None,
 ) -> dict[str, Any]:
     planned = planned_model_profile(repo_root, profile_name)
     planned["actual_provider_model_id"] = actual_provider_model_id
     planned["actual_identity_available"] = actual_provider_model_id is not None
     planned["evidence_level"] = evidence_level
+    frozen_external_identity = normalize_external_identity(external_identity)
+    if frozen_external_identity is not None:
+        planned["external_identity"] = frozen_external_identity
+        planned["external_identity_source"] = "external_identity"
     fingerprint = _sha256(_canonical_json(planned))
     return {**planned, "model_config_fingerprint": fingerprint, "fingerprint": fingerprint}
 
@@ -131,5 +148,6 @@ def fake_model_identity() -> dict[str, Any]:
 
 __all__ = [
     "DEFAULT_PROFILE", "fake_model_identity", "model_config_identity",
-    "normalize_endpoint_identity", "planned_model_profile",
+    "GENERIC_MODEL_ALIASES", "normalize_endpoint_identity", "normalize_external_identity",
+    "planned_model_profile",
 ]

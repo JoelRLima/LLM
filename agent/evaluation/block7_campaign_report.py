@@ -115,6 +115,7 @@ def run_real_model_campaign(
     gateway_factory: GatewayFactory,
     profile_name: str = "local_8gb",
     epoch: str = DEFAULT_REAL_MODEL_EPOCH,
+    external_identity: str | None = None,
     installed_acceptance: Mapping[str, Any] | None = None,
     resume_report: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -123,7 +124,12 @@ def run_real_model_campaign(
     from agent.evaluation.block7_campaign import run_scripted_campaign
 
     root = Path(repo_root).resolve()
-    identity = model_config_identity(root, profile_name=profile_name, evidence_level=EvidenceLevel.REAL_MODEL.value)
+    identity = model_config_identity(
+        root,
+        profile_name=profile_name,
+        evidence_level=EvidenceLevel.REAL_MODEL.value,
+        external_identity=external_identity,
+    )
     report = run_scripted_campaign(
         root,
         output_path=None,
