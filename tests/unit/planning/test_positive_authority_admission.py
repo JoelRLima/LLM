@@ -1,5 +1,6 @@
 """Corrective 5 tests for the positive effect-authority boundary."""
 
+import re
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,64 @@ def test_supported_positive_forms_admit_only_the_bounded_destination(
     ]
     assert authority.requested_effects == ("write",)
     assert all(item.target != "source.md" for item in authority.authorized_intents)
+
+
+_CORRECTIVE_7_CANONICAL_DENIES = (
+    ("edit foo.py, but do not write", "*"),
+    ("edit foo.py; do not write", "*"),
+    ("edit foo.py, but never write", "*"),
+    ("edit foo.py; do not save", "*"),
+    ("edite foo.py, mas nao escreva", "*"),
+    ("edit foo.py; nao e para edit foo.py", "foo.py"),
+    ("edite foo.py; nao e para editar foo.py", "foo.py"),
+    ("edit foo.py; do not edit foo.py", "foo.py"),
+)
+
+
+@pytest.mark.parametrize(("objective", "constraint_target"), _CORRECTIVE_7_CANONICAL_DENIES)
+def test_corrective_7_p0_denies_are_canonical_and_dominant(
+    objective: str, constraint_target: str
+) -> None:
+    authority = admit_effect_authority(objective)
+
+    assert authority.authorized_effects == ()
+    assert [(item.effect, item.target) for item in authority.constraints] == [
+        ("write", constraint_target)
+    ]
+    assert effect_intent_error(
+        objective,
+        "code_task",
+        {"action": "modify", "targets": ["foo.py"]},
+        _WRITE_CONTRACT,
+    )
+
+
+@pytest.mark.parametrize(
+    ("objective", "allowed_target", "forbidden_target"),
+    (
+        (
+            "edit allowed.txt; do not edit forbidden.txt",
+            "allowed.txt",
+            "forbidden.txt",
+        ),
+        (
+            "edite permitido.txt; nao edite proibido.txt",
+            "permitido.txt",
+            "proibido.txt",
+        ),
+    ),
+)
+def test_corrective_7_p0_exact_denies_preserve_unrelated_positive_target(
+    objective: str, allowed_target: str, forbidden_target: str
+) -> None:
+    authority = admit_effect_authority(objective)
+
+    assert [(item.effect, item.target) for item in authority.authorized_effects] == [
+        ("write", allowed_target)
+    ]
+    assert [(item.effect, item.target) for item in authority.constraints] == [
+        ("write", forbidden_target)
+    ]
 
 
 _REPORTED_SPEECH_P0 = (
@@ -213,15 +272,20 @@ def test_production_authority_parser_has_no_eval_owned_grammar() -> None:
     modules = sorted(planning.glob("task_semantics_positive_proof*.py"))
     modules.append(planning / "task_semantics_effect_inference.py")
 
-    assert len(modules) >= 8
-    assert planning / "task_semantics_positive_proof_engine.py" in modules
+    assert planning.is_dir()
+    assert len(modules) > 0
+    expected_sentinels = {
+        "task_semantics_positive_proof_engine.py",
+        "task_semantics_positive_proof_commands.py",
+        "task_semantics_effect_inference.py",
+    }
+    assert expected_sentinels.issubset({path.name for path in modules})
     scanned = {path.name: path.read_text(encoding="utf-8") for path in modules}
+    assert len(scanned) > 0
     payload = "\n".join(scanned.values()).casefold()
 
     for forbidden in (
         "_scenario_label_re",
-        "cap_[a-z0-9_]+",
-        "slice_[a-z0-9_]+",
         "recuse qualquer alvo fora da autoridade permitida",
         "a politica nao pode depender so da extensao",
         "alteracao deterministica",
@@ -229,6 +293,8 @@ def test_production_authority_parser_has_no_eval_owned_grammar() -> None:
         "sem\", \"aprovacao\", \"explicita",
     ):
         assert forbidden not in payload
+    for forbidden_pattern in (r"\bcap_[a-z0-9_]+\b", r"\bslice_[a-z0-9_]+\b"):
+        assert re.search(forbidden_pattern, payload) is None
 
 
 def test_admitted_effect_is_distinct_and_carries_a_complete_structured_proof() -> None:

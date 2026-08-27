@@ -6,19 +6,21 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from agent.planning.task_semantics_authority_helpers import (
+    apply_constraint_dominance,
     candidate_projection,
+    constraint_projection,
     matching_proof,
     positive_admission_failure,
-    reject_conflicts,
 )
 from agent.planning.task_semantics_positive_proof import (
+    AuthorityConstraint,
     AuthorizedEffect,
     PositiveAuthorityProof,
     authorized_effect_from_proof,
-    build_positive_authority_proofs,
     objective_authority_fingerprint,
+    parse_objective_authority,
 )
-from agent.planning.task_semantics_types import EffectIntent, EffectSemantics
+from agent.planning.task_semantics_types import EffectIntent, EffectSemantics, TaskSemanticsError
 
 
 class AuthorityDecision(str, Enum):
@@ -78,6 +80,7 @@ class EffectAuthority:
     objective: str
     decisions: tuple[EffectAuthorityDecision, ...] = ()
     proposal_only: bool = False
+    constraints: tuple[AuthorityConstraint, ...] = ()
     _factory_token: object = field(default=None, repr=False, compare=False, kw_only=True)
 
     def __post_init__(self) -> None:
@@ -85,6 +88,8 @@ class EffectAuthority:
             raise TypeError("objetivo da autoridade invalido")
         if any(not isinstance(item, EffectAuthorityDecision) for item in self.decisions):
             raise TypeError("decisoes de autoridade invalidas")
+        if any(not isinstance(item, AuthorityConstraint) for item in self.constraints):
+            raise TypeError("restricoes de autoridade invalidas")
         if type(self.proposal_only) is not bool:
             raise TypeError("flag de proposta da autoridade invalida")
         if self._factory_token is not _AUTHORITY_FACTORY_TOKEN:
@@ -96,6 +101,10 @@ class EffectAuthority:
             for item in self.decisions
         ):
             raise TypeError("positive authority proof does not belong to this objective")
+        if any(
+            item.objective_fingerprint != expected_identity for item in self.constraints
+        ):
+            raise TypeError("authority constraint does not belong to this objective")
 
     @property
     def authorized_decisions(self) -> tuple[EffectAuthorityDecision, ...]:
@@ -123,7 +132,7 @@ class EffectAuthority:
 
     @property
     def constraint_intents(self) -> tuple[EffectIntent, ...]:
-        return tuple(item.candidate for item in self.decisions if item.candidate.polarity == "prohibited")
+        return tuple(constraint_projection(item) for item in self.constraints)
 
     @property
     def requested_effects(self) -> tuple[str, ...]:
@@ -131,18 +140,15 @@ class EffectAuthority:
 
     @property
     def admitted_intents(self) -> tuple[EffectIntent, ...]:
-        return tuple(
-            item.candidate
-            for item in self.decisions
-            if item.authorized or item.candidate.polarity == "prohibited"
-        )
+        authorized = tuple(item.candidate for item in self.decisions if item.authorized)
+        return (*authorized, *self.constraint_intents)
 
     @property
     def has_conditional_candidate(self) -> bool:
         return any(
             item.candidate.conditional or item.candidate.condition is not None
             for item in self.decisions
-        )
+        ) or any(item.conditional for item in self.constraints)
 
 
 def admit_effect_authority(
@@ -157,8 +163,11 @@ def admit_effect_authority(
         raise TypeError("candidatos de efeito invalidos")
     from agent.planning.task_semantics_inference import infer_effect_semantics
 
-    candidates = infer_effect_semantics(objective)
-    proofs = () if candidates.proposal_only else build_positive_authority_proofs(objective)
+    if candidates is None:
+        candidates = infer_effect_semantics(objective)
+    grammar = parse_objective_authority(objective)
+    proofs = () if candidates.proposal_only else grammar.positive_proofs
+    constraints = grammar.constraints
     unmatched_proofs = list(proofs)
     initial: list[EffectAuthorityDecision] = []
     for candidate in candidates.intents:
@@ -167,7 +176,7 @@ def admit_effect_authority(
                 EffectAuthorityDecision(
                     candidate,
                     AuthorityDecision.NOT_AUTHORIZED,
-                    "explicit constraint is a deny signal, never a grant",
+                    "advisory constraint is not a canonical authority fact",
                 )
             )
             continue
@@ -203,10 +212,21 @@ def admit_effect_authority(
         )
     return EffectAuthority(
         objective,
-        reject_conflicts(tuple(initial)),
+        apply_constraint_dominance(tuple(initial), constraints),
         proposal_only=candidates.proposal_only,
+        constraints=constraints,
         _factory_token=_AUTHORITY_FACTORY_TOKEN,
     )
+
+
+def authority_for_objective(
+    objective: str, authority: EffectAuthority | None
+) -> EffectAuthority:
+    if authority is None:
+        return admit_effect_authority(objective)
+    if not isinstance(authority, EffectAuthority) or authority.objective != objective:
+        raise TaskSemanticsError("autoridade de efeito nao corresponde ao objetivo")
+    return authority
 
 
 __all__ = [
@@ -215,5 +235,6 @@ __all__ = [
     "EffectAuthority",
     "EffectAuthorityDecision",
     "PositiveAuthorityProof",
+    "authority_for_objective",
     "admit_effect_authority",
 ]

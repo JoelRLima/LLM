@@ -207,6 +207,15 @@ class _ProofSpec:
     predicate: _Predicate | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _ConstraintSpec:
+    effect: str
+    target: str
+    production_id: str
+    target_role: str
+    predicate: _Predicate | None = None
+
+
 def _proof_integrity_seal(proof: PositiveAuthorityProof) -> str:
     material = repr(
         (
@@ -231,4 +240,7 @@ def _proof_integrity_seal(proof: PositiveAuthorityProof) -> str:
     return hmac.new(_PROOF_SEAL_KEY, material, hashlib.sha256).hexdigest()
 
 
-__all__ = ["AuthorizedEffect", "PositiveAuthorityProof"]
+__all__ = [
+    "AuthorizedEffect",
+    "PositiveAuthorityProof",
+]

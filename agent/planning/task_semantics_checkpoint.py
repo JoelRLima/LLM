@@ -114,6 +114,7 @@ def restore_from_checkpoint(cls: Any, data: Mapping[str, Any]) -> Any:
     effect_authority, effect_intents, candidate_intents = restore_effect_authority(
         objective,
         requested,
+        prohibited,
         effect_intents,
         data.get("effect_authority"),
     )

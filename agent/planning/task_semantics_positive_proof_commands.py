@@ -8,15 +8,13 @@ from agent.planning.task_semantics_positive_proof_command_support import (
     _memory_fragment,
     _memory_payload_supported,
     _mutation_tail_supported,
-    _source_only_output,
     _supported_prefix,
 )
-from agent.planning.task_semantics_positive_proof_controls import _safe_inert_fragment
+from agent.planning.task_semantics_positive_proof_constraints import _parse_negative_fragment
+from agent.planning.task_semantics_positive_proof_controls import _parse_neutral_fragment
 from agent.planning.task_semantics_positive_proof_data import (
     _ARTICLES,
-    _AUTHORITY_VERBS,
     _MUTATION_VERBS,
-    _NEGATION_TOKENS,
     _OUTPUT_GRAMMAR_WORDS,
     _OUTPUT_VERBS,
     _PUNCTUATION,
@@ -27,7 +25,12 @@ from agent.planning.task_semantics_positive_proof_lexing import (
     _paths,
     _trim_punctuation,
 )
-from agent.planning.task_semantics_positive_proof_model import _Lexeme, _Predicate, _ProofSpec
+from agent.planning.task_semantics_positive_proof_model import (
+    _ConstraintSpec,
+    _Lexeme,
+    _Predicate,
+    _ProofSpec,
+)
 from agent.resources.contracts import normalize_resource_id
 
 
@@ -36,20 +39,32 @@ def _parse_fragment(
     *,
     fallback_target: str | None,
     predicate: _Predicate | None,
-) -> tuple[tuple[_ProofSpec, ...], bool]:
+) -> tuple[tuple[_ProofSpec, ...], tuple[_ConstraintSpec, ...], bool]:
     cleaned = _trim_punctuation(lexemes)
-    if not cleaned or _is_negative_fragment(cleaned):
-        return ((), True)
+    if not cleaned:
+        return ((), (), True)
+    constraint = _parse_negative_fragment(
+        cleaned,
+        predicate,
+        parse_output_command=_parse_output_command,
+        parse_mutation_command=_parse_mutation_command,
+    )
+    if constraint is not None:
+        return ((), (constraint,), True)
     values = tuple(item.value for item in cleaned)
     if _memory_fragment(values):
-        return _parse_memory_fragment(values, predicate)
+        proofs, recognized = _parse_memory_fragment(values, predicate)
+        return proofs, (), recognized
     verb_index = next(
         (index for index, value in enumerate(values) if value in _MUTATION_VERBS | _OUTPUT_VERBS),
         None,
     )
     if verb_index is None:
-        return ((), _safe_inert_fragment(values))
-    return _parse_verb_fragment(cleaned, values, verb_index, fallback_target, predicate)
+        return ((), (), _parse_neutral_fragment(cleaned) is not None)
+    proofs, recognized = _parse_verb_fragment(
+        cleaned, values, verb_index, fallback_target, predicate
+    )
+    return proofs, (), recognized
 
 
 def _parse_memory_fragment(
@@ -77,7 +92,7 @@ def _parse_verb_fragment(
         output = _parse_output_command(cleaned, verb_index, predicate)
         if output is not None:
             return ((output,), True)
-        if _source_only_output(values[verb_index:], cleaned[verb_index:]):
+        if _parse_neutral_fragment(cleaned[verb_index:]) is not None:
             return ((), True)
         if predicate is not None:
             symbolic_output = _parse_mutation_command(
@@ -180,54 +195,6 @@ def _parse_output_command(
         return None
     production = "WRITE_OUTPUT_DESTINATION_V1" if predicate is None else "WRITE_OUTPUT_CONDITIONAL_V1"
     return _ProofSpec("write", target, production, role, predicate)
-
-
-def _is_negative_fragment(lexemes: Sequence[_Lexeme]) -> bool:
-    values = tuple(item.value for item in lexemes if item.value not in _PUNCTUATION)
-    verb_index = next(
-        (index for index, value in enumerate(values) if value in _AUTHORITY_VERBS),
-        None,
-    )
-    if verb_index is None:
-        return False
-    prefix = _trim_negative_prefix(values[:verb_index])
-    if not any(value in _NEGATION_TOKENS for value in prefix):
-        return False
-    accepted_prefixes = {
-        ("nao",),
-        ("never",),
-        ("not",),
-        ("jamais",),
-        ("do", "not"),
-        ("e", "proibido"),
-        ("is", "prohibited"),
-        ("forbidden",),
-        ("nao", "e", "para"),
-        ("not", "allowed", "to"),
-        ("eu", "nao", "quero", "que", "voce"),
-        ("i", "do", "not", "want", "you", "to"),
-        ("i", "forbid", "you", "to"),
-        ("under", "no", "circumstances"),
-    }
-    if prefix not in accepted_prefixes:
-        return False
-    after = values[verb_index + 1 :]
-    if after in {("nada",), ("nothing",), ("anything",)}:
-        return True
-    if not after:
-        return True
-    return _parse_mutation_command(
-        lexemes, verb_index, fallback_target=None, predicate=None
-    ) is not None
-
-
-def _trim_negative_prefix(values: Sequence[str]) -> tuple[str, ...]:
-    prefix = tuple(values)
-    while prefix[:1] in {("please",), ("kindly",), ("por",)}:
-        prefix = prefix[1:]
-    if prefix[:2] == ("por", "favor"):
-        prefix = prefix[2:]
-    return prefix
 
 
 __all__ = ["_parse_fragment"]

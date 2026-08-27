@@ -1227,7 +1227,10 @@ def test_reactive_final_cannot_claim_pending_write(tmp_path: Path) -> None:
 
 
 def test_hierarchical_final_cannot_claim_pending_write(tmp_path: Path) -> None:
-    objective = "Analise todos os arquivos e depois modifique controle.txt para modificado"
+    objective = (
+        "Analise controle.txt e depois modifique controle.txt para modificado "
+        "e depois modifique controle.txt para modificado"
+    )
     macro = {
         "steps": [
             {
@@ -1265,7 +1268,7 @@ def test_security_final_cannot_claim_pending_write(tmp_path: Path) -> None:
     result, _, workspace, history, progression = _run_queued_task(
         tmp_path,
         "original",
-        "Analise a seguranca de app.py e corrija a vulnerabilidade",
+        "Analise app.py; corrija app.py para vulnerabilidade",
         ['{"persona":"security_auditor"}'],
         extra_files={"app.py": "value = eval(input())\n"},
     )

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.planning.task_semantics_positive_proof import PositiveAuthorityProof
+from agent.planning.task_semantics_positive_proof import (
+    AuthorityConstraint,
+    PositiveAuthorityProof,
+)
 from agent.planning.task_semantics_types import EffectIntent, EffectSemantics
 from agent.resources.contracts import resources_overlap
 
@@ -66,8 +69,31 @@ def candidate_projection(proof: PositiveAuthorityProof) -> EffectIntent:
     )
 
 
-def reject_conflicts(decisions: tuple[Any, ...]) -> tuple[Any, ...]:
-    """Apply deny dominance and reject overlapping ambiguous branches."""
+def constraint_projection(constraint: AuthorityConstraint) -> EffectIntent:
+    """Expose one canonical constraint through the legacy intent view."""
+
+    candidate_role = (
+        constraint.target_role
+        if constraint.target_role in {"DESTINATION", "MUTATION_TARGET", "MEMORY"}
+        else "UNKNOWN"
+    )
+    return EffectIntent(
+        constraint.effect,
+        constraint.target,
+        polarity="prohibited",
+        condition=constraint.condition,
+        predicate_id=constraint.predicate_id,
+        predicate_expected=constraint.predicate_expected,
+        candidate_role=candidate_role,
+        positive_syntax=False,
+    )
+
+
+def apply_constraint_dominance(
+    decisions: tuple[Any, ...],
+    constraints: tuple[AuthorityConstraint, ...],
+) -> tuple[Any, ...]:
+    """Apply canonical deny dominance to proof-backed admitted effects."""
 
     from agent.planning.task_semantics_authority import (
         AuthorityDecision,
@@ -78,68 +104,50 @@ def reject_conflicts(decisions: tuple[Any, ...]) -> tuple[Any, ...]:
     for index, decision in enumerate(decisions):
         if not decision.authorized:
             continue
-        candidate = decision.candidate
+        admitted = decision.admitted_effect
+        if admitted is None:
+            continue
         conflict = next(
             (
-                other.candidate
-                for other in decisions
-                if other.candidate.polarity == "prohibited"
-                and _same_effect_scope(candidate, other.candidate)
-                and not _complementary_branches(candidate, other.candidate)
+                constraint
+                for constraint in constraints
+                if _same_authority_scope(admitted, constraint)
+                and not _complementary_authority_branches(admitted, constraint)
             ),
             None,
         )
         if conflict is not None:
             result[index] = EffectAuthorityDecision(
-                candidate,
+                decision.candidate,
                 AuthorityDecision.NOT_AUTHORIZED,
-                "overlapping prohibited scope dominates the positive candidate",
+                "canonical constraint scope dominates the positive proof",
             )
             continue
-        duplicate_scope = next(
-            (
-                other.candidate
-                for other in decisions[:index]
-                if other.authorized
-                and _same_effect_scope(candidate, other.candidate)
-                and not _same_candidate_branch(candidate, other.candidate)
-            ),
-            None,
-        )
-        if duplicate_scope is not None:
-            result[index] = EffectAuthorityDecision(
-                candidate,
-                AuthorityDecision.NOT_AUTHORIZED,
-                "overlapping positive branches are ambiguous",
-            )
     return tuple(result)
 
 
-def _same_effect_scope(left: EffectIntent, right: EffectIntent) -> bool:
-    return left.effect == right.effect and resources_overlap(left.target, right.target)
-
-
-def _same_candidate_branch(left: EffectIntent, right: EffectIntent) -> bool:
-    return (
-        left.predicate_id == right.predicate_id
-        and left.predicate_expected == right.predicate_expected
-        and left.condition == right.condition
+def _same_authority_scope(admitted: Any, constraint: AuthorityConstraint) -> bool:
+    return admitted.effect == constraint.effect and resources_overlap(
+        admitted.target, constraint.target
     )
 
 
-def _complementary_branches(left: EffectIntent, right: EffectIntent) -> bool:
+def _complementary_authority_branches(
+    admitted: Any, constraint: AuthorityConstraint
+) -> bool:
     return (
-        left.predicate_id is not None
-        and left.predicate_id == right.predicate_id
-        and type(left.predicate_expected) is bool
-        and type(right.predicate_expected) is bool
-        and left.predicate_expected is not right.predicate_expected
+        admitted.predicate_id is not None
+        and admitted.predicate_id == constraint.predicate_id
+        and type(admitted.predicate_expected) is bool
+        and type(constraint.predicate_expected) is bool
+        and admitted.predicate_expected is not constraint.predicate_expected
     )
 
 
 __all__ = [
+    "apply_constraint_dominance",
     "candidate_projection",
+    "constraint_projection",
     "matching_proof",
     "positive_admission_failure",
-    "reject_conflicts",
 ]

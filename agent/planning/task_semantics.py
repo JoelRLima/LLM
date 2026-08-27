@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence, cast
 
 from agent.planning.task_semantics_admission_api import TaskSemanticsAdmissionMixin
 from agent.planning.task_semantics_authority import (
+    AuthorityConstraint,
     AuthorityDecision,
     AuthorizedEffect,
     EffectAuthority,
@@ -164,7 +165,7 @@ class TaskSemantics(TaskSemanticsProjectionMixin, TaskSemanticsAdmissionMixin):
                 admitted_prohibited,
                 effect_intents=admitted_intents,
             ),
-            inferred_obligations(objective, admitted_effects),
+            inferred_obligations(objective, admitted_effects, authority=authority),
             effect_authority=authority,
             candidate_effect_intents=candidates.intents,
             _strict_evidence=True,
@@ -512,9 +513,8 @@ class TaskSemantics(TaskSemanticsProjectionMixin, TaskSemanticsAdmissionMixin):
         )
 
 __all__ = (
-    "AuthorityDecision",
-    "AuthorizedEffect",
-    "EffectAuthority",
+    "AuthorityDecision", "AuthorityConstraint",
+    "AuthorizedEffect", "EffectAuthority",
     "EffectAuthorityDecision",
     "EffectSemantics",
     "admit_effect_authority",

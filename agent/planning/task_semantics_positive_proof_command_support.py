@@ -5,20 +5,16 @@ from __future__ import annotations
 from typing import Sequence
 
 from agent.planning.task_semantics_positive_proof_data import (
-    _DESTINATION_RELATIONS,
     _DIRECT_REQUEST_PREFIXES,
     _MEMORY_CONTEXT_VERBS,
     _MEMORY_DIRECT_VERBS,
-    _OUTPUT_GRAMMAR_WORDS,
     _PUNCTUATION,
     _QUOTE_PAIRS,
     _VALIDATION_TAILS,
 )
 from agent.planning.task_semantics_positive_proof_lexing import (
     _bounded_symbol,
-    _path_value,
 )
-from agent.planning.task_semantics_positive_proof_model import _Lexeme
 
 
 def _memory_fragment(values: Sequence[str]) -> bool:
@@ -123,22 +119,6 @@ def _strip_bounded_literal_quotes(values: Sequence[str]) -> tuple[str, ...]:
     return candidate
 
 
-def _source_only_output(values: Sequence[str], lexemes: Sequence[_Lexeme]) -> bool:
-    paths = tuple(
-        item for item in lexemes if _path_value(item.raw)
-    )
-    if not paths:
-        return False
-    non_paths = tuple(
-        value
-        for value in values[1:]
-        if value not in _PUNCTUATION and not _path_value(value)
-    )
-    return all(value in _OUTPUT_GRAMMAR_WORDS for value in non_paths) and not any(
-        value in _DESTINATION_RELATIONS for value in non_paths
-    )
-
-
 def _supported_prefix(values: Sequence[str]) -> bool:
     prefix = tuple(value for value in values if value not in _PUNCTUATION)
     return prefix in _DIRECT_REQUEST_PREFIXES
@@ -148,6 +128,5 @@ __all__ = [
     "_memory_fragment",
     "_memory_payload_supported",
     "_mutation_tail_supported",
-    "_source_only_output",
     "_supported_prefix",
 ]

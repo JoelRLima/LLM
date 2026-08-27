@@ -7,23 +7,27 @@ from typing import Sequence
 
 from agent.planning.task_semantics_normalization import _normalize_text
 from agent.planning.task_semantics_positive_proof_commands import (
-    _is_negative_fragment,
     _parse_fragment,
 )
-from agent.planning.task_semantics_positive_proof_controls import _safe_read_prefix_target
+from agent.planning.task_semantics_positive_proof_controls import _parse_neutral_fragment
 from agent.planning.task_semantics_positive_proof_data import _PUNCTUATION
 from agent.planning.task_semantics_positive_proof_lexing import (
     _bounded_symbol,
     _paths,
     _trim_punctuation,
 )
-from agent.planning.task_semantics_positive_proof_model import _Lexeme, _Predicate, _ProofSpec
+from agent.planning.task_semantics_positive_proof_model import (
+    _ConstraintSpec,
+    _Lexeme,
+    _Predicate,
+    _ProofSpec,
+)
 from agent.resources.contracts import normalize_resource_id
 
 
 def _parse_conditional(
     lexemes: Sequence[_Lexeme],
-) -> tuple[tuple[_ProofSpec, ...], bool] | None:
+) -> tuple[tuple[_ProofSpec, ...], tuple[_ConstraintSpec, ...], bool] | None:
     values = tuple(item.value for item in lexemes)
     condition_start = next(
         (index for index, value in enumerate(values) if value in {"if", "se"}),
@@ -33,7 +37,7 @@ def _parse_conditional(
         return None
     parsed = _conditional_predicate(lexemes, values, condition_start)
     if parsed is None:
-        return ((), False)
+        return ((), (), False)
     predicate, comma, symbolic = parsed
     semicolon = next(
         (index for index in range(comma + 1, len(values)) if values[index] == ";"),
@@ -45,22 +49,33 @@ def _parse_conditional(
             lexemes[condition_start:comma],
             lexemes[comma + 1 : semicolon],
         )
-    true_specs, true_complete = _parse_fragment(
+    true_specs, true_constraints, true_complete = _parse_fragment(
         lexemes[comma + 1 : semicolon],
         fallback_target=predicate.target,
         predicate=predicate,
     )
     if not true_complete:
-        return ((), False)
-    return _parse_conditional_else(values, lexemes, semicolon, predicate, true_specs)
+        return ((), (), False)
+    return _parse_conditional_else(
+        values,
+        lexemes,
+        semicolon,
+        predicate,
+        true_specs,
+        true_constraints,
+    )
 
 
 def _conditional_predicate(
     lexemes: Sequence[_Lexeme], values: Sequence[str], condition_start: int
 ) -> tuple[_Predicate, int, bool] | None:
     prefix = lexemes[:condition_start]
-    fallback_target = _safe_read_prefix_target(prefix)
-    if prefix and fallback_target is None:
+    neutral = _parse_neutral_fragment(prefix)
+    fallback_target = neutral.target if neutral is not None else None
+    if prefix and (
+        neutral is None
+        or neutral.production_id != "NEUTRAL_FIRST_READ_EXACT_PATH_V1"
+    ):
         return None
     try:
         comma = values.index(",", condition_start + 1)
@@ -96,10 +111,12 @@ def _parse_conditional_else(
     semicolon: int,
     predicate: _Predicate,
     true_specs: Sequence[_ProofSpec],
-) -> tuple[tuple[_ProofSpec, ...], bool]:
+    true_constraints: Sequence[_ConstraintSpec],
+) -> tuple[tuple[_ProofSpec, ...], tuple[_ConstraintSpec, ...], bool]:
     collected_specs = list(true_specs)
+    collected_constraints = list(true_constraints)
     if semicolon == len(values):
-        return (tuple(collected_specs), True)
+        return (tuple(collected_specs), tuple(collected_constraints), True)
     remaining = _trim_punctuation(lexemes[semicolon + 1 :])
     remaining_values = tuple(item.value for item in remaining)
     if remaining_values[:2] == ("caso", "contrario"):
@@ -107,24 +124,23 @@ def _parse_conditional_else(
     elif remaining_values[:1] == ("otherwise",):
         remaining = _trim_punctuation(remaining[1:])
     else:
-        return ((), False)
+        return ((), (), False)
     complement = _Predicate(
         predicate.predicate_id,
         not predicate.expected,
         " ".join(item.value for item in remaining),
         predicate.target,
     )
-    if _is_negative_fragment(remaining):
-        return (tuple(collected_specs), True)
-    false_specs, false_complete = _parse_fragment(
+    false_specs, false_constraints, false_complete = _parse_fragment(
         remaining,
         fallback_target=predicate.target,
         predicate=complement,
     )
     if not false_complete:
-        return ((), False)
+        return ((), (), False)
     collected_specs.extend(false_specs)
-    return (tuple(collected_specs), True)
+    collected_constraints.extend(false_constraints)
+    return (tuple(collected_specs), tuple(collected_constraints), True)
 
 
 def _parse_predicate(

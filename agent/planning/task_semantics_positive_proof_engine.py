@@ -5,6 +5,11 @@ from __future__ import annotations
 import hashlib
 from typing import Sequence
 
+from agent.planning.task_semantics_authority_model import (
+    _AUTHORITY_RESULT_FACTORY_TOKEN,
+    AuthorityConstraint,
+    ObjectiveAuthorityGrammarResult,
+)
 from agent.planning.task_semantics_normalization import _normalize_text
 from agent.planning.task_semantics_positive_proof_commands import _parse_fragment
 from agent.planning.task_semantics_positive_proof_condition import _parse_conditional
@@ -24,6 +29,7 @@ from agent.planning.task_semantics_positive_proof_model import (
     _PROOF_FACTORY_TOKEN,
     AuthorizedEffect,
     PositiveAuthorityProof,
+    _ConstraintSpec,
     _Predicate,
     _ProofSpec,
 )
@@ -41,55 +47,74 @@ def objective_authority_fingerprint(objective: str) -> str:
 
 
 def build_positive_authority_proofs(objective: str) -> tuple[PositiveAuthorityProof, ...]:
-    """Parse ``objective`` with the complete-scope positive grammar."""
+    """Project positive proofs from the complete canonical authority parse."""
+
+    return parse_objective_authority(objective).positive_proofs
+
+
+def parse_objective_authority(objective: str) -> ObjectiveAuthorityGrammarResult:
+    """Parse positive proofs and negative constraints in one bounded pass."""
 
     if not isinstance(objective, str):
         raise TypeError("objective must be textual")
+    fingerprint = objective_authority_fingerprint(objective)
     repaired = _repair_mojibake(objective).strip()
     if not repaired or len(repaired) > _MAX_OBJECTIVE_CHARS:
-        return ()
+        return _authority_result(fingerprint, (), (), False)
     if _contains_quoted_command(repaired):
-        return ()
+        return _authority_result(fingerprint, (), (), False)
     lexemes = _lexemes(repaired)
     if not lexemes:
-        return ()
+        return _authority_result(fingerprint, (), (), False)
     conditional = _parse_conditional(lexemes)
     if conditional is not None:
-        specs, complete = conditional
-        return _materialize_if_complete(repaired, lexemes, specs, complete)
-    return _build_direct_proofs(repaired, lexemes)
-
-
-def _materialize_if_complete(
-    objective: str,
-    lexemes: Sequence,
-    specs: Sequence[_ProofSpec],
-    complete: bool,
-) -> tuple[PositiveAuthorityProof, ...]:
+        specs, constraints, complete = conditional
+    else:
+        specs, constraints, complete = _build_direct_specs(lexemes)
     if not complete:
-        return ()
-    return _materialize_proofs(objective, lexemes, specs)
+        return _authority_result(fingerprint, (), (), False)
+    return _authority_result(
+        fingerprint,
+        _materialize_proofs(repaired, lexemes, specs),
+        _materialize_constraints(repaired, lexemes, constraints),
+        True,
+    )
 
 
-def _build_direct_proofs(
-    objective: str, lexemes: Sequence
-) -> tuple[PositiveAuthorityProof, ...]:
+def _authority_result(
+    fingerprint: str,
+    proofs: tuple[PositiveAuthorityProof, ...],
+    constraints: tuple[AuthorityConstraint, ...],
+    complete: bool,
+) -> ObjectiveAuthorityGrammarResult:
+    return ObjectiveAuthorityGrammarResult(
+        fingerprint,
+        proofs,
+        constraints,
+        complete,
+        _factory_token=_AUTHORITY_RESULT_FACTORY_TOKEN,
+    )
+
+
+def _build_direct_specs(
+    lexemes: Sequence,
+) -> tuple[tuple[_ProofSpec, ...], tuple[_ConstraintSpec, ...], bool]:
     segment_groups = _split_control_segments(lexemes)
     specs: list[_ProofSpec] = []
+    constraints: list[_ConstraintSpec] = []
     complete = True
     for group in segment_groups:
         fallback_target = _single_path(group)
         for fragment in _split_conjoined_commands(group):
-            fragment_specs, recognized = _parse_fragment(
+            fragment_specs, fragment_constraints, recognized = _parse_fragment(
                 fragment,
                 fallback_target=fallback_target,
                 predicate=None,
             )
             specs.extend(fragment_specs)
+            constraints.extend(fragment_constraints)
             complete = complete and recognized
-    if not complete or not specs:
-        return ()
-    return _materialize_proofs(objective, lexemes, specs)
+    return tuple(specs), tuple(constraints), complete
 
 
 def authorized_effect_from_proof(
@@ -156,8 +181,60 @@ def _materialize_proofs(
     return tuple(result)
 
 
+def _materialize_constraints(
+    objective: str,
+    lexemes: Sequence,
+    specs: Sequence[_ConstraintSpec],
+) -> tuple[AuthorityConstraint, ...]:
+    if not specs:
+        return ()
+    start = lexemes[0].start
+    end = lexemes[-1].end
+    clause = objective[start:end].strip()
+    if not clause or len(clause) > _MAX_SCOPE_CHARS:
+        return ()
+    fingerprint = objective_authority_fingerprint(objective)
+    consumed = tuple(item.value for item in lexemes if item.value not in {",", ".", ":", "!", "?"})
+    span = (start, end)
+    result: list[AuthorityConstraint] = []
+    seen: set[tuple[object, ...]] = set()
+    for spec in specs:
+        target = normalize_resource_id(spec.target)
+        predicate: _Predicate | None = spec.predicate
+        identity = (
+            spec.effect,
+            target,
+            spec.production_id,
+            predicate.predicate_id if predicate else None,
+            predicate.expected if predicate else None,
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(
+            AuthorityConstraint(
+                effect=spec.effect,
+                target=target,
+                authority_source="objective_authority_grammar",
+                production_id=spec.production_id,
+                governing_clause=clause,
+                governing_span=span,
+                consumed_spans=(span,),
+                consumed_tokens=consumed,
+                target_role=spec.target_role,
+                objective_fingerprint=fingerprint,
+                predicate_id=predicate.predicate_id if predicate else None,
+                predicate_expected=predicate.expected if predicate else None,
+                condition=predicate.condition if predicate else None,
+                _factory_token=_PROOF_FACTORY_TOKEN,
+            )
+        )
+    return tuple(result)
+
+
 __all__ = [
     "authorized_effect_from_proof",
     "build_positive_authority_proofs",
     "objective_authority_fingerprint",
+    "parse_objective_authority",
 ]

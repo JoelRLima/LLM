@@ -6,7 +6,7 @@ import hashlib
 import re
 from collections.abc import Mapping, Sequence
 
-from agent.planning.task_semantics_authority import admit_effect_authority
+from agent.planning.task_semantics_authority import EffectAuthority, admit_effect_authority, authority_for_objective
 from agent.planning.task_semantics_effect_inference import (
     _READ_VERBS,
     _RESPONSE_VERBS,
@@ -60,14 +60,14 @@ def infer_prohibited_effects(objective: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(item.effect for item in authority.constraint_intents))
 
 
-def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskObligation]:
-    admitted_effects = admit_effect_authority(objective).requested_effects
+def inferred_obligations(objective: str, effects: EffectSemantics, *, authority: EffectAuthority | None = None) -> list[TaskObligation]:
+    authority = authority_for_objective(objective, authority)
+    admitted_effects = authority.requested_effects
     tokens = _tokens(objective)
     paths = _file_targets(objective)
     obligations: list[TaskObligation] = []
-    # A direct content question is already a user-authored read request. It
-    # must not be downgraded to an implicit safety obligation that requires a
-    # separate runtime admission token before the normal read plan can run.
+    # A direct content question is already a user-authored read request; it must not be
+    # downgraded to an implicit safety obligation requiring a separate runtime admission token.
     normalized_objective = _normalize_text(_repair_mojibake(objective))
     has_content_question = bool(
         paths
