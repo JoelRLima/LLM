@@ -6,7 +6,7 @@ import shlex
 from collections.abc import Mapping
 from typing import Any
 
-from agent.capabilities import WRITE_CAPABILITIES, capability_values
+from agent.capabilities import WRITE_CAPABILITIES, Capability, capability_values
 from agent.resources.contracts import (
     WORKSPACE_RESOURCE,
     ResourceAccess,
@@ -19,18 +19,18 @@ CODE_READ_ACTIONS = frozenset({"analyze", "review"})
 CODE_WRITE_ACTIONS = frozenset({"generate", "modify", "repair", "refactor"})
 _MEMORY_WRITE_ACTIONS = frozenset({"set", "delete"})
 _CODE_ACTION_CAPABILITIES = {
-    "analyze": frozenset({"read", "analyze"}),
-    "review": frozenset({"read", "analyze"}),
-    "generate": frozenset({"read", "write"}),
-    "modify": frozenset({"read", "write", "validate"}),
-    "repair": frozenset({"read", "write", "validate"}),
-    "refactor": frozenset({"read", "write", "validate"}),
-    "multitask": frozenset({"read", "write", "validate"}),
+    "analyze": capability_values((Capability.READ, Capability.ANALYZE)),
+    "review": capability_values((Capability.READ, Capability.ANALYZE)),
+    "generate": capability_values((Capability.READ, Capability.WRITE)),
+    "modify": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
+    "repair": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
+    "refactor": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
+    "multitask": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
 }
 _TEMPLATE_CAPABILITIES = {
-    "parallel_analyze": frozenset({"read", "analyze"}),
-    "parallel_review": frozenset({"read", "analyze"}),
-    "analyze_then_modify": frozenset({"read", "write", "validate"}),
+    "parallel_analyze": capability_values((Capability.READ, Capability.ANALYZE)),
+    "parallel_review": capability_values((Capability.READ, Capability.ANALYZE)),
+    "analyze_then_modify": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
 }
 CODE_TASK_ACTIONS = frozenset(
     {*CODE_READ_ACTIONS, *CODE_WRITE_ACTIONS, "multitask", "template"}

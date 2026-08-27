@@ -7,7 +7,8 @@ from typing import Any
 
 from agent.execution_state import StepStatus
 from agent.planning.failure_policy import FailureClass, classify_failure
-from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES, operational_status_for
+from agent.tools.result_completeness import legacy_result_successful
 
 _TERMINAL_FAILURE_RESULTS = NON_SUCCESS_STATUSES
 
@@ -15,20 +16,13 @@ _TERMINAL_FAILURE_RESULTS = NON_SUCCESS_STATUSES
 class StateFailureRecoveryMixin:
     @staticmethod
     def _result_is_successful(result: Any) -> bool:
-        if not isinstance(result, Mapping):
-            return False
-        status = str(result.get("status") or "")
-        if status in _TERMINAL_FAILURE_RESULTS:
-            return False
-        return result.get("ok") is True and (
-            status == "succeeded" or result.get("done") is True or result.get("executed") is True
-        )
+        return isinstance(result, Mapping) and legacy_result_successful(result)
 
     @staticmethod
     def _result_is_failure(result: Any) -> bool:
         if not isinstance(result, Mapping):
             return False
-        status = str(result.get("status") or "")
+        status = operational_status_for(result.get("status"))
         return status in _TERMINAL_FAILURE_RESULTS or result.get("ok") is False
 
     @staticmethod

@@ -7,7 +7,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agent.tools.provenance import ArgumentOrigin
-from agent.tools.result_completeness import canonical_completeness
+from agent.tools.result_completeness import (
+    canonical_completeness,
+    canonical_result_successful,
+)
 
 _SYMBOLIC_REFERENCE_PATTERNS = (
     re.compile(r"\$\{[^{}\r\n]*\}"),
@@ -238,9 +241,8 @@ def _result_mapping(raw_result: Any, fallback: Mapping[str, Any]) -> Mapping[str
 
 def _complete_successful_result(result: Mapping[str, Any]) -> bool:
     return (
-        result.get("ok") is True
+        canonical_result_successful(result)
         and result.get("executed") is True
-        and result.get("status") == "succeeded"
         and "data" in result
         and canonical_completeness(result)[0]
     )

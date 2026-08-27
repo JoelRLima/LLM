@@ -7,8 +7,8 @@ from typing import Sequence
 
 from agent.planning.task_semantics_positive_proof_data import (
     _DESTINATION_RELATIONS,
+    _NEUTRAL_SOURCE_ONLY_OUTPUT_VERBS,
     _OUTPUT_GRAMMAR_WORDS,
-    _OUTPUT_VERBS,
     _PUNCTUATION,
     _READ_VERBS,
     _RESPONSE_VERBS,
@@ -95,7 +95,10 @@ def _parse_exact_source(
 def _parse_source_only_output(
     cleaned: Sequence[_Lexeme], values: tuple[str, ...]
 ) -> _NeutralContextSpec | None:
-    if not values or values[0] not in _OUTPUT_VERBS:
+    # A source-only response is deliberately narrower than the durable
+    # output vocabulary. ``save/store/write/create`` without a bounded
+    # destination must remain unknown instead of being admitted as neutral.
+    if not values or values[0] not in _NEUTRAL_SOURCE_ONLY_OUTPUT_VERBS:
         return None
     path_items = tuple(item for item in cleaned[1:] if _path_value(item.raw))
     non_paths = tuple(

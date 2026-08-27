@@ -58,6 +58,13 @@ class StatePlanExecutionMixin:
         if self.current_step_id not in records:
             self.current_step_id = None
 
+    def set_plan_step(self, value: int) -> None:
+        """Record the current plan cursor through the state owner."""
+
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("plan step must be a non-negative integer")
+        self.plan_step = value
+
     def reset_execution(self) -> None:
         self.plan = []
         self.plan_identity = None
@@ -159,7 +166,7 @@ class StatePlanExecutionMixin:
         record.attempts += 1
         record.last_error = ""
         self.current_step_id = step_id
-        self.plan_step = index + 1
+        self.set_plan_step(index + 1)
 
     def mark_step_completed(self, index: int) -> None:
         self._mark_step_terminal(index, StepStatus.COMPLETED)

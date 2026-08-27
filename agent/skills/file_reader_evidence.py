@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent.tools.result_completeness import EvidenceProvenance
+from agent.tools.result_completeness import (
+    EvidenceProvenance,
+    legacy_result_successful,
+)
 
 # The mixin delegates error construction to FileReader's typed facade.
 # The concrete facade provides the dict contract at the public boundary.
@@ -93,7 +96,7 @@ class FileReaderEvidenceMixin:
                 source_identity=source_identity,
                 source_hash=source_hash,
             )
-            if not result.get("ok"):
+            if not legacy_result_successful(result):
                 if start == 1:
                     return result
                 break

@@ -527,6 +527,12 @@ def test_terminal_complete_checkpoint_without_success_evidence_is_blocked() -> N
     checkpoint_state = AgentState()
     checkpoint_state.objective = "tarefa terminal"
     checkpoint_state.terminal_disposition = "complete"
+    checkpoint_state.last_result = {
+        "ok": True,
+        "status": "complete",
+        "executed": True,
+        "data": "legacy result",
+    }
     checkpoint = checkpoint_state.to_checkpoint_dict()
     restored = AgentState()
     executed = []

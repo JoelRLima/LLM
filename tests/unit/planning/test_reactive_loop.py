@@ -99,6 +99,9 @@ class _State:
         self.last_args = args
         self.last_result = result
 
+    def set_plan_step(self, value):
+        self.plan_step = value
+
 
 class _Orchestrator:
     def __init__(self):

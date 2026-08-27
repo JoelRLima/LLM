@@ -1,24 +1,19 @@
 """Persistent progress tracking for hierarchical execution."""
 
-import json
 import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, cast
 
+from agent.execution_state import StepStatus
+from agent.memory.json_persistence import write_json_atomic
 from agent.reporting.task_tracker_rendering import render_markdown, step_to_dict
 from agent.runtime.logging import logger
 
 
-class StepStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+class TrackerTaskStatus(str, Enum):
+    """Progress-document lifecycle, distinct from operational task status."""
 
-
-class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -46,7 +41,7 @@ class TaskTracker:
             normalized = [_step_to_dict(step) for step in (steps or [])]
             now, metadata = _now_iso(), planning_metadata or {}
             self._data = {
-                "objective": objective, "status": TaskStatus.RUNNING.value,
+                "objective": objective, "status": TrackerTaskStatus.RUNNING.value,
                 "progress": {"completed": 0, "total": len(normalized), "percent": 0.0},
                 "metrics": {"steps": len(normalized), "tool_calls": 0, "llm_calls": 0},
                 "planning": {
@@ -134,12 +129,12 @@ class TaskTracker:
         }
 
     def finish_success(self, final_summary: str = "") -> None:
-        self._finish(TaskStatus.COMPLETED, "final_summary", final_summary)
+        self._finish(TrackerTaskStatus.COMPLETED, "final_summary", final_summary)
 
     def finish_failure(self, reason: str = "") -> None:
-        self._finish(TaskStatus.FAILED, "failure_reason", reason)
+        self._finish(TrackerTaskStatus.FAILED, "failure_reason", reason)
 
-    def _finish(self, status: TaskStatus, field: str, value: str) -> None:
+    def _finish(self, status: TrackerTaskStatus, field: str, value: str) -> None:
         try:
             self._data["status"] = status.value
             self._data[field] = value or ""
@@ -161,7 +156,7 @@ class TaskTracker:
 
     def _write_json(self) -> None:
         try:
-            self._atomic_write(self.json_path, json.dumps(self._data, indent=2, ensure_ascii=False, default=str))
+            write_json_atomic(self.json_path, self._data, default=str)
         except Exception as exc:
             logger.warning("TaskTracker: falha ao gravar JSON em '%s': %s", self.json_path, exc)
 

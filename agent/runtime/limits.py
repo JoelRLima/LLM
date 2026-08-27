@@ -69,6 +69,18 @@ def runtime_limit_values(config: Mapping[str, Any] | None = None) -> dict[str, i
         "max_task_tokens": configured(
             "max_task_tokens", int(packaged["max_task_tokens"])
         ),
+        "max_task_wall_seconds": configured(
+            "max_task_wall_seconds", int(packaged["max_task_wall_seconds"])
+        ),
+        "max_repeated_no_progress": configured(
+            "max_repeated_no_progress", int(packaged["max_repeated_no_progress"])
+        ),
+        "max_consecutive_same_error": configured(
+            "max_consecutive_same_error", int(packaged["max_consecutive_same_error"])
+        ),
+        "max_reasoning_turns": configured(
+            "max_reasoning_turns", int(packaged["max_reasoning_turns"])
+        ),
         "max_output_tokens": configured(
             "max_output_tokens",
             int(profile_output or hardware.default_output_tokens),

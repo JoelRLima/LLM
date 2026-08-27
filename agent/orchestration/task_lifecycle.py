@@ -17,6 +17,7 @@ from agent.planning.task_completion import (
 from agent.runtime.logging import logger
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+from agent.tools.result_completeness import canonical_result_successful
 
 
 def _has_observed_task_mutation(state: Any) -> bool:
@@ -59,27 +60,7 @@ class TaskLifecycleMixin:
     def _reset_missing_input_state(self) -> None:
         """Discard stale task evidence before recording a missing-input result."""
 
-        reset_task = getattr(self.orchestrator, "_reset_task_state", None)
-        if callable(reset_task):
-            reset_task("")
-            return
-        state = self.orchestrator.agent_state
-        reset_execution = getattr(state, "reset_execution", None)
-        if callable(reset_execution):
-            reset_execution()
-        reset_progression = getattr(state, "reset_task_progression", None)
-        if callable(reset_progression):
-            reset_progression(())
-        state.objective = None
-        state.last_result = None
-        state.last_tool = None
-        state.last_args = None
-        state.tool_history = []
-        clear_terminal = getattr(state, "clear_terminal_disposition", None)
-        if callable(clear_terminal):
-            clear_terminal()
-        else:
-            state.terminal_disposition = None
+        self.orchestrator._reset_task_state("")
 
     def _resume_terminal_checkpoint(self, objective: str) -> str:
         """Report a terminal checkpoint without reopening a fresh route."""
@@ -90,8 +71,7 @@ class TaskLifecycleMixin:
             result = getattr(self.orchestrator.agent_state, "last_result", None)
             result_is_success = (
                 isinstance(result, Mapping)
-                and result.get("status") == "succeeded"
-                and result.get("ok") is True
+                and canonical_result_successful(result)
             )
             if not review.accepted or not result_is_success:
                 self.orchestrator._preserve_checkpoint = True

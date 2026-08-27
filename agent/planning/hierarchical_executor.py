@@ -15,6 +15,7 @@ from agent.reporting.task_tracker import TaskTracker
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.tools.result_completeness import legacy_result_successful
 
 _STEP_SUMMARY_MAX_CHARS = 3000
 class HierarchicalExecutor:
@@ -257,9 +258,7 @@ class HierarchicalExecutor:
         except Exception as e:
             logger.warning(f"HierarchicalExecutor: falha ao restaurar contexto da sessão: {e}")
     @staticmethod
-    def _determine_step_success(
-        step_results: List[Dict[str, Any]], projection: Any = None
-    ) -> bool:
+    def _determine_step_success(step_results: List[Dict[str, Any]], projection: Any = None) -> bool:
         """Decide se um passo foi bem-sucedido a partir dos resultados coletados.
         Um passo sem nenhum resultado de ferramenta é considerado falho
         (nada foi executado). Caso o último resultado exponha um campo
@@ -267,7 +266,7 @@ class HierarchicalExecutor:
         sucesso (a ferramenta rodou sem lançar exceção).
         """
         if projection is not None and getattr(projection, "result", None) is not None:
-            result_ok = bool(projection.result.get("ok"))
+            result_ok = legacy_result_successful(projection.result, allow_bare_ok=True)
             if getattr(getattr(projection, "outcome", None), "kind", None) is StepOutcomeKind.FINAL:
                 return result_ok
             return result_ok and not projection.decisive
@@ -276,7 +275,7 @@ class HierarchicalExecutor:
         last_entry = step_results[-1]
         result = last_entry.get("result") if isinstance(last_entry, Mapping) else None
         if isinstance(result, Mapping) and "ok" in result:
-            return bool(result.get("ok"))
+            return legacy_result_successful(result, allow_bare_ok=True)
         return True
     @staticmethod
     def _has_failed_execution_record(agent_state: Any) -> bool:

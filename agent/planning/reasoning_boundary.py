@@ -11,7 +11,7 @@ from typing import Any, Callable, cast
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_semantics import TaskSemanticsError
 from agent.runtime.budget import BudgetExhausted
-from agent.runtime.config import DEFAULT_COST_WATCHDOG
+from agent.runtime.limits import runtime_limit_values
 
 _EPHEMERAL_FIELDS = frozenset(
     {"invocation_id", "step_id", "request_id", "timestamp", "created_at", "updated_at", "token_count"}
@@ -145,7 +145,7 @@ def reasoning_progress_fingerprint(history: Sequence[Mapping[str, Any]]) -> str:
 def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:
     state = orchestrator.agent_state
     config = getattr(getattr(orchestrator, "session", None), "config", {}) or {}
-    limit = int(config.get("max_reasoning_turns", DEFAULT_COST_WATCHDOG["max_reasoning_turns"]))
+    limit = runtime_limit_values(config)["max_reasoning_turns"]
     history = state.tool_history
     stored_cursor = int(getattr(state, "reasoning_last_history_count", -1))
     uninitialized_cursor = stored_cursor < 0

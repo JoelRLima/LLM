@@ -43,11 +43,7 @@ class TaskExecutionOwnershipMixin:
         self.agent_state.objective = objective
         self.agent_state.reset_execution()
         self.agent_state.reset_task_progression()
-        self.agent_state.last_result = None
-        self.agent_state.last_tool = None
-        self.agent_state.last_args = None
-        self.agent_state.tool_history = []
-        self.agent_state.events.clear()
+        self.agent_state.reset_runtime_observation(clear_events=True)
         self.context_manager._cached_project_context = None
         self.workspace.restore_points.clear()
         created_files = getattr(self.workspace, "created_files", None)

@@ -1,10 +1,10 @@
 import json
 import os
 from copy import deepcopy
-from importlib import resources
 from typing import Any, Dict
 
 from agent.runtime import paths
+from agent.runtime.config_repository import packaged_config_defaults
 from agent.runtime.config_validation import (
     ConfigValidator,
     validate_limits,
@@ -17,13 +17,7 @@ from agent.runtime.config_validation import (
 def _load_packaged_defaults() -> Dict[str, Any]:
     """Read the one authored default source used by runtime configuration."""
 
-    raw = resources.files("agent.resources").joinpath("default_config.json").read_text(
-        encoding="utf-8"
-    )
-    value = json.loads(raw)
-    if not isinstance(value, dict):
-        raise RuntimeError("Packaged configuration defaults must be an object.")
-    return value
+    return packaged_config_defaults()
 
 
 # Keep the legacy module-level names as projections for callers that still

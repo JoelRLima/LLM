@@ -14,7 +14,10 @@ from agent.runtime.logging import logger
 from agent.tools.contracts import ToolError, ToolInvocationRequest, ToolStatus
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 from agent.tools.result_adapter import ensure_canonical_result
-from agent.tools.result_completeness import EvidenceProvenance
+from agent.tools.result_completeness import (
+    EvidenceProvenance,
+    legacy_result_successful,
+)
 
 
 class ToolExecutor:
@@ -245,7 +248,9 @@ class ToolExecutor:
     def maybe_summarize_and_store(
         self, tool_name: str, args: ToolArgs, result: CanonicalToolResult
     ) -> None:
-        if tool_name not in ("code_analyzer", "file_reader") or not result.get("ok"):
+        if tool_name not in ("code_analyzer", "file_reader") or not legacy_result_successful(
+            result,
+        ):
             return
 
         file_path = args.get("target") or args.get("file_path")
@@ -263,8 +268,6 @@ class ToolExecutor:
         summary = self.summarize_text(str(content), context=f"Arquivo: {file_path}")
         memory = self.orchestrator.agent_state.memory
         memory_key = str(file_path)
-        memory.remember(memory_key, summary, section="file_summaries")
-        memory.state["analyzed_files"][memory_key] = summary[:150]
         # The cached value is the output of a summarizer, never the source
         # bytes.  Preserve freshness separately so a cache hit cannot be
         # mistaken for exact source evidence.
@@ -277,11 +280,10 @@ class ToolExecutor:
             with self._resolve_user_path(file_path).open("r", encoding="utf-8") as handle:
                 source_text = handle.read()
                 file_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
-            memory.state.setdefault("file_hashes", {})[memory_key] = file_hash
             cache_entry.update(
                 source_identity=memory_key,
                 source_hash=file_hash,
             )
         except (OSError, ValueError):
             pass
-        memory.state.setdefault("file_cache_entries", {})[memory_key] = cache_entry
+        memory.store_file_observation(memory_key, summary, cache_entry)

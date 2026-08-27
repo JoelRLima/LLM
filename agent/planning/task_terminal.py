@@ -112,7 +112,11 @@ def mark_terminal_failure(orchestrator: Any) -> None:
     if existing not in (None, CompletionDisposition.COMPLETE.value):
         return
     result = getattr(state, "last_result", None)
-    status = str(result.get("status") or "") if isinstance(result, Mapping) else ""
+    status = (
+        operational_status_for(result.get("status"))
+        if isinstance(result, Mapping)
+        else None
+    )
     if status == OperationalStatus.BLOCKED.value:
         _set_terminal(state, CompletionDisposition.BLOCK.value)
     elif status == OperationalStatus.PERMISSION_DENIED.value:

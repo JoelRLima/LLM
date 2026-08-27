@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from agent.code.intelligence import CodeIntelligenceService
-from agent.tools.result_completeness import EvidenceProvenance
+from agent.tools.result_completeness import (
+    EvidenceProvenance,
+    legacy_result_successful,
+)
 
 from .base import BaseSkill
 from .python_security_analysis import analyze_security_file
@@ -143,7 +146,7 @@ class CodeAnalyzerSkill(BaseSkill):
         for file_path in self._python_files(dir_path):
             relative = str(file_path.relative_to(self.base_dir))
             result = self._analyze_file(file_path, include_code, compact)
-            if result.get("ok") is not True:
+            if not legacy_result_successful(result):
                 continue
             project_map[relative] = result["data"]
             if not compact:

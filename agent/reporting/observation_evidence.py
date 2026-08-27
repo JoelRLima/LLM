@@ -21,6 +21,7 @@ from agent.tools.result_completeness import (
     EvidenceProvenance,
     canonical_completeness,
     canonical_evidence_provenance,
+    canonical_result_successful,
     has_explicit_evidence_provenance,
 )
 
@@ -44,7 +45,7 @@ def result_status(result: Mapping[str, Any]) -> str:
 def result_is_successful(result: Mapping[str, Any]) -> bool:
     """Whether the recorded result is a canonical successful observation."""
 
-    return result_status(result) == "succeeded" and result.get("ok") is True
+    return canonical_result_successful(result)
 
 
 def result_is_failed(result: Mapping[str, Any]) -> bool:

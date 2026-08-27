@@ -6,17 +6,16 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent.planning.result_binding_types import ResultBindingError
-from agent.tools.result_completeness import canonical_completeness
+from agent.tools.result_completeness import (
+    canonical_completeness,
+    canonical_result_successful,
+)
 
 
 def result_is_bindable(result: Mapping[str, Any]) -> bool:
     """Return whether a result is complete enough to become causal data."""
 
-    if (
-        result.get("ok") is not True
-        or result.get("executed") is not True
-        or result.get("status") != "succeeded"
-    ):
+    if not canonical_result_successful(result) or result.get("executed") is not True:
         return False
     return "data" in result and canonical_completeness(result)[0]
 

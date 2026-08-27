@@ -18,6 +18,7 @@ from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.runtime.outcome_taxonomy import OperationalStatus, operational_status_for
 from agent.tools.contracts import ToolResult
 from agent.tools.invocation_semantics import resolve_invocation_semantics
+from agent.tools.result_completeness import legacy_result_successful
 
 _MARKER_PREFIXES = (
     "code_analyzer_",
@@ -44,10 +45,13 @@ def _can_have_legacy_mutated(result: Any) -> bool:
         OperationalStatus.PERMISSION_DENIED.value,
     }:
         return False
-    return result.get("ok") is True or status in {
-        OperationalStatus.SUCCEEDED.value,
-        OperationalStatus.UNVERIFIED.value,
-    }
+    return (
+        legacy_result_successful(
+            result,
+            allow_bare_ok=True,
+        )
+        or status == OperationalStatus.UNVERIFIED.value
+    )
 
 
 def mutation_footprint(
@@ -119,15 +123,12 @@ def _clear_markers(usage: Dict[str, int], affected: tuple[str, ...]) -> None:
 
 
 def _clear_summaries(memory: Any, state: dict[str, Any], affected: tuple[str, ...]) -> None:
-    summaries = state.get("file_summaries")
-    keys = _matching_keys(summaries, affected)
-    forget = getattr(memory, "forget", None)
-    if callable(forget):
-        for key in keys:
-            forget(key, section="file_summaries")
-    elif isinstance(summaries, dict):
-        for key in keys:
-            summaries.pop(key, None)
+    keys: set[str] = set()
+    for name in ("file_summaries", "file_hashes", "file_cache_entries", "analyzed_files"):
+        keys.update(_matching_keys(state.get(name), affected))
+
+    for key in sorted(keys):
+        memory.invalidate_file_observation(key)
 
 
 def clear_observation_state(
@@ -143,12 +144,6 @@ def clear_observation_state(
         return
 
     _clear_summaries(memory, state, affected)
-
-    for name in ("file_hashes", "file_cache_entries", "analyzed_files"):
-        values = state.get(name)
-        if isinstance(values, dict):
-            for key in _matching_keys(values, affected):
-                values.pop(key, None)
 
 
 __all__ = ["clear_observation_state", "mutation_footprint"]

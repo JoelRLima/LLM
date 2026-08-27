@@ -10,6 +10,7 @@ from agent.runtime.outcome_taxonomy import (
     HARD_FAILURE_CODES,
     HARD_FAILURE_STATUSES,
     LOCAL_FAILURE_STATUSES,
+    operational_status_for,
 )
 
 
@@ -24,7 +25,7 @@ def classify_failure(result: Any) -> FailureClass:
 
     if not isinstance(result, Mapping):
         return FailureClass.NONE
-    status = str(result.get("status") or "")
+    status = operational_status_for(result.get("status"))
     code = str(result.get("error_code") or "")
     if status in HARD_FAILURE_STATUSES or code in HARD_FAILURE_CODES:
         return FailureClass.HARD

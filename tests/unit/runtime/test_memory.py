@@ -186,6 +186,20 @@ def test_tool_executor_summary_survives_memory_restart(tmp_path, monkeypatch):
     assert reloaded.state["file_summaries"]["sample.py"] == "resumo durável"
 
 
+def test_file_observation_without_source_hash_clears_old_freshness_claim(tmp_path):
+    memory = AgentMemory(
+        db_path=tmp_path / "agent_memory.db",
+        default_file=tmp_path / "agent_memory.json",
+        backup_dir=tmp_path / "backups",
+    )
+    memory.state["file_hashes"]["sample.py"] = "old-hash"
+
+    memory.store_file_observation("sample.py", "new summary", {"data": "new summary"})
+
+    assert "sample.py" not in memory.state["file_hashes"]
+    assert memory.state["file_cache_entries"]["sample.py"] == {"data": "new summary"}
+
+
 def test_memory_clear_rolls_back_and_preserves_state_on_sqlite_failure(tmp_path):
     database = tmp_path / "agent_memory.db"
     memory = AgentMemory(

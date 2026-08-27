@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from enum import Enum
 from threading import BoundedSemaphore
 from typing import Any, Dict, Mapping, Optional, Protocol
 from uuid import uuid4
@@ -16,6 +15,7 @@ from agent.runtime.budget import (
     estimate_model_request_allowance,
 )
 from agent.runtime.limits import default_runtime_limit, runtime_limit_values
+from agent.runtime.outcome_taxonomy import OperationalStatus
 
 
 class EventSink(Protocol):
@@ -69,6 +69,10 @@ class RuntimeLimits:
     max_model_calls: int = field(default_factory=lambda: default_runtime_limit("max_model_calls"))
     max_task_tool_calls: int = field(default_factory=lambda: default_runtime_limit("max_task_tool_calls"))
     max_task_tokens: int = field(default_factory=lambda: default_runtime_limit("max_task_tokens"))
+    max_task_wall_seconds: int = field(default_factory=lambda: default_runtime_limit("max_task_wall_seconds"))
+    max_repeated_no_progress: int = field(default_factory=lambda: default_runtime_limit("max_repeated_no_progress"))
+    max_consecutive_same_error: int = field(default_factory=lambda: default_runtime_limit("max_consecutive_same_error"))
+    max_reasoning_turns: int = field(default_factory=lambda: default_runtime_limit("max_reasoning_turns"))
     max_output_tokens: int = field(default_factory=lambda: default_runtime_limit("max_output_tokens"))
     max_repair_attempts: int = field(default_factory=lambda: default_runtime_limit("max_repair_attempts"))
 
@@ -223,12 +227,10 @@ class TaskExecutionContext:
         return gate
 
 
-class TaskStatus(str, Enum):
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    UNVERIFIED = "unverified"
-    BLOCKED = "blocked"
+# Compatibility name retained for callers that describe a task result. The
+# runtime has one terminal-status owner; graph, step, validation, and tracker
+# states remain separate subdomain state machines.
+TaskStatus = OperationalStatus
 
 
 @dataclass(frozen=True)

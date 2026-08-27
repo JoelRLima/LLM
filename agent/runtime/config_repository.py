@@ -19,6 +19,28 @@ from agent.runtime.config_schema import SCHEMA_VERSION, validate_config_document
 from agent.runtime.paths import AppPaths
 
 
+def packaged_config_defaults(
+    resource_package: str = "agent.resources",
+    resource_name: str = "default_config.json",
+) -> dict[str, Any]:
+    """Load the authored, validated packaged configuration defaults once."""
+
+    try:
+        resource = resources.files(resource_package).joinpath(resource_name)
+        raw = json.loads(resource.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ModuleNotFoundError, json.JSONDecodeError) as exc:
+        raise ConfigError("Recurso de configuração default indisponível.") from exc
+    if not isinstance(raw, dict):
+        raise ConfigError("Recurso de configuração default deve ser um objeto.")
+    defaults = deepcopy(raw)
+    validate_config_document(
+        defaults,
+        require_version=True,
+        require_complete=True,
+    )
+    return defaults
+
+
 @dataclass(frozen=True)
 class ResolvedConfig:
     """Validated configuration, still carrying its explicit schema version."""
@@ -178,22 +200,7 @@ class ConfigRepository:
             task_report.pop("output_dir", None)
 
     def _defaults(self) -> dict[str, Any]:
-        try:
-            resource = resources.files(self.resource_package).joinpath(
-                self.resource_name
-            )
-            raw = json.loads(resource.read_text(encoding="utf-8"))
-        except (FileNotFoundError, ModuleNotFoundError, json.JSONDecodeError) as exc:
-            raise ConfigError("Recurso de configuração default indisponível.") from exc
-        if not isinstance(raw, dict):
-            raise ConfigError("Recurso de configuração default deve ser um objeto.")
-        defaults: dict[str, Any] = deepcopy(raw)
-        validate_config_document(
-            defaults,
-            require_version=True,
-            require_complete=True,
-        )
-        return defaults
+        return packaged_config_defaults(self.resource_package, self.resource_name)
 
     @classmethod
     def _merge(
@@ -278,4 +285,5 @@ __all__ = [
     "ConfigVersionError",
     "ResolvedConfig",
     "SCHEMA_VERSION",
+    "packaged_config_defaults",
 ]

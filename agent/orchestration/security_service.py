@@ -8,7 +8,9 @@ from agent.orchestration.route_result import RouteResult
 from agent.planning.task_completion import allow_linear_completion
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.runtime.outcome_taxonomy import operational_status_for
 from agent.security.security_scanner import consolidate
+from agent.tools.result_completeness import canonical_result_successful
 
 _ROUTE = "security"
 
@@ -52,7 +54,7 @@ class SecurityAnalysisService:
                 reason_code="SECURITY_ANALYZER_FAILED",
                 detail=f"{type(exc).__name__}: {exc}",
             )
-        if result.get("ok") is not True or str(result.get("status") or "").casefold() != "succeeded":
+        if not canonical_result_successful(result):
             return self._analyzer_fallback(objective, result=result)
 
         findings = consolidate(result.get("data") or {})
@@ -107,7 +109,8 @@ class SecurityAnalysisService:
         else:
             status = getattr(result, "status", None)
         status = getattr(status, "value", status)
-        return bool(status and str(status).casefold() != "succeeded")
+        normalized = operational_status_for(status)
+        return bool(status and normalized != "succeeded")
 
     def _target_file(self, objective: str) -> str | None:
         hints = self.orchestrator.context_manager.get_file_hints(objective)

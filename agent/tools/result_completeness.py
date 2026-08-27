@@ -6,6 +6,12 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
+from agent.runtime.outcome_taxonomy import (
+    NON_SUCCESS_STATUSES,
+    OperationalStatus,
+    operational_status_for,
+)
+
 
 class EvidenceProvenance(str, Enum):
     """Canonical provenance of the value represented by a tool result.
@@ -151,6 +157,46 @@ def is_legacy_complete_result(result: Mapping[str, Any]) -> bool:
     )
 
 
+def canonical_result_successful(
+    result: Mapping[str, Any],
+) -> bool:
+    """Return whether a result has the exact canonical successful status."""
+
+    if not isinstance(result, Mapping) or result.get("ok") is not True:
+        return False
+    status = result.get("status")
+    raw_status = getattr(status, "value", status)
+    return raw_status == OperationalStatus.SUCCEEDED.value
+
+
+def legacy_result_successful(
+    result: Mapping[str, Any], *, allow_bare_ok: bool = False
+) -> bool:
+    """Adapt historical result statuses at an explicit compatibility edge.
+
+    This adapter is limited to progress/recovery projections. Its output is not
+    canonical causal evidence unless a strict consumer revalidates the adapted
+    result.
+    """
+
+    if not isinstance(result, Mapping) or result.get("ok") is not True:
+        return False
+    status = result.get("status")
+    normalized = operational_status_for(status)
+    if normalized in NON_SUCCESS_STATUSES:
+        return False
+    if normalized == OperationalStatus.SUCCEEDED.value:
+        return True
+    return bool(
+        status in (None, "")
+        and (
+            allow_bare_ok
+            or result.get("done") is True
+            or result.get("executed") is True
+        )
+    )
+
+
 def exact_source_covers_whole_result(result: Mapping[str, Any]) -> bool:
     """Whether result data can prove an exact whole-source observation."""
 
@@ -206,6 +252,8 @@ __all__ = [
     "EvidenceProvenance",
     "canonical_completeness",
     "canonical_evidence_provenance",
+    "canonical_result_successful",
+    "legacy_result_successful",
     "exact_source_covers_whole_result",
     "has_explicit_evidence_provenance",
     "is_legacy_complete_result",

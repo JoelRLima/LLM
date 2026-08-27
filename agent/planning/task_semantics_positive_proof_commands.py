@@ -14,6 +14,7 @@ from agent.planning.task_semantics_positive_proof_constraints import _parse_nega
 from agent.planning.task_semantics_positive_proof_controls import _parse_neutral_fragment
 from agent.planning.task_semantics_positive_proof_data import (
     _ARTICLES,
+    _DESTINATION_RELATIONS,
     _MUTATION_VERBS,
     _OUTPUT_GRAMMAR_WORDS,
     _OUTPUT_VERBS,
@@ -173,9 +174,19 @@ def _parse_output_command(
     ]
     target: str | None = None
     role = "DESTINATION"
-    for index, path in reversed(paths):
-        preceding = set(values[verb_index + 1 : index])
-        if preceding & {"em", "in", "into", "na", "no", "to"}:
+    source_relations = {"de", "from"}
+    destination_relations = _DESTINATION_RELATIONS
+    for index, path in paths:
+        preceding = values[verb_index + 1 : index]
+        nearest_relation = next(
+            (
+                value
+                for value in reversed(preceding)
+                if value in destination_relations or value in source_relations
+            ),
+            None,
+        )
+        if nearest_relation in destination_relations:
             target = path
             break
     if target is None and paths:

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from agent.cancellation import CancellationToken
+from agent.capabilities import Capability, capability_values
 from agent.code.graph_result_projection import project_graph_result
 from agent.code.multitask import MultitaskCodingService
 from agent.code.policy import ChangeApprover, change_policy_from_config
@@ -62,7 +63,15 @@ def build_code_context(
         cancellation=CancellationToken(),
         limits=limits,
         metrics_sink=metrics_sink or NullMetricsSink(),
-        permissions=frozenset({"read", "write", "process", "validate", "analyze"}),
+        permissions=capability_values(
+            (
+                Capability.READ,
+                Capability.WRITE,
+                Capability.PROCESS,
+                Capability.VALIDATE,
+                Capability.ANALYZE,
+            )
+        ),
         metadata={
             "model": getattr(
                 model_gateway,

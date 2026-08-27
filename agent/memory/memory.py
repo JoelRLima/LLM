@@ -1,5 +1,6 @@
 import json
 import sqlite3 as sqlite3
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -128,6 +129,64 @@ class AgentMemory(SqliteMemoryStoreMixin):
             self.state.get("file_summaries", {}).pop(key, None)
         else:
             self.state.pop(key, None)
+
+    def store_file_observation(
+        self,
+        key: str,
+        summary: Any,
+        cache_entry: Mapping[str, Any],
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        """Persist one derived file observation and its freshness metadata.
+
+        File summaries, their short index projection, and the cache/freshness
+        record are one memory-owned observation.  Callers may compute the
+        observation, but they do not write individual state projections.
+        """
+
+        memory_key = str(key)
+        self.remember(
+            memory_key,
+            summary,
+            section="file_summaries",
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )
+        self.state.setdefault("analyzed_files", {})[memory_key] = str(summary)[:150]
+
+        entry = deepcopy(dict(cache_entry))
+        self.state.setdefault("file_cache_entries", {})[memory_key] = entry
+        source_hash = entry.get("source_hash")
+        hashes = self.state.setdefault("file_hashes", {})
+        if isinstance(source_hash, str) and source_hash:
+            hashes[memory_key] = source_hash
+        else:
+            # A refreshed observation without a verified source hash must not
+            # inherit an older freshness claim for the same path.
+            hashes.pop(memory_key, None)
+
+    def invalidate_file_observation(
+        self,
+        key: str,
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        """Remove every derived projection for one changed file."""
+
+        memory_key = str(key)
+        self.forget(
+            memory_key,
+            section="file_summaries",
+            cancellation_token=cancellation_token,
+            cancellation_event=cancellation_event,
+        )
+        for section in ("file_hashes", "file_cache_entries", "analyzed_files"):
+            values = self.state.get(section)
+            if isinstance(values, dict):
+                values.pop(memory_key, None)
 
     def clear(self) -> None:
         self.initialize()

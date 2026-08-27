@@ -22,11 +22,17 @@ import time
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import stringify
-from agent.runtime.config import DEFAULT_COST_WATCHDOG
+from agent.runtime.limits import (
+    default_runtime_limit,
+    runtime_limit_values,
+)
+from agent.tools.result_completeness import legacy_result_successful
 
-DEFAULT_MAX_TASK_WALL_SECONDS = DEFAULT_COST_WATCHDOG["max_task_wall_seconds"]
-DEFAULT_MAX_REPEATED_NO_PROGRESS = DEFAULT_COST_WATCHDOG["max_repeated_no_progress"]
-DEFAULT_MAX_CONSECUTIVE_SAME_ERROR = DEFAULT_COST_WATCHDOG["max_consecutive_same_error"]
+# Compatibility constants for historical imports; the typed runtime-limit
+# owner supplies configured values at each boundary below.
+DEFAULT_MAX_TASK_WALL_SECONDS = default_runtime_limit("max_task_wall_seconds")
+DEFAULT_MAX_REPEATED_NO_PROGRESS = default_runtime_limit("max_repeated_no_progress")
+DEFAULT_MAX_CONSECUTIVE_SAME_ERROR = default_runtime_limit("max_consecutive_same_error")
 
 
 class Watchdog:
@@ -45,7 +51,7 @@ class Watchdog:
     def check_global_timeout(start_time: Optional[float], config: Dict[str, Any]) -> Optional[str]:
         if start_time is None:
             return None
-        max_seconds = config.get("max_task_wall_seconds", DEFAULT_MAX_TASK_WALL_SECONDS)
+        max_seconds = runtime_limit_values(config)["max_task_wall_seconds"]
         elapsed = time.monotonic() - start_time
         if elapsed > max_seconds:
             return f"Timeout global da tarefa atingido ({elapsed:.1f}s > {max_seconds}s)."
@@ -89,7 +95,7 @@ class Watchdog:
         block do PlanExecutor, que só olha tool+file_path, nem pelo
         CostGuard, que só conta volume).
         """
-        max_repeats = config.get("max_repeated_no_progress", DEFAULT_MAX_REPEATED_NO_PROGRESS)
+        max_repeats = runtime_limit_values(config)["max_repeated_no_progress"]
         if len(tool_history) < max_repeats:
             return None
 
@@ -117,7 +123,7 @@ class Watchdog:
         argumentos variem entre tentativas — sinal de que o agente está
         preso tentando a mesma abordagem inválida repetidamente.
         """
-        max_same_error = config.get("max_consecutive_same_error", DEFAULT_MAX_CONSECUTIVE_SAME_ERROR)
+        max_same_error = runtime_limit_values(config)["max_consecutive_same_error"]
         if len(tool_history) < max_same_error:
             return None
 
@@ -125,7 +131,10 @@ class Watchdog:
         errors = []
         for h in recent:
             result = h.get("result") or {}
-            if result.get("ok"):
+            if legacy_result_successful(
+                result,
+                allow_bare_ok=True,
+            ):
                 return None  # houve sucesso recente, não é uma sequência de falhas
             errors.append((result.get("error") or "").strip())
 

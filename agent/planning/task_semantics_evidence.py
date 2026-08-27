@@ -9,6 +9,7 @@ from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_types import _normalize_text
 from agent.tools.result_completeness import (
     canonical_completeness,
+    canonical_result_successful,
     exact_source_covers_whole_result,
 )
 
@@ -178,14 +179,7 @@ def compare_args_match(operands: Sequence[str], args: Mapping[str, Any] | None) 
 
 
 def result_is_successful(result: Mapping[str, Any]) -> bool:
-    if not isinstance(result, Mapping):
-        return False
-    status = result.get("status")
-    if status not in (None, "", "succeeded"):
-        return False
-    return result.get("ok") is True and (
-        status == "succeeded" or result.get("done") is True or result.get("executed") is True
-    )
+    return canonical_result_successful(result)
 
 
 __all__ = (

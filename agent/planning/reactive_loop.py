@@ -29,7 +29,7 @@ class ReactiveLoop:
             if stopped is not None:
                 return stopped
             reactive_step += 1
-            self.orchestrator.agent_state.plan_step = reactive_step
+            self._set_plan_step(reactive_step)
             decision = cast(ModelDecision, self.orchestrator.context_manager.ask_model(
                 self._build_prompt(objective),
                 step_type="tool_decision",
@@ -146,7 +146,7 @@ class ReactiveLoop:
         result = self.orchestrator.execution_gateway.execute_validated_plan(
             [step], objective, usage
         )
-        self.orchestrator.agent_state.plan_step = reactive_step
+        self._set_plan_step(reactive_step)
         if result.aborted:
             answer = result.final_answer or "A tarefa falhou e foi abortada."
             self.orchestrator.fail_task()
@@ -162,3 +162,6 @@ class ReactiveLoop:
         if result.final_answer:
             return self._canonical_answer(str(result.final_answer), objective)
         return None
+
+    def _set_plan_step(self, value: int) -> None:
+        self.orchestrator.agent_state.set_plan_step(value)

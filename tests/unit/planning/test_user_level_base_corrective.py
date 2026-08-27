@@ -626,6 +626,11 @@ class _ObservationMemory:
         self.forget_calls.append((key, section))
         self.state.setdefault(section, {}).pop(key, None)
 
+    def invalidate_file_observation(self, key: str) -> None:
+        self.forget(key, section="file_summaries")
+        for section in ("analyzed_files", "file_hashes", "file_cache_entries"):
+            self.state.setdefault(section, {}).pop(key, None)
+
 
 def _observation_context(
     memory: object, tool: str, args: dict[str, object]

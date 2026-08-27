@@ -444,6 +444,35 @@ def test_source_only_output_neutrality_is_bounded_and_non_durable() -> None:
     assert authority.authorized_effects == ()
 
 
+@pytest.mark.parametrize(
+    "objective",
+    (
+        "save a summary from source.md",
+        "store a summary from source.md",
+        "write a summary from source.md",
+        "criar um resumo de source.md",
+    ),
+)
+def test_persistence_shaped_source_only_output_fails_closed(objective: str) -> None:
+    result = parse_objective_authority(objective)
+    authority = admit_effect_authority(objective)
+
+    assert result.complete is False
+    assert result.positive_proofs == ()
+    assert authority.authorized_effects == ()
+
+
+def test_output_destination_precedes_source_clause() -> None:
+    objective = "save a summary to report.md from source.md"
+    result = parse_objective_authority(objective)
+    authority = admit_effect_authority(objective)
+
+    assert result.complete is True
+    assert [(item.effect, item.target) for item in authority.authorized_effects] == [
+        ("write", "report.md")
+    ]
+
+
 def test_neutral_owner_is_not_a_negative_space_fallback() -> None:
     root = Path(__file__).resolve().parents[3]
     controls = (root / "agent" / "planning" / "task_semantics_positive_proof_controls.py").read_text(

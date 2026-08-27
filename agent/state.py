@@ -137,6 +137,17 @@ class AgentState(
         self.last_tool = tool_name
         self.last_args = args
         self.last_result = canonical_result
+
+    def reset_runtime_observation(self, *, clear_events: bool = False) -> None:
+        """Clear the task's last-result/history projection at one boundary."""
+
+        self.last_result = None
+        self.last_tool = None
+        self.last_args = None
+        self.tool_history = []
+        if clear_events:
+            self.events.clear()
+
     def add_event(self, event: AgentEvent) -> None:
         """Adiciona um evento ao histórico de telemetria."""
         self.events.append(event)

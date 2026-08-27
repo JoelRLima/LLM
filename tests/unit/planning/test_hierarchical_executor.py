@@ -8,7 +8,12 @@ from agent.planning.hierarchical_planner import HierarchicalPlanner, MacroPlan, 
 from agent.planning.plan_builder import PlanBuildResult
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.outcome_taxonomy import OperationalStatus
 from agent.state import AgentState
+from agent.tools.result_completeness import (
+    canonical_result_successful,
+    legacy_result_successful,
+)
 
 
 class _State:
@@ -113,6 +118,26 @@ def test_hierarchical_microstep_failure_is_not_overwritten_by_later_success():
     )
 
     assert HierarchicalExecutor._has_failed_execution_record(state) is True
+
+
+def test_hierarchical_step_success_uses_canonical_status_over_raw_ok() -> None:
+    assert HierarchicalExecutor._determine_step_success(
+        [{"result": {"ok": True, "status": "failed"}}]
+    ) is False
+    assert canonical_result_successful({"ok": True}) is False
+    for legacy_status in ("complete", "completed", "success"):
+        assert canonical_result_successful(
+            {"ok": True, "status": legacy_status}
+        ) is False
+        assert legacy_result_successful(
+            {"ok": True, "status": legacy_status}
+        ) is True
+    assert canonical_result_successful(
+        {"ok": True, "status": OperationalStatus.SUCCEEDED}
+    ) is True
+    assert HierarchicalExecutor._determine_step_success(
+        [{"result": {"ok": True}}]
+    ) is True
 
 
 def test_hierarchical_planner_does_not_swallow_budget_exhaustion() -> None:

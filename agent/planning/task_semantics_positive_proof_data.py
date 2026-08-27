@@ -71,6 +71,20 @@ _OUTPUT_VERBS = frozenset(
         "write",
     }
 )
+# Only these output verbs can describe a source-only response without a
+# durable destination. Persistence-shaped verbs remain in ``_OUTPUT_VERBS``
+# so they are still parsed by the durable-output grammar, but they may not
+# fall through to the neutral source-only production.
+_NEUTRAL_SOURCE_ONLY_OUTPUT_VERBS = frozenset(
+    {
+        "generate",
+        "gere",
+        "gerar",
+        "produce",
+        "produza",
+        "produzir",
+    }
+)
 _MEMORY_DIRECT_VERBS = frozenset(
     {
         "esqueca",

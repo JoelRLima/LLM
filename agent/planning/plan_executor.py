@@ -49,7 +49,7 @@ class PlanExecutor:
         if self.orchestrator.cancellation_token.cancelled:
             return StepLoopResult(index, answer="Tarefa cancelada. O progresso concluído foi preservado.", stop=True)
         step = state.plan[index]
-        state.plan_step = index + 1
+        state.set_plan_step(index + 1)
         blocked = self._check_watchdog() or self._check_cost_limits(index + 1)
         if blocked:
             return StepLoopResult(index, answer=blocked, stop=True)

@@ -10,6 +10,7 @@ from agent.planning.task_graph import TaskGraph, TaskNode
 from agent.planning.task_scheduler import TaskGraphScheduler
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from agent.runtime.outcome_taxonomy import OperationalStatus
 
 
 class _Gateway:
@@ -24,6 +25,10 @@ def _context(*, permissions: frozenset[str] = frozenset({"read", "write", "valid
         limits=RuntimeLimits(max_model_calls=1, max_task_tool_calls=1),
         permissions=permissions,
     )
+
+
+def test_task_result_status_uses_the_canonical_operational_taxonomy() -> None:
+    assert TaskStatus is OperationalStatus
 
 
 def test_child_model_and_tool_budget_are_parent_owned() -> None:

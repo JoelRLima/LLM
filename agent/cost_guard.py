@@ -7,11 +7,13 @@ com valores de fallback divergentes. Este módulo é a única fonte de verdade p
 from typing import Any, Dict, List
 
 from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.config import DEFAULT_COST_WATCHDOG
+from agent.runtime.limits import default_runtime_limit, runtime_limit_values
 
-DEFAULT_MAX_TASK_STEPS = DEFAULT_COST_WATCHDOG["max_task_steps"]
-DEFAULT_MAX_TASK_TOKENS = DEFAULT_COST_WATCHDOG["max_task_tokens"]
-DEFAULT_MAX_TASK_TOOL_CALLS = DEFAULT_COST_WATCHDOG["max_task_tool_calls"]
+# Compatibility constants for callers that imported the historical names.
+# Values now come from the typed runtime-limit owner.
+DEFAULT_MAX_TASK_STEPS = default_runtime_limit("max_steps")
+DEFAULT_MAX_TASK_TOKENS = default_runtime_limit("max_task_tokens")
+DEFAULT_MAX_TASK_TOOL_CALLS = default_runtime_limit("max_task_tool_calls")
 
 
 class CostGuard:
@@ -33,7 +35,7 @@ class CostGuard:
             estimated_tokens: Estimativa de tokens consumidos no contexto atual.
             config: Dicionário de configuração com as chaves max_task_*.
         """
-        max_steps = config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
+        max_steps = runtime_limit_values(config)["max_steps"]
         del tool_history, estimated_tokens
         snapshot = ledger.snapshot()
         max_tokens = snapshot.max_task_tokens
@@ -56,7 +58,7 @@ class CostGuard:
         """Monta o payload do evento de telemetria 'cost_limit'."""
         del tool_history, estimated_tokens
         snapshot = ledger.snapshot()
-        max_steps = config.get("max_task_steps", DEFAULT_MAX_TASK_STEPS)
+        max_steps = runtime_limit_values(config)["max_steps"]
         max_tokens = snapshot.max_task_tokens
         max_tool_calls = snapshot.max_task_tool_calls
         event = {
