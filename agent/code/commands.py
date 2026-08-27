@@ -5,6 +5,8 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 
+from agent.tools.invocation_semantics import CODE_COMMAND_ACTIONS
+
 
 class CodeCommandError(ValueError):
     pass
@@ -82,7 +84,7 @@ def parse_code_command(text: str) -> ParsedCodeCommand:
         return ParsedCodeCommand("help")
 
     action = tokens[1].casefold().replace("-", "_")
-    allowed = {"analyze", "review", "generate", "modify", "repair", "refactor", "template"}
+    allowed = CODE_COMMAND_ACTIONS
     if action not in allowed:
         raise CodeCommandError(f"Ação desconhecida: {action}.\n{CODE_COMMAND_HELP}")
 
@@ -107,7 +109,7 @@ def parse_code_command(text: str) -> ParsedCodeCommand:
     objective = " ".join(after).strip()
     if not objective:
         raise CodeCommandError(f"/code {action} exige objetivo após --.")
-    if action in {"modify", "repair", "refactor"} and not before:
+    if action in CODE_COMMAND_ACTIONS.intersection({"modify", "repair", "refactor"}) and not before:
         raise CodeCommandError(f"/code {action} exige ao menos um target.")
     return ParsedCodeCommand(
         action,

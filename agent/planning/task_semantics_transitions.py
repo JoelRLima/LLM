@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_evidence import (
@@ -18,11 +18,8 @@ from agent.planning.task_semantics_evidence import (
 from agent.planning.task_semantics_terminal import validate_terminal_evidence
 from agent.planning.task_semantics_types import (
     ObligationStatus,
-    TaskIntent,
-    TaskObligation,
     TaskSemanticsError,
     _eligible_evidence_ref,
-    _normalize_effect,
 )
 
 
@@ -153,7 +150,63 @@ def register_observation(
         "result": dict(result),
     }
     if previous is not None and previous.get("tool") and previous != observation:
-        raise TaskSemanticsError("referencia de evidencia reutilizada para observacoes distintas")
+        # A legacy result can be pre-registered without an invocation ID and
+        # receive one when it crosses the typed-result adapter.  Treat that
+        # single compatibility enrichment as the same observation, while
+        # keeping collisions between two explicitly identified invocations
+        # fail-closed.
+        previous_result = previous.get("result")
+        current_result = observation.get("result")
+        compatible_missing_id = (
+            isinstance(previous_result, Mapping)
+            and isinstance(current_result, Mapping)
+            and (
+                "invocation_id" not in previous_result
+                or "invocation_id" not in current_result
+            )
+        )
+        if not compatible_missing_id:
+            raise TaskSemanticsError("referencia de evidencia reutilizada para observacoes distintas")
+        previous_without_id: dict[str, Any] = dict(
+            cast(Mapping[str, Any], previous_result)
+        )
+        current_without_id: dict[str, Any] = dict(
+            cast(Mapping[str, Any], current_result)
+        )
+        previous_without_id.pop("invocation_id", None)
+        current_without_id.pop("invocation_id", None)
+        optional_projection_fields = {
+            "artifacts", "data", "error_code", "error_detail",
+            "evidence_provenance", "executed", "message",
+        }
+        optional_defaults: dict[str, Any] = {
+            "artifacts": [],
+            "data": None,
+            "error_code": "TOOL_ERROR",
+            "error_detail": None,
+            "evidence_provenance": None,
+            "executed": None,
+            "message": None,
+        }
+        equivalent = True
+        for key in set(previous_without_id) | set(current_without_id):
+            previous_value = previous_without_id.get(key)
+            current_value = current_without_id.get(key)
+            if previous_value == current_value:
+                continue
+            if key in optional_projection_fields:
+                if key not in previous_without_id and current_value == optional_defaults.get(key):
+                    continue
+                if key not in current_without_id and previous_value == optional_defaults.get(key):
+                    continue
+            equivalent = False
+            break
+        if (
+            previous.get("tool") != observation.get("tool")
+            or previous.get("args") != observation.get("args")
+            or not equivalent
+        ):
+            raise TaskSemanticsError("referencia de evidencia reutilizada para observacoes distintas")
     owner._evidence_catalog[ref] = observation
 
 
@@ -226,55 +279,3 @@ def _satisfy_comparisons_from_reads(owner: Any) -> list[str]:
         )
         satisfied.append(item.id)
     return satisfied
-
-
-def replace_effects(owner: Any, requested_effects: Sequence[str], prohibited_effects: Sequence[str]) -> None:
-    requested = tuple(dict.fromkeys(_normalize_effect(item) for item in requested_effects))
-    prohibited = tuple(dict.fromkeys(_normalize_effect(item) for item in prohibited_effects))
-    previous_requested = set(owner.requested_effects)
-    removed = previous_requested - set(requested)
-    if removed:
-        owner._executed_effects = [
-            effect for effect in owner._executed_effects if effect not in removed
-        ]
-        owner._waived_effects = [
-            effect for effect in owner._waived_effects if effect not in removed
-        ]
-    non_effect = tuple(item for item in owner._obligations if item.kind != "effect")
-    owner._intent = TaskIntent(owner.objective, requested, prohibited)
-    owner._obligations = non_effect + tuple(
-        TaskObligation(
-            id=f"effect:{effect}",
-            kind="effect",
-            effect=effect,
-            description=f"Produzir o efeito operacional solicitado: {effect}.",
-        )
-        for effect in requested
-    )
-    previous = owner._statuses
-    previous_evidence = owner._evidence
-    previous_status_claims = getattr(owner, "_status_claims", {})
-    previous_evidence_claims = getattr(owner, "_evidence_claims", {})
-    owner._statuses = {item.id: previous.get(item.id, ObligationStatus.PENDING) for item in owner._obligations}
-    owner._evidence = {item.id: list(previous_evidence.get(item.id, ())) for item in owner._obligations}
-    owner._status_claims = {
-        item.id: previous_status_claims[item.id]
-        for item in owner._obligations
-        if item.id in previous_status_claims
-    }
-    owner._evidence_claims = {
-        item.id: list(previous_evidence_claims[item.id])
-        for item in owner._obligations
-        if item.id in previous_evidence_claims
-    }
-
-
-def reset_progress(owner: Any) -> None:
-    owner._statuses = {item.id: ObligationStatus.PENDING for item in owner._obligations}
-    owner._evidence = {item.id: [] for item in owner._obligations}
-    owner._status_claims = {}
-    owner._evidence_claims = {}
-    owner._executed_effects = []
-    owner._waived_effects = []
-    owner._unrequested_effects = []
-    owner._evidence_catalog = {}

@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy
 from importlib import resources
 from typing import Any, Dict
 
@@ -11,75 +12,39 @@ from agent.runtime.config_validation import (
     validate_root,
     validate_sections,
 )
-from agent.runtime.hardware import LOW_VRAM_8GB
-
-DEFAULT_PROMPT = (
-    "You are a helpful assistant. Always think and reason in English. "
-    "Your final response must be in Portuguese (Brazil), natural and fluent. "
-    "Do not mention the language switch."
-)
-DEFAULT_VALIDATION: Dict[str, Any] = {
-    "enabled": True, "ruff": False, "mypy": False, "pytest": False,
-    "pytest_dir": "tests/", "fail_triggers_replan": False,
-}
-DEFAULT_TASK_REPORT: Dict[str, Any] = {
-    "enabled": True, "format": "json", "output_dir": paths.REPORTS_DIR,
-}
-DEFAULT_CODE_POLICY: Dict[str, Any] = {
-    "auto_apply_min_confidence": 0.85,
-    "max_auto_files": 2,
-    "require_target_alignment": True,
-}
 
 
-def _packaged_reasoning_turn_default() -> int:
-    """Read the canonical reasoning budget from the packaged config resource."""
+def _load_packaged_defaults() -> Dict[str, Any]:
+    """Read the one authored default source used by runtime configuration."""
 
-    try:
-        raw = resources.files("agent.resources").joinpath("default_config.json").read_text(
-            encoding="utf-8"
-        )
-        value = json.loads(raw)["max_reasoning_turns"]
-    except (FileNotFoundError, ModuleNotFoundError, KeyError, TypeError, ValueError) as exc:
-        raise RuntimeError("Default max_reasoning_turns is unavailable.") from exc
-    if type(value) is not int or value < 1:
-        raise RuntimeError("Default max_reasoning_turns is invalid.")
+    raw = resources.files("agent.resources").joinpath("default_config.json").read_text(
+        encoding="utf-8"
+    )
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise RuntimeError("Packaged configuration defaults must be an object.")
     return value
 
 
-DEFAULT_COST_WATCHDOG: Dict[str, Any] = {
-    "max_task_steps": 30,
-    "max_task_tokens": 200000,
-    "max_task_tool_calls": 60,
-    "max_task_wall_seconds": 1800,
-    "max_repeated_no_progress": 3,
-    "max_consecutive_same_error": 3,
-    "max_reasoning_turns": _packaged_reasoning_turn_default(),
+# Keep the legacy module-level names as projections for callers that still
+# import them; the packaged resource is the authored source.
+_PACKAGED_DEFAULTS = _load_packaged_defaults()
+DEFAULT_PROMPT = str(_PACKAGED_DEFAULTS["default_system_prompt"])
+DEFAULT_VALIDATION = deepcopy(_PACKAGED_DEFAULTS["validation"])
+DEFAULT_TASK_REPORT = deepcopy(_PACKAGED_DEFAULTS["task_report"])
+DEFAULT_TASK_REPORT.setdefault("output_dir", paths.REPORTS_DIR)
+DEFAULT_CODE_POLICY = deepcopy(_PACKAGED_DEFAULTS["code_policy"])
+DEFAULT_COST_WATCHDOG = {
+    key: _PACKAGED_DEFAULTS[key]
+    for key in (
+        "max_task_steps", "max_task_tokens", "max_task_tool_calls",
+        "max_task_wall_seconds", "max_repeated_no_progress",
+        "max_consecutive_same_error", "max_reasoning_turns",
+    )
 }
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "api_url": "http://127.0.0.1:8080/v1/chat/completions",
-    "model": "default",
-    "temperature": 0.6,
-    "max_tokens": 4096,
-    "timeout": 300,
-    "hardware_profile": LOW_VRAM_8GB.name,
-    "semantic_memory_enabled": False,
-    "semantic_memory_model": "all-MiniLM-L6-v2",
-    "max_model_concurrency": LOW_VRAM_8GB.max_model_concurrency,
-    "max_io_concurrency": LOW_VRAM_8GB.max_io_concurrency,
-    "max_process_concurrency": LOW_VRAM_8GB.max_process_concurrency,
-    "max_model_calls": 20,
-    "default_system_prompt": DEFAULT_PROMPT,
-    "validation": DEFAULT_VALIDATION,
-    "checkpoint_file": paths.CHECKPOINT_FILE,
-    "task_report": DEFAULT_TASK_REPORT,
-    "code_policy": DEFAULT_CODE_POLICY,
-    "ENABLE_GBNF": True,
-    "auto_confirm": False,
-    "resume_retry_failed": False,
-    "resume_retry_skipped": False,
-    **DEFAULT_COST_WATCHDOG,
-}
+DEFAULT_CONFIG = deepcopy(_PACKAGED_DEFAULTS)
+DEFAULT_CONFIG.setdefault("checkpoint_file", paths.CHECKPOINT_FILE)
+DEFAULT_CONFIG["task_report"] = deepcopy(DEFAULT_TASK_REPORT)
 
 
 def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:

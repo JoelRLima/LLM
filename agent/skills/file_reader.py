@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,13 +34,34 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
             "file_path": {"type": "string", "description": "Caminho relativo do arquivo."},
             "start_line": {
                 "type": "integer",
+                "minimum": 1,
                 "description": "Linha inicial (1-indexada) para leitura parcial. Opcional.",
             },
             "end_line": {
                 "type": "integer",
+                "minimum": 1,
                 "description": "Linha final (1-indexada) para leitura parcial. Opcional. Se omitido, lê até o final.",
             },
         }
+
+    def validate_arguments(
+        self,
+        args: Mapping[str, Any],
+        *,
+        bound_fields: frozenset[str] = frozenset(),
+        planning: bool = False,
+    ) -> None:
+        del planning
+        start = args.get("start_line")
+        end = args.get("end_line")
+        if (
+            "start_line" not in bound_fields
+            and "end_line" not in bound_fields
+            and start is not None
+            and end is not None
+            and start > end
+        ):
+            raise ValueError(f"'start_line' ({start}) cannot exceed 'end_line' ({end})")
 
     def execute(self, args: dict[str, Any]) -> dict[str, Any]:
         file_path = str(args.get("file_path", ""))

@@ -7,14 +7,14 @@ import uuid
 from dataclasses import replace
 from typing import Any, Dict, List
 
-from agent.contracts import ToolResult
 from agent.planning.parallel_contracts import (
     ParallelInvocation,
     correlate_parallel_result,
     future_parallel_result,
 )
 from agent.planning.step_executor import StepExecutionOutcome
-from agent.tools.contracts import ToolInvocationRequest
+from agent.runtime.limits import runtime_limit_values
+from agent.tools.contracts import ToolError, ToolInvocationRequest, ToolResult, ToolStatus
 
 
 def run_parallel_tools(
@@ -28,10 +28,8 @@ def run_parallel_tools(
     results: Dict[int, ToolResult] = {}
     correlations: Dict[int, ParallelInvocation] = {}
     futures: Dict[concurrent.futures.Future[ToolResult], int] = {}
-    workers = min(
-        int(plan_executor.orchestrator.session.config.get("max_io_concurrency", 2)),
-        len(indices),
-    )
+    limits = runtime_limit_values(plan_executor.orchestrator.session.config)
+    workers = min(limits["max_io_concurrency"], len(indices))
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         for index in indices:
             prepared = plan_executor.step_executor.prepare_invocation(index)
@@ -44,14 +42,15 @@ def run_parallel_tools(
                     invocation_id=invocation_id,
                     request=ToolInvocationRequest(invocation_id, tool, args),
                 )
-                cached[index] = {
-                    "invocation_id": invocation_id,
-                    "ok": False,
-                    "done": True,
-                    "status": "failed",
-                    "data": None,
-                    "error": prepared.error or "preparacao da invocacao falhou",
-                }
+                cached[index] = ToolResult(
+                    invocation_id=invocation_id,
+                    status=ToolStatus.FAILED,
+                    error=ToolError(
+                        "PREPARATION_FAILED",
+                        prepared.error or "preparacao da invocacao falhou",
+                    ),
+                    executed=False,
+                )
                 continue
             tool, args, file_path = prepared.tool, prepared.args, prepared.file_path
             invocation_id = str(uuid.uuid4())
@@ -76,12 +75,21 @@ def run_parallel_tools(
             if not getattr(plan_executor.orchestrator, "tool_invocation_gateway", None):
                 plan_executor.orchestrator._emit("tool_start", {"tool": tool, "args": args})
             runner = getattr(plan_executor.orchestrator.tool_executor, "run_tool_invocation", None)
+            canonical_prepared_runner = getattr(
+                plan_executor.orchestrator.tool_executor,
+                "run_prepared_invocation_canonical",
+                None,
+            )
             prepared_runner = getattr(
                 plan_executor.orchestrator.tool_executor,
                 "run_prepared_invocation",
                 None,
             )
-            if callable(prepared_runner):
+            if callable(canonical_prepared_runner):
+                future = pool.submit(
+                    canonical_prepared_runner, prepared_for_dispatch, False
+                )
+            elif callable(prepared_runner):
                 future = pool.submit(
                     prepared_runner, prepared_for_dispatch, False
                 )

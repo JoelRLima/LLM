@@ -7,8 +7,7 @@ import stat
 from pathlib import Path
 
 from agent.runtime.file_lock import OPEN_BINARY, read_descriptor
-
-_REPARSE_POINT = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+from agent.runtime.filesystem_primitives import has_reparse_point, sync_parent_directory
 
 
 class UnsafeLockPathError(OSError):
@@ -16,8 +15,7 @@ class UnsafeLockPathError(OSError):
 
 
 def _has_reparse_point(stat_result: os.stat_result) -> bool:
-    attributes = getattr(stat_result, "st_file_attributes", 0)
-    return bool(attributes & _REPARSE_POINT)
+    return has_reparse_point(stat_result)
 
 
 def is_safe_regular(stat_result: os.stat_result) -> bool:
@@ -119,19 +117,6 @@ def unlink_if_observed(path: Path, observed_stat: os.stat_result, observed_raw: 
         return True
     except (OSError, UnsafeLockPathError):
         return False
-
-
-def sync_parent_directory(path: Path) -> None:
-    """Persist a directory-entry publication where the platform exposes it."""
-
-    if os.name == "nt":
-        return
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    descriptor = os.open(path.parent, flags)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 __all__ = [

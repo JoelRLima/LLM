@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping
 from typing import Any
 
 from agent.execution_state import StepStatus
+from agent.planning.completion_observations_support import (
+    eligible_waiver_observations,
+    observation_references,
+)
+from agent.planning.effect_intent import effect_intent_matches
 from agent.planning.failure_policy import (
     FailureClass,
     classify_failure,
@@ -13,73 +18,155 @@ from agent.planning.failure_policy import (
     unrecovered_local_failure_observations,
 )
 from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
-from agent.planning.task_semantics_effects import (
-    effect_observation_proves_terminal,
-    observed_effect_kinds,
-)
+from agent.planning.task_semantics_effects import observed_effect_accesses, observed_effect_kinds
 from agent.planning.task_semantics_effects import (
     tool_capabilities as _tool_capabilities,
 )
-from agent.planning.task_semantics_types import ObligationStatus
-from agent.reporting.operational_outcome import project_operational_outcome
+from agent.resources.contracts import WORKSPACE_RESOURCE, ResourceAccess, ResourceMode, ResourceProvenance
+from agent.runtime.operational_outcome import project_operational_outcome
 
 tool_capabilities = _tool_capabilities
+
+__all__ = [
+    "eligible_waiver_observations",
+    "observation_references",
+    "publish_outcome",
+    "refresh_executed_effects",
+    "terminal_failure",
+]
 
 
 def refresh_executed_effects(orchestrator: Any) -> None:
     state = orchestrator.agent_state
     for history_index, item in enumerate(getattr(state, "tool_history", ()) or (), start=1):
-        if not isinstance(item, dict) or not isinstance(item.get("result"), dict):
-            continue
+        _refresh_observation(orchestrator, history_index, item)
+
+
+def _refresh_observation(orchestrator: Any, history_index: int, item: Any) -> None:
+    if not isinstance(item, Mapping) or not isinstance(item.get("result"), Mapping):
+        return
+    observed = observed_effect_accesses(orchestrator, item)
+    persisted_effects = set(observed_effect_kinds(orchestrator, item))
+    effects = tuple(dict.fromkeys(effect for effect, _access in observed))
+    if not effects:
         effects = observed_effect_kinds(orchestrator, item)
-        if not effects:
+    if not effects:
+        return
+    semantics = getattr(orchestrator.agent_state, "task_semantics", None)
+    _register_observation(semantics, item, history_index)
+    observed = observed or _fallback_observations(effects)
+    requested, prohibited = _split_effect_intents(semantics)
+    _record_observed_effects(
+        orchestrator,
+        history_index,
+        observed,
+        persisted_effects,
+        requested,
+        prohibited,
+        semantics,
+    )
+
+
+def _register_observation(semantics: Any, item: Mapping[str, Any], history_index: int) -> None:
+    register = getattr(semantics, "register_observation", None)
+    if callable(register):
+        register(
+            str(item.get("tool", "")),
+            item["result"],
+            evidence_ref=history_index,
+            args=item.get("args") if isinstance(item.get("args"), dict) else {},
+        )
+
+
+def _fallback_observations(
+    effects: tuple[str, ...],
+) -> tuple[tuple[str, ResourceAccess], ...]:
+    return tuple(
+        (
+            effect,
+            ResourceAccess(
+                WORKSPACE_RESOURCE,
+                ResourceMode.WRITE,
+                ResourceProvenance.OBSERVED_MUTATION,
+            ),
+        )
+        for effect in effects
+    )
+
+
+def _split_effect_intents(semantics: Any) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+    intents = tuple(getattr(semantics, "effect_intents", ()) if semantics is not None else ())
+    return (
+        tuple(item for item in intents if not getattr(item, "prohibited", False)),
+        tuple(item for item in intents if getattr(item, "prohibited", False)),
+    )
+
+
+def _record_observed_effects(
+    orchestrator: Any,
+    history_index: int,
+    observed: tuple[tuple[str, ResourceAccess], ...],
+    persisted_effects: set[str],
+    requested: tuple[Any, ...],
+    prohibited: tuple[Any, ...],
+    semantics: Any,
+) -> None:
+    state = orchestrator.agent_state
+    requested_effects = tuple(getattr(state, "requested_effects", ()) or ())
+    predicate_resolutions = (
+        getattr(semantics, "predicate_resolutions", None)
+        if semantics is not None
+        else None
+    )
+    seen_pairs: set[tuple[str, str]] = set()
+    for effect, access in observed:
+        pair = (effect, access.name)
+        if pair in seen_pairs:
             continue
-        semantics = getattr(state, "task_semantics", None)
-        for effect in effects:
-            register = getattr(semantics, "register_observation", None)
-            if callable(register):
-                register(
-                    str(item.get("tool", "")),
-                    item["result"],
-                    evidence_ref=history_index,
-                    args=item.get("args") if isinstance(item.get("args"), dict) else {},
-                )
-            requested = effect in tuple(getattr(state, "requested_effects", ()) or ())
+        seen_pairs.add(pair)
+        is_requested = any(
+            effect_intent_matches(
+                intent,
+                effect,
+                access,
+                predicate_resolutions=predicate_resolutions,
+            )
+            for intent in requested
+        )
+        is_prohibited = any(
+            effect_intent_matches(
+                intent,
+                effect,
+                access,
+                predicate_resolutions=predicate_resolutions,
+            )
+            for intent in prohibited
+        )
+        if effect in persisted_effects and (is_requested or effect not in requested_effects):
             state.record_executed_effect(
                 effect,
                 evidence_ref=history_index,
                 effect_authority=orchestrator,
             )
-            if not requested:
-                record_unrequested = getattr(semantics, "record_unrequested_effect", None)
-                if callable(record_unrequested):
-                    record_unrequested(
-                        effect,
-                        evidence_ref=history_index,
-                        effect_authority=orchestrator,
-                    )
+        _record_effect_violation(semantics, effect, history_index, is_prohibited, is_requested, orchestrator)
 
 
-def eligible_waiver_observations(
-    orchestrator: Any,
-) -> list[tuple[int, dict[str, Any]]]:
-    eligible: list[tuple[int, dict[str, Any]]] = []
-    for index, item in enumerate(orchestrator.agent_state.tool_history, start=1):
-        if not isinstance(item, dict):
-            continue
-        result = item.get("result")
-        if not isinstance(result, dict):
-            continue
-        if effect_observation_proves_terminal(orchestrator, ObligationStatus.WAIVED, item):
-            eligible.append((index, item))
-    return eligible
-
-
-def observation_references(orchestrator: Any) -> str:
-    return "\n".join(
-        f"{index}: tool={json.dumps(str(item.get('tool', '')), ensure_ascii=False)}"
-        for index, item in eligible_waiver_observations(orchestrator)
-    )
+def _record_effect_violation(
+    semantics: Any,
+    effect: str,
+    history_index: int,
+    prohibited: bool,
+    requested: bool,
+    authority: Any,
+) -> None:
+    if prohibited:
+        record = getattr(semantics, "record_prohibited_effect", None)
+        if callable(record):
+            record(effect, evidence_ref=history_index, effect_authority=authority)
+    if not requested:
+        record = getattr(semantics, "record_unrequested_effect", None)
+        if callable(record):
+            record(effect, evidence_ref=history_index, effect_authority=authority, force=True)
 
 
 def publish_outcome(orchestrator: Any) -> None:
@@ -102,7 +189,7 @@ def publish_outcome(orchestrator: Any) -> None:
     emit("task_outcome", projection)
 
 
-def _later_recovery(state: Any, index: int, entry: dict[str, Any]) -> bool:
+def _later_recovery(state: Any, index: int, entry: Mapping[str, Any]) -> bool:
     checker = getattr(state, "_later_recovery", None)
     return bool(checker(index, entry)) if callable(checker) else False
 
@@ -111,9 +198,9 @@ def _step_failure_requires_terminal(state: Any, record: Any, permits: Any) -> bo
     relevant = [
         (index, entry)
         for index, entry in enumerate(getattr(state, "tool_history", ()) or ())
-        if isinstance(entry, dict)
+        if isinstance(entry, Mapping)
         and str(entry.get("step_id") or "") == str(getattr(record, "step_id", ""))
-        and isinstance(entry.get("result"), dict)
+        and isinstance(entry.get("result"), Mapping)
     ]
     if not relevant:
         return True
@@ -191,7 +278,7 @@ def _last_result_is_terminal(
     hard_checker: Any,
 ) -> bool:
     result = getattr(state, "last_result", None)
-    if not isinstance(result, dict):
+    if not isinstance(result, Mapping):
         return bool(getattr(orchestrator, "_task_failed", False)) and not callable(hard_checker)
     classification = classify_failure(result)
     if classification is FailureClass.HARD:

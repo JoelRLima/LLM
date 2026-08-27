@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from typing import Any
 
 
 class BaseSkill(ABC):
@@ -28,6 +30,17 @@ class BaseSkill(ABC):
         }
         """
         return {}
+
+    def validate_arguments(
+        self,
+        args: Mapping[str, Any],
+        *,
+        bound_fields: frozenset[str] = frozenset(),
+        planning: bool = False,
+    ) -> None:
+        """Validate cross-field invariants owned by this operation contract."""
+
+        del args, bound_fields, planning
 
     @abstractmethod
     def execute(self, args: dict) -> dict:

@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Iterable, Mapping, cast
 from uuid import uuid4
 
+from agent.capabilities import Capability, capability_values
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 from agent.tools.workspace_extensions_resolver import ResolvedWorkspaceExtensions
@@ -44,9 +45,12 @@ def operational_mode_capabilities(mode: OperationalMode) -> frozenset[str] | Non
 
     if mode is OperationalMode.FULL:
         return None
-    capabilities = {"read", "vcs_read", "analyze"}
+    capabilities = {
+        item.value
+        for item in (Capability.READ, Capability.VCS_READ, Capability.ANALYZE)
+    }
     if mode is OperationalMode.EDITOR:
-        capabilities.update({"write", "validate"})
+        capabilities.update(capability_values((Capability.WRITE, Capability.VALIDATE)))
     return frozenset(capabilities)
 
 
@@ -164,7 +168,7 @@ class TaskAuthoritySnapshot:
         if self.runtime_identity is not None and not isinstance(
             self.runtime_identity, RuntimeSnapshotIdentity
         ):
-            raise TypeError("runtime_identity invÃ¡lida")
+            raise TypeError("runtime_identity inválida")
 
 
 def bind_task_authority(

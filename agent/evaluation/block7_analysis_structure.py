@@ -12,6 +12,7 @@ from agent.evaluation.block7_analysis_support import (
     _is_environmental_attempt,
     _scenario_definitions,
 )
+from agent.evaluation.block7_fixture_context import runtime_objective
 
 
 def _run_envelope_errors(run: Any, index: int) -> list[str]:
@@ -101,7 +102,7 @@ def _run_structure_errors(
     if arm is not None:
         if str(evidence.get("initial_fixture_digest", "")) != digest_fixture(arm.initial_files):
             errors.append(f"run_{index}:initial_fixture_mismatch")
-        if str(evidence.get("objective", "")) != arm.objective:
+        if str(evidence.get("objective", "")) != runtime_objective(arm.objective, scenario.h_id):
             errors.append(f"run_{index}:objective_mismatch")
     _record_repetition(raw_run, evidence, index, h_id, arm_id, seen_semantic, valid_groups, errors)
     return errors

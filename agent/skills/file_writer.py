@@ -89,6 +89,20 @@ class FileWriterSkill(BaseSkill):
             "old_hash": "string: SHA256 anterior opcional",
         }
 
+    def validate_arguments(
+        self,
+        args: Mapping[str, Any],
+        *,
+        bound_fields: frozenset[str] = frozenset(),
+        planning: bool = False,
+    ) -> None:
+        del planning
+        if args.get("action", "write") != "ast_patch":
+            return
+        for field in ("target", "new_code"):
+            if field not in args and field not in bound_fields:
+                raise ValueError(f"Campo '{field}' obrigatório para ast_patch")
+
     def _is_safe(self, requested: Path) -> tuple[bool, str]:
         try:
             relative = requested.relative_to(self.base_dir)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from agent.capabilities import ALL_CAPABILITIES
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
 
@@ -13,23 +14,10 @@ def build_task_execution_context(owner: Any) -> TaskExecutionContext:
     return TaskExecutionContext(
         model_gateway=owner.session.gateway,
         cancellation=owner.cancellation_token,
-        limits=RuntimeLimits(
-            max_model_concurrency=max(1, int(config.get("max_model_concurrency", 1))),
-            max_io_concurrency=max(1, int(config.get("max_io_concurrency", 2))),
-            max_process_concurrency=max(1, int(config.get("max_process_concurrency", 1))),
-            max_steps=max(1, int(config.get("max_task_steps", 30))),
-            max_model_calls=max(1, int(config.get("max_model_calls", 20))),
-            max_task_tool_calls=max(1, int(config.get("max_task_tool_calls", 60))),
-            max_task_tokens=max(1, int(config.get("max_task_tokens", 200_000))),
-        ),
+        limits=RuntimeLimits.from_config(config),
         budget_ledger=owner.task_budget,
-        permissions=frozenset(
-            {
-                "read", "write", "validate", "analyze", "process", "network",
-                "memory", "vcs_read", "vcs_write", "package_install",
-            }
-        ),
-        metadata={"ownership_root": True},
+        permissions=frozenset(item.value for item in ALL_CAPABILITIES),
+        metadata={"ownership_root": True, "workspace_manager": owner.workspace},
     )
 
 
@@ -62,6 +50,13 @@ class TaskExecutionOwnershipMixin:
         self.agent_state.events.clear()
         self.context_manager._cached_project_context = None
         self.workspace.restore_points.clear()
+        created_files = getattr(self.workspace, "created_files", None)
+        clear_created_files = getattr(created_files, "clear", None)
+        if callable(clear_created_files):
+            clear_created_files()
+        discard_transactions = getattr(self.workspace, "discard_transactions", None)
+        if callable(discard_transactions):
+            discard_transactions()
         self._planning_context = None
         self._task_failed = False
         self._cancelled = False

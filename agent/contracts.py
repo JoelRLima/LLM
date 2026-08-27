@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from agent.tools.contracts import ToolResult as CanonicalToolResult
+
 ToolArgs = Dict[str, Any]
 EventData = Dict[str, Any]
 
@@ -27,7 +29,9 @@ class PlanStep(TypedDict, total=False):
     on_false: Dict[str, Any]
 
 
-class ToolResult(TypedDict, total=False):
+class LegacyToolResult(TypedDict, total=False):
+    """Serialized compatibility shape, not the canonical runtime result."""
+
     invocation_id: str
     ok: bool
     done: bool
@@ -47,7 +51,13 @@ class ToolResult(TypedDict, total=False):
     source_extent: Dict[str, Any]
 
 
+# ``ToolResult`` remains available only through the module compatibility hook
+# below. New runtime code names this serialized shape explicitly.
+
+
 class ToolHistoryEntry(TypedDict, total=False):
+    """Canonical live runtime history entry."""
+
     step_id: Optional[str]
     plan_id: Optional[str]
     invocation_id: str
@@ -55,7 +65,20 @@ class ToolHistoryEntry(TypedDict, total=False):
     logical_slot: int
     tool: str
     args: ToolArgs
-    result: ToolResult
+    result: CanonicalToolResult
+
+
+class SerializedToolHistoryEntry(TypedDict, total=False):
+    """Checkpoint/public compatibility projection of a history entry."""
+
+    step_id: Optional[str]
+    plan_id: Optional[str]
+    invocation_id: str
+    status: str
+    logical_slot: int
+    tool: str
+    args: ToolArgs
+    result: LegacyToolResult
 
 
 class AgentEvent(TypedDict, total=False):
@@ -91,8 +114,8 @@ class CheckpointData(TypedDict, total=False):
     step_records: List[StepRecordData]
     last_tool: Optional[str]
     last_args: Optional[ToolArgs]
-    last_result: Optional[ToolResult]
-    tool_history: List[ToolHistoryEntry]
+    last_result: Optional[LegacyToolResult]
+    tool_history: List[SerializedToolHistoryEntry]
     execution_incidents: List[Dict[str, Any]]
     events: List[AgentEvent]
     conversation_history: List[Dict[str, str]]
@@ -103,3 +126,11 @@ class CheckpointData(TypedDict, total=False):
     reasoning_last_history_count: int
     reasoning_last_progress_token: Optional[str]
     continue_after_plan: bool
+
+
+def __getattr__(name: str) -> Any:
+    """Preserve the old import without making it an internal type name."""
+
+    if name == "ToolResult":
+        return LegacyToolResult
+    raise AttributeError(name)

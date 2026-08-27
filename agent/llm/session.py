@@ -52,6 +52,7 @@ class ChatSession(LegacySessionMixin):
         response: Any = None,
         call_number: int | None = None,
         estimated_tokens: int = 0,
+        reserved_tokens: int = 0,
     ) -> None:
         callback = self.model_call_callback
         if callback is None:
@@ -65,6 +66,7 @@ class ChatSession(LegacySessionMixin):
             response=response,
             call_number=call_number,
             estimated_tokens=estimated_tokens,
+            reserved_tokens=reserved_tokens,
         )
         try:
             callback(entry)
@@ -81,6 +83,7 @@ class ChatSession(LegacySessionMixin):
         usage: Any = None,
         estimated_tokens: int = 0,
     ) -> None:
+        reserved_tokens = self.budget_ledger.reservation_for(call_number)
         self.budget_ledger.finalize_model_call(
             call_number, usage=usage, estimated_tokens=estimated_tokens
         )
@@ -91,6 +94,7 @@ class ChatSession(LegacySessionMixin):
             response=response,
             call_number=call_number,
             estimated_tokens=estimated_tokens,
+            reserved_tokens=reserved_tokens,
         )
     def set_system_prompt(self, prompt: str) -> None:
         """Substitui o system prompt base."""

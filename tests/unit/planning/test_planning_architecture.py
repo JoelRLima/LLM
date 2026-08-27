@@ -32,7 +32,7 @@ def test_context_optimizer_does_not_use_static_catalog() -> None:
 def test_gateway_derives_view_from_effective_context() -> None:
     tree = _function_tree(ExecutionGateway._planning_view)
     assert any(
-        isinstance(node, ast.Attribute) and node.attr == "present"
+        isinstance(node, ast.Attribute) and node.attr == "resolve_view"
         for node in ast.walk(tree)
     )
 

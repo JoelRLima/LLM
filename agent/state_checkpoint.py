@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
-from agent.reporting.operational_outcome import PUBLIC_TERMINAL_STATUSES
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+from agent.state_checkpoint_counters import restore_counters as _restore_counters
 
-_VALID_TERMINAL_DISPOSITIONS = frozenset({"complete", "block", "fail"}) | (
-    PUBLIC_TERMINAL_STATUSES - {"succeeded"}
+_VALID_TERMINAL_DISPOSITIONS = (
+    frozenset(item.value for item in CompletionDisposition) | NON_SUCCESS_STATUSES
 )
 
 
@@ -31,6 +33,7 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
         "prohibited_effects": getattr(state, "prohibited_effects", []),
         "task_semantics": semantic_checkpoint,
         "continuation_attempts": state.continuation_attempts,
+        "replan_counts": dict(getattr(state, "replan_counts", {}) or {}),
         "reasoning_turns_used": state.reasoning_turns_used,
         "reasoning_last_history_count": state.reasoning_last_history_count,
         "reasoning_last_progress_token": state.reasoning_last_progress_token,
@@ -82,45 +85,6 @@ def _restore_semantics(state: Any, data: dict[str, Any]) -> None:
         state.requested_effects = [str(item) for item in (data.get("requested_effects") or [])]
         state.executed_effects = [str(item) for item in (data.get("executed_effects") or [])]
         state.waived_effects = [str(item) for item in (data.get("waived_effects") or [])]
-
-
-def _restore_counters(state: Any, data: dict[str, Any]) -> None:
-    continuation_attempts = data.get("continuation_attempts", 0)
-    if (
-        isinstance(continuation_attempts, bool)
-        or not isinstance(continuation_attempts, int)
-        or continuation_attempts < 0
-    ):
-        raise ValueError("Checkpoint continuation counter is invalid.")
-    reasoning_turns_used = data.get("reasoning_turns_used", 0)
-    if (
-        isinstance(reasoning_turns_used, bool)
-        or not isinstance(reasoning_turns_used, int)
-        or reasoning_turns_used < 0
-    ):
-        raise ValueError("Checkpoint reasoning counter is invalid.")
-    state.continuation_attempts = continuation_attempts
-    state.reasoning_turns_used = reasoning_turns_used
-    raw_cursor = data.get("reasoning_last_history_count")
-    if raw_cursor is None:
-        # Checkpoints written before the scoped cursor existed must resume at
-        # the current history boundary, never treat old history as new work.
-        raw_cursor = len(data.get("tool_history") or [])
-    if (
-        isinstance(raw_cursor, bool)
-        or not isinstance(raw_cursor, int)
-        or raw_cursor < -1
-    ):
-        raise ValueError("Checkpoint reasoning history cursor is invalid.")
-    state.reasoning_last_history_count = raw_cursor
-    token = data.get("reasoning_last_progress_token")
-    if token is not None and not isinstance(token, str):
-        raise ValueError("Checkpoint reasoning progress token is invalid.")
-    state.reasoning_last_progress_token = token
-    continue_after_plan = data.get("continue_after_plan", False)
-    if not isinstance(continue_after_plan, bool):
-        raise ValueError("Checkpoint continuation flag is invalid.")
-    state.continue_after_plan = continue_after_plan
 
 
 def _restore_terminal(state: Any, data: dict[str, Any]) -> None:

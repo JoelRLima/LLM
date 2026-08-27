@@ -3,25 +3,14 @@
 from __future__ import annotations
 
 import os
-import stat
-from dataclasses import dataclass
 from pathlib import Path
 
-_WINDOWS_REPARSE_POINT = getattr(
-    stat,
-    "FILE_ATTRIBUTE_REPARSE_POINT",
-    0x0400,
+from agent.runtime.filesystem_primitives import (
+    FinalPathInspection,
 )
-
-
-@dataclass(frozen=True)
-class FinalPathInspection:
-    """Metadata for one final path component, obtained without following it."""
-
-    exists: bool
-    is_link_like: bool
-    link_kind: str | None = None
-    metadata: os.stat_result | None = None
+from agent.runtime.filesystem_primitives import (
+    inspect_final_path as _inspect_final_path,
+)
 
 
 class LinkLikePathError(RuntimeError):
@@ -39,34 +28,9 @@ class LinkLikePathError(RuntimeError):
 def inspect_final_path(path: str | Path) -> FinalPathInspection:
     """Inspect only the final component, preserving legitimate linked ancestors."""
 
-    candidate = Path(path)
-    try:
-        metadata = os.lstat(candidate)
-    except FileNotFoundError:
-        return FinalPathInspection(exists=False, is_link_like=False)
-
-    if stat.S_ISLNK(metadata.st_mode):
-        return FinalPathInspection(
-            exists=True,
-            is_link_like=True,
-            link_kind="link simbólico",
-            metadata=metadata,
-        )
-
-    file_attributes = int(getattr(metadata, "st_file_attributes", 0))
-    if file_attributes & _WINDOWS_REPARSE_POINT:
-        return FinalPathInspection(
-            exists=True,
-            is_link_like=True,
-            link_kind="ponto de reparse do Windows",
-            metadata=metadata,
-        )
-
-    return FinalPathInspection(
-        exists=True,
-        is_link_like=False,
-        metadata=metadata,
-    )
+    # Keep the module-local lstat seam used by platform regression tests while
+    # delegating the exact link/reparse mechanics to the shared primitive.
+    return _inspect_final_path(path, lstat=os.lstat)
 
 
 def reject_link_like(path: str | Path) -> FinalPathInspection:
@@ -75,10 +39,7 @@ def reject_link_like(path: str | Path) -> FinalPathInspection:
     candidate = Path(path)
     inspection = inspect_final_path(candidate)
     if inspection.is_link_like:
-        raise LinkLikePathError(
-            candidate,
-            inspection.link_kind or "link",
-        )
+        raise LinkLikePathError(candidate, inspection.link_kind or "link")
     return inspection
 
 

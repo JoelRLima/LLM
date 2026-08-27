@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
+from agent.runtime.argument_contract import validate_operation_arguments
+from agent.runtime.schema_validation import normalize_argument_schema, validate_schema_arguments
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     ToolDescriptor,
@@ -148,61 +151,11 @@ def check_authority(
 
 def validate_arguments(descriptor: Any, args: dict[str, Any]) -> None:
     schema = getattr(descriptor, "schema", None)
-    if not schema:
-        return
-    if not isinstance(args, dict):
-        raise ValueError("arguments must be a JSON object")
-    properties = schema.get("properties") or {}
-    if not isinstance(properties, dict):
-        raise ValueError("schema properties must be an object")
-    _validate_argument_shape(schema, properties, args)
-    _validate_argument_values(properties, args)
-
-
-def _validate_argument_shape(
-    schema: dict[str, Any],
-    properties: dict[str, Any],
-    args: dict[str, Any],
-) -> None:
-    if schema.get("additionalProperties") is False:
-        unknown = sorted(str(key) for key in args if key not in properties)
-        if unknown:
-            raise ValueError(f"unknown argument(s): {', '.join(unknown)}")
-    required = schema.get("required") or []
-    if not isinstance(required, list):
-        required = [required]
-    for key in required:
-        if key not in args:
-            raise ValueError(f"missing required argument: {key}")
-
-
-def _validate_argument_values(
-    properties: dict[str, Any],
-    args: dict[str, Any],
-) -> None:
-    for key, value in args.items():
-        prop_schema = properties.get(key)
-        if prop_schema:
-            validate_property(key, value, prop_schema)
-
-
-def validate_property(key: str, value: Any, schema: Any) -> None:
-    if not isinstance(schema, dict):
-        raise ValueError(f"schema for argument '{key}' must be an object")
-    expected_type = schema.get("type")
-    valid_types = {
-        "string": isinstance(value, str),
-        "integer": isinstance(value, int) and not isinstance(value, bool),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-        "boolean": isinstance(value, bool),
-        "object": isinstance(value, dict),
-        "array": isinstance(value, list),
-    }
-    if expected_type in valid_types and not valid_types[expected_type]:
-        raise ValueError(f"argument '{key}' must be a {expected_type}")
-    allowed_values = schema.get("enum")
-    if isinstance(allowed_values, (list, tuple)) and value not in allowed_values:
-        raise ValueError(f"argument '{key}' has an unsupported value")
+    if schema:
+        if not isinstance(schema, Mapping):
+            raise ValueError("schema must be an object")
+        validate_schema_arguments(normalize_argument_schema(schema), args, planning=False)
+    validate_operation_arguments(descriptor, args, planning=False)
 
 
 def validate_result(

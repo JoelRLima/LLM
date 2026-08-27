@@ -113,6 +113,7 @@ def replace_blocked_step(
         current_step=step,
         tool_history=gateway.orchestrator.agent_state.tool_history,
         last_exception=blocked.reason,
+        retry_counts=getattr(gateway.orchestrator.agent_state, "replan_counts", None),
     )
     if not blocked.is_validation_repair:
         logger.warning(

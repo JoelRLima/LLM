@@ -82,6 +82,24 @@ def derive_admission(owner: Any, obligation: TaskObligation) -> tuple[AdmissionS
 
 
 def objective_identity_exists(owner: Any, obligation: TaskObligation) -> bool:
+    if obligation.kind == "effect":
+        authority = getattr(owner, "effect_authority", None)
+        if authority is not None:
+            return any(
+                item.effect == obligation.effect
+                for item in getattr(authority, "authorized_effects", ())
+            )
+        # A directly constructed TaskIntent is an explicit internal control
+        # contract, not a free-form semantic candidate.  Keep this narrow
+        # compatibility path separate from objective-derived admission.
+        if getattr(owner, "_authority_mode", None) == "legacy":
+            return False
+        return any(
+            getattr(item, "polarity", None) == "requested"
+            and getattr(item, "effect", None) == obligation.effect
+            and str(getattr(item, "source", "")).casefold() != "model"
+            for item in getattr(owner, "effect_intents", ())
+        )
     try:
         canonical = inferred_obligations(
             owner.objective,

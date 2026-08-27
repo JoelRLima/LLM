@@ -1,20 +1,21 @@
-"""Compatibility projections of canonical task effect semantics."""
+"""Compatibility projections of the canonical effect-authority decision."""
 
 from __future__ import annotations
 
-from agent.planning.task_semantics import infer_effect_semantics
+from agent.planning.task_semantics_authority import admit_effect_authority
 
 
 def infer_requested_effects(objective: str) -> tuple[str, ...]:
-    """Return requested effects from the canonical task semantic owner."""
+    """Return only durably admitted effects for compatibility callers."""
 
-    return infer_effect_semantics(objective).requested
+    return admit_effect_authority(objective).requested_effects
 
 
 def infer_prohibited_effects(objective: str) -> tuple[str, ...]:
-    """Return prohibited effects without turning them into requests."""
+    """Return the denied effect projection without creating permission."""
 
-    return infer_effect_semantics(objective).prohibited
+    authority = admit_effect_authority(objective)
+    return tuple(dict.fromkeys(item.effect for item in authority.constraint_intents))
 
 
 __all__ = ["infer_prohibited_effects", "infer_requested_effects"]

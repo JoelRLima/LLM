@@ -7,10 +7,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from agent.reporting.artifact_projection import (
-    ArtifactEvidence,
+from agent.reporting.artifact_projection import ArtifactEvidence
+from agent.runtime.mutation_evidence import (
     metadata_is_persisted_mutation,
-    project_artifact_evidence,
+    project_mutation_evidence,
+)
+from agent.runtime.outcome_taxonomy import (
+    NON_SUCCESS_STATUSES,
+    PUBLIC_ERROR_CODES,
+    PUBLIC_TERMINAL_STATUSES,
 )
 from agent.tools.result_completeness import (
     EvidenceProvenance,
@@ -19,32 +24,14 @@ from agent.tools.result_completeness import (
     has_explicit_evidence_provenance,
 )
 
+project_artifact_evidence = project_mutation_evidence
+
 MAX_OBSERVATION_EVIDENCE_CHARS = 12_000
 MAX_OBSERVATION_RECORD_CHARS = 2_000
 MAX_INVOCATION_ARGS_CHARS = 1_000
-PUBLIC_TOOL_ERROR_CODES = frozenset(
-    {
-        "ADAPTER_FAILED", "APPLICATION_AUTHORITY_DENIED", "APPLICATION_AUTHORITY_MISSING",
-        "APPROVAL_DENIED", "APPROVAL_FAILED", "APPROVAL_REQUIRED", "AUTHORITY_REQUIRED",
-        "AUTH_DENIED", "AUTH_REQUIRED", "CANONICAL_COMMIT_FAILED", "CANCELLED", "DENIED", "DUPLICATE_INVOCATION_ID",
-        "EXECUTION_ABORTED", "EXECUTION_ERROR", "INVALID_ARGUMENTS",
-        "INVALID_RESPONSE", "INVALID_RESULT", "INVALID_STATUS", "INVOCATION_ID_MISMATCH",
-        "MISSING_REQUIRED_INPUT", "ORIGIN_MISMATCH", "PERMISSION_DENIED", "PROVIDER_FAILED",
-        "REGISTRY_UNBOUND", "REQUEST_INVALID",
-        "RUNTIME_MISMATCH", "TASK_AUTHORITY_DENIED", "TASK_AUTHORITY_MISSING", "TIMEOUT",
-        "TASK_BUDGET_EXHAUSTED", "TASK_CLEANUP_FAILURE", "TASK_COST_LIMIT_REACHED",
-        "TOOL_ERROR", "TOOL_NOT_FOUND", "UNRESOLVED_SYMBOLIC_ARGUMENT", "WATCHDOG_TIMEOUT",
-        "WORKSPACE_GRANT_DENIED", "prepared_invocation_stale", "reasoning_boundary_blocked",
-        "requested_effect_pending", "task_obligation_pending", "unresolved_symbolic_argument",
-    }
-)
-PUBLIC_TOOL_STATUSES = frozenset(
-    {
-        "blocked", "cancelled", "failed", "permission_denied", "protocol_error",
-        "succeeded", "timed_out", "unavailable", "unverified",
-    }
-)
-_NON_SUCCESS_STATUSES = PUBLIC_TOOL_STATUSES - {"succeeded"}
+PUBLIC_TOOL_ERROR_CODES = PUBLIC_ERROR_CODES
+PUBLIC_TOOL_STATUSES = PUBLIC_TERMINAL_STATUSES
+_NON_SUCCESS_STATUSES = NON_SUCCESS_STATUSES
 
 
 def result_status(result: Mapping[str, Any]) -> str:

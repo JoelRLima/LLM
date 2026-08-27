@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from agent.reporting.operational_outcome import (
+from agent.runtime.operational_outcome import (
     local_failure_permitted,
     normalize_terminal_status,
     project_operational_outcome,
@@ -13,7 +14,7 @@ from agent.reporting.operational_outcome import (
 
 def reconcile_report_status(state: Any, requested_status: str) -> str:
     last = getattr(state, "last_result", None)
-    last_status = last.get("status") if isinstance(last, dict) else None
+    last_status = last.get("status") if isinstance(last, Mapping) else None
     disposition = getattr(state, "terminal_disposition", None)
     task_failed = bool(getattr(state, "_task_failed", False))
     cancelled = bool(getattr(state, "_cancelled", False))
@@ -38,11 +39,7 @@ def canonical_effect_projection(state: Any, status: str) -> dict[str, Any]:
         "operational_outcome": outcome.to_dict(),
         "files_affected": list(outcome.files_affected),
         "mutation_occurred": outcome.mutation_occurred,
-        "final_state": (
-            "restored"
-            if outcome.rollback_occurred
-            else ("applied" if outcome.mutation_occurred else None)
-        ),
+        "final_state": outcome.final_state,
     }
 
 

@@ -1,6 +1,14 @@
+from types import SimpleNamespace
+
 import pytest
 
-from agent.planning.planning_context import PlanningContextError, PlanningTool, build_planning_context
+from agent.planning.planning_context import (
+    PlanningContextError,
+    PlanningContextSnapshot,
+    PlanningTool,
+    build_planning_context,
+)
+from agent.planning.replan import _planning_view
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import ToolDescriptor, ToolOriginKind
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
@@ -177,6 +185,28 @@ def test_planning_view_is_deterministic_and_rejects_unknown_visibility() -> None
     assert view.tools == tuple(sorted(view.tools, key=lambda tool: tool.name))
     with pytest.raises(PlanningContextError):
         context.present("linear", {"unknown"})
+
+
+def test_normal_and_replan_views_share_the_same_active_eligible_resolution() -> None:
+    identity = RuntimeSnapshotIdentity("registry", "workspace")
+    context = PlanningContextSnapshot(
+        snapshot_id="context",
+        registry_identity="registry",
+        authority_identity="authority",
+        tools=(
+            PlanningTool("builtin", "builtin"),
+            PlanningTool("other", "other"),
+        ),
+        eligible_names=frozenset({"builtin", "other"}),
+        runtime_identity=identity,
+    )
+    orchestrator = SimpleNamespace(active_skills=["builtin", "not-eligible"])
+
+    normal = context.resolve_view("linear", orchestrator.active_skills)
+    replanned = _planning_view(orchestrator, context)
+
+    assert normal.presented_names == replanned.presented_names == frozenset({"builtin"})
+    assert normal.planning_context_id == replanned.planning_context_id == context.snapshot_id
 
 
 def test_extension_is_not_presented_without_explicit_task_authority() -> None:

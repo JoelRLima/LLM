@@ -5,14 +5,20 @@ from __future__ import annotations
 import json
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
 from agent.application import AgentApplication
 from agent.approval import ApprovalPort
-from agent.evaluation.block7_identity import normalize_endpoint_identity
 from agent.evaluation.contracts import ExecutionObservation
-from agent.reporting.task_report_rendering import aggregate_metrics
+from agent.llm.identity import (
+    declared_provider_identity as project_declared_provider_identity,
+)
+from agent.llm.identity import (
+    unavailable_observed_identity,
+)
+from agent.reporting.metrics import project_run_metrics
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.tools.authority import TaskAuthoritySnapshot
@@ -63,8 +69,8 @@ class AgentApplicationScenarioExecutor:
                 result = application.run(objective)
                 history = list(application.orchestrator.agent_state.tool_history)
                 last = history[-1] if history else {}
-                raw = last.get("result", {}) if isinstance(last, dict) else {}
-                raw = raw if isinstance(raw, dict) else {}
+                raw = last.get("result", {}) if isinstance(last, Mapping) else {}
+                raw = raw if isinstance(raw, Mapping) else {}
                 data = raw.get("data")
                 output = json.dumps(data, ensure_ascii=False, default=str) if data is not None else ""
                 invocation_ids = [
@@ -75,11 +81,21 @@ class AgentApplicationScenarioExecutor:
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 metadata = metadata if isinstance(metadata, dict) else {}
                 task_metrics = application.orchestrator._get_metrics_for_task()
-                canonical_metrics = aggregate_metrics(
-                    task_metrics,
-                    tool_calls=application.orchestrator.task_budget.snapshot().tool_calls,
-                    history_records=len(history),
-                    budget_snapshot=application.orchestrator.task_budget.snapshot(),
+                budget_snapshot = application.orchestrator.task_budget.snapshot()
+                receipt_metrics = (
+                    result.receipt.get("metrics")
+                    if isinstance(result.receipt, dict)
+                    else None
+                )
+                canonical_metrics = (
+                    dict(receipt_metrics)
+                    if isinstance(receipt_metrics, dict)
+                    else project_run_metrics(
+                        task_metrics,
+                        tool_calls=budget_snapshot.tool_calls,
+                        history_records=len(history),
+                        budget_snapshot=budget_snapshot,
+                    ).to_dict()
                 )
                 measurement = {
                     "task_id": f"eval:{objective.split(':', 1)[0].strip()}",
@@ -110,42 +126,15 @@ class AgentApplicationScenarioExecutor:
                     "status": result.status,
                     "estimated_tokens": canonical_metrics.get("estimated_tokens", 0),
                     "accounted_tokens": canonical_metrics.get("accounted_tokens", 0),
+                    "reserved_tokens": canonical_metrics.get("reserved_tokens", 0),
                     "token_usage_complete": bool(canonical_metrics.get("token_usage_complete", False)),
                     "reported_input_tokens": canonical_metrics.get("reported_input_tokens", 0),
                     "reported_output_tokens": canonical_metrics.get("reported_output_tokens", 0),
                     "total_tokens": canonical_metrics.get("total_tokens"),
-                    "canonical_metrics": {
-                        "tool_calls": canonical_metrics.get("tool_calls", 0),
-                        "model_calls": canonical_metrics.get("model_calls", 0),
-                        "history_records": canonical_metrics.get("history_records", len(history)),
-                    },
+                    "token_measurement": canonical_metrics.get("token_measurement", "unavailable"),
+                    "canonical_metrics": dict(canonical_metrics),
                 }
-                raw_profile = getattr(gateway, "profile", {})
-                profile = raw_profile if isinstance(raw_profile, dict) else {}
-                capabilities = getattr(gateway, "capabilities", None)
-                measurement["provider_identity"] = {
-                    "provider": str(getattr(gateway, "provider_name", "")),
-                    "model": str(getattr(gateway, "model", "")),
-                    "profile": {
-                        key: value
-                        for key, value in profile.items()
-                        if str(key).casefold() not in {"authorization", "api_key", "password", "token", "secret"}
-                    },
-                    "capabilities": {
-                        "streaming": bool(getattr(capabilities, "streaming", False)),
-                        "structured_output_modes": [
-                            str(getattr(mode, "value", mode))
-                            for mode in getattr(capabilities, "structured_output_modes", ())
-                        ],
-                        "reasoning": bool(getattr(capabilities, "reasoning", False)),
-                        "token_counting": bool(getattr(capabilities, "token_counting", False)),
-                        "tool_calls": bool(getattr(capabilities, "tool_calls", False)),
-                    },
-                    "endpoint_identity": normalize_endpoint_identity(
-                        profile.get("base_url") or profile.get("api_url") or getattr(gateway, "endpoint_identity", None)
-                    ),
-                    "actual_provider_model_id": getattr(gateway, "provider_model_id", None),
-                }
+                measurement["provider_identity"] = project_declared_provider_identity(gateway)
                 events = list(application.orchestrator.agent_state.events)
                 gateway_evidence = {}
                 export_evidence = getattr(gateway, "export_evidence", None)
@@ -156,15 +145,9 @@ class AgentApplicationScenarioExecutor:
                 declared_provider_identity = dict(measurement["provider_identity"])
                 observed_provider_identity = gateway_evidence.get("observed_provider_identity")
                 if not isinstance(observed_provider_identity, dict):
-                    observed_provider_identity = {
-                        "available": False,
-                        "provider_model_id": None,
-                        "actual_provider_model_id": None,
-                        "model": None,
-                        "provider": None,
-                        "endpoint_identity": declared_provider_identity.get("endpoint_identity"),
-                        "source": "unavailable",
-                    }
+                    observed_provider_identity = unavailable_observed_identity(
+                        declared_provider_identity.get("endpoint_identity")
+                    )
                 measurement["declared_provider_identity"] = declared_provider_identity
                 measurement["observed_provider_identity"] = dict(observed_provider_identity)
                 measurement["provider_identity"] = {

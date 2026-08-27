@@ -89,6 +89,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Mapping
 
 from agent.approval import ApprovalDecision, AutoApprove
 from agent.skills import load_skill_registry
@@ -122,8 +123,9 @@ class DeterministicJourneyGateway:
     profile = {"temperature": 0.0, "max_tokens": 256}
     capabilities = ProviderCapabilities(streaming=False)
 
-    def __init__(self, objective):
+    def __init__(self, objective, scenario_id):
         self.objective = objective
+        self.scenario_id = scenario_id
         self.calls = []
 
     def build_payload(self, request):
@@ -138,46 +140,44 @@ class DeterministicJourneyGateway:
     def complete_payload(self, payload):
         messages = payload.get("messages", [])
         self.calls.append(payload)
-        if "SLICE_A5_PROVIDER_FAILURE" in self.objective:
+        if self.scenario_id == "a5_provider_failure":
             raise RuntimeError("provider request failed https://example.test/?api_key=TOPSECRET")
         system = str(messages[0].get("content", "")) if messages else ""
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             return '{"persona": "coder"}'
         if "Escolha exatamente uma das duas respostas JSON" in prompt:
-            if "SLICE_A6_DIRECT" in self.objective:
+            if self.scenario_id == "a6_direct":
                 return '{"action":"direct_response","answer":"abacaxi azul"}'
-            if "SLICE_A1" in self.objective:
+            if self.scenario_id == "a1_read":
                 return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
-            if "SLICE_A2" in self.objective:
-                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2","path":"."}}]}'
-            if "SLICE_C1" in self.objective or "SLICE_C3" in self.objective:
+            if self.scenario_id == "a2_search":
+                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2_EVIDENCE","path":"."}}]}'
+            if self.scenario_id in {"c1_history", "c3_failure"}:
                 return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
-            if "SLICE_C2" in self.objective:
+            if self.scenario_id == "c2_unsupported":
                 return '{"plan":[{"tool":"shell","args":{"command":"git status"}}]}'
             if (
-                "SLICE_B1" in self.objective
-                or "SLICE_B2" in self.objective
-                or "SLICE_B4" in self.objective
-                or "SLICE_B5" in self.objective
+                self.scenario_id
+                in {"b1_modify_validate", "b2_validation_failure", "b4_denied_modify", "b5_preview_blocked"}
             ):
                 return '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"%s","targets":["sample.py"]}}]}' % self.objective
-            if "SLICE_B3" in self.objective:
+            if self.scenario_id == "b3_writer_bypass":
                 return '{"plan":[{"tool":"file_writer","args":{"action":"write","file_path":"sample.py","content":"bypass\\n"}}]}'
-            if "SLICE_D1" in self.objective or "SLICE_D3" in self.objective or "SLICE_D4" in self.objective:
-                marker = "D1_EXTERNAL_EVIDENCE" if "SLICE_D1" in self.objective else ("D3_AUTHORITY_DENIED" if "SLICE_D3" in self.objective else "D4_EXTERNAL_FAILURE")
+            if self.scenario_id in {"d1_success", "d3_denied", "d4_failure"}:
+                marker = "D1_EXTERNAL_EVIDENCE" if self.scenario_id == "d1_success" else ("D3_AUTHORITY_DENIED" if self.scenario_id == "d3_denied" else "D4_EXTERNAL_FAILURE")
                 return '{"plan":[{"tool":"demo_tool","args":{"text":"%s"}}]}' % marker
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
         if "Uma fronteira sem" in prompt:
             return '{"action":"complete","reason":"as observacoes reais bastam"}'
-        if "Objetivo de engenharia:" in prompt and "SLICE_B" in self.objective:
-            if "SLICE_B1" in self.objective:
+        if "Objetivo de engenharia:" in prompt and self.scenario_id.startswith("b"):
+            if self.scenario_id == "b1_modify_validate":
                 return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
-            if "SLICE_B2" in self.objective:
+            if self.scenario_id == "b2_validation_failure":
                 return '{"changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
-            if "SLICE_B4" in self.objective:
+            if self.scenario_id == "b4_denied_modify":
                 return '{"changes":[{"path":"../outside.py","kind":"create","content":"unauthorized\\\\n"}]}'
-            if "SLICE_B5" in self.objective:
+            if self.scenario_id == "b5_preview_blocked":
                 return '{"changes":[{"path":"sample.py","kind":"modify","content":"value = 2\\\\n"}]}'
         if "Resultados das ferramentas executadas:" in prompt:
             if "SLICE_A1_EVIDENCE" in prompt:
@@ -190,13 +190,13 @@ class DeterministicJourneyGateway:
                     "initial",
                 )
                 return f"O histórico real do repositório confirma: {history_line}"
-            if "SLICE_B1" in self.objective and "validado" in prompt.casefold():
+            if self.scenario_id == "b1_modify_validate" and "validado" in prompt.casefold():
                 return "A modificaÃ§Ã£o foi aplicada e validada com sucesso pelo validator real."
-            if "SLICE_B2" in self.objective:
+            if self.scenario_id == "b2_validation_failure":
                 return "A modificaÃ§Ã£o nÃ£o foi validada: o validator real falhou e o arquivo foi revertido."
-            if "SLICE_B4" in self.objective:
+            if self.scenario_id == "b4_denied_modify":
                 return "A modificaÃ§Ã£o fora da autoridade foi recusada sem alterar o workspace."
-            if "SLICE_B5" in self.objective:
+            if self.scenario_id == "b5_preview_blocked":
                 return "A proposta foi bloqueada antes da aplicaÃ§Ã£o; o arquivo permaneceu inalterado."
             if "D1_EXTERNAL_EVIDENCE" in prompt:
                 return "A extensao externa confirmou D1_EXTERNAL_EVIDENCE pelo protocolo stdio real."
@@ -236,8 +236,12 @@ class GatewayApprovePreviewPolicy:
 def project_measurement(name, objective, started_at, application, result, family="a"):
     history = list(application.orchestrator.agent_state.tool_history)
     entry = history[-1] if history else {}
-    raw = entry.get("result") if isinstance(entry, dict) else {}
-    raw = raw if isinstance(raw, dict) else {}
+    # The installed probe exercises the canonical C9 runtime history.  Keep
+    # the measurement projection compatible with both the typed ``ToolResult``
+    # mapping and older serialized dictionaries without reintroducing a
+    # legacy result adapter in the execution path.
+    raw = entry.get("result") if isinstance(entry, Mapping) else {}
+    raw = raw if isinstance(raw, Mapping) else {}
     data = raw.get("data")
     metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
     output = json.dumps(data, ensure_ascii=False, default=str) if data is not None else ""
@@ -314,17 +318,17 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
     paths = AppPaths.discover(app_home, env={})
     ConfigRepository(paths).initialize()
     scenarios = (
-        ("a1_read", "SLICE_A1: leia o arquivo permitido e informe a evidÃªncia.", True),
-        ("a2_search", "SLICE_A2: busque a evidÃªncia no workspace e informe o resultado.", True),
-        ("a3_denied", "SLICE_A3: leia o caminho fora do workspace e informe o resultado.", True),
-        ("a5_provider_failure", "SLICE_A5_PROVIDER_FAILURE: leia notes.txt.", True),
-        ("a6_direct", "SLICE_A6_DIRECT: escreva exatamente: abacaxi azul", True),
+        ("a1_read", "leia o arquivo permitido e informe a evidÃªncia.", True),
+        ("a2_search", "busque SLICE_A2_EVIDENCE no workspace e informe o resultado.", True),
+        ("a3_denied", "leia o caminho fora do workspace e informe o resultado.", True),
+        ("a5_provider_failure", "leia notes.txt.", True),
+        ("a6_direct", "escreva exatamente: abacaxi azul", True),
         ("a4_no_tool", "oi", False),
     )
     measurements = []
     for name, objective, uses_model in scenarios:
         started_at = time.monotonic()
-        gateway = DeterministicJourneyGateway(objective)
+        gateway = DeterministicJourneyGateway(objective, name)
         with AgentApplication.create(
             paths=paths,
             workspace=workspace,
@@ -384,14 +388,14 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
 
 def run_shell_journeys(app_home, workspace, failure_workspace):
     scenarios = (
-        ("c1_history", "SLICE_C1: inspecione o histórico recente do repositório.", workspace),
-        ("c2_unsupported", "SLICE_C2: execute git status para mostrar o estado do repositório.", workspace),
-        ("c3_failure", "SLICE_C3: inspecione o histórico local.", failure_workspace),
+        ("c1_history", "inspecione o histórico recente do repositório.", workspace),
+        ("c2_unsupported", "execute git status para mostrar o estado do repositório.", workspace),
+        ("c3_failure", "inspecione o histórico local.", failure_workspace),
     )
     measurements = []
     for name, objective, scenario_workspace in scenarios:
         started_at = time.monotonic()
-        gateway = DeterministicJourneyGateway(objective)
+        gateway = DeterministicJourneyGateway(objective, name)
         scenario_paths = AppPaths.discover(app_home / name, env={})
         ConfigRepository(scenario_paths).initialize()
         with AgentApplication.create(
@@ -436,11 +440,11 @@ def run_shell_journeys(app_home, workspace, failure_workspace):
 
 def run_modify_journeys(app_home, workspace):
     scenarios = (
-        ("b1_modify_validate", "SLICE_B1: altere sample.py e valide a modificaÃ§Ã£o.", "success"),
-        ("b2_validation_failure", "SLICE_B2: aplique a alteraÃ§Ã£o determinÃ­stica e valide.", "failure"),
-        ("b3_writer_bypass", "SLICE_B3: use file_writer diretamente para alterar sample.py.", "bypass"),
-        ("b4_denied_modify", "SLICE_B4: modifique o alvo fora da autoridade permitida.", "denied"),
-        ("b5_preview_blocked", "SLICE_B5: proponha uma modificaÃ§Ã£o sem aplicar.", "preview"),
+        ("b1_modify_validate", "altere sample.py e valide a modificaÃ§Ã£o.", "success"),
+        ("b2_validation_failure", "modifique sample.py e valide.", "failure"),
+        ("b3_writer_bypass", "use file_writer diretamente para alterar sample.py.", "bypass"),
+        ("b4_denied_modify", "modifique sample.py.", "denied"),
+        ("b5_preview_blocked", "proponha uma modificaÃ§Ã£o em sample.py sem aplicar.", "preview"),
     )
     measurements = []
     for name, objective, expected in scenarios:
@@ -454,7 +458,7 @@ def run_modify_journeys(app_home, workspace):
             outside.write_text("outside = True\\n", encoding="utf-8")
             outside_before = outside.read_text(encoding="utf-8")
         started_at = time.monotonic()
-        gateway = DeterministicJourneyGateway(objective)
+        gateway = DeterministicJourneyGateway(objective, name)
         scenario_paths = AppPaths.discover(app_home / name, env={})
         ConfigRepository(scenario_paths).initialize()
         with AgentApplication.create(
@@ -585,9 +589,9 @@ def run_extension_journeys(base_dir):
 
     measurements = []
     scenarios = (
-        ("d1_success", "SLICE_D1: use a extensao externa e informe D1_EXTERNAL_EVIDENCE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
-        ("d3_denied", "SLICE_D3: use a extensao externa sem autoridade suficiente.", TaskAuthoritySnapshot(frozenset({"read", "process"}), runtime_identity=RuntimeSnapshotIdentity("wrong-runtime", "workspace"))),
-        ("d4_failure", "SLICE_D4: use a extensao externa e reporte D4_EXTERNAL_FAILURE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
+        ("d1_success", "use a extensao externa e informe D1_EXTERNAL_EVIDENCE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
+        ("d3_denied", "use a extensao externa sem autoridade suficiente.", TaskAuthoritySnapshot(frozenset({"read", "process"}), runtime_identity=RuntimeSnapshotIdentity("wrong-runtime", "workspace"))),
+        ("d4_failure", "use a extensao externa e reporte D4_EXTERNAL_FAILURE.", TaskAuthoritySnapshot(frozenset({"read", "process"}))),
     )
     for name, objective, authority in scenarios:
         scenario_home = base_dir / f"app-{name}"
@@ -605,7 +609,7 @@ def run_extension_journeys(base_dir):
         service.grant("installed.demo.extension", "process")
         marker.unlink(missing_ok=True)
         started_at = time.monotonic()
-        gateway = DeterministicJourneyGateway(objective)
+        gateway = DeterministicJourneyGateway(objective, name)
         with AgentApplication.create(paths=paths, workspace=scenario_workspace, gateway=gateway, task_authority=authority, approval_policy=AutoApprove(), configure_logging=False) as application:
             application.orchestrator._route_persona(objective)
             planning_view = application.orchestrator.get_planning_view("linear")

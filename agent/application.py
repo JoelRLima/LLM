@@ -155,7 +155,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 approval_port=selected_approval,
                 event_emitter=orchestrator._emit,
                 state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
-                    name, args, res.to_legacy_dict(include_details=True)
+                    name, args, res
                 ),
                 incident_recorder=orchestrator.agent_state.record_execution_incident,
             )

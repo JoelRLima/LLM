@@ -56,3 +56,11 @@ def test_route_objective_handles_invalid_llm_response(monkeypatch):
     persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)
     assert persona == "general"
     assert "general" in persona_prompt.lower() or "general" in skills
+
+
+def test_listing_heuristic_uses_token_boundaries_and_security_precedence():
+    sess = DummySession()
+
+    assert router.is_listing_objective("liste os arquivos") is True
+    assert router.is_listing_objective("diretorio de trabalho") is False
+    assert router.route_objective("liste vulnerabilidades em x.py", sess)[2] == "security_auditor"

@@ -47,8 +47,9 @@ def test_negative_mutation_language_is_effect_free(objective: str) -> None:
         "Delete the temporary file.",
     ],
 )
-def test_positive_mutation_language_requests_write(objective: str) -> None:
-    assert infer_requested_effects(objective) == ("write",)
+def test_legacy_projection_requires_bounded_positive_authority(objective: str) -> None:
+    expected = ("write",) if objective.startswith("Altere") else ()
+    assert infer_requested_effects(objective) == expected
 
 
 def test_positive_conditional_write_survives_negative_else_branch() -> None:

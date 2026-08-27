@@ -31,6 +31,12 @@ SECURITY_KEYWORDS = [
     "eval", "exec", "subprocess",
 ]
 
+SECURITY_KEYWORDS.extend(("vulnerabilidades", "vulnerabilities"))
+
+LISTING_KEYWORDS = frozenset(
+    {"liste", "listar", "mostrar", "mostre", "exibir", "exiba", "ls", "dir"}
+)
+
 
 def is_security_objective(objective: str) -> bool:
     """Detecta se o objetivo é uma análise de segurança.
@@ -38,8 +44,18 @@ def is_security_objective(objective: str) -> bool:
     Fonte canônica única para esta checagem — antes existiam 3-4 listas
     de keywords quase idênticas e dessincronizadas em orchestrator.py,
     final_response.py e router.py (achado crítico 1.8)."""
-    obj_lower = objective.lower()
-    return any(kw in obj_lower for kw in SECURITY_KEYWORDS)
+    obj_lower = objective.casefold()
+    return any(
+        (kw in obj_lower if " " in kw else re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", obj_lower) is not None)
+        for kw in SECURITY_KEYWORDS
+    )
+
+
+def is_listing_objective(objective: str) -> bool:
+    """Detect bounded listing intent without substring collisions."""
+
+    tokens = set(re.findall(r"[^\W_]+", objective.casefold(), flags=re.UNICODE))
+    return bool(tokens & LISTING_KEYWORDS)
 
 
 TRIVIAL_GREETINGS = {
@@ -55,6 +71,10 @@ def _is_clearly_trivial(objective: str) -> bool:
     clean = objective.strip().lower().rstrip("!.?")
     if clean in TRIVIAL_GREETINGS:
         return True
+    # A substantive question such as ``o que mudou?`` is not a greeting just
+    # because it starts with the words "o que".
+    if "o que" in clean and clean not in TRIVIAL_GREETINGS:
+        return False
     words = clean.split()
     if len(words) <= 3 and any(q in clean for q in ["como vai", "tudo bem", "quem é", "o que"]):
         return True
@@ -87,17 +107,14 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         return prompt, skills, "general"
 
     # Listagem simples: se o usuário só quer listar/mostrar/exibir arquivos, sem análise
-    obj_lower = objective.lower()
-    if any(keyword in obj_lower for keyword in ["liste", "listar", "mostrar", "mostre", "exibir", "exiba", "ls", "dir"]):
+    if is_security_objective(objective):
+        logger.info("Router (keyword) -> security_auditor")
+        prompt, skills = get_persona_config("security_auditor")
+        return prompt, skills, "security_auditor"
+    if is_listing_objective(objective):
         logger.info("Router (heuristic) → general")
         prompt, skills = get_persona_config("general")
         return prompt, skills, "general"
-
-    # Segurança: palavras-chave de auditoria têm prioridade sobre as de código
-    if is_security_objective(objective):
-        logger.info("Router (keyword) → security_auditor")
-        prompt, skills = get_persona_config("security_auditor")
-        return prompt, skills, "security_auditor"
 
     original_prompt = session.messages[0]["content"]
     session.messages[0]["content"] = ROUTER_PROMPT
@@ -127,7 +144,7 @@ def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str
         else:
             persona = "general"
     except Exception as e:
-        logger.error(f"Resposta invÃ¡lida no roteamento LLM: {e}")
+        logger.error(f"Resposta inválida no roteamento LLM: {e}")
         persona = "general"
 
     finally:

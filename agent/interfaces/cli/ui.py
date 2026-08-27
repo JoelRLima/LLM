@@ -14,6 +14,11 @@ console = Console()
 
 
 class ConsoleChangeApprover:
+    # CLI edits always carry an explicit human approval authority.  This is
+    # intentionally independent of the confidence threshold so an unavailable
+    # validator cannot make an unattended write durable.
+    requires_explicit_approval = True
+
     def __init__(self, assume_yes: bool = False) -> None:
         self.assume_yes = assume_yes
         self._lock = Lock()

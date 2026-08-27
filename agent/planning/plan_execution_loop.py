@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, cast
 
-from agent.contracts import ToolResult
 from agent.planning.completion_observations import terminal_failure
 from agent.planning.reasoning_boundary_execution import handle_boundary
 from agent.planning.task_completion import (
@@ -15,6 +14,7 @@ from agent.planning.task_completion import (
     mark_unfinished_obligation,
     needs_effect_continuation,
 )
+from agent.tools.contracts import ToolResult
 
 
 def _advance(executor: Any, objective: str, iteration: Any, continue_after_plan: bool) -> tuple[int | None, str | None, bool, bool]:
@@ -86,13 +86,13 @@ def _finish_loop(
     blocked_obligations = tuple(getattr(state, "blocked_obligations", lambda: ())())
     if blocked_obligations and not terminal_failure(executor.orchestrator):
         return allow_linear_completion(executor.orchestrator, objective)
-    if last_result is not None and not last_result.get("ok"):
+    if last_result is not None and not last_result.ok:
         canonical = allow_linear_completion(executor.orchestrator, objective)
         if canonical is not None:
             return canonical
         return (
             "A tarefa não pôde ser concluída. Último erro: "
-            f"{last_result.get('error', 'Erro desconhecido')}"
+            f"{last_result.error.message if last_result.error else (last_result.message or 'Erro desconhecido')}"
         )
     return None
 

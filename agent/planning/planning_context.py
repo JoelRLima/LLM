@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, cast
 from uuid import uuid4
 
-from agent.planning.planning_schema import validate_argument_shape, validate_property_value
 from agent.planning.planning_tool_normalization import normalize_planning_tool
 from agent.planning.schema_safety import (
     MAX_SCHEMA_DEPTH,
     PlanningSchemaError,
     validate_planning_schema_shape,
 )
+from agent.runtime.argument_contract import validate_operation_arguments
+from agent.runtime.schema_validation import normalize_argument_schema, validate_schema_arguments
 from agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
@@ -51,6 +52,7 @@ class PlanningTool:
     cancellation_safety: CancellationSafetyMode = CancellationSafetyMode.UNSUPPORTED
     argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict)
     result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
+    argument_validator: Callable[..., None] | None = field(default=None, kw_only=True)
     def __post_init__(self) -> None:
         normalize_planning_tool(self, PlanningContextError)
 
@@ -77,20 +79,19 @@ def validate_planning_tool_arguments(
         raise
     if not isinstance(args, dict):
         raise ValueError("arguments must be a JSON object")
-    properties = schema.get("properties") or {}
-    legacy_fields = {
-        key: value
-        for key, value in schema.items()
-        if key not in {"type", "required", "properties", "additionalProperties"}
-    }
-    if not properties and legacy_fields and all(isinstance(value, Mapping) for value in legacy_fields.values()):
-        # Builtin legacy descriptors use a direct field-to-schema mapping.
-        properties = legacy_fields
-    validate_argument_shape(schema, properties, args, bound_fields)
-    for key, value in args.items():
-        prop_schema = properties.get(key)
-        if isinstance(prop_schema, Mapping):
-            validate_property_value(key, value, prop_schema)
+    effective_schema = normalize_argument_schema(schema)
+    validate_schema_arguments(
+        effective_schema,
+        args,
+        bound_fields=bound_fields,
+        planning=True,
+    )
+    validate_operation_arguments(
+        descriptor,
+        args,
+        bound_fields=bound_fields,
+        planning=True,
+    )
 
 @dataclass(frozen=True, slots=True)
 class PlanningContextSnapshot:
@@ -143,6 +144,17 @@ class PlanningContextSnapshot:
             presented_names=frozenset(tool.name for tool in tools),
             runtime_identity=self.runtime_identity,
         )
+
+    def resolve_view(
+        self,
+        planner_kind: str,
+        active_names: Iterable[str] | None = None,
+    ) -> "PlanningPresentationSnapshot":
+        """Resolve the one planner view for active names and eligible tools."""
+
+        active = frozenset(active_names or ())
+        visible = self.eligible_names if not active else active & self.eligible_names
+        return self.present(planner_kind, visible)
 
     @property
     def workspace_id(self) -> str:
@@ -203,6 +215,7 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         cancellation_safety=descriptor.cancellation_safety,
         argument_provenance=descriptor.argument_provenance,
         result_data_schema=descriptor.result_data_schema,
+        argument_validator=descriptor.argument_validator,
     )
 
 

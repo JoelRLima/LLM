@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from agent.contracts import ToolResult
 from agent.planning.step_contracts import StepExecutionOutcome, StepOutcomeKind
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 DECISIVE_OUTCOMES = frozenset(
     {
@@ -62,5 +62,10 @@ def projection_for_outcome(
     return SemanticProjection(
         logical_slot=logical_slot,
         outcome=outcome,
-        result=outcome.result or {"ok": False, "done": True, "status": "failed"},
+        result=outcome.result or ToolResult(
+            invocation_id=f"planner:{logical_slot + 1}",
+            status=ToolStatus.FAILED,
+            error=ToolError("MISSING_RESULT", "resultado ausente"),
+            executed=False,
+        ),
     )

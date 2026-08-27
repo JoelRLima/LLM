@@ -10,6 +10,7 @@ from typing import Any, Callable, cast
 
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_semantics import TaskSemanticsError
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.config import DEFAULT_COST_WATCHDOG
 
 _EPHEMERAL_FIELDS = frozenset(
@@ -59,7 +60,38 @@ def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
                     "reasons": [item.reason for item in rejected],
                 },
             )
-    return True
+    objective = str(getattr(orchestrator.agent_state, "objective", "") or "").casefold()
+    required_rejection = any(
+        _rejection_is_required(item, objective, orchestrator.agent_state)
+        for item in rejected
+    )
+    if required_rejection and callable(emit):
+        emit("canonical_review_required_rejection", {"count": 1})
+    # Unrelated model additions remain safely ignored for compatibility, but
+    # a rejected obligation grounded in the user objective cannot coexist with
+    # a COMPLETE continuation.
+    return not required_rejection
+
+
+def _rejection_is_required(rejection: Any, objective: str, state: Any) -> bool:
+    proposal = getattr(rejection, "proposal", None)
+    if not isinstance(proposal, Mapping):
+        return False
+    effect = proposal.get("effect")
+    requested = set(getattr(state, "requested_effects", ()))
+    if isinstance(effect, str) and effect.casefold() in requested:
+        return True
+    for key in ("target", "query", "fallback_target"):
+        value = proposal.get(key)
+        if isinstance(value, str) and value.strip().casefold() in objective:
+            return True
+    operands = proposal.get("operands")
+    if isinstance(operands, (list, tuple)) and any(
+        isinstance(value, str) and value.strip().casefold() in objective
+        for value in operands
+    ):
+        return True
+    return False
 
 
 def _semantic_value(value: Any, field: str | None = None) -> Any:
@@ -122,21 +154,46 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
     progress = reasoning_progress_fingerprint(window)
     turns_used = int(getattr(state, "reasoning_turns_used", 0))
     last_progress = getattr(state, "reasoning_last_progress_token", None)
-    if turns_used >= limit or (
-        not uninitialized_cursor and not window
-    ) or (last_progress is not None and last_progress == progress):
+    if _boundary_is_blocked(
+        turns_used, limit, uninitialized_cursor, window, last_progress, progress
+    ):
         return BoundaryContinuationResult(blocked=True)
     state.reasoning_turns_used = turns_used + 1
     state.reasoning_last_history_count = len(history)
     state.reasoning_last_progress_token = progress
-    try:
-        continuation = orchestrator.plan_builder.continue_after_reasoning_boundary(objective)
-    except Exception:
-        return BoundaryContinuationResult(blocked=True)
-    if not continuation or continuation.kind is PlanningDecisionKind.FAIL:
+    continuation = _request_continuation(orchestrator, objective)
+    if continuation is None or continuation.kind is PlanningDecisionKind.FAIL:
         return BoundaryContinuationResult(blocked=True)
     if not _apply_canonical_review(orchestrator, continuation):
         return BoundaryContinuationResult(blocked=True)
+    return _project_continuation(orchestrator, continuation, objective)
+
+
+def _boundary_is_blocked(
+    turns_used: int,
+    limit: int,
+    uninitialized_cursor: bool,
+    window: Sequence[Mapping[str, Any]],
+    last_progress: str | None,
+    progress: str,
+) -> bool:
+    return turns_used >= limit or (
+        not uninitialized_cursor and not window
+    ) or (last_progress is not None and last_progress == progress)
+
+
+def _request_continuation(orchestrator: Any, objective: str) -> Any | None:
+    try:
+        return orchestrator.plan_builder.continue_after_reasoning_boundary(objective)
+    except BudgetExhausted:
+        raise
+    except Exception:
+        return None
+
+
+def _project_continuation(
+    orchestrator: Any, continuation: Any, objective: str,
+) -> BoundaryContinuationResult:
     if continuation.kind is PlanningDecisionKind.COMPLETE:
         return BoundaryContinuationResult(completed=True)
     if continuation.kind is PlanningDecisionKind.BLOCK:
@@ -144,8 +201,33 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
     if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
         return BoundaryContinuationResult(blocked=True)
     orchestrator._emit("reasoning_boundary_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
+    return _extend_plan(orchestrator, continuation.plan, objective)
+
+
+def _extend_plan(
+    orchestrator: Any, plan: Any, objective: str,
+) -> BoundaryContinuationResult:
+    extender = getattr(orchestrator.execution_gateway, "extend_validated_plan", None)
+    if not callable(extender):
+        return BoundaryContinuationResult(blocked=True)
     try:
-        validated = orchestrator.execution_gateway.extend_validated_plan(continuation.plan, objective)
+        try:
+            validated = extender(
+                plan,
+                objective,
+                allow_conditional_preview=True,
+            )
+        except TypeError as exc:
+            # Small compatibility test gateways (and supported external
+            # adapters) may still expose the pre-preview two-argument seam.
+            # Only retry that explicitly narrow signature mismatch; the
+            # production gateway accepts the keyword and never takes this
+            # path.
+            if "allow_conditional_preview" not in str(exc):
+                raise
+            validated = extender(plan, objective)
+    except BudgetExhausted:
+        raise
     except Exception:
         validated = None
     if validated is None:

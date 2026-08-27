@@ -18,6 +18,15 @@ def test_tool_descriptor_preserves_historical_positional_fields() -> None:
     assert descriptor.extension_id is None
 
 
+def test_legacy_tool_result_name_is_only_an_edge_compatibility_projection() -> None:
+    from agent.contracts import LegacyToolResult
+    from agent.contracts import ToolResult as LegacyName
+    from agent.tools.contracts import ToolResult as CanonicalToolResult
+
+    assert LegacyName is LegacyToolResult
+    assert LegacyName is not CanonicalToolResult
+
+
 def test_tool_descriptor_new_origin_fields_are_keyword_only() -> None:
     descriptor = ToolDescriptor(
         "x",

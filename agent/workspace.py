@@ -1,27 +1,26 @@
+"""Workspace confinement, diff display, and task restore ownership."""
+
 from __future__ import annotations
 
-import ast
 import datetime
 import difflib
 import shutil
-import subprocess
-import sys
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from agent.code.discovery import ProjectDiscovery
+from agent.code.validation import ProjectValidator, ValidationStatus
 from agent.runtime import paths
+from agent.runtime.config import DEFAULT_VALIDATION
 from agent.runtime.logging import logger
+from agent.workspace_rollback import remove_created_files, restore_backups, rollback_transactions
 
 RESTORE_POINTS_DIR = paths.RESTORE_POINTS_DIR
-DEFAULT_VALIDATION_CONFIG: Dict[str, Any] = {
-    "enabled": True,
-    "ruff": False,
-    "mypy": False,
-    "pytest": False,
-    "pytest_dir": "tests/",
-    "fail_triggers_replan": False,
-}
+# Compatibility projection: the authored defaults live in the packaged
+# configuration resource consumed by ``agent.runtime.config``.
+DEFAULT_VALIDATION_CONFIG = DEFAULT_VALIDATION
 
 
 class ValidationFailedError(Exception):
@@ -35,6 +34,7 @@ class WorkspaceManager:
         workspace_root: str | Path = ".",
         restore_points_dir: str | Path | None = RESTORE_POINTS_DIR,
         validation_config: Mapping[str, Any] | None = None,
+        validation_service: ProjectValidator | None = None,
     ) -> None:
         self.verbose = verbose
         self.workspace_root = Path(workspace_root).expanduser().resolve()
@@ -43,8 +43,22 @@ class WorkspaceManager:
         )
         self.restore_points_dir = Path(effective_restore_dir).expanduser().resolve()
         self.validation_config = self._normalize_validation_config(validation_config)
+        self.validation_service = validation_service or ProjectValidator(
+            self.workspace_root,
+            validation_config=self.validation_config,
+        )
         self.restore_points: List[Dict[str, str]] = []
         self.created_files: List[str] = []
+        self._task_transactions: list[Any] = []
+
+    def register_transaction(self, transaction: Any) -> None:
+        """Record one committed code transaction for task-level rollback."""
+
+        if transaction not in self._task_transactions:
+            self._task_transactions.append(transaction)
+
+    def discard_transactions(self) -> None:
+        self._task_transactions.clear()
 
     @staticmethod
     def _normalize_validation_config(
@@ -63,7 +77,11 @@ class WorkspaceManager:
 
     def resolve_path(self, file_path: str | Path) -> Path:
         raw = Path(file_path).expanduser()
-        candidate = raw.resolve() if raw.is_absolute() else (self.workspace_root / raw).resolve()
+        candidate = (
+            raw.resolve()
+            if raw.is_absolute()
+            else (self.workspace_root / raw).resolve()
+        )
         try:
             candidate.relative_to(self.workspace_root)
         except ValueError as exc:
@@ -106,30 +124,19 @@ class WorkspaceManager:
         except OSError as exc:
             logger.warning("Falha ao criar checkpoint para '%s': %s", target, exc)
 
-    def rollback(self) -> None:
-        if not self.restore_points and not self.created_files:
-            return
+    def rollback(self) -> bool:
+        if not self.restore_points and not self.created_files and not self._task_transactions:
+            return True
+        success = rollback_transactions(self._task_transactions, logger)
         if self.verbose:
             print("⏪ [ROLLBACK] Restaurando arquivos ao estado original...")
-
-        for entry in reversed(self.restore_points):
-            original = self.resolve_path(entry["original"])
-            backup = Path(entry["backup"])
-            try:
-                shutil.copy2(backup, original)
-                backup.unlink(missing_ok=True)
-            except OSError as exc:
-                logger.error("Falha ao restaurar '%s': %s", original, exc)
-
-        for file_path in reversed(self.created_files):
-            target = self.resolve_path(file_path)
-            try:
-                target.unlink(missing_ok=True)
-            except OSError as exc:
-                logger.error("Falha ao remover arquivo criado '%s': %s", target, exc)
+        success = restore_backups(self.restore_points, self.resolve_path, logger) and success
+        success = remove_created_files(self.created_files, self.resolve_path, logger) and success
 
         self.restore_points.clear()
         self.created_files.clear()
+        self._task_transactions.clear()
+        return success
 
     def show_diff(self, file_path: str, new_content: str) -> None:
         target = self.resolve_path(file_path)
@@ -150,80 +157,38 @@ class WorkspaceManager:
         else:
             print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
 
-    def _run_ruff(self, file_path: Path) -> Optional[str]:
-        return self._run_validation_command(
-            ["ruff", "check", str(file_path)],
-            "Ruff",
-            "Ferramenta 'ruff' não está instalada; verificação ignorada.",
-        )
-
-    def _run_mypy(self, file_path: Path) -> Optional[str]:
-        return self._run_validation_command(
-            ["mypy", "--ignore-missing-imports", str(file_path)],
-            "Mypy",
-            "Ferramenta 'mypy' não está instalada; verificação ignorada.",
-        )
-
-    def _run_pytest(self, pytest_dir: str) -> Optional[str]:
-        target = self.resolve_path(pytest_dir)
-        return self._run_validation_command(
-            [sys.executable, "-m", "pytest", str(target)],
-            "Pytest",
-            "Ferramenta 'pytest' não está instalada; verificação ignorada.",
-        )
-
-    def _run_validation_command(
-        self,
-        command: list[str],
-        label: str,
-        unavailable_message: str,
-    ) -> Optional[str]:
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=10,
-                cwd=self.workspace_root,
-            )
-            if result.returncode != 0:
-                output = (result.stdout + result.stderr).strip()
-                return f"{label}: {output}" if output else f"{label}: verificação falhou."
-        except FileNotFoundError:
-            logger.warning(unavailable_message)
-        except subprocess.TimeoutExpired:
-            logger.warning("Verificação '%s' excedeu o tempo limite (10s); ignorada.", label)
-        except OSError as exc:
-            logger.warning("Falha inesperada ao executar '%s': %s", label, exc)
-        return None
-
     def lint_check(self, file_path: str) -> Optional[str]:
+        """Compatibility adapter to the canonical project validation service."""
+
         target = self.resolve_path(file_path)
         if target.suffix != ".py":
             return None
 
-        errors: List[str] = []
-        try:
-            ast.parse(target.read_text(encoding="utf-8"), filename=str(target))
-        except (SyntaxError, UnicodeError) as exc:
-            errors.append(f"Sintaxe: {exc}")
-
-        if self.validation_config.get("enabled", True):
-            checks = (
-                ("ruff", lambda: self._run_ruff(target)),
-                ("mypy", lambda: self._run_mypy(target)),
-                (
-                    "pytest",
-                    lambda: self._run_pytest(str(self.validation_config["pytest_dir"])),
-                ),
+        profile = ProjectDiscovery(self.workspace_root).discover()
+        if self.validation_config.get("pytest") is True:
+            self.resolve_path(str(self.validation_config["pytest_dir"]))
+            profile = replace(
+                profile,
+                test_roots=(str(self.validation_config["pytest_dir"]),),
             )
-            for name, check in checks:
-                if self.validation_config.get(name, False) and (error := check()):
-                    errors.append(error)
-
-        if not errors:
+        relative = target.relative_to(self.workspace_root).as_posix()
+        report = self.validation_service.validate(
+            profile,
+            [relative],
+            include_tests=False,
+        )
+        if report.status in {ValidationStatus.PASSED, ValidationStatus.UNAVAILABLE}:
+            if report.status is ValidationStatus.UNAVAILABLE:
+                logger.warning(
+                    "Validação opcional indisponível para '%s'; ignorada.",
+                    file_path,
+                )
             return ""
-        message = "\n".join(errors)
+        message = "\n".join(
+            diagnostic.message
+            for diagnostic in report.diagnostics
+            if diagnostic.message
+        ) or report.status.value
         if self.validation_config.get("fail_triggers_replan", False):
             raise ValidationFailedError(message)
         return message

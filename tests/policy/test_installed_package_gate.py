@@ -182,7 +182,7 @@ def test_installed_probe_covers_local_history_and_remerge_denials() -> None:
 def test_installed_probe_covers_slice_a_journey_and_measurement() -> None:
     assert "AgentApplication.create" in INSTALLED_PROBE_SOURCE
     assert "run_slice_a_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_A1", "SLICE_A2", "SLICE_A3", "a4_no_tool", "SLICE_A6_DIRECT"):
+    for marker in ("a1_read", "a2_search", "a3_denied", "a4_no_tool", "a6_direct"):
         assert marker in INSTALLED_PROBE_SOURCE
     for field in (
         "task_id",
@@ -199,7 +199,7 @@ def test_installed_probe_covers_slice_a_journey_and_measurement() -> None:
 
 def test_installed_probe_covers_slice_c_journey_and_reuses_measurement() -> None:
     assert "run_shell_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_C1", "SLICE_C2", "SLICE_C3", "git log -1", "git status"):
+    for marker in ("c1_history", "c2_unsupported", "c3_failure", "git log -1", "git status"):
         assert marker in INSTALLED_PROBE_SOURCE
     assert 'project_measurement(name, objective, started_at, application, result, family="c")' in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_c_payload)
@@ -208,7 +208,7 @@ def test_installed_probe_covers_slice_c_journey_and_reuses_measurement() -> None
 
 def test_installed_probe_covers_slice_b_modify_validate_journey() -> None:
     assert "run_modify_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_B1", "SLICE_B2", "SLICE_B3", "SLICE_B4", "code_task", "file_writer"):
+    for marker in ("b1_modify_validate", "b2_validation_failure", "b3_writer_bypass", "b4_denied_modify", "code_task", "file_writer"):
         assert marker in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_b_payload)
     assert 'payload.get("slice_b")' in source
@@ -217,11 +217,16 @@ def test_installed_probe_covers_slice_b_modify_validate_journey() -> None:
 
 def test_installed_probe_covers_external_stdio_slice_d() -> None:
     assert "run_extension_journeys" in INSTALLED_PROBE_SOURCE
-    for marker in ("SLICE_D1", "SLICE_D3", "SLICE_D4", "demo_tool", "TaskAuthoritySnapshot", "stdio_process_required"):
+    for marker in ("d1_success", "d3_denied", "d4_failure", "demo_tool", "TaskAuthoritySnapshot", "stdio_process_required"):
         assert marker in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_d_payload)
     assert 'payload.get("slice_d")' in source
     assert "spawned" in source
+
+
+def test_installed_runtime_objectives_do_not_embed_slice_scenario_labels() -> None:
+    for label in ("SLICE_A1:", "SLICE_B1:", "SLICE_C1:", "SLICE_D1:"):
+        assert label not in INSTALLED_PROBE_SOURCE
 
 
 def test_installed_probe_covers_stale_workspace_lock_recovery() -> None:

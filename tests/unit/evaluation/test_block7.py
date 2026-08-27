@@ -18,11 +18,26 @@ from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 
 
-def test_h_series_is_exactly_versioned_h1_to_h12() -> None:
+def test_h_series_is_exactly_versioned_h1_to_h19() -> None:
     validate_h_series()
-    assert H_SERIES_VERSION == "B7-HSERIES-V1.0"
-    assert [item.h_id for item in H_SERIES] == [f"H{index}" for index in range(1, 13)]
-    assert len({item.h_id for item in H_SERIES}) == 12
+    assert H_SERIES_VERSION == "B7-HSERIES-V1.5"
+    assert [item.h_id for item in H_SERIES] == [f"H{index}" for index in range(1, 20)]
+    assert len({item.h_id for item in H_SERIES}) == 19
+
+
+def test_h19_covers_positive_proof_and_full_consumption_classes() -> None:
+    h19 = next(item for item in H_SERIES if item.h_id == "H19")
+
+    assert {arm.arm_id for arm in h19.arms} == {
+        "positive-direct",
+        "unknown-suffix",
+        "unsupported-prefix",
+        "quoted-command",
+        "contrast-constraint",
+        "multi-target-unknown-control",
+    }
+    assert h19.arms[0].oracle["required_tools"] == ("code_task",)
+    assert all(arm.oracle.get("forbidden_tools") == ("code_task",) for arm in h19.arms[1:])
 
 
 def test_h2_preserves_historical_scalar_fixture_and_binding_shape() -> None:
@@ -127,12 +142,12 @@ def test_recording_gateway_is_observational_and_keeps_call_identity() -> None:
     assert exported["observed_provider_identity"]["identity_sufficient"] is False
 
 
-def test_phase4_audit_covers_every_arm_with_sixteen_answers() -> None:
+def test_phase4_audit_covers_all_h_series_arms_with_sixteen_answers() -> None:
     audit = phase4_audit(Path(__file__).parents[3])
 
     assert audit["known_deterministic_blockers"] == []
     assert len(audit["questions"]) == 16
-    assert len(audit["reviews"]) == 13
+    assert len(audit["reviews"]) == sum(len(item.arms) for item in H_SERIES)
     assert all(len(review["questions"]) == 16 for review in audit["reviews"])
     assert audit["h2_specific_audit"]["fixture_content"] == "orion_584271"
     assert audit["grounding_audit"]["H9"]

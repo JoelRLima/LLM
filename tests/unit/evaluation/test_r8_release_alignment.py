@@ -16,6 +16,7 @@ from agent.evaluation.block7_identity import fake_model_identity, resume_compati
 from agent.evaluation.block7_oracle import deterministic_oracle_evidence
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from agent.reporting.metrics import project_run_metrics
 from tests.unit.evaluation.test_block7_corrective import _analysis_report
 
 
@@ -222,6 +223,31 @@ def test_metrics_use_canonical_invocation_owner_not_history_projection() -> None
         {"evidence": {"measurement": {"tool_history_count": 99, "canonical_metrics": {"tool_calls": 1}}}},
     ]
     assert metric_summary(runs)["tool_calls"] == 1
+
+
+def test_evaluation_reads_the_same_typed_metrics_projection_as_reporting() -> None:
+    snapshot = project_run_metrics(
+        [{
+            "type": "model_call",
+            "input_tokens": 4,
+            "output_tokens": 6,
+            "token_usage_complete": True,
+        }]
+    ).to_dict()
+
+    summary = metric_summary([{
+        "evidence": {
+            "measurement": {
+                "canonical_metrics": snapshot,
+                "duration_ms": 12,
+            }
+        }
+    }])
+
+    assert summary["model_calls"] == snapshot["model_calls"]
+    assert summary["accounted_tokens"] == snapshot["accounted_tokens"]
+    assert summary["estimated_tokens"] == snapshot["estimated_tokens"]
+    assert summary["token_usage_complete"] is True
 
 
 def test_h12_grading_requires_only_expected_changed_file() -> None:

@@ -4,152 +4,83 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Sequence
+from collections.abc import Mapping, Sequence
 
+from agent.planning.task_semantics_authority import admit_effect_authority
+from agent.planning.task_semantics_effect_inference import (
+    _READ_VERBS,
+    _RESPONSE_VERBS,
+    PathRole,
+    _classify_path_roles,
+    _clause_intents,
+    _file_targets,
+    _intent_clauses,
+    _is_negated,
+    _repair_mojibake,
+    _search_spec,
+    _tokens,
+)
+from agent.planning.task_semantics_proposal import is_proposal_only_objective
 from agent.planning.task_semantics_types import (
     EffectSemantics,
+    PredicateEvidence,
+    PredicateResolutionState,
     TaskObligation,
+    TaskSemanticsError,
+    _eligible_evidence_ref,
     _normalize_text,
 )
-
-_WORD_RE = re.compile(r"[\w]+", re.UNICODE)
-_FILE_RE = re.compile(r"(?<!\w)([\w./\\-]+\.[A-Za-z0-9]{1,16})(?!\w)", re.UNICODE)
-_NEGATION_WORDS = frozenset({"nao", "sem", "never", "nunca", "without"})
-_DIRECT_TEXT_WORDS = frozenset({"exatamente", "exactly"})
-_EFFECT_TERMS = {
-    "adicione": "write", "adicionar": "write", "ajuste": "write", "ajustar": "write",
-    "alterar": "write", "altere": "write", "alteracao": "write", "aplicar": "write",
-    "aplique": "write", "aplicacao": "write", "change": "write", "corrija": "write",
-    "corrigir": "write", "create": "write", "crie": "write", "criar": "write",
-    "delete": "write", "edit": "write", "edite": "write", "editar": "write",
-    "escreva": "write", "escrever": "write", "fix": "write", "modifique": "write",
-    "modificar": "write", "modificacao": "write", "modify": "write", "mudanca": "write", "remova": "write", "remover": "write",
-    "refactor": "write", "replace": "write", "substitua": "write", "substituir": "write",
-    "update": "write", "write": "write", "produza": "write", "produzir": "write",
-    "gere": "write", "gerar": "write", "gera": "write",
-}
-_MEMORY_CONTEXT_WORDS = frozenset({"memoria", "memory"})
-_MEMORY_DIRECT_TERMS = frozenset(
-    {
-        "lembre", "lembrar", "remember", "memorize", "memorise", "memorizar",
-        "esqueca", "esquecer", "forget",
-    }
-)
-_MEMORY_CONTEXT_TERMS = frozenset(
-    {
-        "salve", "salvar", "save", "guardar", "guarde", "store", "armazenar",
-        "remova", "remover", "remove", "delete", "apague", "apagar",
-    }
-)
-_OBLIGATION_TERMS = {
-    "leia": "read", "ler": "read", "read": "read", "inspect": "read",
-    "inspecione": "read", "examinar": "read", "examine": "read", "consulte": "read",
-    "consultar": "read", "procure": "search", "procurar": "search", "busque": "search",
-    "buscar": "search", "pesquise": "search", "pesquisar": "search", "search": "search",
-    "find": "search", "encontre": "search", "encontrar": "search", "compare": "compare",
-    "comparar": "compare", "diff": "compare", "analise": "analyze", "analisar": "analyze",
-    "analyze": "analyze",
-}
-_READ_VERBS = frozenset(
-    {"leia", "ler", "read", "inspect", "inspecione", "examinar", "examine", "consulte", "consultar"}
-)
-_SEARCH_FILLER = frozenset(
-    {
-        "o", "a", "os", "as", "um", "uma", "nos", "nas", "no", "na", "em", "de", "do", "da", "dos", "das",
-        "outros", "outras", "arquivos", "arquivo", "workspace", "workspaces", "esse", "essa", "este", "esta", "pela", "pelo", "por", "para", "que", "ele", "ela",
-        "eles", "elas", "palavra", "texto", "ocorrencia", "correspondente", "contem", "contém",
-        "observado", "observada", "observados", "observadas", "observacao", "observacoes",
-        "evidencia", "evidencias", "evidaancia", "evidaancias", "resultado", "resultados",
-        "informacao", "informacoes", "conteudo", "conteudos", "e", "and", "informe", "informar", "diga", "dizer",
-    }
-)
-
-
-def _tokens(objective: str) -> tuple[str, ...]:
-    objective = _repair_mojibake(objective)
-    normalized = _normalize_text(objective).replace("â€™", "'")
-    normalized = normalized.replace("don't", "do not").replace("dont", "do not")
-    return tuple(_WORD_RE.findall(normalized))
-
-
-def _repair_mojibake(text: str) -> str:
-    """Recover one common UTF-8-as-Latin-1 layer without changing valid text."""
-
-    try:
-        repaired = text.encode("latin-1").decode("utf-8")
-    except (UnicodeDecodeError, UnicodeEncodeError):
-        return text
-    return repaired if repaired != text else text
-
-
-def _is_negated(tokens: Sequence[str], index: int) -> bool:
-    return (index > 0 and tokens[index - 1] in {"nao", "sem", "never", "nunca", "without"}) or (
-        index > 1 and tokens[index - 2 : index] == ("do", "not")
-    )
-
-
-def _is_direct_text_request(tokens: Sequence[str], index: int) -> bool:
-    return index + 1 < len(tokens) and tokens[index + 1] in _DIRECT_TEXT_WORDS
-
-
-def _near_memory_context(tokens: Sequence[str], index: int) -> bool:
-    start = max(0, index - 2)
-    end = min(len(tokens), index + 5)
-    return bool(set(tokens[start:end]) & _MEMORY_CONTEXT_WORDS)
-
-
-def _memory_effect_indices(tokens: Sequence[str]) -> tuple[int, ...]:
-    return tuple(
-        index
-        for index, token in enumerate(tokens)
-        if token in _MEMORY_DIRECT_TERMS
-        or (token in _MEMORY_CONTEXT_TERMS and _near_memory_context(tokens, index))
-    )
 
 
 def infer_effect_semantics(objective: str) -> EffectSemantics:
     """Infer requested and prohibited effects from user intent only."""
-
     if not isinstance(objective, str):
-        from agent.planning.task_semantics_types import TaskSemanticsError
-
         raise TaskSemanticsError("objetivo deve ser textual")
-    tokens = _tokens(objective)
+    intents = list(_clause_intents(objective))
     requested: list[str] = []
     prohibited: list[str] = []
-    memory_indices = set(_memory_effect_indices(tokens))
-    for index, token in enumerate(tokens):
-        effect = _EFFECT_TERMS.get(token)
-        if effect is None or _is_direct_text_request(tokens, index):
-            continue
-        if effect == "write" and index in memory_indices and token in _MEMORY_CONTEXT_TERMS:
-            continue
-        target = prohibited if _is_negated(tokens, index) else requested
-        if effect not in target:
-            target.append(effect)
-    for index in memory_indices:
-        target = prohibited if _is_negated(tokens, index) else requested
-        if "memory_write" not in target:
-            target.append("memory_write")
-    return EffectSemantics(tuple(requested), tuple(prohibited))
+    for item in intents:
+        target = prohibited if item.polarity == "prohibited" else requested
+        if item.effect not in target:
+            target.append(item.effect)
+    return EffectSemantics(
+        tuple(requested),
+        tuple(prohibited),
+        tuple(intents),
+        proposal_only=is_proposal_only_objective(objective),
+    )
 
 
 def infer_requested_effects(objective: str) -> tuple[str, ...]:
-    return infer_effect_semantics(objective).requested
+    return admit_effect_authority(objective).requested_effects
 
 
 def infer_prohibited_effects(objective: str) -> tuple[str, ...]:
-    return infer_effect_semantics(objective).prohibited
+    authority = admit_effect_authority(objective)
+    return tuple(dict.fromkeys(item.effect for item in authority.constraint_intents))
 
 
 def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskObligation]:
+    admitted_effects = admit_effect_authority(objective).requested_effects
     tokens = _tokens(objective)
     paths = _file_targets(objective)
     obligations: list[TaskObligation] = []
+    # A direct content question is already a user-authored read request. It
+    # must not be downgraded to an implicit safety obligation that requires a
+    # separate runtime admission token before the normal read plan can run.
+    normalized_objective = _normalize_text(_repair_mojibake(objective))
+    has_content_question = bool(
+        paths
+        and "?" in objective
+        and re.search(
+            r"\b(?:qual|what)\b[^?]*(?:conteudo|content)\b",
+            normalized_objective,
+        )
+    )
     has_explicit_read = any(
         token in _READ_VERBS and not _is_negated(tokens, index)
         for index, token in enumerate(tokens)
-    )
+    ) or has_content_question
     has_compare_reads = any(
         token == "compare" and not _is_negated(tokens, index)
         for index, token in enumerate(tokens)
@@ -168,6 +99,27 @@ def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskO
             )
             for index, path in enumerate(paths)
         )
+
+    implicit_paths, implicit_query = _implicit_workspace_evidence(objective, tokens, paths)
+    if not has_explicit_read and not has_compare_reads:
+        obligations.extend(
+            TaskObligation(
+                id=f"workspace:read:{index + 1}",
+                kind="read",
+                target=path,
+                description=f"Obter evidência fresca do workspace para {path}.",
+            )
+            for index, path in enumerate(implicit_paths)
+        )
+        if implicit_query is not None:
+            obligations.append(
+                TaskObligation(
+                    id="workspace:search",
+                    kind="search",
+                    query=implicit_query,
+                    description="Buscar evidência fresca no workspace para responder à pergunta.",
+                )
+            )
 
     search_spec = _search_spec(objective, tokens)
     if search_spec is not None:
@@ -209,44 +161,194 @@ def inferred_obligations(objective: str, effects: EffectSemantics) -> list[TaskO
             effect=effect,
             description=f"Produzir o efeito operacional solicitado: {effect}.",
         )
-        for effect in effects.requested
+        for effect in admitted_effects
     )
     return obligations
 
 
-def _file_targets(objective: str) -> tuple[str, ...]:
-    values: list[str] = []
-    for match in _FILE_RE.finditer(objective):
-        value = match.group(1).strip(".,;:()[]{}")
-        if value and value.casefold() not in {item.casefold() for item in values}:
-            values.append(value)
-    return tuple(values)
+def predicate_resolutions_from_observations(
+    objective: str,
+    observations: Sequence[Mapping[str, object]] | None,
+) -> dict[str, PredicateEvidence]:
+    """Derive only deterministic predicate facts from trusted observations.
+
+    Model text and the condition strings carried by ``EffectIntent`` are not
+    consulted as evidence.  A bounded predicate is resolved only when a
+    completed observation names the predicate's concrete target and returns
+    textual data.
+    """
+
+    intents = infer_effect_semantics(objective).intents
+    predicate_ids = tuple(
+        dict.fromkeys(
+            item.predicate_id
+            for item in intents
+            if item.predicate_id is not None
+        )
+    )
+    resolved: dict[str, PredicateEvidence] = {}
+    for index, observation in enumerate(observations or (), start=1):
+        for predicate_id in predicate_ids:
+            if predicate_id is None:
+                continue
+            evidence = predicate_evidence_from_observation(
+                predicate_id, observation, evidence_ref=index
+            )
+            if evidence is not None:
+                resolved[predicate_id] = evidence
+    return resolved
 
 
-def _search_spec(objective: str, tokens: Sequence[str]) -> tuple[str | None, str | None] | None:
-    normalized_objective = _normalize_text(objective)
-    for index, token in enumerate(tokens):
-        if _OBLIGATION_TERMS.get(token) != "search" or _is_negated(tokens, index):
-            continue
-        candidates = tokens[index + 1 : index + 8]
-        for candidate_index, candidate in enumerate(candidates):
-            if candidate not in _SEARCH_FILLER and candidate not in _OBLIGATION_TERMS:
-                previous = candidates[candidate_index - 1] if candidate_index else None
-                if candidate == "valor" and (
-                    "valor observado" in normalized_objective
-                    or previous in {"esse", "essa", "este", "esta"}
-                ):
-                    return None, "previous_read"
-                return candidate, None
-        if any(
-            phrase in normalized_objective
-            for phrase in ("palavra que ele contem", "texto observado", "valor observado", "use o texto observado")
-        ):
-            return None, "previous_read"
-        # A generic search request has no bounded identity to bind. Do not
-        # manufacture a previous-read obligation that the task never asked for.
+def predicate_evidence_from_observation(
+    predicate_id: str,
+    observation: Mapping[str, object],
+    *,
+    evidence_ref: int | str,
+) -> PredicateEvidence | None:
+    """Admit and evaluate one predicate from canonical observation evidence."""
+
+    try:
+        ref = _eligible_evidence_ref(evidence_ref)
+    except (TaskSemanticsError, TypeError, ValueError):
         return None
-    return None
+    if not isinstance(observation, Mapping):
+        return None
+    result = observation.get("result")
+    args = observation.get("args")
+    if not isinstance(result, Mapping) or not isinstance(args, Mapping):
+        return None
+    if result.get("executed") is not True or str(result.get("status") or "").casefold() not in {
+        "succeeded",
+        "success",
+    }:
+        return None
+    data = result.get("data")
+    if not isinstance(data, str) or not _has_complete_observation(result):
+        return None
+    target = next(
+        (
+            value
+            for key in ("file_path", "path", "target", "file")
+            for value in (args.get(key),)
+            if isinstance(value, str) and value.strip()
+        ),
+        None,
+    )
+    parts = predicate_id.split("|", 2)
+    if target is None or len(parts) != 3:
+        return None
+    target_identity = _normalize_text(target).replace("\\", "/").strip("/")
+    if parts[0] != target_identity:
+        return None
+    _target, operator, literal = parts
+    if operator == "contains":
+        value = literal in data.casefold()
+    elif operator == "equals":
+        value = data.casefold() == literal.casefold()
+    else:
+        return None
+    return PredicateEvidence(
+        predicate_id,
+        PredicateResolutionState.TRUE if value else PredicateResolutionState.FALSE,
+        ref,
+        "workspace_observation",
+    )
+
+
+def _has_complete_observation(result: Mapping[str, object]) -> bool:
+    """Require an exact text artifact when a producer exposes completeness."""
+
+    artifacts = result.get("artifacts")
+    if artifacts is None:
+        # Small deterministic/unit observations may omit artifact metadata;
+        # their explicit textual result remains admissible for compatibility.
+        return True
+    if not isinstance(artifacts, (list, tuple)):
+        return False
+    return any(
+        isinstance(item, Mapping)
+        and isinstance(item.get("metadata"), Mapping)
+        and item["metadata"].get("complete") is True
+        for item in artifacts
+    )
+
+
+def _implicit_workspace_evidence(
+    objective: str, tokens: Sequence[str], paths: tuple[str, ...]
+) -> tuple[tuple[str, ...], str | None]:
+    """Detect content-dependent path roles without a property-word catalog.
+
+    The request frame (question/interrogative or a bounded response verb) and
+    the path's structural role decide whether a read is needed.  The nouns
+    being requested are intentionally opaque, so an unseen field name cannot
+    silently avoid grounding.  Conceptual questions remain excluded.
+    """
+
+    normalized = _normalize_text(_repair_mojibake(objective))
+    conceptual = bool(
+        re.search(
+            r"\b(?:o que e(?:\s+(?:um|uma|o|a|the))?\s+[\w./-]+\.[a-z0-9]{1,16}|"
+            r"what is\s+[\w./-]+\.[a-z0-9]{1,16}(?:\s+for)?|para que serve|"
+            r"explique o conceito de|explain the concept of|conceito de|concept of)\b",
+            normalized,
+        )
+    )
+    token_set = set(tokens)
+    request_verbs = {
+        "diga", "dizer", "informe", "informar", "list", "liste", "mostrar",
+        "mostre", "report", "relate", "show", "tell",
+    }
+    interrogatives = {
+        "como", "how", "onde", "where", "qual", "quais", "quanto", "quantos",
+        "quantas", "what", "which",
+    }
+    source_transform = bool(token_set & _RESPONSE_VERBS)
+    has_request_frame = bool(token_set & request_verbs)
+    has_interrogative_frame = bool(token_set & interrogatives) and (
+        objective.rstrip().endswith("?") or has_request_frame or "o que" in normalized
+    )
+    has_what_frame = "o que" in normalized and objective.rstrip().endswith("?")
+    file_report = bool(
+        re.search(r"\b(?:o que diz|what does|diz|says)\b", normalized)
+    )
+    question = bool(
+        source_transform
+        or has_request_frame
+        or has_interrogative_frame
+        or has_what_frame
+        or (paths and objective.rstrip().endswith("?"))
+        or file_report
+        or re.search(r"\b(?:onde|where|quantos testes|how many tests)\b", normalized)
+    )
+    if not question:
+        return (), None
+    destination_paths = {
+        item.value.casefold()
+        for clause in _intent_clauses(objective)
+        for item in _classify_path_roles(clause, _tokens(clause))
+        if item.role in {PathRole.DESTINATION, PathRole.MUTATION_TARGET}
+    }
+    implicit_paths: tuple[str, ...] = ()
+    if paths and not conceptual:
+        implicit_paths = tuple(
+            path for path in paths if path.casefold() not in destination_paths
+        )
+
+    query: str | None = None
+    where_match = re.search(
+        r"\b(?:onde|where)\s+([a-z_][a-z0-9_.-]*)\s+(?:e|é|is)\s+(?:definid[oa]|defined)",
+        normalized,
+    )
+    if where_match:
+        query = where_match.group(1)
+    else:
+        count_match = re.search(
+            r"\bquantos\s+testes\s+existem\s+para\s+([a-z_][a-z0-9_.-]*)",
+            normalized,
+        )
+        if count_match:
+            query = count_match.group(1)
+    return implicit_paths, query
 
 
 def stable_obligation_id(kind: str, description: str, effect: str | None = None) -> str:
@@ -260,4 +362,6 @@ __all__ = (
     "infer_prohibited_effects",
     "infer_requested_effects",
     "inferred_obligations",
+    "predicate_resolutions_from_observations",
+    "predicate_evidence_from_observation",
 )

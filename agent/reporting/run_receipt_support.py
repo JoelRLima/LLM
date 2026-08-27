@@ -5,27 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from agent.execution_incidents import CANONICAL_COMMIT_FAILED
+from agent.reporting.metrics import project_run_metrics
 from agent.reporting.public_safety import sanitize_public_text
+from agent.runtime.outcome_taxonomy import failure_layer_for_code as _canonical_failure_layer_for_code
 
 
 def failure_layer_for_code(code: str | None) -> str:
-    if code == "MODEL_PROVIDER_ERROR":
-        return "provider"
-    if code in {
-        "APPLICATION_AUTHORITY_MISSING",
-        "APPLICATION_AUTHORITY_DENIED",
-        "TASK_AUTHORITY_MISSING",
-        "TASK_AUTHORITY_DENIED",
-        "WORKSPACE_GRANT_DENIED",
-        "RUNTIME_MISMATCH",
-        "APPROVAL_REQUIRED",
-        "APPROVAL_DENIED",
-        "PERMISSION_DENIED",
-    }:
-        return "gateway"
-    if code in {"TOOL_ERROR", "EXECUTION_ERROR", "TOOL_NOT_FOUND"}:
-        return "tool"
-    return "runtime"
+    return _canonical_failure_layer_for_code(code)
 
 
 def execution_incidents(state: Any) -> list[dict[str, Any]]:
@@ -68,9 +54,26 @@ def receipt_cause(
     }
 
 
+def metrics_for_orchestrator(orchestrator: Any) -> dict[str, Any] | None:
+    getter = getattr(orchestrator, "_get_metrics_for_task", None)
+    if not callable(getter):
+        return None
+    entries = getter()
+    ledger = getattr(orchestrator, "task_budget", None)
+    snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
+    history = getattr(getattr(orchestrator, "agent_state", None), "tool_history", ()) or ()
+    return project_run_metrics(
+        entries,
+        tool_calls=(snapshot.tool_calls if snapshot is not None else None),
+        history_records=len(history),
+        budget_snapshot=snapshot,
+    ).to_dict()
+
+
 __all__ = [
     "executed_projection",
     "execution_incidents",
     "failure_layer_for_code",
+    "metrics_for_orchestrator",
     "receipt_cause",
 ]

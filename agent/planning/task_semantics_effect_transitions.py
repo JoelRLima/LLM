@@ -114,22 +114,71 @@ def record_unrequested_effect(
     *,
     evidence_ref: int | str,
     effect_authority: Any,
+    force: bool = False,
 ) -> None:
     """Record a durable effect proven by evidence but absent from intent."""
 
     normalized = _normalize_effect(effect)
-    if normalized in owner.requested_effects:
+    if normalized in owner.requested_effects and not force:
         return
     ref = _eligible_evidence_ref(evidence_ref)
     observation = getattr(owner, "_evidence_catalog", {}).get(ref)
-    if effect_authority is None or not isinstance(observation, Mapping) or not effect_observation_proves_terminal(
-        effect_authority,
-        ObligationStatus.SATISFIED,
-        observation,
-    ):
+    if not _proves_observed_effect(owner, normalized, ref, observation, effect_authority):
         raise TaskSemanticsError("evidencia nao prova o efeito nao solicitado")
     if normalized not in owner._unrequested_effects:
         owner._unrequested_effects.append(normalized)
+
+
+def record_prohibited_effect(
+    owner: Any,
+    effect: str,
+    *,
+    evidence_ref: int | str,
+    effect_authority: Any,
+) -> None:
+    """Record a durable effect observed inside a prohibited target scope."""
+
+    normalized = _normalize_effect(effect)
+    ref = _eligible_evidence_ref(evidence_ref)
+    observation = getattr(owner, "_evidence_catalog", {}).get(ref)
+    if not _proves_observed_effect(owner, normalized, ref, observation, effect_authority):
+        raise TaskSemanticsError("evidencia nao prova o efeito proibido")
+    occurred = getattr(owner, "_prohibited_effects_occurred", None)
+    if occurred is None:
+        occurred = []
+        owner._prohibited_effects_occurred = occurred
+    if normalized not in occurred:
+        occurred.append(normalized)
+
+
+def _proves_observed_effect(
+    owner: Any,
+    effect: str,
+    evidence_ref: int | str,
+    observation: Any,
+    effect_authority: Any,
+) -> bool:
+    if (
+        effect_authority is not None
+        and isinstance(observation, Mapping)
+        and effect_observation_proves_terminal(
+            effect_authority,
+            ObligationStatus.SATISFIED,
+            observation,
+        )
+    ):
+        return True
+    if effect_authority is None or not isinstance(observation, Mapping):
+        return False
+    from agent.planning.task_semantics_effects import observed_effect_accesses
+
+    return any(
+        observed_effect == effect
+        for observed_effect, _access in observed_effect_accesses(
+            effect_authority,
+            observation,
+        )
+    )
 
 
 def _validate_unbound_waiver(
@@ -165,4 +214,9 @@ def _transition(*args: Any, **kwargs: Any) -> None:
     transition(*args, **kwargs)
 
 
-__all__ = ["record_effect", "record_unrequested_effect", "waive_effect"]
+__all__ = [
+    "record_effect",
+    "record_prohibited_effect",
+    "record_unrequested_effect",
+    "waive_effect",
+]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import posixpath
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
@@ -18,10 +17,17 @@ from agent.code.application import (
     build_code_context,
 )
 from agent.llm.contracts import ModelGateway
+from agent.planning.task_semantics_proposal import is_proposal_only_objective
 from agent.runtime.context import TaskExecutionContext
+from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.skills.base import BaseSkill
-from agent.skills.code_task_support import OrchestratorMetricsSink, PolicyApprover
+from agent.skills.code_task_support import (
+    OrchestratorMetricsSink,
+    PolicyApprover,
+    ProposalOnlyApprover,
+)
 from agent.skills.invocation_cancellation import with_invocation_cancellation
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
 class CodeTaskSkill(BaseSkill):
@@ -104,69 +110,17 @@ class CodeTaskSkill(BaseSkill):
 
     @staticmethod
     def _effect_projection(result: Any) -> Dict[str, Any]:
-        attempted_files: list[str] = []
-        affected_files: list[str] = []
-        attempted_mutation = False
-        persisted_mutation = False
-        rollback_occurred = False
-        validation: str | None = None
-        for artifact in getattr(result, "artifacts", ()):
-            metadata = getattr(artifact, "metadata", {})
-            if not isinstance(metadata, dict):
-                continue
-            raw_files = metadata.get("affected_files", ())
-            files = (
-                raw_files
-                if isinstance(raw_files, (list, tuple))
-                else ()
-            )
-            normalized = tuple(
-                posixpath.normpath(str(path).replace("\\", "/"))
-                for path in files
-                if str(path).strip()
-            )
-            for path in normalized:
-                if path not in attempted_files:
-                    attempted_files.append(path)
-            mutation = metadata.get("mutation_occurred") is True
-            applied = metadata.get("applied") is True
-            attempted_mutation = attempted_mutation or mutation
-            artifact_rollback = (
-                metadata.get("rollback_occurred") is True
-                or metadata.get("final_state") == "restored"
-            )
-            rollback_occurred = rollback_occurred or artifact_rollback
-            persisted = (
-                metadata.get("persisted_mutation") is True and not artifact_rollback
-                or (
-                    applied
-                    and mutation
-                    and not artifact_rollback
-                    and metadata.get("final_state") == "applied"
-                )
-            )
-            persisted_mutation = persisted_mutation or persisted
-            if persisted:
-                for path in normalized:
-                    if path not in affected_files:
-                        affected_files.append(path)
-            if metadata.get("validation") is not None:
-                validation = str(metadata["validation"])
+        evidence = project_mutation_evidence(result)
         return {
-            "affected_files": tuple(sorted(affected_files)),
-            "attempted_files": tuple(sorted(attempted_files)),
-            "mutation_occurred": attempted_mutation,
-            "attempted_mutation": attempted_mutation,
-            "persisted_mutation": persisted_mutation,
-            "surviving_mutation": persisted_mutation,
-            "rollback_occurred": rollback_occurred,
-            "validation": validation,
-            "final_state": (
-                "restored" if rollback_occurred
-                else "applied" if persisted_mutation
-                else "proposed" if attempted_mutation
-                else None
-            ),
+            "affected_files": evidence.surviving_files,
+            "attempted_files": evidence.affected_files,
+            "mutation_occurred": evidence.mutation_occurred,
+            "attempted_mutation": evidence.attempted,
+            "persisted_mutation": evidence.persisted_mutation,
+            "surviving_mutation": evidence.survives,
+            "rollback_occurred": evidence.rollback_occurred,
+            "validation": evidence.validation_status,
+            "final_state": evidence.final_state or ("proposed" if evidence.attempted else None),
         }
 
     def execute(self, args: dict) -> dict:
@@ -216,9 +170,11 @@ class CodeTaskSkill(BaseSkill):
                 cancellation_token,
                 cancellation_event,
             )
-            child_permissions = frozenset({"read", "write", "validate", "analyze"})
-            if include_tests:
-                child_permissions |= frozenset({"process"})
+            # The concrete code operation, rather than the tool-wide
+            # descriptor ceiling, determines the child context's minimum
+            # permissions.  This keeps read-only analyze/review paths from
+            # inheriting write authority.
+            child_permissions = resolve_invocation_semantics(self, args).required_capabilities
             if self.orchestrator is not None:
                 child_permissions &= frozenset(
                     getattr(self.orchestrator, "allowed_capabilities", child_permissions)
@@ -253,7 +209,11 @@ class CodeTaskSkill(BaseSkill):
                     graph=graph if isinstance(graph, dict) else None,
                     template=str(args["template"]) if isinstance(args.get("template"), str) else None,
                 ),
-                approver=PolicyApprover(self.approval_policy),
+                approver=(
+                    ProposalOnlyApprover()
+                    if is_proposal_only_objective(objective)
+                    else PolicyApprover(self.approval_policy)
+                ),
             )
         except Exception as exc:
             return {"ok": False, "done": True, "error": str(exc), "message": str(exc)}

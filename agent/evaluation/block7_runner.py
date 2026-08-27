@@ -32,7 +32,7 @@ from agent.evaluation.block7_identity import (
     semantic_manifest_hash,
     source_fingerprint,
 )
-from agent.evaluation.block7_model_identity import normalize_external_identity
+from agent.llm.identity import normalize_external_identity
 
 __all__ = [
     "ADVERSARIAL_AUDIT_QUESTIONS",

@@ -8,6 +8,7 @@ import stat
 import tempfile
 from pathlib import Path
 
+from agent.runtime.filesystem_primitives import is_link_like
 from agent.tools.extension_catalog_codec import decode_catalog, encode_catalog
 from agent.tools.extension_catalog_document import ExtensionCatalogDocument
 from agent.tools.extension_catalog_errors import (
@@ -32,16 +33,6 @@ class _PayloadFailure(Exception):
         self.secondary = secondary
 
 
-def _is_reparse_point(path: Path) -> bool:
-    if not path.exists() and not path.is_symlink():
-        return False
-    try:
-        attributes = getattr(path.stat(follow_symlinks=False), "st_file_attributes", 0)
-    except OSError as exc:
-        raise CatalogStorageError(f"Nao foi possivel inspecionar o destino: {path}") from exc
-    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
-
-
 def _record_secondary_error(
     primary: CatalogStorageError,
     secondary: BaseException,
@@ -63,7 +54,7 @@ class ExtensionCatalogStorage:
         self.path = Path(path)
 
     def load(self) -> ExtensionCatalogDocument:
-        if self.path.is_symlink() or _is_reparse_point(self.path):
+        if is_link_like(self.path):
             raise CatalogStorageError(f"Destino do catalogo nao pode ser symlink: {self.path}")
         if not self.path.exists():
             return ExtensionCatalogDocument()
@@ -77,7 +68,7 @@ class ExtensionCatalogStorage:
             raise CatalogCorruptError(f"Catalogo corrompido: {self.path}: {exc}") from exc
 
     def save(self, document: ExtensionCatalogDocument) -> None:
-        if self.path.is_symlink() or _is_reparse_point(self.path):
+        if is_link_like(self.path):
             raise CatalogStorageError(f"Destino do catalogo nao pode ser symlink: {self.path}")
         try:
             payload = encode_catalog(document)

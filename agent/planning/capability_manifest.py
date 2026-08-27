@@ -11,9 +11,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-_MUTATION_CAPABILITIES = frozenset(
-    {"write", "vcs_write", "package_install", "validate"}
-)
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
 def render_active_harness_capabilities(
@@ -282,11 +280,19 @@ def _configured_positive(orchestrator: Any, key: str) -> bool:
 
 
 def _has_mutation(tools: Iterable[Any], allowed: frozenset[str]) -> bool:
-    return any(
-        bool(frozenset(getattr(tool, "required_capabilities", ())) & _MUTATION_CAPABILITIES)
-        and frozenset(getattr(tool, "required_capabilities", ())).issubset(allowed)
-        for tool in tools
-    )
+    for tool in tools:
+        class _Descriptor:
+            name = getattr(tool, "name", "")
+            capabilities = getattr(tool, "required_capabilities", ())
+            cacheable = getattr(tool, "cacheable", False)
+            idempotent = getattr(tool, "idempotent", False)
+            cancellation_safety = getattr(tool, "cancellation_safety", "unsupported")
+
+        semantics = resolve_invocation_semantics(_Descriptor(), {})
+        capabilities = frozenset(semantics.required_capabilities)
+        if semantics.may_mutate and capabilities.issubset(allowed):
+            return True
+    return False
 
 
 __all__ = [

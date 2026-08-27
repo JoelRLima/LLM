@@ -1,34 +1,35 @@
 import json
 import re
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Tuple, cast
 
-from agent.contracts import ToolResult
+from agent.runtime.argument_contract import validate_operation_arguments
+from agent.runtime.schema_validation import normalize_argument_schema, validate_schema_arguments
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from agent.tools.result_adapter import ensure_canonical_result
 
 
 def _find_balanced_json_end(text: str, start: int) -> Optional[int]:
-    """
-    A partir do índice de um '{' em `text`, encontra o índice do '}' que
-    fecha esse objeto, respeitando strings (e escapes dentro delas).
-    Retorna None se o objeto nunca fecha.
-    """
+    """Find the closing brace for an object while respecting JSON strings."""
+
     balance = 0
     in_string = False
     escape = False
     for i in range(start, len(text)):
-        c = text[i]
+        char = text[i]
         if escape:
             escape = False
             continue
-        if c == '\\':
+        if char == "\\":
             escape = True
             continue
-        if c == '"':
+        if char == '"':
             in_string = not in_string
             continue
         if not in_string:
-            if c == '{':
+            if char == "{":
                 balance += 1
-            elif c == '}':
+            elif char == "}":
                 balance -= 1
                 if balance == 0:
                     return i
@@ -36,7 +37,8 @@ def _find_balanced_json_end(text: str, start: int) -> Optional[int]:
 
 
 def extract_json(text: str) -> Optional[dict]:
-    """Tenta extrair um objeto JSON de uma string."""
+    """Try to extract one JSON object from text."""
+
     if not text:
         return None
     cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text)
@@ -46,21 +48,24 @@ def extract_json(text: str) -> Optional[dict]:
     end = _find_balanced_json_end(cleaned, start)
     if end is None:
         return None
-    json_str = cleaned[start:end + 1]
     try:
-        return cast(Dict[Any, Any], json.loads(json_str))
+        return cast(Dict[Any, Any], json.loads(cleaned[start : end + 1]))
     except json.JSONDecodeError:
         return None
 
+
 def stringify(obj: Any) -> str:
-    """Converte um objeto para string JSON amigável, se possível."""
+    """Convert an object to a readable JSON string where possible."""
+
     try:
         return json.dumps(obj, ensure_ascii=False, indent=2, default=str)
     except Exception:
         return str(obj)
 
+
 def validate_decision(decision: Any) -> Tuple[bool, Optional[str]]:
-    """Valida se a decisão do agente está no formato esperado."""
+    """Validate the model decision envelope."""
+
     if not isinstance(decision, dict):
         return False, "Decisão não é um dicionário."
     action = decision.get("action")
@@ -82,36 +87,69 @@ def validate_decision(decision: Any) -> Tuple[bool, Optional[str]]:
             return False, "'answer' deve ser uma string."
     return True, None
 
+
 def normalize_tool_result(result: Any, error_patterns: List[str]) -> ToolResult:
-    """Garante que o resultado da ferramenta siga o contrato estrito."""
-    if isinstance(result, dict):
+    """Normalize an older adapter value into the canonical runtime result."""
+
+    if isinstance(result, ToolResult):
+        return result
+    if isinstance(result, Mapping):
         ok = result.get("ok") is True
         done = result.get("done") is True
         if not ok:
             done = False
-        normalized = {"ok": ok, "done": done, "data": result.get("data"), "error": result.get("error"), "message": result.get("message")}
-        for k, v in result.items():
-            if k not in normalized:
-                normalized[k] = v
-        return cast(ToolResult, normalized)
+        normalized = {
+            "ok": ok,
+            "done": done,
+            "data": result.get("data"),
+            "error": result.get("error"),
+            "message": result.get("message"),
+        }
+        for key, value in result.items():
+            if key not in normalized:
+                normalized[key] = value
+        return ensure_canonical_result(normalized)
     if result is None:
-        return {"ok": False, "done": False, "data": None, "error": "Tool retornou None.", "message": "Retorno vazio da ferramenta."}
+        return ToolResult(
+            invocation_id="parser:none",
+            status=ToolStatus.FAILED,
+            data=None,
+            error=ToolError("EMPTY_RESULT", "Tool retornou None."),
+            message="Retorno vazio da ferramenta.",
+            executed=False,
+            done_override=False,
+        )
     if isinstance(result, str):
         lower = result.strip().lower()
         if any(pattern in lower for pattern in error_patterns):
-            return {"ok": False, "done": False, "data": None, "error": result, "message": "A ferramenta retornou uma mensagem de erro."}
-        return {"ok": True, "done": True, "data": result, "error": None, "message": None}
-    return {"ok": True, "done": True, "data": result, "error": None, "message": None}
+            return ToolResult(
+                invocation_id="parser:string-error",
+                status=ToolStatus.FAILED,
+                data=None,
+                error=ToolError("TOOL_ERROR", result),
+                message="A ferramenta retornou uma mensagem de erro.",
+                executed=True,
+                done_override=False,
+            )
+        return ToolResult(
+            invocation_id="parser:string",
+            status=ToolStatus.SUCCEEDED,
+            data=result,
+            executed=True,
+        )
+    return ToolResult(
+        invocation_id="parser:value",
+        status=ToolStatus.SUCCEEDED,
+        data=result,
+        executed=True,
+    )
+
 
 def extract_json_from_end(text: str) -> Optional[Dict]:
-    """
-    Tenta extrair o último objeto JSON válido no texto, varrendo todas as
-    ocorrências de '{' e usando balanceamento real de chaves (respeitando
-    strings) para encontrar o fechamento correto de cada candidato.
-    """
+    """Return the last valid JSON object embedded in text."""
+
     if not text:
         return None
-
     last_valid = None
     search_from = 0
     while True:
@@ -120,74 +158,12 @@ def extract_json_from_end(text: str) -> Optional[Dict]:
             break
         end = _find_balanced_json_end(text, start)
         if end is not None:
-            candidate = text[start:end + 1]
             try:
-                last_valid = json.loads(candidate)
+                last_valid = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 pass
-            search_from = start + 1
-        else:
-            search_from = start + 1
-
+        search_from = start + 1
     return last_valid
-
-def _validate_required(
-    args: Dict[str, Any], required: List[str], bound_fields: set[str] | None = None
-) -> List[str]:
-    bound_fields = bound_fields or set()
-    return [
-        f"Campo obrigatório ausente: '{field}'"
-        for field in required
-        if field not in bound_fields
-        if field not in args or args[field] is None
-    ]
-
-
-def _type_error(field: str, value: Any, expected_type: str) -> Optional[str]:
-    expected_types: Dict[str, Any] = {
-        "string": str,
-        "number": (int, float),
-        "boolean": bool,
-        "object": dict,
-        "array": list,
-    }
-    expected_python = expected_types.get(expected_type)
-    if expected_python is None or isinstance(value, expected_python):
-        return None
-    labels = {"string": "string", "number": "número", "boolean": "booleano", "object": "objeto", "array": "array"}
-    return f"'{field}': esperado {labels[expected_type]}, recebido {type(value).__name__}"
-
-
-def _property_errors(field: str, value: Any, prop: Dict[str, Any]) -> List[str]:
-    expected_type = str(prop.get("type", "string"))
-    errors: List[str] = []
-    if error := _type_error(field, value, expected_type):
-        errors.append(error)
-    allowed = prop.get("enum")
-    if allowed and value not in allowed:
-        errors.append(f"'{field}': valor '{value}' não está entre os permitidos: {allowed}")
-    if expected_type == "number" and isinstance(value, (int, float)):
-        minimum = prop.get("minimum")
-        maximum = prop.get("maximum")
-        if minimum is not None and value < minimum:
-            errors.append(f"'{field}': valor {value} é menor que o mínimo {minimum}")
-        if maximum is not None and value > maximum:
-            errors.append(f"'{field}': valor {value} é maior que o máximo {maximum}")
-    return errors
-
-
-def _tool_specific_errors(tool_name: str, args: Dict[str, Any]) -> List[str]:
-    errors: List[str] = []
-    if tool_name == "file_reader":
-        start, end = args.get("start_line"), args.get("end_line")
-        if start is not None and end is not None and start > end:
-            errors.append(f"'start_line' ({start}) não pode ser maior que 'end_line' ({end})")
-    if tool_name == "file_writer" and args.get("action", "write") == "ast_patch":
-        if not args.get("target"):
-            errors.append("Campo 'target' obrigatório para ast_patch")
-        if not args.get("new_code"):
-            errors.append("Campo 'new_code' obrigatório para ast_patch")
-    return errors
 
 
 def validate_tool_args(
@@ -196,43 +172,30 @@ def validate_tool_args(
     skills: Dict[str, Any],
     bound_fields: set[str] | None = None,
 ) -> Tuple[bool, Optional[str]]:
-    """Valida argumentos contra o schema exportado pela ferramenta."""
+    """Validate one skill through the shared schema and operation contracts."""
+
     skill = skills.get(tool_name)
     if not skill:
-        return True, None  # ferramenta desconhecida, deixa executar e falhar depois
-
+        return True, None
     schema_provider = getattr(skill, "get_schema", None)
     schema = schema_provider() if callable(schema_provider) else getattr(skill, "schema", {})
-    if not schema or not isinstance(schema, dict):
-        return True, None  # sem schema, não valida
-
-    required = schema.get("required", [])
-    properties = schema.get("properties", {})
-    legacy_fields = {
-        key: value
-        for key, value in schema.items()
-        if key not in {"type", "required", "properties", "additionalProperties"}
-    }
-    if not properties and legacy_fields and all(isinstance(value, dict) for value in legacy_fields.values()):
-        # Legacy builtin skills expose a direct ``{field: schema}`` mapping;
-        # normalize it for bound-target validation without changing callers.
-        properties = legacy_fields
-    bound_fields = bound_fields or set()
-    unknown_bound = sorted(str(field) for field in bound_fields if field not in properties)
-    if unknown_bound:
-        return False, f"argument(s) vinculados desconhecidos: {', '.join(unknown_bound)}"
-    errors = _validate_required(args, required, bound_fields)
-    if schema.get("additionalProperties") is False:
-        unknown = sorted(str(field) for field in args if field not in properties)
-        if unknown:
-            errors.append(f"Campos não suportados: {', '.join(unknown)}")
-    for field, value in args.items():
-        prop = properties.get(field)
-        if not prop:
-            continue
-        errors.extend(_property_errors(field, value, prop))
-    errors.extend(_tool_specific_errors(tool_name, args))
-
-    if errors:
-        return False, "; ".join(errors)
+    try:
+        if schema:
+            if not isinstance(schema, Mapping):
+                raise ValueError("schema must be an object")
+            effective_schema = normalize_argument_schema(schema)
+            validate_schema_arguments(
+                effective_schema,
+                args,
+                bound_fields=bound_fields,
+                planning=True,
+            )
+        validate_operation_arguments(
+            skill,
+            args,
+            bound_fields=bound_fields,
+            planning=True,
+        )
+    except (TypeError, ValueError) as exc:
+        return False, str(exc)
     return True, None

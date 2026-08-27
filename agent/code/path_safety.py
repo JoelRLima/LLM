@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent.runtime.filesystem_primitives import is_link_like
+
 
 class WorkspacePathError(ValueError):
     """Raised when a code-assistance path crosses the workspace boundary."""
@@ -45,13 +47,10 @@ def workspace_command_argument(root: str | Path, value: str | Path) -> str:
     return "." if relative == "." else f"./{relative}"
 
 
-def is_link_like(path: Path) -> bool:
-    """Recognize symlinks and, where supported, Windows junctions."""
-
-    try:
-        if path.is_symlink():
-            return True
-        is_junction = getattr(path, "is_junction", None)
-        return bool(callable(is_junction) and is_junction())
-    except OSError:
-        return True
+__all__ = [
+    "WorkspacePathError",
+    "is_link_like",
+    "resolve_workspace_path",
+    "workspace_command_argument",
+    "workspace_relative_path",
+]

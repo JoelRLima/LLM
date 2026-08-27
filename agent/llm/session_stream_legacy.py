@@ -6,7 +6,11 @@ import time
 from typing import Any, Callable, Dict, cast
 
 from agent.llm.contracts import PendingStream, response_usage
-from agent.runtime.budget import estimate_payload_tokens
+from agent.runtime.budget import (
+    BudgetExhausted,
+    estimate_payload_allowance,
+    estimate_payload_tokens,
+)
 
 
 def send_legacy_request(
@@ -14,11 +18,26 @@ def send_legacy_request(
 ) -> Any:
     """Send raw legacy transport with exactly one task-budget reservation."""
 
-    call_number = session.budget_ledger.reserve_model_call()
+    call_number = session.budget_ledger.reserve_model_call(
+        estimate_payload_allowance(
+            payload,
+            getattr(session.gateway, "count_tokens", None),
+        )
+    )
     started_at = time.monotonic()
     try:
         response = session.gateway.send_payload(payload, stream=stream)
-    except Exception:
+    except BudgetExhausted:
+        estimate = estimate_payload_tokens(payload)
+        session._finalize_model_call(
+            call_number,
+            started_at,
+            success=False,
+            streaming=stream,
+            estimated_tokens=estimate,
+        )
+        raise
+    except BaseException:
         estimate = estimate_payload_tokens(payload)
         session._finalize_model_call(
             call_number,
@@ -74,7 +93,21 @@ def process_legacy_stream(
             str,
             session.gateway.consume_stream(response.response, stream_callbacks),
         )
-    except Exception as exc:
+    except BudgetExhausted as exc:
+        partial_content = getattr(exc, "partial_content", None)
+        visible = partial_content if isinstance(partial_content, str) else visible
+        estimate = estimate_payload_tokens(response.payload, visible)
+        session._finalize_model_call(
+            response.call_number,
+            response.started_at,
+            success=False,
+            streaming=True,
+            response={"usage": usage} if usage is not None else None,
+            usage=usage,
+            estimated_tokens=estimate,
+        )
+        raise
+    except BaseException as exc:
         partial_content = getattr(exc, "partial_content", None)
         visible = partial_content if isinstance(partial_content, str) else visible
         estimate = estimate_payload_tokens(response.payload, visible)

@@ -126,7 +126,7 @@ def test_conditional_write_and_read_only_shell_are_not_false_prohibitions() -> N
         "code_task",
         {"action": "modify", "targets": ["controle.txt"]},
         SimpleNamespace(capabilities=frozenset({"write"})),
-    ) is None
+    ) == "UNRESOLVED_CONDITIONAL_EFFECT: a ferramenta 'code_task' propoe o efeito duravel sem predicate resolvido por evidencia confiavel."
     assert effect_intent_error(
         "Inspecione o historico local.",
         "shell",

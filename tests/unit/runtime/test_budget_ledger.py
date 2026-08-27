@@ -168,3 +168,28 @@ def test_authoritative_total_normalization(
     assert snapshot.accounted_tokens == expected_accounted
     assert snapshot.estimated_tokens == expected_estimated
     assert snapshot.token_usage_complete is complete
+
+
+def test_token_preflight_reservation_blocks_known_overshoot_and_reconciles() -> None:
+    ledger = TaskBudgetLedger(max_task_tokens=10)
+
+    first = ledger.reserve_model_call(8)
+    assert ledger.snapshot().reserved_tokens == 8
+    with pytest.raises(BudgetExhausted):
+        ledger.reserve_model_call(3)
+
+    ledger.finalize_model_call(first, usage={"total_tokens": 2})
+    snapshot = ledger.snapshot()
+    assert snapshot.accounted_tokens == 2
+    assert snapshot.reserved_tokens == 0
+    assert ledger.remaining_task_tokens == 8
+
+
+def test_failed_reserved_model_call_does_not_leak_allowance() -> None:
+    ledger = TaskBudgetLedger(max_task_tokens=10)
+    call_number = ledger.reserve_model_call(7)
+
+    ledger.finalize_model_call(call_number, estimated_tokens=1)
+
+    assert ledger.snapshot().reserved_tokens == 0
+    assert ledger.snapshot().accounted_tokens == 1

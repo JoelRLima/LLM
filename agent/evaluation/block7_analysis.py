@@ -174,7 +174,33 @@ def build_corrective_readiness(
         output_dir=root / "reports" / "acceptance" / "block7",
         epoch=DEFAULT_REAL_MODEL_EPOCH,
     )
-    deterministic_analysis = analyze_campaign(dry_run_report, require_final_epoch=False)
+    try:
+        deterministic_analysis = analyze_campaign(dry_run_report, require_final_epoch=False)
+    except CampaignAnalysisError:
+        # Persisted campaign reports are sanitized for transport.  The
+        # evidence sanitizer intentionally bounds the top-level ``runs`` list
+        # (currently at 64 items), while ``_campaign_report`` has already
+        # computed and preserved a complete, mechanically validated analysis.
+        # Reuse that analysis only after checking its own envelope and the
+        # complete H-series projection; never accept an arbitrary partial
+        # report as readiness evidence.
+        preserved = dry_run_report.get("analysis")
+        envelope = preserved.get("evidence_envelope") if isinstance(preserved, Mapping) else None
+        repetition = preserved.get("repetition") if isinstance(preserved, Mapping) else None
+        per_scenario = repetition.get("per_scenario") if isinstance(repetition, Mapping) else None
+        expected_h_ids = {f"H{index}" for index in range(1, 20)}
+        if not (
+            isinstance(preserved, Mapping)
+            and isinstance(envelope, Mapping)
+            and envelope.get("valid") is True
+            and not envelope.get("errors")
+            and isinstance(repetition, Mapping)
+            and isinstance(per_scenario, Mapping)
+            and set(per_scenario) == expected_h_ids
+            and int(envelope.get("run_count", 0)) == int(dry_run_report.get("summary", {}).get("total", 0))
+        ):
+            raise
+        deterministic_analysis = dict(preserved)
     prior = prior_epoch_disposition(root / "reports" / "acceptance" / "block7-real-model.json")
     prior["path"] = "reports/acceptance/block7-real-model.json"
     return {
@@ -192,7 +218,7 @@ def build_corrective_readiness(
         "corrective_proofs": {
             "repetition_policy": {
                 "H2": "exactly 5 valid scenario repetitions",
-                "H1_and_H3_H12": "3 initial; unanimous 3/3 or 0/3 stop; mixed 1/3 or 2/3 extends exactly 2",
+                "H1_and_H3_H19": "3 initial; unanimous 3/3 or 0/3 stop; mixed 1/3 or 2/3 extends exactly 2",
                 "environmental_attempts": "preserved and excluded from valid denominator",
                 "H1_reporting": "scenario_repetitions and arm_executions are separate",
             },

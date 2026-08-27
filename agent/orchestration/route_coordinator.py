@@ -12,9 +12,10 @@ from agent.planning.task_completion import (
     allow_linear_completion,
     mark_terminal_blocked,
 )
-from agent.reporting.operational_outcome import PUBLIC_TERMINAL_STATUSES
+from agent.planning.task_completion_types import CompletionDisposition
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
 
 HIERARCHICAL_ROUTE = "hierarchical"
 SECURITY_ROUTE = "security"
@@ -39,9 +40,7 @@ FALLBACK_STATUS_BY_REASON = {
     "HIERARCHICAL_PRECONDITION_UNAVAILABLE": "unavailable",
     "HIERARCHICAL_AUTHORITY_DENIED": "permission_denied",
 }
-TERMINAL_DISPOSITIONS = frozenset({"complete", "block", "fail"}) | (
-    PUBLIC_TERMINAL_STATUSES - {"succeeded"}
-)
+TERMINAL_DISPOSITIONS = frozenset(item.value for item in CompletionDisposition) | NON_SUCCESS_STATUSES
 
 
 class RouteCoordinatorMixin:

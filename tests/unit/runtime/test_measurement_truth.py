@@ -12,8 +12,9 @@ from agent.llm.model_client import ModelClient, ModelProviderError
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.llm.router import route_objective
 from agent.llm.session import ChatSession
-from agent.reporting.task_report_rendering import aggregate_metrics
-from agent.runtime.budget import BudgetExhausted
+from agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
+from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
+from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
 
 
@@ -154,6 +155,7 @@ def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> N
     assert gateway.calls == 2
     assert len(entries) == 2
     assert [entry["type"] for entry in entries] == ["model_call", "model_call"]
+    assert all(entry["reserved_tokens"] > 0 for entry in entries)
     assert all(entry["success"] is True for entry in entries)
     assert entries[1]["streaming"] is True
 
@@ -572,3 +574,66 @@ def test_aggregate_zero_run_duration_remains_observable() -> None:
 
     assert metrics["duration_available"] is True
     assert metrics["total_duration_ms"] == 0
+
+
+def test_aggregate_distinguishes_active_reservation_from_observed_allowance() -> None:
+    entries = [
+        {
+            "type": "model_call",
+            "reserved_tokens": 20,
+            "estimated_tokens": 3,
+            "accounted_tokens": 3,
+            "token_usage_complete": False,
+        }
+    ]
+    ledger = TaskBudgetLedger(max_task_tokens=100)
+    call_number = ledger.reserve_model_call(20)
+
+    metrics = aggregate_metrics(entries, budget_snapshot=ledger.snapshot())
+
+    assert metrics["reserved_tokens"] == 20
+    assert metrics["reserved_allowance_tokens"] == 20
+    assert metrics["estimated_tokens"] == 0
+    assert metrics["accounted_tokens"] == 0
+
+    ledger.finalize_model_call(call_number, estimated_tokens=3)
+    completed_metrics = aggregate_metrics(entries, budget_snapshot=ledger.snapshot())
+    assert completed_metrics["reserved_tokens"] == 0
+    assert completed_metrics["reserved_allowance_tokens"] == 20
+
+
+def test_typed_metrics_snapshot_distinguishes_measurement_provenance() -> None:
+    cases = (
+        (
+            [{"type": "model_call", "input_tokens": 4, "output_tokens": 6, "total_tokens": 10}],
+            "provider_reported",
+            10,
+        ),
+        (
+            [{"type": "model_call", "input_tokens": 4, "output_tokens": 6}],
+            "derived",
+            10,
+        ),
+        (
+            [{"type": "model_call", "estimated_tokens": 7, "token_usage_complete": False}],
+            "estimated",
+            None,
+        ),
+        ([{"type": "model_call", "token_usage_complete": False}], "unavailable", None),
+    )
+
+    for entries, measurement, total in cases:
+        snapshot = project_run_metrics(entries)
+        assert isinstance(snapshot, RunMetricsSnapshot)
+        assert snapshot.token_measurement == measurement
+        assert snapshot.total_tokens == total
+
+
+def test_markdown_labels_estimates_as_non_exact() -> None:
+    metrics = project_run_metrics(
+        [{"type": "model_call", "estimated_tokens": 7, "token_usage_complete": False}]
+    ).to_dict()
+    markdown = render_markdown({"task_id": "metrics", "metrics": metrics})
+
+    assert "estimada; não é um total exato" in markdown
+    assert "exata, reportada pelo provedor" not in markdown

@@ -40,12 +40,14 @@ class ExecutionGateway:
         continue_after_plan: bool = False,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        allow_conditional_preview: bool = False,
     ) -> ExecutionResult:
         validated = self.validate_and_optimize_plan(
             plan,
             objective,
             planning_context=planning_context,
             planning_view=planning_view,
+            allow_conditional_preview=allow_conditional_preview,
         )
         if validated is None:
             return ExecutionResult(
@@ -77,6 +79,7 @@ class ExecutionGateway:
         *,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
+        allow_conditional_preview: bool = False,
     ) -> Optional[List[Dict[str, Any]]]:
         return _validate_and_optimize_plan(
             self,
@@ -84,6 +87,7 @@ class ExecutionGateway:
             objective,
             planning_context=planning_context,
             planning_view=planning_view,
+            allow_conditional_preview=allow_conditional_preview,
         )
 
     @staticmethod
@@ -105,6 +109,8 @@ class ExecutionGateway:
         self,
         plan: List[Dict[str, Any]],
         objective: str,
+        *,
+        allow_conditional_preview: bool = False,
     ) -> Optional[List[Dict[str, Any]]]:
         """Validate a continuation before appending it to the canonical plan.
 
@@ -117,7 +123,11 @@ class ExecutionGateway:
         state = self.orchestrator.agent_state
         prefix = [dict(step) for step in state.plan]
         combined = [*prefix, *[dict(step) for step in plan]]
-        validated = self.validate_and_optimize_plan(combined, objective)
+        validated = self.validate_and_optimize_plan(
+            combined,
+            objective,
+            allow_conditional_preview=allow_conditional_preview,
+        )
         if validated is None or len(validated) <= len(prefix):
             return None
         prefix_ids = [str(step.get("_step_id", "")) for step in prefix]
@@ -257,12 +267,12 @@ class ExecutionGateway:
     ) -> PlanningPresentationSnapshot | None:
         if context is None:
             if planning_view is not None:
-                raise PlanningContextError("planning view sem contexto canÃ´nico")
+                raise PlanningContextError("planning view sem contexto canônico")
             return None
         if planning_view is not None:
             validate_planning_view_binding(context, planning_view, planner_kind)
             if planning_view.planner_kind != planner_kind:
-                raise PlanningContextError("planning view incompatÃ­vel com o planner")
+                raise PlanningContextError("planning view incompatível com o planner")
             return planning_view
         if explicit_context:
             raise PlanningContextError("contexto explícito exige view correlacionada")
@@ -275,11 +285,9 @@ class ExecutionGateway:
                 or stored_context.runtime_identity != context.runtime_identity
             ):
                 raise PlanningContextError(
-                    "contexto explÃ­cito exige view correlacionada quando diverge do orchestrator"
+                    "contexto explícito exige view correlacionada quando diverge do orchestrator"
                 )
-        active = frozenset(getattr(self.orchestrator, "active_skills", ()) or ())
-        visible = active & context.eligible_names if active else context.eligible_names
-        return context.present(planner_kind, visible)
+        return context.resolve_view(planner_kind, getattr(self.orchestrator, "active_skills", ()))
 
     @staticmethod
     def _validate_view_binding(

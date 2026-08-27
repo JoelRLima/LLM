@@ -170,6 +170,7 @@ def build_model_call_metric(
     response: Any = None,
     call_number: int | None = None,
     estimated_tokens: int = 0,
+    reserved_tokens: int = 0,
 ) -> Dict[str, Any]:
     usage = response_usage(response)
     available = usage is not None and (
@@ -191,6 +192,7 @@ def build_model_call_metric(
         "provider": getattr(gateway, "provider_name", None),
         "model": getattr(gateway, "model", config.get("model")),
         "token_usage_complete": complete,
+        "reserved_tokens": max(0, reserved_tokens),
     }
     if call_number is not None:
         entry["call_number"] = call_number

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
+from agent.capabilities import Capability
 from agent.planning.tool_metadata import ToolMetadata
 from agent.tools.contracts import (
     ToolAdapter,
@@ -103,9 +104,9 @@ class ToolRegistry:
                 status=ToolStatus.PERMISSION_DENIED,
                 error=ToolError(
                     "AUTHORITY_REQUIRED",
-                    "Extensions sÃ³ podem ser executadas pela fronteira canÃ´nica de invocaÃ§Ã£o.",
+                    "Extensions só podem ser executadas pela fronteira canônica de invocação.",
                 ),
-                message="ExecuÃ§Ã£o de extension fora do gateway canÃ´nico.",
+                message="Execução de extension fora do gateway canônico.",
             )
         return adapter.invoke(invocation)
 
@@ -121,10 +122,22 @@ class ToolRegistry:
         """Convert descriptors to ToolMetadata dictionary for plan validation and optimization."""
         result: Dict[str, ToolMetadata] = {}
         for desc in self.descriptors():
-            reads = any(c in desc.capabilities for c in ("read", "vcs_read"))
-            writes = any(c in desc.capabilities for c in ("write", "vcs_write"))
+            reads = any(
+                c.value in desc.capabilities
+                for c in (Capability.READ, Capability.VCS_READ)
+            )
+            writes = any(
+                c.value in desc.capabilities
+                for c in (Capability.WRITE, Capability.VCS_WRITE)
+            )
             side_effects = writes or any(
-                c in desc.capabilities for c in ("process", "network", "package_install", "validate")
+                c.value in desc.capabilities
+                for c in (
+                    Capability.PROCESS,
+                    Capability.NETWORK,
+                    Capability.PACKAGE_INSTALL,
+                    Capability.VALIDATE,
+                )
             )
             result[desc.name] = ToolMetadata(
                 cost=desc.cost,

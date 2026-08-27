@@ -11,14 +11,15 @@ from __future__ import annotations
 import json
 import os
 import stat
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
 from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
 from agent.checkpoint_validation import validate_document
+from agent.memory.json_persistence import write_json_atomic
 from agent.memory.path_safety import LinkLikePathError, inspect_final_path, reject_link_like
-from agent.runtime.lock_filesystem import open_verified, sync_parent_directory
+from agent.runtime.filesystem_primitives import sync_parent_directory
+from agent.runtime.lock_filesystem import open_verified
 from agent.runtime.logging import logger
 
 
@@ -28,16 +29,13 @@ class CheckpointManager:
     def __init__(self, checkpoint_file: str | Path):
         self.checkpoint_file = str(checkpoint_file)
 
-    def save(self, agent_state: Any) -> None:
+    def save(self, agent_state: Any) -> bool:
         """Persist a versioned checkpoint with an atomic, link-safe replace.
 
-        Checkpoint writes are best-effort at this boundary, as they have been
-        historically.  A failed write is visible in logs and never replaces
-        the previous valid checkpoint; task execution is responsible for
-        deciding whether the failure itself is terminal.
+        Return ``True`` only after the replacement and parent sync succeed.
+        A failed write never replaces the previous valid checkpoint.
         """
 
-        temporary_path: Path | None = None
         destination = Path(self.checkpoint_file)
         try:
             checkpoint_data = agent_state.to_checkpoint_dict()
@@ -45,46 +43,13 @@ class CheckpointManager:
                 raise TypeError("serialização do checkpoint não produziu um objeto")
             checkpoint_data["schema_version"] = CHECKPOINT_SCHEMA_VERSION
 
-            reject_link_like(destination)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=destination.parent,
-                prefix=f".{destination.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as stream:
-                temporary_path = Path(stream.name)
-                json.dump(
-                    checkpoint_data,
-                    stream,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str,
-                )
-                stream.flush()
-                os.fsync(stream.fileno())
-
-            # Revalidate the final entry immediately before publication.  A
-            # replacement race cannot make os.replace follow a symlink, and an
-            # existing link-like entry is rejected rather than overwritten.
-            reject_link_like(destination)
-            os.replace(temporary_path, destination)
-            sync_parent_directory(destination)
-            temporary_path = None
+            # The shared primitive owns temporary-file durability, final
+            # link checks, atomic replacement, and parent-directory sync.
+            write_json_atomic(destination, checkpoint_data, default=str)
+            return True
         except Exception as exc:
             logger.warning("Falha ao salvar checkpoint: %s", exc)
-        finally:
-            if temporary_path is not None:
-                try:
-                    temporary_path.unlink(missing_ok=True)
-                except OSError as exc:
-                    logger.warning(
-                        "Falha ao remover arquivo temporário de checkpoint %s: %s",
-                        temporary_path,
-                        exc,
-                    )
+            return False
 
     def load(self) -> Optional[Dict[str, Any]]:
         """Load a checkpoint, distinguishing absence from invalid state.

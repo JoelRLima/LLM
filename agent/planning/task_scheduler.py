@@ -20,6 +20,7 @@ from agent.planning.task_resources import (
     effective_resource_claims,
     resource_claims_conflict,
 )
+from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 
 
@@ -39,22 +40,10 @@ class GraphExecutionResult:
         return bool(self.states) and all(state == NodeState.SUCCEEDED for state in self.states.values())
 
 
-def _normalize_resource(name: str) -> str:
-    from agent.planning.task_resources import normalize_resource_name
-
-    return normalize_resource_name(name)
-
-
-def _resource_overlap(left: str, right: str) -> bool:
-    from agent.planning.task_resources import claims_overlap
-
-    return claims_overlap(left, right)
-
-
 def resources_conflict(left: tuple[TaskResource, ...], right: tuple[TaskResource, ...]) -> bool:
     return resource_claims_conflict(
-        tuple(ResourceClaim(_normalize_resource(item.name), str(item.mode.value)) for item in left),
-        tuple(ResourceClaim(_normalize_resource(item.name), str(item.mode.value)) for item in right),
+        tuple(ResourceClaim(item.name, item.mode) for item in left),
+        tuple(ResourceClaim(item.name, item.mode) for item in right),
     )
 
 
@@ -179,6 +168,8 @@ class TaskGraphScheduler:
     def _future_result(future: concurrent.futures.Future[TaskResult]) -> TaskResult:
         try:
             return future.result()
+        except BudgetExhausted:
+            raise
         except Exception as exc:
             return TaskResult(TaskStatus.FAILED, error=str(exc))
 

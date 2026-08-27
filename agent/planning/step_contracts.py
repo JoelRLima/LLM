@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
-from agent.contracts import EventData, PlanStep, ToolArgs, ToolHistoryEntry, ToolResult
+from agent.contracts import EventData, PlanStep, ToolArgs, ToolHistoryEntry
+from agent.tools.contracts import ToolResult
 
 
 class StepOutcomeKind(str, Enum):

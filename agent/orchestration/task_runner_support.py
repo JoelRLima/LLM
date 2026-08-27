@@ -7,7 +7,7 @@ from typing import Any
 
 from agent.final_response import has_usable_partial_evidence
 from agent.planning.task_completion import mark_terminal_blocked
-from agent.reporting.operational_outcome import project_operational_outcome
+from agent.runtime.operational_outcome import project_operational_outcome
 
 
 def terminal_answer(

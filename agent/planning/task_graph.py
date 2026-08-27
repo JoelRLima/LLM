@@ -7,6 +7,8 @@ from enum import Enum, IntEnum
 from typing import Any, Dict
 
 from agent.planning.task_graph_validation import GraphValidationReport, TaskGraphValidator
+from agent.resources.contracts import ResourceAccess as TaskResource
+from agent.resources.contracts import ResourceMode
 
 __all__ = [
     "FailurePolicy", "GraphValidationReport", "NodeState", "ResourceMode", "TaskGraph",
@@ -20,17 +22,6 @@ class TaskPriority(IntEnum):
     MEDIUM = 2
     HIGH = 3
     CRITICAL = 4
-
-
-class ResourceMode(str, Enum):
-    READ = "read"
-    WRITE = "write"
-
-
-@dataclass(frozen=True)
-class TaskResource:
-    name: str
-    mode: ResourceMode = ResourceMode.READ
 
 
 class FailurePolicy(str, Enum):
@@ -160,11 +151,19 @@ class TaskGraphState:
 
 
 def _node_to_dict(node: TaskNode) -> Dict[str, Any]:
+    failure_policy = getattr(node.failure_policy, "value", node.failure_policy)
+    resources = [
+        {
+            "name": item.name,
+            "mode": str(getattr(item.mode, "value", item.mode)),
+        }
+        for item in node.resources
+    ]
     return {
         "id": node.node_id, "objective": node.objective,
         "depends_on": list(node.depends_on), "priority": node.priority.name.lower(),
-        "resources": [{"name": item.name, "mode": item.mode.value} for item in node.resources],
-        "capabilities": sorted(node.capabilities), "failure_policy": node.failure_policy.value,
+        "resources": resources,
+        "capabilities": sorted(node.capabilities), "failure_policy": str(failure_policy),
         "metadata": node.metadata,
     }
 

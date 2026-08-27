@@ -44,7 +44,7 @@ class PythonValidationProvider:
             return ()
         root = Path(project.root)
         commands: list[CommandSpec] = []
-        python_files = self._python_files(root, changed_files)
+        python_files = self.python_files(root, changed_files)
         if python_files:
             commands.append(self._syntax_command(python_files))
         if include_tests and project.test_roots:
@@ -54,7 +54,7 @@ class PythonValidationProvider:
         return tuple(commands)
 
     @staticmethod
-    def _python_files(
+    def python_files(
         root: Path,
         changed_files: Sequence[str],
     ) -> tuple[str, ...]:
@@ -111,7 +111,6 @@ class PythonValidationProvider:
     def _pytest_command(test_roots: Sequence[str]) -> CommandSpec:
         argv = (
             sys.executable,
-            "-I",
             "-B",
             "-c",
             _PYTEST_VALIDATION_CODE,

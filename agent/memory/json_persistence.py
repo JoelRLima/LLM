@@ -6,9 +6,10 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from agent.memory.path_safety import LinkLikePathError, reject_link_like
+from agent.runtime.filesystem_primitives import sync_parent_directory
 from agent.runtime.logging import logger
 
 
@@ -58,7 +59,12 @@ def read_json_object(
     return value
 
 
-def write_json_atomic(path: str | Path, payload: Any) -> None:
+def write_json_atomic(
+    path: str | Path,
+    payload: Any,
+    *,
+    default: Callable[[Any], Any] | None = None,
+) -> bool:
     """Grava JSON em arquivo temporário e substitui o destino atomicamente."""
 
     destination = Path(path)
@@ -75,12 +81,14 @@ def write_json_atomic(path: str | Path, payload: Any) -> None:
             delete=False,
         ) as stream:
             temporary_path = Path(stream.name)
-            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            json.dump(payload, stream, ensure_ascii=False, indent=2, default=default)
             stream.flush()
             os.fsync(stream.fileno())
         reject_link_like(destination)
         os.replace(temporary_path, destination)
+        sync_parent_directory(destination)
         temporary_path = None
+        return True
     except Exception as exc:
         raise AtomicJsonWriteError(destination, exc) from exc
     finally:

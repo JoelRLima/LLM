@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent.reporting.observation_evidence import (
@@ -13,13 +13,20 @@ from agent.reporting.observation_evidence import (
     project_tool_observation,
     serialize_tool_observations,
 )
-from agent.reporting.operational_outcome import OperationalOutcome
 from agent.reporting.public_safety import sanitize_public_text
+from agent.runtime.operational_outcome import OperationalOutcome
+from agent.runtime.outcome_taxonomy import OperationalStatus, operational_status_for
 
 MAX_TOOL_RESULTS_SUMMARY_CHARS = MAX_OBSERVATION_EVIDENCE_CHARS
 MAX_TOOL_RESULT_SUMMARY_CHARS = MAX_OBSERVATION_RECORD_CHARS
 _PARTIAL_EVIDENCE_STATUSES = frozenset(
-    {"blocked", "failed", "timed_out", "unavailable", "unverified"}
+    {
+        OperationalStatus.BLOCKED.value,
+        OperationalStatus.FAILED.value,
+        OperationalStatus.TIMED_OUT.value,
+        OperationalStatus.UNAVAILABLE.value,
+        OperationalStatus.UNVERIFIED.value,
+    }
 )
 _INTERNAL_REASON_MARKERS = (
     "approval", "authority", "budget", "cancel", "checkpoint", "execution_aborted",
@@ -66,7 +73,8 @@ def _known_observation_reason(value: Any) -> str | None:
 
 
 def public_outcome_reason(outcome: OperationalOutcome) -> str | None:
-    raw = outcome.failure_reason if outcome.terminal_status == "failed" else outcome.blocked_reason
+    status = operational_status_for(outcome.terminal_status)
+    raw = outcome.failure_reason if status == OperationalStatus.FAILED.value else outcome.blocked_reason
     reason = _known_observation_reason(raw)
     if reason is not None:
         return reason
@@ -81,7 +89,7 @@ def public_outcome_reason(outcome: OperationalOutcome) -> str | None:
 
 def history_observation_reason(history: Any) -> str | None:
     for entry in reversed(history or ()):
-        if not isinstance(entry, dict) or not isinstance(entry.get("result"), dict):
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("result"), Mapping):
             continue
         reason = _known_observation_reason(entry["result"].get("error"))
         if reason is not None:
@@ -90,12 +98,13 @@ def history_observation_reason(history: Any) -> str | None:
 
 
 def _partial_evidence_allowed(outcome: OperationalOutcome) -> bool:
-    if outcome.terminal_status not in _PARTIAL_EVIDENCE_STATUSES:
+    status = operational_status_for(outcome.terminal_status)
+    if status not in _PARTIAL_EVIDENCE_STATUSES:
         return False
     if any((outcome.requested_effects, outcome.executed_effects, outcome.waived_effects,
             outcome.pending_effects, outcome.mutation_occurred, outcome.rollback_occurred)):
         return False
-    if outcome.terminal_status == "blocked":
+    if status == OperationalStatus.BLOCKED.value:
         blocked_reason = _fold_reason(outcome.blocked_reason)
         if any(marker in blocked_reason for marker in ("approval", "authority", "permission", "safety", "workspace_grant")):
             return False
@@ -109,7 +118,7 @@ def has_usable_partial_evidence(outcome: OperationalOutcome, history: Any) -> bo
         return False
     successful_observations = []
     for entry in history or ():
-        if not isinstance(entry, dict):
+        if not isinstance(entry, Mapping):
             continue
         evidence = project_tool_observation(entry)
         if evidence.status != "succeeded" or evidence.executed is not True or not evidence.present:
@@ -133,6 +142,7 @@ def _model_claims_unsupported_effect(answer: str) -> bool:
 
 
 def render_non_success_status(status: str, outcome: OperationalOutcome) -> str:
+    status = operational_status_for(status) or status
     if status == "failed":
         reason = public_outcome_reason(outcome)
         return f"A tarefa não pôde ser concluída: {reason}." if reason else "A tarefa não pôde ser concluída."
@@ -155,6 +165,14 @@ def _render_pending_effects(effects: tuple[str, ...]) -> str:
 
 
 def _render_rollback(outcome: OperationalOutcome) -> str:
+    if outcome.rollback_succeeded is False:
+        answer = (
+            "A altera\u00e7\u00e3o foi marcada para revers\u00e3o, mas n\u00e3o foi poss\u00edvel "
+            "confirmar a restaura\u00e7\u00e3o completa do estado final."
+        )
+        if outcome.surviving_files:
+            answer += f" Recursos ainda possivelmente alterados: {', '.join(outcome.surviving_files)}."
+        return answer
     answer = "A altera\u00e7\u00e3o tentada foi revertida; nenhuma escrita persistiu no estado final."
     if outcome.pending_effects:
         answer += f" Efeitos ainda pendentes: {', '.join(outcome.pending_effects)}."
@@ -164,9 +182,12 @@ def _render_rollback(outcome: OperationalOutcome) -> str:
 def render_operational_answer(outcome: OperationalOutcome) -> str | None:
     """Render canonical operational truth when the outcome contains effects."""
 
-    terminal_status = str(outcome.terminal_status or "unverified")
-    successful_statuses = {"complete", "succeeded"}
-    if terminal_status not in successful_statuses and not outcome.pending_effects and not outcome.rollback_occurred:
+    terminal_status = operational_status_for(outcome.terminal_status) or "unverified"
+    if (
+        terminal_status != OperationalStatus.SUCCEEDED.value
+        and not outcome.pending_effects
+        and not outcome.rollback_occurred
+    ):
         return render_non_success_status(terminal_status, outcome)
     if not any((outcome.requested_effects, outcome.executed_effects, outcome.waived_effects,
                 outcome.pending_effects, outcome.mutation_occurred, outcome.rollback_occurred)):
@@ -177,7 +198,7 @@ def render_operational_answer(outcome: OperationalOutcome) -> str | None:
         return _render_pending_effects(outcome.pending_effects)
     if outcome.rollback_occurred:
         return "A alteração tentada foi revertida; nenhuma escrita persistiu no estado final."
-    if terminal_status not in successful_statuses:
+    if terminal_status != OperationalStatus.SUCCEEDED.value:
         return f"A tarefa terminou com status operacional: {terminal_status}."
     if "write" in outcome.executed_effects and outcome.mutation_occurred:
         files = f" Arquivos afetados: {', '.join(outcome.files_affected)}." if outcome.files_affected else ""
@@ -234,7 +255,7 @@ def compose_operational_answer(
 ) -> str:
     """Keep terminal truth while retaining safe partial observations in public text."""
 
-    if outcome.terminal_status in {"succeeded", "complete"}:
+    if operational_status_for(outcome.terminal_status) == OperationalStatus.SUCCEEDED.value:
         # A successful terminal status still carries canonical effect facts.
         # Keep the deterministic effect projection in that case; otherwise a
         # route-specific model answer could hide a waived, pending, or applied

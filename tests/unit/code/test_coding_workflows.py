@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent.approval import AutoApprove, RequireExplicitApproval
 from agent.cancellation import CancellationToken
+from agent.code.validation import ValidationStatus
 from agent.code.workflows import CodingWorkflowService
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
@@ -32,6 +34,8 @@ class FakeGateway:
 
 
 class ApproveAll:
+    requires_explicit_approval = True
+
     def approve(self, preview, assessment):
         del preview, assessment
         return True
@@ -54,6 +58,12 @@ class RecordingMetrics:
 
     def record(self, metric):
         self.entries.append(metric)
+
+
+class UnavailableValidator:
+    def validate(self, *args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(status=ValidationStatus.UNAVAILABLE, diagnostics=())
 
 
 def _service(
@@ -437,6 +447,31 @@ def test_code_task_auto_approval_applies_high_confidence_write(tmp_path: Path):
     assert (tmp_path / "approved_create.py").read_text(encoding="utf-8") == "VALUE = 2\n"
 
 
+def test_proposal_only_code_task_never_applies_even_with_auto_approval(tmp_path: Path):
+    original = "value = 1\n"
+    (tmp_path / "module.py").write_text(original, encoding="utf-8")
+    gateway = FakeGateway(
+        [_changes({"path": "module.py", "kind": "modify", "content": "value = 2\n"})]
+    )
+
+    result = CodeTaskSkill(
+        str(tmp_path),
+        model_gateway=gateway,
+        approval_policy=AutoApprove(),
+    ).execute(
+        {
+            "action": "modify",
+            "objective": "Proponha uma modificacao sem aplicar.",
+            "targets": ["module.py"],
+        }
+    )
+
+    assert result["status"] == "blocked"
+    assert result["error"] == "confirmation_required"
+    assert result["data"]["artifacts"][0]["metadata"]["applied"] is False
+    assert (tmp_path / "module.py").read_text(encoding="utf-8") == original
+
+
 def test_failed_validation_rolls_back_generated_file(tmp_path: Path):
     gateway = FakeGateway(
         [_changes({"path": "broken.py", "kind": "create", "content": "def broken(:\n"})]
@@ -454,15 +489,103 @@ def test_failed_validation_rolls_back_generated_file(tmp_path: Path):
     assert not (tmp_path / "broken.py").exists()
 
 
-def test_unavailable_validation_is_explicit_and_keeps_non_code_artifact(tmp_path: Path):
+def test_unavailable_validation_rolls_back_autonomous_non_code_mutation(tmp_path: Path):
     gateway = FakeGateway(
         [_changes({"path": "notes.txt", "kind": "create", "content": "documentação\n"})]
     )
 
     result = _service(tmp_path, gateway).change("Crie documentação")
 
-    assert result.status == TaskStatus.UNVERIFIED
-    assert (tmp_path / "notes.txt").exists()
+    assert result.status == TaskStatus.FAILED
+    assert not (tmp_path / "notes.txt").exists()
+    assert result.artifacts[0].metadata["approval_mode"] == "autonomous"
+    assert result.artifacts[0].metadata["rollback_occurred"] is True
+    assert result.artifacts[0].metadata["final_state"] == "restored"
+
+
+def test_unavailable_autonomous_mutation_is_extension_independent(tmp_path: Path):
+    for extension in ("py", "json", "md"):
+        target = tmp_path / f"autonomous.{extension}"
+        gateway = FakeGateway(
+            [_changes({"path": target.name, "kind": "create", "content": "new\n"})]
+        )
+        service = _service(tmp_path, gateway)
+        service.validator = UnavailableValidator()
+
+        result = service.change(f"Crie {target.name}")
+
+        assert result.status == TaskStatus.FAILED
+        assert not target.exists()
+        metadata = result.artifacts[0].metadata
+        assert metadata["approval_mode"] == "autonomous"
+        assert metadata["rollback_occurred"] is True
+        assert metadata["final_state"] == "restored"
+
+
+def test_unavailable_explicit_approval_is_extension_independent(tmp_path: Path):
+    for extension in ("py", "json", "md"):
+        target = tmp_path / f"approved.{extension}"
+        target.write_text("old\n", encoding="utf-8")
+        gateway = FakeGateway(
+            [_changes({"path": target.name, "kind": "modify", "content": "new\n"})]
+        )
+        service = _service(tmp_path, gateway)
+        service.validator = UnavailableValidator()
+
+        result = service.change(
+            f"Altere {target.name}", [target.name], approver=ApproveAll()
+        )
+
+        assert result.status == TaskStatus.UNVERIFIED
+        assert target.read_text(encoding="utf-8") == "new\n"
+        metadata = result.artifacts[0].metadata
+        assert metadata["approval_mode"] == "explicit_approved"
+        assert metadata["approval"]["explicit"] is True
+        assert metadata["validation"] == "unavailable"
+
+
+def test_unavailable_explicit_approval_can_be_disabled_by_product_policy(tmp_path: Path):
+    target = tmp_path / "approved.json"
+    target.write_text("old\n", encoding="utf-8")
+    gateway = FakeGateway(
+        [_changes({"path": target.name, "kind": "modify", "content": "new\n"})]
+    )
+    service = _service(tmp_path, gateway)
+    service.validation_config = {"allow_unverified_approved": False}
+    service.validator = UnavailableValidator()
+
+    result = service.change(
+        f"Altere {target.name}", [target.name], approver=ApproveAll()
+    )
+
+    assert result.status == TaskStatus.FAILED
+    assert target.read_text(encoding="utf-8") == "old\n"
+    assert result.artifacts[0].metadata["approval_mode"] == "explicit_approved"
+    assert result.artifacts[0].metadata["final_state"] == "restored"
+
+
+def test_unavailable_rollback_failure_preserves_surviving_mutation_truth(
+    tmp_path: Path, monkeypatch
+):
+    target = tmp_path / "surviving.md"
+    gateway = FakeGateway(
+        [_changes({"path": target.name, "kind": "create", "content": "new\n"})]
+    )
+    service = _service(tmp_path, gateway)
+    service.validator = UnavailableValidator()
+    monkeypatch.setattr(
+        "agent.code.workflow_application.ChangeSetTransaction.rollback",
+        lambda _transaction: False,
+    )
+
+    result = service.change(f"Crie {target.name}")
+
+    assert result.status == TaskStatus.FAILED
+    assert target.read_text(encoding="utf-8") == "new\n"
+    metadata = result.artifacts[0].metadata
+    assert metadata["final_state"] == "unknown"
+    assert metadata["surviving_mutation"] is True
+    assert result.error == "rollback:incomplete"
 
 
 def test_repair_retries_with_bounded_model_calls_and_rolls_back_failed_attempt(tmp_path: Path):

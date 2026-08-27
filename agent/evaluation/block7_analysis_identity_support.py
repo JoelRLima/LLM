@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from agent.evaluation.block7_analysis_support import _evidence
+from agent.llm.identity import GENERIC_MODEL_ALIASES
 
 CALL_IDENTITY_FIELDS = (
     "call_index",
@@ -14,9 +15,6 @@ CALL_IDENTITY_FIELDS = (
     "observed_provider_model_id",
     "identity_source",
 )
-GENERIC_MODEL_ALIASES = frozenset({"default"})
-
-
 def ordered_identity_values(value: Any) -> list[Any]:
     if isinstance(value, (list, tuple)):
         return list(value)

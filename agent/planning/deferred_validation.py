@@ -15,6 +15,8 @@ def validate_deferred_items(
     objective: str,
     canonical_references: bool,
     step_validator: Callable[[Any], str | None],
+    *,
+    deferred_step_validator: Callable[[Any], str | None] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     for index, step in enumerate(plan):
@@ -33,7 +35,12 @@ def validate_deferred_items(
             continue
         problem = validate_deferred_condition(step, index, plan, objective)
         if problem is None:
-            problem = step_validator(step.get("on_true"))
+            # The branch is only a deferred control payload at this stage.
+            # Its durable effect is revalidated immediately after the trusted
+            # observation resolves the branch.  Keep the legacy one-argument
+            # callback usable for callers outside PlanValidator.
+            branch_validator = deferred_step_validator or step_validator
+            problem = branch_validator(step.get("on_true"))
         if problem:
             errors.append(f"Passo {index + 1} deferred inválido: {problem}.")
     return errors

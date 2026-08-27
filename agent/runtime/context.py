@@ -5,12 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from threading import BoundedSemaphore
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Mapping, Optional, Protocol
 from uuid import uuid4
 
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelGateway
-from agent.runtime.budget import BudgetSnapshot, TaskBudgetLedger
+from agent.runtime.budget import (
+    BudgetSnapshot,
+    TaskBudgetLedger,
+    estimate_model_request_allowance,
+)
+from agent.runtime.limits import default_runtime_limit, runtime_limit_values
 
 
 class EventSink(Protocol):
@@ -57,15 +62,21 @@ ModelCallBudget = TaskBudgetLedger
 
 @dataclass(frozen=True)
 class RuntimeLimits:
-    max_model_concurrency: int = 1
-    max_io_concurrency: int = 2
-    max_process_concurrency: int = 1
-    max_steps: int = 30
-    max_model_calls: int = 20
-    max_task_tool_calls: int = 60
-    max_task_tokens: int = 200_000
-    max_output_tokens: int = 2048
-    max_repair_attempts: int = 2
+    max_model_concurrency: int = field(default_factory=lambda: default_runtime_limit("max_model_concurrency"))
+    max_io_concurrency: int = field(default_factory=lambda: default_runtime_limit("max_io_concurrency"))
+    max_process_concurrency: int = field(default_factory=lambda: default_runtime_limit("max_process_concurrency"))
+    max_steps: int = field(default_factory=lambda: default_runtime_limit("max_steps"))
+    max_model_calls: int = field(default_factory=lambda: default_runtime_limit("max_model_calls"))
+    max_task_tool_calls: int = field(default_factory=lambda: default_runtime_limit("max_task_tool_calls"))
+    max_task_tokens: int = field(default_factory=lambda: default_runtime_limit("max_task_tokens"))
+    max_output_tokens: int = field(default_factory=lambda: default_runtime_limit("max_output_tokens"))
+    max_repair_attempts: int = field(default_factory=lambda: default_runtime_limit("max_repair_attempts"))
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any] | None = None) -> "RuntimeLimits":
+        """Materialize limits through one typed config boundary."""
+
+        return cls(**runtime_limit_values(config))
 
 
 @dataclass(frozen=True)
@@ -158,11 +169,22 @@ class TaskExecutionContext:
             }
         )
 
-    def consume_model_call(self) -> int:
+    def consume_model_call(self, request: Any = None, *, token_allowance: int | None = None) -> int:
         ledger = self.budget_ledger
         if ledger is None:  # Apenas para estreitar o tipo após __post_init__.
             raise RuntimeError("Orçamento de modelo não inicializado.")
-        return ledger.reserve_model_call()
+        if token_allowance is None and request is not None:
+            token_allowance = estimate_model_request_allowance(
+                request,
+                getattr(self.model_gateway, "count_tokens", None),
+            )
+        return ledger.reserve_model_call(token_allowance or 0)
+
+    def reservation_for_model_call(self, call_number: int) -> int:
+        ledger = self.budget_ledger
+        if ledger is None:
+            raise RuntimeError("Ledger de tarefa nao inicializado.")
+        return ledger.reservation_for(call_number)
 
     def finalize_model_call(
         self, call_number: int, *, usage: Any = None, estimated_tokens: int = 0

@@ -36,9 +36,36 @@ class JourneyGateway:
     profile = {"temperature": 0.0, "max_tokens": 128}
     capabilities = ProviderCapabilities(streaming=False)
 
-    def __init__(self, objective: str) -> None:
+    def __init__(self, objective: str, scenario_id: str | None = None) -> None:
         self.objective = objective
+        self.scenario_id = scenario_id or self._infer_scenario_id(objective)
         self.calls: list[ModelRequest] = []
+
+    @staticmethod
+    def _infer_scenario_id(objective: str) -> str:
+        upper = objective.upper()
+        for marker in (
+            "CAP_READ",
+            "CAP_SEARCH",
+            "CAP_MODIFY",
+            "CAP_SHELL",
+            "CAP_EXTENSION",
+            "CAP_FAILURE",
+            "CAP_DENIAL",
+            "CAP_RECOVERY",
+        ):
+            if marker in upper:
+                return marker
+        lowered = objective.casefold()
+        if lowered.startswith("altere sample.py"):
+            return "CAP_MODIFY"
+        if lowered.startswith("modifique sample.py"):
+            return "CAP_RECOVERY"
+        if "workspace sem repositório" in lowered:
+            return "CAP_FAILURE"
+        if "caminho fora do workspace" in lowered:
+            return "CAP_DENIAL"
+        return ""
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
@@ -74,9 +101,9 @@ class JourneyGateway:
             return self._plan_response()
         if "Uma fronteira" in prompt:
             return '{"action":"complete","reason":"a evidencia observada basta"}'
-        if "Objetivo de engenharia:" in prompt and "CAP_MODIFY" in self.objective:
+        if "Objetivo de engenharia:" in prompt and self.scenario_id == "CAP_MODIFY":
             return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
-        if "Objetivo de engenharia:" in prompt and "CAP_RECOVERY" in self.objective:
+        if "Objetivo de engenharia:" in prompt and self.scenario_id == "CAP_RECOVERY":
             return '{"changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
         if "Resultados das ferramentas executadas:" in prompt:
             return self._result_response(prompt)
@@ -91,17 +118,30 @@ class JourneyGateway:
         for marker, answer in direct_answers:
             if marker in self.objective:
                 return json.dumps({"action": "direct_response", "answer": answer}, ensure_ascii=False)
+        if self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"}:
+            return json.dumps(
+                {
+                    "plan": [
+                        {
+                            "tool": "code_task",
+                            "args": {
+                                "action": "modify",
+                                "objective": self.objective,
+                                "targets": ["sample.py"],
+                            },
+                        }
+                    ]
+                }
+            )
         plans = (
             ("CAP_DENIAL", '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'),
             ("CAP_SEARCH", '{"plan":[{"tool":"grep","args":{"pattern":"CAP_SEARCH_EVIDENCE","path":"."}}]}'),
-            ("CAP_MODIFY", '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"CAP_MODIFY","targets":["sample.py"]}}]}'),
-            ("CAP_RECOVERY", '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"CAP_RECOVERY","targets":["sample.py"]}}]}'),
             ("CAP_EXTENSION", '{"plan":[{"tool":"demo_tool","args":{"text":"CAP_EXTENSION_EVIDENCE"}}]}'),
         )
         for marker, response in plans:
-            if marker in self.objective:
+            if marker in self.scenario_id or marker in self.objective:
                 return response
-        if "CAP_SHELL" in self.objective or "CAP_FAILURE" in self.objective:
+        if self.scenario_id in {"CAP_SHELL", "CAP_FAILURE"}:
             return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
         return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
 
@@ -117,11 +157,11 @@ class JourneyGateway:
         for marker, response in responses:
             if marker in prompt:
                 return response
-        if "CAP_MODIFY" in self.objective:
+        if self.scenario_id == "CAP_MODIFY":
             return "A modificação foi validada com sucesso."
-        if "CAP_RECOVERY" in self.objective:
+        if self.scenario_id == "CAP_RECOVERY":
             return "A validação falhou e o arquivo foi restaurado pelo rollback."
-        if "CAP_FAILURE" in self.objective:
+        if self.scenario_id == "CAP_FAILURE":
             return "A inspeção falhou; não foi possível concluir com sucesso."
         return "A tarefa foi concluída com a evidência retornada."
 
@@ -363,18 +403,18 @@ def test_interactive_provider_failure_is_canonically_finalized(tmp_path: Path) -
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:
-    for objective, expected_status, expected_validation, expected_rollback, expected_content in (
-        ("CAP_MODIFY: altere sample.py", "succeeded", "passed", False, "value = 2"),
-        ("CAP_RECOVERY: altere sample.py", "failed", "failed", True, "value = 1\n"),
+    for scenario_id, objective, expected_status, expected_validation, expected_rollback, expected_content in (
+        ("CAP_MODIFY", "altere sample.py", "succeeded", "passed", False, "value = 2"),
+        ("CAP_RECOVERY", "modifique sample.py", "failed", "failed", True, "value = 1\n"),
     ):
-        case_root = tmp_path / objective.split(":", 1)[0].lower()
+        case_root = tmp_path / scenario_id.lower()
         workspace = case_root / "workspace"
         workspace.mkdir(parents=True)
         (workspace / "sample.py").write_text("value = 1\n", encoding="utf-8")
         with AgentApplication.create(
             paths=_initialized_paths(case_root),
             workspace=workspace,
-            gateway=JourneyGateway(objective),
+            gateway=JourneyGateway(objective, scenario_id),
             approval_policy=AutoApprove(),
             configure_logging=False,
         ) as application:
@@ -448,7 +488,9 @@ def test_direct_response_is_a_first_class_no_tool_result(
     assert result.receipt["tools"] == []
     assert result.receipt["executed"] is None
     assert report["metrics"]["tools_called"] == 0
-    assert report["metrics"]["model_calls"] == len(gateway.calls) == 1
+    # ``DIRECT_*`` must not accidentally match the bounded ``dir`` listing
+    # token; the normal route therefore performs router + planner calls.
+    assert report["metrics"]["model_calls"] == len(gateway.calls) == 2
 
 
 def test_direct_response_can_use_existing_conversation_context(tmp_path: Path) -> None:

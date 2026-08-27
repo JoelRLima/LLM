@@ -4,8 +4,14 @@ import pytest
 
 from agent.application import AgentApplication
 from agent.llm.contracts import TokenUsage
+from agent.reporting.metrics import project_run_metrics
 from agent.reporting.operational_outcome import normalize_terminal_status
-from agent.reporting.run_receipt import build_run_diagnostics, derive_status, public_exception_message
+from agent.reporting.run_receipt import (
+    build_run_diagnostics,
+    build_run_receipt,
+    derive_status,
+    public_exception_message,
+)
 from agent.reporting.task_report import TaskReportBuilder
 from agent.reporting.task_report_rendering import render_markdown
 from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
@@ -100,6 +106,36 @@ def test_task_report_preserves_total_only_ledger_usage_without_metric_rows() -> 
     assert report["metrics"]["reported_total_tokens"] == 15
     assert report["metrics"]["accounted_tokens"] == 15
     assert report["metrics"]["token_usage_complete"] is True
+    assert report["metrics"]["token_measurement"] == "provider_reported"
+
+
+def test_report_and_receipt_share_the_typed_metrics_snapshot() -> None:
+    entries = [
+        {
+            "type": "model_call",
+            "input_tokens": 4,
+            "output_tokens": 6,
+            "token_usage_complete": True,
+        }
+    ]
+    snapshot = project_run_metrics(entries).to_dict()
+    state = SimpleNamespace(
+        objective="metrics",
+        tool_history=[],
+        events=[],
+        last_result=None,
+    )
+
+    report = TaskReportBuilder({}).build_report(
+        state,
+        entries,
+        "done",
+        canonical_outcome={"status": "succeeded", "error": None},
+    )
+    receipt = build_run_receipt(".", AgentState(), "succeeded", None, metrics=snapshot)
+
+    assert report["metrics"] == snapshot
+    assert receipt["metrics"] == snapshot
 
 
 def test_task_report_does_not_infer_success_from_final_answer() -> None:

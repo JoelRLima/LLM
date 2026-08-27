@@ -92,11 +92,19 @@ def metric_summary(runs: list[Mapping[str, Any]]) -> dict[str, Any]:
     token_measurements = 0
     for run in runs:
         measurement = _measurement(run)
-        totals["model_calls"] += int(measurement.get("model_calls", 0) or 0)
         canonical = measurement.get("canonical_metrics")
         if isinstance(canonical, Mapping):
+            totals["model_calls"] += int(canonical.get("model_calls", 0) or 0)
             totals["tool_calls"] += int(canonical.get("tool_calls", 0) or 0)
+            totals["accounted_tokens"] += int(canonical.get("accounted_tokens", 0) or 0)
+            totals["estimated_tokens"] += int(canonical.get("estimated_tokens", 0) or 0)
+            complete = bool(canonical.get("token_usage_complete", False))
+            totals["duration_ms"] += int(
+                canonical.get("total_duration_ms", measurement.get("duration_ms", 0))
+                or 0
+            )
         else:
+            totals["model_calls"] += int(measurement.get("model_calls", 0) or 0)
             # This field is the canonical budget/gateway projection.  A
             # history length is observational storage and cannot stand in for
             # a physical invocation count.
@@ -105,12 +113,13 @@ def metric_summary(runs: list[Mapping[str, Any]]) -> dict[str, Any]:
                 totals["tool_calls"] += int(snapshot.get("tool_calls", 0) or 0)
             else:
                 totals["tool_calls"] += int(measurement.get("tool_calls", 0) or 0)
-        totals["duration_ms"] += int(measurement.get("duration_ms", 0) or 0)
-        totals["accounted_tokens"] += int(measurement.get("accounted_tokens", 0) or 0)
-        totals["estimated_tokens"] += int(measurement.get("estimated_tokens", 0) or 0)
+            totals["accounted_tokens"] += int(measurement.get("accounted_tokens", 0) or 0)
+            totals["estimated_tokens"] += int(measurement.get("estimated_tokens", 0) or 0)
+            complete = bool(measurement.get("token_usage_complete", False))
+            totals["duration_ms"] += int(measurement.get("duration_ms", 0) or 0)
         if measurement:
             token_measurements += 1
-            token_complete = token_complete and bool(measurement.get("token_usage_complete", False))
+            token_complete = token_complete and complete
     return {
         **totals,
         "token_usage_complete": token_complete and token_measurements > 0,

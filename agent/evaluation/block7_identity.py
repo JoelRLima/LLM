@@ -10,7 +10,6 @@ evaluation, fixture, or provider change invalidates a campaign epoch.
 from __future__ import annotations
 
 import hashlib
-import json
 import subprocess
 from pathlib import Path
 from typing import Any, Mapping
@@ -20,49 +19,18 @@ from agent.evaluation.block7_model_identity import (
     DEFAULT_PROFILE,
     fake_model_identity,
     model_config_identity,
-    normalize_endpoint_identity,
     planned_model_profile,
+)
+from agent.llm.identity import (
+    canonical_json,
+    normalize_endpoint_identity,
+    sha256_digest,
+    unavailable_observed_identity,
 )
 
 CAMPAIGN_SCHEMA_VERSION = "B7-CAMPAIGN-V2.0"
 DEFAULT_DRY_RUN_EPOCH = "B7-DRY-RUN-V2"
 DEFAULT_REAL_MODEL_EPOCH = "B7-REAL-MODEL-EPOCH-2"
-
-
-def unavailable_observed_identity() -> dict[str, Any]:
-    """Explicitly represent a backend that did not expose response identity."""
-
-    return {
-        "available": False,
-        "provider_observation_available": False,
-        "identity_sufficient": False,
-        "consistent": True,
-        "specific": False,
-        "complete": False,
-        "provider_model_id": None,
-        "actual_provider_model_id": None,
-        "provider": None,
-        "model": None,
-        "endpoint_identity": None,
-        "source": "unavailable",
-        "identity_source": "unavailable",
-        "observed_model_ids": [],
-        "distinct_observed_model_ids": [],
-        "external_identity": None,
-        "external_identity_source": None,
-        "provider_observation_limitation": "backend_identity_unavailable",
-        "call_count": 0,
-        "call_identities": [],
-    }
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-
-
-def _sha256(value: bytes | str) -> str:
-    payload = value.encode("utf-8") if isinstance(value, str) else value
-    return hashlib.sha256(payload).hexdigest()
 
 
 def _git_head(repo_root: Path) -> str:
@@ -133,12 +101,12 @@ def semantic_candidate_manifest(repo_root: str | Path) -> list[dict[str, str]]:
     manifest: list[dict[str, str]] = []
     for path in _included_files(root, roots, excluded):
         relative = path.relative_to(root).as_posix()
-        manifest.append({"path": relative, "sha256": _sha256(path.read_bytes())})
+        manifest.append({"path": relative, "sha256": sha256_digest(path.read_bytes())})
     return manifest
 
 
 def semantic_manifest_hash(manifest: list[dict[str, str]]) -> str:
-    return _sha256(_canonical_json(manifest))
+    return sha256_digest(canonical_json(manifest))
 
 
 def semantic_candidate_fingerprint(repo_root: str | Path) -> str:
@@ -162,8 +130,8 @@ def documentation_fingerprint(repo_root: str | Path) -> str:
         ("docs",),
         {".git", ".venv", ".audit-local", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"},
     )
-    payload = [{"path": p.relative_to(root).as_posix(), "sha256": _sha256(p.read_bytes())} for p in files]
-    return _sha256(_canonical_json(payload))
+    payload = [{"path": p.relative_to(root).as_posix(), "sha256": sha256_digest(p.read_bytes())} for p in files]
+    return sha256_digest(canonical_json(payload))
 
 
 def candidate_identity(repo_root: str | Path) -> dict[str, str]:
@@ -218,7 +186,7 @@ def fixture_identity() -> str:
                 for arm in scenario.arms
             ],
         })
-    return _sha256(_canonical_json(payload))
+    return sha256_digest(canonical_json(payload))
 
 
 def campaign_config(

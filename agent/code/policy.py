@@ -12,6 +12,15 @@ from agent.code.path_safety import (
     resolve_workspace_path,
     workspace_relative_path,
 )
+from agent.runtime.config import DEFAULT_CODE_POLICY
+
+DEFAULT_AUTO_APPLY_MIN_CONFIDENCE = float(
+    DEFAULT_CODE_POLICY["auto_apply_min_confidence"]
+)
+DEFAULT_MAX_AUTO_FILES = int(DEFAULT_CODE_POLICY["max_auto_files"])
+DEFAULT_REQUIRE_TARGET_ALIGNMENT = bool(
+    DEFAULT_CODE_POLICY["require_target_alignment"]
+)
 
 
 @dataclass(frozen=True)
@@ -32,9 +41,9 @@ class ChangeApprover(Protocol):
 
 @dataclass(frozen=True)
 class ChangeApprovalPolicy:
-    auto_apply_min_confidence: float = 0.85
-    max_auto_files: int = 2
-    require_target_alignment: bool = True
+    auto_apply_min_confidence: float = DEFAULT_AUTO_APPLY_MIN_CONFIDENCE
+    max_auto_files: int = DEFAULT_MAX_AUTO_FILES
+    require_target_alignment: bool = DEFAULT_REQUIRE_TARGET_ALIGNMENT
 
     @staticmethod
     def _normalized_targets(
@@ -201,19 +210,23 @@ def change_policy_from_config(config: Dict[str, Any]) -> ChangeApprovalPolicy:
     raw = config.get("code_policy")
     if not isinstance(raw, dict):
         return ChangeApprovalPolicy()
-    confidence = raw.get("auto_apply_min_confidence", 0.85)
+    confidence = raw.get(
+        "auto_apply_min_confidence", DEFAULT_AUTO_APPLY_MIN_CONFIDENCE
+    )
     if (
         isinstance(confidence, bool)
         or not isinstance(confidence, (int, float))
         or not 0.0 <= float(confidence) <= 1.0
     ):
-        confidence = 0.85
-    max_files = raw.get("max_auto_files", 2)
+        confidence = DEFAULT_AUTO_APPLY_MIN_CONFIDENCE
+    max_files = raw.get("max_auto_files", DEFAULT_MAX_AUTO_FILES)
     if isinstance(max_files, bool) or not isinstance(max_files, int) or max_files < 1:
-        max_files = 2
-    alignment = raw.get("require_target_alignment", True)
+        max_files = DEFAULT_MAX_AUTO_FILES
+    alignment = raw.get(
+        "require_target_alignment", DEFAULT_REQUIRE_TARGET_ALIGNMENT
+    )
     if not isinstance(alignment, bool):
-        alignment = True
+        alignment = DEFAULT_REQUIRE_TARGET_ALIGNMENT
     return ChangeApprovalPolicy(
         auto_apply_min_confidence=float(confidence),
         max_auto_files=max_files,

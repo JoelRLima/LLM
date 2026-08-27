@@ -5,13 +5,15 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from agent.contracts import ToolArgs, ToolResult
+from agent.contracts import ToolArgs
 from agent.parsers import stringify
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.step_contracts import PreparedInvocation
 from agent.runtime.logging import logger
-from agent.tools.contracts import ToolInvocationRequest
+from agent.tools.contracts import ToolError, ToolInvocationRequest, ToolStatus
+from agent.tools.contracts import ToolResult as CanonicalToolResult
+from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import EvidenceProvenance
 
 
@@ -32,14 +34,21 @@ class ToolExecutor:
 
     def run_tool(
         self, tool_name: str, args: ToolArgs, record_result: bool = True
-    ) -> ToolResult:
+    ) -> CanonicalToolResult:
+        """Run one tool and retain the canonical result through the spine."""
+
+        return self.run_canonical_tool(tool_name, args, record_result=record_result)
+
+    def run_canonical_tool(
+        self, tool_name: str, args: ToolArgs, record_result: bool = True
+    ) -> CanonicalToolResult:
         request = ToolInvocationRequest(
             str(uuid.uuid4()),
             tool_name,
             args,
             task_id=self._task_id(),
         )
-        return self.run_tool_invocation(request, record_result=record_result)
+        return self.run_tool_invocation_canonical(request, record_result=record_result)
 
     def _task_id(self) -> str | None:
         context = getattr(self.orchestrator, "_task_execution_context", None)
@@ -47,7 +56,12 @@ class ToolExecutor:
 
     def run_tool_invocation(
         self, request: ToolInvocationRequest, record_result: bool = True
-    ) -> ToolResult:
+    ) -> CanonicalToolResult:
+        return self.run_tool_invocation_canonical(request, record_result=record_result)
+
+    def run_tool_invocation_canonical(
+        self, request: ToolInvocationRequest, record_result: bool = True
+    ) -> CanonicalToolResult:
         """Run a pre-correlated request without replacing its invocation ID."""
         gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
         if gateway is None:
@@ -84,11 +98,11 @@ class ToolExecutor:
         # records this returned value itself. Preserve the canonical details
         # there (executed/artifacts/error_code) instead of downgrading it to
         # the historical projection before the result reaches AgentState.
-        result = cast(ToolResult, raw_res.to_legacy_dict(include_details=True))
-        msg = result.get("message") or ("Concluido" if result.get("ok") else "Falha")
+        result = cast(CanonicalToolResult, raw_res)
+        msg = result.message or ("Concluido" if result.ok else "Falha")
         print(f" {msg}")
         if getattr(self.orchestrator, "verbose", False):
-            print(f"[DEBUG] Resultado completo: {stringify(result)}")
+            print(f"[DEBUG] Resultado completo: {stringify(result.to_legacy_dict(include_details=True))}")
         return result
 
     def _cancellation_token(
@@ -111,7 +125,17 @@ class ToolExecutor:
 
     def run_prepared_invocation(
         self, prepared: PreparedInvocation, record_result: bool = True
-    ) -> ToolResult:
+    ) -> CanonicalToolResult:
+        """Run a prepared invocation while retaining canonical typing."""
+
+        return self.run_prepared_invocation_canonical(
+            prepared,
+            record_result=record_result,
+        )
+
+    def run_prepared_invocation_canonical(
+        self, prepared: PreparedInvocation, record_result: bool = True
+    ) -> CanonicalToolResult:
         """Dispatch only the concrete preparation boundary.
 
         The planner owns resolution and preparation; this adapter preserves
@@ -167,13 +191,12 @@ class ToolExecutor:
         # the production class method below still goes through the gateway.
         overridden_run_tool = self.run_tool
         if getattr(overridden_run_tool, "__func__", None) is not ToolExecutor.run_tool:
-            return cast(
-                ToolResult,
+            return ensure_canonical_result(
                 overridden_run_tool(
                     prepared.tool,
                     dict(prepared.args),
                     record_result,
-                ),
+                )
             )
         request = ToolInvocationRequest(
             invocation_id,
@@ -181,22 +204,19 @@ class ToolExecutor:
             dict(prepared.args),
             task_id=getattr(prepared, "task_id", None) or self._task_id(),
         )
-        return self.run_tool_invocation(request, record_result=record_result)
+        return self.run_tool_invocation_canonical(request, record_result=record_result)
 
     @staticmethod
     def _prepared_block(
         invocation_id: str, error_code: str, message: str
-    ) -> ToolResult:
-        return {
-            "invocation_id": invocation_id,
-            "ok": False,
-            "done": True,
-            "executed": False,
-            "status": "blocked",
-            "error": message,
-            "error_code": error_code,
-            "message": message,
-        }
+    ) -> CanonicalToolResult:
+        return CanonicalToolResult(
+            invocation_id=invocation_id,
+            status=ToolStatus.BLOCKED,
+            error=ToolError(error_code, message),
+            message=message,
+            executed=False,
+        )
 
     @staticmethod
     def _primary_resource(args: Mapping[str, Any]) -> str | None:
@@ -222,9 +242,8 @@ class ToolExecutor:
         except Exception as exc:
             logger.warning("Falha ao usar summarize_skill: %s", exc)
         return text[:300] + "..." if len(text) > 300 else text
-
     def maybe_summarize_and_store(
-        self, tool_name: str, args: ToolArgs, result: ToolResult
+        self, tool_name: str, args: ToolArgs, result: CanonicalToolResult
     ) -> None:
         if tool_name not in ("code_analyzer", "file_reader") or not result.get("ok"):
             return

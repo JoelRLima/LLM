@@ -29,6 +29,7 @@ from agent.planning.task_terminal import (
     mark_unfinished_effect,
     mark_unfinished_obligation,
 )
+from agent.runtime.budget import BudgetExhausted
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +61,10 @@ def initialize_task_progression(orchestrator: Any, objective: str) -> None:
             preserve_semantics=True,
         )
     else:
-        requested = infer_requested_effects(objective)
+        # Even compatibility orchestrators must receive the canonical
+        # positive-authority projection; the advisory requested list is not a
+        # durable permission source.
+        requested = TaskSemantics.from_objective(objective).requested_effects
         state.reset_task_progression(requested)
     orchestrator.agent_state.reasoning_last_history_count = len(
         orchestrator.agent_state.tool_history
@@ -69,11 +73,36 @@ def initialize_task_progression(orchestrator: Any, objective: str) -> None:
 
 def bind_effect_waiver(orchestrator: Any, observation_index: int, *, effects: tuple[str, ...] | None = None, source: str = "continuation") -> bool:
     match = next((item for index, item in eligible_waiver_observations(orchestrator) if index == observation_index), None)
-    pending = orchestrator.agent_state.pending_effects()
-    if match is None or not pending:
+    state = orchestrator.agent_state
+    pending = tuple(state.pending_effects())
+    # A resolved false deferred branch deliberately projects its requested
+    # effect as inactive, so it is absent from ``pending_effects``.  The
+    # branch still records an evidence-backed waiver for audit truthfulness;
+    # admit only an explicitly selected, otherwise-unresolved requested
+    # effect and never revive an executed/already-waived effect.
+    inactive_selected: tuple[str, ...] = ()
+    if effects:
+        semantics_owner = getattr(state, "task_semantics", None)
+        requirement_state = getattr(semantics_owner, "_effect_requirement_state", None)
+        executed_value = getattr(state, "executed_effects", ())
+        waived_value = getattr(state, "waived_effects", ())
+        executed = set(executed_value() if callable(executed_value) else executed_value)
+        waived = set(waived_value() if callable(waived_value) else waived_value)
+        requested = set(getattr(state, "requested_effects", ()))
+        if callable(requirement_state):
+            inactive_selected = tuple(
+                effect
+                for effect in effects
+                if effect in requested
+                and effect not in executed
+                and effect not in waived
+                and requirement_state(effect) == "inactive"
+            )
+    if match is None or (not pending and not inactive_selected):
         return False
-    selected = pending if effects is None else effects
-    if not selected or any(effect not in pending for effect in selected):
+    selected = pending if effects is None else tuple(effects)
+    eligible = set(pending) | set(inactive_selected)
+    if not selected or any(effect not in eligible for effect in selected):
         return False
     for effect in selected:
         if isinstance(getattr(orchestrator.agent_state, "task_semantics", None), TaskSemantics):
@@ -223,6 +252,8 @@ def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
     executed = ", ".join(state.executed_effects) or "nenhum efeito de escrita executado"
     try:
         continuation = orchestrator.plan_builder.continue_after_observation(objective, executed, observation_references(orchestrator))
+    except BudgetExhausted:
+        raise
     except Exception:
         return mark_unfinished_effect(orchestrator, objective)
     if continuation.kind is PlanningDecisionKind.COMPLETE:
@@ -237,7 +268,13 @@ def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
         return mark_unfinished_effect(orchestrator, objective)
     orchestrator._emit("continuation_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
     try:
-        validated = orchestrator.execution_gateway.extend_validated_plan(continuation.plan, objective)
+        validated = orchestrator.execution_gateway.extend_validated_plan(
+            continuation.plan,
+            objective,
+            allow_conditional_preview=True,
+        )
+    except BudgetExhausted:
+        raise
     except Exception:
         validated = None
     return None if validated is not None else mark_unfinished_effect(orchestrator, objective)

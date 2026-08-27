@@ -25,7 +25,11 @@ from agent.llm.legacy_payload import (
 from agent.llm.legacy_payload import (
     legacy_payload as _legacy_payload,
 )
-from agent.runtime.budget import estimate_model_request_tokens
+from agent.runtime.budget import (
+    BudgetExhausted,
+    estimate_model_request_allowance,
+    estimate_model_request_tokens,
+)
 
 
 def _mapping_value(value: Any) -> Mapping[str, Any]:
@@ -102,7 +106,12 @@ def build_model_request(
 def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse:
     """Complete one canonical request with task-budget accounting."""
 
-    call_number = session.budget_ledger.reserve_model_call()
+    call_number = session.budget_ledger.reserve_model_call(
+        estimate_model_request_allowance(
+            request,
+            getattr(session.gateway, "count_tokens", None),
+        )
+    )
     started_at = time.monotonic()
     try:
         if callable(getattr(session.gateway, "complete", None)):
@@ -117,7 +126,17 @@ def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse
             )
         if not isinstance(response, ModelResponse):
             response = ModelResponse(content=response_text(response))
-    except Exception:
+    except BudgetExhausted:
+        estimate = estimate_model_request_tokens(request)
+        session._finalize_model_call(
+            call_number,
+            started_at,
+            success=False,
+            streaming=False,
+            estimated_tokens=estimate,
+        )
+        raise
+    except BaseException:
         estimate = estimate_model_request_tokens(request)
         session._finalize_model_call(
             call_number,
@@ -203,7 +222,12 @@ def consume_model_stream(
     """Consume a native or legacy stream with one ledger reservation."""
 
     request = replace(request, stream=True)
-    call_number = session.budget_ledger.reserve_model_call()
+    call_number = session.budget_ledger.reserve_model_call(
+        estimate_model_request_allowance(
+            request,
+            getattr(session.gateway, "count_tokens", None),
+        )
+    )
     started_at = time.monotonic()
     usage: Any = None
     visible = ""
@@ -212,7 +236,22 @@ def consume_model_stream(
             visible, usage = _consume_gateway_events(session.gateway, request, callbacks)
         else:
             visible, usage = _consume_legacy_gateway(session.gateway, request, callbacks)
-    except Exception as exc:
+    except BudgetExhausted as exc:
+        partial_content = getattr(exc, "partial_content", None)
+        if isinstance(partial_content, str) and partial_content:
+            visible = partial_content
+        estimate = estimate_model_request_tokens(request, visible)
+        session._finalize_model_call(
+            call_number,
+            started_at,
+            success=False,
+            streaming=True,
+            response={"usage": usage} if usage is not None else visible,
+            usage=usage,
+            estimated_tokens=estimate,
+        )
+        raise
+    except BaseException as exc:
         partial_content = getattr(exc, "partial_content", None)
         if isinstance(partial_content, str) and partial_content:
             visible = partial_content

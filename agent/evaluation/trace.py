@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from agent.evaluation.block7_model_identity import (
-    GENERIC_MODEL_ALIASES,
-    normalize_endpoint_identity,
-    normalize_external_identity,
-)
-from agent.evaluation.block7_trace_identity import (
+from agent.llm.identity import (
     call_identity,
+    declared_provider_identity,
+    normalize_external_identity,
     observed_provider_model_id,
+    project_observed_provider_identity,
 )
 
 
@@ -159,123 +157,13 @@ class RecordingGateway:
 
     def export_evidence(self) -> dict[str, Any]:
         records = [dict(record) for record in self._records]
-        provider = getattr(self.gateway, "provider_name", None)
-        model = getattr(self.gateway, "model", None)
-        profile = getattr(self.gateway, "profile", None)
-        capabilities = getattr(self.gateway, "capabilities", None)
-        capability_projection = {
-            "streaming": bool(getattr(capabilities, "streaming", False)),
-            "structured_output_modes": [
-                str(getattr(mode, "value", mode))
-                for mode in getattr(capabilities, "structured_output_modes", ())
-            ],
-            "reasoning": bool(getattr(capabilities, "reasoning", False)),
-            "token_counting": bool(getattr(capabilities, "token_counting", False)),
-            "tool_calls": bool(getattr(capabilities, "tool_calls", False)),
-        }
-        declared = {
-            "provider": str(provider or ""),
-            "model": str(model or ""),
-            "profile": dict(profile) if isinstance(profile, dict) else {},
-            "capabilities": capability_projection,
-            "endpoint_identity": normalize_endpoint_identity(getattr(self.gateway, "endpoint_identity", None)),
-        }
-        call_identities = [
-            {
-                key: record.get(key)
-                for key in (
-                    "call_index",
-                    "provider",
-                    "endpoint_identity",
-                    "declared_model",
-                    "observed_provider_model_id",
-                    "identity_source",
-                )
-            }
-            for record in records
-        ]
-        observed_ids = [
-            str(identity["observed_provider_model_id"])
-            for identity in call_identities
-            if identity.get("observed_provider_model_id") not in (None, "")
-        ]
-        distinct_observed_ids = list(dict.fromkeys(observed_ids))
-        generic_aliases = GENERIC_MODEL_ALIASES
-        specific = len(distinct_observed_ids) == 1 and distinct_observed_ids[0].casefold() not in generic_aliases
-        external_identity = self.external_identity
-        providers = list(dict.fromkeys(
-            str(identity["provider"]).strip()
-            for identity in call_identities
-            if identity.get("provider") not in (None, "")
-        ))
-        endpoints = list(dict.fromkeys(
-            str(identity["endpoint_identity"]).strip()
-            for identity in call_identities
-            if identity.get("endpoint_identity") not in (None, "")
-        ))
-        consistent = len(distinct_observed_ids) <= 1 and len(providers) <= 1 and len(endpoints) <= 1
-        provider_observed = bool(distinct_observed_ids)
-        fields_complete = bool(call_identities) and all(
-            all(key in identity for key in (
-                "call_index",
-                "provider",
-                "endpoint_identity",
-                "declared_model",
-                "observed_provider_model_id",
-                "identity_source",
-            ))
-            for identity in call_identities
+        declared = declared_provider_identity(self.gateway)
+        observed = project_observed_provider_identity(
+            records,
+            declared,
+            external_identity=self.external_identity,
         )
-        provider_observation_complete = bool(call_identities) and all(
-            identity.get("observed_provider_model_id") not in (None, "")
-            for identity in call_identities
-        )
-        complete = bool(
-            fields_complete
-            and (provider_observation_complete or external_identity is not None)
-        )
-        sufficient = bool(complete and consistent and (specific or external_identity))
-        observed_model_id = distinct_observed_ids[0] if len(distinct_observed_ids) == 1 else None
-        provider_identity = providers[0] if len(providers) == 1 else None
-        endpoint_identity = endpoints[0] if len(endpoints) == 1 else None
-        observed_source = (
-            "response.provider_metadata"
-            if provider_observed and specific
-            else "external_identity"
-            if external_identity
-            else "response.provider_metadata"
-            if provider_observed
-            else "unavailable"
-        )
-        observed = {
-            "available": provider_observed or bool(external_identity),
-            "provider_observation_available": provider_observed,
-            "identity_sufficient": sufficient,
-            "consistent": consistent,
-            "specific": specific,
-            "complete": complete,
-            "provider_observation_complete": provider_observation_complete,
-            "provider_model_id": observed_model_id,
-            "actual_provider_model_id": observed_model_id,
-            "model": observed_model_id if provider_observed else None,
-            "provider": provider_identity,
-            "endpoint_identity": endpoint_identity,
-            "source": observed_source,
-            "identity_source": observed_source,
-            "observed_model_ids": observed_ids,
-            "distinct_observed_model_ids": distinct_observed_ids,
-            "external_identity": external_identity,
-            "external_identity_source": "external_identity" if external_identity else None,
-            "provider_observation_limitation": (
-                "generic_provider_model_id"
-                if provider_observed and not specific
-                else "backend_identity_unavailable"
-                if not provider_observed
-                else None
-            ),
-            "call_count": len(call_identities),
-            "call_identities": call_identities,
-        }
+        call_identities = observed["call_identities"]
         return {
             "model_decisions": [record for record in records if record.get("stage") == "decision"],
             "repair_decisions": [record for record in records if record.get("stage") == "repair"],

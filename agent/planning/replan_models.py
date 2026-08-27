@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,23 @@ class ReplanContext:
     last_exception: Optional[str] = None
     last_tool_result: Optional[Dict[str, Any]] = None
     budget_remaining: Optional[int] = None
+    # The task owns this mapping.  A context is an attempt view, never the
+    # retry ledger itself.
+    retry_counts: MutableMapping[str, int] | None = None
+
+    def count(self, kind: str) -> int:
+        if self.retry_counts is not None:
+            return int(self.retry_counts.get(kind, 0))
+        return self.heuristic_replans if kind == "heuristic" else self.llm_replans
+
+    def record(self, kind: str) -> None:
+        if self.retry_counts is not None:
+            self.retry_counts[kind] = self.count(kind) + 1
+            self.retry_counts["total"] = self.count("total") + 1
+        if kind == "heuristic":
+            self.heuristic_replans += 1
+        else:
+            self.llm_replans += 1
 
 
 @dataclass
@@ -40,12 +58,14 @@ class RetryPolicy:
         self.max_llm = max_llm
 
     def allows_heuristic(self, context: ReplanContext) -> bool:
-        total = context.heuristic_replans + context.llm_replans
-        return total < self.max_total and context.heuristic_replans < self.max_heuristic
+        total = context.count("total") if context.retry_counts is not None else context.count("heuristic") + context.count("llm")
+        heuristic = context.count("heuristic")
+        return total < self.max_total and heuristic < self.max_heuristic
 
     def allows_llm(self, context: ReplanContext) -> bool:
-        total = context.heuristic_replans + context.llm_replans
-        return total < self.max_total and context.llm_replans < self.max_llm
+        total = context.count("total") if context.retry_counts is not None else context.count("heuristic") + context.count("llm")
+        llm = context.count("llm")
+        return total < self.max_total and llm < self.max_llm
 
 
 def classify_error(error_message: str) -> ErrorCategory:

@@ -6,12 +6,13 @@ import stat
 from pathlib import Path
 from typing import cast
 
+from agent.runtime.filesystem_primitives import is_link_like
 from agent.tools.extension_catalog_errors import (
     CatalogStorageError,
     WorkspaceConfigurationCorruptError,
     WorkspaceStorageError,
 )
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage, _is_reparse_point
+from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.extension_state import WorkspaceExtensionsState
 from agent.tools.workspace_extensions_codec import (
     decode_workspace_extensions,
@@ -27,7 +28,7 @@ class WorkspaceExtensionsStorage:
         self._atomic = ExtensionCatalogStorage(self.path)
 
     def load(self) -> WorkspaceExtensionsState:
-        if self.path.is_symlink() or _is_reparse_point(self.path):
+        if is_link_like(self.path):
             raise WorkspaceStorageError("Configuração do workspace não pode ser symlink")
         if not self.path.exists():
             return WorkspaceExtensionsState()
@@ -46,7 +47,7 @@ class WorkspaceExtensionsStorage:
             ) from exc
 
     def save(self, state: WorkspaceExtensionsState) -> None:
-        if self.path.is_symlink() or _is_reparse_point(self.path):
+        if is_link_like(self.path):
             raise WorkspaceStorageError("Configuração do workspace não pode ser symlink")
         try:
             payload = encode_workspace_extensions(state)

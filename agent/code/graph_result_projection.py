@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from agent.reporting.observation_evidence import project_artifact_evidence
 from agent.runtime.context import TaskResult, TaskStatus
+from agent.runtime.mutation_evidence import project_mutation_evidence
 
 
 def _graph_status(graph_result: Any) -> TaskStatus:
@@ -40,7 +40,7 @@ def _empty_node_metadata(graph_result: Any, node_id: str) -> dict[str, Any]:
 
 
 def _project_node(result: Any) -> tuple[dict[str, Any], Any]:
-    evidence = project_artifact_evidence({"data": asdict(result)})
+    evidence = project_mutation_evidence({"data": asdict(result)})
     invocation_ids: list[str] = []
     for artifact in result.artifacts:
         for key in ("validation_invocation_id", "invocation_id"):

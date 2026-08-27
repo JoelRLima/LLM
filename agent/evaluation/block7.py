@@ -23,9 +23,10 @@ from agent.evaluation.block7_evidence import (
     sanitize_evidence,
     sanitize_evidence_text,
 )
+from agent.evaluation.block7_fixture_context import fixture_marker, runtime_objective
 from agent.evaluation.contracts import CapabilityScenario, ScenarioExpectation
 
-H_SERIES_VERSION = "B7-HSERIES-V1.0"
+H_SERIES_VERSION = "B7-HSERIES-V1.5"
 # Per-run evidence remains readable by the preserved Epoch 1 artifact.  The
 # corrected campaign envelope carries its own version and the additive fields
 # below are safe for older readers.
@@ -99,6 +100,11 @@ class HSeriesArm:
     initial_files: Mapping[str, str] = field(default_factory=dict)
     expectation: ScenarioExpectation = field(default_factory=ScenarioExpectation)
     oracle: Mapping[str, Any] = field(default_factory=dict)
+    approval_mode: str = "explicit"
+
+    def __post_init__(self) -> None:
+        if self.approval_mode not in {"explicit", "required"}:
+            raise Block7EvidenceError("invalid H-series approval mode")
 
     def to_capability_scenario(self, h_id: str) -> CapabilityScenario:
         scenario_id = f"{h_id.lower()}-{self.arm_id}"
@@ -108,11 +114,13 @@ class HSeriesArm:
             "h_series_version": H_SERIES_VERSION,
             "arm_id": self.arm_id,
             "oracle": dict(self.oracle),
+            "fixture_marker": fixture_marker(self.objective, h_id, self.arm_id),
+            "approval_mode": self.approval_mode,
         }
         return CapabilityScenario(
             scenario_id=scenario_id,
             capability=f"block7/{h_id.lower()}",
-            objective=self.objective,
+            objective=runtime_objective(self.objective, h_id),
             initial_files=dict(self.initial_files),
             expectation=self.expectation,
             metadata=metadata,
@@ -136,7 +144,7 @@ class HSeriesScenario:
     notes: str = ""
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"H(?:[1-9]|1[0-2])", self.h_id):
+        if not re.fullmatch(r"H(?:[1-9]|1[0-9])", self.h_id):
             raise Block7EvidenceError(f"invalid H-series id: {self.h_id}")
         if not self.arms:
             raise Block7EvidenceError(f"{self.h_id} has no fixture arms")
@@ -254,13 +262,13 @@ def _load_h_series() -> tuple[HSeriesScenario, ...]:
 
 
 def validate_h_series(scenarios: Sequence[HSeriesScenario] | None = None) -> None:
-    """Validate exact H1-H12 membership and version policy."""
+    """Validate exact H1-H19 membership and version policy."""
 
     selected = _load_h_series() if scenarios is None else scenarios
     ids = [scenario.h_id for scenario in selected]
-    expected = [f"H{index}" for index in range(1, 13)]
+    expected = [f"H{index}" for index in range(1, 20)]
     if ids != expected:
-        raise Block7EvidenceError(f"H-series must contain exactly H1-H12, got {ids!r}")
+        raise Block7EvidenceError(f"H-series must contain exactly H1-H19, got {ids!r}")
     if any(
         scenario.required_repetitions != (5 if scenario.h_id == "H2" else 3)
         for scenario in selected

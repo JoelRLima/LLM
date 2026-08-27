@@ -22,6 +22,7 @@ UNSAFE_VALIDATION_ENV = frozenset(
         "PYTHONEXECUTABLE",
         "PYTHONHOME",
         "PYTHONINSPECT",
+        "PYTHONNOUSERSITE",
         "PYTHONPATH",
         "PYTHONPLATLIBDIR",
         "PYTHONPYCACHEPREFIX",
@@ -132,7 +133,10 @@ class ProcessRunner:
         environment.update(
             {
                 "PYTHONDONTWRITEBYTECODE": "1",
-                "PYTHONNOUSERSITE": "1",
+                # Validation must be able to load the interpreter's explicitly
+                # installed tooling (pytest may live in the user site).  The
+                # import/path hooks and pytest plugin surfaces remain removed
+                # below, so project-controlled paths cannot redirect imports.
                 "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             }
         )

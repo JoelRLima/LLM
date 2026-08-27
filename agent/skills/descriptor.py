@@ -4,31 +4,47 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Callable, Dict, Optional, Protocol
 
+from agent.capabilities import Capability, canonical_capabilities
 from agent.planning.schema_safety import PlanningSchemaError, validate_schema_depth
+from agent.resources.contracts import (
+    ResourceAccess,
+    ResourceMode,
+    ResourceProvenance,
+    normalize_resource_id,
+)
 from agent.tools.contracts import CancellationSafetyMode, freeze_json_like, thaw_json_like
 from agent.tools.provenance import ArgumentOrigin
 
-
-class SkillCapability(str, Enum):
-    READ = "read"
-    WRITE = "write"
-    PROCESS = "process"
-    NETWORK = "network"
-    MEMORY = "memory"
-    ANALYZE = "analyze"
-    VCS_READ = "vcs_read"
-    VCS_WRITE = "vcs_write"
-    PACKAGE_INSTALL = "package_install"
-    VALIDATE = "validate"
+# Compatibility name retained at the descriptor boundary.  The vocabulary
+# itself is owned by ``agent.capabilities`` so planning and execution cannot
+# silently grow divergent capability universes.
+SkillCapability = Capability
 
 
 @dataclass(frozen=True)
 class ResourceIntent:
     resource: str
     write: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "resource", normalize_resource_id(self.resource))
+
+    @property
+    def name(self) -> str:
+        return self.resource
+
+    @property
+    def mode(self) -> ResourceMode:
+        return ResourceMode.WRITE if self.write else ResourceMode.READ
+
+    def as_access(self) -> ResourceAccess:
+        return ResourceAccess(
+            self.resource,
+            self.mode,
+            ResourceProvenance.MODEL_DECLARED,
+        )
 
 
 class SkillLike(Protocol):
@@ -39,6 +55,15 @@ class SkillLike(Protocol):
         ...
 
     def execute(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        ...
+
+    def validate_arguments(
+        self,
+        args: Mapping[str, Any],
+        *,
+        bound_fields: frozenset[str] = frozenset(),
+        planning: bool = False,
+    ) -> None:
         ...
 
 
@@ -181,14 +206,14 @@ class SkillSpec:
     @property
     def side_effects(self) -> bool:
         return bool(
-            self.capabilities
+            canonical_capabilities(self.capabilities)
             & {
-                SkillCapability.WRITE,
-                SkillCapability.PROCESS,
-                SkillCapability.NETWORK,
-                SkillCapability.VCS_WRITE,
-                SkillCapability.PACKAGE_INSTALL,
-                SkillCapability.VALIDATE,
+                Capability.WRITE,
+                Capability.PROCESS,
+                Capability.NETWORK,
+                Capability.VCS_WRITE,
+                Capability.PACKAGE_INSTALL,
+                Capability.VALIDATE,
             }
         )
 
@@ -218,5 +243,5 @@ class SkillDescriptor:
             value = args.get(key)
             if isinstance(value, str) and value:
                 paths.append(value.replace("\\", "/"))
-        writes = SkillCapability.WRITE in self.spec.capabilities
+        writes = Capability.WRITE in canonical_capabilities(self.spec.capabilities)
         return tuple(ResourceIntent(path, write=writes) for path in dict.fromkeys(paths))

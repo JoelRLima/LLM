@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional, Protocol, Sequence
@@ -11,10 +11,14 @@ from agent.cancellation import CancellationToken
 from agent.code.contracts import Diagnostic, DiagnosticSeverity, ProjectProfile
 from agent.code.discovery import IGNORED_DIRECTORIES
 from agent.code.path_safety import (
-    is_link_like,
     resolve_workspace_path,
     workspace_relative_path,
 )
+from agent.code.validation_external import (
+    MypyValidationProvider,
+    RuffValidationProvider,
+)
+from agent.code.validation_preflight import find_external_link, link_status
 from agent.code.validation_process import (
     CommandResult,
     CommandSpec,
@@ -27,6 +31,7 @@ from agent.runtime.context import ProcessConcurrencyGate
 __all__ = [
     "CommandResult", "CommandSpec", "ProcessRunner", "ProjectValidator",
     "ValidationProfile", "ValidationReport", "ValidationRegistry", "ValidationStatus",
+    "MypyValidationProvider", "RuffValidationProvider",
 ]
 
 @dataclass(frozen=True)
@@ -54,15 +59,34 @@ class ValidationProvider(Protocol):
 
 
 class ValidationRegistry:
-    def __init__(self, providers: Sequence[ValidationProvider] = (PythonValidationProvider(),)) -> None:
-        self.providers = tuple(providers)
+    def __init__(
+        self,
+        providers: Sequence[ValidationProvider] | None = None,
+        *,
+        validation_config: Mapping[str, object] | None = None,
+    ) -> None:
+        self.validation_config = dict(validation_config or {})
+        if providers is not None:
+            self.providers = tuple(providers)
+            return
+        configured: list[ValidationProvider] = [PythonValidationProvider()]
+        if self.validation_config.get("enabled", True):
+            if self.validation_config.get("ruff") is True:
+                configured.append(RuffValidationProvider())
+            if self.validation_config.get("mypy") is True:
+                configured.append(MypyValidationProvider())
+        self.providers = tuple(configured)
 
     def build_profile(
         self, project: ProjectProfile, changed_files: Sequence[str], include_tests: bool = False
     ) -> ValidationProfile:
+        tests_requested = bool(include_tests or (
+            self.validation_config.get("enabled", True)
+            and self.validation_config.get("pytest") is True
+        ))
         commands = [
             command for provider in self.providers
-            for command in provider.commands(project, changed_files, include_tests)
+            for command in provider.commands(project, changed_files, tests_requested)
         ]
         return ValidationProfile(tuple(commands))
 
@@ -72,6 +96,7 @@ class ProjectValidator:
         self, root: str | Path, cancellation: Optional[CancellationToken] = None,
         registry: Optional[ValidationRegistry] = None,
         process_gate: Optional[ProcessConcurrencyGate] = None,
+        validation_config: Mapping[str, object] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
         self.runner = ProcessRunner(
@@ -79,7 +104,9 @@ class ProjectValidator:
             cancellation=cancellation,
             process_gate=process_gate,
         )
-        self.registry = registry or ValidationRegistry()
+        self.registry = registry or ValidationRegistry(
+            validation_config=validation_config,
+        )
 
     @staticmethod
     def _invalid_path_report(message: str) -> ValidationReport:
@@ -142,35 +169,12 @@ class ProjectValidator:
         ignored_directories: frozenset[str] = IGNORED_DIRECTORIES,
         reject_all_links: bool = False,
     ) -> str | None:
-        for current, directory_names, file_names in os.walk(
-            start or self.root,
-            topdown=True,
-            followlinks=False,
-        ):
-            current_path = Path(current)
-            safe_directories: list[str] = []
-            for name in sorted(directory_names):
-                if name in ignored_directories:
-                    continue
-                candidate = current_path / name
-                linked, unsafe = self._link_status(
-                    candidate,
-                    reject_all_links=reject_all_links,
-                )
-                if unsafe:
-                    return candidate.relative_to(self.root).as_posix()
-                if not linked:
-                    safe_directories.append(name)
-            directory_names[:] = safe_directories
-            for name in sorted(file_names):
-                candidate = current_path / name
-                _, unsafe = self._link_status(
-                    candidate,
-                    reject_all_links=reject_all_links,
-                )
-                if unsafe:
-                    return candidate.relative_to(self.root).as_posix()
-        return None
+        return find_external_link(
+            self.root,
+            start,
+            ignored_directories=ignored_directories,
+            reject_all_links=reject_all_links,
+        )
 
     def _link_status(
         self,
@@ -178,69 +182,85 @@ class ProjectValidator:
         *,
         reject_all_links: bool,
     ) -> tuple[bool, bool]:
-        linked = is_link_like(candidate)
-        if not linked:
-            return False, False
-        if reject_all_links:
-            return True, True
-        try:
-            resolve_workspace_path(self.root, candidate)
-        except (OSError, ValueError):
-            return True, True
-        return True, False
+        return link_status(self.root, candidate, reject_all_links=reject_all_links)
 
     def validate(
         self, project: ProjectProfile, changed_files: Sequence[str], *,
         include_tests: bool = False, profile: Optional[ValidationProfile] = None,
     ) -> ValidationReport:
+        configured_tests = (
+            self.registry.validation_config.get("enabled", True)
+            and self.registry.validation_config.get("pytest") is True
+        )
+        effective_include_tests = bool(include_tests or configured_tests)
         try:
             safe_project, safe_changed_files = self._prepare_inputs(
                 project,
                 changed_files,
-                include_tests,
+                effective_include_tests,
             )
         except (OSError, ValueError) as exc:
             return self._invalid_path_report(str(exc))
-        if include_tests:
-            external_link = next(
-                (
-                    unsafe
-                    for test_root in safe_project.test_roots
-                    if (
-                        unsafe := self._find_external_link(
-                            resolve_workspace_path(
-                                self.root,
-                                test_root,
-                                require_directory=True,
-                            ),
-                            ignored_directories=frozenset(),
-                            reject_all_links=True,
-                        )
-                    )
-                    is not None
-                ),
-                None,
-            )
-            external_link = external_link or self._find_external_link()
-            if external_link is not None:
-                return self._invalid_path_report(
-                    "Validação de testes recusada: symlink ou junction não "
-                    f"confinável no workspace: {external_link}"
-                )
-        effective = profile or self.registry.build_profile(
-            safe_project,
-            safe_changed_files,
-            include_tests,
+        link_failure = self._test_link_failure(safe_project, effective_include_tests)
+        if link_failure is not None:
+            return link_failure
+        effective = self._effective_profile(
+            safe_project, safe_changed_files, effective_include_tests, profile
         )
-        if not effective.commands:
+        return self._run_profile(effective)
+
+    def _test_link_failure(
+        self, project: ProjectProfile, include_tests: bool,
+    ) -> ValidationReport | None:
+        if not include_tests:
+            return None
+        external_link = next(
+            (
+                unsafe
+                for test_root in project.test_roots
+                if (
+                    unsafe := self._find_external_link(
+                        resolve_workspace_path(
+                            self.root, test_root, require_directory=True,
+                        ),
+                        ignored_directories=frozenset(),
+                        reject_all_links=True,
+                    )
+                ) is not None
+            ),
+            None,
+        )
+        external_link = external_link or self._find_external_link()
+        if external_link is None:
+            return None
+        return self._invalid_path_report(
+            "Validação de testes recusada: symlink ou junction não "
+            f"confinável no workspace: {external_link}"
+        )
+
+    def _effective_profile(
+        self,
+        project: ProjectProfile,
+        changed_files: Sequence[str],
+        include_tests: bool,
+        profile: Optional[ValidationProfile],
+    ) -> ValidationProfile:
+        minimum = self.registry.build_profile(project, changed_files, include_tests)
+        if profile is None:
+            return minimum
+        commands = list(profile.commands)
+        commands.extend(command for command in minimum.commands if command not in commands)
+        return ValidationProfile(tuple(commands))
+
+    def _run_profile(self, profile: ValidationProfile) -> ValidationReport:
+        if not profile.commands:
             return ValidationReport(ValidationStatus.UNAVAILABLE, ())
         results: list[CommandResult] = []
         diagnostics: list[Diagnostic] = []
-        for command in effective.commands:
+        for command in profile.commands:
             result = self.runner.run(command)
             results.append(result)
-            diagnostic = self._diagnostic(result)
-            if diagnostic:
+            if diagnostic := self._diagnostic(result):
                 diagnostics.append(diagnostic)
             if result.status in {ValidationStatus.CANCELLED, ValidationStatus.TIMED_OUT}:
                 break

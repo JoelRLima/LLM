@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, cast
+from typing import Dict, Optional
 
-from agent.contracts import ToolArgs, ToolResult
+from agent.contracts import ToolArgs
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.result_bindings import ResultBindingError, resolve_bound_args
@@ -13,6 +13,8 @@ from agent.planning.step_contracts import (
     StepOutcomeKind,
 )
 from agent.planning.step_policies import StepPolicies
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from agent.tools.result_adapter import ensure_canonical_result
 
 __all__ = ["PreparedInvocation", "StepExecutionOutcome", "StepExecutor", "StepOutcomeKind"]
 
@@ -101,15 +103,13 @@ class StepExecutor:
     def _finish_unresolved_symbolic(
         self, index: int, error: str
     ) -> StepExecutionOutcome:
-        result: ToolResult = {
-            "ok": False,
-            "done": True,
-            "executed": False,
-            "status": "blocked",
-            "error": "unresolved_symbolic_argument",
-            "error_code": "unresolved_symbolic_argument",
-            "message": error,
-        }
+        result = ToolResult(
+            invocation_id=f"planner:{index + 1}",
+            status=ToolStatus.BLOCKED,
+            error=ToolError("unresolved_symbolic_argument", error),
+            message=error,
+            executed=False,
+        )
         return self.finish_blocked(index, result)
 
     def _validate(self, index: int, tool: str, args: ToolArgs) -> StepExecutionOutcome | None:
@@ -145,8 +145,8 @@ class StepExecutor:
         cache_hit, cached = self.try_cache(tool, args, file_path, self.context.agent_state.get_step_id(index))
         if tool == "file_writer" and args.get("content") and file_path:
             self.context.workspace.show_diff(file_path, str(args["content"]))
-        if cache_hit:
-            return cached or {}
+        if cache_hit and cached is not None:
+            return cached
         if not getattr(self.context, "tool_invocation_gateway", None):
             self.context._emit("tool_start", {"tool": tool, "args": args})
         try:
@@ -159,39 +159,44 @@ class StepExecutor:
                 # its model-actionable path never reconstructs a raw plan
                 # step at dispatch time.
                 result = self.context._run_tool(tool, args)
+            # Compatibility contexts may still return a mapping; upgrade it
+            # once here. Gateway/tool-executor production paths already
+            # return the canonical value unchanged.
+            result = ensure_canonical_result(result)
         except ToolNotFoundError as exc:
             self.context._emit("error", {"step": index + 1, "error": str(exc)})
             self.finish_failed(index, str(exc))
             return StepExecutionOutcome(StepOutcomeKind.REPLAN, error=str(exc))
         if not getattr(self.context, "tool_invocation_gateway", None):
-            self.context._emit("tool_end", {"tool": tool, "ok": result.get("ok")})
+            self.context._emit("tool_end", {"tool": tool, "ok": result.ok})
         self.context._maybe_summarize_and_store(tool, args, result)
-        return cast(ToolResult, result)
+        return result
 
     def finalize_result(
         self, index: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> StepExecutionOutcome:
-        status = str(result.get("status") or "")
-        if status != "succeeded" or not result.get("ok"):
+        result = ensure_canonical_result(result)
+        status = result.status.value
+        if status != ToolStatus.SUCCEEDED.value or not result.ok:
             self.policies.invalidate_observation_state(tool, usage, args=args, result=result)
         if status == "blocked":
             return self.finish_blocked(index, result)
         if status == "unverified":
             return self.finish_unverified(index, result)
         if status == "cancelled":
-            reason = str(result.get("error") or "operação cancelada")
+            reason = _result_message(result, "operação cancelada")
             self.context.agent_state.mark_step_skipped(index, reason)
             self._emit_terminal("step_cancelled", index, reason)
             return StepExecutionOutcome(
                 StepOutcomeKind.CANCELLED,
                 result=result,
                 error=reason,
-                final_answer=str(result.get("message") or "Operação cancelada."),
+                final_answer=result.message or "Operação cancelada.",
             )
         if status == "permission_denied":
             return self.finish_permission_denied(index, result)
-        if not result.get("ok"):
+        if not result.ok:
             return self._finish_tool_failure(index, tool, args, result)
         if not self.policies.post_process(index + 1, tool, args, result, file_path, objective, usage):
             return self._finish_post_process_failure(index, tool, args, result)
@@ -200,19 +205,19 @@ class StepExecutor:
         return StepExecutionOutcome(StepOutcomeKind.COMPLETED, result=result)
 
     def finish_permission_denied(self, index: int, result: ToolResult) -> StepExecutionOutcome:
-        reason = str(result.get("error") or result.get("message") or "permissão negada")
+        reason = _result_message(result, "permissão negada")
         self.context.agent_state.mark_step_failed(index, reason)
         self._emit_terminal("step_failed", index, reason)
         return StepExecutionOutcome(
             StepOutcomeKind.PERMISSION_DENIED,
             result=result,
             error=reason,
-            final_answer=str(result.get("message") or reason),
+            final_answer=result.message or reason,
             decisive=True,
         )
 
     def _finish_tool_failure(self, index: int, tool: str, args: ToolArgs, result: ToolResult) -> StepExecutionOutcome:
-        error = str(result.get("error") or "falha da ferramenta")
+        error = _result_message(result, "falha da ferramenta")
         action = self.context._handle_step_failure(index + 1, f"Tool '{tool}' falhou: {error}", tool, args)
         if action == "replan":
             self.finish_failed(index, error, result)
@@ -224,7 +229,7 @@ class StepExecutor:
         return self.finish_failed(index, error, result, decisive=action != "continue")
 
     def _finish_post_process_failure(self, index: int, tool: str, args: ToolArgs, result: ToolResult) -> StepExecutionOutcome:
-        error = str(result.get("error") or "falha no pós-processamento")
+        error = _result_message(result, "falha no pós-processamento")
         action = self.context._handle_step_failure(index + 1, f"Tool '{tool}' falhou: {error}", tool, args)
         if action == "replan":
             self.finish_failed(index, error, result)
@@ -247,25 +252,25 @@ class StepExecutor:
         return StepExecutionOutcome(StepOutcomeKind.SKIPPED, error=reason)
 
     def finish_blocked(self, index: int, result: ToolResult) -> StepExecutionOutcome:
-        reason = str(result.get("error") or "confirmação necessária")
+        reason = _result_message(result, "confirmação necessária")
         self.context.agent_state.mark_step_blocked(index, reason)
         self._emit_terminal("step_blocked", index, reason)
         return StepExecutionOutcome(
             StepOutcomeKind.BLOCKED,
             result=result,
             error=reason,
-            final_answer=str(result.get("message") or "A execução aguarda aprovação."),
+            final_answer=result.message or "A execução aguarda aprovação.",
         )
 
     def finish_unverified(self, index: int, result: ToolResult) -> StepExecutionOutcome:
-        reason = str(result.get("error") or "resultado sem validação disponível")
+        reason = _result_message(result, "resultado sem validação disponível")
         self.context.agent_state.mark_step_unverified(index, reason)
         self._emit_terminal("step_unverified", index, reason)
         return StepExecutionOutcome(
             StepOutcomeKind.UNVERIFIED,
             result=result,
             error=reason,
-            final_answer=str(result.get("message") or "A execução não pôde ser verificada."),
+            final_answer=result.message or "A execução não pôde ser verificada.",
         )
 
     def _emit_terminal(self, event_type: str, index: int, reason: str = "") -> None:
@@ -294,3 +299,9 @@ class StepExecutor:
         return self.policies.try_cache(
             tool, args, file_path, step_id, record_result=record_result
         )
+
+
+def _result_message(result: ToolResult, fallback: str) -> str:
+    if result.error is not None:
+        return result.error.message
+    return result.message or fallback

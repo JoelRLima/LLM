@@ -18,11 +18,24 @@ from agent.state_checkpoint_restore import (
 from agent.state_checkpoint_restore import (
     validate_restored_cross_fields as _validate_restored_cross_fields,
 )
+from agent.tools.result_adapter import ensure_canonical_result, to_legacy_result
 
 
 class StateCheckpointMixin:
     def to_checkpoint_dict(self: Any) -> CheckpointData:
         memory_state = getattr(self.memory, "state", None)
+        # The on-disk schema is a supported compatibility edge.  Keep live
+        # state canonical and project only while constructing this snapshot.
+        last_result = getattr(self, "last_result", None)
+        checkpoint_last_result = (
+            to_legacy_result(last_result) if last_result is not None else None
+        )
+        checkpoint_history = []
+        for raw_entry in getattr(self, "tool_history", ()):
+            entry = dict(raw_entry)
+            if "result" in entry:
+                entry["result"] = to_legacy_result(entry["result"])
+            checkpoint_history.append(entry)
         raw: Dict[str, Any] = {
             "objective": self.objective,
             "plan": self.plan,
@@ -32,8 +45,8 @@ class StateCheckpointMixin:
             "step_records": [record.to_dict() for record in self.step_records.values()],
             "last_tool": self.last_tool,
             "last_args": self.last_args,
-            "last_result": self.last_result,
-            "tool_history": self.tool_history,
+            "last_result": checkpoint_last_result,
+            "tool_history": checkpoint_history,
             "execution_incidents": self.execution_incidents,
             "events": self.events,
             "conversation_history": self.conversation_history,
@@ -132,7 +145,11 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
         raise ValueError("Checkpoint last result is invalid.")
     state.last_tool = last_tool
     state.last_args = dict(last_args) if isinstance(last_args, Mapping) else last_args
-    state.last_result = dict(last_result) if isinstance(last_result, Mapping) else last_result
+    state.last_result = (
+        ensure_canonical_result(last_result)
+        if isinstance(last_result, Mapping)
+        else last_result
+    )
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:

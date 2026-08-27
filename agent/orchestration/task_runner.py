@@ -31,9 +31,9 @@ from agent.planning.task_completion import (
     initialize_task_progression,
     mark_terminal_blocked,
 )
-from agent.reporting.operational_outcome import project_operational_outcome
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
+from agent.runtime.operational_outcome import project_operational_outcome
 from agent.watchdog import Watchdog
 
 

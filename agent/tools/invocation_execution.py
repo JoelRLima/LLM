@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Dict, cast
 
-from agent.planning.effect_intent import operation_durable_effect
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.tools.contracts import (
@@ -21,8 +20,8 @@ from agent.tools.invocation_quiescence import (
     InvocationLivenessError,
     InvocationQuiescenceMixin,
 )
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 from agent.tools.invocation_support import _set_cancel_event, _token_cancelled, denial
-from agent.tools.mode_enforcement import required_capabilities_for_invocation
 
 
 class InvocationExecutionMixin(InvocationQuiescenceMixin, InvocationCommitMixin):
@@ -30,18 +29,7 @@ class InvocationExecutionMixin(InvocationQuiescenceMixin, InvocationCommitMixin)
     def _descriptor_may_mutate(
         descriptor: ToolDescriptor, args: Dict[str, Any]
     ) -> bool:
-        if operation_durable_effect(descriptor.name, args, descriptor) is not None:
-            return True
-        # These descriptors expose both read-only and mutating actions. Their
-        # broad capability ceiling is not evidence that this invocation owns
-        # a durable effect.
-        if descriptor.name.casefold() in {"code_task", "session_memory"}:
-            return False
-        capabilities = required_capabilities_for_invocation(descriptor, args)
-        return bool(
-            capabilities
-            & frozenset({"write", "vcs_write", "package_install", "memory"})
-        )
+        return resolve_invocation_semantics(descriptor, args).may_mutate
 
     def supports_cancellable_execution(
         self: Any,

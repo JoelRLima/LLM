@@ -51,6 +51,7 @@ class PlanValidator(PlanEffectValidationMixin):
         canonical_deferred_references: bool = False,
         available_observations: Sequence[Mapping[str, Any]] | None = None,
         plan_identity: str | None = None,
+        allow_conditional_preview: bool = False,
     ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
@@ -61,6 +62,7 @@ class PlanValidator(PlanEffectValidationMixin):
         self.objective = objective
         self.canonical_deferred_references = canonical_deferred_references
         self.plan_identity = plan_identity
+        self.allow_conditional_preview = allow_conditional_preview
         observations = tuple(available_observations or ())
         if plan_identity is not None:
             observations = tuple(
@@ -113,6 +115,9 @@ class PlanValidator(PlanEffectValidationMixin):
                 self.objective,
                 self.canonical_deferred_references,
                 self._validate_step_schema,
+                deferred_step_validator=lambda step: self._validate_step_schema(
+                    step, deferred_branch=True
+                ),
             )
         )
         errors.extend(
@@ -159,7 +164,11 @@ class PlanValidator(PlanEffectValidationMixin):
                 )
 
     def _validate_step_schema(
-        self, step: Any, *, allow_conditional_effect: bool = False
+        self,
+        step: Any,
+        *,
+        allow_conditional_effect: bool = False,
+        deferred_branch: bool = False,
     ) -> str | None:
         if not isinstance(step, dict) or "tool" not in step:
             return "Passo malformado: falta o campo 'tool'."
@@ -172,7 +181,11 @@ class PlanValidator(PlanEffectValidationMixin):
             return "Bindings inv\u00e1lidos"
         if self.planning_context is not None:
             return self._validate_context_plan_step(
-                tool_name, args, bound_fields, allow_conditional_effect=allow_conditional_effect
+                tool_name,
+                args,
+                bound_fields,
+                allow_conditional_effect=allow_conditional_effect,
+                deferred_branch=deferred_branch,
             )
         descriptor = self._descriptor(tool_name)
         if tool not in self.skills and descriptor is None:
@@ -186,9 +199,14 @@ class PlanValidator(PlanEffectValidationMixin):
                 bound_fields,
                 descriptor,
                 allow_conditional_effect=allow_conditional_effect,
+                deferred_branch=deferred_branch,
             )
         return self._validate_skill_step(
-            tool_name, args, bound_fields, allow_conditional_effect=allow_conditional_effect
+            tool_name,
+            args,
+            bound_fields,
+            allow_conditional_effect=allow_conditional_effect,
+            deferred_branch=deferred_branch,
         )
 
     def _validate_context_step(

@@ -1,6 +1,7 @@
 """Hierarchical executor reusing linear step execution."""
 import inspect
 import time
+from collections.abc import Mapping
 from typing import Any, Callable, Dict, List, Optional
 
 from agent.execution_state import StepStatus
@@ -10,10 +11,10 @@ from agent.planning.task_completion import allow_linear_completion
 from agent.planning.task_graph import task_graph_from_macro_plan, topological_nodes
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
 from agent.reporting.observation_evidence import serialize_tool_observations
-from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.task_tracker import TaskTracker
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
+from agent.runtime.operational_outcome import project_operational_outcome
 
 _STEP_SUMMARY_MAX_CHARS = 3000
 class HierarchicalExecutor:
@@ -273,8 +274,8 @@ class HierarchicalExecutor:
         if not step_results:
             return False
         last_entry = step_results[-1]
-        result = last_entry.get("result") if isinstance(last_entry, dict) else None
-        if isinstance(result, dict) and "ok" in result:
+        result = last_entry.get("result") if isinstance(last_entry, Mapping) else None
+        if isinstance(result, Mapping) and "ok" in result:
             return bool(result.get("ok"))
         return True
     @staticmethod

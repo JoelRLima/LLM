@@ -87,7 +87,7 @@ O caminho sem modelo real é executado por:
 .venv\Scripts\python.exe scripts\run_block7.py --phase corrective-ready --output .audit-local\out\block7-corrective-ready.json
 ```
 
-Esse caminho deve concluir H1–H12 com 41 execuções válidas, sem chamada de
+Esse caminho deve concluir H1–H18 com 110 execuções válidas, sem chamada de
 modelo vivo. Seu veredicto é deliberadamente `INCONCLUSIVE` com
 `REAL_MODEL_EPOCH_REQUIRED`; a saída final da preparação é
 `BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`. O comando de Phase 5 não é
@@ -95,13 +95,13 @@ parte da preparação determinística.
 
 ## Block 7 H-series real-model acceptance
 
-O conjunto versionado `B7-HSERIES-V1.0` contém exatamente H1–H12 e é executado
+O conjunto versionado `B7-HSERIES-V1.2` contém exatamente H1–H18 e é executado
 pelo mesmo `CapabilityEvaluator` usado pelos cenários existentes. O recorder de
 modelo é observacional: não altera requests, respostas, retries, orçamento ou
 status canônico. Cada repetição usa workspace, home e identidade de tarefa
 novos, com fixture determinístico e evidência limitada/sanitizada.
 
-A política final exige cinco repetições válidas para H2. H1 e H3–H12 começam
+A política final exige cinco repetições válidas para H2. H1 e H3–H18 começam
 com três; cenários unânimes terminam em três e cenários mistos recebem
 exatamente duas repetições adicionais, sem rerun-until-pass. Falhas válidas são
 classificadas como `MODEL_VARIANCE`, `MODEL_CAPABILITY`, `HARNESS_DEFECT`,

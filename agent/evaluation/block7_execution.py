@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, cast
 
-from agent.approval import AutoApprove
+from agent.approval import AutoApprove, RequireExplicitApproval
 from agent.evaluation.agent_executor import AgentApplicationScenarioExecutor, GatewayFactory
 from agent.evaluation.block7 import (
     CausalFailureClass,
@@ -31,6 +31,8 @@ from agent.evaluation.block7_execution_evidence import (
     h2_reporting,
     identity_drift,
 )
+from agent.evaluation.block7_fixture_context import fixture_marker
+from agent.evaluation.block7_gateway import bind_fixture_marker
 from agent.evaluation.block7_identity import (
     candidate_identity_string,
     fake_model_identity,
@@ -121,7 +123,19 @@ def _run_one(
     attempt: int | None = None,
 ) -> CampaignRun:
     capability_scenario = arm.to_capability_scenario(scenario.h_id)
-    executor = AgentApplicationScenarioExecutor(gateway_factory, approval_policy=AutoApprove())
+    bound_gateway_factory = bind_fixture_marker(
+        gateway_factory,
+        fixture_marker(arm.objective, scenario.h_id, arm.arm_id),
+    )
+    approval_policy = (
+        RequireExplicitApproval()
+        if arm.approval_mode == "required"
+        else AutoApprove()
+    )
+    executor = AgentApplicationScenarioExecutor(
+        cast(GatewayFactory, bound_gateway_factory),
+        approval_policy=approval_policy,
+    )
     expected_model_identity = dict(
         model_identity or (fake_model_identity() if evidence_level is EvidenceLevel.DETERMINISTIC else {})
     )

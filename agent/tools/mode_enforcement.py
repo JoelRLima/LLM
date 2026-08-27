@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 from agent.tools.invocation_support import denial
 
 
@@ -26,7 +29,10 @@ def required_capabilities_for_invocation(
 ) -> frozenset[str]:
     """Add argument-dependent effects without weakening descriptor policy."""
 
-    required = frozenset(descriptor.capabilities)
+    required = resolve_invocation_semantics(
+        descriptor,
+        arguments if isinstance(arguments, Mapping) else {},
+    ).required_capabilities
     if "validate" in required and requests_test_execution(arguments):
         required |= frozenset({"process"})
     return required

@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from agent import checkpoint_manager as checkpoint_manager_module
 from agent.checkpoint_manager import (
     CHECKPOINT_SCHEMA_VERSION,
     CheckpointLoadError,
@@ -39,6 +40,24 @@ def test_checkpoint_round_trip_is_versioned(tmp_path):
     assert data is not None
     assert data["schema_version"] == CHECKPOINT_SCHEMA_VERSION
     assert data["objective"] == "analisar"
+
+
+def test_checkpoint_save_delegates_durable_json_write_to_shared_primitive(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "checkpoint.json"
+    calls = []
+
+    def shared_write(destination, payload, **kwargs):
+        calls.append((destination, payload, kwargs))
+        return True
+
+    monkeypatch.setattr(checkpoint_manager_module, "write_json_atomic", shared_write)
+
+    assert CheckpointManager(str(path)).save(_State()) is True
+    assert calls and calls[0][0] == path
+    assert calls[0][1]["schema_version"] == CHECKPOINT_SCHEMA_VERSION
+    assert calls[0][2]["default"] is str
 
 
 def test_checkpoint_rejects_incompatible_version(tmp_path):

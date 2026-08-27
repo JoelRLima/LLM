@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
+from uuid import uuid4
 
-from agent.contracts import ToolArgs, ToolResult
+from agent.contracts import ToolArgs
 from agent.parsers import validate_tool_args
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.observation_invalidation import (
@@ -14,6 +15,9 @@ from agent.planning.observation_invalidation import (
 )
 from agent.planning.step_contracts import ExecutionContext
 from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
+from agent.runtime.mutation_evidence import project_mutation_evidence
+from agent.tools.contracts import ToolResult, ToolStatus
+from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import EvidenceProvenance
 
 
@@ -98,10 +102,34 @@ class StepPolicies:
             args or {},
             result,
             self._tool_metadata(tool),
+            descriptor=self._tool_descriptor(tool),
         )
+        evidence = project_mutation_evidence(result)
+        if mutation:
+            clear_observation_state(self.context, usage, affected_files)
+            return True
         if not mutation:
+            # An attempted/unverified mutation can invalidate a prior read
+            # even when no surviving bytes changed.  Keep physical mutation
+            # reporting false, but fail closed for predicate freshness.
+            raw_status = getattr(result, "status", "")
+            status = str(getattr(raw_status, "value", raw_status) or "").casefold()
+            if (
+                status != ToolStatus.UNVERIFIED.value
+                or not evidence.attempted
+                or evidence.occurred
+                or evidence.rollback_occurred
+                or not evidence.affected_files
+            ):
+                return False
+            affected_files = evidence.affected_files
+        if not affected_files:
             return False
         clear_observation_state(self.context, usage, affected_files)
+        semantics = getattr(self.context.agent_state, "task_semantics", None)
+        invalidate = getattr(semantics, "invalidate_predicates_for_targets", None)
+        if callable(invalidate):
+            invalidate(affected_files)
         return True
 
     def _tool_metadata(self, tool: str) -> ToolMetadata:
@@ -113,6 +141,16 @@ class StepPolicies:
                 return metadata
         return get_tool_metadata(tool)
 
+    def _tool_descriptor(self, tool: str) -> object | None:
+        registry = getattr(self.context, "tool_registry", None)
+        descriptor = getattr(registry, "descriptor", None)
+        if not callable(descriptor):
+            return None
+        try:
+            return cast(object | None, descriptor(tool))
+        except (AttributeError, KeyError, LookupError):
+            return None
+
     def is_impossible_chunk(self, tool: str, args: ToolArgs, file_path: str) -> bool:
         if tool != "file_reader" or "start_line" not in args or "end_line" not in args or not file_path:
             return False
@@ -121,10 +159,15 @@ class StepPolicies:
 
     def _known_total_lines(self, file_path: str) -> int | None:
         for history in self.context.agent_state.tool_history:
-            result = history.get("result", {})
+            result: ToolResult | None = history.get("result")
             history_args = history.get("args", {})
             history_file = history_args.get("file_path") or history_args.get("target")
-            if history["tool"] == "file_reader" and result.get("total_lines") and history_file == file_path:
+            if (
+                history["tool"] == "file_reader"
+                and result is not None
+                and result.get("total_lines")
+                and history_file == file_path
+            ):
                 return int(result["total_lines"])
         return None
 
@@ -153,31 +196,31 @@ class StepPolicies:
         if not isinstance(source_extent, dict):
             source_extent = {"kind": "summary"}
         complete = provenance is EvidenceProvenance.EXACT_SOURCE and source_extent.get("kind") == "whole"
-        result: ToolResult = {
-            "ok": True,
-            "done": True,
-            "status": "succeeded",
-            "executed": False,
-            "data": summary,
+        cache_metadata = {
             "complete": complete,
             "truncated": False,
-            "evidence_provenance": provenance.value,
             "source_identity": file_path,
             "source_hash": current_hash,
             "source_extent": source_extent,
-            "artifacts": [{
-                "kind": "cached_observation",
-                "metadata": {
-                    "complete": complete,
-                    "truncated": False,
-                    "evidence_provenance": provenance.value,
-                    "source_identity": file_path,
-                    "source_hash": current_hash,
-                    "source_extent": source_extent,
-                },
-            }],
-            "message": f"Usando cache de {file_path}.",
         }
+        result = ToolResult(
+            invocation_id=f"cache:{uuid4().hex}",
+            status=ToolStatus.SUCCEEDED,
+            data=summary,
+            message=f"Usando cache de {file_path}.",
+            artifacts=((
+                {
+                    "kind": "cached_observation",
+                    "metadata": {
+                        **cache_metadata,
+                        "evidence_provenance": provenance.value,
+                    },
+                },
+            )),
+            executed=False,
+            evidence_provenance=provenance.value,
+            metadata=cache_metadata,
+        )
         self.context._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
         if record_result:
             self.context._emit("tool_end", {"tool": tool, "ok": True})
@@ -198,14 +241,15 @@ class StepPolicies:
         self, step_number: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
     ) -> bool:
+        result = ensure_canonical_result(result)
         del objective
-        if result.get("ok"):
+        if result.ok:
             self.invalidate_observation_state(tool, usage, args=args, result=result)
-        if tool == "file_writer" and result.get("ok") and file_path.endswith(".py"):
+        if tool == "file_writer" and result.ok and file_path.endswith(".py"):
             lint_error = self.context.workspace.lint_check(file_path)
             if lint_error:
                 self.context._emit("warning", {"step": step_number, "warning": f"Problemas de lint em '{file_path}':\n{lint_error}"})
-        if tool == "file_reader" and result.get("ok") and "total_lines" in result:
+        if tool == "file_reader" and result.ok and "total_lines" in result:
             total = result["total_lines"]
             if args.get("end_line", total) == total:
                 usage[f"fully_read_{file_path}"] = 1

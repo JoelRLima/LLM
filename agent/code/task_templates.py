@@ -6,6 +6,7 @@ import hashlib
 from enum import Enum
 from typing import Sequence
 
+from agent.capabilities import Capability, capability_values
 from agent.planning.task_graph import (
     ResourceMode,
     TaskGraph,
@@ -33,7 +34,7 @@ def _read_nodes(targets: Sequence[str], action: str) -> tuple[TaskNode, ...]:
             objective=f"{action} {target}",
             priority=TaskPriority.MEDIUM,
             resources=(TaskResource(target, ResourceMode.READ),),
-            capabilities=frozenset({"read", "analyze"}),
+            capabilities=capability_values((Capability.READ, Capability.ANALYZE)),
             metadata={"action": action, "targets": [target], "template": True},
         )
         for target in targets
@@ -65,9 +66,11 @@ def build_code_task_template(
         raise ValueError("analyze_then_modify exige objective.")
 
     analysis_nodes = _read_nodes(normalized, "analyze")
-    change_capabilities = frozenset({"read", "write", "validate"})
+    change_capabilities = capability_values(
+        (Capability.READ, Capability.WRITE, Capability.VALIDATE)
+    )
     if include_tests:
-        change_capabilities |= frozenset({"process"})
+        change_capabilities |= capability_values((Capability.PROCESS,))
     change_node = TaskNode(
         node_id="modify_after_analysis",
         objective=objective,

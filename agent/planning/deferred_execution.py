@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
-from agent.contracts import ToolResult
 from agent.execution_state import StepStatus
 from agent.planning.deferred_condition import (
     evaluate_equals,
@@ -14,6 +14,8 @@ from agent.planning.execution_models import StepLoopResult
 from agent.planning.plan_validator import PlanValidator
 from agent.planning.task_completion import bind_effect_waiver
 from agent.state_progression import current_result_for_step
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from agent.tools.result_adapter import ensure_canonical_result
 
 
 def execute_deferred_condition(
@@ -36,7 +38,7 @@ def execute_deferred_condition(
 
     predicate = step["predicate"]
     try:
-        matched = evaluate_equals(result.get("data"), str(predicate["value"]))
+        matched = evaluate_equals(result.data, str(predicate["value"]))
     except ValueError as exc:
         return block_deferred(executor, index, str(exc))
 
@@ -128,29 +130,41 @@ def _resolve_observation(
     if history_match is None:
         return "resultado canônico da observação indisponível"
     history_index, history_item = history_match
-    result = history_item.get("result")
-    if not isinstance(result, dict) or (
-        result.get("executed") is not True
-        or result.get("status") != "succeeded"
-        or "data" not in result
+    raw_result = history_item.get("result")
+    if not isinstance(raw_result, Mapping):
+        return "resultado canônico da observação indisponível"
+    result = ensure_canonical_result(raw_result)
+    if (
+        result.executed is not True
+        or result.status.value != ToolStatus.SUCCEEDED.value
+        or result.data is None
     ):
         return "observação canônica não elegível"
-    if not has_complete_text_observation(cast(ToolResult, result)):
+    if not has_complete_text_observation(result):
         return "observação textual integral não está disponível"
-    return history_index, cast(ToolResult, result)
+    return history_index, result
 
 
-def has_complete_text_observation(result: ToolResult) -> bool:
-    artifacts = result.get("artifacts")
+def has_complete_text_observation(result: ToolResult | Mapping[str, Any]) -> bool:
+    artifacts = result.artifacts if isinstance(result, ToolResult) else result.get("artifacts")
     if not isinstance(artifacts, (list, tuple)):
         return False
-    return any(
-        isinstance(item, dict)
-        and item.get("kind") == "text_observation"
-        and isinstance(item.get("metadata"), dict)
-        and item["metadata"].get("complete") is True
-        for item in artifacts
-    )
+    for item in artifacts:
+        if not (
+            isinstance(item, Mapping)
+            and item.get("kind") == "text_observation"
+            and isinstance(item.get("metadata"), Mapping)
+            and item["metadata"].get("complete") is True
+        ):
+            continue
+        extent = item["metadata"].get("source_extent")
+        # A bounded line range can be operationally complete while still
+        # failing to cover the source.  Conditional authority requires a
+        # whole-source observation whenever the reader reports its extent.
+        if isinstance(extent, Mapping) and extent.get("kind") != "whole":
+            continue
+        return True
+    return False
 
 
 def emit_deferred_resolution(
@@ -173,14 +187,13 @@ def emit_deferred_resolution(
 
 def block_deferred(executor: Any, index: int, reason: str) -> StepLoopResult:
     message = f"Condição deferred bloqueada: {reason}."
-    result: ToolResult = {
-        "ok": False,
-        "done": True,
-        "status": "blocked",
-        "executed": False,
-        "error": "deferred_condition_blocked",
-        "message": message,
-    }
+    result = ToolResult(
+        invocation_id=f"deferred:{index + 1}",
+        status=ToolStatus.BLOCKED,
+        error=ToolError("deferred_condition_blocked", message),
+        message=message,
+        executed=False,
+    )
     state = executor.orchestrator.agent_state
     state.mark_step_blocked(index, reason)
     state.project_last_result("planner", {}, result)

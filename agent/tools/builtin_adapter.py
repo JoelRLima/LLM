@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
+from agent.runtime.schema_validation import normalize_argument_schema
 from agent.skills.descriptor import SkillDescriptor
 from agent.skills.registry import SkillRegistry
 from agent.tools.contracts import (
@@ -44,21 +45,14 @@ class BuiltinToolAdapter(ToolAdapter):
             argument_provenance=spec.argument_provenance,
             result_data_schema=spec.result_data_schema,
             cancellation_safety=spec.cancellation_safety,
+            argument_validator=getattr(descriptor.skill, "validate_arguments", None),
         )
 
     @staticmethod
     def _normalize_schema(schema: object) -> dict[str, object]:
         if not isinstance(schema, dict):
             raise ValueError("Schema builtin inválido: esperado objeto JSON")
-        normalized: dict[str, object] = dict(schema)
-        properties = normalized.get("properties")
-        if isinstance(properties, dict):
-            normalized["properties"] = {
-                key: {"type": value} if isinstance(value, str) else value
-                for key, value in properties.items()
-            }
-        normalized.setdefault("type", "object")
-        return normalized
+        return normalize_argument_schema(schema)
 
     def descriptors(self) -> Tuple[ToolDescriptor, ...]:
         return tuple(

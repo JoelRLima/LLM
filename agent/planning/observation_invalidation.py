@@ -8,18 +8,17 @@ from __future__ import annotations
 
 import posixpath
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any, Dict
 
-from agent.contracts import ToolArgs, ToolResult
+from agent.capabilities import Capability, capability_values
+from agent.contracts import ToolArgs
 from agent.planning.tool_metadata import ToolMetadata
+from agent.runtime.mutation_evidence import project_mutation_evidence
+from agent.runtime.outcome_taxonomy import OperationalStatus, operational_status_for
+from agent.tools.contracts import ToolResult
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
-_EFFECT_FIELDS = (
-    "persisted_mutation",
-    "surviving_mutation",
-    "affected_files",
-    "rollback_occurred",
-    "final_state",
-)
 _MARKER_PREFIXES = (
     "code_analyzer_",
     "file_reader_",
@@ -29,107 +28,65 @@ _MARKER_PREFIXES = (
 
 
 def _normalize_path(value: object) -> str:
+    """Normalize observation keys lexically, without filesystem resolution."""
+
     text = str(value).strip().replace("\\", "/")
     return posixpath.normpath(text) if text else ""
 
 
-def _effect_values(result: ToolResult | None, field: str) -> tuple[object, ...]:
-    if not isinstance(result, Mapping):
-        return ()
-    if field in result:
-        return (result.get(field),)
-    artifacts = result.get("artifacts")
-    if not isinstance(artifacts, (list, tuple)):
-        return ()
-    values: list[object] = []
-    for artifact in artifacts:
-        if not isinstance(artifact, Mapping):
-            continue
-        metadata = artifact.get("metadata")
-        if isinstance(metadata, Mapping) and field in metadata:
-            values.append(metadata.get(field))
-    return tuple(values)
-
-
-def _has_effect_field(result: ToolResult | None, field: str) -> bool:
-    return bool(_effect_values(result, field))
-
-
-def _effect_flag(result: ToolResult | None, field: str) -> bool:
-    return any(value is True for value in _effect_values(result, field))
-
-
-def _is_restored(result: ToolResult | None) -> bool:
-    return any(
-        str(value or "").casefold() == "restored"
-        for value in _effect_values(result, "final_state")
-    )
-
-
-def _affected_files(result: ToolResult | None) -> tuple[str, ...]:
-    normalized: list[str] = []
-    for candidates in _effect_values(result, "affected_files"):
-        if isinstance(candidates, str):
-            candidates = [candidates]
-        if not isinstance(candidates, (list, tuple, set)):
-            continue
-        for candidate in candidates:
-            path = _normalize_path(candidate)
-            if path and path not in normalized:
-                normalized.append(path)
-    return tuple(normalized)
-
-
-def _has_effect_projection(result: ToolResult | None) -> bool:
-    return any(_has_effect_field(result, field) for field in _EFFECT_FIELDS)
-
-
-def _can_have_legacy_mutated(result: ToolResult | None) -> bool:
+def _can_have_legacy_mutated(result: Any) -> bool:
     if not isinstance(result, Mapping):
         return True
-    status = str(result.get("status") or "").casefold()
-    if status in {"blocked", "cancelled", "permission_denied", "skipped"}:
+    status = operational_status_for(result.get("status"))
+    if status in {
+        OperationalStatus.BLOCKED.value,
+        OperationalStatus.CANCELLED.value,
+        OperationalStatus.PERMISSION_DENIED.value,
+    }:
         return False
-    return result.get("ok") is True or status in {"succeeded", "unverified"}
-
-
-def _metadata_indicates_mutation(
-    tool: str, args: ToolArgs, metadata: ToolMetadata
-) -> bool:
-    if not (metadata.modifies_workspace or metadata.writes_disk):
-        return False
-    if tool == "code_task":
-        return str(args.get("action") or "analyze").casefold() not in {
-            "analyze", "review"
-        }
-    return True
+    return result.get("ok") is True or status in {
+        OperationalStatus.SUCCEEDED.value,
+        OperationalStatus.UNVERIFIED.value,
+    }
 
 
 def mutation_footprint(
     tool: str,
     args: ToolArgs,
-    result: ToolResult | None,
+    result: ToolResult | Mapping[str, Any] | None,
     metadata: ToolMetadata,
+    *,
+    descriptor: Any | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
     """Return ``(survives, affected_files)`` for one tool result."""
 
-    affected = _affected_files(result)
-    if _has_effect_projection(result):
-        if _effect_flag(result, "surviving_mutation") or _effect_flag(
-            result, "persisted_mutation"
-        ):
-            return True, affected
-        if _effect_flag(result, "rollback_occurred") or _is_restored(result):
-            return False, ()
-        if _has_effect_field(result, "persisted_mutation") or _has_effect_field(
-            result, "surviving_mutation"
-        ):
-            return False, ()
-        return bool(affected and _can_have_legacy_mutated(result)), affected
-
+    evidence = project_mutation_evidence(result)
+    if evidence.survives:
+        return True, evidence.surviving_files
+    if evidence.attempted or evidence.occurred or evidence.rollback_occurred:
+        return False, ()
     if not _can_have_legacy_mutated(result):
         return False, ()
-    return _metadata_indicates_mutation(tool, args, metadata), affected
+    # Legacy tools that predate structured artifact evidence remain a narrow
+    # compatibility case.  The action/effect authority still comes from the
+    # canonical invocation resolver; metadata is adapted only when a legacy
+    # test/context has no live ToolDescriptor to provide.
+    trusted_descriptor = descriptor or SimpleNamespace(
+        name=tool,
+        capabilities=capability_values(
+            item
+            for item, enabled in (
+                (Capability.READ, metadata.reads_disk),
+                (Capability.WRITE, metadata.writes_disk or metadata.modifies_workspace),
+            )
+            if enabled
+        ),
+        cacheable=metadata.cacheable,
+        idempotent=False,
+        cancellation_safety="unsupported",
+    )
+    semantics = resolve_invocation_semantics(trusted_descriptor, args)
+    return semantics.may_mutate, evidence.affected_files
 
 
 def _marker_matches(key: str, file_path: str) -> bool:

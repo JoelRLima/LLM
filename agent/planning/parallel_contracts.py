@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
-from typing import cast
+from typing import Any
 
-from agent.contracts import ToolResult
 from agent.planning.step_contracts import PreparedInvocation
-from agent.tools.contracts import ToolInvocationRequest
+from agent.runtime.budget import BudgetExhausted
+from agent.tools.contracts import (
+    ToolError,
+    ToolInvocationRequest,
+    ToolResult,
+    ToolStatus,
+)
+from agent.tools.result_adapter import ensure_canonical_result
 
 
 @dataclass(frozen=True)
@@ -23,38 +30,66 @@ class ParallelInvocation:
 
 
 def correlate_parallel_result(
-    result: ToolResult, correlation: ParallelInvocation
+    result: Any, correlation: ParallelInvocation
 ) -> ToolResult:
     """Attach the slot identity and fail closed on a divergent result ID."""
 
-    correlated = dict(result)
-    existing = correlated.get("invocation_id")
+    try:
+        canonical = ensure_canonical_result(result)
+    except (TypeError, ValueError):
+        canonical = ToolResult(
+            invocation_id=correlation.invocation_id,
+            status=ToolStatus.PROTOCOL_ERROR,
+            error=ToolError(
+                "INVALID_RESULT",
+                "Resultado paralelo nao possui o contrato de ToolResult.",
+            ),
+            executed=False,
+        )
+    existing = (
+        result.get("invocation_id")
+        if isinstance(result, Mapping)
+        else getattr(result, "invocation_id", None)
+    )
     if existing is not None and existing != correlation.invocation_id:
-        return cast(ToolResult, {
-            "invocation_id": correlation.invocation_id,
-            "ok": False,
-            "done": True,
-            "status": "protocol_error",
-            "data": None,
-            "error": "invocation_id divergente no resultado paralelo.",
-        })
-    correlated["invocation_id"] = correlation.invocation_id
-    correlated.setdefault("done", True)
-    correlated.setdefault("status", "succeeded" if correlated.get("ok") else "failed")
-    return cast(ToolResult, correlated)
+        canonical = ToolResult(
+            invocation_id=correlation.invocation_id,
+            status=ToolStatus.PROTOCOL_ERROR,
+            error=ToolError(
+                "INVOCATION_ID_MISMATCH",
+                "invocation_id divergente no resultado paralelo.",
+            ),
+            executed=True,
+        )
+    elif existing is None and canonical.invocation_id != correlation.invocation_id:
+        # Legacy test/adapter seams may omit the ID; the parallel slot owns
+        # that identity and supplies it exactly once at this boundary.
+        canonical = ToolResult(
+            invocation_id=correlation.invocation_id,
+            status=canonical.status,
+            data=canonical.data,
+            error=canonical.error,
+            message=canonical.message,
+            artifacts=canonical.artifacts,
+            executed=canonical.executed,
+            evidence_provenance=canonical.evidence_provenance,
+            metadata=canonical.metadata,
+            done_override=canonical.done_override,
+        )
+    return canonical
 
 
-def future_parallel_result(future: Future[ToolResult], correlation: ParallelInvocation) -> ToolResult:
+def future_parallel_result(future: Future[Any], correlation: ParallelInvocation) -> ToolResult:
     """Convert a worker result/exception into a correlated terminal result."""
 
     try:
         return correlate_parallel_result(future.result(), correlation)
+    except BudgetExhausted:
+        raise
     except Exception as exc:
-        return cast(ToolResult, {
-            "invocation_id": correlation.invocation_id,
-            "ok": False,
-            "done": True,
-            "status": "failed",
-            "data": None,
-            "error": str(exc),
-        })
+        return ToolResult(
+            invocation_id=correlation.invocation_id,
+            status=ToolStatus.FAILED,
+            error=ToolError("EXECUTION_ERROR", str(exc)),
+            executed=False,
+        )

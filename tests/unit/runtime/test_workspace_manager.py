@@ -1,8 +1,8 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from agent.code.validation import ValidationReport, ValidationStatus
 from agent.workspace import WorkspaceManager
 
 
@@ -47,29 +47,30 @@ def test_workspace_manager_rejects_paths_outside_workspace(tmp_path):
         manager.lint_check("../outside.py")
 
 
-def test_validation_uses_injected_config_and_workspace_cwd(tmp_path, monkeypatch):
+def test_validation_delegates_to_canonical_service(tmp_path):
     workspace = tmp_path / "workspace"
     source = workspace / "src" / "sample.py"
     source.parent.mkdir(parents=True)
     source.write_text("value = 1\n", encoding="utf-8")
     calls = []
 
-    def fake_run(command, **kwargs):
-        calls.append((command, kwargs))
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    class FakeValidationService:
+        def validate(self, project, changed_files, *, include_tests):
+            calls.append((project, changed_files, include_tests))
+            return ValidationReport(ValidationStatus.PASSED, ())
 
-    monkeypatch.setattr("agent.workspace.subprocess.run", fake_run)
     manager = WorkspaceManager(
         workspace_root=workspace,
         restore_points_dir=tmp_path / "restore",
         validation_config={"ruff": True},
+        validation_service=FakeValidationService(),
     )
 
     result = manager.lint_check("src/sample.py")
 
     assert result == ""
-    assert calls[0][0] == ["ruff", "check", str(source.resolve())]
-    assert Path(calls[0][1]["cwd"]) == workspace.resolve()
+    assert calls[0][1] == ["src/sample.py"]
+    assert calls[0][2] is False
 
 
 def test_pytest_target_is_confined_to_workspace(tmp_path):

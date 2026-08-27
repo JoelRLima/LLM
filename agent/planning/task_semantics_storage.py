@@ -52,6 +52,7 @@ def initialize_semantics(
         else list(dict.fromkeys(_normalize_effect(item) for item in waived_effects))
     )
     owner._unrequested_effects = []
+    owner._prohibited_effects_occurred = []
     _restore_statuses(owner, statuses or {}, evidence or {})
     _project_terminal_effects(owner)
 

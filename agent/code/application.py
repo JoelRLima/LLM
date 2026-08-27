@@ -21,7 +21,7 @@ from agent.runtime.context import (
     TaskResult,
     TaskStatus,
 )
-from agent.runtime.hardware import resolve_hardware_profile
+from agent.tools.invocation_semantics import CODE_WRITE_ACTIONS
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,6 @@ def build_code_context(
             parent_context.permissions if permissions is None else frozenset(permissions)
         )
         return parent_context.child("code_task", permissions=child_permissions)
-    hardware = resolve_hardware_profile(config)
     profiles = config.get("model_profiles")
     profile_name = config.get("default_model_profile")
     selected_profile = (
@@ -57,22 +56,7 @@ def build_code_context(
     )
     if not isinstance(selected_profile, dict):
         selected_profile = {}
-    configured_output = selected_profile.get("max_tokens", hardware.default_output_tokens)
-    limits = RuntimeLimits(
-        max_model_concurrency=int(
-            config.get("max_model_concurrency", hardware.max_model_concurrency)
-        ),
-        max_io_concurrency=int(config.get("max_io_concurrency", hardware.max_io_concurrency)),
-        max_process_concurrency=int(
-            config.get("max_process_concurrency", hardware.max_process_concurrency)
-        ),
-        max_steps=int(config.get("max_task_steps", 30)),
-        max_model_calls=int(config.get("max_model_calls", 20)),
-        max_task_tool_calls=int(config.get("max_task_tool_calls", 60)),
-        max_task_tokens=int(config.get("max_task_tokens", 200_000)),
-        max_output_tokens=max(1, int(configured_output)),
-        max_repair_attempts=hardware.max_repair_attempts,
-    )
+    limits = RuntimeLimits.from_config(config)
     return TaskExecutionContext(
         model_gateway=model_gateway or UnavailableModelGateway(),
         cancellation=CancellationToken(),
@@ -114,6 +98,11 @@ class CodingApplicationService:
             self.root,
             self.context,
             approval_policy=self.approval_policy,
+            validation_config=(
+                self.config.get("validation")
+                if isinstance(self.config.get("validation"), dict)
+                else None
+            ),
         )
         if request.action == "analyze":
             return workflow.analyze(request.targets[0] if request.targets else None)
@@ -121,7 +110,7 @@ class CodingApplicationService:
             if not request.targets:
                 return TaskResult(TaskStatus.FAILED, error="review exige targets")
             return workflow.review(request.targets)
-        if request.action in {"generate", "modify", "repair", "refactor"}:
+        if request.action in CODE_WRITE_ACTIONS:
             if not request.objective.strip():
                 return TaskResult(TaskStatus.FAILED, error="ação de mudança exige objective")
             if request.action != "generate" and not request.targets:
@@ -154,6 +143,11 @@ class CodingApplicationService:
                 max_workers=self.context.limits.max_io_concurrency,
                 approval_policy=self.approval_policy,
                 approver=approver,
+                validation_config=(
+                    self.config.get("validation")
+                    if isinstance(self.config.get("validation"), dict)
+                    else None
+                ),
             ).execute(graph, self.context)
             return self._graph_result(graph_result)
         return TaskResult(TaskStatus.FAILED, error=f"ação inválida: {request.action}")

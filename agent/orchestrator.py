@@ -261,13 +261,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
 
         if self._planning_context is None:
             return None
-        visible = (
-            frozenset(self.active_skills)
-            if self.active_skills
-            else self._planning_context.eligible_names
-        )
-        visible &= self._planning_context.eligible_names
-        return self._planning_context.present(planner_kind, visible)
+        return self._planning_context.resolve_view(planner_kind, self.active_skills)
 
     @staticmethod
     def _is_security_objective(objective: str) -> bool:

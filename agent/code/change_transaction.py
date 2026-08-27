@@ -35,6 +35,7 @@ class ChangeSetTransaction:
         self._staged_content: Dict[Path, bytes] = {}
         self._applied_paths: set[Path] = set()
         self._preview: Optional[ChangePreview] = None
+        self.rollback_errors: tuple[str, ...] = ()
 
     def _resolve(self, relative: str) -> Path:
         try:
@@ -203,11 +204,15 @@ class ChangeSetTransaction:
             self.change_set = replace(self.change_set, state=ChangeSetState.COMMITTED)
         except Exception as exc:
             try:
-                self.rollback()
+                rollback_ok = self.rollback()
             except ChangeSetError as rollback_error:
                 raise ChangeSetError(
                     f"Falha ao aplicar ChangeSet: {exc}; rollback incompleto: "
                     f"{rollback_error}"
+                ) from exc
+            if not rollback_ok:
+                raise ChangeSetError(
+                    f"Falha ao aplicar ChangeSet: {exc}; rollback incompleto."
                 ) from exc
             raise ChangeSetError(f"Falha ao aplicar ChangeSet: {exc}") from exc
 
@@ -216,14 +221,24 @@ class ChangeSetTransaction:
             raise ChangeSetError("Somente ChangeSet aplicado pode ser validado.")
         self.change_set = replace(self.change_set, state=ChangeSetState.VALIDATED)
 
-    def rollback(self) -> None:
+    def rollback(self) -> bool:
+        errors: list[str] = []
         for path, content in reversed(tuple(self._backups.items())):
             if path not in self._applied_paths:
                 continue
-            self._assert_current_path(path)
-            if content is None and path.exists():
-                path.unlink()
-            elif content is not None:
-                self._atomic_write(path, content)
+            try:
+                self._assert_current_path(path)
+                if content is None and path.exists():
+                    path.unlink()
+                elif content is not None:
+                    self._atomic_write(path, content)
+            except Exception as exc:
+                errors.append(f"{path}: {exc}")
+        self.rollback_errors = tuple(errors)
+        if errors:
+            # Leave the state visibly non-restored.  The caller may retry the
+            # rollback after repairing the external conflict.
+            return False
         self._applied_paths.clear()
         self.change_set = replace(self.change_set, state=ChangeSetState.ROLLED_BACK)
+        return True

@@ -1,65 +1,19 @@
-"""Canonical provider and model/config identity for Block 7 campaigns."""
+"""Block 7 campaign model profiles built from runtime identity primitives."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlsplit, urlunsplit
+
+from agent.llm.identity import (
+    GENERIC_MODEL_ALIASES,
+    model_config_fingerprint,
+    normalize_endpoint_identity,
+    normalize_external_identity,
+)
 
 DEFAULT_PROFILE = "local_8gb"
-GENERIC_MODEL_ALIASES = frozenset({"default"})
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
-
-
-def _sha256(value: bytes | str) -> str:
-    payload = value.encode("utf-8") if isinstance(value, str) else value
-    return hashlib.sha256(payload).hexdigest()
-
-
-def normalize_endpoint_identity(value: Any) -> str | None:
-    """Return a non-secret normalized endpoint identity without doing I/O."""
-
-    if value is None:
-        return None
-    raw = str(value).strip()
-    if not raw:
-        return None
-    if "://" not in raw:
-        return raw.casefold()
-    parsed = urlsplit(raw)
-    hostname = (parsed.hostname or "").casefold()
-    if not hostname:
-        return None
-    try:
-        port = parsed.port
-    except ValueError:
-        port = None
-    netloc = hostname
-    if port is not None and not (
-        (parsed.scheme.casefold() == "http" and port == 80)
-        or (parsed.scheme.casefold() == "https" and port == 443)
-    ):
-        netloc = f"{netloc}:{port}"
-    path = parsed.path.rstrip("/")
-    return urlunsplit((parsed.scheme.casefold(), netloc, path, "", ""))
-
-
-def normalize_external_identity(value: Any) -> str | None:
-    """Bound an explicit non-provider identity without probing an endpoint."""
-
-    if value in (None, ""):
-        return None
-    identity = str(value).strip()[:256]
-    if not identity or identity.casefold() in GENERIC_MODEL_ALIASES:
-        return None
-    return identity
-
-
 def planned_model_profile(repo_root: str | Path, profile_name: str = DEFAULT_PROFILE) -> dict[str, Any]:
     """Return the frozen profile without constructing or probing a gateway."""
 
@@ -116,7 +70,7 @@ def model_config_identity(
     if frozen_external_identity is not None:
         planned["external_identity"] = frozen_external_identity
         planned["external_identity_source"] = "external_identity"
-    fingerprint = _sha256(_canonical_json(planned))
+    fingerprint = model_config_fingerprint(planned)
     return {**planned, "model_config_fingerprint": fingerprint, "fingerprint": fingerprint}
 
 
@@ -142,7 +96,7 @@ def fake_model_identity() -> dict[str, Any]:
         "actual_identity_available": True,
         "evidence_level": "deterministic",
     }
-    fingerprint = _sha256(_canonical_json(payload))
+    fingerprint = model_config_fingerprint(payload)
     return {**payload, "model_config_fingerprint": fingerprint, "fingerprint": fingerprint}
 
 

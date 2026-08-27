@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from agent.planning.effect_intent import effect_intent_matches
 from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
 from agent.planning.task_semantics_effects import (
     effect_observation_proves_terminal,
+    observed_effect_accesses,
     observed_effect_kinds,
 )
 from agent.planning.task_semantics_restore import revalidate_restored_terminal_evidence
 from agent.planning.task_semantics_types import ObligationStatus
+from agent.resources.contracts import ResourceAccess
+from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import EvidenceProvenance, has_explicit_evidence_provenance
 
 
@@ -30,6 +34,8 @@ def _validated_tool_history(state: Any, data: Mapping[str, Any]) -> list[dict[st
             restored_result = dict(result)
             restored_result["evidence_provenance"] = EvidenceProvenance.UNKNOWN.value
             entry["result"] = restored_result
+        if isinstance(entry.get("result"), Mapping):
+            entry["result"] = ensure_canonical_result(entry["result"])
         history.append(entry)
     return history
 
@@ -107,17 +113,49 @@ def _reconstruct_modern_unbound_effects(
         observation = catalog.get(index)
         if not isinstance(observation, Mapping):
             continue
-        for effect in observed_effect_kinds(effect_authority, observation):
-            semantics.record_effect(
-                effect,
-                evidence_ref=index,
-                effect_authority=effect_authority,
+        observed: tuple[tuple[str, ResourceAccess | None], ...] = tuple(
+            observed_effect_accesses(effect_authority, observation)
+        )
+        if not observed:
+            observed = tuple(
+                (effect, None)
+                for effect in observed_effect_kinds(effect_authority, observation)
             )
-            if effect not in semantics.requested_effects:
+        for effect, access in observed:
+            requested = (
+                access is None
+                and effect in semantics.requested_effects
+            ) or (
+                access is not None
+                and any(
+                    effect_intent_matches(intent, effect, access)
+                    for intent in semantics.effect_intents
+                    if not getattr(intent, "prohibited", False)
+                )
+            )
+            prohibited = access is not None and any(
+                effect_intent_matches(intent, effect, access)
+                for intent in semantics.effect_intents
+                if getattr(intent, "prohibited", False)
+            )
+            if requested or effect not in semantics.requested_effects:
+                semantics.record_effect(
+                    effect,
+                    evidence_ref=index,
+                    effect_authority=effect_authority,
+                )
+            if prohibited:
+                semantics.record_prohibited_effect(
+                    effect,
+                    evidence_ref=index,
+                    effect_authority=effect_authority,
+                )
+            if not requested:
                 semantics.record_unrequested_effect(
                     effect,
                     evidence_ref=index,
                     effect_authority=effect_authority,
+                    force=True,
                 )
 
 
@@ -166,8 +204,12 @@ def restore_histories(
     semantics = getattr(state, "task_semantics", None)
     if not isinstance(semantics, TaskSemantics):
         raise ValueError("Checkpoint task semantics owner is invalid after restore.")
+    revalidate_predicates = getattr(semantics, "revalidate_predicate_resolutions", None)
+    if callable(revalidate_predicates):
+        revalidate_predicates()
+    legacy_semantics = not isinstance(data.get("task_semantics"), Mapping)
     validate_admission = getattr(semantics, "validate_admission_provenance", None)
-    if callable(validate_admission):
+    if callable(validate_admission) and not legacy_semantics:
         try:
             validate_admission(admission_authority=admission_authority)
         except (TaskSemanticsError, TypeError, AttributeError) as exc:

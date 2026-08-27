@@ -17,6 +17,7 @@ def validate_and_optimize_plan(
     *,
     planning_context: PlanningContextSnapshot | None = None,
     planning_view: PlanningPresentationSnapshot | None = None,
+    allow_conditional_preview: bool = False,
 ) -> Optional[List[Dict[str, Any]]]:
     explicit_context = planning_context is not None
     context = (
@@ -36,6 +37,7 @@ def validate_and_optimize_plan(
         objective,
         plan_identity=plan_identity,
         available_observations=observations,
+        allow_conditional_preview=allow_conditional_preview,
     )
     repair_budget = {"remaining": 1}
     report = validator.validate(plan)
@@ -60,6 +62,7 @@ def validate_and_optimize_plan(
             canonical_deferred_references=True,
             plan_identity=bound_plan_identity,
             available_observations=bound_observations,
+            allow_conditional_preview=allow_conditional_preview,
         )
         bound_report = validator.validate(working_plan)
         gateway._log_validation(bound_report, "binding canônico")
@@ -98,6 +101,7 @@ def validate_and_optimize_plan(
             canonical_deferred_references=True,
             plan_identity=post_plan_identity,
             available_observations=post_observations,
+            allow_conditional_preview=allow_conditional_preview,
         )
     post_report = post_validator.validate(optimized)
     gateway._log_validation(post_report, "pós-otimização")
@@ -156,6 +160,7 @@ def _validator(
     canonical_deferred_references: bool = False,
     plan_identity: str | None = None,
     available_observations: Any = None,
+    allow_conditional_preview: bool = False,
 ) -> PlanValidator:
     observations = (
         getattr(gateway.orchestrator.agent_state, "tool_history", ())
@@ -174,6 +179,7 @@ def _validator(
         canonical_deferred_references=canonical_deferred_references,
         available_observations=observations,
         plan_identity=plan_identity,
+        allow_conditional_preview=allow_conditional_preview,
     )
 
 

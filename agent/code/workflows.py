@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -31,6 +32,7 @@ class CodingWorkflowService:
         context_selector: Optional[ContextSelector] = None,
         approval_policy: Optional[ChangeApprovalPolicy] = None,
         failure_classifier: Optional[FailureClassifier] = None,
+        validation_config: Mapping[str, object] | None = None,
     ) -> None:
         self.root = Path(root).resolve()
         self.context = context
@@ -38,8 +40,12 @@ class CodingWorkflowService:
         self.context_selector = context_selector or ContextSelector(self.root, self.intelligence)
         self.approval_policy = approval_policy or ChangeApprovalPolicy()
         self.failure_classifier = failure_classifier or FailureClassifier()
+        self.validation_config = dict(validation_config or {})
         self.validator = validator or ProjectValidator(
-            self.root, cancellation=context.cancellation, process_gate=context.process_slot()
+            self.root,
+            cancellation=context.cancellation,
+            process_gate=context.process_slot(),
+            validation_config=validation_config,
         )
 
     @staticmethod

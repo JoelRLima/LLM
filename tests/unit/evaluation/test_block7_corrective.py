@@ -19,6 +19,7 @@ from agent.evaluation.block7 import (
 )
 from agent.evaluation.block7_analysis import analyze_campaign, secret_safe_report, validate_campaign_report
 from agent.evaluation.block7_execution import CampaignRun, _run_one, classify_failure
+from agent.evaluation.block7_fixture_context import fixture_marker, runtime_objective
 from agent.evaluation.block7_gateway import _scripted_factory
 from agent.evaluation.block7_identity import (
     candidate_identity_string,
@@ -42,6 +43,22 @@ _CANDIDATE = {
     "semantic_manifest_hash": "manifest",
 }
 _MODEL = fake_model_identity()
+
+
+def test_h_series_identity_is_metadata_not_runtime_objective_prose() -> None:
+    visited = 0
+    for scenario in H_SERIES:
+        for arm in scenario.arms:
+            capability = arm.to_capability_scenario(scenario.h_id)
+            visited += 1
+            marker = fixture_marker(arm.objective, scenario.h_id, arm.arm_id)
+            assert capability.objective == runtime_objective(arm.objective, scenario.h_id)
+            assert capability.metadata["fixture_marker"] == marker
+            assert not capability.objective.casefold().startswith(
+                marker.casefold() + ":"
+            )
+
+    assert visited >= 47
 
 
 def _scenario(h_id: str, *, arm_ids: tuple[str, ...] = ("arm",)) -> HSeriesScenario:
@@ -446,7 +463,7 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
                     "model_fingerprint": _MODEL,
                     "declared_model_identity": _MODEL,
                     "initial_fixture_digest": digest_fixture(arm.initial_files),
-                    "objective": arm.objective,
+                    "objective": runtime_objective(arm.objective, scenario.h_id),
                     "observed_model_identity": {
                         "available": True,
                         "provider_observation_available": True,

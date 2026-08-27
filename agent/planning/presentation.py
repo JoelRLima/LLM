@@ -10,6 +10,7 @@ from typing import Any, cast
 from agent.planning.planning_context import PlanningContextError, PlanningTool
 from agent.planning.schema_safety import MAX_SCHEMA_DEPTH, PlanningSchemaError, validate_schema_depth
 from agent.skills.descriptor import validate_result_data_schema
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
@@ -68,21 +69,8 @@ class PlanningPresentationSnapshot:
     def metadata_dict(self) -> dict[str, Any]:
         """Return optimizer metadata copied from the safe planning model."""
 
-        from agent.planning.tool_metadata import ToolMetadata
-
         return {
-            tool.name: ToolMetadata(
-                cost=tool.cost,
-                reads_disk="read" in tool.required_capabilities or "vcs_read" in tool.required_capabilities,
-                writes_disk="write" in tool.required_capabilities or "vcs_write" in tool.required_capabilities,
-                modifies_workspace="write" in tool.required_capabilities or "vcs_write" in tool.required_capabilities,
-                cacheable=tool.cacheable,
-                side_effects=bool(
-                    tool.required_capabilities
-                    & frozenset({"write", "process", "network", "package_install", "vcs_write", "validate"})
-                ),
-                category=tool.category,
-            )
+            tool.name: _tool_metadata(tool)
             for tool in self.tools
         }
 
@@ -103,8 +91,6 @@ class PlanningPresentationSnapshot:
             raise PlanningContextError("workspace do context e view diverge")
         if planner_kind is not None and planning_view.planner_kind != planner_kind:
             raise PlanningContextError("planning view planner kind diverge")
-        return
-        raise PlanningContextError("planning view incompatível com o planner")
 
     def render(
         self,
@@ -141,6 +127,34 @@ def validate_planning_view_binding(
     planner_kind: str | None = None,
 ) -> None:
     PlanningPresentationSnapshot._validate_planning_view_binding(context, planning_view, planner_kind)
+
+
+def _tool_metadata(tool: PlanningTool) -> Any:
+    """Project optimizer metadata through the canonical invocation resolver."""
+
+    from agent.planning.tool_metadata import ToolMetadata
+
+    class _Descriptor:
+        name = tool.name
+        capabilities = tool.required_capabilities
+        cacheable = tool.cacheable
+        idempotent = tool.idempotent
+        cancellation_safety = tool.cancellation_safety
+
+    semantics = resolve_invocation_semantics(_Descriptor(), {})
+    reads_disk = any(
+        getattr(access.mode, "value", access.mode) == "read" and access.name != "memory"
+        for access in semantics.resource_access
+    ) or bool({"read", "vcs_read"} & set(semantics.required_capabilities))
+    return ToolMetadata(
+        cost=tool.cost,
+        reads_disk=reads_disk,
+        writes_disk=semantics.workspace_mutation,
+        modifies_workspace=semantics.workspace_mutation,
+        cacheable=semantics.cacheable,
+        side_effects=bool(semantics.external_side_effects or semantics.task_state_mutation),
+        category=tool.category,
+    )
 
 
 def _tool_payload(

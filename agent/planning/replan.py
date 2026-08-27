@@ -213,9 +213,7 @@ def _planning_view(
 ) -> PlanningPresentationSnapshot | None:
     if context is None:
         return None
-    active = frozenset(getattr(orchestrator, "active_skills", ()) or ())
-    visible = active & context.eligible_names if active else context.eligible_names
-    return context.present("linear", visible)
+    return context.resolve_view("linear", getattr(orchestrator, "active_skills", ()))
 
 
 def _surviving_steps(steps: list[Dict[str, Any]], validator: PlanValidator, phase: str) -> list[Dict[str, Any]]:
@@ -225,10 +223,15 @@ def _surviving_steps(steps: list[Dict[str, Any]], validator: PlanValidator, phas
     for error in report.errors:
         logger.warning("[VALIDATOR][%s] %s", phase, error)
     blocked = {item.index for item in report.blocked_steps}
-    if blocked:
+    # ``is_valid`` is the canonical structural gate.  A validator may report
+    # structural errors before it can associate them with a concrete step, so
+    # an empty blocked-step list is not evidence that the replacement is safe.
+    if report.errors or not report.is_valid or blocked:
         logger.warning(
-            "[VALIDATOR][%s] replacement rejeitado integralmente; passos bloqueados=%s",
+            "[VALIDATOR][%s] replacement rejeitado integralmente; valido=%s erros=%s passos_bloqueados=%s",
             phase,
+            report.is_valid,
+            len(report.errors),
             sorted(index + 1 for index in blocked),
         )
         return []
@@ -264,7 +267,7 @@ def replan(
             action, orchestrator, planning_context, planning_view, objective=ctx.task
         )
         if action is not None:
-            ctx.heuristic_replans += 1
+            ctx.record("heuristic")
             _log_action(ctx, category, action)
             return action
     if policy.allows_llm(ctx):
@@ -278,14 +281,14 @@ def replan(
         )
         if validation_repair:
             if action is not None:
-                ctx.llm_replans += 1
+                ctx.record("llm")
                 _log_action(ctx, category, action)
             return action
         action = _validate_and_optimize_new_steps(
             action, orchestrator, planning_context, planning_view, objective=ctx.task
         )
         if action is not None:
-            ctx.llm_replans += 1
+            ctx.record("llm")
             _log_action(ctx, category, action)
             return action
     logger.warning(

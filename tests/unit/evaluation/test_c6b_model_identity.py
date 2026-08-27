@@ -9,6 +9,7 @@ from agent.evaluation.block7_execution_evidence import identity_drift
 from agent.evaluation.block7_identity import campaign_config, model_config_identity, resume_compatible
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from agent.llm.identity import declared_provider_identity
 
 
 class SequenceGateway:
@@ -30,6 +31,20 @@ class SequenceGateway:
 
     def count_tokens(self, text: str) -> int:
         return len(text)
+
+
+def test_runtime_identity_redacts_nested_secrets_and_exposes_non_secret_fingerprint() -> None:
+    gateway = SequenceGateway(["model-A"])
+    gateway.profile = {
+        "base_url": "https://identity.example/v1?api_key=should-not-be-kept",
+        "provider_options": {"api_key": "TOPSECRET", "organization": "safe"},
+    }
+
+    identity = declared_provider_identity(gateway)
+
+    assert identity["profile"]["provider_options"] == {"organization": "safe"}
+    assert "TOPSECRET" not in repr(identity)
+    assert identity["model_config_fingerprint"]
 
 
 def _record(observed_ids: list[str | None], *, external_identity: str | None = None) -> dict:

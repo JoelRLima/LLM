@@ -13,7 +13,7 @@ from agent.llm.structured_output import (
     StructuredOutputStrategy,
     parse_structured_response,
 )
-from agent.runtime.budget import estimate_model_request_tokens, normalize_usage
+from agent.runtime.budget import BudgetExhausted, estimate_model_request_tokens, normalize_usage
 
 CHANGESET_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -122,12 +122,11 @@ def _prompt(objective: str, targets: Sequence[str], context: str, instruction: s
 
 def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
     service.context.emit("model_call_started", {"operation": "propose_changes"})
-    call_number = service.context.consume_model_call()
+    call_number = service.context.consume_model_call(request)
+    reserved_tokens = service.context.reservation_for_model_call(call_number)
     started_at = time.monotonic()
-    try:
-        with service.context.model_slot():
-            response = service.context.model_gateway.complete(request)
-    except Exception:
+
+    def finalize_failure() -> None:
         estimate = estimate_model_request_tokens(request)
         service.context.finalize_model_call(
             call_number,
@@ -137,12 +136,22 @@ def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
             "operation": "propose_changes",
             "provider": service.context.model_gateway.provider_name,
             "call_number": call_number,
+            "reserved_tokens": reserved_tokens,
             "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
             "success": False,
             "token_usage_complete": False,
             "estimated_tokens": estimate,
             "accounted_tokens": estimate,
         })
+
+    try:
+        with service.context.model_slot():
+            response = service.context.model_gateway.complete(request)
+    except BudgetExhausted:
+        finalize_failure()
+        raise
+    except BaseException:
+        finalize_failure()
         raise
     usage = getattr(response, "usage", None)
     estimate = estimate_model_request_tokens(request, response)
@@ -157,6 +166,7 @@ def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
         "operation": "propose_changes",
         "provider": service.context.model_gateway.provider_name,
         "call_number": call_number,
+        "reserved_tokens": reserved_tokens,
         "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
         "success": True,
         "token_usage_complete": complete,

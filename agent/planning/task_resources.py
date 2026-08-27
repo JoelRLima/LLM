@@ -2,44 +2,43 @@
 
 from __future__ import annotations
 
-import posixpath
-from dataclasses import dataclass
 from typing import Any
 
-WORKSPACE_RESOURCE = "*"
-_MUTATING_CAPABILITIES = frozenset(
-    {
-        "write",
-        "vcs_write",
-        "process",
-        "network",
-        "package_install",
-        "memory",
-        "validate",
-    }
+from agent.capabilities import WRITE_CAPABILITIES, capability_values
+from agent.resources.contracts import (
+    WORKSPACE_RESOURCE,
+    ResourceAccess,
+    ResourceMode,
+    ResourceProvenance,
+    resources_conflict,
+    resources_overlap,
 )
-_CODE_READ_ACTIONS = frozenset({"analyze", "review"})
-_CODE_WRITE_ACTIONS = frozenset({"generate", "modify", "repair", "refactor"})
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
-
-@dataclass(frozen=True)
-class ResourceClaim:
-    name: str
-    mode: str
+# Compatibility alias.  ResourceAccess is the canonical shape.
+ResourceClaim = ResourceAccess
 
 
 def normalize_resource_name(value: Any) -> str:
-    """Normalize one workspace-relative resource identity conservatively."""
+    """Return the historical lexical display form for old planning callers.
+
+    ``ResourceAccess`` is the authority-bearing representation and applies
+    the conservative workspace sentinel to traversal-like IDs.  This adapter
+    preserves the old string helper's display behavior for compatibility, but
+    every value crossing a claim/scheduling boundary is immediately wrapped
+    in ``ResourceAccess`` and normalized canonically there.
+    """
 
     if not isinstance(value, str) or not value.strip():
         return WORKSPACE_RESOURCE
     token = value.replace("\\", "/").strip()
-    if token in {"*", ".", "./", "workspace", "workspace-wide"}:
+    if token.casefold() in {"*", ".", "./", "workspace", "workspace-wide"}:
         return WORKSPACE_RESOURCE
-    normalized = posixpath.normpath(token).replace("\\", "/")
-    if normalized == "." or normalized == ".." or normalized.startswith("../"):
-        return WORKSPACE_RESOURCE
-    return normalized.strip("/") or WORKSPACE_RESOURCE
+    # Presentation-only compatibility projection.  It must never be used as
+    # physical scope without ResourceAccess wrapping.
+    import posixpath
+
+    return posixpath.normpath(token).strip("/") or WORKSPACE_RESOURCE
 
 
 def _mode(value: Any) -> str:
@@ -49,45 +48,68 @@ def _mode(value: Any) -> str:
 
 def declared_resource_claims(node: Any) -> tuple[ResourceClaim, ...]:
     return tuple(
-        ResourceClaim(normalize_resource_name(resource.name), _mode(resource.mode))
+        ResourceClaim(
+            resource.name,
+            _mode(resource.mode),
+            ResourceProvenance.MODEL_DECLARED,
+        )
         for resource in getattr(node, "resources", ())
     )
 
 
 def node_is_mutating(node: Any) -> bool:
-    action = str(getattr(node, "metadata", {}).get("action", "")).casefold()
-    capabilities = frozenset(str(item).casefold() for item in getattr(node, "capabilities", ()))
-    return action in _CODE_WRITE_ACTIONS or bool(capabilities & _MUTATING_CAPABILITIES)
-
-
-def _target_claims(node: Any, *, mode: str) -> tuple[ResourceClaim, ...]:
-    raw_targets = getattr(node, "metadata", {}).get("targets", ())
-    targets = tuple(
-        normalize_resource_name(item)
-        for item in raw_targets
-        if isinstance(item, str) and item.strip()
-    ) if isinstance(raw_targets, (list, tuple)) else ()
-    if not targets:
-        return (ResourceClaim(WORKSPACE_RESOURCE, mode),)
-    return tuple(dict.fromkeys(ResourceClaim(target, mode) for target in targets))
+    metadata = getattr(node, "metadata", {})
+    tool_name = str(metadata.get("tool") or ("code_task" if "action" in metadata else "")).casefold()
+    if tool_name:
+        class _Descriptor:
+            name = tool_name
+            capabilities = capability_values(getattr(node, "capabilities", ()))
+            cacheable = False
+            idempotent = False
+            cancellation_safety = "unsupported"
+        semantics = resolve_invocation_semantics(_Descriptor(), metadata)
+        return semantics.may_mutate
+    capabilities = capability_values(getattr(node, "capabilities", ()))
+    # External/process/validation capabilities do not imply a workspace
+    # mutation.  Preserve the conservative wildcard only for explicit write
+    # authority when no operation name is available.
+    return bool(capabilities & {item.value for item in WRITE_CAPABILITIES})
 
 
 def trusted_resource_claims(node: Any) -> tuple[ResourceClaim, ...]:
     """Derive resources from the concrete operation, never from its claims."""
 
-    action = str(getattr(node, "metadata", {}).get("action", "")).casefold()
-    if action in _CODE_READ_ACTIONS:
-        return _target_claims(node, mode="read")
-    if action in _CODE_WRITE_ACTIONS:
-        # Model-generated ChangeSets may write outside requested targets.  The
-        # target list remains task intent/approval context, never a physical
-        # scheduling boundary for this corrective.
-        return (ResourceClaim(WORKSPACE_RESOURCE, "write"),)
-    if node_is_mutating(node):
-        # A generic mutating node has no trusted footprint contract.  It must
-        # serialize against every workspace write rather than trust omission.
-        return (ResourceClaim(WORKSPACE_RESOURCE, "write"),)
-    return ()
+    metadata = getattr(node, "metadata", {})
+    tool_name = str(metadata.get("tool") or ("code_task" if "action" in metadata else "")).casefold()
+    if not tool_name:
+        return () if not node_is_mutating(node) else (
+            ResourceClaim(
+                WORKSPACE_RESOURCE,
+                ResourceMode.WRITE,
+                ResourceProvenance.TRUSTED_DERIVED,
+            ),
+        )
+    class _Descriptor:
+        name = tool_name
+        capabilities = capability_values(getattr(node, "capabilities", ()))
+        cacheable = False
+        idempotent = False
+        cancellation_safety = "unsupported"
+    semantics = resolve_invocation_semantics(_Descriptor(), metadata)
+    if semantics.read_only:
+        return tuple(
+            ResourceClaim(access.name, access.mode, ResourceProvenance.TRUSTED_DERIVED)
+            for access in semantics.resource_access
+        )
+    # A generated ChangeSet can discover collateral paths at execution time;
+    # requested target claims are therefore not a physical scheduling fence.
+    return (
+        ResourceClaim(
+            WORKSPACE_RESOURCE,
+            ResourceMode.WRITE,
+            ResourceProvenance.TRUSTED_DERIVED,
+        ),
+    )
 
 
 def effective_resource_claims(node: Any) -> tuple[ResourceClaim, ...]:
@@ -96,21 +118,11 @@ def effective_resource_claims(node: Any) -> tuple[ResourceClaim, ...]:
 
 
 def claims_overlap(left: str, right: str) -> bool:
-    left_name = normalize_resource_name(left)
-    right_name = normalize_resource_name(right)
-    if WORKSPACE_RESOURCE in {left_name, right_name} or left_name == right_name:
-        return True
-    left_parts = tuple(part for part in left_name.split("/") if part)
-    right_parts = tuple(part for part in right_name.split("/") if part)
-    return (
-        len(left_parts) < len(right_parts) and right_parts[: len(left_parts)] == left_parts
-    ) or (
-        len(right_parts) < len(left_parts) and left_parts[: len(right_parts)] == right_parts
-    )
+    return resources_overlap(left, right)
 
 
 def claims_conflict(left: ResourceClaim, right: ResourceClaim) -> bool:
-    return claims_overlap(left.name, right.name) and "write" in {left.mode, right.mode}
+    return resources_conflict(left, right)
 
 
 def resource_claims_conflict(

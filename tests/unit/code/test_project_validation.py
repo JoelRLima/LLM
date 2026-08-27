@@ -12,6 +12,7 @@ from agent.code.validation import (
     ProcessRunner,
     ProjectValidator,
     ValidationProfile,
+    ValidationRegistry,
     ValidationStatus,
 )
 
@@ -281,3 +282,28 @@ def test_process_runner_sanitizes_python_and_pytest_environment(
         "1",
         "1",
     ]
+
+
+def test_configured_test_policy_cannot_be_suppressed_by_include_tests_false(
+    tmp_path: Path,
+) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_safe.py").write_text(
+        "def test_safe():\n    assert True\n",
+        encoding="utf-8",
+    )
+    profile = ProjectDiscovery(tmp_path).discover()
+    registry = ValidationRegistry(
+        validation_config={"enabled": True, "pytest": True},
+    )
+    commands = registry.build_profile(profile, ["tests/test_safe.py"], include_tests=False)
+
+    assert any(command.name == "pytest" for command in commands.commands)
+    report = ProjectValidator(tmp_path, registry=registry).validate(
+        profile,
+        ["tests/test_safe.py"],
+        include_tests=False,
+        profile=ValidationProfile(()),
+    )
+    assert any(check.name == "pytest" for check in report.checks)

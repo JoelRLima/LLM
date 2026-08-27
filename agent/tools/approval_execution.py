@@ -7,13 +7,19 @@ from typing import Any
 from agent.approval import ApprovalDecision, ApprovalRequest, format_concrete_operation
 from agent.runtime.logging import logger
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 from agent.tools.invocation_support import denial
-from agent.tools.mode_enforcement import required_capabilities_for_invocation
 
 
 def check_effect_approval(gateway: Any, invocation: ToolInvocation, descriptor: ToolDescriptor) -> ToolResult | None:
-    effects = frozenset({"write", "vcs_write", "process", "network", "package_install", "validate"})
-    requested = effects & required_capabilities_for_invocation(descriptor, invocation.args)
+    semantics = resolve_invocation_semantics(descriptor, invocation.args)
+    requested = frozenset(
+        {
+            *semantics.external_side_effects,
+            *semantics.durable_effects,
+        }
+        - {"memory_write"}
+    )
     if not requested:
         return None
     gateway._emit("approval_requested", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})

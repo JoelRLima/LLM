@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, cast
 
-from agent.contracts import ToolArgs, ToolResult
+from agent.contracts import ToolArgs
 from agent.cost_guard import CostGuard
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_execution import execute_deferred_condition
@@ -18,6 +18,7 @@ from agent.planning.semantic_projection import (
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.runtime.budget import task_budget_for
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
 from agent.watchdog import Watchdog
 
 
@@ -155,7 +156,7 @@ class PlanExecutor:
                 return StepLoopResult(index, result, "Replanejamento bloqueado: havia dependencias ja executadas.", True)
             return StepLoopResult(index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True)
             return StepLoopResult(
-                index, result, f"A tarefa nÃ£o pÃ´de ser concluÃ­da. Ãšltimo erro: {error}", True
+                index, result, f"A tarefa não pôde ser concluída. Último erro: {error}", True
             )
         return StepLoopResult(
             projection.logical_slot + 1,
@@ -178,7 +179,15 @@ class PlanExecutor:
         for producer in self._step_dependencies.get(index, []):
             if not self._dependency_succeeded(index, producer):
                 step = self.orchestrator.agent_state.plan[index]
-                result = {"ok": False, "error": f"Dependência falhou: passo {producer + 1}"}
+                result = ToolResult(
+                    invocation_id=f"dependency:{index + 1}",
+                    status=ToolStatus.FAILED,
+                    error=ToolError(
+                        "DEPENDENCY_FAILED",
+                        f"Dependência falhou: passo {producer + 1}",
+                    ),
+                    executed=False,
+                )
                 self.orchestrator.agent_state.record_tool_result(str(step.get("tool", "unknown")), step.get("args", {}), result)
                 return False
         return True
@@ -203,7 +212,8 @@ class PlanExecutor:
             current_step=step,
             tool_history=state.tool_history,
             last_exception=error,
-            last_tool_result=cast(Dict[str, Any], selected_result) if selected_result else None,
+            last_tool_result=cast(dict[str, Any], selected_result) if selected_result is not None else None,
+            retry_counts=getattr(state, "replan_counts", None),
         )
         action = replan(context, error, self.orchestrator)
         return action.steps if action else None

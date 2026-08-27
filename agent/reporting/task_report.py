@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
+from agent.reporting.metrics import project_run_metrics
 from agent.reporting.observation_evidence import project_tool_observation
 from agent.reporting.public_projection import (
     canonical_effect_projection,
@@ -15,7 +17,7 @@ from agent.reporting.public_projection import (
     reconcile_report_status,
 )
 from agent.reporting.public_safety import sanitize_public_text
-from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
+from agent.reporting.task_report_rendering import render_markdown
 from agent.runtime.paths import REPORTS_DIR
 
 TIMESTAMP_KEYS = ("timestamp", "time", "ts")
@@ -93,12 +95,12 @@ class TaskReportBuilder:
     ) -> Dict[str, Any]:
         ledger = getattr(agent_state, "budget_ledger", None)
         snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
-        return aggregate_metrics(
+        return project_run_metrics(
             metrics_entries,
             tool_calls=(getattr(snapshot, "tool_calls", None) if snapshot is not None else None),
             history_records=history_records,
             budget_snapshot=snapshot,
-        )
+        ).to_dict()
 
     def save_report(
         self, report: Dict[str, Any], format: str = "json", path: Optional[str] = None
@@ -147,8 +149,8 @@ class TaskReportBuilder:
 
     def _build_step(self, index: int, entry: Dict[str, Any]) -> Dict[str, Any]:
         raw_result = entry.get("result")
-        evidence = project_tool_observation(entry) if isinstance(raw_result, dict) else None
-        if isinstance(raw_result, dict):
+        evidence = project_tool_observation(entry) if isinstance(raw_result, Mapping) else None
+        if isinstance(raw_result, Mapping):
             assert evidence is not None
             data = evidence.value if evidence.present else None
             output_text = self._truncate(data) if evidence.present else ""
@@ -291,7 +293,7 @@ class TaskReportBuilder:
 
     @staticmethod
     def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[str, Any]:
-        return cast(Dict[str, Any], aggregate_metrics(entries, tools_called))
+        return project_run_metrics(entries, tools_called).to_dict()
 
     @staticmethod
     def _render_markdown(report: Dict[str, Any]) -> str:

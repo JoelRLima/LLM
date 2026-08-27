@@ -12,8 +12,8 @@ from agent.reporting.observation_evidence import (
     observation_contract_instructions,
     serialize_tool_observations,
 )
-from agent.reporting.operational_outcome import project_operational_outcome
 from agent.runtime.budget import task_budget_for
+from agent.runtime.operational_outcome import project_operational_outcome
 from agent.watchdog import Watchdog
 
 

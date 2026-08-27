@@ -5,18 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from agent.planning.operational_constants import WRITE_CAPABILITIES
 from agent.planning.task_semantics_types import ObligationStatus
 from agent.reporting.observation_evidence import (
-    artifact_metadata,
-    project_artifact_evidence,
     result_executed,
     result_has_data,
     result_is_failed,
     result_is_successful,
 )
-
-_MEMORY_CAPABILITY = "memory"
+from agent.resources.contracts import (
+    WORKSPACE_RESOURCE,
+    ResourceAccess,
+    ResourceMode,
+    ResourceProvenance,
+    normalize_resource_id,
+)
+from agent.runtime.mutation_evidence import project_mutation_evidence
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
 def tool_capabilities(authority: Any, tool_name: str) -> frozenset[str] | None:
@@ -40,6 +44,24 @@ def tool_capabilities(authority: Any, tool_name: str) -> frozenset[str] | None:
     return frozenset(values)
 
 
+def _invocation_semantics(authority: Any, observation: Mapping[str, Any]) -> Any | None:
+    registry = getattr(authority, "tool_registry", None)
+    if registry is None and callable(getattr(authority, "descriptor", None)):
+        registry = authority
+    if registry is None:
+        return None
+    tool = str(observation.get("tool") or "")
+    try:
+        descriptor = registry.descriptor(tool)
+    except Exception:
+        return None
+    args = observation.get("args")
+    return resolve_invocation_semantics(
+        descriptor,
+        args if isinstance(args, Mapping) else {},
+    )
+
+
 def effect_observation_proves_terminal(
     authority: Any,
     status: ObligationStatus,
@@ -57,17 +79,15 @@ def effect_observation_proves_terminal(
     if not isinstance(result, Mapping):
         return False
     capabilities = tool_capabilities(authority, tool)
-    if capabilities is None:
+    semantics = _invocation_semantics(authority, observation)
+    if capabilities is None or semantics is None:
         return False
 
     if status is ObligationStatus.SATISFIED:
         return (
             result_executed(result) is True
-            and (
-                bool(capabilities & WRITE_CAPABILITIES)
-                or _is_memory_write_observation(tool, capabilities, observation)
-            )
-            and project_artifact_evidence(result).persisted_mutation
+            and bool(semantics.durable_effects)
+            and project_mutation_evidence(result).persisted_mutation
         )
 
     if status is ObligationStatus.WAIVED:
@@ -75,35 +95,17 @@ def effect_observation_proves_terminal(
             result_executed(result) is True
             and result_is_successful(result)
             and result_has_data(result)
-            and not bool(capabilities & (WRITE_CAPABILITIES | {_MEMORY_CAPABILITY}))
+            and semantics.read_only
         )
 
     if status is ObligationStatus.BLOCKED:
         return (
-            bool(capabilities & WRITE_CAPABILITIES)
+            semantics.may_mutate
             and result_is_failed(result)
-            and not project_artifact_evidence(result).persisted_mutation
+            and not project_mutation_evidence(result).persisted_mutation
         )
 
     return False
-
-
-def _is_memory_write_observation(
-    tool: str,
-    capabilities: frozenset[str],
-    observation: Mapping[str, Any],
-) -> bool:
-    if _MEMORY_CAPABILITY not in capabilities:
-        return False
-    result = observation.get("result")
-    if not isinstance(result, Mapping):
-        return False
-    args = observation.get("args")
-    if str(tool).casefold() == "session_memory" and isinstance(args, Mapping):
-        return str(args.get("action", "")).casefold() in {"set", "delete"}
-    if result.get("effect") == "memory_write":
-        return True
-    return any(metadata.get("effect") == "memory_write" for metadata in artifact_metadata(result))
 
 
 def observed_effect_kinds(authority: Any, observation: Mapping[str, Any]) -> tuple[str, ...]:
@@ -112,17 +114,80 @@ def observed_effect_kinds(authority: Any, observation: Mapping[str, Any]) -> tup
     result = observation.get("result")
     if not isinstance(result, Mapping):
         return ()
-    capabilities = tool_capabilities(authority, str(observation.get("tool") or ""))
-    if capabilities is None or result_executed(result) is not True:
+    semantics = _invocation_semantics(authority, observation)
+    if semantics is None or result_executed(result) is not True:
         return ()
-    if not project_artifact_evidence(result).persisted_mutation:
+    if not project_mutation_evidence(result).persisted_mutation:
         return ()
-    effects: list[str] = []
-    if capabilities & WRITE_CAPABILITIES:
-        effects.append("write")
-    if _is_memory_write_observation(str(observation.get("tool") or ""), capabilities, observation):
-        effects.append("memory_write")
-    return tuple(effects)
+    return tuple(semantics.durable_effects)
 
 
-__all__ = ["effect_observation_proves_terminal", "observed_effect_kinds", "tool_capabilities"]
+def observed_effect_accesses(
+    authority: Any,
+    observation: Mapping[str, Any],
+) -> tuple[tuple[str, ResourceAccess], ...]:
+    """Project durable effects and their observed mutation scope.
+
+    The operation resolver describes what a registered invocation can do;
+    artifact evidence supplies the physical footprint.  If a mutating result
+    proves persistence but omits its footprint, widen the observed scope to
+    the workspace instead of trusting the invocation's requested target.
+    """
+
+    result = observation.get("result")
+    if not isinstance(result, Mapping):
+        return ()
+    semantics = _invocation_semantics(authority, observation)
+    if semantics is None or result_executed(result) is not True:
+        return ()
+    evidence = project_mutation_evidence(result)
+    # An attempted write that failed before committing is not an observed
+    # durable effect.  A committed-then-rolled-back write remains an
+    # occurrence and is still relevant to prohibited-effect containment.
+    if not (evidence.occurred or evidence.survives):
+        return ()
+    effects = tuple(semantics.durable_effects)
+    if not effects:
+        return ()
+
+    raw_resources = tuple(
+        dict.fromkeys(
+            normalize_resource_id(path)
+            for path in (
+                *evidence.affected_resources,
+                *evidence.mutated_resources,
+                *evidence.surviving_resources,
+            )
+            if isinstance(path, str) and path.strip()
+        )
+    )
+    if raw_resources:
+        accesses = tuple(
+            ResourceAccess(path, ResourceMode.WRITE, ResourceProvenance.OBSERVED_MUTATION)
+            for path in raw_resources
+        )
+    elif "memory_write" in effects:
+        accesses = (
+            ResourceAccess(
+                "memory",
+                ResourceMode.WRITE,
+                ResourceProvenance.OBSERVED_MUTATION,
+            ),
+        )
+    else:
+        accesses = (
+            ResourceAccess(
+                WORKSPACE_RESOURCE,
+                ResourceMode.WRITE,
+                ResourceProvenance.OBSERVED_MUTATION,
+            ),
+        )
+    return tuple((effect, access) for effect in effects for access in accesses)
+
+
+__all__ = [
+    "effect_observation_proves_terminal",
+    "observed_effect_accesses",
+    "observed_effect_kinds",
+    "tool_capabilities",
+]

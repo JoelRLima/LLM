@@ -9,9 +9,9 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, cast
 
-from agent.reporting.artifact_projection import project_artifact_evidence
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
+from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.contracts import (
     CancellationSafetyMode,
     ToolError,
@@ -196,7 +196,7 @@ class InvocationQuiescenceMixin:
         data = projected.get("data")
         if isinstance(data, Mapping) and data.get("physical_effect_unknown") is True:
             return False
-        artifact = project_artifact_evidence(projected)
+        artifact = project_mutation_evidence(projected)
         if artifact.mutation_occurred or artifact.persisted_mutation or artifact.rollback_occurred:
             return True
         return isinstance(data, Mapping) and any(

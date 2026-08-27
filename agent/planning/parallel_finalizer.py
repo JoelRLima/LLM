@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from agent.contracts import ToolResult
 from agent.planning.parallel_contracts import ParallelInvocation, correlate_parallel_result
+from agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 
 def finalize_parallel_index(
@@ -24,13 +24,19 @@ def finalize_parallel_index(
     args = dict(correlations[index].request.arguments)
     file_path = str(args.get("target") or args.get("file_path") or "")
     result = cached.get(index) or results.get(
-        index, {"ok": False, "done": False, "data": None, "error": "Falha desconhecida"}
+        index,
+        ToolResult(
+            invocation_id=correlations[index].invocation_id,
+            status=ToolStatus.FAILED,
+            error=ToolError("MISSING_RESULT", "Falha desconhecida"),
+            executed=False,
+        ),
     )
     result = correlate_parallel_result(result, correlations[index])
     if not getattr(executor.orchestrator, "tool_invocation_gateway", None) or index in cached:
         executor.orchestrator._emit(
             "tool_end",
-            {"tool": tool, "ok": result.get("ok"), "invocation_id": result.get("invocation_id")},
+            {"tool": tool, "ok": result.ok, "invocation_id": result.invocation_id},
         )
     state.record_tool_result(
         tool, args, result, step_id=correlations[index].step_id, logical_slot=index

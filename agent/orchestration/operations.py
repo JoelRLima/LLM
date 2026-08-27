@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional, cast
 
-from agent.contracts import AgentEvent, EventData, ToolArgs, ToolResult
+from agent.contracts import AgentEvent, EventData, ToolArgs
 from agent.error_handler import ErrorHandler
-from agent.planning.capability_manifest import render_active_harness_capabilities
-from agent.planning.presentation import PlanningPresentationSnapshot
-from agent.reporting.operational_outcome import project_operational_outcome
+from agent.orchestration.operations_tools import build_tools_description
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.logging import logger
+from agent.runtime.operational_outcome import project_operational_outcome
+from agent.tools.contracts import ToolResult as CanonicalToolResult
 
 
 class OrchestratorOperations:
@@ -45,32 +44,7 @@ class OrchestratorOperations:
         *,
         planner_kind: str | None = None,
     ) -> str:
-        planning_view = cast(
-            PlanningPresentationSnapshot | None,
-            getattr(self, "get_planning_view", lambda _kind: None)(
-                planner_kind or ("linear" if not compact else "reactive")
-            ),
-        )
-        if planning_view is not None:
-            context_limit = int(
-                getattr(getattr(self.session, "hardware_profile", None), "context_limit", 8_192)
-            )
-            rendered = cast(str, planning_view.render(compact=compact, context_limit=context_limit))
-            if not compact:
-                return rendered
-            return rendered + "\n" + render_active_harness_capabilities(
-                self, planner_kind=planner_kind or "reactive"
-            )
-        descriptions = []
-        for skill in self.skills.values():
-            if self.active_skills and skill.name not in self.active_skills:
-                continue
-            if compact:
-                descriptions.append(f"- {skill.name}: {skill.description}")
-            else:
-                schema = json.dumps(skill.get_schema(), indent=2, ensure_ascii=False)
-                descriptions.append(f"- {skill.name}: {skill.description}\nArgs: {schema}")
-        return "\n".join(descriptions)
+        return build_tools_description(self, compact, planner_kind=planner_kind)
 
     def remember(
         self,
@@ -139,7 +113,24 @@ class OrchestratorOperations:
             )
             logger.warning("Checkpoint deferred while a mutating invocation is active.")
             return False
-        self.checkpoint_manager.save(self.agent_state)
+        try:
+            saved = self.checkpoint_manager.save(self.agent_state)
+        except Exception as exc:
+            logger.warning("Checkpoint persistence failed: %s", type(exc).__name__)
+            saved = False
+        # CheckpointManager returns a strict bool.  ``None`` is retained only
+        # for legacy injected save ports whose historical contract reported
+        # success by completing without an exception; every explicit false or
+        # other value remains a failed confirmation.
+        if saved is not True and saved is not None:
+            self.agent_state.events.append(
+                {
+                    "type": "checkpoint_persistence_failed",
+                    "step": self.agent_state.plan_step,
+                    "data": {"reason": "checkpoint write was not confirmed"},
+                }
+            )
+            return False
         return True
 
     def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
@@ -264,7 +255,7 @@ class OrchestratorOperations:
     def _summarize_text(self, text: str, context: str = "") -> str:
         return str(self.tool_executor.summarize_text(text, context))
 
-    def _maybe_summarize_and_store(self, tool_name: str, args: ToolArgs, result: ToolResult) -> None:
+    def _maybe_summarize_and_store(self, tool_name: str, args: ToolArgs, result: CanonicalToolResult) -> None:
         self.tool_executor.maybe_summarize_and_store(tool_name, args, result)
 
     def _test_and_correct(self, file_path: str, objective: str) -> bool:
@@ -277,10 +268,15 @@ class OrchestratorOperations:
     def _run_reactive(self, objective: str, usage: Dict[str, int], original_count: int) -> str:
         return str(self.reactive_loop.run_reactive(objective, usage, original_count))
 
-    def _run_tool(self, tool_name: str, args: ToolArgs) -> ToolResult:
-        return cast(ToolResult, self.tool_executor.run_tool(tool_name, args))
+    def _run_tool(self, tool_name: str, args: ToolArgs) -> CanonicalToolResult:
+        """Return the canonical result; legacy projection belongs at adapters."""
 
-    def _run_prepared_invocation(self, prepared: Any) -> ToolResult:
+        return cast(CanonicalToolResult, self.tool_executor.run_canonical_tool(tool_name, args))
+
+    def _run_prepared_invocation(self, prepared: Any) -> CanonicalToolResult:
         """Dispatch the owned concrete preparation boundary."""
 
-        return cast(ToolResult, self.tool_executor.run_prepared_invocation(prepared))
+        return cast(
+            CanonicalToolResult,
+            self.tool_executor.run_prepared_invocation_canonical(prepared),
+        )

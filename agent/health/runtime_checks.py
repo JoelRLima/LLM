@@ -4,6 +4,7 @@ import importlib
 import os
 import tempfile
 import traceback
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -94,7 +95,7 @@ def check_skills() -> CheckResult:
             result = echo.execute({"message": "health_check_ping"})
 
             details["echo_test_result"] = result
-            if not isinstance(result, dict) or result.get("ok") is not True:
+            if not isinstance(result, Mapping) or result.get("ok") is not True:
                 status = STATUS_WARNING if status == STATUS_OK else status
         except Exception as exc:
             messages.append(f"Falha ao testar echo: {exc}")

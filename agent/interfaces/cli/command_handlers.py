@@ -10,6 +10,7 @@ from agent.interfaces.cli.workspace_entry import render_active_workspace
 from agent.runtime import paths
 from agent.runtime.logging import set_debug_level
 from agent.tools.authority import OperationalMode
+from agent.tools.invocation_semantics import CODE_TASK_ACTIONS
 from agent.tools.mode_enforcement import requests_test_execution
 
 Handler = Callable[[str, Any], None]
@@ -134,7 +135,7 @@ def code_command(text: str, ctx: Any) -> None:
     except CodeCommandError as exc:
         console.print(f"[bold red]{exc}[/bold red]")
         return
-    if parsed.action in {"generate", "modify", "repair", "refactor", "multitask", "template"}:
+    if parsed.action in CODE_TASK_ACTIONS - {"analyze", "review"}:
         mode_allows = getattr(ctx.orchestrator, "mode_allows", None)
         if not callable(mode_allows) or not mode_allows({"write", "validate"}):
             console.print("[bold red]Ação negada pelo modo operacional ativo.[/bold red]")

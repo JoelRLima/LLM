@@ -1,243 +1,27 @@
-"""Deterministic projection of final operational truth for one linear task."""
+"""Compatibility imports for the runtime-owned terminal outcome projector.
 
-from __future__ import annotations
+The reporting package may render this value, but it does not define execution
+status or mutation truth.
+"""
 
-from dataclasses import dataclass
-from typing import Any
-
-from agent.planning.failure_policy import (
-    FailureClass,
-    classify_failure,
-    local_failure_permitted,
-)
-from agent.reporting.observation_evidence import (
+from agent.runtime.operational_outcome import (
+    OperationalOutcome,
     artifact_metadata,
-    metadata_is_persisted_mutation,
-)
-from agent.reporting.operational_outcome_evidence import (
-    collect_operational_evidence,
     has_canonical_commit_incident,
+    local_failure_permitted,
+    metadata_is_persisted_mutation,
+    normalize_terminal_status,
+    project_operational_outcome,
 )
-
-PUBLIC_TERMINAL_STATUSES = frozenset(
-    {
-        "succeeded",
-        "blocked",
-        "cancelled",
-        "failed",
-        "timed_out",
-        "permission_denied",
-        "protocol_error",
-        "unavailable",
-        "unverified",
-    }
-)
-_DISPOSITION_TO_STATUS = {
-    "complete": "succeeded",
-    "block": "blocked",
-    "fail": "failed",
-}
-_DISPOSITION_TO_STATUS.update({
-    status: status
-    for status in PUBLIC_TERMINAL_STATUSES
-    if status != "succeeded"
-})
-_STATUS_TO_DISPOSITION = {
-    "succeeded": "complete",
-    "blocked": "block",
-    "failed": "fail",
-}
-
-
-def _status_is_local_failure(status: Any) -> bool:
-    return classify_failure({"status": status}) is FailureClass.LOCAL
-
-
-def normalize_terminal_status(
-    *,
-    last_result_status: Any = None,
-    terminal_disposition: Any = None,
-    task_failed: bool = False,
-    cancelled: bool = False,
-    explicit_status: Any = None,
-    local_failure_permitted: bool = False,
-) -> str:
-    """Reduce established run facts to one public terminal status.
-
-    Success is intentionally asymmetric: only the canonical ``complete``
-    disposition can establish it. Explicit or tool-reported success remains
-    evidence until completion has been established.
-    """
-
-    disposition = _DISPOSITION_TO_STATUS.get(str(terminal_disposition or ""))
-    if cancelled:
-        return "cancelled"
-
-    explicit = str(explicit_status or "")
-    observed = str(last_result_status or "")
-    non_success = PUBLIC_TERMINAL_STATUSES - {"succeeded"}
-
-    # Preserve established non-success boundaries, but never manufacture
-    # success merely because a caller supplied explicit_status="succeeded".
-    if explicit in non_success and not (
-        local_failure_permitted and _status_is_local_failure(explicit)
-    ):
-        return explicit
-    if observed in non_success and not (
-        local_failure_permitted and _status_is_local_failure(observed)
-    ):
-        return observed
-    if disposition in non_success:
-        return disposition
-    if task_failed and not local_failure_permitted:
-        return "failed"
-    if disposition == "succeeded":
-        return "succeeded"
-    return "unverified"
-
-
-@dataclass(frozen=True, slots=True)
-class OperationalOutcome:
-    terminal_status: str
-    requested_effects: tuple[str, ...]
-    executed_effects: tuple[str, ...]
-    waived_effects: tuple[str, ...]
-    pending_effects: tuple[str, ...]
-    mutation_occurred: bool
-    validation_status: str | None
-    rollback_occurred: bool
-    blocked_reason: str | None
-    failure_reason: str | None
-    files_affected: tuple[str, ...]
-    evidence_invocation_ids: tuple[str, ...]
-    failed_invocation_ids: tuple[str, ...] = ()
-    failed_invocation_statuses: tuple[str, ...] = ()
-    unexpected_effects: tuple[str, ...] = ()
-    recovered_invocation_ids: tuple[str, ...] = ()
-    recovered_local_failure: bool = False
-    unrecovered_failure: bool = False
-    fallback_resolved: bool = False
-    physical_effect_unknown: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "terminal_status": self.terminal_status,
-            "requested_effects": list(self.requested_effects),
-            "executed_effects": list(self.executed_effects),
-            "waived_effects": list(self.waived_effects),
-            "pending_effects": list(self.pending_effects),
-            "mutation_occurred": self.mutation_occurred,
-            "validation_status": self.validation_status,
-            "rollback_occurred": self.rollback_occurred,
-            "blocked_reason": self.blocked_reason,
-            "failure_reason": self.failure_reason,
-            "files_affected": list(self.files_affected),
-            "evidence_invocation_ids": list(self.evidence_invocation_ids),
-            "failed_invocation_ids": list(self.failed_invocation_ids),
-            "failed_invocation_statuses": list(self.failed_invocation_statuses),
-            "unexpected_effects": list(self.unexpected_effects),
-            "recovered_invocation_ids": list(self.recovered_invocation_ids),
-            "recovered_local_failure": self.recovered_local_failure,
-            "unrecovered_failure": self.unrecovered_failure,
-            "fallback_resolved": self.fallback_resolved,
-            "physical_effect_unknown": self.physical_effect_unknown,
-        }
-
-    def debug_projection(self) -> dict[str, Any]:
-        return {
-            # Keep the established task_outcome event vocabulary while using
-            # the normalized status as its sole source.
-            "status": _STATUS_TO_DISPOSITION.get(self.terminal_status, self.terminal_status),
-            "requested_effects": list(self.requested_effects),
-            "executed_effects": list(self.executed_effects),
-            "waived_effects": list(self.waived_effects),
-            "pending_effects": list(self.pending_effects),
-            "mutation_occurred": self.mutation_occurred,
-            "validation_status": self.validation_status,
-            "rollback_occurred": self.rollback_occurred,
-            "failed_invocation_ids": list(self.failed_invocation_ids),
-            "failed_invocation_statuses": list(self.failed_invocation_statuses),
-            "unexpected_effects": list(self.unexpected_effects),
-            "recovered_invocation_ids": list(self.recovered_invocation_ids),
-            "recovered_local_failure": self.recovered_local_failure,
-            "unrecovered_failure": self.unrecovered_failure,
-            "fallback_resolved": self.fallback_resolved,
-            "physical_effect_unknown": self.physical_effect_unknown,
-        }
-
-
-def project_operational_outcome(
-    state: Any,
-    *,
-    terminal_status: str | None = None,
-    task_failed: bool = False,
-    cancelled: bool = False,
-) -> OperationalOutcome:
-    facts = collect_operational_evidence(state)
-
-    last = getattr(state, "last_result", None)
-    last_result = last if isinstance(last, dict) else {}
-    normalized_status = normalize_terminal_status(
-        explicit_status=terminal_status,
-        last_result_status=last_result.get("status"),
-        terminal_disposition=getattr(state, "terminal_disposition", None),
-        task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
-        cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
-        local_failure_permitted=local_failure_permitted(state),
-    )
-    if facts.incident_present and normalized_status == "succeeded":
-        normalized_status = "unverified"
-    reason = last_result.get("error")
-    reason_text = str(reason) if reason else None
-    blocked_reason = reason_text if normalized_status == "blocked" else None
-    failure_reason = reason_text if normalized_status == "failed" else None
-    pending_value = getattr(state, "pending_effects", ())
-    if callable(pending_value):
-        pending_value = pending_value()
-    recovered_local_failure = bool(facts.recovered_invocations)
-    failure_permitted = local_failure_permitted(state)
-    unrecovered_failure = bool(facts.unrecovered_hard_invocations) or (
-        bool(facts.unrecovered_invocations)
-        and not (normalized_status == "succeeded" and failure_permitted)
-    ) or (
-        normalized_status != "succeeded" and bool(facts.failed_invocations)
-    ) or facts.incident_present
-    fallback_resolved = normalized_status == "succeeded" and (
-        recovered_local_failure
-        or bool(getattr(state, "waived_effects", ()) or ())
-        or failure_permitted
-    )
-    return OperationalOutcome(
-        terminal_status=normalized_status,
-        requested_effects=tuple(getattr(state, "requested_effects", ()) or ()),
-        executed_effects=tuple(getattr(state, "executed_effects", ()) or ()),
-        waived_effects=tuple(getattr(state, "waived_effects", ()) or ()),
-        pending_effects=tuple(pending_value or ()),
-        mutation_occurred=facts.mutation_occurred,
-        validation_status=facts.validation_status,
-        rollback_occurred=facts.rollback_occurred,
-        blocked_reason=blocked_reason,
-        failure_reason=failure_reason,
-        files_affected=tuple(sorted(facts.files)),
-        evidence_invocation_ids=tuple(dict.fromkeys(facts.invocation_ids)),
-        failed_invocation_ids=tuple(dict.fromkeys(facts.failed_invocations)),
-        failed_invocation_statuses=tuple(facts.failed_statuses),
-        unexpected_effects=tuple(
-            getattr(state, "unrequested_effects", lambda: ())() or ()
-        ),
-        recovered_invocation_ids=tuple(dict.fromkeys(facts.recovered_invocations)),
-        recovered_local_failure=recovered_local_failure,
-        unrecovered_failure=unrecovered_failure,
-        fallback_resolved=fallback_resolved,
-        physical_effect_unknown=facts.physical_effect_unknown,
-    )
-
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES, PUBLIC_TERMINAL_STATUSES
 
 __all__ = [
+    "NON_SUCCESS_STATUSES",
+    "PUBLIC_TERMINAL_STATUSES",
     "OperationalOutcome",
     "artifact_metadata",
-    "local_failure_permitted",
     "has_canonical_commit_incident",
+    "local_failure_permitted",
     "metadata_is_persisted_mutation",
     "normalize_terminal_status",
     "project_operational_outcome",

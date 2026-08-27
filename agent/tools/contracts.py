@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from collections.abc import Mapping as ABCMapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Mapping, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 
+from agent.runtime.outcome_taxonomy import OperationalStatus
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.json_snapshot import (
     FrozenJsonObject as FrozenJsonObject,
@@ -22,16 +25,11 @@ from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnap
 RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
 
 
-class ToolStatus(str, Enum):
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    BLOCKED = "blocked"
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-    PERMISSION_DENIED = "permission_denied"
-    PROTOCOL_ERROR = "protocol_error"
-    UNAVAILABLE = "unavailable"
-    UNVERIFIED = "unverified"
+# Compatibility name retained for adapters and callers that speak in terms of
+# a tool result.  OperationalStatus is the single enum owner for terminal
+# outcomes; keeping this as an alias preserves identity checks without
+# maintaining a second status universe.
+ToolStatus = OperationalStatus
 
 
 class ToolOriginKind(str, Enum):
@@ -51,13 +49,13 @@ class CancellationSafetyMode(str, Enum):
 
 def _normalized_capabilities(value: Any) -> frozenset[str]:
     if isinstance(value, str):
-        raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings")
+        raise TypeError("capabilities deve ser uma coleção de strings")
     try:
         capabilities = frozenset(value)
     except TypeError as exc:
-        raise TypeError("capabilities deve ser uma coleÃ§Ã£o de strings") from exc
+        raise TypeError("capabilities deve ser uma coleção de strings") from exc
     if any(type(item) is not str or not item.strip() for item in capabilities):
-        raise ValueError("capabilities contÃ©m valor invÃ¡lido")
+        raise ValueError("capabilities contém valor inválido")
     return capabilities
 
 
@@ -82,7 +80,7 @@ def _validate_descriptor_origin(descriptor: Any, public_fields: frozenset[str]) 
             raise ValueError("Tool de extension requer extension_id")
         validate_extension_id(descriptor.extension_id)
     elif descriptor.extension_id is not None:
-        raise ValueError("Tool builtin nÃ£o pode conter extension_id")
+        raise ValueError("Tool builtin não pode conter extension_id")
 
 
 @dataclass(frozen=True)
@@ -114,6 +112,9 @@ class ToolDescriptor:
         default=CancellationSafetyMode.UNSUPPORTED,
         kw_only=True,
     )
+    # Cross-field invariants remain owned by the builtin operation contract.
+    # This callable is internal metadata, never model-visible JSON.
+    argument_validator: Callable[..., None] | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         try:
@@ -125,6 +126,8 @@ class ToolDescriptor:
         public_fields = normalize_public_invocation_fields(self.public_invocation_fields)
         object.__setattr__(self, "public_invocation_fields", public_fields)
         object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
+        if self.argument_validator is not None and not callable(self.argument_validator):
+            raise TypeError("argument_validator must be callable")
         from agent.skills.descriptor import freeze_result_data_schema
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
         _normalize_descriptor_enums(self)
@@ -173,9 +176,9 @@ class ToolInvocationRequest:
         if self.tool_name is not None and type(self.tool_name) is not str:
             raise TypeError("tool_name deve usar str exata")
         if not isinstance(self.invocation_id, str) or not self.invocation_id.strip():
-            raise ValueError("invocation_id deve ser uma string nÃ£o vazia")
+            raise ValueError("invocation_id deve ser uma string não vazia")
         if not isinstance(self.tool_name, str) or not self.tool_name.strip():
-            raise ValueError("tool_name deve ser uma string nÃ£o vazia")
+            raise ValueError("tool_name deve ser uma string não vazia")
         if not isinstance(self.arguments, Mapping):
             raise TypeError("arguments deve ser um mapping")
         object.__setattr__(self, "arguments", freeze_json_like(dict(self.arguments)))
@@ -216,7 +219,7 @@ class ToolError:
 
 
 @dataclass(frozen=True)
-class ToolResult:
+class ToolResult(ABCMapping[str, Any]):
     """Standardized output produced by any tool adapter."""
     invocation_id: str
     status: ToolStatus
@@ -226,12 +229,20 @@ class ToolResult:
     artifacts: Tuple[Any, ...] = ()
     executed: bool | None = None
     evidence_provenance: str | None = None
+    # Additional structured fields are retained only when a legacy producer
+    # supplied them (for example completeness/source metadata).  They are
+    # not an authority channel: execution status and mutation evidence remain
+    # owned by the typed fields/artifacts above.
+    metadata: Mapping[str, Any] = field(default_factory=dict, kw_only=True)
+    done_override: bool | None = field(default=None, kw_only=True, repr=False)
     @property
     def ok(self) -> bool:
         return self.status == ToolStatus.SUCCEEDED
     @property
     def done(self) -> bool:
         """Whether execution reached a terminal state."""
+        if type(self.done_override) is bool:
+            return self.done_override
         return self.status in frozenset(ToolStatus)
     def to_legacy_dict(self, *, include_details: bool = False) -> Dict[str, Any]:
         err_msg = self.error.message if self.error else None
@@ -248,7 +259,27 @@ class ToolResult:
                            "artifacts": list(self.artifacts),
                            "executed": self.executed,
                            "evidence_provenance": self.evidence_provenance})
+            if isinstance(self.metadata, Mapping):
+                for key, value in self.metadata.items():
+                    if key not in result:
+                        result[key] = value
         return result
+
+    # ``ToolResult`` is the canonical runtime value.  These read-only mapping
+    # methods are a deliberately narrow compatibility affordance for older
+    # reporting/test callers; they do not change the typed status/error owner
+    # and do not route execution back through the legacy adapters.
+    def _compat_mapping(self) -> Dict[str, Any]:
+        return self.to_legacy_dict(include_details=True)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._compat_mapping()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._compat_mapping())
+
+    def __len__(self) -> int:
+        return len(self._compat_mapping())
 class ToolAdapter(Protocol):
     """Protocol implemented by any tool source (builtin, stdio extension, etc.)."""
 

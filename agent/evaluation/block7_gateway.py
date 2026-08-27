@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
 from agent.evaluation.block7_gateway_logic import scripted_plan_response, scripted_response
 from agent.evaluation.trace import RecordingGateway
@@ -20,8 +21,12 @@ class ScriptedBlock7Gateway:
     provider_model_id = "block7-scripted"
     capabilities = ProviderCapabilities(streaming=False)
 
-    def __init__(self, objective: str) -> None:
+    def __init__(self, objective: str, *, fixture_marker: str | None = None) -> None:
         self.objective = objective
+        self.fixture_marker = str(fixture_marker or "").strip()
+        self.dispatch_objective = (
+            f"{self.fixture_marker}: {objective}" if self.fixture_marker else objective
+        )
         self.calls: list[ModelRequest] = []
 
     def complete(self, request: ModelRequest) -> ModelResponse:
@@ -44,11 +49,29 @@ class ScriptedBlock7Gateway:
         return scripted_response(self, system, prompt)
 
     def _plan_response(self, prompt: str) -> str:
-        return scripted_plan_response(self.objective, prompt)
+        return scripted_plan_response(self.dispatch_objective, prompt)
 
 
-def _scripted_factory(objective: str, _workspace: Path) -> RecordingGateway:
-    return RecordingGateway(ScriptedBlock7Gateway(objective))
+def _scripted_factory(
+    objective: str,
+    _workspace: Path,
+    *,
+    fixture_marker: str | None = None,
+) -> RecordingGateway:
+    return RecordingGateway(
+        ScriptedBlock7Gateway(objective, fixture_marker=fixture_marker)
+    )
 
 
-__all__ = ["ScriptedBlock7Gateway"]
+_scripted_factory._accepts_fixture_marker = True  # type: ignore[attr-defined]
+
+
+def bind_fixture_marker(
+    factory: Callable[..., Any], marker: str
+) -> Callable[..., Any]:
+    if getattr(factory, "_accepts_fixture_marker", False) is not True:
+        return factory
+    return partial(factory, fixture_marker=marker)
+
+
+__all__ = ["ScriptedBlock7Gateway", "bind_fixture_marker"]

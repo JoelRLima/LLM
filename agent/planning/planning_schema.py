@@ -1,9 +1,11 @@
-"""Pure JSON-schema checks shared by planning-context callers."""
+"""Planning-facing adapters over the shared argument-schema engine."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+
+from agent.runtime.schema_validation import normalize_argument_schema, validate_schema_arguments
 
 
 def validate_argument_shape(
@@ -12,35 +14,32 @@ def validate_argument_shape(
     args: Mapping[str, Any],
     bound_fields: set[str] | None = None,
 ) -> None:
-    bound_fields = bound_fields or set()
-    unknown_bound = sorted(str(key) for key in bound_fields if key not in properties)
-    if unknown_bound:
-        raise ValueError(f"unknown bound argument(s): {', '.join(unknown_bound)}")
-    if schema.get("additionalProperties") is False:
-        unknown = sorted(str(key) for key in args if key not in properties)
-        if unknown:
-            raise ValueError(f"unknown argument(s): {', '.join(unknown)}")
-    required = schema.get("required") or []
-    required_values = required if isinstance(required, list) else [required]
-    for key in required_values:
-        if key in bound_fields:
-            continue
-        if key not in args:
-            raise ValueError(f"missing required argument: {key}")
+    # Older builtin skill descriptors expose a direct field-to-schema mapping
+    # instead of JSON Schema's nested ``properties`` object.  Normalize that
+    # representation at this planning adapter boundary so the shared engine
+    # sees exactly the same shape as runtime invocation validation.
+    effective_schema = schema
+    if not isinstance(schema.get("properties"), Mapping) and properties:
+        effective_schema = {
+            **schema,
+            "type": "object",
+            "properties": dict(properties),
+        }
+    effective_schema = normalize_argument_schema(effective_schema)
+    validate_schema_arguments(
+        effective_schema,
+        args,
+        bound_fields=bound_fields,
+        planning=True,
+    )
 
 
 def validate_property_value(key: str, value: Any, schema: Mapping[str, Any]) -> None:
-    expected_type = schema.get("type")
-    valid_types = {
-        "string": isinstance(value, str),
-        "integer": isinstance(value, int) and not isinstance(value, bool),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-        "boolean": isinstance(value, bool),
-        "object": isinstance(value, dict),
-        "array": isinstance(value, list),
-    }
-    if expected_type in valid_types and not valid_types[expected_type]:
-        raise ValueError(f"argument '{key}' must be a {expected_type}")
-    allowed_values = schema.get("enum")
-    if isinstance(allowed_values, (list, tuple)) and value not in allowed_values:
-        raise ValueError(f"argument '{key}' has an unsupported value")
+    validate_schema_arguments(
+        normalize_argument_schema({"type": "object", "properties": {key: schema}, "additionalProperties": False}),
+        {key: value},
+        planning=True,
+    )
+
+
+__all__ = ["validate_argument_shape", "validate_property_value"]

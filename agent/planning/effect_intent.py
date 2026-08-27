@@ -5,43 +5,26 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from agent.planning.task_semantics_inference import infer_effect_semantics
-
-_WRITE_CAPABILITIES = frozenset({"write", "vcs_write"})
-_CODE_WRITE_ACTIONS = frozenset({"generate", "modify", "repair", "refactor"})
-
-
-def _contract_capabilities(contract: Any) -> frozenset[str]:
-    raw = getattr(contract, "required_capabilities", None)
-    if raw is None:
-        raw = getattr(contract, "capabilities", ())
-    return frozenset(str(item).casefold() for item in (raw or ()))
+from agent.planning.task_semantics_authority import admit_effect_authority
+from agent.planning.task_semantics_inference import predicate_resolutions_from_observations
+from agent.planning.task_semantics_types import PredicateEvidence, PredicateResolutionState
+from agent.resources.contracts import WORKSPACE_RESOURCE, ResourceAccess, ResourceMode, resources_overlap
+from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
-def _code_task_writes(args: Mapping[str, Any]) -> bool:
-    action = str(args.get("action", "")).casefold()
-    if action in _CODE_WRITE_ACTIONS:
-        return True
-    if action == "template":
-        return str(args.get("template", "")).casefold() == "analyze_then_modify"
-    if action != "multitask":
-        return False
-    graph = args.get("graph")
-    nodes = graph.get("nodes") if isinstance(graph, Mapping) else None
-    if not isinstance(nodes, list):
-        return True
-    for node in nodes:
-        if not isinstance(node, Mapping):
-            continue
-        metadata = node.get("metadata")
-        metadata = metadata if isinstance(metadata, Mapping) else {}
-        node_action = str(metadata.get("action", "")).casefold()
-        capabilities = frozenset(
-            str(item).casefold() for item in (node.get("capabilities") or ())
-        )
-        if node_action in _CODE_WRITE_ACTIONS or capabilities & _WRITE_CAPABILITIES:
-            return True
-    return False
+def _semantic_descriptor(tool_name: str, contract: Any) -> Any:
+    """Build a disconnected descriptor view from trusted contract metadata."""
+
+    class _Descriptor:
+        name = tool_name
+        capabilities = getattr(contract, "required_capabilities", None)
+        if capabilities is None:
+            capabilities = getattr(contract, "capabilities", ())
+        cacheable = bool(getattr(contract, "cacheable", False))
+        idempotent = bool(getattr(contract, "idempotent", False))
+        cancellation_safety = getattr(contract, "cancellation_safety", "unsupported")
+
+    return _Descriptor()
 
 
 def operation_durable_effect(
@@ -51,23 +34,100 @@ def operation_durable_effect(
 ) -> str | None:
     """Return the stable effect kind for one concrete model-plan step."""
 
-    normalized_tool = str(tool_name).strip().casefold()
     concrete_args = args if isinstance(args, Mapping) else {}
-    if normalized_tool == "session_memory":
-        return (
-            "memory_write"
-            if str(concrete_args.get("action", "")).casefold() in {"set", "delete"}
-            else None
-        )
-    # The model-actionable shell surface is intentionally restricted to
-    # read-only validation/history/tree commands.  Its broad descriptor
-    # capability set is an authorization ceiling, not proof of a durable
-    # effect for a concrete command.
-    if normalized_tool == "shell":
-        return None
-    if normalized_tool == "code_task":
-        return "write" if _code_task_writes(concrete_args) else None
-    return "write" if _contract_capabilities(contract) & _WRITE_CAPABILITIES else None
+    normalized_tool = str(tool_name).strip().casefold()
+    descriptor = (
+        contract
+        if str(getattr(contract, "name", "")).strip().casefold() == normalized_tool
+        else _semantic_descriptor(normalized_tool, contract)
+    )
+    semantics = resolve_invocation_semantics(descriptor, concrete_args)
+    return semantics.durable_effects[0] if semantics.durable_effects else None
+
+
+def _operation_accesses(
+    tool_name: str,
+    args: Mapping[str, Any] | None,
+    contract: Any = None,
+) -> tuple[ResourceAccess, ...]:
+    concrete_args = args if isinstance(args, Mapping) else {}
+    normalized_tool = str(tool_name).strip().casefold()
+    descriptor = (
+        contract
+        if str(getattr(contract, "name", "")).strip().casefold() == normalized_tool
+        else _semantic_descriptor(normalized_tool, contract)
+    )
+    return resolve_invocation_semantics(descriptor, concrete_args).resource_access
+
+
+def _predicate_is_active(
+    intent: Any,
+    predicate_resolutions: Mapping[str, Any] | None = None,
+) -> bool:
+    predicate_id = getattr(intent, "predicate_id", None)
+    condition = getattr(intent, "condition", None)
+    if predicate_id is None:
+        # A condition string without a canonical identity is decorative text,
+        # never permission.
+        return condition is None
+    state = getattr(intent, "predicate_state", PredicateResolutionState.UNRESOLVED)
+    if predicate_resolutions is not None:
+        raw = predicate_resolutions.get(predicate_id)
+        if isinstance(raw, PredicateEvidence):
+            state = (
+                raw.state
+                if raw.predicate_id == predicate_id
+                else PredicateResolutionState.UNRESOLVED
+            )
+        elif isinstance(raw, Mapping):
+            try:
+                evidence = PredicateEvidence(
+                    predicate_id,
+                    raw["state"],
+                    raw["evidence_ref"],
+                    raw["provenance"],
+                )
+                state = evidence.state
+            except (KeyError, TypeError, ValueError):
+                state = PredicateResolutionState.UNRESOLVED
+    if not isinstance(state, PredicateResolutionState):
+        try:
+            state = PredicateResolutionState(str(state).strip().upper())
+        except ValueError:
+            state = PredicateResolutionState.UNRESOLVED
+    if state is PredicateResolutionState.UNRESOLVED:
+        return False
+    expected = getattr(intent, "predicate_expected", None)
+    if type(expected) is not bool:
+        return False
+    return (state is PredicateResolutionState.TRUE) is expected
+
+
+def _intent_matches(
+    intent: Any,
+    effect: str,
+    access: ResourceAccess,
+    predicate_resolutions: Mapping[str, Any] | None = None,
+) -> bool:
+    if intent.effect != effect:
+        return False
+    if not _predicate_is_active(intent, predicate_resolutions):
+        return False
+    return intent.target == WORKSPACE_RESOURCE or resources_overlap(
+        intent.target, access.name
+    )
+
+
+def effect_intent_matches(
+    intent: Any,
+    effect: str,
+    access: ResourceAccess,
+    *,
+    predicate_resolutions: Mapping[str, Any] | None = None,
+) -> bool:
+    """Public target matcher shared by plan and observed-effect checks."""
+
+    return _intent_matches(intent, effect, access, predicate_resolutions)
 
 
 def effect_intent_error(
@@ -75,23 +135,85 @@ def effect_intent_error(
     tool_name: str,
     args: Mapping[str, Any] | None,
     contract: Any = None,
+    *,
+    predicate_resolutions: Mapping[str, Any] | None = None,
+    available_observations: Any = None,
 ) -> str | None:
     """Reject model-proposed durable effects absent from trusted task intent."""
 
+    concrete_args = args if isinstance(args, Mapping) else {}
+    normalized_tool = str(tool_name).strip().casefold()
     effect = operation_durable_effect(tool_name, args, contract)
     if effect is None:
         return None
-    semantics = infer_effect_semantics(objective)
-    # A write appearing in both sets is the canonical representation of a
-    # conditional branch (write in one branch, no-write in another).  The
-    # concrete plan/effect footprint remains authoritative for what happened;
-    # reject only an effect that is exclusively prohibited or unrequested.
-    if effect in semantics.prohibited and effect not in semantics.requested:
+    authority = admit_effect_authority(objective)
+    if predicate_resolutions is None and available_observations is not None:
+        predicate_resolutions = predicate_resolutions_from_observations(
+            objective,
+            available_observations,
+        )
+    accesses = _operation_accesses(tool_name, args, contract)
+    if not accesses:
+        accesses = (ResourceAccess(WORKSPACE_RESOURCE, ResourceMode.WRITE),)
+    requested_intents = authority.authorized_effects
+    prohibited_intents = authority.constraint_intents
+    requested_matches = tuple(
+        intent
+        for intent in requested_intents
+        if any(
+            _intent_matches(intent, effect, access, predicate_resolutions)
+            for access in accesses
+        )
+    )
+    prohibited_matches = tuple(
+        intent
+        for intent in prohibited_intents
+        if any(
+            _intent_matches(intent, effect, access, predicate_resolutions)
+            for access in accesses
+        )
+    )
+    conditional_intents = tuple(
+        item.candidate
+        for item in authority.decisions
+        if getattr(item.candidate, "conditional", False)
+        or getattr(item.candidate, "condition", None) is not None
+    )
+    proposal_only_code_task = (
+        normalized_tool == "code_task"
+        and effect == "write"
+        and str(concrete_args.get("action", "")).strip().casefold()
+        not in {"analyze", "review"}
+        and authority.proposal_only
+    )
+    if proposal_only_code_task:
+        # code_task first materializes a non-durable ChangeSet preview. The
+        # code-task boundary separately forces approval to remain required so
+        # this exception can never turn an explicit no-apply request into a
+        # physical mutation.
+        return None
+    # A prohibition wins for the same concrete target unless the objective
+    # represented distinct conditional branches.  This prevents a broad
+    # requested write from laundering a target-specific prohibition.
+    conditional_pair = bool(
+        requested_matches
+        and prohibited_matches
+        and all(
+            getattr(item, "condition", None)
+            for item in (*requested_matches, *prohibited_matches)
+        )
+    )
+    if prohibited_matches and not conditional_pair:
         return (
             f"PROHIBITED_EFFECT: a ferramenta '{tool_name}' propoe o efeito duravel "
             f"'{effect}' proibido pelo objetivo."
         )
-    if effect not in semantics.requested:
+    if not requested_matches:
+        if conditional_intents:
+            return (
+                f"UNRESOLVED_CONDITIONAL_EFFECT: a ferramenta '{tool_name}' propoe o efeito duravel "
+                "sem predicate resolvido por evidencia confiavel."
+            )
         return (
             f"UNREQUESTED_EFFECT: a ferramenta '{tool_name}' propoe o efeito duravel "
             f"'{effect}' nao solicitado pelo objetivo."
@@ -99,4 +221,4 @@ def effect_intent_error(
     return None
 
 
-__all__ = ["effect_intent_error", "operation_durable_effect"]
+__all__ = ["effect_intent_error", "effect_intent_matches", "operation_durable_effect"]

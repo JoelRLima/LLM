@@ -12,8 +12,8 @@ from agent.execution_incidents import (
     EFFECT_PROVEN,
     EFFECT_UNKNOWN,
 )
-from agent.reporting.artifact_projection import project_artifact_evidence
 from agent.runtime.logging import logger
+from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.contracts import ToolError, ToolInvocation, ToolResult, ToolStatus
 from agent.tools.invocation_lifecycle import InvocationAttempt
 
@@ -110,7 +110,7 @@ class InvocationCommitMixin:
 
     @staticmethod
     def _incident_effect_state(result: ToolResult, projected: Mapping[str, Any]) -> str:
-        artifact = project_artifact_evidence(projected)
+        artifact = project_mutation_evidence(projected)
         if artifact.persisted_mutation or artifact.mutation_occurred or artifact.rollback_occurred:
             return EFFECT_PROVEN
         if result.executed is False:
@@ -133,7 +133,7 @@ class InvocationCommitMixin:
             )
             return
         projected = result.to_legacy_dict(include_details=True)
-        artifact = project_artifact_evidence(projected)
+        artifact = project_mutation_evidence(projected)
         rollback = _rollback_projection(projected, artifact.rollback_occurred)
         incident = {
             "incident_type": CANONICAL_COMMIT_FAILED,

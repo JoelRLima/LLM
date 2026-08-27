@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from agent.evaluation.block7_execution_attribution import evidence_mapping
+from agent.llm.identity import GENERIC_MODEL_ALIASES
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
 
-_FAILURE_STATUSES = frozenset(
-    {"failed", "blocked", "cancelled", "timed_out", "permission_denied", "protocol_error", "unavailable", "unverified"}
-)
-_GENERIC_MODEL_ALIASES = frozenset({"default"})
+_FAILURE_STATUSES = NON_SUCCESS_STATUSES
 
 
 def _normalized_observed_identity(observed: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
@@ -48,7 +47,7 @@ def _specific_expected_model_id(expected: Mapping[str, Any]) -> str | None:
         if value in (None, ""):
             continue
         normalized = str(value)
-        if normalized.casefold() not in _GENERIC_MODEL_ALIASES:
+        if normalized.casefold() not in GENERIC_MODEL_ALIASES:
             return normalized
     return None
 

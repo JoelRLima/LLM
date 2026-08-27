@@ -65,6 +65,7 @@ class CostGuard:
             "max_steps": max_steps,
             "estimated_tokens": snapshot.estimated_tokens,
             "accounted_tokens": snapshot.accounted_tokens,
+            "reserved_tokens": snapshot.reserved_tokens,
             "max_tokens": max_tokens,
             "reported_tokens": snapshot.reported_total_tokens,
             "tool_calls": snapshot.tool_calls,
