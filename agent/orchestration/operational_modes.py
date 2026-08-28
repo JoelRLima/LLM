@@ -76,7 +76,11 @@ def set_operational_mode(orchestrator: Any, mode: OperationalMode) -> None:
     persona_prompt = getattr(orchestrator, "current_persona_prompt", None)
     if persona_prompt is not None:
         orchestrator._cached_base_prompt = orchestrator.context_manager.build_base_system_prompt(
-            persona_prompt, orchestrator._build_tools_description(compact=False)
+            persona_prompt,
+            orchestrator._build_tools_description(
+                compact=True,
+                planner_kind="linear",
+            )
         )
     gateway = orchestrator.tool_invocation_gateway
     if gateway is not None:

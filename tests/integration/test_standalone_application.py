@@ -10,7 +10,8 @@ import pytest
 
 from agent.application import AgentApplication
 from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
-from agent.llm.contracts import ModelRequest
+from agent.llm.contracts import ModelRequest, ModelResponse
+from agent.llm.decision_contract import ModelRequestContract
 from agent.memory.memory import MemoryLoadError
 from agent.orchestration.task_runner import TaskRunner
 from agent.planning.step_policies import StepPolicies
@@ -56,6 +57,17 @@ class _QueuedLegacyGateway(OfflineLegacyGateway):
         self.payloads = []
 
     def complete(self, request: ModelRequest):
+        if request.request_contract is ModelRequestContract.TOOL_DISCOVERY:
+            marker = "<untrusted_tool_catalog>"
+            end_marker = "</untrusted_tool_catalog>"
+            content = request.messages[-1].content
+            try:
+                catalog_text = content.split(marker, 1)[1].split(end_marker, 1)[0]
+                catalog = json.loads(catalog_text.strip())
+                names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+                names = []
+            return ModelResponse(content=json.dumps({"tools": names[:8]}))
         payload = {
             "model": request.model,
             "messages": [
@@ -1938,6 +1950,7 @@ def test_model_planned_file_writer_is_excluded_with_auto_approval_and_no_mutatio
     gateway = OfflineLegacyGateway("unused")
     gateway.responses = [
         '{"persona":"coder"}',
+        '{"tools":["code_task"]}',
         '{"plan":[{"tool":"file_writer","args":{"action":"write","file_path":"headless.txt","content":"não aplicar\\n"}}]}',
     ]
     application = AgentApplication.create(

@@ -146,6 +146,33 @@ class DeterministicJourneyGateway:
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             return '{"persona": "coder"}'
+        if "TOOL DISCOVERY" in prompt:
+            marker = "<untrusted_tool_catalog>"
+            end_marker = "</untrusted_tool_catalog>"
+            try:
+                catalog_text = prompt.split(marker, 1)[1].split(end_marker, 1)[0]
+                catalog = json.loads(catalog_text.strip())
+                names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+                names = []
+            preferred = {
+                "a1_read": ("file_reader",),
+                "a2_search": ("grep",),
+                "c1_history": ("shell",),
+                "c2_unsupported": ("shell",),
+                "c3_failure": ("shell",),
+                "b1_modify_validate": ("code_task",),
+                "b2_validation_failure": ("code_task",),
+                "b4_denied_modify": ("code_task",),
+                "b5_preview_blocked": ("code_task",),
+                "b3_writer_bypass": ("file_writer",),
+                "d1_success": ("demo_tool",),
+                "d3_denied": ("demo_tool",),
+                "d4_failure": ("demo_tool",),
+            }
+            selected = [name for name in preferred.get(self.scenario_id, ("file_reader",)) if name in names]
+            selected.extend(name for name in names if name not in selected)
+            return json.dumps({"tools": selected[:8]})
         if "Escolha exatamente uma das duas respostas JSON" in prompt:
             if self.scenario_id == "a6_direct":
                 return '{"action":"direct_response","answer":"abacaxi azul"}'
@@ -894,6 +921,17 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             content = '{"persona":"coder"}'
+        elif "TOOL DISCOVERY" in prompt:
+            marker = "<untrusted_tool_catalog>"
+            end_marker = "</untrusted_tool_catalog>"
+            try:
+                catalog_text = prompt.split(marker, 1)[1].split(end_marker, 1)[0]
+                catalog = json.loads(catalog_text.strip())
+                names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+                names = []
+            selected = ["wheel_tool"] if "wheel_tool" in names else names[:1]
+            content = json.dumps({"tools": selected})
         elif "Escolha exatamente uma das duas respostas JSON" in prompt:
             content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
         elif "Uma fronteira sem" in prompt:

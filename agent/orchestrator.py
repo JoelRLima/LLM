@@ -196,7 +196,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             persona_prompt,
-            self._build_tools_description(compact=False),
+            self._build_tools_description(compact=True, planner_kind="linear"),
         )
         if self.verbose:
             print(f" concluído ({len(self.active_skills)} skills permitidas)")
@@ -215,7 +215,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._create_planning_context()
         self._cached_base_prompt = self.context_manager.build_base_system_prompt(
             self.current_persona_prompt,
-            self._build_tools_description(compact=False),
+            self._build_tools_description(compact=True, planner_kind="linear"),
         )
     def _answer_trivial(self, objective: str) -> str:
         normalized = objective.strip().lower().rstrip("!?.")

@@ -6,6 +6,8 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, TypeGuard
 
+from agent.llm.tool_discovery_contract import valid_tool_discovery as _valid_tool_discovery
+
 
 class ModelRequestContract(str, Enum):
     INITIAL_PLAN = "initial_plan"
@@ -16,6 +18,7 @@ class ModelRequestContract(str, Enum):
     FINAL_GENERATION = "final_generation"
     SUMMARIZATION = "summarization"
     REPLAN = "replan"
+    TOOL_DISCOVERY = "tool_discovery"
     INITIAL_PLANNING = "initial_plan"
     EFFECT_CONTINUATION = "effect_observation_continuation"
     REASONING_CONTINUATION = "reasoning_boundary_continuation"
@@ -32,6 +35,7 @@ _STEP_TYPE_CONTRACTS: dict[str, ModelRequestContract] = {
     "final": ModelRequestContract.FINAL_GENERATION,
     "summarize": ModelRequestContract.SUMMARIZATION,
     "replan": ModelRequestContract.REPLAN,
+    "tool_discovery": ModelRequestContract.TOOL_DISCOVERY,
 }
 def coerce_request_contract(value: Any) -> ModelRequestContract | None:
     if isinstance(value, ModelRequestContract):
@@ -223,6 +227,8 @@ def _valid_summarize(decision: dict[str, Any]) -> bool:
     return set(decision) == {"summary"} and _is_string(decision["summary"])
 def _valid_replan(decision: dict[str, Any]) -> bool:
     return decision.get("action") == "tool" and _valid_reactive_tool_decision(decision)
+
+
 _CONTRACT_VALIDATORS: dict[ModelRequestContract, Callable[[dict[str, Any]], bool]] = {
     ModelRequestContract.INITIAL_PLAN: _valid_initial_plan,
     ModelRequestContract.MACRO_PLAN: _valid_macro_plan,
@@ -232,6 +238,7 @@ _CONTRACT_VALIDATORS: dict[ModelRequestContract, Callable[[dict[str, Any]], bool
     ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION: _valid_effect_observation_continuation,
     ModelRequestContract.REASONING_BOUNDARY_CONTINUATION: _valid_reasoning_boundary_continuation,
     ModelRequestContract.REPLAN: _valid_replan,
+    ModelRequestContract.TOOL_DISCOVERY: _valid_tool_discovery,
 }
 def normalize_generic_model_decision(value: Any) -> dict[str, Any] | None:
     """Keep the historical object normalization outside canonical admission."""

@@ -11,6 +11,7 @@ from agent.planning.planning_context import (
     PlanningContextError,
     PlanningContextSnapshot,
 )
+from agent.planning.planning_view_support import extend_planning_view
 from agent.planning.presentation import PlanningPresentationSnapshot, validate_planning_view_binding
 from agent.planning.result_bindings import bind_result_references, has_result_bindings
 from agent.planning.validation_repair import replace_blocked_step, replan_blocked_steps
@@ -42,6 +43,7 @@ class ExecutionGateway:
         planning_view: PlanningPresentationSnapshot | None = None,
         allow_conditional_preview: bool = False,
     ) -> ExecutionResult:
+        self._active_planning_view = planning_view
         validated = self.validate_and_optimize_plan(
             plan,
             objective,
@@ -81,6 +83,8 @@ class ExecutionGateway:
         planning_view: PlanningPresentationSnapshot | None = None,
         allow_conditional_preview: bool = False,
     ) -> Optional[List[Dict[str, Any]]]:
+        if planning_view is not None:
+            self._active_planning_view = planning_view
         return _validate_and_optimize_plan(
             self,
             plan,
@@ -111,6 +115,7 @@ class ExecutionGateway:
         objective: str,
         *,
         allow_conditional_preview: bool = False,
+        planning_view: PlanningPresentationSnapshot | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """Validate a continuation before appending it to the canonical plan.
 
@@ -123,10 +128,14 @@ class ExecutionGateway:
         state = self.orchestrator.agent_state
         prefix = [dict(step) for step in state.plan]
         combined = [*prefix, *[dict(step) for step in plan]]
+        context = getattr(self.orchestrator, "planning_context", None)
+        effective_view = extend_planning_view(context, planning_view, prefix)
+        self._active_planning_view = effective_view
         validated = self.validate_and_optimize_plan(
             combined,
             objective,
             allow_conditional_preview=allow_conditional_preview,
+            planning_view=effective_view,
         )
         if validated is None or len(validated) <= len(prefix):
             return None
@@ -288,10 +297,3 @@ class ExecutionGateway:
                     "contexto explícito exige view correlacionada quando diverge do orchestrator"
                 )
         return context.resolve_view(planner_kind, getattr(self.orchestrator, "active_skills", ()))
-
-    @staticmethod
-    def _validate_view_binding(
-        context: PlanningContextSnapshot,
-        planning_view: PlanningPresentationSnapshot,
-    ) -> None:
-        validate_planning_view_binding(context, planning_view)

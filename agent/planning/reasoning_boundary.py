@@ -24,6 +24,7 @@ class BoundaryContinuationResult:
     extended: bool = False
     completed: bool = False
     blocked: bool = False
+    planning_view: Any = None
 
 
 def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
@@ -201,38 +202,59 @@ def _project_continuation(
     if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
         return BoundaryContinuationResult(blocked=True)
     orchestrator._emit("reasoning_boundary_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
-    return _extend_plan(orchestrator, continuation.plan, objective)
+    return _extend_plan(
+        orchestrator,
+        continuation.plan,
+        objective,
+        getattr(continuation, "planning_view", None),
+    )
 
 
 def _extend_plan(
-    orchestrator: Any, plan: Any, objective: str,
+    orchestrator: Any, plan: Any, objective: str, planning_view: Any = None,
 ) -> BoundaryContinuationResult:
     extender = getattr(orchestrator.execution_gateway, "extend_validated_plan", None)
     if not callable(extender):
         return BoundaryContinuationResult(blocked=True)
     try:
-        try:
-            validated = extender(
-                plan,
-                objective,
-                allow_conditional_preview=True,
-            )
-        except TypeError as exc:
-            # Small compatibility test gateways (and supported external
-            # adapters) may still expose the pre-preview two-argument seam.
-            # Only retry that explicitly narrow signature mismatch; the
-            # production gateway accepts the keyword and never takes this
-            # path.
-            if "allow_conditional_preview" not in str(exc):
-                raise
-            validated = extender(plan, objective)
+        validated = _call_extension(extender, plan, objective, planning_view)
     except BudgetExhausted:
         raise
     except Exception:
         validated = None
     if validated is None:
         return BoundaryContinuationResult(blocked=True)
-    return BoundaryContinuationResult(extended=True)
+    return BoundaryContinuationResult(extended=True, planning_view=planning_view)
+
+
+def _call_extension(
+    extender: Callable[..., Any], plan: Any, objective: str, planning_view: Any
+) -> Any:
+    """Call the canonical extension seam with a narrow legacy compatibility retry."""
+
+    extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}
+    if planning_view is not None:
+        extension_kwargs["planning_view"] = planning_view
+    try:
+        return extender(plan, objective, **extension_kwargs)
+    except TypeError as exc:
+        message = str(exc)
+        keywords = ("allow_conditional_preview", "planning_view")
+        if not any(keyword in message for keyword in keywords):
+            raise
+        fallback_kwargs = {
+            key: value
+            for key, value in extension_kwargs.items()
+            if key not in message
+        }
+        try:
+            return extender(plan, objective, **fallback_kwargs)
+        except TypeError as fallback_exc:
+            if fallback_kwargs and any(
+                keyword in str(fallback_exc) for keyword in keywords
+            ):
+                return extender(plan, objective)
+            raise
 
 
 __all__ = [

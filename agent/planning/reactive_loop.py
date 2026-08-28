@@ -7,8 +7,10 @@ from agent.final_response import (
     has_usable_partial_evidence,
 )
 from agent.llm.decision_contract import ModelRequestContract
-from agent.planning.plan_builder import build_planner_tools_description
+from agent.planning.planner_prompt_tools import build_planner_tools_description
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
+from agent.planning.tool_disclosure import disclose_tools, render_tool_guidance
 from agent.reporting.observation_evidence import (
     observation_contract_instructions,
     serialize_tool_observations,
@@ -21,6 +23,7 @@ from agent.watchdog import Watchdog
 class ReactiveLoop:
     def __init__(self, orchestrator: Any):
         self.orchestrator = orchestrator
+        self._last_planning_view: PlanningPresentationSnapshot | None = None
 
     def run_reactive(self, objective: str, tool_usage_count: Dict[str, int], original_msg_count: int) -> str:
         del original_msg_count
@@ -76,9 +79,20 @@ class ReactiveLoop:
         )
 
     def _build_prompt(self, objective: str) -> str:
-        tools = build_planner_tools_description(
-            self.orchestrator, planner_kind="reactive", compact=True
+        disclosure = disclose_tools(
+            self.orchestrator,
+            planner_kind="reactive",
+            objective=objective,
+            force_refresh=True,
         )
+        if disclosure is None:
+            self._last_planning_view = None
+            tools = build_planner_tools_description(
+                self.orchestrator, planner_kind="reactive", compact=True
+            )
+        else:
+            self._last_planning_view = disclosure.selected_view
+            tools = render_tool_guidance(self.orchestrator, disclosure)
         history = "".join(
             self._history_line(
                 action,
@@ -145,8 +159,11 @@ class ReactiveLoop:
         step: Dict[str, Any] = {"tool": tool, "args": decision.get("args", {})}
         if "bindings" in decision:
             step["bindings"] = decision["bindings"]
+        gateway_kwargs: Dict[str, Any] = {}
+        if self._last_planning_view is not None:
+            gateway_kwargs["planning_view"] = self._last_planning_view
         result = self.orchestrator.execution_gateway.execute_validated_plan(
-            [step], objective, usage
+            [step], objective, usage, **gateway_kwargs
         )
         self._set_plan_step(reactive_step)
         if result.aborted:

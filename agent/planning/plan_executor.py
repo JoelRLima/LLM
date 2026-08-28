@@ -215,7 +215,21 @@ class PlanExecutor:
             last_tool_result=cast(dict[str, Any], selected_result) if selected_result is not None else None,
             retry_counts=getattr(state, "replan_counts", None),
         )
-        action = replan(context, error, self.orchestrator)
+        active_view = getattr(
+            getattr(self.orchestrator, "execution_gateway", None),
+            "_active_planning_view",
+            None,
+        )
+        replan_kwargs: dict[str, Any] = {}
+        if active_view is not None:
+            replan_kwargs["planning_context"] = getattr(
+                self.orchestrator, "planning_context", None
+            )
+            replan_kwargs["planning_view"] = active_view
+        action = replan(context, error, self.orchestrator, **replan_kwargs)
+        selected_view = getattr(action, "planning_view", None) if action is not None else None
+        if selected_view is not None:
+            self.orchestrator.execution_gateway._active_planning_view = selected_view
         return action.steps if action else None
 
     def _replace_current_step(self, index: int, new_steps: List[Dict[str, Any]]) -> bool:

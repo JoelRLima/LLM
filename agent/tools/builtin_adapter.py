@@ -45,6 +45,7 @@ class BuiltinToolAdapter(ToolAdapter):
             argument_provenance=spec.argument_provenance,
             result_data_schema=spec.result_data_schema,
             cancellation_safety=spec.cancellation_safety,
+            usage_examples=spec.usage_examples,
             argument_validator=getattr(descriptor.skill, "validate_arguments", None),
         )
 

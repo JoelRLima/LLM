@@ -24,12 +24,14 @@ def _view(*, planner_kind: str = "reactive") -> PlanningPresentationSnapshot:
     )
 
 
-def test_render_is_framed_escaped_and_schema_preserving_for_reactive() -> None:
+def test_compact_render_is_a_framed_escaped_level_zero_index() -> None:
     rendered = _view().render(compact=True)
     assert rendered.startswith("Os dados seguintes")
     assert "<untrusted_tool_catalog>" in rendered
     assert "\\u003c" in rendered and "\\u0026" in rendered
-    assert '"schema"' in rendered
+    assert '"name":"safe_tool"' in rendered
+    assert '"purpose":"descri' in rendered
+    assert '"schema"' not in rendered
     assert "<instrução>" not in rendered
 
 
@@ -59,7 +61,7 @@ def test_result_data_schema_is_rendered_as_bounded_structure() -> None:
         runtime_identity=RuntimeSnapshotIdentity("registry-1", "workspace"),
     )
 
-    rendered = view.render(compact=True)
+    rendered = view.render_detailed()
 
     assert '"result_data_schema":{"items":{"properties":{"content":{"type":"string"}' in rendered
 

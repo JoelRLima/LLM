@@ -49,6 +49,7 @@ class ReplanAction:
     steps: List[Dict[str, Any]] = field(default_factory=list)
     source: str = ""
     reason: str = ""
+    planning_view: Any = None
 
 
 class RetryPolicy:

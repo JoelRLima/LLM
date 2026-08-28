@@ -25,6 +25,7 @@ from agent.orchestration.task_lifecycle import TaskLifecycleMixin
 from agent.orchestration.task_runner_support import checkpoint_error_answer, terminal_answer
 from agent.planning.complexity import is_hierarchical
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.planning_view_support import resume_planning_view
 from agent.planning.task_completion import (
     allow_linear_completion,
     complete_direct_answer,
@@ -142,7 +143,8 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
     ) -> str:
         usage: Dict[str, int] = {}
         if inputs.resumed and self.orchestrator.agent_state.plan:
-            plan = self._resume_plan()
+            self.orchestrator._restore_persona_from_state()
+            plan = [dict(step) for step in self.orchestrator.agent_state.plan]
             return self._execute_plan(
                 plan,
                 inputs.objective,
@@ -151,6 +153,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 continue_after_plan=bool(
                     getattr(self.orchestrator.agent_state, "continue_after_plan", False)
                 ),
+                planning_view=resume_planning_view(self.orchestrator, plan),
             )
         self.orchestrator._route_persona(inputs.objective)
         self.orchestrator._save_checkpoint()
@@ -236,26 +239,22 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             usage,
             on_chunk,
             continue_after_plan=decision.continue_after_plan,
+            planning_view=getattr(decision, "planning_view", None),
         )
-    def _resume_plan(self) -> List[Dict[str, Any]]:
-        self.orchestrator._restore_persona_from_state()
-        return [dict(step) for step in self.orchestrator.agent_state.plan]
-
     def _execute_plan(
         self, plan: List[Dict[str, Any]], objective: str, usage: Dict[str, int],
         on_chunk: Callable[[str], None] | None,
         *,
         continue_after_plan: bool = False,
+        planning_view: Any = None,
     ) -> str:
         self.orchestrator.agent_state.continue_after_plan = continue_after_plan
+        gateway_kwargs: Dict[str, Any] = {"planning_view": planning_view} if planning_view is not None else {}
         if continue_after_plan:
-            result = self.orchestrator.execution_gateway.execute_validated_plan(
-                plan, objective, usage, continue_after_plan=True
-            )
-        else:
-            result = self.orchestrator.execution_gateway.execute_validated_plan(
-                plan, objective, usage
-            )
+            gateway_kwargs["continue_after_plan"] = True
+        result = self.orchestrator.execution_gateway.execute_validated_plan(
+            plan, objective, usage, **gateway_kwargs
+        )
         if result.aborted:
             answer = result.final_answer or "A execução foi interrompida."
             mark_terminal_blocked(

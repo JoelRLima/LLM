@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from agent.execution_state import StepStatus
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
+from agent.planning.planning_view_support import selected_view_kwargs
 from agent.planning.step_contracts import StepOutcomeKind
 from agent.planning.task_completion import allow_linear_completion
 from agent.planning.task_graph import task_graph_from_macro_plan, topological_nodes
@@ -178,7 +179,7 @@ class HierarchicalExecutor:
                 # era invocado no caminho hierárquico). Agora o micro-plano
                 # deste sub-objetivo atravessa o mesmo ExecutionGateway do
                 # caminho linear, que valida, otimiza e só então executa.
-                gateway_kwargs: dict[str, Any] = {}
+                gateway_kwargs: dict[str, Any] = selected_view_kwargs(decision)
                 if decision.continue_after_plan:
                     try:
                         signature = inspect.signature(

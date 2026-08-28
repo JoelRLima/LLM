@@ -21,6 +21,7 @@ from agent.evaluation import (
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.interfaces.cli.chat import run_agent_turn
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
+from agent.llm.decision_contract import ModelRequestContract
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
@@ -69,6 +70,9 @@ class JourneyGateway:
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
+        request_contract = getattr(request.request_contract, "value", request.request_contract)
+        if request_contract == ModelRequestContract.TOOL_DISCOVERY.value:
+            return ModelResponse(content=self._tool_discovery_response(request.messages[-1].content))
         return ModelResponse(content=self._response(request.messages[0].content, request.messages[-1].content))
 
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
@@ -83,7 +87,10 @@ class JourneyGateway:
 
     def complete_payload(self, payload: Dict[str, Any]) -> str:
         messages = payload.get("messages", [])
+        prompt = str(messages[-1].get("content", ""))
         self.calls.append(payload)  # type: ignore[arg-type]
+        if "TOOL DISCOVERY" in prompt:
+            return self._tool_discovery_response(prompt)
         return self._response(str(messages[0].get("content", "")), str(messages[-1].get("content", "")))
 
     def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
@@ -93,6 +100,29 @@ class JourneyGateway:
     def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
         del callbacks
         return str(response)
+
+    def _tool_discovery_response(self, prompt: str) -> str:
+        marker = "<untrusted_tool_catalog>"
+        end_marker = "</untrusted_tool_catalog>"
+        try:
+            catalog_text = prompt.split(marker, 1)[1].split(end_marker, 1)[0]
+            catalog = json.loads(catalog_text.strip())
+            names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+        except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+            names = []
+        preferred = {
+            "CAP_EXTENSION": ("demo_tool",),
+            "CAP_MODIFY": ("code_task",),
+            "CAP_RECOVERY": ("code_task",),
+            "CAP_SEARCH": ("grep",),
+            "CAP_SHELL": ("shell",),
+            "CAP_FAILURE": ("shell",),
+            "CAP_DENIAL": ("file_reader",),
+        }
+        required = preferred.get(self.scenario_id, ("file_reader",))
+        selected = [name for name in required if name in names]
+        selected.extend(name for name in names if name not in selected)
+        return json.dumps({"tools": selected[:8]})
 
     def _response(self, system: str, prompt: str) -> str:
         if "You are a Router Agent" in system:
@@ -489,8 +519,8 @@ def test_direct_response_is_a_first_class_no_tool_result(
     assert result.receipt["executed"] is None
     assert report["metrics"]["tools_called"] == 0
     # ``DIRECT_*`` must not accidentally match the bounded ``dir`` listing
-    # token; the normal route therefore performs router + planner calls.
-    assert report["metrics"]["model_calls"] == len(gateway.calls) == 2
+    # token; the normal route therefore performs router + discovery + planner calls.
+    assert report["metrics"]["model_calls"] == len(gateway.calls) == 3
 
 
 def test_direct_response_can_use_existing_conversation_context(tmp_path: Path) -> None:

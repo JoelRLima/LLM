@@ -186,6 +186,14 @@ root ::= "{" ws "\"summary\"" ws ":" ws string ws "}"
     + _COMMON_RULES
 )
 
+TOOL_DISCOVERY_GRAMMAR = (
+    r'''
+root ::= "{" ws "\"tools\"" ws ":" ws string-array ws "}"
+string-array ::= "[" ws (string ("," ws string)*)? ws "]"
+'''
+    + _COMMON_RULES
+)
+
 
 _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
     ModelRequestContract.INITIAL_PLAN: PLAN_GRAMMAR,
@@ -196,6 +204,7 @@ _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
     ModelRequestContract.FINAL_GENERATION: FINAL_GRAMMAR,
     ModelRequestContract.SUMMARIZATION: SUMMARIZE_GRAMMAR,
     ModelRequestContract.REPLAN: REPLAN_GRAMMAR,
+    ModelRequestContract.TOOL_DISCOVERY: TOOL_DISCOVERY_GRAMMAR,
 }
 
 
@@ -211,6 +220,7 @@ GRAMMARS: Dict[str, str] = {
     "final": FINAL_GRAMMAR,
     "summarize": SUMMARIZE_GRAMMAR,
     "replan": REPLAN_GRAMMAR,
+    "tool_discovery": TOOL_DISCOVERY_GRAMMAR,
 }
 
 

@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
-import inspect
-import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 
 from agent.llm.decision_contract import ModelRequestContract
+from agent.planning.plan_progress import build_plan_progress
 from agent.planning.plan_prompts import (
     build_continuation_prompt,
     build_plan_prompt,
     build_reasoning_boundary_prompt,
 )
+from agent.planning.planner_prompt_tools import (
+    build_planner_tools_description,
+    build_tool_guidance,
+)
+from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_semantics import TaskSemanticsError
+
+__all__ = ["PlanBuilder", "PlanBuildResult", "PlanningDecisionKind", "build_planner_tools_description"]
 
 
 class PlanningDecisionKind(str, Enum):
@@ -36,6 +42,7 @@ class PlanBuildResult:
     waiver_observation_index: Optional[int] = None
     continue_after_plan: bool = False
     kind: PlanningDecisionKind | None = None
+    planning_view: PlanningPresentationSnapshot | None = None
 
     def __post_init__(self) -> None:
         if self.kind is not None:
@@ -51,28 +58,11 @@ class PlanBuildResult:
         object.__setattr__(self, "kind", selected)
 
 
-def build_planner_tools_description(orchestrator: Any, *, planner_kind: str, compact: bool) -> str:
-    builder = orchestrator._build_tools_description
-    try:
-        signature = inspect.signature(builder)
-    except (TypeError, ValueError) as exc:
-        if getattr(orchestrator, "planning_context", None) is not None:
-            raise TypeError("canonical planner catalog signature is unavailable") from exc
-        return cast(str, builder(compact=compact))
-    supports_kind = "planner_kind" in signature.parameters or any(
-        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
-    )
-    if supports_kind:
-        return cast(str, builder(compact=compact, planner_kind=planner_kind))
-    if getattr(orchestrator, "planning_context", None) is not None:
-        raise TypeError("canonical planner catalog requires planner_kind")
-    return cast(str, builder(compact=compact))
-
-
 class PlanBuilder:
     def __init__(self, orchestrator: Any, *, analysis_notes_file: str | Path = "analysis_notes.md"):
         self.orchestrator = orchestrator
         self.analysis_notes_file = Path(analysis_notes_file)
+        self._last_planning_view: PlanningPresentationSnapshot | None = None
 
     def build_plan(self, objective: str) -> PlanBuildResult:
         self._clear_analysis_notes()
@@ -102,6 +92,7 @@ class PlanBuilder:
             plan=cast(List[Dict[str, Any]], plan),
             obligations=reviewed_obligations,
             continue_after_plan=decision.get("action") == "continue_after_plan",
+            planning_view=self._last_planning_view,
         )
 
     def _review_obligations(
@@ -139,7 +130,7 @@ class PlanBuilder:
         if callable(summarize):
             summary = str(summarize())
         decision = self.orchestrator.context_manager.ask_model(
-            self._build_continuation_prompt(objective, summary, effect_evidence, observation_references, self._plan_progress()),
+            self._build_continuation_prompt(objective, summary, effect_evidence, observation_references, build_plan_progress(self.orchestrator.agent_state)),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION,
@@ -161,7 +152,18 @@ class PlanBuilder:
         if action not in {"execute", "continue_after_plan"} or set(decision) != {"action", "plan"}:
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         plan = self._normalize_decision(decision)
-        return PlanBuildResult(plan=cast(List[Dict[str, Any]], plan), kind=PlanningDecisionKind.EXECUTE) if plan else PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        return (
+            PlanBuildResult(
+                plan=cast(List[Dict[str, Any]], plan),
+                kind=PlanningDecisionKind.EXECUTE,
+                planning_view=self._last_planning_view,
+            )
+            if plan
+            else PlanBuildResult(
+                kind=PlanningDecisionKind.FAIL,
+                planning_view=self._last_planning_view,
+            )
+        )
 
     def continue_after_reasoning_boundary(self, objective: str) -> PlanBuildResult:
         summary = ""
@@ -170,7 +172,7 @@ class PlanBuilder:
         if callable(summarize):
             summary = str(summarize())
         decision = self.orchestrator.context_manager.ask_model(
-            self._build_reasoning_boundary_prompt(objective, summary, self._plan_progress()),
+            self._build_reasoning_boundary_prompt(objective, summary, build_plan_progress(self.orchestrator.agent_state)),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.REASONING_BOUNDARY_CONTINUATION,
@@ -227,6 +229,7 @@ class PlanBuilder:
             plan=cast(List[Dict[str, Any]], plan),
             review_obligations=review_obligations,
             kind=PlanningDecisionKind.EXECUTE,
+            planning_view=self._last_planning_view,
         )
 
     def _clear_analysis_notes(self) -> None:
@@ -239,38 +242,29 @@ class PlanBuilder:
 
     def _build_prompt(self, objective: str) -> str:
         hints = self.orchestrator.context_manager.get_file_hints(objective)
-        tools = build_planner_tools_description(self.orchestrator, planner_kind="linear", compact=True)
+        tools = self._tool_guidance(objective, force_refresh=False)
         return build_plan_prompt(objective, hints, tools)
 
     def _build_continuation_prompt(self, objective: str, observations: str, effect_evidence: str, observation_references: str, plan_progress: str) -> str:
-        tools = build_planner_tools_description(self.orchestrator, planner_kind="linear", compact=True)
+        tools = self._tool_guidance(objective, force_refresh=True)
         return build_continuation_prompt(objective, observations, effect_evidence, observation_references, plan_progress, tools)
 
     def _build_reasoning_boundary_prompt(self, objective: str, observations: str, plan_progress: str) -> str:
-        tools = build_planner_tools_description(self.orchestrator, planner_kind="linear", compact=True)
+        tools = self._tool_guidance(objective, force_refresh=True)
         return build_reasoning_boundary_prompt(objective, observations, plan_progress, tools)
 
+    def _tool_guidance(self, objective: str, *, force_refresh: bool) -> str:
+        disclosure, guidance = build_tool_guidance(
+            self.orchestrator,
+            planner_kind="linear",
+            objective=objective,
+            force_refresh=force_refresh,
+        )
+        self._last_planning_view = disclosure.selected_view if disclosure is not None else None
+        return guidance
+
     def _plan_progress(self) -> str:
-        state = self.orchestrator.agent_state
-        lines = [
-            f"{index + 1}: status={state.get_step_status(index).value}, tool={json.dumps(str(step.get('tool', '')), ensure_ascii=True)}"
-            for index, step in enumerate(state.plan)
-        ]
-        semantics = getattr(state, "task_semantics", None)
-        snapshot = getattr(semantics, "snapshot", None)
-        if callable(snapshot):
-            lines.append("Obrigacoes canonicas e evidencias:")
-            for item in snapshot():
-                lines.append(
-                    "- id={id}; kind={kind}; status={status}; evidence={evidence}; description={description}".format(
-                        id=item.get("id", ""),
-                        kind=item.get("kind", ""),
-                        status=item.get("status", "pending"),
-                        evidence=json.dumps(item.get("evidence_refs", []), ensure_ascii=True),
-                        description=item.get("description", ""),
-                    )
-                )
-        return "\n".join(lines)
+        return build_plan_progress(self.orchestrator.agent_state)
 
     @staticmethod
     def _direct_answer(decision: Dict[str, Any]) -> Optional[str]:

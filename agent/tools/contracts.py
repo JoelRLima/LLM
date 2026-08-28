@@ -11,16 +11,12 @@ from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 
 from agent.runtime.outcome_taxonomy import OperationalStatus
 from agent.tools.extension_state import validate_extension_id
-from agent.tools.json_snapshot import (
-    FrozenJsonObject as FrozenJsonObject,
-)
-from agent.tools.json_snapshot import (
-    freeze_json_like,
-    thaw_json_like,
-)
+from agent.tools.json_snapshot import FrozenJsonObject as FrozenJsonObject
+from agent.tools.json_snapshot import freeze_json_like, thaw_json_like
 from agent.tools.provenance import normalize_argument_provenance
 from agent.tools.public_invocation import normalize_public_invocation_fields
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnapshotIdentity
+from agent.tools.usage_examples import normalize_usage_examples
 
 RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
 
@@ -112,6 +108,10 @@ class ToolDescriptor:
         default=CancellationSafetyMode.UNSUPPORTED,
         kw_only=True,
     )
+    usage_examples: Tuple[Mapping[str, Any], ...] = field(
+        default_factory=tuple,
+        kw_only=True,
+    )
     # Cross-field invariants remain owned by the builtin operation contract.
     # This callable is internal metadata, never model-visible JSON.
     argument_validator: Callable[..., None] | None = field(default=None, kw_only=True)
@@ -130,6 +130,15 @@ class ToolDescriptor:
             raise TypeError("argument_validator must be callable")
         from agent.skills.descriptor import freeze_result_data_schema
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
+        object.__setattr__(
+            self,
+            "usage_examples",
+            normalize_usage_examples(
+                self.usage_examples,
+                schema=self.schema,
+                argument_validator=self.argument_validator,
+            ),
+        )
         _normalize_descriptor_enums(self)
         _validate_descriptor_origin(self, public_fields)
     def __getattribute__(self, name: str) -> Any:

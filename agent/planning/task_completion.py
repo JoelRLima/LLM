@@ -268,10 +268,13 @@ def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
         return mark_unfinished_effect(orchestrator, objective)
     orchestrator._emit("continuation_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
     try:
+        extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}
+        if getattr(continuation, "planning_view", None) is not None:
+            extension_kwargs["planning_view"] = continuation.planning_view
         validated = orchestrator.execution_gateway.extend_validated_plan(
             continuation.plan,
             objective,
-            allow_conditional_preview=True,
+            **extension_kwargs,
         )
     except BudgetExhausted:
         raise

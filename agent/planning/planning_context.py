@@ -53,6 +53,10 @@ class PlanningTool:
     argument_provenance: Mapping[str, frozenset[str]] = field(default_factory=dict)
     result_data_schema: Mapping[str, Any] | None = field(default=None, kw_only=True)
     argument_validator: Callable[..., None] | None = field(default=None, kw_only=True)
+    usage_examples: tuple[Mapping[str, Any], ...] = field(
+        default_factory=tuple,
+        kw_only=True,
+    )
     def __post_init__(self) -> None:
         normalize_planning_tool(self, PlanningContextError)
 
@@ -216,6 +220,7 @@ def _planning_tool(descriptor: ToolDescriptor) -> PlanningTool:
         argument_provenance=descriptor.argument_provenance,
         result_data_schema=descriptor.result_data_schema,
         argument_validator=descriptor.argument_validator,
+        usage_examples=descriptor.usage_examples,
     )
 
 

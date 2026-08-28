@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.evaluation.block7_gateway_fixture import bind_code_task_objective
 from agent.evaluation.block7_structured_proof_fixtures import H19_FINAL_ANSWERS, H19_PLAN_PAYLOADS
+from agent.evaluation.block7_tool_guidance import h5_response, selection_response
 
 
 def _scalar_plan(file_name: str) -> dict[str, Any]:
@@ -399,16 +400,6 @@ def _h11_response(combined: str, prompt: str) -> str | None:
     )
 
 
-def _h5_response(gateway: Any, combined: str, prompt: str) -> str | None:
-    if "Uma fronteira sem" not in prompt or "H5" not in combined:
-        return None
-    if len(gateway.calls) >= 4:
-        return '{"action":"complete","reason":"H5_FINAL_EVIDENCE basta"}'
-    return json.dumps(
-        {"action": "execute", "plan": [{"tool": "file_reader", "args": {"file_path": "h5_second.txt"}}]}
-    )
-
-
 def _engineering_response(objective: str, prompt: str) -> str:
     combined = f"{objective}\n{prompt}"
     if "H19_POSITIVE" in combined:
@@ -522,15 +513,24 @@ def _standard_response(objective: str, prompt: str) -> str:
 
 
 def scripted_response(gateway: Any, system: str, prompt: str) -> str:
+    """Dispatch the deterministic fixture without changing product policy.
+
+    Discovery responses select from the exact current index.
+    All other responses retain the pre-existing scenario handlers.
+    Selection remains visibility-only and never authorizes a tool.
+    This adapter is used only by the local deterministic campaign.
+    """
     dispatch_objective = getattr(gateway, "dispatch_objective", gateway.objective)
     combined = f"{dispatch_objective}\n{prompt}"
     if "You are a Router Agent" in system:
         return '{"persona":"coder"}'
+    if "TOOL DISCOVERY" in prompt:
+        return selection_response(prompt)
     for handler in (_repair_response, _h11_response):
         response = handler(combined, prompt)
         if response is not None:
             return response
-    response = _h5_response(gateway, combined, prompt)
+    response = h5_response(gateway, combined, prompt)
     return response if response is not None else _standard_response(dispatch_objective, prompt)
 
 

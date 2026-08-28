@@ -434,6 +434,10 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
         "deterministic validation rejected argument field(s): pattern; validator detail: pattern lacks grounded provenance",
         SimpleNamespace(
             context_manager=context,
+            planning_context=planning_context,
+            get_planning_view=lambda kind: planning_context.present(
+                kind, {"file_reader", "grep"}
+            ),
             execution_gateway=SimpleNamespace(_bind_deferred_references=lambda plan: plan),
             tool_registry=registry,
             _cached_base_prompt=catalog,
@@ -501,7 +505,7 @@ def test_planning_catalog_exposes_descriptor_provenance_policy():
         eligible_names=frozenset({"grep"}),
         allowed_capabilities=frozenset({"read"}),
     )
-    rendered = context.present("linear").render(compact=True)
+    rendered = context.present("linear").render_detailed()
     assert '"argument_provenance"' in rendered
     assert '"result_binding"' in rendered
 

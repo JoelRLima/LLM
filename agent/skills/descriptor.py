@@ -16,6 +16,7 @@ from agent.resources.contracts import (
 )
 from agent.tools.contracts import CancellationSafetyMode, freeze_json_like, thaw_json_like
 from agent.tools.provenance import ArgumentOrigin
+from agent.tools.usage_examples import normalize_usage_examples
 
 # Compatibility name retained at the descriptor boundary.  The vocabulary
 # itself is owned by ``agent.capabilities`` so planning and execution cannot
@@ -187,9 +188,18 @@ class SkillSpec:
         default=CancellationSafetyMode.UNSUPPORTED,
         kw_only=True,
     )
+    usage_examples: tuple[Mapping[str, Any], ...] = field(
+        default_factory=tuple,
+        kw_only=True,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
+        object.__setattr__(
+            self,
+            "usage_examples",
+            normalize_usage_examples(self.usage_examples),
+        )
         if not isinstance(self.cancellation_safety, CancellationSafetyMode):
             object.__setattr__(
                 self,
@@ -226,6 +236,13 @@ class SkillDescriptor:
     spec: SkillSpec
     skill: SkillLike
     resource_resolver: Optional[ResourceResolver] = None
+
+    def __post_init__(self) -> None:
+        normalize_usage_examples(
+            self.spec.usage_examples,
+            schema=self.schema,
+            argument_validator=getattr(self.skill, "validate_arguments", None),
+        )
 
     @property
     def name(self) -> str:

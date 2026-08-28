@@ -13,6 +13,7 @@ from agent.skills.descriptor import freeze_result_data_schema
 from agent.tools.contracts import CancellationSafetyMode, ToolOriginKind, freeze_json_like
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.provenance import normalize_argument_provenance
+from agent.tools.usage_examples import normalize_usage_examples
 
 
 def normalize_planning_tool(tool: Any, error_type: type[ValueError]) -> None:
@@ -40,6 +41,16 @@ def normalize_planning_tool(tool: Any, error_type: type[ValueError]) -> None:
         tool,
         "result_data_schema",
         freeze_result_data_schema(tool.result_data_schema),
+    )
+    object.__setattr__(
+        tool,
+        "usage_examples",
+        normalize_usage_examples(
+            tool.usage_examples,
+            schema=tool.input_schema,
+            argument_validator=tool.argument_validator,
+            error_type=error_type,
+        ),
     )
     _normalize_enums(tool)
     _validate_origin(tool, error_type)

@@ -38,6 +38,7 @@ STEP_BUDGETS = {
     "plan": 4096,
     "final": 4096,
     "tool_decision": 2048,
+    "tool_discovery": 1024,
 }
 DEFAULT_AGENT_MAX_TOKENS = 2048
 class ContextManager:

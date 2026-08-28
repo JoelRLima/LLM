@@ -1,5 +1,6 @@
 import pytest
 
+from agent.skills.registry import build_builtin_registry
 from agent.tools.contracts import (
     ToolDescriptor,
     ToolError,
@@ -143,3 +144,43 @@ def test_tool_descriptor_defaults() -> None:
 def test_tool_descriptor_rejects_unsafe_result_data_schema(result_data_schema) -> None:
     with pytest.raises((TypeError, ValueError)):
         ToolDescriptor("shaped", "shaped", result_data_schema=result_data_schema)
+
+
+def test_tool_descriptor_owns_one_immutable_validated_usage_example() -> None:
+    example = {"args": {"value": "synthetic"}, "purpose": "positive case"}
+    descriptor = ToolDescriptor(
+        "example",
+        "example",
+        schema={
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+        },
+        usage_examples=(example,),
+    )
+
+    example["args"]["value"] = "changed"
+    stored = descriptor.usage_examples[0]
+    assert stored["args"]["value"] == "synthetic"
+    with pytest.raises(TypeError):
+        stored["args"]["value"] = "mutate"  # type: ignore[index]
+
+
+def test_tool_descriptor_rejects_usage_example_that_breaks_schema() -> None:
+    with pytest.raises(ValueError):
+        ToolDescriptor(
+            "example",
+            "example",
+            schema={
+                "type": "object",
+                "properties": {"value": {"type": "integer"}},
+            },
+            usage_examples=({"args": {"value": "not-an-integer"}},),
+        )
+
+
+def test_every_shipped_builtin_has_one_schema_validated_usage_example() -> None:
+    registry = build_builtin_registry()
+
+    descriptors = tuple(registry)
+    assert len(descriptors) == 14
+    assert all(len(descriptor.spec.usage_examples) == 1 for descriptor in descriptors)
