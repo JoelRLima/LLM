@@ -17,6 +17,7 @@ from agent.health.contracts import (
     CheckResult,
 )
 from agent.health.state_integrity import check_persistent_state
+from agent.llm.model_profile import resolve_model_profile
 from agent.runtime.config_errors import ConfigError
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -201,26 +202,25 @@ def check_backend(config: dict[str, Any] | None) -> CheckResult:
             "Não avaliado porque a configuração é inválida ou ausente.",
             {"configured": False, "connectivity": "not_checked"},
         )
-    profile_name = config.get("default_model_profile")
-    profiles = config.get("model_profiles")
-    profile = profiles.get(profile_name) if isinstance(profiles, dict) else None
-    if not isinstance(profile, dict):
+    try:
+        profile = resolve_model_profile(config)
+    except (TypeError, ValueError, KeyError) as exc:
         return CheckResult(
             "Perfil e backend",
             STATUS_ERROR,
-            f"Perfil '{profile_name}' não encontrado.",
+            f"Perfil e backend inválidos: {type(exc).__name__}.",
             {"configured": False, "connectivity": "not_checked"},
         )
-    endpoint = profile.get("api_url") or profile.get("base_url") or config.get("api_url")
+    endpoint = profile.api_url
     parsed = urlparse(str(endpoint or ""))
     valid_endpoint = parsed.scheme in {"http", "https"} and bool(parsed.netloc)
-    provider = profile.get("provider")
+    provider = profile.provider
     provider_supported = provider in SUPPORTED_MODEL_PROVIDERS
     configured = all(
         (
             isinstance(provider, str) and bool(provider.strip()),
             provider_supported,
-            isinstance(profile.get("model"), str) and bool(profile["model"].strip()),
+            isinstance(profile.model, str) and bool(profile.model.strip()),
             valid_endpoint,
         )
     )
@@ -234,10 +234,10 @@ def check_backend(config: dict[str, Any] | None) -> CheckResult:
         ),
         {
             "configured": configured,
-            "profile": profile_name,
+            "profile": profile.name,
             "provider": provider,
             "provider_supported": provider_supported,
-            "model": profile.get("model"),
+            "model": profile.model,
             "endpoint": endpoint,
             "hardware_profile": config.get("hardware_profile"),
             "connectivity": "not_checked",

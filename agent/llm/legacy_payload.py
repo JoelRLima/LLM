@@ -15,6 +15,10 @@ from agent.llm.contracts import (
     response_usage,
 )
 from agent.llm.decision_contract import ModelRequestContract, coerce_request_contract
+from agent.llm.model_profile import (
+    ResolvedModelProfile,
+    resolve_gateway_model_profile,
+)
 
 _LEGACY_CANONICAL_FIELDS = frozenset(
     {
@@ -50,9 +54,14 @@ def _session_config(session: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _gateway_profile(session: Any) -> Mapping[str, Any]:
-    value = getattr(getattr(session, "gateway", None), "profile", {})
-    return value if isinstance(value, Mapping) else {}
+def _session_profile(session: Any) -> ResolvedModelProfile:
+    profile = getattr(session, "model_profile", None)
+    if isinstance(profile, ResolvedModelProfile):
+        return profile
+    return resolve_gateway_model_profile(
+        _session_config(session),
+        getattr(session, "gateway", None),
+    )
 
 
 def _integer(value: Any, default: int) -> int:
@@ -73,8 +82,7 @@ def build_legacy_model_request(
 ) -> ModelRequest:
     """Translate an old payload into the canonical request contract."""
 
-    config = _session_config(session)
-    profile = _gateway_profile(session)
+    profile = _session_profile(session)
     hardware_profile = getattr(session, "hardware_profile", None)
     effective_grammar = grammar
     if effective_grammar is None and isinstance(payload.get("grammar"), str):
@@ -112,10 +120,7 @@ def build_legacy_model_request(
         if effective_grammar is not None
         else None
     )
-    configured_max_tokens = profile.get(
-        "max_tokens",
-        config.get("max_tokens", getattr(hardware_profile, "default_output_tokens", 1024)),
-    )
+    configured_max_tokens = profile.max_output_tokens
     raw_max_tokens = payload.get(
         "max_tokens", payload.get("max_output_tokens", configured_max_tokens)
     )
@@ -123,11 +128,11 @@ def build_legacy_model_request(
         messages=messages,
         model=str(
             payload.get(
-                "model", getattr(session.gateway, "model", config.get("model", "default"))
+                "model", profile.model
             )
         ),
-        temperature=float(payload.get("temperature", config.get("temperature", 0.6))),
-        max_output_tokens=_integer(raw_max_tokens, 1024),
+        temperature=float(payload.get("temperature", profile.temperature)),
+        max_output_tokens=_integer(raw_max_tokens, profile.max_output_tokens),
         stream=bool(payload.get("stream", False)),
         reasoning_budget=_integer(
             payload.get("reasoning_budget", getattr(session, "thinking_budget", 0)),

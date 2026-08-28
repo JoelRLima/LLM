@@ -10,6 +10,10 @@ from typing import Any, Dict
 from agent.llm.contracts import normalize_usage, request_contract_value, response_usage
 
 
+def _operation_field(operation: str | None) -> dict[str, str]:
+    return {"operation": operation} if operation else {}
+
+
 def build_model_call_metric(
     gateway: Any,
     config: Mapping[str, Any],
@@ -27,6 +31,7 @@ def build_model_call_metric(
     context_limit: int | None = None,
     context_compacted: bool = False,
     request_input_measurement: Any = None,
+    operation: str | None = None,
 ) -> Dict[str, Any]:
     usage = response_usage(response)
     available = usage is not None and (
@@ -82,6 +87,7 @@ def build_model_call_metric(
         "request_contract": request_contract_value(
             getattr(request, "request_contract", None)
         ),
+        **_operation_field(operation),
     }
     if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0:
         entry["context_limit"] = context_limit

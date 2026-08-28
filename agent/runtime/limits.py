@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from agent.llm.model_profile import resolve_model_profile
 from agent.runtime.hardware import resolve_hardware_profile
 
 
@@ -31,18 +32,7 @@ def runtime_limit_values(config: Mapping[str, Any] | None = None) -> dict[str, i
     source = dict(packaged) if supplied is None else supplied
     hardware = resolve_hardware_profile(source)
 
-    profiles = source.get("model_profiles")
-    profile_name = source.get("default_model_profile")
-    profile = (
-        profiles.get(profile_name, {})
-        if isinstance(profiles, Mapping) and isinstance(profile_name, str)
-        else {}
-    )
-    profile_output = (
-        profile.get("max_tokens")
-        if isinstance(profile, Mapping)
-        else None
-    )
+    profile_output = resolve_model_profile(source).max_output_tokens
 
     def configured(name: str, fallback: int) -> int:
         return _positive(source.get(name, fallback), fallback)

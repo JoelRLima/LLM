@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelGateway
+from agent.llm.model_profile import ResolvedModelProfile
+from agent.llm.model_profile_binding import cached_gateway_model_profile
 from agent.runtime.budget import (
     BudgetSnapshot,
     TaskBudgetLedger,
@@ -91,6 +93,7 @@ class RuntimeLimits:
 class TaskExecutionContext:
     model_gateway: ModelGateway
     cancellation: CancellationToken
+    model_profile: ResolvedModelProfile | None = None
     limits: RuntimeLimits = field(default_factory=RuntimeLimits)
     event_sink: EventSink = field(default_factory=NullEventSink)
     metrics_sink: MetricsSink = field(default_factory=NullMetricsSink)
@@ -105,6 +108,12 @@ class TaskExecutionContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.model_profile is None:
+            resolved_profile = getattr(self.model_gateway, "resolved_profile", None)
+            if not isinstance(resolved_profile, ResolvedModelProfile):
+                resolved_profile = cached_gateway_model_profile(self.model_gateway)
+            if isinstance(resolved_profile, ResolvedModelProfile):
+                object.__setattr__(self, "model_profile", resolved_profile)
         if self.model_gate is None:
             object.__setattr__(
                 self,

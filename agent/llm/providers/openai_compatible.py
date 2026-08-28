@@ -26,23 +26,14 @@ from agent.llm.contracts import (
     TokenUsage,
     UnsupportedModelCapability,
 )
+from agent.llm.model_profile import ResolvedModelProfile, resolve_model_profile
+from agent.llm.model_profile_compat import thaw_provider_options
 from agent.llm.providers.openai_input_tokens import (
     extension_url,
     measure_request_input_tokens,
 )
 from agent.runtime.budget_estimation import RequestInputMeasurement
 from agent.runtime.logging import logger
-
-
-def _structured_modes(raw: Any) -> tuple[StructuredOutputMode, ...]:
-    value = str(raw or "json_prompt").lower()
-    modes: list[StructuredOutputMode] = []
-    if value == "json_schema":
-        modes.append(StructuredOutputMode.JSON_SCHEMA)
-    elif value == "gbnf":
-        modes.append(StructuredOutputMode.GBNF)
-    modes.append(StructuredOutputMode.JSON_PROMPT)
-    return tuple(modes)
 
 
 def _token_value(data: Dict[str, Any], primary: str, legacy: str) -> int | None:
@@ -63,29 +54,17 @@ def _token_value(data: Dict[str, Any], primary: str, legacy: str) -> int | None:
 class OpenAICompatibleGateway:
     provider_name = "openai_compatible"
 
-    def __init__(self, profile: Dict[str, Any]) -> None:
-        self.profile = dict(profile)
-        self.model = str(profile.get("model", "default"))
-        self.timeout = float(profile.get("timeout", 300))
-        self.provider_options = dict(profile.get("provider_options") or {})
-        self.api_url = self._resolve_api_url(profile)
-        raw_capabilities = profile.get("capabilities") or {}
-        self._capabilities = ProviderCapabilities(
-            streaming=bool(raw_capabilities.get("streaming", True)),
-            structured_output_modes=_structured_modes(
-                raw_capabilities.get("structured_output", "json_prompt")
-            ),
-            reasoning=bool(raw_capabilities.get("reasoning", False)),
-            token_counting=bool(raw_capabilities.get("token_counting", False)),
-            tool_calls=bool(raw_capabilities.get("tool_calls", False)),
+    def __init__(self, profile: ResolvedModelProfile | Dict[str, Any]) -> None:
+        self.resolved_profile = (
+            profile if isinstance(profile, ResolvedModelProfile) else resolve_model_profile(profile)
         )
-
-    @staticmethod
-    def _resolve_api_url(profile: Dict[str, Any]) -> str:
-        if profile.get("api_url"):
-            return str(profile["api_url"])
-        base_url = str(profile.get("base_url", "http://127.0.0.1:8080/v1")).rstrip("/")
-        return f"{base_url}/chat/completions"
+        self.profile = self.resolved_profile.to_dict()
+        self.model = self.resolved_profile.model
+        self.timeout = self.resolved_profile.timeout
+        self.provider_options = thaw_provider_options(self.resolved_profile.provider_options)
+        self.api_url = self.resolved_profile.api_url
+        self.endpoint_identity = self.resolved_profile.endpoint_identity
+        self._capabilities = self.resolved_profile.capabilities
 
     @property
     def capabilities(self) -> ProviderCapabilities:

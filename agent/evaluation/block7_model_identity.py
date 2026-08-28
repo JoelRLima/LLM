@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from agent.llm.identity import (
     GENERIC_MODEL_ALIASES,
@@ -12,6 +12,7 @@ from agent.llm.identity import (
     normalize_endpoint_identity,
     normalize_external_identity,
 )
+from agent.llm.model_profile import resolve_model_profile
 
 DEFAULT_PROFILE = "local_8gb"
 def planned_model_profile(repo_root: str | Path, profile_name: str = DEFAULT_PROFILE) -> dict[str, Any]:
@@ -19,35 +20,18 @@ def planned_model_profile(repo_root: str | Path, profile_name: str = DEFAULT_PRO
 
     config_path = Path(repo_root).resolve() / "agent" / "resources" / "default_config.json"
     raw = json.loads(config_path.read_text(encoding="utf-8"))
-    profiles = raw.get("model_profiles") if isinstance(raw, dict) else {}
-    profile = dict(profiles.get(profile_name, {})) if isinstance(profiles, dict) else {}
-    capabilities = profile.get("capabilities")
-    capabilities = dict(capabilities) if isinstance(capabilities, Mapping) else {}
-    endpoint = profile.get("base_url") or profile.get("api_url") or (
-        raw.get("api_url") if isinstance(raw, dict) else None
-    )
-    provider_options = profile.get("provider_options")
-    provider_options = dict(provider_options) if isinstance(provider_options, Mapping) else {}
+    resolved = resolve_model_profile(raw, profile_name=profile_name)
     return {
-        "provider": str(profile.get("provider", "openai_compatible")),
-        "profile": profile_name,
-        "configured_model_id": str(profile.get("model", raw.get("model", "default"))),
-        "model": str(profile.get("model", raw.get("model", "default"))),
-        "temperature": profile.get("temperature", 0.2),
-        "max_tokens": profile.get("max_tokens", 2048),
-        "timeout": profile.get("timeout", 300),
-        "capabilities": {
-            "streaming": bool(capabilities.get("streaming", True)),
-            "structured_output": str(capabilities.get("structured_output", "gbnf")),
-            "reasoning": bool(capabilities.get("reasoning", True)),
-            "token_counting": bool(capabilities.get("token_counting", True)),
-            "tool_calls": bool(capabilities.get("tool_calls", False)),
-        },
-        "provider_options": {
-            key: value for key, value in sorted(provider_options.items())
-            if str(key).casefold() not in {"authorization", "api_key", "password", "token", "secret"}
-        },
-        "endpoint_identity": normalize_endpoint_identity(endpoint),
+        "provider": resolved.provider,
+        "profile": resolved.name,
+        "configured_model_id": resolved.model,
+        "model": resolved.model,
+        "temperature": resolved.temperature,
+        "max_tokens": resolved.max_output_tokens,
+        "timeout": resolved.timeout,
+        "capabilities": resolved.capabilities.to_dict(),
+        "provider_options": dict(resolved.to_dict()["provider_options"]),
+        "endpoint_identity": resolved.endpoint_identity,
         "actual_provider_model_id": None,
         "actual_identity_available": False,
         "endpoint_policy": "not accessed before explicit Phase 5 authorization",

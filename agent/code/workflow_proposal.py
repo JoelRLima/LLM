@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, Dict, Sequence
 
 from agent.code.changes import ChangeSet, ChangeSetError, changeset_from_dict
@@ -13,7 +12,6 @@ from agent.llm.structured_output import (
     StructuredOutputStrategy,
     parse_structured_response,
 )
-from agent.runtime.budget import BudgetExhausted, estimate_model_request_tokens, normalize_usage
 
 CHANGESET_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -89,12 +87,18 @@ def _decode_proposal(
 
 
 def _proposal_request(service: Any, prompt: str, structured: Any) -> ModelRequest:
+    profile = getattr(service.context, "model_profile", None)
+    model = getattr(
+        profile,
+        "model",
+        service.context.metadata.get("model", "default"),
+    )
     return ModelRequest(
         messages=(
             ModelMessage("system", "Você propõe mudanças revisáveis. Não escreva no filesystem."),
             ModelMessage("user", prompt),
         ),
-        model=str(service.context.metadata.get("model", "default")),
+        model=str(model),
         temperature=0.1,
         max_output_tokens=service.context.limits.max_output_tokens,
         structured_output=structured,
@@ -121,99 +125,12 @@ def _prompt(objective: str, targets: Sequence[str], context: str, instruction: s
 
 
 def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
-    service.context.emit("model_call_started", {"operation": "propose_changes"})
-    request_input_measurement = service.context.measure_request_input_tokens(request)
-    estimated_request_tokens = request_input_measurement.token_count or 0
-    estimation_source = request_input_measurement.source
-    output_limit = getattr(request, "max_output_tokens", 0)
-    if isinstance(output_limit, bool) or not isinstance(output_limit, int):
-        output_limit = 0
-    allowance = max(1, estimated_request_tokens + max(0, output_limit))
-    call_number = service.context.consume_model_call(
-        request,
-        token_allowance=allowance,
-        request_input_measurement=request_input_measurement,
-    )
-    reserved_tokens = service.context.reservation_for_model_call(call_number)
-    started_at = time.monotonic()
+    """Delegate the coding provider attempt to the canonical lifecycle owner."""
 
-    def finalize_failure() -> None:
-        estimate = estimate_model_request_tokens(
-            request,
-            request_input_measurement=request_input_measurement,
-            gateway=service.context.model_gateway,
-        )
-        service.context.finalize_model_call(
-            call_number,
-            estimated_tokens=estimate,
-        )
-        data = {
-            "operation": "propose_changes",
-            "provider": service.context.model_gateway.provider_name,
-            "call_number": call_number,
-            "reserved_tokens": reserved_tokens,
-            "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
-            "success": False,
-            "token_usage_complete": False,
-            "estimated_tokens": estimate,
-            "accounted_tokens": estimate,
-        }
-        data.update(request_input_measurement.to_dict())
-        data["estimated_request_tokens"] = estimated_request_tokens
-        data["request_estimation_source"] = estimation_source
-        service.context.record_metric("model_call", data)
+    from agent.runtime.model_call import ModelCallService
 
-    try:
-        with service.context.model_slot():
-            response = service.context.model_gateway.complete(request)
-    except BudgetExhausted:
-        finalize_failure()
-        raise
-    except BaseException:
-        finalize_failure()
-        raise
-    usage = getattr(response, "usage", None)
-    estimate = estimate_model_request_tokens(
+    outcome = ModelCallService.for_context(service.context).complete(
         request,
-        response,
-        request_input_measurement=request_input_measurement,
-        gateway=service.context.model_gateway,
-        usage=usage,
+        operation="propose_changes",
     )
-    service.context.finalize_model_call(
-        call_number,
-        usage=usage,
-        estimated_tokens=estimate,
-    )
-    input_tokens, output_tokens, total_tokens, authoritative_total, complete = normalize_usage(usage)
-    accounted_total = authoritative_total if authoritative_total is not None else estimate
-    data = {
-        "operation": "propose_changes",
-        "provider": service.context.model_gateway.provider_name,
-        "call_number": call_number,
-        "reserved_tokens": reserved_tokens,
-        "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
-        "success": True,
-        "token_usage_complete": complete,
-        "estimated_tokens": 0 if complete else estimate,
-        "accounted_tokens": accounted_total,
-        **request_input_measurement.to_dict(),
-        "estimated_request_tokens": estimated_request_tokens,
-        "request_estimation_source": estimation_source,
-    }
-    for field in ("input_tokens", "output_tokens", "total_tokens"):
-        value = getattr(usage, field, None)
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
-            data[field] = int(value)
-    if input_tokens is not None and request_input_measurement.token_count is not None:
-        delta = input_tokens - request_input_measurement.token_count
-        data["request_input_token_delta"] = delta
-        data["request_input_token_abs_delta"] = abs(delta)
-        data["request_input_token_consistent"] = delta == 0
-    service.context.record_metric("model_call", data)
-    service.context.emit("model_call_completed", {
-        "operation": "propose_changes",
-        "provider": service.context.model_gateway.provider_name,
-        "tokens": getattr(usage, "total_tokens", None),
-    })
-    return response, call_number
+    return outcome.response, outcome.call_number

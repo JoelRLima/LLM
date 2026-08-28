@@ -8,8 +8,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from agent.llm.identity_safety import canonicalize_identity_value, redact_identity
+from agent.llm.model_profile_binding import cached_gateway_model_profile
+
 GENERIC_MODEL_ALIASES = frozenset({"default"})
-_SECRET_KEYS = frozenset({"authorization", "api_key", "password", "token", "secret"})
 _IDENTITY_FIELDS = (
     "call_index",
     "provider",
@@ -23,7 +25,13 @@ _IDENTITY_FIELDS = (
 def canonical_json(value: Any) -> str:
     """Encode identity/fingerprint data deterministically."""
 
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return json.dumps(
+        canonicalize_identity_value(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
 
 
 def sha256_digest(value: bytes | str) -> str:
@@ -31,22 +39,10 @@ def sha256_digest(value: bytes | str) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _redact_identity(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): _redact_identity(item)
-            for key, item in value.items()
-            if str(key).casefold() not in _SECRET_KEYS
-        }
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return [_redact_identity(item) for item in value]
-    return value
-
-
 def model_config_fingerprint(config: Mapping[str, Any]) -> str:
     """Fingerprint a non-secret declared model/provider configuration."""
 
-    return sha256_digest(canonical_json(_redact_identity(config)))
+    return sha256_digest(canonical_json(redact_identity(config)))
 
 
 def normalize_endpoint_identity(value: Any) -> str | None:
@@ -119,15 +115,27 @@ def observed_provider_model_id(metadata: Any) -> str | None:
     return None
 
 
-def declared_provider_identity(gateway: Any) -> dict[str, Any]:
-    """Project declared gateway metadata without exposing secrets or authority."""
+def declared_provider_identity(gateway: Any, profile: Any = None) -> dict[str, Any]:
+    """Project secret-safe identity from the relevant resolved profile."""
 
     raw_profile = getattr(gateway, "profile", None)
-    profile = _redact_identity(raw_profile) if isinstance(raw_profile, Mapping) else {}
-    capabilities = getattr(gateway, "capabilities", None)
+    canonical_profile = profile if callable(getattr(profile, "to_dict", None)) else getattr(gateway, "resolved_profile", None)
+    if not callable(getattr(canonical_profile, "to_dict", None)):
+        canonical_profile = cached_gateway_model_profile(gateway)
+    if canonical_profile is not None and callable(getattr(canonical_profile, "to_dict", None)):
+        profile = canonical_profile.to_dict()
+        declared_provider = getattr(canonical_profile, "provider", None)
+        declared_model = getattr(canonical_profile, "model", None)
+        declared_capabilities = getattr(canonical_profile, "capabilities", None)
+    else:
+        profile = redact_identity(raw_profile) if isinstance(raw_profile, Mapping) else {}
+        declared_provider = getattr(gateway, "provider_name", None)
+        declared_model = getattr(gateway, "model", None)
+        declared_capabilities = getattr(gateway, "capabilities", None)
+    capabilities = declared_capabilities
     identity = {
-        "provider": str(getattr(gateway, "provider_name", "") or ""),
-        "model": str(getattr(gateway, "model", "") or ""),
+        "provider": str(declared_provider or ""),
+        "model": str(declared_model or ""),
         "profile": profile,
         "capabilities": {
             "streaming": bool(getattr(capabilities, "streaming", False)),
@@ -140,13 +148,19 @@ def declared_provider_identity(gateway: Any) -> dict[str, Any]:
             "tool_calls": bool(getattr(capabilities, "tool_calls", False)),
         },
         "endpoint_identity": normalize_endpoint_identity(
-            profile.get("base_url")
+            profile.get("endpoint_identity")
+            or profile.get("base_url")
             or profile.get("api_url")
             or getattr(gateway, "endpoint_identity", None)
         ),
         "actual_provider_model_id": getattr(gateway, "provider_model_id", None),
     }
-    identity["model_config_fingerprint"] = model_config_fingerprint(identity)
+    canonical_fingerprint = getattr(canonical_profile, "fingerprint", None)
+    identity["model_config_fingerprint"] = (
+        canonical_fingerprint
+        if isinstance(canonical_fingerprint, str) and canonical_fingerprint
+        else model_config_fingerprint(identity)
+    )
     return identity
 
 
@@ -280,6 +294,7 @@ __all__ = [
     "normalize_external_identity",
     "observed_provider_model_id",
     "project_observed_provider_identity",
+    "redact_identity",
     "sha256_digest",
     "unavailable_observed_identity",
 ]

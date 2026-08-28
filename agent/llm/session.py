@@ -7,9 +7,9 @@ from agent.llm.contracts import (
     ModelRequest,
     ModelResponse,
     ModelTimeoutError,
-    build_model_call_metric,
 )
 from agent.llm.decision_contract import ModelRequestContract
+from agent.llm.model_profile import ResolvedModelProfile, resolve_gateway_model_profile
 from agent.llm.providers import create_model_gateway
 from agent.llm.session_legacy import LegacySessionMixin
 from agent.runtime.budget import TaskBudgetLedger
@@ -34,6 +34,10 @@ class ChatSession(LegacySessionMixin):
         self.thinking_budget: int = 0
         self.config: Dict[str, Any] = config
         self.gateway: LegacyPayloadGateway = gateway or create_model_gateway(config)
+        self.model_profile: ResolvedModelProfile = resolve_gateway_model_profile(
+            config,
+            self.gateway,
+        )
         self.budget_ledger = budget_ledger or TaskBudgetLedger.from_config(config)
         self.hardware_profile: HardwareProfile = resolve_hardware_profile(config)
         self.model_call_callback: Callable[[Dict[str, Any]], None] | None = None
@@ -44,80 +48,6 @@ class ChatSession(LegacySessionMixin):
     ) -> None:
         """Instala o observador de cada request real do provider."""
         self.model_call_callback = callback
-    def _record_model_call(
-        self,
-        started_at: float,
-        *,
-        success: bool,
-        streaming: bool,
-        response: Any = None,
-        request: ModelRequest | None = None,
-        call_number: int | None = None,
-        estimated_tokens: int = 0,
-        reserved_tokens: int = 0,
-        estimated_request_tokens: int = 0,
-        request_estimation_source: str = "unavailable",
-        context_compacted: bool = False,
-        request_input_measurement: Any = None,
-    ) -> None:
-        callback = self.model_call_callback
-        if callback is None:
-            return
-        entry = build_model_call_metric(
-            self.gateway,
-            self.config,
-            started_at,
-            success=success,
-            streaming=streaming,
-            response=response,
-            request=request,
-            call_number=call_number,
-            estimated_tokens=estimated_tokens,
-            reserved_tokens=reserved_tokens,
-            estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=request_estimation_source,
-            context_limit=self.hardware_profile.context_limit,
-            context_compacted=context_compacted,
-            request_input_measurement=request_input_measurement,
-        )
-        try:
-            callback(entry)
-        except Exception as exc:  # observability must not change provider semantics
-            logger.warning("Falha ao registrar chamada do modelo: %s", type(exc).__name__)
-    def _finalize_model_call(
-        self,
-        call_number: int,
-        started_at: float,
-        *,
-        success: bool,
-        streaming: bool,
-        response: Any = None,
-        usage: Any = None,
-        request: ModelRequest | None = None,
-        estimated_tokens: int = 0,
-        estimated_request_tokens: int = 0,
-        request_estimation_source: str = "unavailable",
-        context_compacted: bool = False,
-        request_input_measurement: Any = None,
-    ) -> None:
-        reserved_tokens = self.budget_ledger.reservation_for(call_number)
-        self.budget_ledger.finalize_model_call(
-            call_number, usage=usage, estimated_tokens=estimated_tokens
-        )
-        self._record_model_call(
-            started_at,
-            success=success,
-            streaming=streaming,
-            response=response,
-            request=request,
-            call_number=call_number,
-            estimated_tokens=estimated_tokens,
-            reserved_tokens=reserved_tokens,
-            estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=request_estimation_source,
-            context_compacted=context_compacted,
-            request_input_measurement=request_input_measurement,
-        )
     def set_system_prompt(self, prompt: str) -> None:
         """Substitui o system prompt base."""
         self.messages[0]["content"] = prompt

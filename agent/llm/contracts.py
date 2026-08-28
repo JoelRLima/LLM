@@ -43,6 +43,25 @@ class ProviderCapabilities:
     reasoning: bool = False
     token_counting: bool = False
     tool_calls: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Project typed capabilities for compatibility/reporting edges."""
+
+        return {
+            "streaming": self.streaming,
+            "structured_output": (
+                self.structured_output_modes[0].value
+                if self.structured_output_modes
+                else "none"
+            ),
+            "structured_output_modes": [
+                mode.value if isinstance(mode, StructuredOutputMode) else str(mode)
+                for mode in self.structured_output_modes
+            ],
+            "reasoning": self.reasoning,
+            "token_counting": self.token_counting,
+            "tool_calls": self.tool_calls,
+        }
     def supports(self, mode: StructuredOutputMode) -> bool:
         return mode in self.structured_output_modes
 @dataclass(frozen=True)
@@ -123,6 +142,8 @@ class PendingStream:
         "started_at",
         "request",
         "request_input_measurement",
+        "service",
+        "operation",
     )
     def __init__(
         self,
@@ -132,6 +153,8 @@ class PendingStream:
         started_at: float,
         request: Any = None,
         request_input_measurement: Any = None,
+        service: Any = None,
+        operation: str | None = None,
     ) -> None:
         self.response = response
         self.call_number = call_number
@@ -139,6 +162,8 @@ class PendingStream:
         self.started_at = started_at
         self.request = request
         self.request_input_measurement = request_input_measurement
+        self.service = service
+        self.operation = operation
     def __getattr__(self, name: str) -> Any:
         return getattr(self.response, name)
 def response_usage(response: Any) -> Any:

@@ -14,6 +14,7 @@ from agent.code.policy import ChangeApprover, change_policy_from_config
 from agent.code.task_templates import build_code_task_template
 from agent.code.workflows import CodingWorkflowService
 from agent.llm.contracts import ModelGateway, UnavailableModelGateway
+from agent.llm.model_profile import resolve_gateway_model_profile
 from agent.planning.task_graph import TaskGraph, task_graph_from_dict
 from agent.runtime.context import (
     NullMetricsSink,
@@ -48,18 +49,12 @@ def build_code_context(
             parent_context.permissions if permissions is None else frozenset(permissions)
         )
         return parent_context.child("code_task", permissions=child_permissions)
-    profiles = config.get("model_profiles")
-    profile_name = config.get("default_model_profile")
-    selected_profile = (
-        profiles.get(profile_name, {})
-        if isinstance(profiles, dict) and isinstance(profile_name, str)
-        else {}
-    )
-    if not isinstance(selected_profile, dict):
-        selected_profile = {}
+    selected_gateway = model_gateway or UnavailableModelGateway()
+    resolved_profile = resolve_gateway_model_profile(config, selected_gateway)
     limits = RuntimeLimits.from_config(config)
     return TaskExecutionContext(
-        model_gateway=model_gateway or UnavailableModelGateway(),
+        model_gateway=selected_gateway,
+        model_profile=resolved_profile,
         cancellation=CancellationToken(),
         limits=limits,
         metrics_sink=metrics_sink or NullMetricsSink(),
@@ -73,11 +68,12 @@ def build_code_context(
             )
         ),
         metadata={
-            "model": getattr(
-                model_gateway,
-                "model",
-                selected_profile.get("model", config.get("model", "default")),
-            )
+            "model": resolved_profile.model,
+            "provider": resolved_profile.provider,
+            "temperature": resolved_profile.temperature,
+            "max_output_tokens": resolved_profile.max_output_tokens,
+            "timeout": resolved_profile.timeout,
+            "model_config_fingerprint": resolved_profile.fingerprint,
         },
     )
 

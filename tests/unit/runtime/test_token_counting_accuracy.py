@@ -124,7 +124,7 @@ def test_t3_unsupported_request_counter_falls_back_to_provider_text_tokenizer(
     ]
 
     with patch.object(openai_module.requests, "post", side_effect=responses) as post:
-        measurement = gateway.measure_request_input_tokens(_request())
+        measurement = measure_model_request_input_tokens(_request(), gateway)
 
     assert measurement.token_count == 11
     assert measurement.source == PROVIDER_TEXT_TOKENIZER
@@ -143,10 +143,10 @@ def test_t4_counter_network_failure_does_not_retry_generation() -> None:
         openai_module.requests,
         "post",
         side_effect=[
-            openai_module.RequestException("counter down"),
-            openai_module.RequestException("tokenizer down"),
-            completion,
-            _http_response(200, {"tokens": [1]}),
+                openai_module.RequestException("counter down"),
+                openai_module.RequestException("tokenizer down"),
+                completion,
+                _http_response(200, {"tokens": [1]}),
         ],
     ) as post:
         session = ChatSession("system", {"model": "mock-model"}, gateway=gateway)
@@ -183,11 +183,28 @@ def test_t5_malformed_request_counter_result_falls_back_non_exact(
         "post",
         return_value=_http_response(200, body),
     ):
-        measurement = gateway.measure_request_input_tokens(_request())
+        measurement = measure_model_request_input_tokens(_request(), gateway)
 
     assert measurement.token_count == 7
     assert measurement.source == PROVIDER_TEXT_TOKENIZER
     assert measurement.exact is False
+
+
+def test_t5c_provider_exact_helper_reports_unavailable_without_global_fallback() -> None:
+    gateway = _openai_gateway()
+    gateway.count_tokens = MagicMock(return_value=7)  # type: ignore[method-assign]
+
+    with patch.object(
+        openai_module.requests,
+        "post",
+        return_value=_http_response(404, {"error": "unsupported"}),
+    ) as post:
+        measurement = gateway.measure_request_input_tokens(_request())
+
+    assert measurement.available is False
+    assert measurement.source == "unavailable"
+    gateway.count_tokens.assert_not_called()  # type: ignore[attr-defined]
+    assert post.call_count == 1
 
 
 def test_t5b_explicitly_unsupported_text_counter_is_not_called_as_provider_truth() -> None:

@@ -10,13 +10,16 @@ from copy import deepcopy
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent.runtime.config_effective import apply_selected_profile_overrides
 from agent.runtime.config_environment import environment_config
 from agent.runtime.config_errors import ConfigError, ConfigNotFound, ConfigVersionError
 from agent.runtime.config_schema import SCHEMA_VERSION, validate_config_document
 from agent.runtime.paths import AppPaths
+
+if TYPE_CHECKING:
+    from agent.llm.model_profile import ResolvedModelProfile
 
 
 def packaged_config_defaults(
@@ -58,6 +61,14 @@ class ResolvedConfig:
         values = self.to_dict()
         values.pop("schema_version", None)
         return values
+
+    @property
+    def model_profile(self) -> "ResolvedModelProfile":
+        """Resolve the effective model profile through the canonical owner."""
+
+        from agent.llm.model_profile import resolve_model_profile
+
+        return resolve_model_profile(self._values)
 
 
 class ConfigRepository:

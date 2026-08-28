@@ -39,12 +39,15 @@ def test_decision_contract_production_has_no_regression_fixture_vocabulary() -> 
 
 
 def test_final_request_measurement_precedes_provider_dispatch() -> None:
-    source = (ROOT / "agent/llm/session_requests.py").read_text(encoding="utf-8")
+    source = (ROOT / "agent/runtime/model_call.py").read_text(encoding="utf-8")
+    record_source = (ROOT / "agent/runtime/model_call_record.py").read_text(
+        encoding="utf-8"
+    )
 
-    measurement = source.index("measure_model_request_input_tokens(")
-    dispatch = source.index("session.gateway.complete(request)")
+    measurement = source.index("measure_request_input_tokens(")
+    dispatch = source.index("_complete_provider(")
     assert measurement < dispatch
-    assert "request_estimation_source=measurement.source" in source
+    assert "request_estimation_source=measurement.source" in record_source
 
 
 def test_eval_code_does_not_own_task_budget_call_accounting() -> None:

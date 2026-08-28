@@ -13,6 +13,7 @@ def build_task_execution_context(owner: Any) -> TaskExecutionContext:
     config = owner.session.config or {}
     return TaskExecutionContext(
         model_gateway=owner.session.gateway,
+        model_profile=getattr(owner.session, "model_profile", None),
         cancellation=owner.cancellation_token,
         limits=RuntimeLimits.from_config(config),
         budget_ledger=owner.task_budget,

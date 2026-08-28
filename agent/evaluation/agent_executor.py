@@ -154,7 +154,10 @@ class AgentApplicationScenarioExecutor:
                     "token_measurement": canonical_metrics.get("token_measurement", "unavailable"),
                     "canonical_metrics": dict(canonical_metrics),
                 }
-                measurement["provider_identity"] = project_declared_provider_identity(gateway)
+                measurement["provider_identity"] = project_declared_provider_identity(
+                    gateway,
+                    profile=getattr(application.session, "model_profile", None),
+                )
                 events = list(application.orchestrator.agent_state.events)
                 gateway_evidence = {}
                 export_evidence = getattr(gateway, "export_evidence", None)

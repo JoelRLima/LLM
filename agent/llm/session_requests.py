@@ -1,20 +1,15 @@
-"""Canonical request/stream operations for :class:`ChatSession`."""
+"""Canonical request and stream operations for ChatSession."""
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from typing import Any, Dict, Optional, cast
 
 from agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    ModelResponseError,
-    StreamEventType,
     StructuredOutputMode,
     StructuredOutputRequest,
-    response_text,
 )
 from agent.llm.decision_contract import ModelRequestContract, coerce_request_contract
 from agent.llm.legacy_payload import (
@@ -22,22 +17,30 @@ from agent.llm.legacy_payload import (
     complete_legacy_payload_request,
     legacy_payload_from_request,
 )
-from agent.llm.legacy_payload import (
-    legacy_payload as _legacy_payload,
+from agent.llm.model_profile import (
+    ResolvedModelProfile,
+    resolve_gateway_model_profile,
 )
-from agent.runtime.budget import (
-    BudgetExhausted,
-    estimate_model_request_tokens,
-)
-from agent.runtime.budget_estimation import measure_model_request_input_tokens
 
 
 def _mapping_value(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
 def _session_config(session: Any) -> Mapping[str, Any]:
     return _mapping_value(getattr(session, "config", {}))
-def _gateway_profile(session: Any) -> Mapping[str, Any]:
-    return _mapping_value(getattr(getattr(session, "gateway", None), "profile", {}))
+
+
+def _session_profile(session: Any) -> ResolvedModelProfile:
+    profile = getattr(session, "model_profile", None)
+    if isinstance(profile, ResolvedModelProfile):
+        return profile
+    return resolve_gateway_model_profile(
+        _session_config(session),
+        getattr(session, "gateway", None),
+    )
+
+
 def _integer(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return default
@@ -47,43 +50,6 @@ def _integer(value: Any, default: int) -> int:
         return default
 
 
-def _estimate_model_tokens(session: Any, request: ModelRequest, response: Any = None, measurement: Any = None, usage: Any = None) -> int:
-    return estimate_model_request_tokens(
-        request,
-        response,
-        request_input_measurement=measurement,
-        gateway=session.gateway,
-        usage=usage,
-    )
-
-
-def _finalize_model_tokens(
-    session: Any,
-    call_number: int,
-    started_at: float,
-    request: ModelRequest,
-    measurement: Any,
-    estimate: int,
-    *,
-    success: bool,
-    streaming: bool,
-    response: Any = None,
-    usage: Any = None,
-) -> None:
-    session._finalize_model_call(
-        call_number,
-        started_at,
-        success=success,
-        streaming=streaming,
-        response=response,
-        usage=usage,
-        estimated_tokens=estimate,
-        estimated_request_tokens=measurement.token_count or 0,
-        request_estimation_source=measurement.source,
-        context_compacted=request.context_compacted,
-        request_input_measurement=measurement,
-        request=request,
-    )
 def build_model_request(
     session: Any,
     response_format: Optional[str] = None,
@@ -98,32 +64,20 @@ def build_model_request(
         system_content += "\n\n" + response_format
     payload_messages = [{"role": "system", "content": system_content}] + session.messages[1:]
     structured = (
-        StructuredOutputRequest(mode=StructuredOutputMode.GBNF, grammar=grammar)
-        if grammar is not None
-        else None
+        None
+        if grammar is None
+        else StructuredOutputRequest(mode=StructuredOutputMode.GBNF, grammar=grammar)
     )
-    config = _session_config(session)
-    profile = _gateway_profile(session)
+    profile = _session_profile(session)
     hardware_profile = getattr(session, "hardware_profile", None)
-    configured_output_tokens = _integer(
-        profile.get(
-            "max_tokens",
-            config.get(
-                "max_tokens",
-                getattr(hardware_profile, "default_output_tokens", 1024),
-            ),
-        ),
-        1024,
-    )
+    configured_output_tokens = _integer(profile.max_output_tokens, 1024)
     return ModelRequest(
         messages=tuple(
             ModelMessage(role=message["role"], content=message["content"])
             for message in payload_messages
         ),
-        model=str(getattr(session.gateway, "model", config.get("model", "default"))),
-        temperature=float(
-            profile.get("temperature", config.get("temperature", 0.6))
-        ),
+        model=profile.model,
+        temperature=profile.temperature,
         max_output_tokens=(
             configured_output_tokens
             if max_output_tokens is None
@@ -135,156 +89,31 @@ def build_model_request(
         context_limit=getattr(hardware_profile, "context_limit", None),
         request_contract=coerce_request_contract(request_contract),
     )
+
+
 def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse:
-    """Complete one canonical request with task-budget accounting."""
-    request_input_measurement = measure_model_request_input_tokens(
-        request, session.gateway
+    """Delegate canonical completion to the shared model-call lifecycle."""
+
+    from agent.runtime.model_call import ModelCallService
+
+    return cast(
+        ModelResponse,
+        ModelCallService.for_session(session).complete(request).response,
     )
-    estimated_request_tokens = request_input_measurement.token_count or 0
-    allowance = max(
-        1, estimated_request_tokens + max(0, request.max_output_tokens)
-    )
-    call_number = session.budget_ledger.reserve_model_call(allowance)
-    started_at = time.monotonic()
-    try:
-        if callable(getattr(session.gateway, "complete", None)):
-            response = session.gateway.complete(request)
-        else:
-            payload = _legacy_payload(session.gateway, request)
-            legacy_response = session.gateway.complete_payload(payload)
-            response = (
-                legacy_response
-                if isinstance(legacy_response, ModelResponse)
-                else ModelResponse(content=response_text(legacy_response))
-            )
-        if not isinstance(response, ModelResponse):
-            response = ModelResponse(content=response_text(response))
-    except BudgetExhausted:
-        estimate = _estimate_model_tokens(session, request, measurement=request_input_measurement)
-        _finalize_model_tokens(
-            session, call_number, started_at, request, request_input_measurement, estimate,
-            success=False, streaming=False,
-        )
-        raise
-    except BaseException:
-        estimate = _estimate_model_tokens(session, request, measurement=request_input_measurement)
-        _finalize_model_tokens(
-            session, call_number, started_at, request, request_input_measurement, estimate,
-            success=False, streaming=False,
-        )
-        raise
-    estimate = _estimate_model_tokens(
-        session, request, response, request_input_measurement, response.usage
-    )
-    _finalize_model_tokens(
-        session, call_number, started_at, request, request_input_measurement, estimate,
-        success=True, streaming=False, response=response, usage=response.usage,
-    )
-    return response
-def _callback(callbacks: Dict[str, Callable[..., Any]], name: str, value: Any) -> None:
-    handler = callbacks.get(name)
-    if handler is not None:
-        handler(value)
-def _consume_gateway_events(
-    gateway: Any,
-    request: ModelRequest,
-    callbacks: Dict[str, Callable[..., Any]],
-) -> tuple[str, Any]:
-    """Consume native events while keeping the event loop out of ChatSession."""
-    raw_callback = callbacks.get("on_raw_line")
-    if raw_callback is not None:
-        raw_callback("")
-    visible = ""
-    usage: Any = None
-    for event in gateway.stream(request):
-        if event.type is StreamEventType.REASONING:
-            _callback(callbacks, "on_thinking_chunk", event.text)
-        elif event.type is StreamEventType.CONTENT:
-            visible += event.text
-            _callback(callbacks, "on_content_chunk", event.text)
-        elif event.type is StreamEventType.USAGE:
-            usage = event.data
-            _callback(callbacks, "on_usage", event.data)
-        elif event.type is StreamEventType.ERROR:
-            _callback(callbacks, "on_error", event.text)
-            raise ModelResponseError(event.text, partial_content=visible)
-        elif event.type is StreamEventType.DONE and event.data:
-            _callback(callbacks, "on_done", event.data)
-    return visible, usage
-def _consume_legacy_gateway(
-    gateway: Any,
-    request: ModelRequest,
-    callbacks: Dict[str, Callable[..., Any]],
-) -> tuple[str, Any]:
-    payload = _legacy_payload(gateway, request)
-    raw_response = gateway.send_payload(payload, stream=True)
-    usage: Any = None
-    def capture_usage(value: Any) -> None:
-        nonlocal usage
-        usage = value
-        _callback(callbacks, "on_usage", value)
-    stream_callbacks = dict(callbacks)
-    stream_callbacks["on_usage"] = capture_usage
-    visible = cast(str, gateway.consume_stream(raw_response, stream_callbacks))
-    return visible, usage
+
+
 def consume_model_stream(
     session: Any,
     request: ModelRequest,
     callbacks: Dict[str, Callable[..., Any]],
 ) -> str:
-    """Consume a native or legacy stream with one ledger reservation."""
-    request = replace(request, stream=True)
-    request_input_measurement = measure_model_request_input_tokens(
-        request, session.gateway
-    )
-    estimated_request_tokens = request_input_measurement.token_count or 0
-    allowance = max(
-        1, estimated_request_tokens + max(0, request.max_output_tokens)
-    )
-    call_number = session.budget_ledger.reserve_model_call(allowance)
-    started_at = time.monotonic()
-    usage: Any = None
-    visible = ""
-    try:
-        if callable(getattr(session.gateway, "stream", None)):
-            visible, usage = _consume_gateway_events(session.gateway, request, callbacks)
-        else:
-            visible, usage = _consume_legacy_gateway(session.gateway, request, callbacks)
-    except BudgetExhausted as exc:
-        partial_content = getattr(exc, "partial_content", None)
-        if isinstance(partial_content, str) and partial_content:
-            visible = partial_content
-        estimate = _estimate_model_tokens(
-            session, request, visible, request_input_measurement, usage
-        )
-        _finalize_model_tokens(
-            session, call_number, started_at, request, request_input_measurement, estimate,
-            success=False, streaming=True,
-            response={"usage": usage} if usage is not None else visible, usage=usage,
-        )
-        raise
-    except BaseException as exc:
-        partial_content = getattr(exc, "partial_content", None)
-        if isinstance(partial_content, str) and partial_content:
-            visible = partial_content
-        estimate = _estimate_model_tokens(
-            session, request, visible, request_input_measurement, usage
-        )
-        _finalize_model_tokens(
-            session, call_number, started_at, request, request_input_measurement, estimate,
-            success=False, streaming=True,
-            response={"usage": usage} if usage is not None else visible, usage=usage,
-        )
-        raise
-    estimate = _estimate_model_tokens(
-        session, request, visible, request_input_measurement, usage
-    )
-    _finalize_model_tokens(
-        session, call_number, started_at, request, request_input_measurement, estimate,
-        success=True, streaming=True,
-        response={"usage": usage} if usage is not None else visible, usage=usage,
-    )
-    return visible.strip()
+    """Delegate canonical streaming to the shared model-call lifecycle."""
+
+    from agent.runtime.model_call import ModelCallService
+
+    return ModelCallService.for_session(session).stream(request, callbacks).text
+
+
 __all__ = [
     "build_legacy_model_request",
     "build_model_request",
