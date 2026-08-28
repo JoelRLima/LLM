@@ -33,6 +33,7 @@ from agent.reporting.metrics_support import (
 from agent.reporting.metrics_support import (
     token_count as _token_count,
 )
+from agent.reporting.request_metrics import project_request_input_metrics
 
 TOKEN_KEYS = ("tokens", "total_tokens", "token_count", "prompt_tokens", "completion_tokens")
 DURATION_KEYS = ("duration_ms", "elapsed_ms", "latency_ms")
@@ -55,6 +56,13 @@ class RunMetricsSnapshot:
     reported_input_tokens: int
     reported_output_tokens: int
     reported_total_tokens: int
+    request_input_tokens: int | None
+    request_input_measurement_source: str
+    request_input_measurement_exact: bool | None
+    request_input_measurement_available: bool
+    request_input_token_delta: int | None
+    request_input_token_abs_delta: int | None
+    request_input_token_consistent: bool | None
     derived_tokens: int | None
     reserved_tokens: int
     reserved_allowance_tokens: int
@@ -114,6 +122,10 @@ def project_run_metrics(
         for entry in model_entries
         if _has_number(entry, ("total_tokens",))
     )
+    request_input = project_request_input_metrics(model_entries)
+    request_input_tokens = request_input["request_input_tokens"]
+    request_input_source = request_input["request_input_measurement_source"]
+    request_input_exact = request_input["request_input_measurement_exact"]
     estimated_tokens = sum(
         _first_number(entry, ("estimated_tokens",)) for entry in model_entries
     )
@@ -224,6 +236,13 @@ def project_run_metrics(
         reported_input_tokens=reported_input_tokens,
         reported_output_tokens=reported_output_tokens,
         reported_total_tokens=reported_total_tokens,
+        request_input_tokens=request_input_tokens,
+        request_input_measurement_source=request_input_source,
+        request_input_measurement_exact=request_input_exact,
+        request_input_measurement_available=request_input_tokens is not None,
+        request_input_token_delta=request_input["request_input_token_delta"],
+        request_input_token_abs_delta=request_input["request_input_token_abs_delta"],
+        request_input_token_consistent=request_input["request_input_token_consistent"],
         derived_tokens=derived_tokens,
         reserved_tokens=reserved_tokens,
         reserved_allowance_tokens=reserved_allowance_tokens,

@@ -43,6 +43,8 @@ class ScriptedBlock7Gateway:
         raise AssertionError("Block 7 scripted campaign must use canonical completion")
 
     def count_tokens(self, text: str) -> int:
+        """Deterministic text-only fallback; never an exact chat count."""
+
         return max(1, len(text) // 4)
 
     def _response(self, system: str, prompt: str) -> str:

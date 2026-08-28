@@ -14,6 +14,10 @@ from agent.runtime.budget import (
     TaskBudgetLedger,
     estimate_model_request_allowance,
 )
+from agent.runtime.budget_estimation import (
+    RequestInputMeasurement,
+    measure_model_request_input_tokens,
+)
 from agent.runtime.limits import default_runtime_limit, runtime_limit_values
 from agent.runtime.outcome_taxonomy import OperationalStatus
 
@@ -173,14 +177,28 @@ class TaskExecutionContext:
             }
         )
 
-    def consume_model_call(self, request: Any = None, *, token_allowance: int | None = None) -> int:
+    def measure_request_input_tokens(self, request: Any) -> RequestInputMeasurement:
+        """Use the one canonical request-input measurement primitive."""
+
+        return measure_model_request_input_tokens(request, self.model_gateway)
+
+    def consume_model_call(
+        self,
+        request: Any = None,
+        *,
+        token_allowance: int | None = None,
+        request_input_measurement: RequestInputMeasurement | None = None,
+    ) -> int:
         ledger = self.budget_ledger
         if ledger is None:  # Apenas para estreitar o tipo após __post_init__.
             raise RuntimeError("Orçamento de modelo não inicializado.")
         if token_allowance is None and request is not None:
+            measurement = request_input_measurement or self.measure_request_input_tokens(
+                request
+            )
             token_allowance = estimate_model_request_allowance(
                 request,
-                getattr(self.model_gateway, "count_tokens", None),
+                request_input_measurement=measurement,
             )
         return ledger.reserve_model_call(token_allowance or 0)
 

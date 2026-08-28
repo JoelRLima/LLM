@@ -262,7 +262,9 @@ def test_stream_error_after_partial_content_uses_partial_estimate() -> None:
         session.process_stream(pending, {})
 
     snapshot = session.budget_ledger.snapshot()
-    expected_estimate = len("partial") // 4
+    expected_request_input = (len("system") + 3) // 4
+    expected_output_estimate = (len("partial") + 3) // 4
+    expected_estimate = expected_request_input + expected_output_estimate
     assert gateway.send_payload.call_count == 1
     assert snapshot.model_calls == 1
     assert snapshot.reported_total_tokens == 0
@@ -270,6 +272,8 @@ def test_stream_error_after_partial_content_uses_partial_estimate() -> None:
     assert snapshot.estimated_tokens == expected_estimate
     assert snapshot.accounted_tokens == expected_estimate
     assert entries[0]["success"] is False
+    assert entries[0]["request_input_tokens"] == expected_request_input
+    assert entries[0]["request_input_measurement_source"] == "heuristic_chars_per_token"
     assert entries[0]["estimated_tokens"] == expected_estimate
     assert entries[0]["accounted_tokens"] == expected_estimate
 

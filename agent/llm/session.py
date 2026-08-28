@@ -58,6 +58,7 @@ class ChatSession(LegacySessionMixin):
         estimated_request_tokens: int = 0,
         request_estimation_source: str = "unavailable",
         context_compacted: bool = False,
+        request_input_measurement: Any = None,
     ) -> None:
         callback = self.model_call_callback
         if callback is None:
@@ -77,6 +78,7 @@ class ChatSession(LegacySessionMixin):
             request_estimation_source=request_estimation_source,
             context_limit=self.hardware_profile.context_limit,
             context_compacted=context_compacted,
+            request_input_measurement=request_input_measurement,
         )
         try:
             callback(entry)
@@ -96,6 +98,7 @@ class ChatSession(LegacySessionMixin):
         estimated_request_tokens: int = 0,
         request_estimation_source: str = "unavailable",
         context_compacted: bool = False,
+        request_input_measurement: Any = None,
     ) -> None:
         reserved_tokens = self.budget_ledger.reservation_for(call_number)
         self.budget_ledger.finalize_model_call(
@@ -113,6 +116,7 @@ class ChatSession(LegacySessionMixin):
             estimated_request_tokens=estimated_request_tokens,
             request_estimation_source=request_estimation_source,
             context_compacted=context_compacted,
+            request_input_measurement=request_input_measurement,
         )
     def set_system_prompt(self, prompt: str) -> None:
         """Substitui o system prompt base."""

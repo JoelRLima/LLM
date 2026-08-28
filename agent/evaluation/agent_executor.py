@@ -130,6 +130,26 @@ class AgentApplicationScenarioExecutor:
                     "token_usage_complete": bool(canonical_metrics.get("token_usage_complete", False)),
                     "reported_input_tokens": canonical_metrics.get("reported_input_tokens", 0),
                     "reported_output_tokens": canonical_metrics.get("reported_output_tokens", 0),
+                    "reported_total_tokens": canonical_metrics.get("reported_total_tokens", 0),
+                    "request_input_tokens": canonical_metrics.get("request_input_tokens"),
+                    "request_input_measurement_source": canonical_metrics.get(
+                        "request_input_measurement_source", "unavailable"
+                    ),
+                    "request_input_measurement_exact": canonical_metrics.get(
+                        "request_input_measurement_exact"
+                    ),
+                    "request_input_measurement_available": canonical_metrics.get(
+                        "request_input_measurement_available", False
+                    ),
+                    "request_input_token_delta": canonical_metrics.get(
+                        "request_input_token_delta"
+                    ),
+                    "request_input_token_abs_delta": canonical_metrics.get(
+                        "request_input_token_abs_delta"
+                    ),
+                    "request_input_token_consistent": canonical_metrics.get(
+                        "request_input_token_consistent"
+                    ),
                     "total_tokens": canonical_metrics.get("total_tokens"),
                     "token_measurement": canonical_metrics.get("token_measurement", "unavailable"),
                     "canonical_metrics": dict(canonical_metrics),

@@ -254,7 +254,7 @@ def _measurement_summary(measurement: dict[str, object]) -> dict[str, object]:
         "task_id", "duration_ms", "tools", "invocation_id", "invocation_ids", "invocations",
         "terminal_outcome", "error", "output_chars", "truncated", "tool_history_count", "tool_calls", "model_calls", "gateway_calls", "run_id", "status",
         "estimated_tokens", "accounted_tokens", "reserved_tokens", "token_usage_complete",
-        "reported_input_tokens", "reported_output_tokens", "total_tokens", "token_measurement",
+        "reported_input_tokens", "reported_output_tokens", "reported_total_tokens", "request_input_tokens", "request_input_measurement_source", "request_input_measurement_exact", "request_input_measurement_available", "request_input_token_delta", "request_input_token_abs_delta", "request_input_token_consistent", "total_tokens", "token_measurement",
         "provider_identity", "declared_provider_identity", "observed_provider_identity",
     }
     result: dict[str, object] = {}

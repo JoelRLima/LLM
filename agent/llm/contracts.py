@@ -1,10 +1,8 @@
 """Contratos independentes de provider para chamadas de modelo."""
 from __future__ import annotations
 
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterator, Optional, Protocol, Sequence
 
@@ -118,12 +116,29 @@ class ModelResponse:
     provider_metadata: Dict[str, Any] = field(default_factory=dict)
 class PendingStream:
     """Legacy stream response carrying its task-budget reservation."""
-    __slots__ = ("response", "call_number", "payload", "started_at")
-    def __init__(self, response: Any, call_number: int, payload: Dict[str, Any], started_at: float) -> None:
+    __slots__ = (
+        "response",
+        "call_number",
+        "payload",
+        "started_at",
+        "request",
+        "request_input_measurement",
+    )
+    def __init__(
+        self,
+        response: Any,
+        call_number: int,
+        payload: Dict[str, Any],
+        started_at: float,
+        request: Any = None,
+        request_input_measurement: Any = None,
+    ) -> None:
         self.response = response
         self.call_number = call_number
         self.payload = payload
         self.started_at = started_at
+        self.request = request
+        self.request_input_measurement = request_input_measurement
     def __getattr__(self, name: str) -> Any:
         return getattr(self.response, name)
 def response_usage(response: Any) -> Any:
@@ -138,68 +153,16 @@ def response_text(response: Any) -> str:
         if isinstance(content, str):
             return content
     return response if isinstance(response, str) else str(response)
-def build_model_call_metric(
-    gateway: Any,
-    config: Mapping[str, Any],
-    started_at: float,
-    *,
-    success: bool,
-    streaming: bool,
-    response: Any = None,
-    request: Any = None,
-    call_number: int | None = None,
-    estimated_tokens: int = 0,
-    reserved_tokens: int = 0,
-    estimated_request_tokens: int = 0, request_estimation_source: str = "unavailable",
-    context_limit: int | None = None, context_compacted: bool = False,
-) -> Dict[str, Any]:
-    usage = response_usage(response)
-    available = usage is not None and (
-        usage.get("available", True) is not False
-        if isinstance(usage, Mapping)
-        else getattr(usage, "available", True) is not False
-    )
-    input_tokens, output_tokens, total_tokens, normalized_total, complete = normalize_usage(
-        usage if available else None
-    )
-    entry: Dict[str, Any] = {
-        "type": "model_call",
-        "metric_type": "model_call",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "duration_ms": max(0, int((time.monotonic() - started_at) * 1000)),
-        "success": bool(success),
-        "provider_call_succeeded": bool(success),
-        "streaming": bool(streaming),
-        "provider": getattr(gateway, "provider_name", None),
-        "model": getattr(gateway, "model", config.get("model")),
-        "token_usage_complete": complete,
-        "reserved_tokens": max(0, reserved_tokens),
-        "estimated_request_tokens": max(0, estimated_request_tokens),
-        "request_estimation_source": request_estimation_source,
-        "context_compacted": bool(context_compacted),
-        "request_contract": request_contract_value(
-            getattr(request, "request_contract", None)
-        ),
-    }
-    if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0:
-        entry["context_limit"] = context_limit
-        entry["request_utilization_ratio"] = max(0, estimated_request_tokens) / context_limit
-    if call_number is not None:
-        entry["call_number"] = call_number
-    if input_tokens is not None:
-        entry["input_tokens"] = entry["prompt_tokens"] = input_tokens
-    if output_tokens is not None:
-        entry["output_tokens"] = entry["completion_tokens"] = output_tokens
-    if total_tokens is not None:
-        entry["total_tokens"] = total_tokens
-    if complete:
-        entry["estimated_tokens"] = 0
-        assert normalized_total is not None
-        entry["accounted_tokens"] = normalized_total
-    else:
-        entry["estimated_tokens"] = max(0, estimated_tokens)
-        entry["accounted_tokens"] = max(0, estimated_tokens)
-    return entry
+
+
+def build_model_call_metric(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Compatibility facade for the canonical model-call metric projection."""
+
+    from agent.llm.model_metrics import build_model_call_metric as project_metric
+
+    return project_metric(*args, **kwargs)
+
+
 class StreamEventType(str, Enum):
     CONTENT = "content"
     REASONING = "reasoning"
@@ -221,6 +184,8 @@ class ModelGateway(Protocol):
     def complete(self, request: ModelRequest) -> ModelResponse:
         ...
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
+        ...
+    def measure_request_input_tokens(self, request: ModelRequest) -> Any:
         ...
     def count_tokens(self, text: str) -> Optional[int]:
         ...
@@ -255,6 +220,9 @@ class UnavailableModelGateway:
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
         del request
         raise UnsupportedModelCapability("Esta operação exige um ModelGateway configurado.")
+    def measure_request_input_tokens(self, request: ModelRequest) -> None:
+        del request
+        return None
     def count_tokens(self, text: str) -> Optional[int]:
         del text
         return None

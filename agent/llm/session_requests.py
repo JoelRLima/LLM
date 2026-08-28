@@ -45,6 +45,45 @@ def _integer(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _estimate_model_tokens(session: Any, request: ModelRequest, response: Any = None, measurement: Any = None, usage: Any = None) -> int:
+    return estimate_model_request_tokens(
+        request,
+        response,
+        request_input_measurement=measurement,
+        gateway=session.gateway,
+        usage=usage,
+    )
+
+
+def _finalize_model_tokens(
+    session: Any,
+    call_number: int,
+    started_at: float,
+    request: ModelRequest,
+    measurement: Any,
+    estimate: int,
+    *,
+    success: bool,
+    streaming: bool,
+    response: Any = None,
+    usage: Any = None,
+) -> None:
+    session._finalize_model_call(
+        call_number,
+        started_at,
+        success=success,
+        streaming=streaming,
+        response=response,
+        usage=usage,
+        estimated_tokens=estimate,
+        estimated_request_tokens=measurement.token_count or 0,
+        request_estimation_source=measurement.source,
+        context_compacted=request.context_compacted,
+        request_input_measurement=measurement,
+        request=request,
+    )
 def build_model_request(
     session: Any,
     response_format: Optional[str] = None,
@@ -98,10 +137,13 @@ def build_model_request(
     )
 def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse:
     """Complete one canonical request with task-budget accounting."""
-    estimated_request_tokens, estimation_source = measure_model_request_input_tokens(
-        request, getattr(session.gateway, "count_tokens", None)
+    request_input_measurement = measure_model_request_input_tokens(
+        request, session.gateway
     )
-    allowance = max(1, estimated_request_tokens + max(0, request.max_output_tokens))
+    estimated_request_tokens = request_input_measurement.token_count or 0
+    allowance = max(
+        1, estimated_request_tokens + max(0, request.max_output_tokens)
+    )
     call_number = session.budget_ledger.reserve_model_call(allowance)
     started_at = time.monotonic()
     try:
@@ -118,36 +160,25 @@ def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse
         if not isinstance(response, ModelResponse):
             response = ModelResponse(content=response_text(response))
     except BudgetExhausted:
-        estimate = estimate_model_request_tokens(request)
-        session._finalize_model_call(
-            call_number, started_at, success=False, streaming=False,
-            estimated_tokens=estimate, estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=estimation_source, context_compacted=request.context_compacted,
-            request=request,
+        estimate = _estimate_model_tokens(session, request, measurement=request_input_measurement)
+        _finalize_model_tokens(
+            session, call_number, started_at, request, request_input_measurement, estimate,
+            success=False, streaming=False,
         )
         raise
     except BaseException:
-        estimate = estimate_model_request_tokens(request)
-        session._finalize_model_call(
-            call_number, started_at, success=False, streaming=False,
-            estimated_tokens=estimate, estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=estimation_source, context_compacted=request.context_compacted,
-            request=request,
+        estimate = _estimate_model_tokens(session, request, measurement=request_input_measurement)
+        _finalize_model_tokens(
+            session, call_number, started_at, request, request_input_measurement, estimate,
+            success=False, streaming=False,
         )
         raise
-    estimate = estimate_model_request_tokens(request, response)
-    session._finalize_model_call(
-        call_number,
-        started_at,
-        success=True,
-        streaming=False,
-        response=response,
-        usage=response.usage,
-        estimated_tokens=estimate,
-        estimated_request_tokens=estimated_request_tokens,
-        request_estimation_source=estimation_source,
-        context_compacted=request.context_compacted,
-        request=request,
+    estimate = _estimate_model_tokens(
+        session, request, response, request_input_measurement, response.usage
+    )
+    _finalize_model_tokens(
+        session, call_number, started_at, request, request_input_measurement, estimate,
+        success=True, streaming=False, response=response, usage=response.usage,
     )
     return response
 def _callback(callbacks: Dict[str, Callable[..., Any]], name: str, value: Any) -> None:
@@ -203,10 +234,13 @@ def consume_model_stream(
 ) -> str:
     """Consume a native or legacy stream with one ledger reservation."""
     request = replace(request, stream=True)
-    estimated_request_tokens, estimation_source = measure_model_request_input_tokens(
-        request, getattr(session.gateway, "count_tokens", None)
+    request_input_measurement = measure_model_request_input_tokens(
+        request, session.gateway
     )
-    allowance = max(1, estimated_request_tokens + max(0, request.max_output_tokens))
+    estimated_request_tokens = request_input_measurement.token_count or 0
+    allowance = max(
+        1, estimated_request_tokens + max(0, request.max_output_tokens)
+    )
     call_number = session.budget_ledger.reserve_model_call(allowance)
     started_at = time.monotonic()
     usage: Any = None
@@ -220,53 +254,35 @@ def consume_model_stream(
         partial_content = getattr(exc, "partial_content", None)
         if isinstance(partial_content, str) and partial_content:
             visible = partial_content
-        estimate = estimate_model_request_tokens(request, visible)
-        session._finalize_model_call(
-            call_number,
-            started_at,
-            success=False,
-            streaming=True,
-            response={"usage": usage} if usage is not None else visible,
-            usage=usage,
-            estimated_tokens=estimate,
-            estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=estimation_source,
-            context_compacted=request.context_compacted,
-            request=request,
+        estimate = _estimate_model_tokens(
+            session, request, visible, request_input_measurement, usage
+        )
+        _finalize_model_tokens(
+            session, call_number, started_at, request, request_input_measurement, estimate,
+            success=False, streaming=True,
+            response={"usage": usage} if usage is not None else visible, usage=usage,
         )
         raise
     except BaseException as exc:
         partial_content = getattr(exc, "partial_content", None)
         if isinstance(partial_content, str) and partial_content:
             visible = partial_content
-        estimate = estimate_model_request_tokens(request, visible)
-        session._finalize_model_call(
-            call_number,
-            started_at,
-            success=False,
-            streaming=True,
-            response={"usage": usage} if usage is not None else visible,
-            usage=usage,
-            estimated_tokens=estimate,
-            estimated_request_tokens=estimated_request_tokens,
-            request_estimation_source=estimation_source,
-            context_compacted=request.context_compacted,
-            request=request,
+        estimate = _estimate_model_tokens(
+            session, request, visible, request_input_measurement, usage
+        )
+        _finalize_model_tokens(
+            session, call_number, started_at, request, request_input_measurement, estimate,
+            success=False, streaming=True,
+            response={"usage": usage} if usage is not None else visible, usage=usage,
         )
         raise
-    estimate = estimate_model_request_tokens(request, visible)
-    session._finalize_model_call(
-        call_number,
-        started_at,
-        success=True,
-        streaming=True,
-        response={"usage": usage} if usage is not None else visible,
-        usage=usage,
-        estimated_tokens=estimate,
-        estimated_request_tokens=estimated_request_tokens,
-        request_estimation_source=estimation_source,
-        context_compacted=request.context_compacted,
-        request=request,
+    estimate = _estimate_model_tokens(
+        session, request, visible, request_input_measurement, usage
+    )
+    _finalize_model_tokens(
+        session, call_number, started_at, request, request_input_measurement, estimate,
+        success=True, streaming=True,
+        response={"usage": usage} if usage is not None else visible, usage=usage,
     )
     return visible.strip()
 __all__ = [

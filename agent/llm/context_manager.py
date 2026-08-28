@@ -77,6 +77,8 @@ class ContextManager:
         self._cached_project_context = discover_project_context(self.workspace_root)
         return self._cached_project_context
     def estimate_conversation_tokens(self) -> int:
+        """Return a rough context-pressure estimate, not provider usage."""
+
         total_chars = sum(
             len(str(m.get("content", ""))) for m in self.session.messages
         )
@@ -113,7 +115,9 @@ class ContextManager:
                 print(
                     "⚠️  Atenção: prefixo acima de 80%! Considere limpar memória ou reduzir histórico."
                 )
-    def count_tokens_precise(self, text: str) -> Optional[int]:
+    def count_tokens_text_estimate(self, text: str) -> Optional[int]:
+        """Compatibility text estimate; never the exact count of a chat request."""
+
         try:
             count = self.session.gateway.count_tokens(text)
             return int(count) if count is not None else None
@@ -196,11 +200,6 @@ class ContextManager:
         )
         if self.verbose:
             self.check_prompt_size()
-            exact = self.count_tokens_precise(
-                self.session.messages[0]["content"]
-            )
-            if exact is not None:
-                print(f"📏 [AUDITORIA] Tokens exatos do prefixo: {exact}")
         try:
             context_addition = self.build_context(prompt)
             if base_prompt is None:

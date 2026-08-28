@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any, Callable, Dict, cast
 
 from agent.llm.contracts import PendingStream, response_usage
+from agent.llm.legacy_payload import legacy_payload
 from agent.runtime.budget import (
     BudgetExhausted,
-    estimate_payload_allowance,
-    estimate_payload_tokens,
+    estimate_model_request_tokens,
 )
+from agent.runtime.budget_estimation import measure_model_request_input_tokens
 
 
 def send_legacy_request(
@@ -18,37 +20,67 @@ def send_legacy_request(
 ) -> Any:
     """Send raw legacy transport with exactly one task-budget reservation."""
 
-    call_number = session.budget_ledger.reserve_model_call(
-        estimate_payload_allowance(
-            payload,
-            getattr(session.gateway, "count_tokens", None),
-        )
+    request = replace(session.build_legacy_request(payload), stream=stream)
+    request_input_measurement = measure_model_request_input_tokens(
+        request, session.gateway
     )
+    estimated_request_tokens = request_input_measurement.token_count or 0
+    estimation_source = request_input_measurement.source
+    allowance = max(1, estimated_request_tokens + max(0, request.max_output_tokens))
+    dispatch_payload = payload
+    if callable(getattr(session.gateway, "build_payload", None)):
+        # Keep the legacy transport aligned with the canonical payload owner
+        # used by the request-level counter and the modern dispatch path.
+        dispatch_payload = legacy_payload(session.gateway, request)
+    call_number = session.budget_ledger.reserve_model_call(allowance)
     started_at = time.monotonic()
     try:
-        response = session.gateway.send_payload(payload, stream=stream)
+        response = session.gateway.send_payload(dispatch_payload, stream=stream)
     except BudgetExhausted:
-        estimate = estimate_payload_tokens(payload)
+        estimate = estimate_model_request_tokens(
+            request,
+            request_input_measurement=request_input_measurement,
+            gateway=session.gateway,
+        )
         session._finalize_model_call(
             call_number,
             started_at,
             success=False,
             streaming=stream,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            request_input_measurement=request_input_measurement,
+            request=request,
         )
         raise
     except BaseException:
-        estimate = estimate_payload_tokens(payload)
+        estimate = estimate_model_request_tokens(
+            request,
+            request_input_measurement=request_input_measurement,
+            gateway=session.gateway,
+        )
         session._finalize_model_call(
             call_number,
             started_at,
             success=False,
             streaming=stream,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            request_input_measurement=request_input_measurement,
+            request=request,
         )
         raise
     if stream:
-        return PendingStream(response, call_number, payload, started_at)
+        return PendingStream(
+            response,
+            call_number,
+            dispatch_payload,
+            started_at,
+            request,
+            request_input_measurement,
+        )
 
     session._finalize_model_call(
         call_number,
@@ -57,7 +89,16 @@ def send_legacy_request(
         streaming=False,
         response=response,
         usage=response_usage(response),
-        estimated_tokens=estimate_payload_tokens(payload),
+        estimated_tokens=estimate_model_request_tokens(
+            request,
+            response,
+            request_input_measurement=request_input_measurement,
+            gateway=session.gateway,
+        ),
+        estimated_request_tokens=estimated_request_tokens,
+        request_estimation_source=estimation_source,
+        request_input_measurement=request_input_measurement,
+        request=request,
     )
     return response
 
@@ -77,6 +118,16 @@ def process_legacy_stream(
         return cast(str, session.gateway.consume_stream(response, callbacks))
 
     usage: Any = None
+    request = response.request
+    request_input_measurement = response.request_input_measurement
+    if request is None:
+        request = replace(session.build_legacy_request(response.payload), stream=True)
+    if request_input_measurement is None:
+        request_input_measurement = measure_model_request_input_tokens(
+            request, session.gateway
+        )
+    estimated_request_tokens = request_input_measurement.token_count or 0
+    estimation_source = request_input_measurement.source
 
     def capture_usage(value: Any) -> None:
         nonlocal usage
@@ -96,7 +147,13 @@ def process_legacy_stream(
     except BudgetExhausted as exc:
         partial_content = getattr(exc, "partial_content", None)
         visible = partial_content if isinstance(partial_content, str) else visible
-        estimate = estimate_payload_tokens(response.payload, visible)
+        estimate = estimate_model_request_tokens(
+            request,
+            visible,
+            request_input_measurement=request_input_measurement,
+            gateway=session.gateway,
+            usage=usage,
+        )
         session._finalize_model_call(
             response.call_number,
             response.started_at,
@@ -105,12 +162,22 @@ def process_legacy_stream(
             response={"usage": usage} if usage is not None else None,
             usage=usage,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            request_input_measurement=request_input_measurement,
+            request=request,
         )
         raise
     except BaseException as exc:
         partial_content = getattr(exc, "partial_content", None)
         visible = partial_content if isinstance(partial_content, str) else visible
-        estimate = estimate_payload_tokens(response.payload, visible)
+        estimate = estimate_model_request_tokens(
+            request,
+            visible,
+            request_input_measurement=request_input_measurement,
+            gateway=session.gateway,
+            usage=usage,
+        )
         session._finalize_model_call(
             response.call_number,
             response.started_at,
@@ -119,9 +186,19 @@ def process_legacy_stream(
             response={"usage": usage} if usage is not None else None,
             usage=usage,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            request_input_measurement=request_input_measurement,
+            request=request,
         )
         raise
-    estimate = estimate_payload_tokens(response.payload, visible)
+    estimate = estimate_model_request_tokens(
+        request,
+        visible,
+        request_input_measurement=request_input_measurement,
+        gateway=session.gateway,
+        usage=usage,
+    )
     observed = {"usage": usage} if usage is not None else visible
     session._finalize_model_call(
         response.call_number,
@@ -131,6 +208,10 @@ def process_legacy_stream(
         response=observed,
         usage=usage,
         estimated_tokens=estimate,
+        estimated_request_tokens=estimated_request_tokens,
+        request_estimation_source=estimation_source,
+        request_input_measurement=request_input_measurement,
+        request=request,
     )
     return visible
 

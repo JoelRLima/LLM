@@ -26,6 +26,11 @@ from agent.llm.contracts import (
     TokenUsage,
     UnsupportedModelCapability,
 )
+from agent.llm.providers.openai_input_tokens import (
+    extension_url,
+    measure_request_input_tokens,
+)
+from agent.runtime.budget_estimation import RequestInputMeasurement
 from agent.runtime.logging import logger
 
 
@@ -97,7 +102,6 @@ class OpenAICompatibleGateway:
             "max_tokens": request.max_output_tokens,
             "stream": request.stream,
         }
-
         reasoning_mode = self.provider_options.get("reasoning_mode")
         if reasoning_mode == "chat_template_kwargs" and self.capabilities.reasoning:
             payload["chat_template_kwargs"] = {
@@ -124,6 +128,7 @@ class OpenAICompatibleGateway:
                         "json_schema": {"name": "agent_response", "schema": structured.schema},
                     }
         payload.update(request.provider_options)
+        payload.update({"stream_options": {**dict(payload.get("stream_options") or {}), "include_usage": True}} if request.stream else {})
         return payload
 
     def send_payload(self, payload: Dict[str, Any], stream: bool) -> Response:
@@ -274,17 +279,22 @@ class OpenAICompatibleGateway:
                 callbacks["on_done"](event.data)
         return visible.strip()
 
+    def measure_request_input_tokens(self, request: ModelRequest) -> RequestInputMeasurement:
+        return measure_request_input_tokens(self, request)
+
     def count_tokens(self, text: str) -> Optional[int]:
+        """Return a lower-fidelity text count, never exact chat-request usage."""
+
         if not self.capabilities.token_counting:
             return None
         tokenize_path = str(self.provider_options.get("tokenize_path", "/tokenize"))
-        base_url = self.api_url.rsplit("/v1/", 1)[0]
-        tokenize_url = f"{base_url}{tokenize_path}"
+        tokenize_url = extension_url(self.api_url, tokenize_path)
         try:
             response = requests.post(tokenize_url, json={"content": text}, timeout=min(self.timeout, 10))
             if response.status_code != 200:
                 return None
-            tokens = response.json().get("tokens", [])
+            data = response.json()
+            tokens = data.get("tokens", []) if isinstance(data, dict) else []
             return len(tokens) if isinstance(tokens, list) else None
-        except RequestException:
+        except (RequestException, TypeError, ValueError):
             return None

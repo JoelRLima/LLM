@@ -122,6 +122,8 @@ def _build_compression_request(
 
 
 def compress_conversation(session: Any, context_limit: int, verbose: bool) -> None:
+    """Use a rough character heuristic only to decide context compaction."""
+
     estimated = sum(len(str(message.get("content", ""))) for message in session.messages) // 4
     threshold = int(context_limit * 0.8)
     if estimated <= threshold:
@@ -169,7 +171,7 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
     if original_user_messages:
         session.messages.append(original_user_messages[-1])
     if verbose:
-        print(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary) // 4} tokens.")
+        print(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary) // 4} tokens (heurística).")
 
 
 def _line_hint(

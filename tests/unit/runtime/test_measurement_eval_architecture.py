@@ -44,7 +44,7 @@ def test_final_request_measurement_precedes_provider_dispatch() -> None:
     measurement = source.index("measure_model_request_input_tokens(")
     dispatch = source.index("session.gateway.complete(request)")
     assert measurement < dispatch
-    assert "request_estimation_source=estimation_source" in source
+    assert "request_estimation_source=measurement.source" in source
 
 
 def test_eval_code_does_not_own_task_budget_call_accounting() -> None:

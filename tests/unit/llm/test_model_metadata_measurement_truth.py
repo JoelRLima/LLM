@@ -428,7 +428,7 @@ def test_model_call_measures_the_exact_dispatched_request_with_provenance() -> N
 
     expected_input = len("system-prefix\ncurrent-objective")
     assert entries[0]["estimated_request_tokens"] == expected_input
-    assert entries[0]["request_estimation_source"] == "provider_token_counter"
+    assert entries[0]["request_estimation_source"] == "provider_text_tokenizer"
     assert entries[0]["reserved_tokens"] == expected_input + 16
     assert entries[0]["context_limit"] == session.hardware_profile.context_limit
     assert entries[0]["request_utilization_ratio"] == pytest.approx(
@@ -455,7 +455,7 @@ def test_stream_model_call_preserves_request_measurement_truth() -> None:
     expected_input = len("system-prefix\ncurrent-objective")
     assert entries[0]["streaming"] is True
     assert entries[0]["estimated_request_tokens"] == expected_input
-    assert entries[0]["request_estimation_source"] == "provider_token_counter"
+    assert entries[0]["request_estimation_source"] == "provider_text_tokenizer"
     assert entries[0]["context_compacted"] is True
     assert entries[0]["reserved_tokens"] == expected_input + 16
     assert session.budget_ledger.snapshot().model_calls == 1
@@ -483,7 +483,7 @@ def test_failed_stream_preserves_the_same_request_measurement_truth() -> None:
     assert gateway.stream_attempts == 1
     assert entries[0]["streaming"] is True
     assert entries[0]["estimated_request_tokens"] == expected_input
-    assert entries[0]["request_estimation_source"] == "provider_token_counter"
+    assert entries[0]["request_estimation_source"] == "provider_text_tokenizer"
     assert entries[0]["context_compacted"] is True
     assert entries[0]["reserved_tokens"] == expected_input + 16
     assert entries[0]["provider_call_succeeded"] is False

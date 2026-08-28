@@ -1,121 +1,140 @@
-"""Deterministic token estimates used by the task budget boundary."""
+"""Fallback token accounting around the canonical request measurement."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Callable
+from typing import Any
+
+from agent.llm.contracts import normalize_usage
+from agent.runtime.request_measurement import (
+    HEURISTIC_CHARS_PER_TOKEN,
+    PROVIDER_CHAT_INPUT_TOKENS,
+    PROVIDER_TEXT_TOKENIZER,
+    UNAVAILABLE,
+    RequestInputMeasurement,
+    _available_count,
+    _gateway_text_token_counter,
+    _provider_text_measurement,
+    measure_model_request_input_tokens,
+    measure_payload_input_tokens,
+    measure_request_input_tokens_from_texts,
+)
 
 
-def estimate_payload_tokens(payload: Any, response: Any = None) -> int:
-    texts: list[str] = []
-    messages = payload.get("messages") if isinstance(payload, Mapping) else None
-    if isinstance(messages, list):
-        texts.extend(
-            str(message.get("content", ""))
-            for message in messages
-            if isinstance(message, Mapping)
-        )
+def _response_text(response: Any) -> str:
     if isinstance(response, str):
-        texts.append(response)
-    elif isinstance(response, Mapping):
+        return response
+    if isinstance(response, Mapping):
         content = response.get("content")
-        if isinstance(content, str):
-            texts.append(content)
-    else:
-        content = getattr(response, "content", None)
-        if isinstance(content, str):
-            texts.append(content)
-    return sum(len(text) for text in texts) // 4
-
-
-def estimate_model_request_tokens(request: Any, response: Any = None) -> int:
-    messages = getattr(request, "messages", ())
-    texts = [str(getattr(message, "content", "")) for message in messages]
+        return content if isinstance(content, str) else ""
     content = getattr(response, "content", None)
-    if isinstance(content, str):
-        texts.append(content)
-    return sum(len(text) for text in texts) // 4
+    return content if isinstance(content, str) else ""
 
 
-def _conservative_text_tokens(text: str) -> int:
-    """Estimate text tokens conservatively without claiming provider usage."""
+def _response_usage(response: Any) -> Any:
+    if isinstance(response, Mapping):
+        return response.get("usage")
+    return getattr(response, "usage", None)
 
+
+def _fallback_output_tokens(response: Any, gateway: Any = None) -> int:
+    """Estimate visible output without probing a tokenizer for empty output."""
+
+    text = _response_text(response)
     if not text:
         return 0
-    return max(1, (len(text) + 3) // 4)
+    measurement = _provider_text_measurement(
+        text, _gateway_text_token_counter(gateway)
+    )
+    return _available_count(measurement)
 
 
-def _provider_prompt_tokens(
-    texts: list[str], token_counter: Callable[[str], Any] | None,
+def estimate_payload_tokens(
+    payload: Any,
+    response: Any = None,
+    *,
+    request_input_measurement: RequestInputMeasurement | None = None,
+    gateway: Any = None,
 ) -> int:
-    return measure_request_input_tokens_from_texts(texts, token_counter)[0]
+    """Return fallback accounting for a legacy payload and visible output."""
+
+    if normalize_usage(_response_usage(response))[4]:
+        return 0
+    measurement = request_input_measurement or measure_payload_input_tokens(payload)
+    return _available_count(measurement) + _fallback_output_tokens(response, gateway)
 
 
-def measure_request_input_tokens_from_texts(
-    texts: list[str], token_counter: Callable[[str], Any] | None,
-) -> tuple[int, str]:
-    """Measure final request input with explicit estimator provenance."""
+def estimate_model_request_tokens(
+    request: Any,
+    response: Any = None,
+    *,
+    request_input_measurement: RequestInputMeasurement | None = None,
+    gateway: Any = None,
+    usage: Any = None,
+) -> int:
+    """Return fallback accounting using an already measured request when given.
 
-    joined = "\n".join(texts)
-    if token_counter is not None:
-        try:
-            value = token_counter(joined)
-        except Exception as exc:
-            from agent.runtime.budget import BudgetExhausted
+    This helper intentionally returns an estimate, not exact usage. Provider
+    call paths pass the pre-dispatch measurement so input is never recomputed
+    from content after dispatch.
+    """
 
-            if isinstance(exc, BudgetExhausted):
-                raise
-            value = None
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            return max(1, value) if joined else 0, "provider_token_counter"
-    return _conservative_text_tokens(joined), "heuristic_chars_per_token"
-
-
-def measure_model_request_input_tokens(
-    request: Any, token_counter: Callable[[str], Any] | None = None,
-) -> tuple[int, str]:
-    """Measure the input portion of the exact ``ModelRequest`` about to dispatch."""
-
-    messages = getattr(request, "messages", ())
-    texts = [str(getattr(message, "content", "")) for message in messages]
-    return measure_request_input_tokens_from_texts(texts, token_counter)
+    if usage is None:
+        usage = _response_usage(response)
+    if normalize_usage(usage)[4]:
+        return 0
+    measurement = request_input_measurement or measure_model_request_input_tokens(request)
+    return _available_count(measurement) + _fallback_output_tokens(response, gateway)
 
 
 def estimate_model_request_allowance(
-    request: Any, token_counter: Callable[[str], Any] | None = None,
+    request: Any,
+    gateway: Any = None,
+    *,
+    token_counter: Any = None,
+    request_input_measurement: RequestInputMeasurement | None = None,
 ) -> int:
     """Return the hard preflight allowance for one model request."""
 
-    input_tokens, _ = measure_model_request_input_tokens(request, token_counter)
+    measurement = request_input_measurement or measure_model_request_input_tokens(
+        request, gateway, token_counter=token_counter
+    )
     output = getattr(request, "max_output_tokens", 0)
     if isinstance(output, bool) or not isinstance(output, int):
         output = 0
-    return max(1, input_tokens + max(0, output))
+    return max(1, _available_count(measurement) + max(0, output))
 
 
 def estimate_payload_allowance(
-    payload: Any, token_counter: Callable[[str], Any] | None = None,
+    payload: Any,
+    token_counter: Any = None,
+    *,
+    request_input_measurement: RequestInputMeasurement | None = None,
 ) -> int:
-    """Return the equivalent hard allowance for a legacy payload."""
+    """Return a compatibility allowance with explicit fallback semantics."""
 
-    messages = payload.get("messages") if isinstance(payload, Mapping) else None
-    texts = [
-        str(message.get("content", ""))
-        for message in messages or ()
-        if isinstance(message, Mapping)
-    ]
+    measurement = request_input_measurement or measure_payload_input_tokens(
+        payload, token_counter
+    )
     output = payload.get("max_output_tokens") if isinstance(payload, Mapping) else None
     if output is None and isinstance(payload, Mapping):
         output = payload.get("max_tokens", 0)
     if isinstance(output, bool) or not isinstance(output, int):
         output = 0
-    return max(1, _provider_prompt_tokens(texts, token_counter) + max(0, output))
+    return max(1, _available_count(measurement) + max(0, output))
 
 
 __all__ = [
+    "HEURISTIC_CHARS_PER_TOKEN",
+    "PROVIDER_CHAT_INPUT_TOKENS",
+    "PROVIDER_TEXT_TOKENIZER",
+    "RequestInputMeasurement",
+    "UNAVAILABLE",
     "estimate_model_request_allowance",
     "estimate_model_request_tokens",
-    "measure_model_request_input_tokens",
     "estimate_payload_allowance",
     "estimate_payload_tokens",
+    "measure_model_request_input_tokens",
+    "measure_payload_input_tokens",
+    "measure_request_input_tokens_from_texts",
 ]

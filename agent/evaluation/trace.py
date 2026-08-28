@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 from agent.llm.contracts import StreamEventType, normalize_usage
@@ -17,16 +17,14 @@ from agent.llm.identity import (
     observed_provider_model_id,
     project_observed_provider_identity,
 )
-from agent.runtime.budget_estimation import measure_model_request_input_tokens
+from agent.runtime.budget_estimation import (
+    RequestInputMeasurement,
+    measure_model_request_input_tokens,
+)
 
 
 class RecordingGateway:
-    """Observe model calls while preserving the wrapped gateway contract.
-
-    The recorder does not retry, edit requests/responses, alter budgets, or
-    decide outcomes.  It records bounded metadata plus the raw response text;
-    the Block 7 evidence serializer performs sanitization when exporting it.
-    """
+    """Observe model calls without changing provider behavior or outcomes."""
 
     def __init__(self, gateway: Any, *, external_identity: str | None = None) -> None:
         self.gateway = gateway
@@ -37,6 +35,7 @@ class RecordingGateway:
         )
         self.external_identity = normalize_external_identity(configured_external_identity)
         self._records: list[dict[str, Any]] = []
+        self._pending_request_measurements: dict[int, RequestInputMeasurement] = {}
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.gateway, name)
@@ -73,9 +72,15 @@ class RecordingGateway:
                 or structured_mode not in (None, "", "StructuredOutputMode.NONE", "none")
             )
         )
-        estimated_input_tokens, estimation_source = measure_model_request_input_tokens(
-            request, getattr(self.gateway, "count_tokens", None)
+        request_input_measurement = self._pending_request_measurements.pop(
+            id(request), None
         )
+        if request_input_measurement is None:
+            request_input_measurement = measure_model_request_input_tokens(
+                request, self.gateway
+            )
+        estimated_input_tokens = request_input_measurement.token_count or 0
+        estimation_source = request_input_measurement.source
         summary = {
             "model": str(getattr(request, "model", "")),
             "temperature": getattr(request, "temperature", None),
@@ -94,6 +99,10 @@ class RecordingGateway:
                 "instruction_present": getattr(structured, "instruction", None) not in (None, ""),
             } if structured is not None else None,
             "message_count": len(getattr(request, "messages", ()) or ()),
+            "request_input_tokens": request_input_measurement.token_count,
+            "request_input_measurement_source": estimation_source,
+            "request_input_measurement_exact": request_input_measurement.exact,
+            "request_input_measurement_available": request_input_measurement.available,
             "estimated_request_tokens": estimated_input_tokens,
             "request_estimation_source": estimation_source,
             "context_compacted": bool(getattr(request, "context_compacted", False)),
@@ -123,6 +132,34 @@ class RecordingGateway:
             fingerprint_payload.encode("utf-8")
         ).hexdigest()
         return summary
+
+    def measure_request_input_tokens(
+        self, request: Any
+    ) -> RequestInputMeasurement:
+        """Carry the session's one request measurement into trace evidence."""
+
+        measurement = measure_model_request_input_tokens(request, self.gateway)
+        self._pending_request_measurements[id(request)] = measurement
+        return measurement
+
+    @staticmethod
+    def _apply_input_reconciliation(
+        record: dict[str, Any], input_tokens: int | None
+    ) -> None:
+        request = record.get("request")
+        measured = request.get("request_input_tokens") if isinstance(request, Mapping) else None
+        if (
+            isinstance(input_tokens, int)
+            and not isinstance(input_tokens, bool)
+            and input_tokens >= 0
+            and isinstance(measured, int)
+            and not isinstance(measured, bool)
+            and measured >= 0
+        ):
+            delta = input_tokens - measured
+            record["request_input_token_delta"] = delta
+            record["request_input_token_abs_delta"] = abs(delta)
+            record["request_input_token_consistent"] = delta == 0
 
     def _apply_response_identity(self, record: dict[str, Any], response: Any) -> None:
         observed = observed_provider_model_id(getattr(response, "provider_metadata", None))
@@ -162,14 +199,20 @@ class RecordingGateway:
         usage = getattr(response, "usage", None)
         if usage is not None:
             input_tokens, output_tokens, total_tokens, _, complete = normalize_usage(usage)
+            usage_available = (
+                usage.get("available", True)
+                if isinstance(usage, Mapping)
+                else getattr(usage, "available", False)
+            )
             record["usage"] = {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": total_tokens,
-                "available": getattr(usage, "available", False),
+                "available": usage_available,
                 "complete": complete,
                 "source": "provider_reported" if complete else "provider_incomplete",
             }
+            self._apply_input_reconciliation(record, input_tokens)
         provider_metadata = getattr(response, "provider_metadata", None)
         if isinstance(provider_metadata, dict):
             record["provider_metadata"] = dict(provider_metadata)
@@ -185,9 +228,12 @@ class RecordingGateway:
         }
         record.update(call_identity(self.gateway, request, len(self._records) + 1))
         chunks: list[str] = []
+        observed_usage: Any = None
         try:
             for event in self.gateway.stream(request):
                 self._apply_stream_identity(record, event)
+                if getattr(event, "type", None) is StreamEventType.USAGE:
+                    observed_usage = getattr(event, "data", None)
                 text = getattr(event, "text", "")
                 if getattr(event, "type", None) is StreamEventType.CONTENT and text:
                     chunks.append(str(text))
@@ -196,13 +242,31 @@ class RecordingGateway:
             record["error"] = f"{type(exc).__name__}: {exc}"
             record["response"] = "".join(chunks)
             record["provider_call_succeeded"] = False
+            self._record_stream_usage(record, observed_usage)
             record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
             self._records.append(record)
             raise
         record["response"] = "".join(chunks)
         record["provider_call_succeeded"] = True
+        self._record_stream_usage(record, observed_usage)
         record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
         self._records.append(record)
+
+    def _record_stream_usage(self, record: dict[str, Any], usage: Any) -> None:
+        if usage is None:
+            return
+        input_tokens, output_tokens, total_tokens, _, complete = normalize_usage(usage)
+        record["usage"] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "available": usage.get("available", True)
+            if isinstance(usage, Mapping)
+            else getattr(usage, "available", False),
+            "complete": complete,
+            "source": "provider_reported" if complete else "provider_incomplete",
+        }
+        self._apply_input_reconciliation(record, input_tokens)
 
     def count_tokens(self, text: str) -> Any:
         return self.gateway.count_tokens(text)
@@ -229,6 +293,5 @@ class RecordingGateway:
             "declared_provider_identity": declared,
             "observed_provider_identity": observed,
         }
-
 
 __all__ = ["RecordingGateway"]

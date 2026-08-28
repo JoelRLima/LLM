@@ -99,7 +99,7 @@ def test_existing_trace_records_attempt_config_usage_and_latency_without_reasoni
     assert record["duration_ms"] >= 0
     assert record["request"]["config_fingerprint"]
     assert record["request"]["estimated_request_tokens"] == len("objective")
-    assert record["request"]["request_estimation_source"] == "provider_token_counter"
+    assert record["request"]["request_estimation_source"] == "provider_text_tokenizer"
     assert record["request"]["context_compacted"] is True
     assert record["request"]["context_limit"] == 100
     assert record["request"]["request_utilization_ratio"] == len("objective") / 100
