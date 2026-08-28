@@ -1,5 +1,4 @@
 """Canonical request/stream operations for :class:`ChatSession`."""
-
 from __future__ import annotations
 
 import time
@@ -17,6 +16,7 @@ from agent.llm.contracts import (
     StructuredOutputRequest,
     response_text,
 )
+from agent.llm.decision_contract import ModelRequestContract, coerce_request_contract
 from agent.llm.legacy_payload import (
     build_legacy_model_request,
     complete_legacy_payload_request,
@@ -27,23 +27,17 @@ from agent.llm.legacy_payload import (
 )
 from agent.runtime.budget import (
     BudgetExhausted,
-    estimate_model_request_allowance,
     estimate_model_request_tokens,
 )
+from agent.runtime.budget_estimation import measure_model_request_input_tokens
 
 
 def _mapping_value(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
-
-
 def _session_config(session: Any) -> Mapping[str, Any]:
     return _mapping_value(getattr(session, "config", {}))
-
-
 def _gateway_profile(session: Any) -> Mapping[str, Any]:
     return _mapping_value(getattr(getattr(session, "gateway", None), "profile", {}))
-
-
 def _integer(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return default
@@ -51,8 +45,6 @@ def _integer(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
 def build_model_request(
     session: Any,
     response_format: Optional[str] = None,
@@ -60,6 +52,7 @@ def build_model_request(
     *,
     stream: bool = True,
     max_output_tokens: int | None = None,
+    request_contract: ModelRequestContract | str | None = None,
 ) -> ModelRequest:
     system_content = session.get_effective_system_prompt()
     if response_format:
@@ -100,18 +93,16 @@ def build_model_request(
         stream=stream,
         reasoning_budget=_integer(getattr(session, "thinking_budget", 0), 0),
         structured_output=structured,
+        context_limit=getattr(hardware_profile, "context_limit", None),
+        request_contract=coerce_request_contract(request_contract),
     )
-
-
 def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse:
     """Complete one canonical request with task-budget accounting."""
-
-    call_number = session.budget_ledger.reserve_model_call(
-        estimate_model_request_allowance(
-            request,
-            getattr(session.gateway, "count_tokens", None),
-        )
+    estimated_request_tokens, estimation_source = measure_model_request_input_tokens(
+        request, getattr(session.gateway, "count_tokens", None)
     )
+    allowance = max(1, estimated_request_tokens + max(0, request.max_output_tokens))
+    call_number = session.budget_ledger.reserve_model_call(allowance)
     started_at = time.monotonic()
     try:
         if callable(getattr(session.gateway, "complete", None)):
@@ -129,21 +120,19 @@ def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse
     except BudgetExhausted:
         estimate = estimate_model_request_tokens(request)
         session._finalize_model_call(
-            call_number,
-            started_at,
-            success=False,
-            streaming=False,
-            estimated_tokens=estimate,
+            call_number, started_at, success=False, streaming=False,
+            estimated_tokens=estimate, estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source, context_compacted=request.context_compacted,
+            request=request,
         )
         raise
     except BaseException:
         estimate = estimate_model_request_tokens(request)
         session._finalize_model_call(
-            call_number,
-            started_at,
-            success=False,
-            streaming=False,
-            estimated_tokens=estimate,
+            call_number, started_at, success=False, streaming=False,
+            estimated_tokens=estimate, estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source, context_compacted=request.context_compacted,
+            request=request,
         )
         raise
     estimate = estimate_model_request_tokens(request, response)
@@ -155,23 +144,22 @@ def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse
         response=response,
         usage=response.usage,
         estimated_tokens=estimate,
+        estimated_request_tokens=estimated_request_tokens,
+        request_estimation_source=estimation_source,
+        context_compacted=request.context_compacted,
+        request=request,
     )
     return response
-
-
 def _callback(callbacks: Dict[str, Callable[..., Any]], name: str, value: Any) -> None:
     handler = callbacks.get(name)
     if handler is not None:
         handler(value)
-
-
 def _consume_gateway_events(
     gateway: Any,
     request: ModelRequest,
     callbacks: Dict[str, Callable[..., Any]],
 ) -> tuple[str, Any]:
     """Consume native events while keeping the event loop out of ChatSession."""
-
     raw_callback = callbacks.get("on_raw_line")
     if raw_callback is not None:
         raw_callback("")
@@ -192,8 +180,6 @@ def _consume_gateway_events(
         elif event.type is StreamEventType.DONE and event.data:
             _callback(callbacks, "on_done", event.data)
     return visible, usage
-
-
 def _consume_legacy_gateway(
     gateway: Any,
     request: ModelRequest,
@@ -202,32 +188,26 @@ def _consume_legacy_gateway(
     payload = _legacy_payload(gateway, request)
     raw_response = gateway.send_payload(payload, stream=True)
     usage: Any = None
-
     def capture_usage(value: Any) -> None:
         nonlocal usage
         usage = value
         _callback(callbacks, "on_usage", value)
-
     stream_callbacks = dict(callbacks)
     stream_callbacks["on_usage"] = capture_usage
     visible = cast(str, gateway.consume_stream(raw_response, stream_callbacks))
     return visible, usage
-
-
 def consume_model_stream(
     session: Any,
     request: ModelRequest,
     callbacks: Dict[str, Callable[..., Any]],
 ) -> str:
     """Consume a native or legacy stream with one ledger reservation."""
-
     request = replace(request, stream=True)
-    call_number = session.budget_ledger.reserve_model_call(
-        estimate_model_request_allowance(
-            request,
-            getattr(session.gateway, "count_tokens", None),
-        )
+    estimated_request_tokens, estimation_source = measure_model_request_input_tokens(
+        request, getattr(session.gateway, "count_tokens", None)
     )
+    allowance = max(1, estimated_request_tokens + max(0, request.max_output_tokens))
+    call_number = session.budget_ledger.reserve_model_call(allowance)
     started_at = time.monotonic()
     usage: Any = None
     visible = ""
@@ -249,6 +229,10 @@ def consume_model_stream(
             response={"usage": usage} if usage is not None else visible,
             usage=usage,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            context_compacted=request.context_compacted,
+            request=request,
         )
         raise
     except BaseException as exc:
@@ -264,6 +248,10 @@ def consume_model_stream(
             response={"usage": usage} if usage is not None else visible,
             usage=usage,
             estimated_tokens=estimate,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=estimation_source,
+            context_compacted=request.context_compacted,
+            request=request,
         )
         raise
     estimate = estimate_model_request_tokens(request, visible)
@@ -275,10 +263,12 @@ def consume_model_stream(
         response={"usage": usage} if usage is not None else visible,
         usage=usage,
         estimated_tokens=estimate,
+        estimated_request_tokens=estimated_request_tokens,
+        request_estimation_source=estimation_source,
+        context_compacted=request.context_compacted,
+        request=request,
     )
     return visible.strip()
-
-
 __all__ = [
     "build_legacy_model_request",
     "build_model_request",

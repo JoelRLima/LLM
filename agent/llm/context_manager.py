@@ -12,7 +12,15 @@ from agent.llm.context_views import (
     discover_project_context,
     get_file_hints,
 )
-from agent.llm.decision_compat import build_retry_request, record_legacy_metadata
+from agent.llm.decision_compat import (
+    build_request_with_contract,
+    build_retry_request,
+    record_legacy_metadata,
+)
+from agent.llm.decision_contract import (
+    ModelRequestContract,
+    resolve_request_contract,
+)
 from agent.llm.grammars import AUTO_GRAMMAR, AutoGrammar, get_grammar
 from agent.llm.prompts import AGENT_SYSTEM_PROMPT
 from agent.llm.session import ChatSession
@@ -26,15 +34,12 @@ from agent.runtime.hardware import resolve_hardware_profile
 from agent.runtime.logging import logger
 from agent.state import AgentState
 
-# Budgets por tipo de passo
 STEP_BUDGETS = {
     "plan": 4096,
     "final": 4096,
     "tool_decision": 2048,
 }
 DEFAULT_AGENT_MAX_TOKENS = 2048
-
-
 class ContextManager:
     def __init__(
         self,
@@ -65,36 +70,26 @@ class ContextManager:
                     "Busca semântica indisponível; usando hints determinísticos: %s",
                     type(exc).__name__,
                 )
-
-    # ------------------------------------------------------------------
-    # Métodos de contexto (inalterados)
-    # ------------------------------------------------------------------
-
     def get_project_context(self) -> str:
         if self._cached_project_context is not None:
             return self._cached_project_context
         self._cached_project_context = discover_project_context(self.workspace_root)
         return self._cached_project_context
-
     def estimate_conversation_tokens(self) -> int:
         total_chars = sum(
             len(str(m.get("content", ""))) for m in self.session.messages
         )
         return total_chars // 4
-
     def maybe_compress_context(self) -> None:
         compress_conversation(self.session, self.hardware_profile.context_limit, self.verbose)
-
     def build_compact_view(self) -> List[Dict[str, Any]]:
         return build_compact_view(
             self.session.messages,
             self.agent_state.tool_history,
             self.agent_state.memory.state,
         )
-
     def get_file_hints(self, objective: str) -> str:
         return get_file_hints(objective, self.semantic, self.workspace_root)
-
     def check_prompt_size(self, context_limit: int | None = None) -> None:
         effective_limit = (
             self.hardware_profile.context_limit
@@ -105,12 +100,10 @@ class ContextManager:
         estimated_tokens = len(system_content) // 4
         threshold = int(effective_limit * 0.8)
         pct = estimated_tokens / effective_limit * 100
-
         if self.verbose:
             print(
                 f"📏 [AUDITORIA] Prefixo estimado: ~{estimated_tokens} tokens ({pct:.1f}% do limite de {effective_limit})"
             )
-
         if estimated_tokens > threshold:
             logger.warning(
                 f"Prefixo grande: ~{estimated_tokens} tokens ({pct:.1f}%)"
@@ -119,7 +112,6 @@ class ContextManager:
                 print(
                     "⚠️  Atenção: prefixo acima de 80%! Considere limpar memória ou reduzir histórico."
                 )
-
     def count_tokens_precise(self, text: str) -> Optional[int]:
         try:
             count = self.session.gateway.count_tokens(text)
@@ -127,7 +119,6 @@ class ContextManager:
         except Exception as e:
             logger.warning(f"Não foi possível contar tokens pelo provider: {e}")
             return None
-
     def build_base_system_prompt(
         self, persona_prompt: str, tools_desc: str
     ) -> str:
@@ -141,7 +132,6 @@ class ContextManager:
             + datetime_context
             + project_context
         )
-
     def build_context(self, objective: str = "") -> str:
         memory_budget = min(
             DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS,
@@ -153,7 +143,6 @@ class ContextManager:
             budget_tokens=memory_budget,
         )
         memory_context = f"\n\n{memory_projection}" if memory_projection else ""
-
         history_context = ""
         if self.agent_state.conversation_history:
             turns = self.agent_state.conversation_history[
@@ -166,13 +155,7 @@ class ContextManager:
                 history_context += (
                     f"Usuário: {turn['user']}\nAgente: {turn['agent']}\n\n"
                 )
-
         return history_context + memory_context
-
-    # ------------------------------------------------------------------
-    # Método principal (refatorado — Fix 5)
-    # ------------------------------------------------------------------
-
     def ask_model(
         self,
         prompt: str,
@@ -180,44 +163,51 @@ class ContextManager:
         base_prompt: str | None = None,
         log_metric_callback: Callable[[Dict[str, Any]], None] | None = None,
         grammar: str | None | AutoGrammar = AUTO_GRAMMAR,
+        request_contract: ModelRequestContract | str | None = None,
     ) -> Dict[str, Any]:
         """
         Prepara o contexto e resolve a decisão no ModelGateway canônico.
-
         Args:
             grammar: gramática GBNF a usar. Por padrão (AUTO_GRAMMAR), a
                 gramática é escolhida automaticamente com base em
                 `step_type`. Passe uma string para sobrescrever, ou None
                 para desabilitar a gramática nesta chamada.
         """
+        exact_contract = resolve_request_contract(
+            request_contract=request_contract,
+            step_type=step_type,
+        )
         if isinstance(grammar, AutoGrammar):
-            effective_grammar = get_grammar(step_type, self.session.config)
+            effective_grammar = get_grammar(
+                step_type,
+                self.session.config,
+                request_contract=(
+                    request_contract
+                    if request_contract is not None
+                    else exact_contract
+                ),
+            )
         else:
             effective_grammar = grammar
         original_messages = [m.copy() for m in self.session.messages]
         original_system_content = (
             self.session.messages[0]["content"] if self.session.messages else ""
         )
-
         if self.verbose:
             self.check_prompt_size()
             exact = self.count_tokens_precise(
                 self.session.messages[0]["content"]
             )
             if exact is not None:
-                print(f"📏 [AUDITORIA] Tokens exatos: {exact}")
-
+                print(f"📏 [AUDITORIA] Tokens exatos do prefixo: {exact}")
         try:
             context_addition = self.build_context(prompt)
             if base_prompt is None:
                 base_prompt = self.build_base_system_prompt("", "")
-
             self.session.messages[0]["content"] = (
                 base_prompt + context_addition
             )
-
             self.session.add_user_message(prompt)
-
             estimated = self.estimate_conversation_tokens()
             config_max = self.session.config.get("agent_max_tokens")
             budget = config_max if config_max is not None else min(
@@ -233,28 +223,30 @@ class ContextManager:
                 compact_messages = self.build_compact_view()
                 original_messages_in_session = self.session.messages
                 self.session.messages = compact_messages
-                request = self.session.build_request(
+                request = build_request_with_contract(
+                    self.session,
                     grammar=grammar_for_request,
                     stream=False,
                     max_output_tokens=int(budget),
+                    request_contract=exact_contract,
                 )
+                request = replace(request, context_compacted=True)
                 self.session.messages = original_messages_in_session
             else:
-                request = self.session.build_request(
+                request = build_request_with_contract(
+                    self.session,
                     grammar=grammar_for_request,
                     stream=False,
                     max_output_tokens=int(budget),
+                    request_contract=exact_contract,
                 )
-
             if self.verbose:
                 print(
                     f"⏳ Consultando o modelo (step={step_type}, budget={budget})...",
                     end="",
                     flush=True,
                 )
-
             started_at = time.monotonic()
-
             decision = resolve_model_decision(
                 request,
                 complete=self.session.complete_request,
@@ -263,6 +255,7 @@ class ContextManager:
                     effective_grammar,
                     self.hardware_profile,
                     DEFAULT_AGENT_MAX_TOKENS,
+                    exact_contract,
                 ),
                 grammar=grammar_for_request,
                 grammar_supported=getattr(
@@ -274,6 +267,12 @@ class ContextManager:
                 fallback_request=lambda current: replace(
                     current, structured_output=None
                 ),
+                step_type=step_type,
+                request_contract=(
+                    request_contract
+                    if request_contract is not None
+                    else exact_contract
+                ),
                 on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
                     log_metric_callback,
                     response,
@@ -281,15 +280,17 @@ class ContextManager:
                     active_request,
                     step_type,
                     started_at,
+                    request_contract=(
+                        request_contract
+                        if request_contract is not None
+                        else exact_contract
+                    ),
                 ),
             )
-
             return decision
-
         finally:
             self.session.messages = original_messages
             if self.session.messages:
                 self.session.messages[0]["content"] = original_system_content
-
     def purge_stale_context(self) -> None:
         ErrorHandler.purge_stale_context(self.session, self.verbose)

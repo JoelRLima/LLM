@@ -48,6 +48,14 @@ def _conservative_text_tokens(text: str) -> int:
 def _provider_prompt_tokens(
     texts: list[str], token_counter: Callable[[str], Any] | None,
 ) -> int:
+    return measure_request_input_tokens_from_texts(texts, token_counter)[0]
+
+
+def measure_request_input_tokens_from_texts(
+    texts: list[str], token_counter: Callable[[str], Any] | None,
+) -> tuple[int, str]:
+    """Measure final request input with explicit estimator provenance."""
+
     joined = "\n".join(texts)
     if token_counter is not None:
         try:
@@ -59,8 +67,18 @@ def _provider_prompt_tokens(
                 raise
             value = None
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            return value
-    return _conservative_text_tokens(joined)
+            return max(1, value) if joined else 0, "provider_token_counter"
+    return _conservative_text_tokens(joined), "heuristic_chars_per_token"
+
+
+def measure_model_request_input_tokens(
+    request: Any, token_counter: Callable[[str], Any] | None = None,
+) -> tuple[int, str]:
+    """Measure the input portion of the exact ``ModelRequest`` about to dispatch."""
+
+    messages = getattr(request, "messages", ())
+    texts = [str(getattr(message, "content", "")) for message in messages]
+    return measure_request_input_tokens_from_texts(texts, token_counter)
 
 
 def estimate_model_request_allowance(
@@ -68,12 +86,11 @@ def estimate_model_request_allowance(
 ) -> int:
     """Return the hard preflight allowance for one model request."""
 
-    messages = getattr(request, "messages", ())
-    texts = [str(getattr(message, "content", "")) for message in messages]
+    input_tokens, _ = measure_model_request_input_tokens(request, token_counter)
     output = getattr(request, "max_output_tokens", 0)
     if isinstance(output, bool) or not isinstance(output, int):
         output = 0
-    return max(1, _provider_prompt_tokens(texts, token_counter) + max(0, output))
+    return max(1, input_tokens + max(0, output))
 
 
 def estimate_payload_allowance(
@@ -98,6 +115,7 @@ def estimate_payload_allowance(
 __all__ = [
     "estimate_model_request_allowance",
     "estimate_model_request_tokens",
+    "measure_model_request_input_tokens",
     "estimate_payload_allowance",
     "estimate_payload_tokens",
 ]

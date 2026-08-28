@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional, cast
 
 from agent.llm.contracts import ModelRequest
+from agent.llm.decision_contract import ModelRequestContract
 
 
 class LegacySessionMixin:
@@ -27,10 +28,16 @@ class LegacySessionMixin:
         payload: Dict[str, Any],
         *,
         grammar: Optional[str] = None,
+        request_contract: ModelRequestContract | str | None = None,
     ) -> ModelRequest:
         from agent.llm.session_requests import build_legacy_model_request
 
-        return build_legacy_model_request(self, payload, grammar=grammar)
+        return build_legacy_model_request(
+            self,
+            payload,
+            grammar=grammar,
+            request_contract=request_contract,
+        )
 
     def send_request(self: Any, payload: Dict[str, Any], stream: bool = True) -> Any:
         """Fachada legada que preserva o transporte raw e o envelope de stream."""

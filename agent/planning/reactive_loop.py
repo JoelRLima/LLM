@@ -6,6 +6,7 @@ from agent.final_response import (
     compose_operational_answer,
     has_usable_partial_evidence,
 )
+from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.plan_builder import build_planner_tools_description
 from agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
 from agent.reporting.observation_evidence import (
@@ -33,6 +34,7 @@ class ReactiveLoop:
             decision = cast(ModelDecision, self.orchestrator.context_manager.ask_model(
                 self._build_prompt(objective),
                 step_type="tool_decision",
+                request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
                 base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
                 log_metric_callback=self.orchestrator._log_metric,
             ))

@@ -138,6 +138,11 @@ def test_canonical_request_acceptance_is_one_provider_attempt() -> None:
     assert session._grammar_supports_grammar is True
     assert session.budget_ledger.snapshot().model_calls == 1
     assert len(entries) == 1
+    assert entries[0]["provider_call_succeeded"] is True
+    assert entries[0]["estimated_request_tokens"] > 0
+    assert entries[0]["request_estimation_source"] == "heuristic_chars_per_token"
+    assert entries[0]["context_limit"] == session.hardware_profile.context_limit
+    assert entries[0]["request_utilization_ratio"] > 0
 
 
 def test_canonical_grammar_rejection_falls_back_without_grammar() -> None:
@@ -154,10 +159,12 @@ def test_canonical_grammar_rejection_falls_back_without_grammar() -> None:
     assert len(entries) == 2
     assert entries[0]["success"] is False
     assert entries[1]["success"] is True
+    assert [entry["call_number"] for entry in entries] == [1, 2]
+    assert [entry["provider_call_succeeded"] for entry in entries] == [False, True]
 
 
 def test_canonical_generic_provider_error_does_not_fallback() -> None:
-    session, gateway, _ = _session([RuntimeError("provider unavailable")])
+    session, gateway, entries = _session([RuntimeError("provider unavailable")])
 
     with pytest.raises(ModelProviderError):
         _resolve(session)
@@ -166,15 +173,21 @@ def test_canonical_generic_provider_error_does_not_fallback() -> None:
     assert gateway.requests[0].structured_output is not None
     assert session._grammar_supports_grammar is None
     assert session.budget_ledger.snapshot().model_calls == 1
+    assert len(entries) == 1
+    assert entries[0]["provider_call_succeeded"] is False
+    assert entries[0]["token_usage_complete"] is False
 
 
 def test_canonical_malformed_response_retries_exactly_once() -> None:
-    session, gateway, _ = _session(["not json", '{"action":"final"}'])
+    session, gateway, entries = _session(["not json", '{"action":"final"}'])
 
     assert _resolve(session) == {"action": "final"}
     assert len(gateway.requests) == 2
     assert all(request.structured_output is not None for request in gateway.requests)
     assert session.budget_ledger.snapshot().model_calls == 2
+    assert [entry["call_number"] for entry in entries] == [1, 2]
+    assert all(entry["provider_call_succeeded"] is True for entry in entries)
+    assert session.budget_ledger.snapshot().model_calls_without_reported_usage == 2
 
 
 def test_canonical_fallback_then_malformed_retry_keeps_fallback_state() -> None:

@@ -25,7 +25,9 @@ def test_analysis_cli_execution(agent, fake_model):
     }
 
     # Configura as respostas do fake
-    fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli", "plan", {"action": "use_tools", "plan": plan_data["plan"]}
+    )
     fake_model.set_response(
         "analysis_cli",
         "continuation_plan",
@@ -72,7 +74,9 @@ def test_analysis_cli_cache_hit(agent, fake_model):
     }
 
     # Primeira execução
-    fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli", "plan", {"action": "use_tools", "plan": plan_data["plan"]}
+    )
     fake_model.set_response(
         "analysis_cli",
         "continuation_plan",
@@ -82,7 +86,9 @@ def test_analysis_cli_cache_hit(agent, fake_model):
     agent.run("analysis_cli")
 
     # Segunda execução — deve usar cache
-    fake_model.set_response("analysis_cli", "plan", plan_data)
+    fake_model.set_response(
+        "analysis_cli", "plan", {"action": "use_tools", "plan": plan_data["plan"]}
+    )
     fake_model.set_response(
         "analysis_cli",
         "continuation_plan",

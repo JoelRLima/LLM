@@ -13,6 +13,7 @@ from agent.llm.decision_compat import (
     complete_legacy_retry,
     record_legacy_metadata,
 )
+from agent.llm.decision_contract import resolve_request_contract
 from agent.llm.legacy_payload import (
     build_legacy_model_request,
     complete_legacy_payload_request,
@@ -90,6 +91,7 @@ class ModelClient:
         log_metric_callback: Callable[[Dict[str, Any]], None] | None = None,
         verbose: bool = False,
         grammar: Optional[str] = None,
+        request_contract: str | None = None,
     ) -> Dict[str, Any]:
         """Resolve one legacy request through the canonical request/decision path."""
 
@@ -104,13 +106,24 @@ class ModelClient:
             else None
         )
         hardware_profile = getattr(session, "hardware_profile", None)
+        exact_contract = resolve_request_contract(
+            request_contract=request_contract,
+            step_type=step_type,
+        )
 
         if cls._canonical_session(session):
-            request = session.build_legacy_request(payload, grammar=effective_grammar)
+            request = session.build_legacy_request(
+                payload,
+                grammar=effective_grammar,
+                request_contract=exact_contract,
+            )
             complete = session.complete_request
         else:
             request = build_legacy_model_request(
-                session, payload, grammar=effective_grammar
+                session,
+                payload,
+                grammar=effective_grammar,
+                request_contract=exact_contract,
             )
 
             def complete(current_request: Any) -> Any:
@@ -123,6 +136,7 @@ class ModelClient:
                 requested_grammar,
                 hardware_profile,
                 FALLBACK_AGENT_MAX_TOKENS,
+                exact_contract,
             )
 
         if verbose:
@@ -140,6 +154,8 @@ class ModelClient:
             grammar_supported=cls._grammar_support(session),
             set_grammar_supported=lambda value: cls._set_grammar_support(session, value),
             fallback_request=lambda current: replace(current, structured_output=None),
+            step_type=step_type,
+            request_contract=request_contract if request_contract is not None else exact_contract,
             on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
                 log_metric_callback,
                 response,
@@ -147,6 +163,7 @@ class ModelClient:
                 active_request,
                 step_type,
                 started_at,
+                request_contract=request_contract if request_contract is not None else exact_contract,
             ),
         )
         if verbose:

@@ -93,6 +93,34 @@ def discover_project_context(root: str | os.PathLike[str]) -> str:
     )
 
 
+def _build_compression_request(
+    session: Any, prompt: str
+) -> tuple[Any | None, Dict[str, Any] | None]:
+    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
+        original_messages = session.messages
+        session.messages = [
+            {
+                "role": "system",
+                "content": "Resuma o histórico de forma concisa e técnica.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            request = session.build_request(
+                stream=False,
+                max_output_tokens=1024,
+            )
+            return replace(request, reasoning_budget=0), None
+        finally:
+            session.messages = original_messages
+    temporary = type(session)("", session.config)
+    temporary.set_system_prompt("Resuma o histórico de forma concisa e técnica.")
+    temporary.add_user_message(prompt)
+    payload = temporary.build_payload()
+    payload.update({"max_tokens": 1024, "stream": False})
+    return None, payload
+
+
 def compress_conversation(session: Any, context_limit: int, verbose: bool) -> None:
     estimated = sum(len(str(message.get("content", ""))) for message in session.messages) // 4
     threshold = int(context_limit * 0.8)
@@ -113,29 +141,7 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
         for message in session.messages[1:]
         if message.get("role") == "user"
     ]
-    canonical_request = None
-    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
-        original_messages = session.messages
-        session.messages = [
-            {
-                "role": "system",
-                "content": "Resuma o histórico de forma concisa e técnica.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        try:
-            canonical_request = session.build_request(
-                stream=False, max_output_tokens=1024
-            )
-            canonical_request = replace(canonical_request, reasoning_budget=0)
-        finally:
-            session.messages = original_messages
-    if canonical_request is None:
-        temporary = type(session)("", session.config)
-        temporary.set_system_prompt("Resuma o histórico de forma concisa e técnica.")
-        temporary.add_user_message(prompt)
-        payload = temporary.build_payload()
-        payload.update({"max_tokens": 1024, "stream": False})
+    canonical_request, payload = _build_compression_request(session, prompt)
     try:
         if canonical_request is not None:
             response = session.complete_request(canonical_request).content

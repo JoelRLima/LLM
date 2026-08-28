@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Dict, cast
 
+from agent.llm.decision_contract import request_contract_for_step_type
 from agent.orchestration.route_result import RouteResult
 from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.hierarchical_executor import HierarchicalExecutor
@@ -183,6 +184,7 @@ class HierarchicalExecutionService:
             self.orchestrator.context_manager.ask_model(
                 prompt,
                 step_type=step_type,
+                request_contract=request_contract_for_step_type(step_type),
                 base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None) or "",
                 log_metric_callback=self.orchestrator._log_metric,
             ),

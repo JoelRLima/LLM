@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any, Dict, Optional
 
+from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.capability_manifest import (
     render_active_harness_capabilities,
     render_validation_repair_manual,
@@ -132,6 +133,7 @@ def ask_llm_for_alternative(
         decision = orchestrator.context_manager.ask_model(
             prompt,
             step_type="replan",
+            request_contract=ModelRequestContract.REPLAN,
             base_prompt=getattr(orchestrator, "_cached_base_prompt", None),
             log_metric_callback=orchestrator._log_metric if hasattr(orchestrator, "_log_metric") else None,
         )

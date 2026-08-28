@@ -253,6 +253,9 @@ def _measurement_summary(measurement: dict[str, object]) -> dict[str, object]:
     allowed = {
         "task_id", "duration_ms", "tools", "invocation_id", "invocation_ids", "invocations",
         "terminal_outcome", "error", "output_chars", "truncated", "tool_history_count", "tool_calls", "model_calls", "gateway_calls", "run_id", "status",
+        "estimated_tokens", "accounted_tokens", "reserved_tokens", "token_usage_complete",
+        "reported_input_tokens", "reported_output_tokens", "total_tokens", "token_measurement",
+        "provider_identity", "declared_provider_identity", "observed_provider_identity",
     }
     result: dict[str, object] = {}
     for key in allowed:

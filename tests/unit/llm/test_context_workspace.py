@@ -454,6 +454,7 @@ def test_compression_disables_thinking_budget_on_canonical_request() -> None:
     assert session.requests[0].stream is False
     assert session.requests[0].max_output_tokens == 1024
     assert session.completed_request.reasoning_budget == 0
+    assert session.completed_request.request_contract is None
     assert session.thinking_budget == 900
 
 

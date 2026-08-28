@@ -102,6 +102,28 @@ class _FinalGateway:
         return "resposta"
 
 
+class _CanonicalFinalSession:
+    def __init__(self) -> None:
+        self.request = None
+
+    def build_request(self, *, stream=True, max_output_tokens=None, request_contract=None):
+        self.request = SimpleNamespace(request_contract=request_contract)
+        return self.request
+
+    def complete_request(self, request):
+        assert request is self.request
+        return SimpleNamespace(content="plain final text")
+
+
+def test_public_final_text_request_has_no_structured_contract() -> None:
+    session = _CanonicalFinalSession()
+
+    response = FinalResponder(SimpleNamespace(session=session))._request_answer(None)
+
+    assert response == "plain final text"
+    assert session.request.request_contract is None
+
+
 def _outcome(**overrides):
     values = {
         "terminal_status": "complete",

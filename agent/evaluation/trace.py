@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import time
 from collections.abc import Iterator
 from typing import Any
 
+from agent.llm.contracts import StreamEventType, normalize_usage
+from agent.llm.decision_contract import request_contract_value
 from agent.llm.identity import (
     call_identity,
     declared_provider_identity,
@@ -12,6 +17,7 @@ from agent.llm.identity import (
     observed_provider_model_id,
     project_observed_provider_identity,
 )
+from agent.runtime.budget_estimation import measure_model_request_input_tokens
 
 
 class RecordingGateway:
@@ -67,12 +73,18 @@ class RecordingGateway:
                 or structured_mode not in (None, "", "StructuredOutputMode.NONE", "none")
             )
         )
-        return {
+        estimated_input_tokens, estimation_source = measure_model_request_input_tokens(
+            request, getattr(self.gateway, "count_tokens", None)
+        )
+        summary = {
             "model": str(getattr(request, "model", "")),
             "temperature": getattr(request, "temperature", None),
             "max_output_tokens": getattr(request, "max_output_tokens", None),
             "stream": bool(getattr(request, "stream", False)),
             "reasoning_budget": getattr(request, "reasoning_budget", None),
+            "request_contract": request_contract_value(
+                getattr(request, "request_contract", None)
+            ),
             "structured_mode": structured_mode,
             "structured_contract_present": structured_contract_present,
             "structured_contract": {
@@ -82,7 +94,35 @@ class RecordingGateway:
                 "instruction_present": getattr(structured, "instruction", None) not in (None, ""),
             } if structured is not None else None,
             "message_count": len(getattr(request, "messages", ()) or ()),
+            "estimated_request_tokens": estimated_input_tokens,
+            "request_estimation_source": estimation_source,
+            "context_compacted": bool(getattr(request, "context_compacted", False)),
+            "context_limit": getattr(request, "context_limit", None),
         }
+        context_limit = summary["context_limit"]
+        summary["request_utilization_ratio"] = (
+            estimated_input_tokens / context_limit
+            if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0
+            else None
+        )
+        stable_config = {
+            key: summary[key]
+            for key in (
+                "model",
+                "temperature",
+                "max_output_tokens",
+                "stream",
+                "reasoning_budget",
+                "request_contract",
+                "structured_mode",
+                "structured_contract",
+            )
+        }
+        fingerprint_payload = json.dumps(stable_config, sort_keys=True, separators=(",", ":"), default=str)
+        summary["config_fingerprint"] = hashlib.sha256(
+            fingerprint_payload.encode("utf-8")
+        ).hexdigest()
+        return summary
 
     def _apply_response_identity(self, record: dict[str, Any], response: Any) -> None:
         observed = observed_provider_model_id(getattr(response, "provider_metadata", None))
@@ -99,6 +139,7 @@ class RecordingGateway:
             record["identity_source"] = "stream.event_metadata"
 
     def complete(self, request: Any) -> Any:
+        started_at = time.monotonic()
         record: dict[str, Any] = {
             "call_index": len(self._records) + 1,
             "stage": self._stage(request),
@@ -109,19 +150,25 @@ class RecordingGateway:
             response = self.gateway.complete(request)
         except Exception as exc:
             record["error"] = f"{type(exc).__name__}: {exc}"
+            record["provider_call_succeeded"] = False
+            record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
             self._records.append(record)
             raise
+        record["provider_call_succeeded"] = True
+        record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
         self._apply_response_identity(record, response)
         record["response"] = str(getattr(response, "content", response))
-        record["reasoning"] = str(getattr(response, "reasoning", ""))
         record["finish_reason"] = getattr(response, "finish_reason", None)
         usage = getattr(response, "usage", None)
         if usage is not None:
+            input_tokens, output_tokens, total_tokens, _, complete = normalize_usage(usage)
             record["usage"] = {
-                "input_tokens": getattr(usage, "input_tokens", None),
-                "output_tokens": getattr(usage, "output_tokens", None),
-                "total_tokens": getattr(usage, "total_tokens", None),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
                 "available": getattr(usage, "available", False),
+                "complete": complete,
+                "source": "provider_reported" if complete else "provider_incomplete",
             }
         provider_metadata = getattr(response, "provider_metadata", None)
         if isinstance(provider_metadata, dict):
@@ -130,6 +177,7 @@ class RecordingGateway:
         return response
 
     def stream(self, request: Any) -> Iterator[Any]:
+        started_at = time.monotonic()
         record: dict[str, Any] = {
             "call_index": len(self._records) + 1,
             "stage": self._stage(request),
@@ -141,15 +189,19 @@ class RecordingGateway:
             for event in self.gateway.stream(request):
                 self._apply_stream_identity(record, event)
                 text = getattr(event, "text", "")
-                if text:
+                if getattr(event, "type", None) is StreamEventType.CONTENT and text:
                     chunks.append(str(text))
                 yield event
         except Exception as exc:
             record["error"] = f"{type(exc).__name__}: {exc}"
             record["response"] = "".join(chunks)
+            record["provider_call_succeeded"] = False
+            record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
             self._records.append(record)
             raise
         record["response"] = "".join(chunks)
+        record["provider_call_succeeded"] = True
+        record["duration_ms"] = max(0, int((time.monotonic() - started_at) * 1000))
         self._records.append(record)
 
     def count_tokens(self, text: str) -> Any:

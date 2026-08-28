@@ -14,6 +14,7 @@ from agent.llm.contracts import (
     response_text,
     response_usage,
 )
+from agent.llm.decision_contract import ModelRequestContract, coerce_request_contract
 
 _LEGACY_CANONICAL_FIELDS = frozenset(
     {
@@ -68,6 +69,7 @@ def build_legacy_model_request(
     payload: Dict[str, Any],
     *,
     grammar: Optional[str] = None,
+    request_contract: ModelRequestContract | str | None = None,
 ) -> ModelRequest:
     """Translate an old payload into the canonical request contract."""
 
@@ -93,7 +95,12 @@ def build_legacy_model_request(
             from agent.llm.session_requests import build_model_request
 
             messages = tuple(
-                build_model_request(session, grammar=effective_grammar, stream=False).messages
+                build_model_request(
+                    session,
+                    grammar=effective_grammar,
+                    stream=False,
+                    request_contract=request_contract,
+                ).messages
             )
         except Exception:
             messages = ()
@@ -128,6 +135,8 @@ def build_legacy_model_request(
         ),
         structured_output=structured,
         provider_options=legacy_provider_options(payload),
+        context_limit=getattr(hardware_profile, "context_limit", None),
+        request_contract=coerce_request_contract(request_contract),
     )
 
 

@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 
+from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.plan_prompts import (
     build_continuation_prompt,
     build_plan_prompt,
@@ -79,6 +80,7 @@ class PlanBuilder:
             self._build_prompt(objective), step_type="plan",
             base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
+            request_contract=ModelRequestContract.INITIAL_PLAN,
         )
         if self.orchestrator.verbose:
             print(f"[DEBUG] plan_decision bruto: {decision}")
@@ -140,6 +142,7 @@ class PlanBuilder:
             self._build_continuation_prompt(objective, summary, effect_evidence, observation_references, self._plan_progress()),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
+            request_contract=ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION,
         )
         action = decision.get("action")
         if action == "complete_without_effect":
@@ -170,6 +173,7 @@ class PlanBuilder:
             self._build_reasoning_boundary_prompt(objective, summary, self._plan_progress()),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
+            request_contract=ModelRequestContract.REASONING_BOUNDARY_CONTINUATION,
         )
         if not isinstance(decision, dict):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)

@@ -15,6 +15,10 @@ responsabilidade do PlanValidator.
 """
 from typing import Any, Dict, Mapping, Optional
 
+from agent.llm.decision_contract import (
+    ModelRequestContract,
+    resolve_request_contract,
+)
 from agent.runtime import config as _config
 
 # ----------------------------------------------------------------------
@@ -53,39 +57,76 @@ array  ::= "[" ws (value ("," ws value)*)? ws "]"
 
 PLAN_GRAMMAR = (
     r"""
-root      ::= plan-response | continue-after-plan-response | direct-response
+    root      ::= plan-response | direct-response
 plan-response ::= "{" ws "\"action\"" ws ":" ws "\"use_tools\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
-continue-after-plan-response ::= "{" ws "\"action\"" ws ":" ws "\"continue_after_plan\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
 direct-response ::= "{" ws "\"action\"" ws ":" ws "\"direct_response\"" ws "," ws "\"answer\"" ws ":" ws string ws "}"
 plan-item ::= tool-step | deferred-condition
 tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
-deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws integer ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step ws "," ws "\"on_false\"" ws ":" ws write-waiver ws "}"
+    deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws step-ordinal ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step ws "," ws "\"on_false\"" ws ":" ws write-waiver ws "}"
 equals-predicate ::= "{" ws "\"op\"" ws ":" ws "\"equals\"" ws "," ws "\"value\"" ws ":" ws string ws "}"
 write-waiver ::= "{" ws "\"waive_effect\"" ws ":" ws "\"write\"" ws "}"
-integer ::= [1-9] [0-9]*
+    step-ordinal ::= [1-9] [0-9]*
+    path-index ::= "0" | [1-9] [0-9]*
 bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
 binding-member ::= string ws ":" ws binding-spec
-binding-spec ::= "{" ws "\"from_step\"" ws ":" ws integer ws "," ws "\"path\"" ws ":" ws path-array ws "}"
+    binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
 path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
-path-segment ::= string | integer
+    path-segment ::= string | path-index
 """
+    + _COMMON_RULES
+)
+
+EFFECT_OBSERVATION_CONTINUATION_GRAMMAR = (
+    r"""
+    root      ::= execute-response | complete-without-effect-response | blocked-response
+    execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws plan-item ("," ws plan-item)* ws "]" ws "}"
+    complete-without-effect-response ::= "{" ws "\"action\"" ws ":" ws "\"complete_without_effect\"" ws "," ws "\"observation_index\"" ws ":" ws step-ordinal ws "}"
+    blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
+    plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+    bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
+    binding-member ::= string ws ":" ws binding-spec
+    binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
+    path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
+    path-segment ::= string | path-index
+    step-ordinal ::= [1-9] [0-9]*
+    path-index ::= "0" | [1-9] [0-9]*
+    """
+    + _COMMON_RULES
+)
+
+REASONING_BOUNDARY_CONTINUATION_GRAMMAR = (
+    r"""
+    root      ::= execute-response | complete-response | blocked-response
+    execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws plan-item ("," ws plan-item)* ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
+    complete-response ::= "{" ws "\"action\"" ws ":" ws "\"complete\"" ws "," ws "\"reason\"" ws ":" ws string (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
+    blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
+    plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+    bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
+    binding-member ::= string ws ":" ws binding-spec
+    binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
+    path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
+    path-segment ::= string | path-index
+    step-ordinal ::= [1-9] [0-9]*
+    path-index ::= "0" | [1-9] [0-9]*
+    """
     + _COMMON_RULES
 )
 
 CONTINUATION_PLAN_GRAMMAR = (
     r"""
 root      ::= execute-response | complete-response | complete-without-effect-response | blocked-response
-execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" ws "}"
-complete-without-effect-response ::= "{" ws "\"action\"" ws ":" ws "\"complete_without_effect\"" ws "," ws "\"observation_index\"" ws ":" ws integer ws "}"
+execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws plan-item ("," ws plan-item)* ws "]" ws "}"
+    complete-without-effect-response ::= "{" ws "\"action\"" ws ":" ws "\"complete_without_effect\"" ws "," ws "\"observation_index\"" ws ":" ws step-ordinal ws "}"
 complete-response ::= "{" ws "\"action\"" ws ":" ws "\"complete\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
 blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
 plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
 bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
 binding-member ::= string ws ":" ws binding-spec
-binding-spec ::= "{" ws "\"from_step\"" ws ":" ws integer ws "," ws "\"path\"" ws ":" ws path-array ws "}"
+    binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
 path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
-path-segment ::= string | integer
-integer ::= [1-9] [0-9]*
+    path-segment ::= string | path-index
+    step-ordinal ::= [1-9] [0-9]*
+    path-index ::= "0" | [1-9] [0-9]*
 """
     + _COMMON_RULES
 )
@@ -103,10 +144,11 @@ _TOOL_DECISION_PRODUCTIONS = r"""
 tool-decision ::= "{" ws "\"action\"" ws ":" ws "\"tool\"" ws "," ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
 bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
 binding-member ::= string ws ":" ws binding-spec
-binding-spec ::= "{" ws "\"from_step\"" ws ":" ws integer ws "," ws "\"path\"" ws ":" ws path-array ws "}"
+binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
 path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
-path-segment ::= string | integer
-integer ::= [1-9] [0-9]*
+path-segment ::= string | path-index
+step-ordinal ::= [1-9] [0-9]*
+path-index ::= "0" | [1-9] [0-9]*
 """
 
 _FINAL_DECISION_PRODUCTION = r"""
@@ -145,6 +187,18 @@ root ::= "{" ws "\"summary\"" ws ":" ws string ws "}"
 )
 
 
+_CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
+    ModelRequestContract.INITIAL_PLAN: PLAN_GRAMMAR,
+    ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION: EFFECT_OBSERVATION_CONTINUATION_GRAMMAR,
+    ModelRequestContract.REASONING_BOUNDARY_CONTINUATION: REASONING_BOUNDARY_CONTINUATION_GRAMMAR,
+    ModelRequestContract.MACRO_PLAN: MACRO_PLAN_GRAMMAR,
+    ModelRequestContract.REACTIVE_TOOL_DECISION: TOOL_DECISION_GRAMMAR,
+    ModelRequestContract.FINAL_GENERATION: FINAL_GRAMMAR,
+    ModelRequestContract.SUMMARIZATION: SUMMARIZE_GRAMMAR,
+    ModelRequestContract.REPLAN: REPLAN_GRAMMAR,
+}
+
+
 # ----------------------------------------------------------------------
 # Mapeamento step_type -> gramática
 # ----------------------------------------------------------------------
@@ -161,8 +215,10 @@ GRAMMARS: Dict[str, str] = {
 
 
 def get_grammar(
-    step_type: str,
+    step_type: str | None = None,
     config: Mapping[str, Any] | None = None,
+    *,
+    request_contract: ModelRequestContract | str | None = None,
 ) -> Optional[str]:
     """
     Retorna a gramática GBNF correspondente ao `step_type`, ou None se
@@ -181,4 +237,13 @@ def get_grammar(
     effective_config = _config.DEFAULT_CONFIG if config is None else config
     if not effective_config.get("ENABLE_GBNF", True):
         return None
-    return GRAMMARS.get(step_type)
+    if request_contract is not None:
+        contract = resolve_request_contract(
+            request_contract=request_contract,
+            step_type=step_type,
+        )
+        return _CONTRACT_GRAMMARS.get(contract) if contract is not None else None
+    contract = resolve_request_contract(step_type=step_type)
+    if contract is not None:
+        return _CONTRACT_GRAMMARS.get(contract)
+    return GRAMMARS.get(step_type) if isinstance(step_type, str) else None

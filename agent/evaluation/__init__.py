@@ -24,6 +24,11 @@ from agent.evaluation.contracts import (
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.evaluation.loader import load_scenario, load_scenarios
+from agent.evaluation.real_model_readiness import (
+    REAL_MODEL_READINESS_VERSION,
+    readiness_campaign_policy,
+    real_model_readiness_scenarios,
+)
 from agent.evaluation.regressions import CURATED_REGRESSION_SET, RegressionCase
 from agent.evaluation.runner import CapabilityEvaluator, EvaluationSetReport, ScenarioExecutor
 from agent.evaluation.trace import RecordingGateway
@@ -47,6 +52,7 @@ __all__ = [
     "H_SERIES_VERSION",
     "RepetitionPolicy",
     "RecordingGateway",
+    "REAL_MODEL_READINESS_VERSION",
     "ScenarioExecutor",
     "ScenarioExpectation",
     "ScenarioReport",
@@ -54,6 +60,8 @@ __all__ = [
     "RegressionCase",
     "load_scenario",
     "load_scenarios",
+    "readiness_campaign_policy",
+    "real_model_readiness_scenarios",
     "sanitize_evidence",
     "validate_h_series",
 ]

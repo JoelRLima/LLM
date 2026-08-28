@@ -9,6 +9,7 @@ from agent.llm.contracts import (
     ModelTimeoutError,
     build_model_call_metric,
 )
+from agent.llm.decision_contract import ModelRequestContract
 from agent.llm.providers import create_model_gateway
 from agent.llm.session_legacy import LegacySessionMixin
 from agent.runtime.budget import TaskBudgetLedger
@@ -50,9 +51,13 @@ class ChatSession(LegacySessionMixin):
         success: bool,
         streaming: bool,
         response: Any = None,
+        request: ModelRequest | None = None,
         call_number: int | None = None,
         estimated_tokens: int = 0,
         reserved_tokens: int = 0,
+        estimated_request_tokens: int = 0,
+        request_estimation_source: str = "unavailable",
+        context_compacted: bool = False,
     ) -> None:
         callback = self.model_call_callback
         if callback is None:
@@ -64,9 +69,14 @@ class ChatSession(LegacySessionMixin):
             success=success,
             streaming=streaming,
             response=response,
+            request=request,
             call_number=call_number,
             estimated_tokens=estimated_tokens,
             reserved_tokens=reserved_tokens,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=request_estimation_source,
+            context_limit=self.hardware_profile.context_limit,
+            context_compacted=context_compacted,
         )
         try:
             callback(entry)
@@ -81,7 +91,11 @@ class ChatSession(LegacySessionMixin):
         streaming: bool,
         response: Any = None,
         usage: Any = None,
+        request: ModelRequest | None = None,
         estimated_tokens: int = 0,
+        estimated_request_tokens: int = 0,
+        request_estimation_source: str = "unavailable",
+        context_compacted: bool = False,
     ) -> None:
         reserved_tokens = self.budget_ledger.reservation_for(call_number)
         self.budget_ledger.finalize_model_call(
@@ -92,9 +106,13 @@ class ChatSession(LegacySessionMixin):
             success=success,
             streaming=streaming,
             response=response,
+            request=request,
             call_number=call_number,
             estimated_tokens=estimated_tokens,
             reserved_tokens=reserved_tokens,
+            estimated_request_tokens=estimated_request_tokens,
+            request_estimation_source=request_estimation_source,
+            context_compacted=context_compacted,
         )
     def set_system_prompt(self, prompt: str) -> None:
         """Substitui o system prompt base."""
@@ -158,6 +176,7 @@ class ChatSession(LegacySessionMixin):
         *,
         stream: bool = True,
         max_output_tokens: int | None = None,
+        request_contract: ModelRequestContract | str | None = None,
     ) -> ModelRequest:
         from agent.llm.session_requests import build_model_request
 
@@ -167,6 +186,7 @@ class ChatSession(LegacySessionMixin):
             grammar,
             stream=stream,
             max_output_tokens=max_output_tokens,
+            request_contract=request_contract,
         )
 
     def complete_request(self, request: ModelRequest) -> ModelResponse:

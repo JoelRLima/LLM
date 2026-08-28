@@ -58,7 +58,8 @@ class SummarizeSkill(BaseSkill):
                 try:
                     if hasattr(session, "build_request") and hasattr(session, "complete_request"):
                         request = session.build_request(
-                            stream=False, max_output_tokens=1024
+                            stream=False,
+                            max_output_tokens=1024,
                         )
                         response = session.complete_request(request).content
                     else:
