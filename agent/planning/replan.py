@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_validator import PlanValidator
@@ -12,17 +12,26 @@ from agent.planning.planning_context import (
     PlanningContextSnapshot,
 )
 from agent.planning.presentation import PlanningPresentationSnapshot, validate_planning_view_binding
+from agent.planning.replan_compat import (
+    LegacyReplanContext,
+    RetryPolicy,
+    legacy_replan_context,
+    legacy_replan_failure,
+)
 from agent.planning.replan_llm import ask_llm_for_alternative
 from agent.planning.replan_models import (
     ErrorCategory,
     ReplanAction,
-    ReplanContext,
-    RetryPolicy,
-    classify_error,
+    category_for_failure,
+)
+from agent.planning.replan_models import (
+    ReplanContext as CoreReplanContext,
 )
 from agent.planning.replan_scope import scoped_replan_observations
 from agent.planning.tool_metadata import TOOL_METADATA
+from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
+from agent.runtime.recovery import RecoveryScope
 
 __all__ = [
     "ErrorCategory",
@@ -30,10 +39,26 @@ __all__ = [
     "ReplanContext",
     "RetryPolicy",
     "ask_llm_for_alternative",
-    "classify_error",
     "replan",
     "try_heuristic",
 ]
+
+
+def _legacy_context(*args: Any, **kwargs: Any) -> CoreReplanContext | LegacyReplanContext:
+    """Keep old construction syntax outside the canonical context type."""
+
+    if any(
+        key in kwargs
+        for key in ("retry_counts", "heuristic_replans", "llm_replans")
+    ):
+        return legacy_replan_context(*args, **kwargs)
+    return CoreReplanContext(*args, **kwargs)
+
+
+# Compatibility symbols are intentionally construction facades, not policy
+# owners. Canonical callers import ReplanContext from replan_models directly.
+ReplanContext = _legacy_context
+ReplanContextCompat = _legacy_context
 
 
 def try_heuristic(
@@ -115,6 +140,10 @@ def _planning_view(
     return context.resolve_view("linear", getattr(orchestrator, "active_skills", ()))
 
 
+def _recovery_budget(orchestrator: Any) -> Any:
+    return getattr(getattr(orchestrator, "agent_state", None), "recovery_budget", None)
+
+
 def _surviving_steps(
     steps: list[Dict[str, Any]], validator: PlanValidator, phase: str
 ) -> list[Dict[str, Any]]:
@@ -139,7 +168,7 @@ def _surviving_steps(
     return list(steps)
 
 
-def _log_action(context: ReplanContext, category: ErrorCategory, action: ReplanAction) -> None:
+def _log_action(context: CoreReplanContext, category: ErrorCategory, action: ReplanAction) -> None:
     logger.info(
         "[REPLAN] step=%s tool=%s error=%s strategy=%s replacement=%s",
         len(context.tool_history) + 1,
@@ -150,9 +179,48 @@ def _log_action(context: ReplanContext, category: ErrorCategory, action: ReplanA
     )
 
 
+def _canonical_context(
+    ctx: CoreReplanContext | LegacyReplanContext,
+    failure: FailureFact | str | None,
+) -> CoreReplanContext:
+    if isinstance(ctx, LegacyReplanContext):
+        typed_failure = (
+            failure if isinstance(failure, FailureFact) else legacy_replan_failure(failure)
+        )
+        return CoreReplanContext(
+            task=ctx.task,
+            current_step=ctx.current_step,
+            tool_history=ctx.tool_history,
+            failure=typed_failure,
+            last_exception=ctx.last_exception,
+            budget_remaining=ctx.budget_remaining,
+        )
+    if isinstance(failure, FailureFact):
+        if failure is ctx.failure:
+            return ctx
+        return CoreReplanContext(
+            task=ctx.task,
+            current_step=ctx.current_step,
+            tool_history=ctx.tool_history,
+            failure=failure,
+            last_tool_result=ctx.last_tool_result,
+            last_exception=ctx.last_exception,
+            budget_remaining=ctx.budget_remaining,
+        )
+    return CoreReplanContext(
+        task=ctx.task,
+        current_step=ctx.current_step,
+        tool_history=ctx.tool_history,
+        failure=legacy_replan_failure(failure),
+        last_tool_result=ctx.last_tool_result,
+        last_exception=ctx.last_exception,
+        budget_remaining=ctx.budget_remaining,
+    )
+
+
 def replan(
-    ctx: ReplanContext,
-    error_message: str,
+    ctx: CoreReplanContext | LegacyReplanContext,
+    failure: FailureFact | str | None,
     orchestrator: Any,
     retry_policy: RetryPolicy | None = None,
     *,
@@ -162,37 +230,45 @@ def replan(
     repairable_fields: tuple[str, ...] = (),
     prior_steps: tuple[Any, ...] = (),
 ) -> Optional[ReplanAction]:
-    policy = retry_policy or RetryPolicy()
-    category = classify_error(error_message)
-    if not validation_repair and policy.allows_heuristic(ctx):
-        action = try_heuristic(category, ctx.current_step.get("tool", ""), ctx.current_step.get("args", {}))
-        action = _validate_and_optimize_new_steps(
-            action, orchestrator, planning_context, planning_view, objective=ctx.task
-        )
+    del retry_policy
+    ctx = _canonical_context(ctx, failure)
+    category = category_for_failure(ctx.failure)
+    if not validation_repair and ctx.failure.retryable and not ctx.failure.hard:
+        action = try_heuristic(category, str(ctx.current_step.get("tool", "")), ctx.current_step.get("args", {}))
+        budget = _recovery_budget(orchestrator)
+        if action is not None and (budget is None or budget.try_consume(RecoveryScope.HEURISTIC_REPLANS)):
+            action = _validate_and_optimize_new_steps(
+                action, orchestrator, planning_context, planning_view, objective=ctx.task
+            )
+        else:
+            action = None
         if action is not None:
-            ctx.record("heuristic")
             _log_action(ctx, category, action)
             return action
-    if policy.allows_llm(ctx):
-        action = ask_llm_for_alternative(
-            ctx.current_step,
-            error_message,
-            orchestrator,
-            validation_repair=validation_repair,
-            repairable_fields=repairable_fields,
-            prior_steps=prior_steps,
-            objective=ctx.task,
+    if validation_repair or (ctx.failure.retryable and not ctx.failure.hard):
+        budget = _recovery_budget(orchestrator)
+        allowed = validation_repair or budget is None or budget.try_consume(RecoveryScope.LLM_REPLANS)
+        action = (
+            ask_llm_for_alternative(
+                cast(Dict[str, Any], ctx.current_step),
+                ctx.failure,
+                orchestrator,
+                validation_repair=validation_repair,
+                repairable_fields=repairable_fields,
+                prior_steps=prior_steps,
+                objective=ctx.task,
+            )
+            if allowed
+            else None
         )
         if validation_repair:
             if action is not None:
-                ctx.record("llm")
                 _log_action(ctx, category, action)
             return action
         action = _validate_and_optimize_new_steps(
             action, orchestrator, planning_context, planning_view, objective=ctx.task
         )
         if action is not None:
-            ctx.record("llm")
             _log_action(ctx, category, action)
             return action
     logger.warning(

@@ -1,12 +1,19 @@
+"""Typed domain projections for bounded plan recovery."""
+
 from __future__ import annotations
 
-from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from types import MappingProxyType
+from typing import Any, Mapping, Sequence
+
+from agent.runtime.failures import FailureFact
+from agent.tools.contracts import ToolResult
 
 
 class ErrorCategory(Enum):
+    """Small domain projection of a canonical :class:`FailureFact`."""
+
     FILE_NOT_FOUND = "FileNotFoundError"
     SANDBOX = "SandboxError"
     SCHEMA = "SchemaError"
@@ -15,70 +22,70 @@ class ErrorCategory(Enum):
     UNKNOWN = "Unknown"
 
 
-@dataclass
+def category_for_failure(failure: FailureFact) -> ErrorCategory:
+    """Project canonical code/status into the replan domain vocabulary."""
+
+    if failure.code == "FILE_NOT_FOUND":
+        return ErrorCategory.FILE_NOT_FOUND
+    if failure.status == "timed_out" or failure.code in {"TIMEOUT", "WATCHDOG_TIMEOUT"}:
+        return ErrorCategory.TIMEOUT
+    if failure.code in {"INVALID_ARGUMENTS", "MISSING_REQUIRED_INPUT", "REQUEST_INVALID"}:
+        return ErrorCategory.SCHEMA
+    if failure.status == "permission_denied" or failure.code in {
+        "AUTH_DENIED",
+        "AUTHORITY_REQUIRED",
+        "APPLICATION_AUTHORITY_DENIED",
+        "DENIED",
+        "OPERATIONAL_MODE_DENIED",
+        "PERMISSION_DENIED",
+        "TASK_AUTHORITY_DENIED",
+        "WORKSPACE_GRANT_DENIED",
+    }:
+        return ErrorCategory.TOOL_BLOCKED
+    if failure.code in {"TOOL_BLOCKED", "TOOL_UNAVAILABLE"}:
+        return ErrorCategory.TOOL_BLOCKED
+    return ErrorCategory.UNKNOWN
+
+
+def _readonly_step(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    copied = dict(value)
+    raw_args = copied.get("args")
+    if isinstance(raw_args, Mapping):
+        copied["args"] = MappingProxyType(dict(raw_args))
+    return MappingProxyType(copied)
+
+
+@dataclass(frozen=True, slots=True)
 class ReplanContext:
+    """Read-only attempt view; recovery accounting lives in task state."""
+
     task: str
-    current_step: Dict[str, Any]
-    tool_history: List[Dict[str, Any]]
-    heuristic_replans: int = 0
-    llm_replans: int = 0
-    last_exception: Optional[str] = None
-    last_tool_result: Optional[Dict[str, Any]] = None
-    budget_remaining: Optional[int] = None
-    # The task owns this mapping.  A context is an attempt view, never the
-    # retry ledger itself.
-    retry_counts: MutableMapping[str, int] | None = None
+    current_step: Mapping[str, Any]
+    tool_history: Sequence[Mapping[str, Any]] = ()
+    failure: FailureFact = field(default_factory=FailureFact.unknown)
+    last_tool_result: ToolResult | None = None
+    # Diagnostic compatibility field. It is never read for policy.
+    last_exception: str | None = None
+    budget_remaining: int | None = None
 
-    def count(self, kind: str) -> int:
-        if self.retry_counts is not None:
-            return int(self.retry_counts.get(kind, 0))
-        return self.heuristic_replans if kind == "heuristic" else self.llm_replans
-
-    def record(self, kind: str) -> None:
-        if self.retry_counts is not None:
-            self.retry_counts[kind] = self.count(kind) + 1
-            self.retry_counts["total"] = self.count("total") + 1
-        if kind == "heuristic":
-            self.heuristic_replans += 1
-        else:
-            self.llm_replans += 1
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "current_step", _readonly_step(self.current_step))
+        object.__setattr__(self, "tool_history", tuple(self.tool_history))
+        if not isinstance(self.failure, FailureFact):
+            raise TypeError("ReplanContext.failure must be a FailureFact")
 
 
 @dataclass
 class ReplanAction:
-    steps: List[Dict[str, Any]] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
     source: str = ""
     reason: str = ""
     planning_view: Any = None
 
 
-class RetryPolicy:
-    def __init__(self, max_total: int = 2, max_heuristic: int = 2, max_llm: int = 1):
-        self.max_total = max_total
-        self.max_heuristic = max_heuristic
-        self.max_llm = max_llm
-
-    def allows_heuristic(self, context: ReplanContext) -> bool:
-        total = context.count("total") if context.retry_counts is not None else context.count("heuristic") + context.count("llm")
-        heuristic = context.count("heuristic")
-        return total < self.max_total and heuristic < self.max_heuristic
-
-    def allows_llm(self, context: ReplanContext) -> bool:
-        total = context.count("total") if context.retry_counts is not None else context.count("heuristic") + context.count("llm")
-        llm = context.count("llm")
-        return total < self.max_total and llm < self.max_llm
-
-
-def classify_error(error_message: str) -> ErrorCategory:
-    message = (error_message or "").lower()
-    patterns = (
-        (ErrorCategory.FILE_NOT_FOUND, ("filenotfounderror", "arquivo não encontrado", "no such file")),
-        (ErrorCategory.SANDBOX, ("sandbox", "fail-closed", "traversal", "absoluto")),
-        (ErrorCategory.SCHEMA, ("schema", "campo obrigatório", "argumentos inválidos")),
-        (ErrorCategory.TOOL_BLOCKED, ("não permitida", "não está permitida")),
-        (ErrorCategory.TIMEOUT, ("timeout", "excedeu")),
-    )
-    for category, terms in patterns:
-        if any(term in message for term in terms):
-            return category
-    return ErrorCategory.UNKNOWN
+__all__ = [
+    "ErrorCategory",
+    "ReplanAction",
+    "ReplanContext",
+    "category_for_failure",
+]

@@ -1,12 +1,12 @@
-
-
-class ToolNotFoundError(Exception):
-    """Exceção lançada quando uma ferramenta referenciada no plano não existe."""
+from agent.runtime.errors import ToolNotFoundError
 
 
 class InvalidToolError(Exception):
-    """Exceção lançada quando uma ferramenta existe mas não pode ser executada."""
+    """Exception raised when a tool exists but cannot be executed."""
 
 
 class PlanExecutionError(Exception):
-    """Erro genérico de execução do plano."""
+    """Generic plan execution error."""
+
+
+__all__ = ["InvalidToolError", "PlanExecutionError", "ToolNotFoundError"]

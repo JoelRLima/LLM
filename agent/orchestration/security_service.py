@@ -10,6 +10,8 @@ from agent.runtime.budget import BudgetExhausted
 from agent.runtime.operational_outcome import project_operational_outcome
 from agent.runtime.outcome_taxonomy import operational_status_for
 from agent.security.security_scanner import consolidate
+from agent.tools.contracts import ToolResult
+from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import canonical_result_successful
 
 _ROUTE = "security"
@@ -39,7 +41,7 @@ class SecurityAnalysisService:
                 active_skills=getattr(self.orchestrator, "active_skills", None),
                 allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
             )
-            result = res.to_legacy_dict(include_details=True)
+            result = ensure_canonical_result(res)
         except BudgetExhausted:
             raise
         except (ConnectionError, TimeoutError) as exc:
@@ -54,10 +56,10 @@ class SecurityAnalysisService:
                 reason_code="SECURITY_ANALYZER_FAILED",
                 detail=f"{type(exc).__name__}: {exc}",
             )
-        if not canonical_result_successful(result):
+        if not result.ok:
             return self._analyzer_fallback(objective, result=result)
 
-        findings = consolidate(result.get("data") or {})
+        findings = consolidate(result.data or {})
         if not findings:
             return RouteResult.handled(
                 _ROUTE,
@@ -73,18 +75,23 @@ class SecurityAnalysisService:
         self,
         objective: str,
         *,
-        result: dict[str, Any] | None = None,
+        result: ToolResult | Mapping[str, Any] | None = None,
         reason_code: str | None = None,
         detail: str | None = None,
     ) -> RouteResult:
-        result = result or {}
-        status = str(result.get("status") or "").casefold()
+        canonical = None if result is None else ensure_canonical_result(result)
+        status = operational_status_for(canonical.status) if canonical is not None else ""
+        status = status or ""
         classified_reason = reason_code or {
             "permission_denied": "SECURITY_ANALYZER_DENIED",
             "failed": "SECURITY_ANALYZER_FAILED",
             "unavailable": "SECURITY_ANALYZER_UNAVAILABLE",
         }.get(status, f"SECURITY_ANALYZER_{status.upper()}" if status else "SECURITY_ANALYZER_FAILED")
-        fallback_detail = detail or result.get("error") or result.get("message")
+        fallback_detail = (
+            detail
+            or (canonical.error.message if canonical is not None and canonical.error is not None else None)
+            or (canonical.message if canonical is not None else None)
+        )
         blocker = self._establish_non_success(objective)
         if blocker and not fallback_detail:
             fallback_detail = str(blocker)
@@ -104,13 +111,13 @@ class SecurityAnalysisService:
 
     @staticmethod
     def _recorded_non_success(result: Any) -> bool:
-        if isinstance(result, Mapping):
-            status = result.get("status")
-        else:
-            status = getattr(result, "status", None)
-        status = getattr(status, "value", status)
-        normalized = operational_status_for(status)
-        return bool(status and normalized != "succeeded")
+        if result is None:
+            return False
+        try:
+            canonical = ensure_canonical_result(result)
+        except (TypeError, ValueError):
+            return False
+        return not canonical_result_successful(canonical)
 
     def _target_file(self, objective: str) -> str | None:
         hints = self.orchestrator.context_manager.get_file_hints(objective)

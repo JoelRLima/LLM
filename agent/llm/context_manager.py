@@ -32,6 +32,7 @@ from agent.memory.prompt_context import (
 from agent.memory.semantic_memory import SemanticMemory
 from agent.runtime.hardware import resolve_hardware_profile
 from agent.runtime.logging import logger
+from agent.runtime.recovery import RecoveryScope
 from agent.state import AgentState
 
 STEP_BUDGETS = {
@@ -78,7 +79,6 @@ class ContextManager:
         return self._cached_project_context
     def estimate_conversation_tokens(self) -> int:
         """Return a rough context-pressure estimate, not provider usage."""
-
         total_chars = sum(
             len(str(m.get("content", ""))) for m in self.session.messages
         )
@@ -117,25 +117,28 @@ class ContextManager:
                 )
     def count_tokens_text_estimate(self, text: str) -> Optional[int]:
         """Compatibility text estimate; never the exact count of a chat request."""
-
         try:
             count = self.session.gateway.count_tokens(text)
             return int(count) if count is not None else None
         except Exception as e:
             logger.warning(f"Não foi possível contar tokens pelo provider: {e}")
             return None
+    def _authorize_structured_response_repair(self) -> bool:
+        budget = getattr(self.agent_state, "recovery_budget", None)
+        if budget is None:
+            return True
+        return bool(budget.try_consume(RecoveryScope.STRUCTURED_RESPONSE_REPAIRS))
     def build_base_system_prompt(
         self, persona_prompt: str, tools_desc: str
     ) -> str:
         now_str = dt.datetime.now().strftime("%A, %d de %B de %Y %H:%M")
         datetime_context = f"\n\n[SISTEMA] Data e hora atual: {now_str}. Use esta informação para responder perguntas sobre datas."
-        project_context = str(self.get_project_context())
         return (
             persona_prompt
             + "\n\n"
             + AGENT_SYSTEM_PROMPT.format(tools_description=tools_desc)
             + datetime_context
-            + project_context
+            + str(self.get_project_context())
         )
     def build_context(self, objective: str = "") -> str:
         memory_budget = min(
@@ -267,6 +270,7 @@ class ContextManager:
                 fallback_request=lambda current: replace(
                     current, structured_output=None
                 ),
+                retry_authorizer=self._authorize_structured_response_repair,
                 step_type=step_type,
                 request_contract=(
                     request_contract

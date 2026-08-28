@@ -6,6 +6,7 @@ from agent.contracts import AgentEvent, EventData, ToolArgs
 from agent.error_handler import ErrorHandler
 from agent.orchestration.operations_tools import build_tools_description
 from agent.reporting.task_report import TaskReportBuilder
+from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
 from agent.tools.contracts import ToolResult as CanonicalToolResult
@@ -233,10 +234,22 @@ class OrchestratorOperations:
         return str(ErrorHandler.sanitize_error(error_message))
 
     def _handle_step_failure(
-        self, step_index: int, reason: str, tool: str = "", args: dict[str, Any] | None = None
+        self,
+        step_index: int,
+        reason: str,
+        tool: str = "",
+        args: dict[str, Any] | None = None,
+        *,
+        failure: FailureFact | None = None,
     ) -> str:
         return str(ErrorHandler.handle_step_failure(
-            step_index, reason, tool, args, emit_callback=self._emit, verbose=self.verbose
+            step_index,
+            reason,
+            tool,
+            args,
+            emit_callback=self._emit,
+            verbose=self.verbose,
+            failure=failure,
         ))
 
     def _purge_stale_context(self) -> None:

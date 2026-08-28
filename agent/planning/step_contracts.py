@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
 from agent.contracts import EventData, PlanStep, ToolArgs, ToolHistoryEntry
+from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
 
@@ -27,6 +28,7 @@ class StepExecutionOutcome:
     error: str = ""
     final_answer: Optional[str] = None
     decisive: bool = False
+    failure: FailureFact | None = None
 
 
 @dataclass(frozen=True)
@@ -88,7 +90,15 @@ class StepRuntimePort(Protocol):
     def _emit(self, event_type: str, data: Optional[EventData] = None) -> None: ...
     def _run_tool(self, tool_name: str, args: ToolArgs) -> ToolResult: ...
     def _run_prepared_invocation(self, prepared: PreparedInvocation) -> ToolResult: ...
-    def _handle_step_failure(self, step_index: int, reason: str, tool: str = "", args: Optional[ToolArgs] = None) -> str: ...
+    def _handle_step_failure(
+        self,
+        step_index: int,
+        reason: str,
+        tool: str = "",
+        args: Optional[ToolArgs] = None,
+        *,
+        failure: FailureFact | None = None,
+    ) -> str: ...
     def _purge_stale_context(self) -> None: ...
     def _generate_content(self, tool: str, args: ToolArgs, objective: str) -> Optional[str]: ...
     def _test_and_correct(self, file_path: str, objective: str) -> bool: ...

@@ -2,7 +2,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from agent.planning.replan import classify_error
+from agent.runtime.failures import FailureFact, failure_fact_from_legacy_message
 from agent.runtime.logging import logger
 
 
@@ -55,10 +55,12 @@ class ErrorHandler:
         args: dict[str, Any] | None = None,
         emit_callback: Callable[[str, dict[str, Any]], None] | None = None,
         verbose: bool = False,
+        *,
+        failure: FailureFact | None = None,
     ) -> str:
         """
         Trata falhas na execução de um passo.
-        Sanitiza o erro, classifica e decide a ação.
+        Sanitiza/renderiza o erro e projeta a ação do fato estruturado.
         Retorna:
             "continue" – para erros não recuperáveis (pular passo).
             "replan"   – para erros potencialmente recuperáveis.
@@ -71,10 +73,11 @@ class ErrorHandler:
 
         logger.warning(f"Passo {step_index} falhou ({tool}): {sanitized}")
 
-        # Classifica o erro para decidir se vale a pena replanejar
-        category = classify_error(sanitized)
-        if category.value in ("FileNotFoundError", "SandboxError", "SchemaError",
-                              "ToolBlocked", "TimeoutError"):
+        # A mensagem sanitizada é apenas diagnóstico. Recovery policy consumes
+        # the typed fact supplied by the canonical caller; a legacy text-only
+        # call is deliberately converted to an unknown, non-retryable fact.
+        fact = failure or failure_fact_from_legacy_message(reason)
+        if fact.retryable and not fact.hard:
             return "replan"
 
         return "continue"

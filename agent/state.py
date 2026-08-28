@@ -11,6 +11,11 @@ from agent.execution_state import StepExecutionRecord
 from agent.memory.memory import AgentMemory
 from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.recovery import (
+    RecoveryBudgetState,
+    RecoveryPolicy,
+    RecoveryScope,
+)
 from agent.state_checkpointing import StateCheckpointMixin
 from agent.state_failure_recovery import StateFailureRecoveryMixin
 from agent.state_incidents import StateIncidentMixin
@@ -55,13 +60,12 @@ class AgentState(
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
         self._task_semantics = TaskSemantics.empty()
-        self.continuation_attempts: int = 0
-        # Task-owned retry ledger.  ReplanContext instances are projections
-        # and cannot reset these counters by being recreated.
-        self.replan_counts: Dict[str, int] = {"total": 0, "heuristic": 0, "llm": 0}
+        # One task-owned recovery owner.  The compatibility counter
+        # properties below are projections and cannot create an independent
+        # ledger.
+        self.recovery_budget = RecoveryBudgetState()
         self._task_rollback_occurred: bool = False
         self._task_rollback_succeeded: bool | None = None
-        self.reasoning_turns_used: int = 0
         self.reasoning_last_history_count: int = -1
         self.reasoning_last_progress_token: Optional[str] = None
         self.continue_after_plan: bool = False
@@ -73,6 +77,50 @@ class AgentState(
         self.events: List[AgentEvent] = []
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history_turns: int = 6
+
+    def configure_recovery_policy(self, config: Mapping[str, Any] | None = None) -> None:
+        self.recovery_budget.reconfigure(RecoveryPolicy.from_config(config))
+
+    @property
+    def continuation_attempts(self) -> int:
+        return self.recovery_budget.used(RecoveryScope.EFFECT_CONTINUATIONS)
+
+    @continuation_attempts.setter
+    def continuation_attempts(self, value: int) -> None:
+        self.recovery_budget.set_projection_used(
+            RecoveryScope.EFFECT_CONTINUATIONS, value
+        )
+
+    @property
+    def replan_counts(self) -> Mapping[str, int]:
+        heuristic = self.recovery_budget.used(RecoveryScope.HEURISTIC_REPLANS)
+        llm = self.recovery_budget.used(RecoveryScope.LLM_REPLANS)
+        from types import MappingProxyType
+
+        return MappingProxyType(
+            {"total": heuristic + llm, "heuristic": heuristic, "llm": llm}
+        )
+
+    @replan_counts.setter
+    def replan_counts(self, value: Mapping[str, Any]) -> None:
+        current = dict(value) if isinstance(value, Mapping) else value
+        if not isinstance(current, Mapping):
+            raise ValueError("replan counters must be a mapping")
+        self.recovery_budget.restore_legacy_projection(
+            continuation_attempts=self.continuation_attempts,
+            replan_counts=current,
+            reasoning_turns_used=self.reasoning_turns_used,
+        )
+
+    @property
+    def reasoning_turns_used(self) -> int:
+        return self.recovery_budget.used(RecoveryScope.REASONING_CONTINUATIONS)
+
+    @reasoning_turns_used.setter
+    def reasoning_turns_used(self, value: int) -> None:
+        self.recovery_budget.set_projection_used(
+            RecoveryScope.REASONING_CONTINUATIONS, value
+        )
 
     def record_tool_result(
         self,

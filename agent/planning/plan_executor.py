@@ -10,7 +10,7 @@ from agent.planning.parallel_contracts import ParallelInvocation
 from agent.planning.parallel_dispatch import run_parallel_tools
 from agent.planning.parallel_finalizer import finalize_parallel_index
 from agent.planning.plan_execution_loop import run_plan_loop
-from agent.planning.replan import ReplanContext, replan
+from agent.planning.replan_execution import attempt_replan
 from agent.planning.semantic_projection import (
     SemanticProjection,
     project_outcomes,
@@ -18,6 +18,7 @@ from agent.planning.semantic_projection import (
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.runtime.budget import task_budget_for
+from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolError, ToolResult, ToolStatus
 from agent.watchdog import Watchdog
 
@@ -73,18 +74,28 @@ class PlanExecutor:
         ):
             return StepLoopResult(index, outcome.result, outcome.final_answer, True)
         if outcome.kind is StepOutcomeKind.REPLAN:
-            return self._handle_replan(index, step, tool, objective, outcome.error, outcome.result)
+            return self._handle_replan(
+                index,
+                step,
+                tool,
+                objective,
+                outcome.error,
+                outcome.result,
+                outcome.failure,
+            )
         return StepLoopResult(index + 1, outcome.result)
 
     def _execute_deferred_condition(self, index: int, objective: str) -> StepLoopResult:
         return execute_deferred_condition(self, index, objective)
     def _handle_replan(
         self, index: int, step: Dict[str, Any], tool: str, objective: str,
-        error: str, result: Optional[ToolResult],
+        error: str, result: Optional[ToolResult], failure: FailureFact | None,
     ) -> StepLoopResult:
         raw_args = step.get("args")
         args = cast(ToolArgs, raw_args) if isinstance(raw_args, dict) else {}
-        replacements = self._attempt_replan(step, tool, args, objective)
+        replacements = self._attempt_replan(
+            step, tool, args, objective, failure=failure
+        )
         if replacements:
             if self._replace_current_step(index, replacements):
                 return StepLoopResult(index, result)
@@ -148,7 +159,13 @@ class PlanExecutor:
             args = dict(correlation.request.arguments)
             result, error = projection.result, projection.outcome.error
             replacements = self._attempt_replan(
-                step, tool, args, objective, last_result=result, last_error=error
+                step,
+                tool,
+                args,
+                objective,
+                last_result=result,
+                last_error=error,
+                failure=projection.outcome.failure,
             )
             if replacements:
                 if self._replace_current_step(index, replacements):
@@ -201,36 +218,20 @@ class PlanExecutor:
 
     def _attempt_replan(
         self, step: Dict[str, Any], tool: str, args: ToolArgs, objective: str,
-        *, last_result: Optional[ToolResult] = None, last_error: Optional[str] = None,
+        *,
+        last_result: Optional[ToolResult] = None,
+        last_error: Optional[str] = None,
+        failure: FailureFact | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
         del tool, args
-        state = self.orchestrator.agent_state
-        selected_result = last_result if last_result is not None else state.last_result
-        error = str(last_error if last_error is not None else (selected_result.get("error", "") if selected_result else ""))
-        context = ReplanContext(
-            task=objective,
-            current_step=step,
-            tool_history=state.tool_history,
-            last_exception=error,
-            last_tool_result=cast(dict[str, Any], selected_result) if selected_result is not None else None,
-            retry_counts=getattr(state, "replan_counts", None),
+        return attempt_replan(
+            self.orchestrator,
+            step,
+            objective,
+            last_result=last_result,
+            last_error=last_error,
+            failure=failure,
         )
-        active_view = getattr(
-            getattr(self.orchestrator, "execution_gateway", None),
-            "_active_planning_view",
-            None,
-        )
-        replan_kwargs: dict[str, Any] = {}
-        if active_view is not None:
-            replan_kwargs["planning_context"] = getattr(
-                self.orchestrator, "planning_context", None
-            )
-            replan_kwargs["planning_view"] = active_view
-        action = replan(context, error, self.orchestrator, **replan_kwargs)
-        selected_view = getattr(action, "planning_view", None) if action is not None else None
-        if selected_view is not None:
-            self.orchestrator.execution_gateway._active_planning_view = selected_view
-        return action.steps if action else None
 
     def _replace_current_step(self, index: int, new_steps: List[Dict[str, Any]]) -> bool:
         """Replace a failed producer without silently rewinding consumers."""

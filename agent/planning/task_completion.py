@@ -7,11 +7,9 @@ from typing import Any
 
 from agent.planning.completion_observations import (
     eligible_waiver_observations,
-    observation_references,
     refresh_executed_effects,
     terminal_failure,
 )
-from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.reasoning_boundary import BoundaryContinuationResult
 from agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as _reasoning_boundary,
@@ -19,6 +17,9 @@ from agent.planning.reasoning_boundary import (
 from agent.planning.requested_effects import infer_requested_effects
 from agent.planning.task_completion_dispatch import accept_review, reject_review
 from agent.planning.task_completion_types import CompletionDisposition
+from agent.planning.task_continuation import (
+    continue_after_observation as _continue_after_observation,
+)
 from agent.planning.task_semantics import TaskObligation, TaskSemantics
 from agent.planning.task_terminal import (
     _set_terminal,
@@ -29,7 +30,7 @@ from agent.planning.task_terminal import (
     mark_unfinished_effect,
     mark_unfinished_obligation,
 )
-from agent.runtime.budget import BudgetExhausted
+from agent.runtime.recovery import RecoveryPolicy, RecoveryScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,15 @@ class CompletionReview:
     unrecovered_failure: bool = False
 
 
-MAX_CONTINUATION_ATTEMPTS = 1
+# Backward-compatible read-only projection; ``needs_effect_continuation`` and
+# ``continue_after_observation`` consult the task-owned budget directly.
+MAX_CONTINUATION_ATTEMPTS = RecoveryPolicy.default().limit(
+    RecoveryScope.EFFECT_CONTINUATIONS
+)
+
+
+def _legacy_continuation_increment(orchestrator: Any) -> None:
+    orchestrator.agent_state.continuation_attempts += 1
 
 
 def initialize_task_progression(orchestrator: Any, objective: str) -> None:
@@ -130,7 +139,13 @@ def needs_effect_continuation(orchestrator: Any, objective: str) -> bool:
     del objective
     refresh_executed_effects(orchestrator)
     state = orchestrator.agent_state
-    return not terminal_failure(orchestrator) and bool(state.pending_effects()) and state.continuation_attempts < MAX_CONTINUATION_ATTEMPTS
+    budget = getattr(state, "recovery_budget", None)
+    available = (
+        budget.can_attempt(RecoveryScope.EFFECT_CONTINUATIONS)
+        if budget is not None
+        else state.continuation_attempts < MAX_CONTINUATION_ATTEMPTS
+    )
+    return not terminal_failure(orchestrator) and bool(state.pending_effects()) and available
 
 
 def review_task_completion(orchestrator: Any) -> CompletionReview:
@@ -246,41 +261,13 @@ def complete_direct_answer(orchestrator: Any, objective: str, answer: str) -> st
 
 
 def continue_after_observation(orchestrator: Any, objective: str) -> str | None:
-    state = orchestrator.agent_state
-    state.continuation_attempts += 1
-    refresh_executed_effects(orchestrator)
-    executed = ", ".join(state.executed_effects) or "nenhum efeito de escrita executado"
-    try:
-        continuation = orchestrator.plan_builder.continue_after_observation(objective, executed, observation_references(orchestrator))
-    except BudgetExhausted:
-        raise
-    except Exception:
-        return mark_unfinished_effect(orchestrator, objective)
-    if continuation.kind is PlanningDecisionKind.COMPLETE:
-        index = continuation.waiver_observation_index
-        if index is None or not bind_effect_waiver(orchestrator, index):
-            return mark_unfinished_effect(orchestrator, objective)
-        # Waiving the effect resolves only the effect obligation.  Overall
-        # task completion must still pass through the post-plan reasoning
-        # boundary in the execution loop.
-        return None
-    if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
-        return mark_unfinished_effect(orchestrator, objective)
-    orchestrator._emit("continuation_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
-    try:
-        extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}
-        if getattr(continuation, "planning_view", None) is not None:
-            extension_kwargs["planning_view"] = continuation.planning_view
-        validated = orchestrator.execution_gateway.extend_validated_plan(
-            continuation.plan,
-            objective,
-            **extension_kwargs,
-        )
-    except BudgetExhausted:
-        raise
-    except Exception:
-        validated = None
-    return None if validated is not None else mark_unfinished_effect(orchestrator, objective)
+    return _continue_after_observation(
+        orchestrator,
+        objective,
+        legacy_increment=_legacy_continuation_increment,
+        bind_effect_waiver=bind_effect_waiver,
+        mark_unfinished_effect=mark_unfinished_effect,
+    )
 
 
 __all__ = [

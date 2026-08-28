@@ -15,15 +15,13 @@ from agent.planning.presentation import (
     PlanningPresentationSnapshot,
     validate_planning_view_binding,
 )
+from agent.runtime.recovery import RecoveryScope
 
 SMALL_ELIGIBLE_VIEW_THRESHOLD = 4
 _CACHE_ATTRIBUTE = "_tool_disclosure_cache"
-
-
 @dataclass(frozen=True, slots=True)
 class ToolDisclosureResult:
     """One immutable disclosure decision for one exact planning snapshot."""
-
     index_view: PlanningPresentationSnapshot
     selected_view: PlanningPresentationSnapshot
     selected_names: frozenset[str]
@@ -37,8 +35,6 @@ class ToolDisclosureResult:
     @property
     def planning_view(self) -> PlanningPresentationSnapshot:
         return self.selected_view
-
-
 def disclose_tools(
     orchestrator: Any,
     *,
@@ -98,7 +94,7 @@ def disclose_tools(
         decision, index_view.presented_names
     )
     semantic_correction_requests = 0
-    if structured_valid and not selection_valid:
+    if structured_valid and not selection_valid and _authorize_semantic_selection_repair(orchestrator):
         semantic_correction_requests = 1
         correction_prompt = _selection_prompt(
             objective,
@@ -131,7 +127,6 @@ def disclose_tools(
     )
     _emit(orchestrator, result, cached=False)
     return result
-
 
 def render_tool_guidance(
     orchestrator: Any,
@@ -240,6 +235,13 @@ def _ask_selection(orchestrator: Any, prompt: str) -> Any:
         base_prompt=None,
         log_metric_callback=getattr(orchestrator, "_log_metric", None),
     )
+
+
+def _authorize_semantic_selection_repair(orchestrator: Any) -> bool:
+    budget = getattr(getattr(orchestrator, "agent_state", None), "recovery_budget", None)
+    if budget is None:
+        return True
+    return bool(budget.try_consume(RecoveryScope.SEMANTIC_SELECTION_REPAIRS))
 
 
 def _validate_selection(

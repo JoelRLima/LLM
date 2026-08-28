@@ -56,7 +56,7 @@ def build_error_registry(
             default_status=operational_status.PERMISSION_DENIED.value,
         ),
         *definitions(
-            ("ADAPTER_FAILED", "EXECUTION_ERROR", "TOOL_ERROR", "TOOL_NOT_FOUND"),
+            ("ADAPTER_FAILED", "EXECUTION_ERROR", "FILE_NOT_FOUND", "TOOL_ERROR", "TOOL_NOT_FOUND"),
             layer=failure_layer.TOOL,
             default_status=operational_status.FAILED.value,
             retryable=True,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from agent.planning.completion_observations import (
@@ -15,8 +14,20 @@ from agent.runtime.outcome_taxonomy import (
     OperationalStatus,
     operational_status_for,
 )
+from agent.tools.contracts import ToolResult
+from agent.tools.result_adapter import ensure_canonical_result
 
 _NON_SUCCESS_STATUSES = NON_SUCCESS_STATUSES
+
+
+def _canonical_last_result(state: Any) -> ToolResult | None:
+    result = getattr(state, "last_result", None)
+    if result is None:
+        return None
+    try:
+        return ensure_canonical_result(result)
+    except (TypeError, ValueError):
+        return None
 
 
 def _set_terminal(state: Any, value: str | None) -> None:
@@ -111,12 +122,8 @@ def mark_terminal_failure(orchestrator: Any) -> None:
         _set_terminal(state, None)
     if existing not in (None, CompletionDisposition.COMPLETE.value):
         return
-    result = getattr(state, "last_result", None)
-    status = (
-        operational_status_for(result.get("status"))
-        if isinstance(result, Mapping)
-        else None
-    )
+    result = _canonical_last_result(state)
+    status = operational_status_for(result.status) if result is not None else None
     if status == OperationalStatus.BLOCKED.value:
         _set_terminal(state, CompletionDisposition.BLOCK.value)
     elif status == OperationalStatus.PERMISSION_DENIED.value:
@@ -205,17 +212,18 @@ def _terminal_message(state: Any) -> str:
     disposition = getattr(state, "terminal_disposition", None)
     if disposition == CompletionDisposition.COMPLETE.value:
         return ""
-    result = getattr(state, "last_result", None)
-    if isinstance(result, Mapping):
+    result = _canonical_last_result(state)
+    if result is not None:
         # Preserve the established machine-readable deferred-condition
         # boundary for callers that use the completion return value as a
         # reason code.  The canonical ToolResult still carries the human
         # message and structured ToolError internally.
-        if result.get("error_code") == "deferred_condition_blocked":
+        error_code = result.error.code if result.error is not None else None
+        if error_code == "deferred_condition_blocked":
             return "deferred_condition_blocked"
-        error = result.get("error")
-        message = result.get("message")
-        if result.get("error_code") == error and isinstance(message, str) and message.strip():
+        error = result.error.message if result.error is not None else None
+        message = result.message
+        if error_code == error and isinstance(message, str) and message.strip():
             return message.strip()
         message = error or message
         if isinstance(message, str) and message.strip():

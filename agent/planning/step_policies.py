@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Dict, Optional, cast
 from uuid import uuid4
@@ -15,6 +15,7 @@ from agent.planning.observation_invalidation import (
 )
 from agent.planning.step_contracts import ExecutionContext
 from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
+from agent.runtime.failures import FailureFact
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.contracts import ToolResult, ToolStatus
 from agent.tools.result_adapter import ensure_canonical_result
@@ -33,30 +34,52 @@ class StepPolicies:
         self.context = context
         candidate = path_resolver or getattr(context, "resolve_user_path", None)
         self._path_resolver = candidate if callable(candidate) else None
-
     def _resolve_user_path(self, file_path: str | Path) -> Path:
         if self._path_resolver is None:
             return Path(file_path)
         return self._path_resolver(file_path)
-
     def validate(self, step_number: int, tool: str, args: ToolArgs) -> bool:
         valid, error = validate_tool_args(tool, args, self.context.skills)
         if not valid:
-            return self._reject(step_number, f"Schema: {error}", tool, args)
+            return self._reject(
+                step_number,
+                f"Schema: {error}",
+                tool,
+                args,
+                failure=FailureFact.from_code(
+                    "INVALID_ARGUMENTS", message=str(error), tool_name=tool
+                ),
+            )
         if tool not in self.context.skills:
             raise ToolNotFoundError(f"Tool '{tool}' não foi registrada no Orchestrator.")
         if self.context.active_skills and tool not in self.context.active_skills:
-            return self._reject(step_number, f"Tool '{tool}' não permitida", tool, args)
+            return self._reject(
+                step_number,
+                f"Tool '{tool}' não permitida",
+                tool,
+                args,
+                failure=FailureFact.from_code(
+                    "TOOL_BLOCKED", message=f"Tool '{tool}' não permitida", tool_name=tool
+                ),
+            )
         return True
-
-    def _reject(self, step_number: int, reason: str, tool: str, args: ToolArgs) -> bool:
-        action = self.context._handle_step_failure(step_number, reason, tool, args)
+    def _reject(
+        self,
+        step_number: int,
+        reason: str,
+        tool: str,
+        args: ToolArgs,
+        *,
+        failure: FailureFact | None = None,
+    ) -> bool:
+        action = self.context._handle_step_failure(
+            step_number, reason, tool, args, failure=failure
+        )
         if action == "continue":
             self.context._purge_stale_context()
         else:
             self.context.fail_task()
         return False
-
     def is_hard_blocked(
         self, tool: str, args: ToolArgs, file_path: str, usage: Dict[str, int]
     ) -> bool:
@@ -65,7 +88,6 @@ class StepPolicies:
         if reason and self.context.verbose:
             print(f"[DEBUG] Hard block silencioso: {reason} em '{file_path}'")
         return bool(reason)
-
     @staticmethod
     def _analyzer_repetition(tool: str, file_path: str, usage: Dict[str, int]) -> str | None:
         if tool != "code_analyzer" or not file_path:
@@ -77,7 +99,6 @@ class StepPolicies:
         usage[f"fully_read_{file_path}"] = 1
         usage[f"fully_analyzed_{file_path}"] = 1
         return "code_analyzer repetido"
-
     @staticmethod
     def _reader_repetition(tool: str, args: ToolArgs, file_path: str, usage: Dict[str, int]) -> str | None:
         if tool != "file_reader" or not file_path:
@@ -131,7 +152,6 @@ class StepPolicies:
         if callable(invalidate):
             invalidate(affected_files)
         return True
-
     def _tool_metadata(self, tool: str) -> ToolMetadata:
         registry = getattr(self.context, "tool_registry", None)
         metadata_dict = getattr(registry, "metadata_dict", None)
@@ -159,16 +179,21 @@ class StepPolicies:
 
     def _known_total_lines(self, file_path: str) -> int | None:
         for history in self.context.agent_state.tool_history:
-            result: ToolResult | None = history.get("result")
+            raw_result = history.get("result")
+            result = (
+                ensure_canonical_result(raw_result)
+                if isinstance(raw_result, Mapping)
+                else raw_result
+            )
             history_args = history.get("args", {})
             history_file = history_args.get("file_path") or history_args.get("target")
             if (
                 history["tool"] == "file_reader"
-                and result is not None
-                and result.get("total_lines")
+                and isinstance(result, ToolResult)
+                and _total_lines(result) is not None
                 and history_file == file_path
             ):
-                return int(result["total_lines"])
+                return int(_total_lines(result) or 0)
         return None
 
     def try_cache(
@@ -249,9 +274,27 @@ class StepPolicies:
             lint_error = self.context.workspace.lint_check(file_path)
             if lint_error:
                 self.context._emit("warning", {"step": step_number, "warning": f"Problemas de lint em '{file_path}':\n{lint_error}"})
-        if tool == "file_reader" and result.ok and "total_lines" in result:
-            total = result["total_lines"]
+        total_lines = _total_lines(result)
+        if tool == "file_reader" and result.ok and total_lines is not None:
+            total = total_lines
             if args.get("end_line", total) == total:
                 usage[f"fully_read_{file_path}"] = 1
         self.context.context_manager.maybe_compress_context()
         return True
+
+
+def _total_lines(result: ToolResult) -> int | None:
+    """Read completeness metadata from the typed result/artifact boundary."""
+
+    metadata = result.metadata
+    if isinstance(metadata, Mapping) and type(metadata.get("total_lines")) is int:
+        return int(metadata["total_lines"])
+    for artifact in result.artifacts:
+        if not isinstance(artifact, Mapping):
+            continue
+        artifact_metadata = artifact.get("metadata")
+        if isinstance(artifact_metadata, Mapping) and type(
+            artifact_metadata.get("total_lines")
+        ) is int:
+            return int(artifact_metadata["total_lines"])
+    return None

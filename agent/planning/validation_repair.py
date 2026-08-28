@@ -9,6 +9,9 @@ from functools import partial
 from typing import Any, Dict, List, Optional
 
 from agent.planning.grounded_repair import try_grounded_grep_repair
+from agent.planning.replan_models import ReplanContext
+from agent.runtime.failures import FailureFact
+from agent.runtime.recovery import RecoveryScope
 
 
 def repairable_fields(step: Any, problem: str) -> frozenset[str]:
@@ -28,7 +31,6 @@ def repairable_fields(step: Any, problem: str) -> frozenset[str]:
         if match:
             return frozenset({match.group(1)})
     return frozenset()
-
 
 def accepts_constrained_repair(
     original: Mapping[str, Any], candidate: Mapping[str, Any], fields: frozenset[str]
@@ -71,8 +73,10 @@ def replan_blocked_steps(
     blocked_steps: List[Any],
     planning_context: Any = None,
     planning_view: Any = None,
-    repair_budget: Dict[str, int] | None = None,
+    repair_budget: Mapping[str, int] | None = None,
 ) -> Optional[List[Dict[str, Any]]]:
+    # Source-compatible parameter only; canonical ownership is task state.
+    del repair_budget
     updated = list(plan)
     allowed_blocked_indices = {item.index for item in blocked_steps}
     for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
@@ -83,12 +87,10 @@ def replan_blocked_steps(
             blocked,
             planning_context,
             planning_view,
-            repair_budget,
             _allowed_blocked_indices=allowed_blocked_indices,
         ):
             return None
     return updated or None
-
 
 def replace_blocked_step(
     gateway: Any,
@@ -97,23 +99,30 @@ def replace_blocked_step(
     blocked: Any,
     planning_context: Any = None,
     planning_view: Any = None,
-    repair_budget: Dict[str, int] | None = None,
+    repair_budget: Mapping[str, int] | None = None,
     *,
     _allowed_blocked_indices: set[int] | None = None,
 ) -> bool:
-    from agent.planning.replan import ReplanContext, replan
+    from agent.planning.replan import replan
     from agent.runtime.logging import logger
+
+    del repair_budget
 
     index = blocked.index
     if index >= len(plan):
         return False
     step = plan[index] if isinstance(plan[index], dict) else {"tool": "", "args": {}}
+    failure = FailureFact.from_code(
+        "INVALID_ARGUMENTS",
+        message=str(blocked.reason),
+        tool_name=str(step.get("tool") or "") or None,
+        step_id=str(step.get("_step_id")) if step.get("_step_id") else None,
+    )
     context = ReplanContext(
         task=objective,
         current_step=step,
         tool_history=gateway.orchestrator.agent_state.tool_history,
-        last_exception=blocked.reason,
-        retry_counts=getattr(gateway.orchestrator.agent_state, "replan_counts", None),
+        failure=failure,
     )
     if not blocked.is_validation_repair:
         logger.warning(
@@ -155,17 +164,10 @@ def replace_blocked_step(
             },
         )
         return True
-    if repair_budget is not None and repair_budget.get("remaining", 0) <= 0:
+    budget = getattr(gateway.orchestrator.agent_state, "recovery_budget", None)
+    if budget is not None and not budget.try_consume(RecoveryScope.VALIDATION_REPAIRS):
         logger.warning("Orcamento de reparo de validacao esgotado para o passo %s.", index + 1)
         return False
-    if repair_budget is not None:
-        repair_budget["remaining"] = repair_budget.get("remaining", 0) - 1
-    repair_error = (
-        "deterministic validation rejected argument field(s): "
-        + ", ".join(sorted(blocked.repairable_fields))
-        + "; validator detail: "
-        + str(blocked.reason)[:256]
-    )
     prior_steps = tuple(
         (candidate_index + 1, candidate)
         for candidate_index, candidate in enumerate(plan[:index])
@@ -173,7 +175,7 @@ def replace_blocked_step(
     )
     action = replan(
         context,
-        repair_error,
+        failure,
         gateway.orchestrator,
         planning_context=planning_context,
         planning_view=planning_view,
@@ -217,7 +219,6 @@ def replace_blocked_step(
     plan[:] = accepted
     logger.info("Passo %s substituido atomicamente no plano causal.", index + 1)
     return True
-
 
 def _validate_reintegrated_candidate(
     gateway: Any,

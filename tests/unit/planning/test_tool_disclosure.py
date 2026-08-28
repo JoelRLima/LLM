@@ -20,6 +20,7 @@ from agent.llm.tool_discovery_contract import (
 from agent.planning.plan_validator import PlanValidator
 from agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
 from agent.planning.tool_disclosure import disclose_tools, render_tool_guidance
+from agent.runtime.recovery import RecoveryBudgetState, RecoveryScope
 from agent.state import AgentState
 from agent.tools.contracts import ToolOriginKind
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
@@ -229,6 +230,34 @@ def test_invalid_selection_after_correction_exposes_no_detail() -> None:
     assert disclosure.selection_valid is False
     assert disclosure.selected_names == frozenset()
     assert disclosure.selected_view.tools == ()
+
+
+def test_semantic_selection_repair_exhaustion_is_stable() -> None:
+    context = _context()
+    owner = _owner(context, [{"tools": ["hidden"]}, {"tools": ["tool_c"]}])
+    budget = RecoveryBudgetState()
+    owner.agent_state = SimpleNamespace(recovery_budget=budget)
+
+    first = disclose_tools(owner, planner_kind="linear", objective="inspect")
+
+    assert first is not None
+    assert first.semantic_correction_requests == 1
+    assert budget.used(RecoveryScope.SEMANTIC_SELECTION_REPAIRS) == 1
+
+    follow_up = [{"tools": ["also_hidden"]}, {"tools": ["tool_d"]}]
+    owner.context_manager = SimpleNamespace(ask_model=lambda *_args, **_kwargs: follow_up.pop(0))
+    second = disclose_tools(
+        owner,
+        planner_kind="linear",
+        objective="inspect again",
+        force_refresh=True,
+    )
+
+    assert second is not None
+    assert second.semantic_correction_requests == 0
+    assert second.selection_valid is False
+    assert second.selected_names == frozenset()
+    assert budget.used(RecoveryScope.SEMANTIC_SELECTION_REPAIRS) == 1
 
 
 def test_small_view_skips_model_selection_but_uses_full_detail() -> None:

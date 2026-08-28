@@ -126,6 +126,7 @@ class CheckpointData(TypedDict, total=False):
     reasoning_last_history_count: int
     reasoning_last_progress_token: Optional[str]
     continue_after_plan: bool
+    recovery_budget: Dict[str, Any]
 
 
 def __getattr__(name: str) -> Any:

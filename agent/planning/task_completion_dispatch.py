@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, Callable
 
 from agent.planning.completion_observations import publish_outcome
 from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_terminal import (
+    _canonical_last_result,
     _set_terminal,
     _terminal_message,
     mark_terminal_blocked,
@@ -34,8 +34,8 @@ def accept_review(orchestrator: Any, existing: str | None) -> str | None:
 def _terminal_failure_review(orchestrator: Any) -> str:
     mark_terminal_failure(orchestrator)
     publish_outcome(orchestrator)
-    result = getattr(orchestrator.agent_state, "last_result", None)
-    if isinstance(result, Mapping) and str(result.get("status") or "") in TERMINAL_FAILURE_STATUSES:
+    result = _canonical_last_result(orchestrator.agent_state)
+    if result is not None and str(getattr(result.status, "value", result.status) or "") in TERMINAL_FAILURE_STATUSES:
         return _terminal_message(orchestrator.agent_state) or "A tarefa não pôde ser concluída."
     return "A tarefa não pôde ser concluída."
 

@@ -12,6 +12,7 @@ from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.task_semantics import TaskSemanticsError
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.limits import runtime_limit_values
+from agent.runtime.recovery import RecoveryScope
 
 _EPHEMERAL_FIELDS = frozenset(
     {"invocation_id", "step_id", "request_id", "timestamp", "created_at", "updated_at", "token_count"}
@@ -146,20 +147,36 @@ def reasoning_progress_fingerprint(history: Sequence[Mapping[str, Any]]) -> str:
 def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:
     state = orchestrator.agent_state
     config = getattr(getattr(orchestrator, "session", None), "config", {}) or {}
-    limit = runtime_limit_values(config)["max_reasoning_turns"]
+    configure = getattr(state, "configure_recovery_policy", None)
+    if callable(configure):
+        configure(config)
+    budget = getattr(state, "recovery_budget", None)
+    limit = (
+        budget.limit(RecoveryScope.REASONING_CONTINUATIONS)
+        if budget is not None
+        else runtime_limit_values(config)["max_reasoning_turns"]
+    )
     history = state.tool_history
     stored_cursor = int(getattr(state, "reasoning_last_history_count", -1))
     uninitialized_cursor = stored_cursor < 0
     cursor = 0 if uninitialized_cursor else min(stored_cursor, len(history))
     window = history[cursor:]
     progress = reasoning_progress_fingerprint(window)
-    turns_used = int(getattr(state, "reasoning_turns_used", 0))
+    turns_used = (
+        budget.used(RecoveryScope.REASONING_CONTINUATIONS)
+        if budget is not None
+        else int(getattr(state, "reasoning_turns_used", 0))
+    )
     last_progress = getattr(state, "reasoning_last_progress_token", None)
     if _boundary_is_blocked(
         turns_used, limit, uninitialized_cursor, window, last_progress, progress
     ):
         return BoundaryContinuationResult(blocked=True)
-    state.reasoning_turns_used = turns_used + 1
+    if budget is not None:
+        if not budget.try_consume(RecoveryScope.REASONING_CONTINUATIONS):
+            return BoundaryContinuationResult(blocked=True)
+    else:
+        state.reasoning_turns_used = turns_used + 1
     state.reasoning_last_history_count = len(history)
     state.reasoning_last_progress_token = progress
     continuation = _request_continuation(orchestrator, objective)

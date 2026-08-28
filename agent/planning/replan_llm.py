@@ -10,7 +10,11 @@ from agent.planning.capability_manifest import (
     render_active_harness_capabilities,
     render_validation_repair_manual,
 )
-from agent.planning.replan_models import ErrorCategory, ReplanAction, classify_error
+from agent.planning.replan_models import (
+    ErrorCategory,
+    ReplanAction,
+    category_for_failure,
+)
 from agent.planning.tool_disclosure import (
     ToolDisclosureResult,
     disclose_tools,
@@ -18,12 +22,13 @@ from agent.planning.tool_disclosure import (
     render_tool_guidance,
 )
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.failures import FailureFact, failure_fact_from_legacy_message
 from agent.runtime.logging import logger
 
 
 def ask_llm_for_alternative(
     original_step: Dict[str, Any],
-    error_message: str,
+    failure: FailureFact | str | None,
     orchestrator: Any,
     *,
     validation_repair: bool = False,
@@ -33,31 +38,38 @@ def ask_llm_for_alternative(
 ) -> Optional[ReplanAction]:
     if not hasattr(orchestrator, "context_manager"):
         return None
-    category = classify_error(error_message)
+    typed_failure = (
+        failure
+        if isinstance(failure, FailureFact)
+        else failure_fact_from_legacy_message(failure)
+    )
+    category = category_for_failure(typed_failure)
     disclosure: ToolDisclosureResult | None = None
     if validation_repair:
         prompt = _validation_repair_prompt(
             original_step,
-            error_message,
+            typed_failure,
             orchestrator,
             repairable_fields,
             prior_steps,
         )
     else:
-        disclosure = _discover_replan_tools(orchestrator, objective or error_message)
+        disclosure = _discover_replan_tools(
+            orchestrator, objective or typed_failure.message or typed_failure.code
+        )
         prompt = _alternative_prompt(
-            original_step, error_message, category, disclosure, orchestrator
+            original_step, typed_failure, category, disclosure, orchestrator
         )
     prompt = _append_repair_manual(
         prompt, orchestrator, validation_repair, disclosure is None
     )
     decision = _request_replan(orchestrator, prompt)
-    return _replan_action(decision, error_message, disclosure, validation_repair)
+    return _replan_action(decision, typed_failure, disclosure, validation_repair)
 
 
 def _validation_repair_prompt(
     original_step: Dict[str, Any],
-    error_message: str,
+    failure: FailureFact,
     orchestrator: Any,
     repairable_fields: tuple[str, ...],
     prior_steps: tuple[Any, ...],
@@ -72,7 +84,7 @@ def _validation_repair_prompt(
     return (
         "CONSTRAINED VALIDATION REPAIR (one bounded opportunity):\n"
         f"The deterministic validator rejected field(s): {', '.join(fields) or 'the reported field'}.\n"
-        f"Reason category: {str(error_message or '')[:256]}\n"
+        f"Reason category: {failure.message or failure.code}\n"
         + render_selected_tool_detail(
             orchestrator, planner_kind="linear", tool_name=tool
         )
@@ -108,7 +120,7 @@ def _discover_replan_tools(orchestrator: Any, objective: str) -> ToolDisclosureR
 
 def _alternative_prompt(
     original_step: Dict[str, Any],
-    error_message: str,
+    failure: FailureFact,
     category: ErrorCategory,
     disclosure: ToolDisclosureResult | None,
     orchestrator: Any,
@@ -116,9 +128,9 @@ def _alternative_prompt(
     failure_evidence = json.dumps(
         {
             "tool": str(original_step.get("tool") or "unknown")[:64],
-            "status": "failed",
-            "error_code": category.value,
-            "description": str(error_message or "")[:256],
+            "status": failure.status,
+            "error_code": failure.code,
+            "description": str(failure.message or "")[:256],
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -182,7 +194,7 @@ def _request_replan(orchestrator: Any, prompt: str) -> Any:
 
 def _replan_action(
     decision: Any,
-    error_message: str,
+    failure: FailureFact,
     disclosure: ToolDisclosureResult | None,
     validation_repair: bool,
 ) -> Optional[ReplanAction]:
@@ -194,6 +206,7 @@ def _replan_action(
     }
     if isinstance(decision.get("bindings"), dict):
         replacement["bindings"] = decision["bindings"]
+    error_message = failure.message or failure.code
     return ReplanAction(
         steps=[replacement],
         source="llm",

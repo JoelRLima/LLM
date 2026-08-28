@@ -113,6 +113,21 @@ class BuiltinToolAdapter(ToolAdapter):
         error_text = raw_result.get("error")
         message_text = raw_result.get("message")
         data = raw_result.get("data")
+        raw_error_code = raw_result.get("error_code")
+        error_code = (
+            str(raw_error_code).strip()
+            if isinstance(raw_error_code, str) and raw_error_code.strip()
+            else "TOOL_ERROR"
+        )
+        metadata = {
+            str(key): value
+            for key, value in raw_result.items()
+            if key
+            not in {
+                "ok", "done", "status", "error", "error_code", "message",
+                "data", "artifacts", "executed", "evidence_provenance",
+            }
+        }
         artifacts = self._observation_artifacts(
             invocation.tool_name,
             raw_result,
@@ -132,6 +147,7 @@ class BuiltinToolAdapter(ToolAdapter):
                 message=message_text,
                 artifacts=artifacts,
                 evidence_provenance=evidence_provenance,
+                metadata=metadata,
             )
 
         return ToolResult(
@@ -139,12 +155,13 @@ class BuiltinToolAdapter(ToolAdapter):
             status=status,
             data=data,
             error=ToolError(
-                code="TOOL_ERROR",
+                code=error_code,
                 message=str(error_text or message_text or "Falha na execução da ferramenta."),
             ),
             message=message_text,
             artifacts=artifacts,
             evidence_provenance=evidence_provenance,
+            metadata=metadata,
         )
 
     @staticmethod

@@ -125,6 +125,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self.metrics_recorder = MetricsRecorder(selected_metrics)
         self.session.set_model_call_callback(self._log_metric)
         self.agent_state = AgentState(memory=memory, budget_ledger=self.task_budget)
+        self.agent_state.configure_recovery_policy(session.config)
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:

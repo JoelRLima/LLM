@@ -16,7 +16,6 @@ from agent.tools.contracts import ToolResult as CanonicalToolResult
 from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import (
     EvidenceProvenance,
-    legacy_result_successful,
 )
 
 
@@ -248,16 +247,15 @@ class ToolExecutor:
     def maybe_summarize_and_store(
         self, tool_name: str, args: ToolArgs, result: CanonicalToolResult
     ) -> None:
-        if tool_name not in ("code_analyzer", "file_reader") or not legacy_result_successful(
-            result,
-        ):
+        result = ensure_canonical_result(result)
+        if tool_name not in ("code_analyzer", "file_reader") or not result.ok:
             return
 
         file_path = args.get("target") or args.get("file_path")
-        if not file_path or "data" not in result:
+        if not file_path or result.data is None:
             return
 
-        content = result.get("data")
+        content = result.data
         if isinstance(content, dict):
             if not content.get("classes") and not content.get("functions"):
                 return

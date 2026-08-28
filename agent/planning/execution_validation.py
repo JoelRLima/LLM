@@ -39,7 +39,6 @@ def validate_and_optimize_plan(
         available_observations=observations,
         allow_conditional_preview=allow_conditional_preview,
     )
-    repair_budget = {"remaining": 1}
     report = validator.validate(plan)
     gateway._log_validation(report)
     if not report.is_valid and not _repairable_report(report):
@@ -80,7 +79,6 @@ def validate_and_optimize_plan(
         "replanejamento inicial falhou",
         context,
         presentation,
-        repair_budget,
     )
     if recovered is None:
         return None
@@ -118,7 +116,6 @@ def validate_and_optimize_plan(
         "replanejamento pós-otimização falhou",
         context,
         presentation,
-        repair_budget,
     ))
 
 

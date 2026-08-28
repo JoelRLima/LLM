@@ -26,14 +26,19 @@ def reset_task_progression(
         state.requested_effects = list(dict.fromkeys(requested_effects))
         state.executed_effects = []
         state.waived_effects = []
-    state.continuation_attempts = 0
+    recovery_budget = getattr(state, "recovery_budget", None)
+    if recovery_budget is not None:
+        recovery_budget.reset()
+    else:
+        state.continuation_attempts = 0
     state._task_rollback_occurred = False
     state._task_rollback_succeeded = None
-    counts = getattr(state, "replan_counts", None)
-    if isinstance(counts, dict):
-        counts.clear()
-        counts.update({"total": 0, "heuristic": 0, "llm": 0})
-    state.reasoning_turns_used = 0
+    if recovery_budget is None:
+        counts = getattr(state, "replan_counts", None)
+        if isinstance(counts, dict):
+            counts.clear()
+            counts.update({"total": 0, "heuristic": 0, "llm": 0})
+        state.reasoning_turns_used = 0
     state.reasoning_last_history_count = 0
     state.reasoning_last_progress_token = None
     state.continue_after_plan = False

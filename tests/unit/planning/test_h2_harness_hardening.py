@@ -19,6 +19,7 @@ from agent.planning.result_bindings import (
     resolve_bound_args,
     validate_result_bindings,
 )
+from agent.runtime.recovery import RecoveryScope
 from agent.skills import load_skill_registry
 from agent.state import AgentState
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
@@ -666,6 +667,8 @@ def test_validation_repair_preserves_tool_and_frozen_arguments(tmp_path):
     assert validated[1]["tool"] == "grep"
     assert validated[1]["args"] == {"path": ".", "recursive": True, "max_results": 20}
     assert validated[1]["bindings"]["pattern"]["from_step"] == validated[0]["_step_id"]
+    assert orchestrator.agent_state.recovery_budget.used(RecoveryScope.VALIDATION_REPAIRS) == 1
+    assert orchestrator.agent_state.recovery_budget.used(RecoveryScope.LLM_REPLANS) == 0
 
 
 def test_contaminated_h2_plan_fails_closed_before_residual_placeholder_invocation(

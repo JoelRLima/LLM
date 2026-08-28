@@ -76,8 +76,7 @@ def extract_json_value(text: str) -> Any:
 def _validate_schema_type(value: Any, schema: Dict[str, Any], path: str) -> None:
     expected_type = schema.get("type")
     type_map: Dict[str, Any] = {
-        "object": dict,
-        "array": list,
+        "object": dict, "array": list,
         "string": str,
         "integer": int,
         "number": (int, float),
@@ -142,9 +141,7 @@ def normalize_model_decision(
     request_contract: ModelRequestContract | str | None = None,
 ) -> Optional[Dict[str, Any]]:
     parsed = _parsed_response(response)
-    if step_type is None and request_contract is None:
-        return normalize_generic_model_decision(parsed)
-    return admit_model_decision_value(parsed, step_type=step_type, request_contract=request_contract)
+    return normalize_generic_model_decision(parsed) if step_type is None and request_contract is None else admit_model_decision_value(parsed, step_type=step_type, request_contract=request_contract)
 def is_grammar_unsupported_error(error: Exception) -> bool:
     response = getattr(error, "response", None)
     if response is None or getattr(response, "status_code", None) != 400:
@@ -230,6 +227,7 @@ def resolve_model_decision(
     grammar_supported: bool | None,
     set_grammar_supported: Callable[[bool], None],
     fallback_request: Callable[[ModelRequest], ModelRequest] | None = None,
+    retry_authorizer: Callable[[], bool] | None = None,
     on_initial_response: Callable[[ModelResponse, Dict[str, Any] | None, ModelRequest], None] | None = None,
     step_type: str | None = None,
     request_contract: ModelRequestContract | str | None = None,
@@ -263,6 +261,12 @@ def resolve_model_decision(
     )
     if legacy_decision is not None:
         return legacy_decision
+    if retry_authorizer is not None and not retry_authorizer():
+        return {
+            "action": "error",
+            "message": "Falha ao extrair JSON da resposta.",
+            "raw_response": response_text(response),
+        }
     retry_request_value = retry_request()
     retry_contract_hint = _request_contract_hint(
         retry_request_value,

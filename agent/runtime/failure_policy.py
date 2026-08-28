@@ -6,12 +6,10 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any
 
-from agent.runtime.outcome_taxonomy import (
-    HARD_FAILURE_CODES,
-    HARD_FAILURE_STATUSES,
-    LOCAL_FAILURE_STATUSES,
-    operational_status_for,
-)
+from agent.runtime.failures import FailureFact
+from agent.runtime.outcome_taxonomy import HARD_FAILURE_CODES, HARD_FAILURE_STATUSES, LOCAL_FAILURE_STATUSES
+from agent.tools.contracts import ToolResult
+from agent.tools.result_adapter import ensure_canonical_result
 
 
 class FailureClass(str, Enum):
@@ -23,15 +21,24 @@ class FailureClass(str, Enum):
 def classify_failure(result: Any) -> FailureClass:
     """Classify observed failure facts without deciding task completion."""
 
-    if not isinstance(result, Mapping):
+    fact = failure_fact_for_result(result)
+    if fact is None:
         return FailureClass.NONE
-    status = operational_status_for(result.get("status"))
-    code = str(result.get("error_code") or "")
-    if status in HARD_FAILURE_STATUSES or code in HARD_FAILURE_CODES:
+    if fact.hard or fact.status in HARD_FAILURE_STATUSES or fact.code in HARD_FAILURE_CODES:
         return FailureClass.HARD
-    if status in LOCAL_FAILURE_STATUSES or result.get("ok") is False:
+    if fact.status in LOCAL_FAILURE_STATUSES:
         return FailureClass.LOCAL
     return FailureClass.NONE
+
+
+def failure_fact_for_result(result: Any) -> FailureFact | None:
+    """Normalize a typed result, with one explicit legacy compatibility edge."""
+
+    if isinstance(result, ToolResult):
+        return FailureFact.from_tool_result(result)
+    if isinstance(result, Mapping):
+        return FailureFact.from_tool_result(ensure_canonical_result(result))
+    return None
 
 
 def is_hard_failure(result: Any) -> bool:
@@ -87,6 +94,7 @@ __all__ = [
     "HARD_FAILURE_STATUSES",
     "LOCAL_FAILURE_STATUSES",
     "classify_failure",
+    "failure_fact_for_result",
     "is_hard_failure",
     "is_local_failure",
     "local_failure_permitted",

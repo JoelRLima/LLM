@@ -6,7 +6,6 @@ compatibility import, but do not define terminal truth.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +26,8 @@ from agent.runtime.outcome_taxonomy import (
     NON_SUCCESS_STATUSES,
     operational_status_for,
 )
+from agent.tools.contracts import ToolResult
+from agent.tools.result_adapter import ensure_canonical_result
 
 _STATUS_TO_DISPOSITION = {
     "succeeded": "complete",
@@ -165,10 +166,13 @@ def project_operational_outcome(
 ) -> OperationalOutcome:
     facts = collect_operational_evidence(state)
     last = getattr(state, "last_result", None)
-    last_result = last if isinstance(last, Mapping) else {}
+    try:
+        last_result = ensure_canonical_result(last) if last is not None else None
+    except (TypeError, ValueError):
+        last_result = None
     normalized_status = normalize_terminal_status(
         explicit_status=terminal_status,
-        last_result_status=last_result.get("status"),
+        last_result_status=last_result.status if isinstance(last_result, ToolResult) else None,
         terminal_disposition=getattr(state, "terminal_disposition", None),
         task_failed=task_failed or bool(getattr(state, "_task_failed", False)),
         cancelled=cancelled or bool(getattr(state, "_cancelled", False)),
@@ -176,7 +180,11 @@ def project_operational_outcome(
     )
     if facts.incident_present and normalized_status == "succeeded":
         normalized_status = "unverified"
-    reason = last_result.get("error")
+    reason = (
+        last_result.error.message
+        if isinstance(last_result, ToolResult) and last_result.error is not None
+        else last_result.message if isinstance(last_result, ToolResult) else None
+    )
     reason_text = str(reason) if reason else None
     blocked_reason = reason_text if normalized_status == "blocked" else None
     failure_reason = reason_text if normalized_status == "failed" else None

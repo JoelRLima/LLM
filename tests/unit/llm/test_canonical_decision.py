@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from agent.llm.context_manager import ContextManager
 from agent.llm.contracts import (
     ModelProviderError,
     ModelRequest,
@@ -18,6 +20,8 @@ from agent.llm.session import ChatSession
 from agent.llm.session_requests import legacy_payload_from_request
 from agent.llm.structured_output import resolve_model_decision
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.recovery import RecoveryScope
+from agent.state import AgentState
 
 GRAMMAR = 'root ::= "ok"'
 
@@ -188,6 +192,32 @@ def test_canonical_malformed_response_retries_exactly_once() -> None:
     assert [entry["call_number"] for entry in entries] == [1, 2]
     assert all(entry["provider_call_succeeded"] is True for entry in entries)
     assert session.budget_ledger.snapshot().model_calls_without_reported_usage == 2
+
+
+def test_context_manager_structured_repair_uses_task_budget_once(tmp_path: Path) -> None:
+    gateway = _CanonicalGateway(
+        [
+            "not json",
+            '{"action":"final","answer":"ok"}',
+            "still not json",
+            '{"action":"final","answer":"should not be requested"}',
+        ]
+    )
+    session = ChatSession(
+        "system",
+        {"model": "canonical-model", "max_tokens": 64, "max_model_calls": 8},
+        gateway=gateway,
+    )
+    state = AgentState()
+    manager = ContextManager(session, state, workspace_root=tmp_path)
+
+    first = manager.ask_model("choose", step_type="tool_decision", grammar=None)
+    second = manager.ask_model("choose again", step_type="tool_decision", grammar=None)
+
+    assert first == {"action": "final", "answer": "ok"}
+    assert second["action"] == "error"
+    assert len(gateway.requests) == 3
+    assert state.recovery_budget.used(RecoveryScope.STRUCTURED_RESPONSE_REPAIRS) == 1
 
 
 def test_canonical_fallback_then_malformed_retry_keeps_fallback_state() -> None:

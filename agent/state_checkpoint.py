@@ -35,6 +35,11 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
         "continuation_attempts": state.continuation_attempts,
         "replan_counts": dict(getattr(state, "replan_counts", {}) or {}),
         "reasoning_turns_used": state.reasoning_turns_used,
+        "recovery_budget": (
+            state.recovery_budget.to_checkpoint_dict()
+            if callable(getattr(getattr(state, "recovery_budget", None), "to_checkpoint_dict", None))
+            else None
+        ),
         "reasoning_last_history_count": state.reasoning_last_history_count,
         "reasoning_last_progress_token": state.reasoning_last_progress_token,
         "continue_after_plan": state.continue_after_plan,

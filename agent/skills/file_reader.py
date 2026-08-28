@@ -69,10 +69,18 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
             return self._error("caminho vazio", "Nenhum caminho de arquivo fornecido.")
         requested, error = resolve_safe_path(self.base_dir, file_path)
         if error or requested is None:
-            return self._error("acesso negado", error or "Caminho inválido.")
+            return self._error(
+                "acesso negado",
+                error or "Caminho inválido.",
+                error_code="PERMISSION_DENIED",
+            )
         requested = self._workspace_version(requested)
         if not requested.exists():
-            return self._error("arquivo não encontrado", f"Arquivo '{file_path}' não existe.")
+            return self._error(
+                "arquivo não encontrado",
+                f"Arquivo '{file_path}' não existe.",
+                error_code="FILE_NOT_FOUND",
+            )
         if not requested.is_file():
             return self._error("não é um arquivo", f"'{file_path}' não é um arquivo regular.")
         type_error = self._file_type_error(requested)
@@ -193,5 +201,17 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
             output.append(title)
             output.extend(f"{prefix}{value}" for value in values[:limit])
 
-    def _error(self, error: str, message: str) -> dict[str, Any]:
-        return {"ok": False, "done": True, "error": error, "message": message}
+    def _error(
+        self,
+        error: str,
+        message: str,
+        *,
+        error_code: str = "TOOL_ERROR",
+    ) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "done": True,
+            "error": error,
+            "error_code": error_code,
+            "message": message,
+        }

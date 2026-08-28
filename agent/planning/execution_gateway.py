@@ -1,5 +1,6 @@
 """Single validated entry point for every plan execution path."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
@@ -93,7 +94,6 @@ class ExecutionGateway:
             planning_view=planning_view,
             allow_conditional_preview=allow_conditional_preview,
         )
-
     @staticmethod
     def _bind_deferred_references(
         plan: List[Dict[str, Any]],
@@ -192,19 +192,18 @@ class ExecutionGateway:
         failure_reason: str,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
-        repair_budget: Dict[str, int] | None = None,
+        repair_budget: Mapping[str, int] | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
+        # Retained as a source-compatible, non-owning edge for older callers.
+        del repair_budget
         if not blocked:
             return plan
-        if repair_budget is None:
-            repair_budget = {"remaining": 1}
         recovered = self._replan_blocked_steps(
             plan,
             objective,
             blocked,
             planning_context if planning_context is not None else getattr(self, "_active_planning_context", None),
             planning_view,
-            repair_budget,
         )
         if recovered is None:
             self._abort(failure_reason)
@@ -248,10 +247,11 @@ class ExecutionGateway:
         blocked_steps: List[BlockedStep],
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
-        repair_budget: Dict[str, int] | None = None,
+        repair_budget: Mapping[str, int] | None = None,
     ) -> Optional[List[Dict[str, Any]]]:
+        del repair_budget
         return replan_blocked_steps(
-            self, plan, objective, blocked_steps, planning_context, planning_view, repair_budget
+            self, plan, objective, blocked_steps, planning_context, planning_view
         )
 
     def _replace_blocked_step(
@@ -261,10 +261,11 @@ class ExecutionGateway:
         blocked: BlockedStep,
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
-        repair_budget: Dict[str, int] | None = None,
+        repair_budget: Mapping[str, int] | None = None,
     ) -> bool:
+        del repair_budget
         return replace_blocked_step(
-            self, plan, objective, blocked, planning_context, planning_view, repair_budget
+            self, plan, objective, blocked, planning_context, planning_view
         )
 
     def _planning_view(
