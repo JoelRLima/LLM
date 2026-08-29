@@ -5,9 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from agent.planning.plan_model import Plan
 
-def validate_plan_identities(plan: Sequence[Any]) -> list[str]:
+
+def validate_plan_identities(plan: Plan | Sequence[Any]) -> list[str]:
     """Keep stable step IDs unique within one causal plan instance."""
+
+    if isinstance(plan, Plan):
+        # Plan.__post_init__ is the canonical typed identity owner; reaching
+        # this branch means uniqueness was already admitted.
+        return []
 
     errors: list[str] = []
     seen: dict[str, int] = {}

@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, cast
+from collections.abc import Mapping, Sequence
+from typing import Any, Optional
 
-from agent.planning.plan_validator import PlanValidator
+from agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
+from agent.planning.plan_model import Plan
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
 
 
 def validate_and_optimize_plan(
     gateway: Any,
-    plan: List[Dict[str, Any]],
+    plan: Plan | Sequence[Mapping[str, Any]],
     objective: str,
     *,
     planning_context: PlanningContextSnapshot | None = None,
     planning_view: PlanningPresentationSnapshot | None = None,
     allow_conditional_preview: bool = False,
-) -> Optional[List[Dict[str, Any]]]:
+) -> Optional[Plan]:
     explicit_context = planning_context is not None
     context = (
         planning_context
@@ -29,17 +30,15 @@ def validate_and_optimize_plan(
     presentation = gateway._planning_view(
         context, "linear", planning_view, explicit_context
     )
-    observations, plan_identity = _observation_scope(gateway, plan)
-    validator = _validator(
-        gateway,
-        context,
-        presentation,
+    admission = PlanAdmissionService(gateway.orchestrator)
+    report = admission.admit(
+        plan,
         objective,
-        plan_identity=plan_identity,
-        available_observations=observations,
+        mode=PlanAdmissionMode.INITIAL,
+        planning_context=context,
+        planning_view=presentation,
         allow_conditional_preview=allow_conditional_preview,
     )
-    report = validator.validate(plan)
     gateway._log_validation(report)
     if not report.is_valid and not _repairable_report(report):
         gateway._abort(
@@ -50,20 +49,14 @@ def validate_and_optimize_plan(
     blocked_steps = report.blocked_steps
     working_plan = gateway._bind_deferred_references(plan)
     if working_plan is not plan:
-        bound_observations, bound_plan_identity = _observation_scope(
-            gateway, working_plan
-        )
-        validator = _validator(
-            gateway,
-            context,
-            presentation,
+        bound_report = admission.admit(
+            working_plan,
             objective,
-            canonical_deferred_references=True,
-            plan_identity=bound_plan_identity,
-            available_observations=bound_observations,
+            mode=PlanAdmissionMode.BOUND,
+            planning_context=context,
+            planning_view=presentation,
             allow_conditional_preview=allow_conditional_preview,
         )
-        bound_report = validator.validate(working_plan)
         gateway._log_validation(bound_report, "binding canônico")
         if not bound_report.is_valid and not _repairable_report(bound_report):
             gateway._abort(
@@ -88,20 +81,14 @@ def validate_and_optimize_plan(
         presentation.presented_names if presentation else None,
         presentation,
     )
-    post_validator = validator
-    if _has_canonical_references(optimized):
-        post_observations, post_plan_identity = _observation_scope(gateway, optimized)
-        post_validator = _validator(
-            gateway,
-            context,
-            presentation,
-            objective,
-            canonical_deferred_references=True,
-            plan_identity=post_plan_identity,
-            available_observations=post_observations,
-            allow_conditional_preview=allow_conditional_preview,
-        )
-    post_report = post_validator.validate(optimized)
+    post_report = admission.admit(
+        optimized,
+        objective,
+        mode=PlanAdmissionMode.POST_OPTIMIZATION,
+        planning_context=context,
+        planning_view=presentation,
+        allow_conditional_preview=allow_conditional_preview,
+    )
     gateway._log_validation(post_report, "pós-otimização")
     if not post_report.is_valid and not _repairable_report(post_report):
         gateway._abort(
@@ -109,33 +96,15 @@ def validate_and_optimize_plan(
             [*post_report.errors, *(item.reason for item in post_report.blocked_steps)],
         )
         return None
-    return cast(Optional[List[Dict[str, Any]]], gateway._recover(
+    recovered = gateway._recover(
         optimized,
         objective,
         post_report.blocked_steps,
         "replanejamento pós-otimização falhou",
         context,
         presentation,
-    ))
-
-
-def _has_canonical_references(plan: List[Dict[str, Any]]) -> bool:
-    for step in plan:
-        if not isinstance(step, Mapping):
-            continue
-        if step.get("kind") == "deferred_condition" and isinstance(
-            step.get("observation_ref"), str
-        ):
-            return True
-        bindings = step.get("bindings")
-        if not isinstance(bindings, Mapping):
-            continue
-        if any(
-            isinstance(spec, Mapping) and isinstance(spec.get("from_step"), str)
-            for spec in bindings.values()
-        ):
-            return True
-    return False
+    )
+    return recovered if isinstance(recovered, Plan) else None
 
 
 def _repairable_report(report: Any) -> bool:
@@ -146,60 +115,3 @@ def _repairable_report(report: Any) -> bool:
         and not report.errors
         and all(item.is_validation_repair for item in report.blocked_steps)
     )
-
-
-def _validator(
-    gateway: Any,
-    context: PlanningContextSnapshot | None,
-    presentation: PlanningPresentationSnapshot | None,
-    objective: str,
-    *,
-    canonical_deferred_references: bool = False,
-    plan_identity: str | None = None,
-    available_observations: Any = None,
-    allow_conditional_preview: bool = False,
-) -> PlanValidator:
-    observations = (
-        getattr(gateway.orchestrator.agent_state, "tool_history", ())
-        if available_observations is None
-        else available_observations
-    )
-    return PlanValidator(
-        gateway.orchestrator.skills,
-        gateway.orchestrator.active_skills,
-        getattr(gateway.orchestrator, "allowed_capabilities", None),
-        getattr(gateway.orchestrator, "tool_registry", None),
-        planning_context=context,
-        presented_names=presentation.presented_names if presentation is not None else None,
-        planning_view=presentation,
-        objective=objective,
-        canonical_deferred_references=canonical_deferred_references,
-        available_observations=observations,
-        plan_identity=plan_identity,
-        allow_conditional_preview=allow_conditional_preview,
-    )
-
-
-def _observation_scope(gateway: Any, plan: List[Dict[str, Any]]) -> tuple[tuple[Any, ...], str | None]:
-    """Scope planner observations to the plan being validated.
-
-    A fresh plan must not inherit marker-looking literals from a previous
-    plan.  An extension or revalidation that carries a persisted step ID may
-    use only the matching plan identity.
-    """
-
-    state = getattr(gateway.orchestrator, "agent_state", None)
-    plan_identity = getattr(state, "plan_identity", None)
-    current_ids = {
-        str(step.get("_step_id"))
-        for step in getattr(state, "plan", ())
-        if isinstance(step, Mapping) and step.get("_step_id")
-    }
-    candidate_ids = {
-        str(step.get("_step_id"))
-        for step in plan
-        if isinstance(step, Mapping) and step.get("_step_id")
-    }
-    if plan_identity is None or not current_ids.intersection(candidate_ids):
-        return (), None
-    return tuple(getattr(state, "tool_history", ()) or ()), str(plan_identity)

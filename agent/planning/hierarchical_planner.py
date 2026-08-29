@@ -8,8 +8,14 @@ através da função `ask_model` injetada no construtor de
 """
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, List, Optional, Set
 
+from agent.llm.admitted_decisions import (
+    MacroPlanDecision,
+    MacroPlanStep,
+    admit_typed_model_decision,
+)
+from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_graph import task_graph_from_macro_plan
 from agent.runtime.budget import BudgetExhausted
@@ -78,7 +84,7 @@ class HierarchicalPlanner:
 
     def __init__(
         self,
-        ask_model: Callable[[str, str], Dict[str, Any]],
+        ask_model: Callable[[str, ModelRequestContract], Any],
         valid_tools: List[str],
         *,
         planning_view: PlanningPresentationSnapshot | None = None,
@@ -101,24 +107,28 @@ class HierarchicalPlanner:
         """
         prompt = self._build_prompt(objective)
         try:
-            response = self.ask_model(prompt, "macro_plan")
+            response = self.ask_model(prompt, ModelRequestContract.MACRO_PLAN)
         except BudgetExhausted:
             raise
         except Exception as e:
             logger.warning(f"HierarchicalPlanner: falha ao consultar o modelo: {e}")
             return None
 
-        if not isinstance(response, dict):
+        if not isinstance(response, MacroPlanDecision):
+            response = admit_typed_model_decision(
+                response, request_contract=ModelRequestContract.MACRO_PLAN
+            )
+        if not isinstance(response, MacroPlanDecision):
             logger.warning("HierarchicalPlanner: resposta do modelo não é um dict.")
             return None
 
-        raw_steps = response.get("steps")
-        if not raw_steps or not isinstance(raw_steps, list):
+        raw_steps = response.steps
+        if not raw_steps:
             return None
 
         steps: List[MacroStep] = []
         seen_ids: Set[str] = set()
-        for raw_step in raw_steps:
+        for raw_step in response.steps:
             step = self._validate_step(raw_step, seen_ids)
             if step is not None:
                 steps.append(step)
@@ -135,7 +145,7 @@ class HierarchicalPlanner:
             return None
         return macro_plan
 
-    def _validate_step(self, raw: Any, seen_ids: Set[str]) -> Optional[MacroStep]:
+    def _validate_step(self, raw: MacroPlanStep, seen_ids: Set[str]) -> Optional[MacroStep]:
         """Valida e normaliza um único passo bruto retornado pelo modelo.
 
         Verifica campos obrigatórios (id, title, goal), valida o valor de
@@ -143,39 +153,28 @@ class HierarchicalPlanner:
         caso de valor desconhecido) e filtra `estimated_tools` contra a
         lista de ferramentas válidas fornecida ao planejador.
         """
-        if not isinstance(raw, dict):
+        if not isinstance(raw, MacroPlanStep):
             return None
 
-        step_id = str(raw.get("id", "")).strip()
-        title = str(raw.get("title", "")).strip()
-        goal = str(raw.get("goal", "")).strip()
-        if not step_id or not title or not goal:
-            return None
+        step_id = raw.id.strip()
+        title = raw.title.strip()
+        goal = raw.goal.strip()
         if step_id in seen_ids:
             return None
 
-        priority_raw = str(raw.get("priority", Priority.MEDIUM.value)).strip().lower()
+        priority_raw = raw.priority.strip().lower()
         try:
             priority = Priority(priority_raw)
         except ValueError:
             priority = Priority.MEDIUM
 
-        depends_on_raw = raw.get("depends_on", [])
-        depends_on = (
-            [str(d).strip() for d in depends_on_raw if str(d).strip()]
-            if isinstance(depends_on_raw, list)
-            else []
-        )
+        depends_on = [item.strip() for item in (raw.depends_on or ()) if item.strip()]
 
-        estimated_tools_raw = raw.get("estimated_tools", [])
-        if self.planning_view is not None and isinstance(estimated_tools_raw, list):
-            if any(not isinstance(tool, str) or tool not in self.valid_tools for tool in estimated_tools_raw):
+        estimated_tools_raw = raw.estimated_tools or ()
+        if self.planning_view is not None:
+            if any(tool not in self.valid_tools for tool in estimated_tools_raw):
                 return None
-        estimated_tools = (
-            [t for t in estimated_tools_raw if isinstance(t, str) and t in self.valid_tools]
-            if isinstance(estimated_tools_raw, list)
-            else []
-        )
+        estimated_tools = [tool for tool in estimated_tools_raw if tool in self.valid_tools]
 
         return MacroStep(
             id=step_id,

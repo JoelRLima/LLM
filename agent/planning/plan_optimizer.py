@@ -1,9 +1,11 @@
 """Safe metadata-guided plan optimizer."""
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from agent.planning.deferred_condition import is_deferred_condition
+from agent.planning.plan_model import Plan, PlanStep, ToolPlanStep
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.result_bindings import has_result_bindings, referenced_step_ids
@@ -25,6 +27,7 @@ class ToolCost:
 class OptimizationReport:
     """Resultado de uma chamada a `PlanOptimizer.optimize()`."""
     optimized_steps: List[Dict[str, Any]] = field(default_factory=list)
+    optimized_plan: Plan = field(default_factory=Plan)
     removed_duplicates: int = 0
     cost_before: int = 0
     cost_after: int = 0
@@ -61,21 +64,36 @@ class PlanOptimizer:
                 names = planning_context.eligible_names if presented_names is None else presented_names
                 self.tool_metadata = planning_context.present("optimizer", names).metadata_dict()
 
-    def optimize(self, plan: List[Dict[str, Any]]) -> OptimizationReport:
+    def optimize(self, plan: Plan | Sequence[Mapping[str, Any]]) -> OptimizationReport:
         """Aplica as otimizaÃ§Ãµes seguras a `plan` e retorna um relatÃ³rio
         detalhado. NUNCA modifica `plan` in-place; sempre retorna uma nova
         lista em `optimized_steps`, deixando o `plan` original intacto."""
-        if not plan or not isinstance(plan, list):
-            safe_plan = list(plan) if isinstance(plan, list) else []
-            return OptimizationReport(optimized_steps=safe_plan, cost_before=0, cost_after=0, changed=False)
+        if isinstance(plan, Plan):
+            typed_plan = plan
+            legacy_source: list[Mapping[str, Any]] | None = None
+        elif isinstance(plan, list):
+            from agent.planning.plan_model import PlanDecodeError
 
-        original = list(plan)
+            try:
+                typed_plan = Plan.from_raw(plan)
+            except PlanDecodeError:
+                return OptimizationReport(optimized_steps=list(plan))
+            legacy_source = list(plan)
+        else:
+            return OptimizationReport()
+        if not typed_plan:
+            return OptimizationReport(optimized_steps=[], optimized_plan=typed_plan)
+
+        original = typed_plan
         cost_details_before = self._cost_details(original)
         cost_before = self._total_cost(cost_details_before)
 
-        if any(is_deferred_condition(step) for step in original):
+        if any(is_deferred_condition(step) for step in original.steps):
             return OptimizationReport(
-                optimized_steps=original,
+                optimized_steps=self._legacy_projection(
+                    original, legacy_source, source_plan=original
+                ),
+                optimized_plan=original,
                 cost_before=cost_before,
                 cost_after=cost_before,
                 cost_details_before=cost_details_before,
@@ -93,7 +111,10 @@ class PlanOptimizer:
         changed = removed_duplicates > 0 or reordered != original
 
         return OptimizationReport(
-            optimized_steps=reordered,
+            optimized_steps=self._legacy_projection(
+                reordered, legacy_source, source_plan=original
+            ),
+            optimized_plan=reordered,
             removed_duplicates=removed_duplicates,
             cost_before=cost_before,
             cost_after=cost_after,
@@ -113,16 +134,16 @@ class PlanOptimizer:
             return metadata
         return self.tool_metadata.get(tool) or get_tool_metadata(tool)
 
-    def _cost_details(self, plan: List[Dict[str, Any]]) -> List[ToolCost]:
+    def _cost_details(self, plan: Plan) -> List[ToolCost]:
         details = []
-        for step in plan:
-            if not isinstance(step, dict):
-                continue
+        for step in plan.steps:
             if is_deferred_condition(step):
                 details.append(ToolCost(tool="deferred_condition", cost=0))
                 continue
-            tool = step.get("tool", "")
-            args = step.get("args", {}) if isinstance(step.get("args"), dict) else {}
+            if not isinstance(step, ToolPlanStep):
+                continue
+            tool = step.tool
+            args = _plain(step.args)
             details.append(ToolCost(tool=tool, cost=self._estimate_cost(tool, args)))
         return details
 
@@ -136,9 +157,9 @@ class PlanOptimizer:
         return sum(d.cost for d in details)
 
     @staticmethod
-    def _step_key(step: Dict[str, Any]) -> tuple:
-        tool = step.get("tool", "")
-        args = step.get("args", {})
+    def _step_key(step: ToolPlanStep) -> tuple:
+        tool = step.tool
+        args = _plain(step.args)
         if tool == "code_analyzer":
             args = PlanOptimizer._code_analyzer_semantic_args(args)
         try:
@@ -149,7 +170,7 @@ class PlanOptimizer:
 
     @staticmethod
     def _code_analyzer_semantic_args(args: Any) -> Any:
-        if not isinstance(args, dict):
+        if not isinstance(args, Mapping):
             return args
         normalized = dict(args)
         normalized.setdefault("mode", "file")
@@ -159,33 +180,33 @@ class PlanOptimizer:
     # Directory output is not a canonical observation of every descendant:
     # discovery exclusions and per-file failures are observable at runtime.
     def _remove_exact_duplicates(
-        self, plan: List[Dict[str, Any]], transformations: List[str]
-    ) -> tuple:
+        self, plan: Plan, transformations: List[str]
+    ) -> tuple[Plan, int]:
         """Remove passos duplicados exatos, restrito a ferramentas
         `cacheable=True` (sem efeitos colaterais, resultado determinÃ­stico).
         Retorna (novo_plano, quantidade_removida)."""
         seen: set[tuple[Any, ...]] = set()
-        result: List[Dict[str, Any]] = []
+        result: list[PlanStep] = []
         removed = 0
         # Never drop a producer/consumer identity while bindings are present.
         # Their semantic dependency is richer than tool + concrete args.
         referenced = referenced_step_ids(plan)
 
-        for idx, step in enumerate(plan):
-            if not isinstance(step, dict):
-                result.append(step)
-                continue
+        for idx, step in enumerate(plan.steps):
             if is_deferred_condition(step):
                 result.append(step)
                 continue
 
-            tool = step.get("tool", "")
+            if not isinstance(step, ToolPlanStep):
+                result.append(step)
+                continue
+            tool = step.tool
             meta = self._meta(tool)
             if meta.modifies_workspace or meta.writes_disk or meta.side_effects:
                 seen.clear()
             key = self._step_key(step)
 
-            step_id = str(step.get("_step_id") or "")
+            step_id = step.step_id
             bound_step = has_result_bindings(step)
             if meta.cacheable and key in seen and not bound_step and step_id not in referenced:
                 removed += 1
@@ -203,4 +224,31 @@ class PlanOptimizer:
                 seen.add(key)
             result.append(step)
 
-        return result, removed
+        return Plan(tuple(result)), removed
+
+    @staticmethod
+    def _legacy_projection(
+        plan: Plan,
+        source: list[Mapping[str, Any]] | None,
+        *,
+        source_plan: Plan,
+    ) -> list[Dict[str, Any]]:
+        if source is None:
+            return plan.to_legacy()
+        by_id = {
+            step.step_id: dict(raw)
+            for step, raw in zip(source_plan.steps, source, strict=True)
+        }
+        return [by_id.get(step.step_id, step.to_dict()) for step in plan.steps]
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    if isinstance(value, frozenset):
+        return [_plain(item) for item in value]
+    return value

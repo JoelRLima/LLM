@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from agent.planning.effect_intent import effect_intent_matches
+from agent.planning.plan_model import Plan
 from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
 from agent.planning.task_semantics_effects import (
     effect_observation_proves_terminal,
@@ -41,7 +42,16 @@ def _validated_tool_history(state: Any, data: Mapping[str, Any]) -> list[dict[st
 
 
 def _restore_history_plan_ids(state: Any) -> None:
-    plan_ids = {str(step.get("_step_id")) for step in state.plan if step.get("_step_id")}
+    if isinstance(state.plan, Plan):
+        plan_ids = {step.step_id for step in state.plan.steps}
+    else:
+        # Explicit compatibility path for a pre-typed state supplied by an
+        # older checkpoint/test facade.
+        plan_ids = {
+            str(step.get("_step_id"))
+            for step in state.plan
+            if isinstance(step, Mapping) and step.get("_step_id")
+        }
     for entry in state.tool_history:
         if state.plan_identity is not None and "plan_id" not in entry and entry.get("step_id") in plan_ids:
             entry["plan_id"] = state.plan_identity

@@ -3,16 +3,16 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from agent.llm.admitted_decisions import (
+    ModelDecisionValue,
+    _project_exactly_admitted_model_decision,
+)
 from agent.llm.contracts import (
     ModelProviderError,
     ModelRequest,
     ModelResponse,
-    ProviderCapabilities,
-    StructuredOutputMode,
-    StructuredOutputRequest,
     response_text,
 )
 from agent.llm.decision_contract import (
@@ -22,38 +22,13 @@ from agent.llm.decision_contract import (
     normalize_generic_model_decision,
     request_contract_for_request,
 )
+from agent.llm.structured_output_strategy import (
+    StructuredOutputError,
+    StructuredOutputStrategy,
+)
 from agent.runtime.budget import BudgetExhausted
 
 
-class StructuredOutputError(ValueError):
-    pass
-@dataclass(frozen=True)
-class StructuredOutputStrategy:
-    capabilities: ProviderCapabilities
-    def select(
-        self,
-        *,
-        schema: Optional[Dict[str, Any]] = None,
-        grammar: Optional[str] = None,
-        instruction: Optional[str] = None,
-    ) -> StructuredOutputRequest:
-        if schema and self.capabilities.supports(StructuredOutputMode.JSON_SCHEMA):
-            return StructuredOutputRequest(
-                mode=StructuredOutputMode.JSON_SCHEMA,
-                schema=schema,
-                instruction=instruction,
-            )
-        if grammar and self.capabilities.supports(StructuredOutputMode.GBNF):
-            return StructuredOutputRequest(
-                mode=StructuredOutputMode.GBNF,
-                grammar=grammar,
-                instruction=instruction,
-            )
-        return StructuredOutputRequest(
-            mode=StructuredOutputMode.JSON_PROMPT,
-            schema=schema,
-            instruction=instruction or "Responda apenas com JSON válido.",
-        )
 def extract_json_value(text: str) -> Any:
     if not isinstance(text, str) or not text.strip():
         raise StructuredOutputError("Resposta estruturada vazia.")
@@ -231,7 +206,8 @@ def resolve_model_decision(
     on_initial_response: Callable[[ModelResponse, Dict[str, Any] | None, ModelRequest], None] | None = None,
     step_type: str | None = None,
     request_contract: ModelRequestContract | str | None = None,
-) -> Dict[str, Any]:
+    typed: bool = False,
+) -> Dict[str, Any] | ModelDecisionValue:
     response, active_request = _complete_initial_request(
         request,
         complete=complete,
@@ -253,7 +229,11 @@ def resolve_model_decision(
     if on_initial_response is not None:
         on_initial_response(response, decision, active_request)
     if decision is not None:
-        return decision
+        return (
+            _project_exactly_admitted_model_decision(decision, contract_hint)
+            if typed
+            else decision
+        )
     legacy_decision = legacy_model_decision_compatibility(
         _parsed_response(response),
         step_type=step_type,
@@ -284,7 +264,11 @@ def resolve_model_decision(
         request_contract=retry_contract_hint,
     )
     if retry_decision:
-        return retry_decision
+        return (
+            _project_exactly_admitted_model_decision(retry_decision, retry_contract_hint)
+            if typed
+            else retry_decision
+        )
     legacy_retry_decision = legacy_model_decision_compatibility(
         _parsed_response(retry_response),
         step_type=step_type,

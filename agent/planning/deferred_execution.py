@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 from agent.execution_state import StepStatus
 from agent.planning.deferred_condition import (
@@ -11,7 +11,13 @@ from agent.planning.deferred_condition import (
     validate_deferred_condition,
 )
 from agent.planning.execution_models import StepLoopResult
-from agent.planning.plan_validator import PlanValidator
+from agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
+from agent.planning.plan_model import (
+    DeferredConditionStep,
+    PlanReferenceError,
+    ToolPlanStep,
+    resolve_deferred_observation_reference,
+)
 from agent.planning.task_completion import bind_effect_waiver
 from agent.state_progression import current_result_for_step
 from agent.tools.contracts import ToolError, ToolResult, ToolStatus
@@ -30,22 +36,27 @@ def execute_deferred_condition(
         return block_deferred(executor, index, problem)
     state.mark_step_running(index)
 
-    reference = step.get("observation_ref")
-    resolved = _resolve_observation(executor, index, reference)
+    if not isinstance(step, DeferredConditionStep):
+        return block_deferred(executor, index, "passo deferred não é tipado")
+    resolved = _resolve_observation(executor, index, step)
     if isinstance(resolved, str):
         return block_deferred(executor, index, resolved)
     history_index, result = resolved
 
-    predicate = step["predicate"]
     try:
-        matched = evaluate_equals(result.data, str(predicate["value"]))
+        matched = evaluate_equals(result.data, step.predicate.value)
     except ValueError as exc:
         return block_deferred(executor, index, str(exc))
 
     if matched:
+        materialized = ToolPlanStep(
+            step_id=state._new_step_id(),
+            tool=step.on_true.tool,
+            args=step.on_true.args,
+        )
         materialization_problem = _validate_materialized_step(
             executor,
-            cast(dict[str, Any], step["on_true"]),
+            materialized,
             objective,
         )
         if materialization_problem:
@@ -53,11 +64,12 @@ def execute_deferred_condition(
                 executor,
                 index,
                 f"on_true revalidation failed: {materialization_problem}",
-            )
+        )
         state.mark_step_completed(index)
-        state.insert_plan_step(index + 1, cast(dict[str, Any], step["on_true"]))
+        state.insert_plan_step(index + 1, materialized)
         executor._rebuild_dependency_map()
-        emit_deferred_resolution(executor, index, reference, "true")
+        assert step.observation_ref.step_id is not None
+        emit_deferred_resolution(executor, index, step.observation_ref.step_id, "true")
         return StepLoopResult(index + 1)
 
     if not bind_effect_waiver(
@@ -68,13 +80,14 @@ def execute_deferred_condition(
     ):
         return block_deferred(executor, index, "waiver canônica não pôde ser vinculada")
     state.mark_step_completed(index)
-    emit_deferred_resolution(executor, index, reference, "false")
+    assert step.observation_ref.step_id is not None
+    emit_deferred_resolution(executor, index, step.observation_ref.step_id, "false")
     return StepLoopResult(index + 1)
 
 
 def _validate_materialized_step(
     executor: Any,
-    step: dict[str, Any],
+    step: ToolPlanStep,
     objective: str,
 ) -> str | None:
     """Re-run the canonical tool/effect gate immediately before insertion."""
@@ -85,46 +98,33 @@ def _validate_materialized_step(
     if context is None:
         context = getattr(orchestrator, "planning_context", None)
     presentation = getattr(gateway, "_active_planning_view", None)
-    state = orchestrator.agent_state
-    validator = PlanValidator(
-        getattr(orchestrator, "skills", {}),
-        getattr(orchestrator, "active_skills", None),
-        getattr(orchestrator, "allowed_capabilities", None),
-        getattr(orchestrator, "tool_registry", None),
+    return PlanAdmissionService(orchestrator).admit_step(
+        step,
+        objective,
+        mode=PlanAdmissionMode.MATERIALIZED_DEFERRED,
         planning_context=context,
-        presented_names=(
-            presentation.presented_names
-            if presentation is not None
-            else getattr(context, "eligible_names", None)
-        ),
         planning_view=presentation,
-        objective=objective,
-        canonical_deferred_references=True,
-        available_observations=getattr(state, "tool_history", ()),
-        plan_identity=getattr(state, "plan_identity", None),
     )
-    return validator._validate_step_schema(step)
 
 
 def _resolve_observation(
     executor: Any,
     index: int,
-    reference: Any,
+    step: DeferredConditionStep,
 ) -> tuple[int, ToolResult] | str:
     state = executor.orchestrator.agent_state
-    if not isinstance(reference, str) or not reference:
+    reference = step.observation_ref
+    if not reference.is_stable_id or reference.step_id is None:
         return "observation_ref não foi vinculada à identidade canônica"
-    observation_index = next(
-        (candidate for candidate in range(index) if state.get_step_id(candidate) == reference),
-        -1,
-    )
-    if observation_index < 0:
+    try:
+        observation_index = resolve_deferred_observation_reference(step, index, state.plan)
+    except PlanReferenceError:
         return "identidade canônica da observação não existe no plano"
     if state.get_step_status(observation_index) is not StepStatus.COMPLETED:
         return "a observação referenciada não foi concluída com sucesso"
     history_match = current_result_for_step(
         state.tool_history,
-        reference,
+        reference.step_id,
         plan_id=getattr(state, "plan_identity", None),
     )
     if history_match is None:

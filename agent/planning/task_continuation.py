@@ -10,6 +10,7 @@ from agent.planning.completion_observations import (
     refresh_executed_effects,
 )
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.plan_model import Plan, serialize_plan
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.recovery import RecoveryScope
 
@@ -60,7 +61,14 @@ def _apply_continuation(
         return mark_unfinished_effect(orchestrator, objective)
     orchestrator._emit(
         "continuation_plan_proposed",
-        {"steps": len(continuation.plan), "plan": continuation.plan},
+        {
+            "steps": len(continuation.plan),
+            "plan": (
+                serialize_plan(continuation.plan)
+                if isinstance(continuation.plan, Plan)
+                else continuation.plan
+            ),
+        },
     )
     try:
         extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}

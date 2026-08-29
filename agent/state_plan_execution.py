@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, List, Optional, cast
 
-from agent.contracts import PlanStep, ToolHistoryEntry
+from agent.contracts import ToolHistoryEntry
 from agent.execution_state import TERMINAL_STEP_STATUSES, StepExecutionRecord, StepStatus
-from agent.state_plan import canonicalize_plan_steps
+from agent.planning.plan_model import (
+    DeferredConditionStep,
+    Plan,
+    PlanStep,
+    ToolPlanStep,
+)
+from agent.state_plan_replacement import canonical_replacement_steps
 from agent.state_progression import (
     current_result_for_step,
     pending_effects,
@@ -18,7 +25,7 @@ from agent.state_progression import (
 
 
 class StatePlanExecutionMixin:
-    plan: List[PlanStep]
+    plan: Plan
     plan_identity: Optional[str]
     plan_step: int
     current_step_id: Optional[str]
@@ -32,16 +39,19 @@ class StatePlanExecutionMixin:
     @classmethod
     def canonicalize_plan_steps(
         cls,
-        plan: Sequence[Mapping[str, Any]],
+        plan: Plan | Sequence[Mapping[str, Any]],
         *,
         preserve_step_ids: bool = True,
-    ) -> List[PlanStep]:
-        return cast(
-            List[PlanStep],
-            canonicalize_plan_steps(plan, cls._new_step_id, preserve_step_ids=preserve_step_ids),
+    ) -> Plan:
+        if isinstance(plan, Plan):
+            return plan
+        return Plan.from_raw(
+            plan,
+            new_step_id=cls._new_step_id,
+            preserve_step_ids=preserve_step_ids,
         )
 
-    def set_plan(self, plan: Sequence[Mapping[str, Any]]) -> None:
+    def set_plan(self, plan: Plan | Sequence[Mapping[str, Any]]) -> None:
         """Substitui o plano e preserva registros de IDs sobreviventes."""
 
         normalized = self.canonicalize_plan_steps(plan)
@@ -51,7 +61,7 @@ class StatePlanExecutionMixin:
             self.plan_identity = f"plan-{uuid.uuid4().hex}"
         records: Dict[str, StepExecutionRecord] = {}
         for step in normalized:
-            step_id = str(step["_step_id"])
+            step_id = step.step_id
             records[step_id] = self.step_records.get(step_id) or StepExecutionRecord(step_id=step_id)
         self.plan = normalized
         self.step_records = records
@@ -66,7 +76,7 @@ class StatePlanExecutionMixin:
         self.plan_step = value
 
     def reset_execution(self) -> None:
-        self.plan = []
+        self.plan = Plan()
         self.plan_identity = None
         self.plan_step = 0
         self.current_step_id = None
@@ -126,29 +136,40 @@ class StatePlanExecutionMixin:
     def clear_plan(self) -> None:
         self.reset_execution()
 
-    def insert_plan_step(self, index: int, step: Mapping[str, Any]) -> None:
+    def insert_plan_step(
+        self, index: int, step: PlanStep | Mapping[str, Any]
+    ) -> None:
         if self.plan_identity is None:
             self.plan_identity = f"plan-{uuid.uuid4().hex}"
-        prepared = cast(PlanStep, dict(step))
-        step_id = str(prepared.get("_step_id") or self._new_step_id())
-        prepared["_step_id"] = step_id
-        if "tool" in prepared or "args" in prepared:
-            args = prepared.get("args")
-            prepared["args"] = dict(args) if isinstance(args, dict) else {}
-        self.plan.insert(index, prepared)
+        if isinstance(step, (ToolPlanStep, DeferredConditionStep)):
+            prepared = step
+        elif isinstance(step, Plan):
+            raise TypeError("insert_plan_step exige um único passo")
+        else:
+            prepared = Plan.from_raw(
+                [step], new_step_id=self._new_step_id
+            ).steps[0]
+        self.plan = Plan(
+            (*self.plan.steps[:index], prepared, *self.plan.steps[index:])
+        )
+        step_id = prepared.step_id
         self.step_records[step_id] = StepExecutionRecord(step_id=step_id)
 
     def remove_plan_step(self, index: int) -> None:
-        step = self.plan.pop(index)
-        self.step_records.pop(str(step.get("_step_id", "")), None)
+        step = self.plan.steps[index]
+        self.plan = Plan((*self.plan.steps[:index], *self.plan.steps[index + 1 :]))
+        self.step_records.pop(step.step_id, None)
 
-    def replace_plan_step(self, index: int, new_steps: Sequence[Mapping[str, Any]]) -> None:
+    def replace_plan_step(
+        self, index: int, new_steps: Sequence[PlanStep | Mapping[str, Any]]
+    ) -> None:
+        replacement = canonical_replacement_steps(self, index, new_steps)
         self.remove_plan_step(index)
-        for offset, step in enumerate(new_steps):
+        for offset, step in enumerate(replacement):
             self.insert_plan_step(index + offset, step)
 
     def get_step_id(self, index: int) -> str:
-        return str(self.plan[index]["_step_id"])
+        return self.plan[index].step_id
 
     def get_step_status(self, index: int) -> StepStatus:
         return self.step_records[self.get_step_id(index)].status

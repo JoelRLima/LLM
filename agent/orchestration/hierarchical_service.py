@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
-from agent.llm.decision_contract import request_contract_for_step_type
+from agent.llm.admitted_decisions import MacroPlanDecision, ask_typed_model_decision
+from agent.llm.decision_contract import ModelRequestContract
 from agent.orchestration.route_result import RouteResult
 from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.hierarchical_executor import HierarchicalExecutor
@@ -178,17 +179,19 @@ class HierarchicalExecutionService:
             return exception_name
         return f"{exception_name}: {message[:240]}"
 
-    def _ask_model(self, prompt: str, step_type: str) -> Dict[str, Any]:
-        return cast(
-            Dict[str, Any],
-            self.orchestrator.context_manager.ask_model(
-                prompt,
-                step_type=step_type,
-                request_contract=request_contract_for_step_type(step_type),
-                base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None) or "",
-                log_metric_callback=self.orchestrator._log_metric,
-            ),
+    def _ask_model(
+        self, prompt: str, request_contract: ModelRequestContract
+    ) -> MacroPlanDecision | None:
+        if request_contract is not ModelRequestContract.MACRO_PLAN:
+            return None
+        decision = ask_typed_model_decision(
+            self.orchestrator.context_manager,
+            prompt,
+            request_contract=request_contract,
+            base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None) or "",
+            log_metric_callback=self.orchestrator._log_metric,
         )
+        return decision if isinstance(decision, MacroPlanDecision) else None
 
     def _metadata(self, objective: str) -> Dict[str, Any]:
         manager = self.orchestrator.context_manager

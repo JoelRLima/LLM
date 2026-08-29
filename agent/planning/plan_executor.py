@@ -1,29 +1,25 @@
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
-from agent.contracts import ToolArgs
-from agent.cost_guard import CostGuard
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.deferred_execution import execute_deferred_condition
-from agent.planning.dependency_map import build_dependency_map, dependency_succeeded, dependent_indices
 from agent.planning.execution_models import StepLoopResult
 from agent.planning.parallel_contracts import ParallelInvocation
 from agent.planning.parallel_dispatch import run_parallel_tools
 from agent.planning.parallel_finalizer import finalize_parallel_index
 from agent.planning.plan_execution_loop import run_plan_loop
-from agent.planning.replan_execution import attempt_replan
+from agent.planning.plan_executor_support import PlanExecutorSupportMixin
+from agent.planning.plan_model import ToolPlanStep
 from agent.planning.semantic_projection import (
     SemanticProjection,
     project_outcomes,
     projection_for_outcome,
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
-from agent.runtime.budget import task_budget_for
 from agent.runtime.failures import FailureFact
-from agent.tools.contracts import ToolError, ToolResult, ToolStatus
-from agent.watchdog import Watchdog
+from agent.tools.contracts import ToolResult
 
 
-class PlanExecutor:
+class PlanExecutor(PlanExecutorSupportMixin):
     """Coordinates a plan while delegating individual steps to StepExecutor."""
 
     def __init__(self, orchestrator: Any, step_executor: Optional[StepExecutor] = None):
@@ -59,7 +55,9 @@ class PlanExecutor:
         if not self._check_dependencies_ok(index):
             self.step_executor.finish_skipped(index, "dependência não satisfeita")
             return StepLoopResult(index + 1)
-        tool = str(step.get("tool", ""))
+        if not isinstance(step, ToolPlanStep):
+            return StepLoopResult(index, answer="Passo executável não é um ToolPlanStep.", stop=True)
+        tool = step.tool
         batch = self._collect_parallel_read_batch(index) if tool in ("file_reader", "directory_lister") else []
         if len(batch) > 1:
             return self._execute_parallel_read_batch(batch, objective, usage)
@@ -88,11 +86,10 @@ class PlanExecutor:
     def _execute_deferred_condition(self, index: int, objective: str) -> StepLoopResult:
         return execute_deferred_condition(self, index, objective)
     def _handle_replan(
-        self, index: int, step: Dict[str, Any], tool: str, objective: str,
+        self, index: int, step: ToolPlanStep, tool: str, objective: str,
         error: str, result: Optional[ToolResult], failure: FailureFact | None,
     ) -> StepLoopResult:
-        raw_args = step.get("args")
-        args = cast(ToolArgs, raw_args) if isinstance(raw_args, dict) else {}
+        args = dict(step.args)
         replacements = self._attempt_replan(
             step, tool, args, objective, failure=failure
         )
@@ -107,7 +104,10 @@ class PlanExecutor:
         for index in range(start_index, len(state.plan)):
             if state.get_step_status(index).value != "pending":
                 break
-            if state.plan[index].get("tool") not in ("file_reader", "directory_lister"):
+            step = state.plan[index]
+            if not isinstance(step, ToolPlanStep) or step.tool not in (
+                "file_reader", "directory_lister"
+            ):
                 break
             if not self._check_dependencies_ok(index):
                 break
@@ -181,115 +181,3 @@ class PlanExecutor:
             projection.outcome.final_answer,
             projection.decisive,
         )
-
-    def _step_data(self, index: int) -> tuple[str, ToolArgs, str]:
-        step = self.orchestrator.agent_state.plan[index]
-        raw_args = step.get("args")
-        args = cast(ToolArgs, raw_args) if isinstance(raw_args, dict) else {}
-        return str(step.get("tool", "")), args, str(args.get("target") or args.get("file_path") or "")
-
-    def _build_dependency_map(self, plan: List[Dict[str, Any]]) -> Dict[int, List[int]]:
-        dependencies, self._dependency_files = build_dependency_map(plan)
-        return dependencies
-
-    def _check_dependencies_ok(self, index: int) -> bool:
-        for producer in self._step_dependencies.get(index, []):
-            if not self._dependency_succeeded(index, producer):
-                step = self.orchestrator.agent_state.plan[index]
-                result = ToolResult(
-                    invocation_id=f"dependency:{index + 1}",
-                    status=ToolStatus.FAILED,
-                    error=ToolError(
-                        "DEPENDENCY_FAILED",
-                        f"Dependência falhou: passo {producer + 1}",
-                    ),
-                    executed=False,
-                )
-                self.orchestrator.agent_state.record_tool_result(str(step.get("tool", "unknown")), step.get("args", {}), result)
-                return False
-        return True
-
-    def _dependency_succeeded(self, index: int, producer: int) -> bool:
-        return dependency_succeeded(
-            self.orchestrator.agent_state.tool_history,
-            self.orchestrator.agent_state.get_step_id(producer),
-            plan_id=getattr(self.orchestrator.agent_state, "plan_identity", None),
-        )
-
-    def _attempt_replan(
-        self, step: Dict[str, Any], tool: str, args: ToolArgs, objective: str,
-        *,
-        last_result: Optional[ToolResult] = None,
-        last_error: Optional[str] = None,
-        failure: FailureFact | None = None,
-    ) -> Optional[List[Dict[str, Any]]]:
-        del tool, args
-        return attempt_replan(
-            self.orchestrator,
-            step,
-            objective,
-            last_result=last_result,
-            last_error=last_error,
-            failure=failure,
-        )
-
-    def _replace_current_step(self, index: int, new_steps: List[Dict[str, Any]]) -> bool:
-        """Replace a failed producer without silently rewinding consumers."""
-
-        state = self.orchestrator.agent_state
-        producer_id = state.get_step_id(index)
-        dependents = dependent_indices(state.plan, index)
-        for dependent in sorted(dependents):
-            if dependent >= len(state.plan):
-                continue
-            status = state.get_step_status(dependent)
-            if status.value in {"running", "completed"}:
-                self.orchestrator._emit(
-                    "replan_blocked",
-                    {
-                        "step_id": producer_id,
-                        "reason": "dependencia causal ja executada",
-                    },
-                )
-                self.orchestrator.fail_task()
-                return False
-        for dependent in sorted(dependents, reverse=True):
-            if dependent < len(state.plan):
-                state.remove_plan_step(dependent)
-        state.replace_plan_step(index, new_steps)
-        self._rebuild_dependency_map()
-        return True
-
-    def _rebuild_dependency_map(self) -> None:
-        self._step_dependencies = self._build_dependency_map(self.orchestrator.agent_state.plan)
-
-    def _check_cost_limits(self, step_number: int) -> Optional[str]:
-        state, config = self.orchestrator.agent_state, self.orchestrator.session.config
-        ledger = task_budget_for(self.orchestrator, config)
-        if not CostGuard.check_limits(step_number, state.tool_history, 0, config, ledger):
-            return None
-        self.orchestrator._emit(
-            "cost_limit",
-            CostGuard.build_limit_reached_event(
-                step_number, state.tool_history, 0, config, ledger
-            ),
-        )
-        answer = str(CostGuard.build_limit_summary(state.objective, state.tool_history, state.last_result))
-        state.add_conversation_turn(str(state.objective), answer)
-        self.orchestrator.fail_task()
-        return answer
-
-    def _remaining_tool_call_budget(self) -> int:
-        ledger = task_budget_for(self.orchestrator, self.orchestrator.session.config)
-        return ledger.remaining_tool_calls
-
-    def _check_watchdog(self) -> Optional[str]:
-        state = self.orchestrator.agent_state
-        reason = Watchdog.check_all(self.orchestrator._task_start_time, state.tool_history, self.orchestrator.session.config)
-        if not reason:
-            return None
-        self.orchestrator._emit("watchdog", Watchdog.build_watchdog_event(reason, self.orchestrator._task_start_time))
-        answer = str(Watchdog.build_watchdog_summary(state.tool_history, reason))
-        state.add_conversation_turn(str(state.objective), answer)
-        self.orchestrator.fail_task()
-        return answer

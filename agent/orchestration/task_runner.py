@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from agent.checkpoint_manager import CheckpointLoadError
@@ -25,6 +25,7 @@ from agent.orchestration.task_lifecycle import TaskLifecycleMixin
 from agent.orchestration.task_runner_support import checkpoint_error_answer, terminal_answer
 from agent.planning.complexity import is_hierarchical
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.plan_model import Plan
 from agent.planning.planning_view_support import resume_planning_view
 from agent.planning.task_completion import (
     allow_linear_completion,
@@ -44,16 +45,13 @@ class TaskInputs:
     resumed: bool
     original_message_count: int
 
-
 class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
     """Coordinates one task lifecycle around the public Orchestrator facade."""
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator = orchestrator
-
     @staticmethod
     def _route_is_hierarchical(objective: str) -> bool:
         return is_hierarchical(objective)
-
     def run(
         self, objective: Optional[str], stream_callback: Callable[[str], None] | None
     ) -> str:
@@ -144,7 +142,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         usage: Dict[str, int] = {}
         if inputs.resumed and self.orchestrator.agent_state.plan:
             self.orchestrator._restore_persona_from_state()
-            plan = [dict(step) for step in self.orchestrator.agent_state.plan]
+            plan = self.orchestrator.agent_state.plan
             return self._execute_plan(
                 plan,
                 inputs.objective,
@@ -242,7 +240,10 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             planning_view=getattr(decision, "planning_view", None),
         )
     def _execute_plan(
-        self, plan: List[Dict[str, Any]], objective: str, usage: Dict[str, int],
+        self,
+        plan: Plan | Sequence[Mapping[str, Any]],
+        objective: str,
+        usage: Dict[str, int],
         on_chunk: Callable[[str], None] | None,
         *,
         continue_after_plan: bool = False,

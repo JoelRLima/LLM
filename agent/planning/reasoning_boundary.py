@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, cast
 
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.plan_model import Plan, serialize_plan
 from agent.planning.task_semantics import TaskSemanticsError
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.limits import runtime_limit_values
@@ -218,7 +219,15 @@ def _project_continuation(
         return BoundaryContinuationResult(blocked=True)
     if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
         return BoundaryContinuationResult(blocked=True)
-    orchestrator._emit("reasoning_boundary_plan_proposed", {"steps": len(continuation.plan), "plan": continuation.plan})
+    proposed_plan = (
+        serialize_plan(continuation.plan)
+        if isinstance(continuation.plan, Plan)
+        else continuation.plan
+    )
+    orchestrator._emit(
+        "reasoning_boundary_plan_proposed",
+        {"steps": len(continuation.plan), "plan": proposed_plan},
+    )
     return _extend_plan(
         orchestrator,
         continuation.plan,

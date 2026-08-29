@@ -1,10 +1,15 @@
 from typing import Any, Dict, cast
 
-from agent.contracts import ModelDecision
 from agent.cost_guard import CostGuard
 from agent.final_response import (
     compose_operational_answer,
     has_usable_partial_evidence,
+)
+from agent.llm.admitted_decisions import (
+    ReactiveFinalDecision,
+    ReactiveToolDecision,
+    admit_typed_model_decision,
+    ask_typed_model_decision,
 )
 from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.planner_prompt_tools import build_planner_tools_description
@@ -34,13 +39,20 @@ class ReactiveLoop:
                 return stopped
             reactive_step += 1
             self._set_plan_step(reactive_step)
-            decision = cast(ModelDecision, self.orchestrator.context_manager.ask_model(
+            decision = ask_typed_model_decision(
+                self.orchestrator.context_manager,
                 self._build_prompt(objective),
                 step_type="tool_decision",
                 request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
                 base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
                 log_metric_callback=self.orchestrator._log_metric,
-            ))
+            )
+            if decision is None:
+                self.orchestrator._handle_step_failure(
+                    self.orchestrator.agent_state.plan_step,
+                    "Resposta de decisão reativa não admitida.",
+                )
+                continue
             answer = self._handle_decision(decision, objective, tool_usage_count, reactive_step)
             if answer is not None:
                 return answer
@@ -119,8 +131,13 @@ class ReactiveLoop:
             f"  authoritative_tool_observation: {evidence}\n"
         )
 
-    def _final_answer(self, decision: ModelDecision, objective: str) -> str:
-        answer = str(decision.get("answer") or decision.get("message") or "Tarefa concluída.")
+    def _final_answer(self, decision: ReactiveFinalDecision | Any, objective: str) -> str:
+        decision = self._compatibility_decision(decision)
+        answer = (
+            decision.answer
+            if isinstance(decision, ReactiveFinalDecision)
+            else "Tarefa concluída."
+        )
         answer = self._canonical_answer(answer, objective)
         self.orchestrator._emit("final", {"answer": answer[:100]})
         self.orchestrator.agent_state.conversation_history.append({"user": objective, "agent": answer})
@@ -144,21 +161,28 @@ class ReactiveLoop:
         )
 
     def _handle_decision(
-        self, decision: ModelDecision, objective: str, usage: Dict[str, int], reactive_step: int
+        self,
+        decision: ReactiveToolDecision | ReactiveFinalDecision | Any,
+        objective: str,
+        usage: Dict[str, int],
+        reactive_step: int,
     ) -> str | None:
-        action = decision.get("action")
-        if action == "final":
+        decision = self._compatibility_decision(decision)
+        if isinstance(decision, ReactiveFinalDecision):
             return self._final_answer(decision, objective)
-        if action != "tool":
-            self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, f"Ação desconhecida: {action}")
+        if not isinstance(decision, ReactiveToolDecision):
+            self.orchestrator._handle_step_failure(
+                self.orchestrator.agent_state.plan_step,
+                "Resposta de decisão reativa não admitida.",
+            )
             return None
-        tool = decision.get("tool")
-        if not tool:
-            self.orchestrator._handle_step_failure(self.orchestrator.agent_state.plan_step, "Ação 'tool' requer o campo 'tool'.")
-            return None
-        step: Dict[str, Any] = {"tool": tool, "args": decision.get("args", {})}
-        if "bindings" in decision:
-            step["bindings"] = decision["bindings"]
+        projected = decision.to_dict()
+        step: Dict[str, Any] = {
+            "tool": decision.tool,
+            "args": projected["args"],
+        }
+        if decision.bindings is not None:
+            step["bindings"] = projected["bindings"]
         gateway_kwargs: Dict[str, Any] = {}
         if self._last_planning_view is not None:
             gateway_kwargs["planning_view"] = self._last_planning_view
@@ -181,6 +205,23 @@ class ReactiveLoop:
         if result.final_answer:
             return self._canonical_answer(str(result.final_answer), objective)
         return None
+
+    @staticmethod
+    def _compatibility_decision(
+        decision: Any,
+    ) -> ReactiveToolDecision | ReactiveFinalDecision | None:
+        """Adapt old direct callers; production calls already carry a variant."""
+
+        if isinstance(decision, (ReactiveToolDecision, ReactiveFinalDecision)):
+            return decision
+        projected = admit_typed_model_decision(
+            decision, request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION
+        )
+        return (
+            projected
+            if isinstance(projected, (ReactiveToolDecision, ReactiveFinalDecision))
+            else None
+        )
 
     def _set_plan_step(self, value: int) -> None:
         self.orchestrator.agent_state.set_plan_step(value)

@@ -3,12 +3,12 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from agent.contracts import (
     AgentEvent,
-    PlanStep,
     ToolArgs,
     ToolHistoryEntry,
 )
 from agent.execution_state import StepExecutionRecord
 from agent.memory.memory import AgentMemory
+from agent.planning.plan_model import Plan
 from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.recovery import (
@@ -41,7 +41,7 @@ class AgentState(
     ) -> None:
         # Dados da execução atual
         self.objective: Optional[str] = None
-        self.plan: List[PlanStep] = []
+        self.plan: Plan = Plan()
         # Scope for causal observations. Step IDs are stable within a plan,
         # but old plans may remain in memory during hierarchical execution or
         # checkpoint migration.

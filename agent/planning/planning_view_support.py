@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
+from agent.planning.plan_model import (
+    DeferredConditionStep,
+    DeferredToolBranch,
+    Plan,
+    ToolPlanStep,
+)
 from agent.planning.planning_context import PlanningContextError
 from agent.planning.presentation import (
     PlanningPresentationSnapshot,
@@ -14,7 +20,7 @@ from agent.planning.presentation import (
 
 def resume_planning_view(
     orchestrator: Any,
-    plan: Sequence[Mapping[str, Any]],
+    plan: Plan | Sequence[Mapping[str, Any]],
     planner_kind: str = "linear",
 ) -> PlanningPresentationSnapshot | None:
     """Reconstruct a persisted plan's narrow view without widening eligibility."""
@@ -32,6 +38,15 @@ def resume_planning_view(
 
 
 def _collect_plan_tool_names(item: Any, names: set[str]) -> None:
+    if isinstance(item, DeferredConditionStep):
+        _collect_plan_tool_names(item.on_true, names)
+        return
+    if isinstance(item, ToolPlanStep):
+        names.add(item.tool)
+        return
+    if isinstance(item, DeferredToolBranch):
+        names.add(item.tool)
+        return
     if not isinstance(item, Mapping):
         return
     if item.get("kind") == "deferred_condition":
@@ -45,7 +60,7 @@ def _collect_plan_tool_names(item: Any, names: set[str]) -> None:
 def extend_planning_view(
     context: Any,
     planning_view: PlanningPresentationSnapshot | None,
-    prefix: Sequence[Mapping[str, Any]],
+    prefix: Plan | Sequence[Mapping[str, Any]],
 ) -> PlanningPresentationSnapshot | None:
     """Add persisted prefix tools to a validated selected view when needed."""
 
@@ -54,11 +69,9 @@ def extend_planning_view(
     if context is None:
         raise PlanningContextError("planning view sem contexto canônico")
     validate_planning_view_binding(context, planning_view, "linear")
-    prefix_names = {
-        str(step.get("tool"))
-        for step in prefix
-        if isinstance(step, Mapping) and step.get("tool")
-    }
+    prefix_names: set[str] = set()
+    for step in prefix:
+        _collect_plan_tool_names(step, prefix_names)
     if prefix_names.issubset(planning_view.presented_names):
         return planning_view
     return cast(

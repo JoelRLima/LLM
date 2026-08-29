@@ -7,6 +7,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
+from agent.planning.plan_model import Plan
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
@@ -77,10 +78,18 @@ class ReplanContext:
 
 @dataclass
 class ReplanAction:
-    steps: list[dict[str, Any]] = field(default_factory=list)
+    # Recovery actions enter the execution core as the same typed Plan used
+    # by normal planning.  List-shaped construction remains a compatibility
+    # input at this model boundary.
+    steps: Plan = field(default_factory=Plan)
     source: str = ""
     reason: str = ""
     planning_view: Any = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.steps, Plan):
+            return
+        object.__setattr__(self, "steps", Plan.from_raw(self.steps))
 
 
 __all__ = [

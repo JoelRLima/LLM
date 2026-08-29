@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 from agent.contracts import ToolArgs
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.plan_model import ToolPlanStep
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.result_bindings import ResultBindingError, resolve_bound_args
 from agent.planning.step_contracts import (
@@ -37,10 +38,8 @@ from agent.tools.result_adapter import ensure_canonical_result
 # This class retains the step lifecycle and state-transition decisions.
 __all__ = ["PreparedInvocation", "StepExecutionOutcome", "StepExecutor", "StepOutcomeKind"]
 
-
 class StepExecutor:
     """Executes and finalizes one already-selected plan step."""
-
     def __init__(self, context: ExecutionContext):
         self.context = context
         self.policies = StepPolicies(context)
@@ -86,8 +85,9 @@ class StepExecutor:
     def _prepare(self, index: int) -> tuple[str, ToolArgs, str] | StepExecutionOutcome:
         state = self.context.agent_state
         step = state.plan[index]
-        raw_args = step.get("args")
-        args: ToolArgs = raw_args if isinstance(raw_args, dict) else {}
+        if not isinstance(step, ToolPlanStep):
+            return self.finish_failed(index, "passo executável não é um ToolPlanStep", decisive=True)
+        args: ToolArgs = dict(step.args)
         file_path = str(args.get("target") or args.get("file_path") or "")
         state.mark_step_running(index)
         try:
@@ -117,7 +117,7 @@ class StepExecutor:
         if symbolic_error is not None:
             return self._finish_unresolved_symbolic(index, symbolic_error)
         file_path = str(args.get("target") or args.get("file_path") or "")
-        return str(step.get("tool", "")), args, file_path
+        return step.tool, args, file_path
 
     def _finish_unresolved_symbolic(
         self, index: int, error: str

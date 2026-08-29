@@ -8,6 +8,7 @@ from typing import Any, cast
 from agent.contracts import ToolArgs
 from agent.parsers import stringify
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.plan_model import Plan
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.step_contracts import PreparedInvocation
 from agent.runtime.logging import logger
@@ -155,15 +156,22 @@ class ToolExecutor:
                 "A invocacao preparada pertence a outro plano canonico.",
             )
         current_plan = getattr(state, "plan", None)
-        if (
-            prepared.plan_id is not None
-            and isinstance(current_plan, list)
-            and not any(
-                isinstance(step, Mapping)
-                and step.get("_step_id") == prepared.step_id
-                for step in current_plan
+        if prepared.plan_id is not None and isinstance(current_plan, Plan):
+            belongs_to_current_plan = any(
+                step.step_id == prepared.step_id for step in current_plan.steps
             )
-        ):
+        else:
+            # Explicit compatibility path for a low-level legacy context.
+            belongs_to_current_plan = (
+                prepared.plan_id is None
+                or not isinstance(current_plan, list)
+                or any(
+                    isinstance(step, Mapping)
+                    and step.get("_step_id") == prepared.step_id
+                    for step in current_plan
+                )
+            )
+        if prepared.plan_id is not None and not belongs_to_current_plan:
             return self._prepared_block(
                 invocation_id,
                 "prepared_invocation_stale",

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
-from agent.contracts import EventData, PlanStep, ToolArgs, ToolHistoryEntry
+from agent.contracts import EventData, ToolArgs, ToolHistoryEntry
+from agent.planning.plan_model import Plan
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
@@ -53,7 +54,7 @@ class MemoryPort(Protocol):
 
 
 class ExecutionStatePort(Protocol):
-    plan: List[PlanStep]
+    plan: Plan
     tool_history: List[ToolHistoryEntry]
     memory: MemoryPort
 

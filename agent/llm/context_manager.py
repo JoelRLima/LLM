@@ -1,30 +1,21 @@
 import datetime as dt
-import time
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent.error_handler import ErrorHandler
+from agent.llm.admitted_decisions import AdmittedModelDecision, ModelDecisionValue
+from agent.llm.context_model_call import run_model_call
 from agent.llm.context_views import (
     build_compact_view,
     compress_conversation,
     discover_project_context,
     get_file_hints,
 )
-from agent.llm.decision_compat import (
-    build_request_with_contract,
-    build_retry_request,
-    record_legacy_metadata,
-)
-from agent.llm.decision_contract import (
-    ModelRequestContract,
-    resolve_request_contract,
-)
-from agent.llm.grammars import AUTO_GRAMMAR, AutoGrammar, get_grammar
+from agent.llm.decision_contract import ModelRequestContract
+from agent.llm.grammars import AUTO_GRAMMAR, AutoGrammar
 from agent.llm.prompts import AGENT_SYSTEM_PROMPT
 from agent.llm.session import ChatSession
-from agent.llm.structured_output import resolve_model_decision
 from agent.memory.prompt_context import (
     DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS,
     build_memory_prompt_context,
@@ -172,7 +163,8 @@ class ContextManager:
         log_metric_callback: Callable[[Dict[str, Any]], None] | None = None,
         grammar: str | None | AutoGrammar = AUTO_GRAMMAR,
         request_contract: ModelRequestContract | str | None = None,
-    ) -> Dict[str, Any]:
+        typed: bool = False,
+    ) -> Dict[str, Any] | ModelDecisionValue:
         """
         Prepara o contexto e resolve a decisão no ModelGateway canônico.
         Args:
@@ -181,120 +173,40 @@ class ContextManager:
                 `step_type`. Passe uma string para sobrescrever, ou None
                 para desabilitar a gramática nesta chamada.
         """
-        exact_contract = resolve_request_contract(
-            request_contract=request_contract,
+        return run_model_call(
+            self,
+            prompt,
             step_type=step_type,
+            base_prompt=base_prompt,
+            log_metric_callback=log_metric_callback,
+            grammar=grammar,
+            request_contract=request_contract,
+            typed=typed,
+            step_budgets=STEP_BUDGETS,
+            default_max_tokens=DEFAULT_AGENT_MAX_TOKENS,
         )
-        if isinstance(grammar, AutoGrammar):
-            effective_grammar = get_grammar(
-                step_type,
-                self.session.config,
-                request_contract=(
-                    request_contract
-                    if request_contract is not None
-                    else exact_contract
-                ),
-            )
-        else:
-            effective_grammar = grammar
-        original_messages = [m.copy() for m in self.session.messages]
-        original_system_content = (
-            self.session.messages[0]["content"] if self.session.messages else ""
+    def ask_model_typed(
+        self,
+        prompt: str,
+        *,
+        request_contract: ModelRequestContract | str,
+        step_type: str | None = None,
+        **kwargs: Any,
+    ) -> ModelDecisionValue | None:
+        """Return only a successful canonical typed decision projection."""
+
+        effective_step_type = step_type or (
+            request_contract.value
+            if isinstance(request_contract, ModelRequestContract)
+            else request_contract
         )
-        if self.verbose:
-            self.check_prompt_size()
-        try:
-            context_addition = self.build_context(prompt)
-            if base_prompt is None:
-                base_prompt = self.build_base_system_prompt("", "")
-            self.session.messages[0]["content"] = (
-                base_prompt + context_addition
-            )
-            self.session.add_user_message(prompt)
-            estimated = self.estimate_conversation_tokens()
-            config_max = self.session.config.get("agent_max_tokens")
-            budget = config_max if config_max is not None else min(
-                STEP_BUDGETS.get(step_type, DEFAULT_AGENT_MAX_TOKENS),
-                self.hardware_profile.default_output_tokens,
-            )
-            grammar_for_request = (
-                effective_grammar
-                if getattr(self.session, "_grammar_supports_grammar", None) is not False
-                else None
-            )
-            if estimated > int(self.hardware_profile.context_limit * 0.75):
-                compact_messages = self.build_compact_view()
-                original_messages_in_session = self.session.messages
-                self.session.messages = compact_messages
-                request = build_request_with_contract(
-                    self.session,
-                    grammar=grammar_for_request,
-                    stream=False,
-                    max_output_tokens=int(budget),
-                    request_contract=exact_contract,
-                )
-                request = replace(request, context_compacted=True)
-                self.session.messages = original_messages_in_session
-            else:
-                request = build_request_with_contract(
-                    self.session,
-                    grammar=grammar_for_request,
-                    stream=False,
-                    max_output_tokens=int(budget),
-                    request_contract=exact_contract,
-                )
-            if self.verbose:
-                print(
-                    f"⏳ Consultando o modelo (step={step_type}, budget={budget})...",
-                    end="",
-                    flush=True,
-                )
-            started_at = time.monotonic()
-            decision = resolve_model_decision(
-                request,
-                complete=self.session.complete_request,
-                retry_request=lambda: build_retry_request(
-                    self.session,
-                    effective_grammar,
-                    self.hardware_profile,
-                    DEFAULT_AGENT_MAX_TOKENS,
-                    exact_contract,
-                ),
-                grammar=grammar_for_request,
-                grammar_supported=getattr(
-                    self.session, "_grammar_supports_grammar", None
-                ),
-                set_grammar_supported=lambda value: setattr(
-                    self.session, "_grammar_supports_grammar", value
-                ),
-                fallback_request=lambda current: replace(
-                    current, structured_output=None
-                ),
-                retry_authorizer=self._authorize_structured_response_repair,
-                step_type=step_type,
-                request_contract=(
-                    request_contract
-                    if request_contract is not None
-                    else exact_contract
-                ),
-                on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
-                    log_metric_callback,
-                    response,
-                    parsed,
-                    active_request,
-                    step_type,
-                    started_at,
-                    request_contract=(
-                        request_contract
-                        if request_contract is not None
-                        else exact_contract
-                    ),
-                ),
-            )
-            return decision
-        finally:
-            self.session.messages = original_messages
-            if self.session.messages:
-                self.session.messages[0]["content"] = original_system_content
+        result = self.ask_model(
+            prompt,
+            step_type=effective_step_type,
+            request_contract=request_contract,
+            typed=True,
+            **kwargs,
+        )
+        return result if isinstance(result, AdmittedModelDecision) else None
     def purge_stale_context(self) -> None:
         ErrorHandler.purge_stale_context(self.session, self.verbose)

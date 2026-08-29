@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, List
 
-from agent.planning.result_bindings import referenced_step_ids, result_is_bindable
+from agent.planning.plan_model import Plan, PlanReferenceError, ToolPlanStep, bind_plan_references
+from agent.planning.result_bindings import result_is_bindable
 from agent.state_progression import current_result_for_step
 
 
@@ -17,27 +19,19 @@ def _add_dependency(edges: Dict[int, List[int]], consumer: int, producer: int) -
 
 
 def build_dependency_map(
-    plan: Sequence[Mapping[str, Any]],
+    plan: Plan | Sequence[Mapping[str, Any]],
 ) -> tuple[Dict[int, List[int]], Dict[tuple[int, int], str]]:
     """Derive stable causal edges from explicit result bindings."""
 
-    edges: Dict[int, List[int]] = {}
-    dependency_files: Dict[tuple[int, int], str] = {}
-    step_indexes = {
-        str(step.get("_step_id")): index
-        for index, step in enumerate(plan)
-        if isinstance(step, Mapping) and isinstance(step.get("_step_id"), str)
-    }
-
-    for index, step in enumerate(plan):
-        if not isinstance(step, Mapping) or not step.get("bindings"):
-            continue
-        for source_id in referenced_step_ids([step]):
-            producer = step_indexes.get(source_id)
-            if producer is not None:
-                _add_dependency(edges, index, producer)
-
-    return edges, dependency_files
+    if isinstance(plan, Plan):
+        return _build_typed_dependency_map(plan)
+    # Historical list-shaped callers are decoded once at this explicit
+    # boundary.  Dependency semantics thereafter use only the typed owner.
+    try:
+        typed_plan = bind_plan_references(Plan.from_raw(plan))
+    except (PlanReferenceError, ValueError, TypeError):
+        return {}, {}
+    return _build_typed_dependency_map(typed_plan)
 
 
 def dependency_succeeded(
@@ -62,7 +56,9 @@ def dependency_succeeded(
     return False
 
 
-def dependent_indices(plan: Sequence[Mapping[str, Any]], producer: int) -> set[int]:
+def dependent_indices(
+    plan: Plan | Sequence[Mapping[str, Any]], producer: int
+) -> set[int]:
     """Return the transitive consumers of one plan slot."""
 
     edges, _ = build_dependency_map(plan)
@@ -78,6 +74,24 @@ def dependent_indices(plan: Sequence[Mapping[str, Any]], producer: int) -> set[i
         dependents.update(next_frontier)
         frontier = next_frontier
     return dependents
+
+
+def _build_typed_dependency_map(
+    plan: Plan,
+) -> tuple[Dict[int, List[int]], Dict[tuple[int, int], str]]:
+    edges: Dict[int, List[int]] = {}
+    dependency_files: Dict[tuple[int, int], str] = {}
+    step_indexes = {step.step_id: index for index, step in enumerate(plan.steps)}
+    for index, step in enumerate(plan.steps):
+        if not isinstance(step, ToolPlanStep) or step.bindings is None:
+            continue
+        for binding in step.bindings.values():
+            if binding.from_step.step_id is None:
+                continue
+            producer = step_indexes.get(binding.from_step.step_id)
+            if producer is not None:
+                _add_dependency(edges, index, producer)
+    return edges, dependency_files
 
 
 __all__ = ["build_dependency_map", "dependent_indices", "dependency_succeeded"]

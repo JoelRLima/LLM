@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, Dict, Optional
 
+from agent.llm.admitted_decisions import AdmittedModelDecision
 from agent.llm.contracts import ModelProviderError
 from agent.llm.decision_compat import (
     build_legacy_retry_request,
@@ -168,6 +169,8 @@ class ModelClient:
         )
         if verbose:
             print("OK")
+        if isinstance(decision, AdmittedModelDecision):
+            return decision.to_dict()
         return decision
 
 

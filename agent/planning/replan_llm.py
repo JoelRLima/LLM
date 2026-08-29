@@ -5,11 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
+from agent.llm.admitted_decisions import (
+    LegacyModelDecision,
+    ReplanDecision,
+    ask_model_decision_with_compatibility,
+)
 from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.capability_manifest import (
     render_active_harness_capabilities,
     render_validation_repair_manual,
 )
+from agent.planning.plan_model import Plan
 from agent.planning.replan_models import (
     ErrorCategory,
     ReplanAction,
@@ -178,7 +184,8 @@ def _append_repair_manual(
 
 def _request_replan(orchestrator: Any, prompt: str) -> Any:
     try:
-        return orchestrator.context_manager.ask_model(
+        return ask_model_decision_with_compatibility(
+            orchestrator.context_manager,
             prompt,
             step_type="replan",
             request_contract=ModelRequestContract.REPLAN,
@@ -198,22 +205,23 @@ def _replan_action(
     disclosure: ToolDisclosureResult | None,
     validation_repair: bool,
 ) -> Optional[ReplanAction]:
-    if not isinstance(decision, dict) or decision.get("action") != "tool":
+    if not isinstance(decision, (ReplanDecision, LegacyModelDecision)):
         return None
+    projected = decision.to_dict()
     replacement: Dict[str, Any] = {
-        "tool": decision["tool"],
-        "args": decision.get("args", {}),
+        "tool": projected["tool"],
+        "args": projected["args"],
     }
-    if isinstance(decision.get("bindings"), dict):
-        replacement["bindings"] = decision["bindings"]
+    if "bindings" in projected:
+        replacement["bindings"] = projected["bindings"]
     error_message = failure.message or failure.code
     return ReplanAction(
-        steps=[replacement],
+        steps=Plan.from_raw([replacement]),
         source="llm",
         planning_view=(
             disclosure.selected_view
             if not validation_repair and disclosure is not None
             else None
         ),
-        reason=f"LLM sugeriu '{decision['tool']}' após erro: {error_message[:150]}",
+        reason=f"LLM sugeriu '{decision.tool}' após erro: {error_message[:150]}",
     )

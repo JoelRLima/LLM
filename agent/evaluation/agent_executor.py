@@ -18,6 +18,7 @@ from agent.llm.identity import (
 from agent.llm.identity import (
     unavailable_observed_identity,
 )
+from agent.planning.plan_model import serialize_plan
 from agent.reporting.metrics import project_run_metrics
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -185,7 +186,9 @@ class AgentApplicationScenarioExecutor:
                             "declared": declared_provider_identity,
                             "observed": dict(observed_provider_identity),
                         },
-                        "canonical_plan": list(application.orchestrator.agent_state.plan),
+                        "canonical_plan": serialize_plan(
+                            application.orchestrator.agent_state.plan
+                        ),
                         "invocation_evidence": list(history),
                         "route_events": [
                             event

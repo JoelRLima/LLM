@@ -8,10 +8,11 @@ from agent.planning.deferred_condition import (
     is_deferred_condition,
     validate_deferred_condition,
 )
+from agent.planning.plan_model import DeferredConditionStep, Plan, PlanDecodeError
 
 
 def validate_deferred_items(
-    plan: list[dict[str, Any]],
+    plan: Plan | list[dict[str, Any]],
     objective: str,
     canonical_references: bool,
     step_validator: Callable[[Any], str | None],
@@ -19,16 +20,26 @@ def validate_deferred_items(
     deferred_step_validator: Callable[[Any], str | None] | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    for index, step in enumerate(plan):
+    if not isinstance(plan, Plan):
+        try:
+            plan = Plan.from_raw(plan)
+        except (PlanDecodeError, TypeError, ValueError) as exc:
+            return [f"Plano deferred invÃ¡lido: {exc}."]
+    for index, step in enumerate(plan.steps):
         if not is_deferred_condition(step):
             continue
-        reference = step.get("observation_ref")
-        if canonical_references and (not isinstance(reference, str) or not reference):
+        if isinstance(step, DeferredConditionStep):
+            reference = step.observation_ref
+            canonical_reference = reference.is_stable_id
+            ordinal_reference = reference.is_ordinal
+        else:
+            continue
+        if canonical_references and not canonical_reference:
             errors.append(
                 f"Passo {index + 1} deferred inválido: observation_ref canônico ausente."
             )
             continue
-        if not canonical_references and type(reference) is not int:
+        if not canonical_references and not ordinal_reference:
             errors.append(
                 f"Passo {index + 1} deferred inválido: observation_ref deve ser ordinal local."
             )
@@ -40,7 +51,8 @@ def validate_deferred_items(
             # observation resolves the branch.  Keep the legacy one-argument
             # callback usable for callers outside PlanValidator.
             branch_validator = deferred_step_validator or step_validator
-            problem = branch_validator(step.get("on_true"))
+            branch = step.on_true
+            problem = branch_validator(branch)
         if problem:
             errors.append(f"Passo {index + 1} deferred inválido: {problem}.")
     return errors

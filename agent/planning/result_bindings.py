@@ -2,127 +2,93 @@
 
 from __future__ import annotations
 
-import copy
-import re
-from collections.abc import Mapping, Sequence
-from typing import Any, Callable
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, cast
 
+from agent.planning.plan_model import (
+    Plan,
+    PlanDecodeError,
+    PlanReferenceError,
+    PlanStepReference,
+    ResultBinding,
+    ToolPlanStep,
+    bind_plan_references,
+    resolve_previous_step_reference,
+    resolve_result_binding_reference,
+    serialize_plan,
+)
 from agent.planning.result_binding_types import ResultBindingError
-from agent.planning.result_binding_values import json_detach, result_is_bindable
-from agent.state_progression import current_result_for_step
-
-_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
-_MAX_PATH, _MAX_PATH_KEY = 32, 128
+from agent.planning.result_binding_values import result_is_bindable
+from agent.planning.result_bindings_resolution import resolve_bound_args
+from agent.planning.result_bindings_schema import (
+    _safe_target,
+    _schema_at_path,
+    validate_path,
+    validate_path_against_schema,
+)
 
 
 def has_result_bindings(step: Any) -> bool:
+    if isinstance(step, ToolPlanStep):
+        return step.bindings is not None
+    # Explicit legacy/model-shape probe at the compatibility boundary.
     return isinstance(step, Mapping) and "bindings" in step
 
 
 def _binding_items(raw: Any) -> list[tuple[str, Mapping[str, Any]]]:
     if not isinstance(raw, Mapping):
         raise ResultBindingError("bindings deve ser um objeto target -> especificacao")
-    if any(not isinstance(key, str) or not isinstance(value, Mapping) for key, value in raw.items()):
+    if any(
+        not isinstance(key, str) or not isinstance(value, Mapping)
+        for key, value in raw.items()
+    ):
         raise ResultBindingError("bindings deve mapear target para objeto")
     return list(raw.items())
 
 
-def binding_items(step: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
-    return _binding_items(step["bindings"]) if "bindings" in step else []
+def binding_items(
+    step: ToolPlanStep | Mapping[str, Any],
+) -> list[tuple[str, ResultBinding | Mapping[str, Any]]]:
+    if isinstance(step, ToolPlanStep):
+        return list((step.bindings or {}).items())
+    # Serializer/model compatibility adapter; typed consumers use attrs.
+    return cast(
+        list[tuple[str, ResultBinding | Mapping[str, Any]]],
+        _binding_items(step["bindings"]) if "bindings" in step else [],
+    )
 
 
-def _source_and_path(spec: Mapping[str, Any]) -> tuple[Any, Any]:
+def _source_and_path(spec: ResultBinding | Mapping[str, Any]) -> tuple[Any, Any]:
+    if isinstance(spec, ResultBinding):
+        return spec.from_step.to_raw(), spec.path
     return spec.get("from_step"), spec.get("path", ())
 
 
-def _safe_target(target: Any) -> str:
-    if not isinstance(target, str) or not target or not _SEGMENT.fullmatch(target):
-        raise ResultBindingError("binding.target deve ser um nome de argumento simples")
-    return target
+def _resolve_ordinal(
+    source: Any, index: int, plan: Sequence[Mapping[str, Any]]
+) -> int | None:
+    """Compatibility adapter to the single typed reference resolver."""
 
-
-def validate_path(path: Any) -> tuple[str | int, ...]:
-    if not isinstance(path, list) or len(path) > _MAX_PATH:
-        raise ResultBindingError("binding.path deve ser uma lista limitada de segmentos")
-    normalized: list[str | int] = []
-    for segment in path:
-        if type(segment) is int and 0 <= segment <= 1_000_000:
-            normalized.append(segment)
-        elif isinstance(segment, str) and 0 < len(segment) <= _MAX_PATH_KEY and not segment.startswith("__") and all(ord(char) >= 32 for char in segment):
-            normalized.append(segment)
-        else:
-            raise ResultBindingError("segmento de path inválido")
-    return tuple(normalized)
-
-
-def _schema_at_path(
-    path: Sequence[str | int], schema: Mapping[str, Any] | None
-) -> Mapping[str, Any] | None:
-    if schema is None:
+    try:
+        typed_plan = Plan.from_raw(plan, preserve_step_ids=type(source) is not int)
+        return resolve_previous_step_reference(
+            PlanStepReference.from_raw(source), index, typed_plan
+        )
+    except (PlanReferenceError, ValueError, TypeError):
         return None
-    current: Mapping[str, Any] | None = schema
-    for segment in path:
-        schema_type = current.get("type") if current is not None else None
-        if current is None or schema_type is None:
-            return None
-        if isinstance(segment, str):
-            if schema_type != "object":
-                raise ResultBindingError(
-                    "binding.path seleciona uma chave em resultado que não é objeto"
-                )
-            properties = current.get("properties")
-            if not isinstance(properties, Mapping) or segment not in properties:
-                raise ResultBindingError(
-                    f"binding.path seleciona propriedade não anunciada: {segment}"
-                )
-            child = properties[segment]
-        else:
-            if schema_type != "array":
-                raise ResultBindingError(
-                    "binding.path seleciona índice em resultado que não é array"
-                )
-            child = current.get("items")
-            if not isinstance(child, Mapping):
-                raise ResultBindingError(
-                    "binding.path seleciona índice sem schema de items anunciado"
-                )
-        current = child if isinstance(child, Mapping) else None
-        if current is None:
-            return None
-    return current
 
 
-def validate_path_against_schema(
-    path: Any, schema: Mapping[str, Any] | None
-) -> tuple[str | int, ...]:
-    """Validate path syntax and, when known, its advertised result shape."""
-
-    normalized = validate_path(path)
-    _schema_at_path(normalized, schema)
-    return normalized
-
-
-def _resolve_ordinal(source: Any, index: int, plan: Sequence[Mapping[str, Any]]) -> int | None:
-    if type(source) is int:
-        candidate = source - 1
-        return candidate if 0 <= candidate < index else None
-    if isinstance(source, str) and source:
-        matches = [i for i in range(index) if plan[i].get("_step_id") == source]
-        return matches[0] if len(matches) == 1 else None
-    return None
-
-
-def _validate_spec(
+def _validate_typed_spec(
     target: str,
-    spec: Mapping[str, Any],
+    binding: ResultBinding,
     index: int,
-    plan: Sequence[Mapping[str, Any]],
+    plan: Plan,
     canonical: bool,
     args: Mapping[str, Any],
     seen: set[str],
-    result_data_schema_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+    result_data_schema_resolver: Callable[[Any], Mapping[str, Any] | None]
     | None = None,
-    target_schema_resolver: Callable[[Mapping[str, Any], str], Mapping[str, Any] | None]
+    target_schema_resolver: Callable[[Any, str], Mapping[str, Any] | None]
     | None = None,
 ) -> None:
     target = _safe_target(target)
@@ -131,155 +97,143 @@ def _validate_spec(
     if target in args:
         raise ResultBindingError(f"target '{target}' colide com args concretos")
     seen.add(target)
-    if set(spec) - {"from_step", "path"} or not {"from_step", "path"}.issubset(spec):
-        raise ResultBindingError("campos não suportados no binding")
-    source, path = _source_and_path(spec)
-    if isinstance(source, Mapping) or (canonical and not isinstance(source, str)) or (not canonical and type(source) is not int):
+    if canonical and not binding.from_step.is_stable_id:
         raise ResultBindingError("from_step deve ser ordinal local ou ID estável")
-    source_index = _resolve_ordinal(source, index, plan)
-    if source_index is None or not isinstance(plan[source_index].get("tool"), str) or plan[source_index].get("kind") == "deferred_condition":
+    if not canonical and not binding.from_step.is_ordinal:
+        raise ResultBindingError("from_step deve ser ordinal local ou ID estável")
+    try:
+        source_index = resolve_result_binding_reference(binding, index, plan)
+    except PlanReferenceError as exc:
+        raise ResultBindingError(str(exc)) from exc
+    producer = plan[source_index]
+    if not isinstance(producer, ToolPlanStep):
         raise ResultBindingError("from_step deve apontar para ToolStep anterior")
     result_schema = (
-        result_data_schema_resolver(plan[source_index])
+        result_data_schema_resolver(producer)
         if result_data_schema_resolver is not None
         else None
     )
-    normalized_path = validate_path_against_schema(path, result_schema)
+    normalized_path = validate_path_against_schema(binding.path, result_schema)
     if target_schema_resolver is not None and result_schema is not None:
         source_leaf = _schema_at_path(normalized_path, result_schema)
         target_schema = target_schema_resolver(plan[index], target)
         source_type = source_leaf.get("type") if source_leaf is not None else None
         target_type = target_schema.get("type") if target_schema is not None else None
         simple_types = {
-            "array", "boolean", "integer", "null", "number", "object", "string"
+            "array",
+            "boolean",
+            "integer",
+            "null",
+            "number",
+            "object",
+            "string",
         }
-        if source_type in simple_types and target_type in simple_types and source_type != target_type:
+        if (
+            source_type in simple_types
+            and target_type in simple_types
+            and source_type != target_type
+        ):
             raise ResultBindingError(
-                f"tipo do resultado ({source_type}) incompatível com argumento '{target}' ({target_type})"
+                f"tipo do resultado ({source_type}) incompatível com argumento "
+                f"'{target}' ({target_type})"
             )
 
 
 def validate_result_bindings(
-    plan: Sequence[Mapping[str, Any]],
+    plan: Plan | Sequence[Mapping[str, Any]],
     *,
     canonical_references: bool = False,
-    result_data_schema_resolver: Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+    result_data_schema_resolver: Callable[[Any], Mapping[str, Any] | None]
     | None = None,
-    target_schema_resolver: Callable[[Mapping[str, Any], str], Mapping[str, Any] | None]
+    target_schema_resolver: Callable[[Any, str], Mapping[str, Any] | None]
     | None = None,
 ) -> list[str]:
+    """Validate typed bindings; list-shaped input is decoded once here."""
+
+    if not isinstance(plan, Plan):
+        try:
+            plan = Plan.from_raw(plan)
+        except (PlanDecodeError, TypeError, ValueError) as exc:
+            return [f"Plano binding inválido: {exc}."]
     errors: list[str] = []
-    for index, step in enumerate(plan):
-        if not isinstance(step, Mapping) or "bindings" not in step:
+    for index, step in enumerate(plan.steps):
+        if not isinstance(step, ToolPlanStep) or step.bindings is None:
             continue
         try:
-            raw_args = step.get("args")
-            args = raw_args if isinstance(raw_args, Mapping) else {}
             seen: set[str] = set()
-            for target, spec in binding_items(step):
-                _validate_spec(
+            for target, binding in step.bindings.items():
+                _validate_typed_spec(
                     target,
-                    spec,
+                    binding,
                     index,
                     plan,
                     canonical_references,
-                    args,
+                    step.args,
                     seen,
                     result_data_schema_resolver,
                     target_schema_resolver,
                 )
-        except ResultBindingError as exc:
+        except (PlanReferenceError, ResultBindingError) as exc:
             errors.append(f"Passo {index + 1} binding inválido: {exc}.")
     return errors
 
 
-def _normalize_binding(target: str, spec: Mapping[str, Any], index: int, plan: Sequence[Mapping[str, Any]], new_step_id: Any) -> dict[str, Any]:
-    source, path = _source_and_path(spec)
-    source_index = _resolve_ordinal(source, index, plan)
-    if source_index is None:
-        raise ResultBindingError("from_step deve apontar para passo anterior")
-    normalized = dict(spec)
-    normalized["from_step"] = plan[source_index].get("_step_id") or new_step_id()
-    normalized["path"] = list(validate_path(path))
-    return normalized
+def bind_result_references(
+    plan: Plan | Sequence[Mapping[str, Any]], new_step_id: Any
+) -> Plan | list[dict[str, Any]]:
+    """Bind references in the typed owner and serialize only for legacy callers."""
+
+    if isinstance(plan, Plan):
+        return bind_plan_references(plan)
+    allocated: set[str] = set()
+
+    def allocate() -> str:
+        base = str(new_step_id())
+        candidate = base
+        suffix = 2
+        while candidate in allocated:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        allocated.add(candidate)
+        return candidate
+
+    try:
+        typed_plan = Plan.from_raw(plan, new_step_id=allocate)
+        return serialize_plan(bind_plan_references(typed_plan))
+    except (PlanDecodeError, PlanReferenceError, TypeError, ValueError) as exc:
+        raise ResultBindingError(str(exc)) from exc
 
 
-def bind_result_references(plan: Sequence[Mapping[str, Any]], new_step_id: Any) -> list[dict[str, Any]]:
-    bound = [dict(step) for step in plan]
-    seen_ids: set[str] = set()
-    for step in bound:
-        candidate = step.get("_step_id")
-        if not isinstance(candidate, str) or not candidate or candidate in seen_ids:
-            candidate = str(new_step_id())
-            step["_step_id"] = candidate
-        seen_ids.add(candidate)
-        if isinstance(step.get("args"), Mapping):
-            step["args"] = dict(step["args"])
-    for index, step in enumerate(bound):
-        if "bindings" not in step:
-            continue
-        items = binding_items(step)
-        normalized = [_normalize_binding(target, spec, index, bound, new_step_id) for target, spec in items]
-        step["bindings"] = {
-            target: value
-            for (target, _), value in zip(items, normalized, strict=True)
-        }
-    return bound
-
-
-def referenced_step_ids(plan: Sequence[Mapping[str, Any]]) -> set[str]:
+def referenced_step_ids(plan: Plan | Sequence[Mapping[str, Any]]) -> set[str]:
+    if not isinstance(plan, Plan):
+        try:
+            plan = bind_plan_references(Plan.from_raw(plan))
+        except (PlanDecodeError, PlanReferenceError, TypeError, ValueError):
+            return set()
     refs: set[str] = set()
-    for step in plan:
-        for _, spec in binding_items(step) if isinstance(step, Mapping) else ():
-            source, _ = _source_and_path(spec)
-            if source is not None:
-                refs.add(str(source))
+    for step in plan.steps:
+        if not isinstance(step, ToolPlanStep) or step.bindings is None:
+            continue
+        for binding in step.bindings.values():
+            if binding.from_step.step_id is not None:
+                refs.add(binding.from_step.step_id)
     return refs
 
 
-def binding_targets(step: Mapping[str, Any]) -> set[str]:
+def binding_targets(step: ToolPlanStep | Mapping[str, Any]) -> set[str]:
     return {_safe_target(target) for target, _ in binding_items(step)}
 
 
-def _read_path(data: Any, path: Sequence[str | int]) -> Any:
-    value = data
-    for segment in path:
-        if isinstance(segment, str) and isinstance(value, Mapping) and segment in value:
-            value = value[segment]
-        elif isinstance(segment, int) and isinstance(value, (list, tuple)) and segment < len(value):
-            value = value[segment]
-        else:
-            raise ResultBindingError("binding.path não está presente no resultado")
-    return json_detach(value)
-
-
-def resolve_bound_args(
-    step: Mapping[str, Any],
-    index: int,
-    plan: Sequence[Mapping[str, Any]],
-    history: Sequence[Mapping[str, Any]],
-    *,
-    plan_id: str | None = None,
-) -> dict[str, Any]:
-    raw_args = step.get("args")
-    args = copy.deepcopy(dict(raw_args)) if isinstance(raw_args, Mapping) else {}
-    for target, spec in binding_items(step):
-        source, path = _source_and_path(spec)
-        source_index = _resolve_ordinal(source, index, plan)
-        source_id = plan[source_index].get("_step_id") if source_index is not None else source
-        current = current_result_for_step(history, str(source_id), plan_id=plan_id)
-        if current is None:
-            raise ResultBindingError("resultado canônico do passo referenciado indisponível")
-        _, entry = current
-        result = entry.get("result")
-        if not isinstance(result, Mapping) or not result_is_bindable(result):
-            raise ResultBindingError("resultado referenciado ausente, falho ou incompleto")
-        args[_safe_target(target)] = _read_path(result.get("data"), validate_path(path))
-    return args
-
-
 __all__ = [
-    "ResultBindingError", "bind_result_references", "binding_items", "binding_targets", "has_result_bindings",
-    "referenced_step_ids", "resolve_bound_args", "result_is_bindable", "validate_path", "validate_path_against_schema",
+    "ResultBindingError",
+    "bind_result_references",
+    "binding_items",
+    "binding_targets",
+    "has_result_bindings",
+    "referenced_step_ids",
+    "resolve_bound_args",
+    "result_is_bindable",
+    "validate_path",
+    "validate_path_against_schema",
     "validate_result_bindings",
 ]

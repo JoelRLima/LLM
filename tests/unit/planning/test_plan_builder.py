@@ -164,6 +164,33 @@ def test_reasoning_boundary_accepts_bounded_canonical_review_payload() -> None:
     assert decision.review_obligations[0]["kind"] == "read"
 
 
+def test_reasoning_boundary_preserves_non_mapping_obligation_for_domain_review() -> None:
+    class _Context(_PromptContext):
+        def ask_model(self, *_args, **_kwargs):
+            return {
+                "action": "complete",
+                "reason": "observacao suficiente",
+                "obligations": ["x"],
+            }
+
+    orchestrator = _PromptOrchestrator()
+    orchestrator.context_manager = _Context()
+    orchestrator.verbose = False
+    orchestrator.final_responder = None
+    orchestrator._log_metric = lambda *_args, **_kwargs: None
+
+    decision = PlanBuilder(orchestrator).continue_after_reasoning_boundary("objetivo")
+    review = orchestrator.agent_state.review_task_obligations_report(
+        decision.review_obligations,
+        source="canonical_review",
+    )
+
+    assert decision.kind.value == "complete"
+    assert decision.review_obligations == ["x"]
+    assert review.accepted == ()
+    assert len(review.rejected) == 1
+
+
 def test_reasoning_boundary_rejects_model_owned_obligation_status() -> None:
     class _Context(_PromptContext):
         def ask_model(self, *_args, **_kwargs):

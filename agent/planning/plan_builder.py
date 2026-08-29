@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 
+from agent.llm.admitted_decisions import (
+    DirectResponseDecision,
+    EffectObservationBlockedDecision,
+    EffectObservationCompleteWithoutEffectDecision,
+    EffectObservationExecuteDecision,
+    InitialPlanDecision,
+    LegacyModelDecision,
+    ReasoningBoundaryBlockedDecision,
+    ReasoningBoundaryCompleteDecision,
+    ReasoningBoundaryExecuteDecision,
+    ask_model_decision_with_compatibility,
+)
 from agent.llm.decision_contract import ModelRequestContract
+from agent.planning.plan_builder_compat import (
+    build_legacy_continuation,
+    build_legacy_initial,
+    continuation_step_id,
+)
+from agent.planning.plan_model import Plan, PlanDecodeError
 from agent.planning.plan_progress import build_plan_progress
 from agent.planning.plan_prompts import (
     build_continuation_prompt,
@@ -34,9 +53,12 @@ class PlanningDecisionKind(str, Enum):
 
 @dataclass(frozen=True)
 class PlanBuildResult:
-    plan: Optional[List[Dict[str, Any]]] = None
+    # A live builder result carries the immutable typed plan.  The runtime
+    # gateway still accepts a list-shaped value for explicit test/legacy
+    # facades, but the production builder never emits that projection.
+    plan: Optional[Plan] = None
     obligations: Optional[List[Dict[str, Any]]] = None
-    review_obligations: Optional[List[Dict[str, Any]]] = None
+    review_obligations: Optional[List[Any]] = None
     blocked_answer: Optional[str] = None
     direct_answer: Optional[str] = None
     waiver_observation_index: Optional[int] = None
@@ -66,39 +88,45 @@ class PlanBuilder:
 
     def build_plan(self, objective: str) -> PlanBuildResult:
         self._clear_analysis_notes()
-        decision = self.orchestrator.context_manager.ask_model(
+        decision = ask_model_decision_with_compatibility(
+            self.orchestrator.context_manager,
             self._build_prompt(objective), step_type="plan",
             base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.INITIAL_PLAN,
         )
         if self.orchestrator.verbose:
-            print(f"[DEBUG] plan_decision bruto: {decision}")
-        if not isinstance(decision, dict):
+            print(f"[DEBUG] plan_decision admitido: {decision!r}")
+        if isinstance(decision, DirectResponseDecision):
+            self.orchestrator._emit("direct_response", {})
+            return PlanBuildResult(direct_answer=decision.answer)
+        if isinstance(decision, LegacyModelDecision):
+            return build_legacy_initial(self, decision)
+        if not isinstance(decision, InitialPlanDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        obligations_ok, reviewed_obligations = self._review_obligations(decision)
+        obligations_ok, reviewed_obligations = self._review_obligations(
+            decision.obligations, source="initial_plan"
+        )
         if not obligations_ok:
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        direct_answer = self._direct_answer(decision)
-        if direct_answer is not None:
-            self.orchestrator._emit("direct_response", {})
-            return PlanBuildResult(direct_answer=direct_answer)
-        plan = self._normalize_decision(decision)
+        plan = self._project_plan(decision)
         if plan is None:
             return PlanBuildResult()
         if self.orchestrator.verbose:
             print(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
         return PlanBuildResult(
-            plan=cast(List[Dict[str, Any]], plan),
+            plan=plan,
             obligations=reviewed_obligations,
-            continue_after_plan=decision.get("action") == "continue_after_plan",
             planning_view=self._last_planning_view,
         )
 
     def _review_obligations(
-        self, decision: Dict[str, Any]
+        self,
+        obligations: Sequence[Any] | None,
+        *,
+        source: str,
     ) -> tuple[bool, Optional[List[Dict[str, Any]]]]:
-        if "obligations" not in decision:
+        if obligations is None:
             return True, None
         state = getattr(self.orchestrator, "agent_state", None)
         report_reviewer = getattr(state, "review_task_obligations_report", None)
@@ -107,12 +135,12 @@ class PlanBuilder:
             return False, None
         try:
             if callable(report_reviewer):
-                reviewed = report_reviewer(decision["obligations"], source="initial_plan")
+                reviewed = report_reviewer(obligations, source=source)
                 accepted = reviewed.accepted
             else:
                 reviewed = cast(Callable[..., Any], legacy_reviewer)(
-                    decision["obligations"],
-                    source="initial_plan",
+                    obligations,
+                    source=source,
                     collect_rejections=True,
                 )
                 accepted = tuple(reviewed)
@@ -129,32 +157,35 @@ class PlanBuilder:
         summarize = getattr(responder, "_tool_results_summary", None)
         if callable(summarize):
             summary = str(summarize())
-        decision = self.orchestrator.context_manager.ask_model(
+        decision = ask_model_decision_with_compatibility(
+            self.orchestrator.context_manager,
             self._build_continuation_prompt(objective, summary, effect_evidence, observation_references, build_plan_progress(self.orchestrator.agent_state)),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION,
         )
-        action = decision.get("action")
-        if action == "complete_without_effect":
-            index = decision.get("observation_index")
-            if set(decision) != {"action", "observation_index"} or type(index) is not int or index < 1:
-                return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-            return PlanBuildResult(waiver_observation_index=index, kind=PlanningDecisionKind.COMPLETE)
-        if action == "blocked":
-            reason = decision.get("reason")
-            if set(decision) != {"action", "reason"}:
-                return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        if isinstance(decision, EffectObservationCompleteWithoutEffectDecision):
             return PlanBuildResult(
-                blocked_answer=reason.strip() if isinstance(reason, str) and reason.strip() else "Efeito solicitado permanece pendente.",
+                waiver_observation_index=decision.observation_index,
+                kind=PlanningDecisionKind.COMPLETE,
+            )
+        if isinstance(decision, EffectObservationBlockedDecision):
+            return PlanBuildResult(
+                blocked_answer=(
+                    decision.reason.strip()
+                    if decision.reason.strip()
+                    else "Efeito solicitado permanece pendente."
+                ),
                 kind=PlanningDecisionKind.BLOCK,
             )
-        if action not in {"execute", "continue_after_plan"} or set(decision) != {"action", "plan"}:
+        if isinstance(decision, LegacyModelDecision):
+            return build_legacy_continuation(self, decision)
+        if not isinstance(decision, EffectObservationExecuteDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        plan = self._normalize_decision(decision)
+        plan = self._project_plan(decision)
         return (
             PlanBuildResult(
-                plan=cast(List[Dict[str, Any]], plan),
+                plan=plan,
                 kind=PlanningDecisionKind.EXECUTE,
                 planning_view=self._last_planning_view,
             )
@@ -171,63 +202,38 @@ class PlanBuilder:
         summarize = getattr(responder, "_tool_results_summary", None)
         if callable(summarize):
             summary = str(summarize())
-        decision = self.orchestrator.context_manager.ask_model(
+        decision = ask_model_decision_with_compatibility(
+            self.orchestrator.context_manager,
             self._build_reasoning_boundary_prompt(objective, summary, build_plan_progress(self.orchestrator.agent_state)),
             step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.REASONING_BOUNDARY_CONTINUATION,
         )
-        if not isinstance(decision, dict):
-            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        terminal = self._reasoning_boundary_terminal_result(decision)
-        if terminal is not None:
-            return terminal
-        return self._reasoning_boundary_execute_result(decision)
-
-    @staticmethod
-    def _optional_boundary_obligations(
-        decision: Dict[str, Any],
-    ) -> tuple[bool, Optional[List[Dict[str, Any]]]]:
-        if "obligations" not in decision:
-            return True, None
-        obligations = decision["obligations"]
-        return (isinstance(obligations, list), obligations if isinstance(obligations, list) else None)
-
-    def _reasoning_boundary_terminal_result(
-        self, decision: Dict[str, Any]
-    ) -> Optional[PlanBuildResult]:
-        action = decision.get("action")
-        if action not in {"complete", "blocked"}:
-            return None
-        allowed = {"action", "reason"}
-        if action == "complete":
-            allowed.add("obligations")
-        if set(decision) not in ({"action", "reason"}, allowed):
-            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        obligations_ok, review_obligations = self._optional_boundary_obligations(decision)
-        reason = decision.get("reason")
-        if not obligations_ok or not isinstance(reason, str) or not reason.strip():
-            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        if action == "complete":
+        if isinstance(decision, ReasoningBoundaryCompleteDecision):
             return PlanBuildResult(
-                review_obligations=review_obligations,
+                review_obligations=(
+                    list(decision.obligations)
+                    if decision.obligations is not None
+                    else None
+                ),
                 kind=PlanningDecisionKind.COMPLETE,
             )
-        return PlanBuildResult(blocked_answer=reason.strip(), kind=PlanningDecisionKind.BLOCK)
-
-    def _reasoning_boundary_execute_result(self, decision: Dict[str, Any]) -> PlanBuildResult:
-        allowed = {"action", "plan", "obligations"}
-        if decision.get("action") != "execute" or set(decision) not in ({"action", "plan"}, allowed):
+        if isinstance(decision, ReasoningBoundaryBlockedDecision):
+            return PlanBuildResult(
+                blocked_answer=decision.reason.strip(), kind=PlanningDecisionKind.BLOCK
+            )
+        if not isinstance(decision, ReasoningBoundaryExecuteDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        obligations_ok, review_obligations = self._optional_boundary_obligations(decision)
-        if not obligations_ok:
-            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        plan = self._normalize_decision(decision)
+        plan = self._project_plan(decision)
         if not plan:
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         return PlanBuildResult(
-            plan=cast(List[Dict[str, Any]], plan),
-            review_obligations=review_obligations,
+            plan=plan,
+            review_obligations=(
+                list(decision.obligations)
+                if decision.obligations is not None
+                else None
+            ),
             kind=PlanningDecisionKind.EXECUTE,
             planning_view=self._last_planning_view,
         )
@@ -266,29 +272,13 @@ class PlanBuilder:
     def _plan_progress(self) -> str:
         return build_plan_progress(self.orchestrator.agent_state)
 
-    @staticmethod
-    def _direct_answer(decision: Dict[str, Any]) -> Optional[str]:
-        if decision.get("action") != "direct_response":
+    def _project_plan(self, decision: Any) -> Optional[Plan]:
+        """Decode an admitted decision into the live typed plan value."""
+
+        try:
+            plan = Plan.from_decision(
+                decision, new_step_id=continuation_step_id(self)
+            )
+        except PlanDecodeError:
             return None
-        answer = decision.get("answer")
-        return answer.strip() if isinstance(answer, str) and answer.strip() else None
-
-    def _normalize_decision(self, decision: Dict[str, Any]) -> Optional[List[Any]]:
-        plan = decision.get("plan")
-        if isinstance(plan, list):
-            return plan or None
-        single = self._single_step(decision)
-        return [single] if single else None
-
-    def _single_step(self, decision: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        tool = decision.get("tool")
-        args = decision.get("args", {})
-        if not isinstance(args, dict):
-            args = {}
-        if not tool and "file_path" in decision:
-            tool, args = "file_reader", decision
-        elif not tool and "target" in decision:
-            tool, args = "code_analyzer", decision
-        if self.orchestrator.verbose and tool:
-            print(f"[DEBUG] Plano extraído de campos soltos: {tool}")
-        return {"tool": tool, "args": args} if tool else None
+        return plan if plan else None

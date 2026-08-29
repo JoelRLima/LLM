@@ -7,6 +7,7 @@ from typing import Any, Dict, Mapping, cast
 
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
+from agent.planning.plan_model import Plan, deserialize_plan, serialize_plan
 from agent.state_checkpoint import progression_checkpoint, restore_progression
 from agent.state_checkpoint_history import restore_histories as _restore_histories
 from agent.state_checkpoint_restore import (
@@ -38,7 +39,7 @@ class StateCheckpointMixin:
             checkpoint_history.append(entry)
         raw: Dict[str, Any] = {
             "objective": self.objective,
-            "plan": self.plan,
+            "plan": serialize_plan(self.plan) if isinstance(self.plan, Plan) else self.plan,
             "plan_identity": self.plan_identity,
             "plan_step": self.plan_step,
             "current_step_id": self.current_step_id,
@@ -99,10 +100,22 @@ def _restore_objective(state: Any, data: Mapping[str, Any]) -> str | None:
 
 
 def _restore_plan(state: Any, data: Mapping[str, Any]) -> None:
-    raw_plan = data.get("plan", state.plan) or []
-    if not isinstance(raw_plan, list) or any(not isinstance(step, Mapping) for step in raw_plan):
-        raise ValueError("Checkpoint plan is structurally invalid.")
-    state.set_plan(raw_plan)
+    raw_plan = data.get("plan")
+    if raw_plan is None:
+        raw_plan = state.plan if isinstance(state.plan, Plan) else []
+    if isinstance(raw_plan, Plan):
+        restored_plan = raw_plan
+    else:
+        if not isinstance(raw_plan, list) or any(not isinstance(step, Mapping) for step in raw_plan):
+            raise ValueError("Checkpoint plan is structurally invalid.")
+        try:
+            restored_plan = deserialize_plan(
+                raw_plan,
+                new_step_id=getattr(state, "_new_step_id", None),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Checkpoint plan is structurally invalid.") from exc
+    state.set_plan(restored_plan)
     identity = data.get("plan_identity")
     if state.plan and isinstance(identity, str) and identity.strip():
         state.plan_identity = identity

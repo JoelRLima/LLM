@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+from agent.llm.admitted_decisions import (
+    ToolDiscoveryDecision,
+    ask_typed_model_decision,
+)
 from agent.llm.decision_contract import ModelRequestContract
 from agent.llm.tool_discovery_contract import (
     MAX_DISCLOSED_TOOLS,
@@ -152,7 +156,6 @@ def render_tool_guidance(
     )
     return "\n\n".join(pieces)
 
-
 def render_selected_tool_detail(
     orchestrator: Any,
     *,
@@ -168,7 +171,6 @@ def render_selected_tool_detail(
     validate_planning_view_binding(context, view, planner_kind)
     selected = context.present(planner_kind, {tool_name})
     return cast(str, selected.render_detailed(context_limit=_context_limit(orchestrator)))
-
 
 def _result(
     index_view: PlanningPresentationSnapshot,
@@ -199,7 +201,6 @@ def _result(
         structured_decision_valid=structured_decision_valid,
     )
 
-
 def _selection_prompt(
     objective: str,
     planner_kind: str,
@@ -224,9 +225,9 @@ def _selection_prompt(
         + index_view.render_index(context_limit=context_limit)
     )
 
-
 def _ask_selection(orchestrator: Any, prompt: str) -> Any:
-    return orchestrator.context_manager.ask_model(
+    return ask_typed_model_decision(
+        orchestrator.context_manager,
         prompt,
         step_type="tool_discovery",
         request_contract=ModelRequestContract.TOOL_DISCOVERY,
@@ -248,11 +249,10 @@ def _validate_selection(
     decision: Any,
     eligible_names: frozenset[str],
 ) -> tuple[frozenset[str], bool, bool]:
-    structured_valid = valid_tool_discovery(decision)
+    structured_valid = isinstance(decision, ToolDiscoveryDecision)
     if not structured_valid:
         return frozenset(), False, False
-    raw_names = cast(dict[str, Any], decision)["tools"]
-    names = frozenset(cast(list[str], raw_names))
+    names = frozenset(decision.tools)
     return names, True, names.issubset(eligible_names)
 
 

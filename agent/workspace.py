@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.code.discovery import ProjectDiscovery
 from agent.code.validation import ProjectValidator, ValidationStatus
+from agent.planning.plan_model import Plan, ToolPlanStep
 from agent.runtime import paths
 from agent.runtime.config import DEFAULT_VALIDATION
 from agent.runtime.logging import logger
@@ -88,15 +89,23 @@ class WorkspaceManager:
             raise ValueError(f"Caminho fora do workspace: {file_path}") from exc
         return candidate
 
-    def create_restore_point(self, plan: list) -> None:
+    def create_restore_point(
+        self, plan: Plan | list[Mapping[str, Any]]
+    ) -> None:
         if not plan:
             return
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         restore_dir = self.restore_points_dir / timestamp
 
         for step in plan:
-            tool = step.get("tool", "") if isinstance(step, dict) else ""
-            args = step.get("args", {}) if isinstance(step, dict) else {}
+            if isinstance(step, ToolPlanStep):
+                tool, args = step.tool, step.args
+            elif isinstance(step, Mapping):
+                # Explicit legacy/checkpoint caller boundary.
+                tool = step.get("tool", "")
+                args = step.get("args", {})
+            else:
+                continue
             if tool not in {"file_writer", "shell", "python_executor"}:
                 continue
             raw_path = args.get("file_path") or args.get("target") or ""
