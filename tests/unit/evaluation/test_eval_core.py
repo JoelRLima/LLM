@@ -11,7 +11,7 @@ from agent.evaluation import (
     ExecutionObservation,
     ScenarioExpectation,
 )
-from agent.evaluation.block7_execution_evidence import critical_incidents
+from agent.evaluation.execution_evidence import critical_incidents
 from agent.evaluation.regressions import CURATED_REGRESSION_SET
 
 

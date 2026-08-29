@@ -113,7 +113,7 @@ def test_clean_install_resolves_declared_dependencies() -> None:
     assert "--force-reinstall" in offline_command
 
 
-def test_block7_installed_summary_is_bounded_and_maps_existing_properties() -> None:
+def test_evaluation_installed_summary_is_bounded_and_maps_existing_properties() -> None:
     summary = installed_acceptance_summary(status="passed", mode="clean-acceptance")
 
     assert summary["evidence_level"] == "installed_deterministic"

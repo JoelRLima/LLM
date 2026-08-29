@@ -380,7 +380,7 @@ def test_static_discovery_contract_is_projected_without_duplicate_rules() -> Non
     disclosure_source = (repository / "agent/planning/tool_disclosure.py").read_text(
         encoding="utf-8"
     )
-    block7_source = (repository / "agent/evaluation/block7_tool_guidance.py").read_text(
+    guidance_source = (repository / "agent/evaluation/scripted_tool_guidance.py").read_text(
         encoding="utf-8"
     )
 
@@ -388,5 +388,5 @@ def test_static_discovery_contract_is_projected_without_duplicate_rules() -> Non
     assert "MAX_DISCLOSED_TOOLS = " not in disclosure_source
     assert "len(raw_names)" not in disclosure_source
     assert "len(tools) <= 8" not in disclosure_source
-    assert "limit: int = 8" not in block7_source
+    assert "limit: int = 8" not in guidance_source
     assert MAX_DISCLOSED_TOOLS == 8

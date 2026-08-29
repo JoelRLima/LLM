@@ -1,4 +1,4 @@
-"""Explicit compatibility edge for pre-Wave-2 replan callers.
+"""Explicit compatibility edge for earlier replan callers.
 
 These helpers are not used by the canonical recovery path. They preserve old
 test/admin construction shapes while keeping the task-owned canonical budget

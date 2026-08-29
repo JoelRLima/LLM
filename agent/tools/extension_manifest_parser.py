@@ -144,7 +144,7 @@ def load_extension_manifest_bytes(
     *,
     mode: ManifestParserMode = "strict_catalog",
 ) -> ExtensionManifest:
-    """Validate exact bytes under either Gate 1 or strict catalog semantics."""
+    """Validate exact bytes under strict catalog semantics."""
 
     if not isinstance(content, bytes):
         raise TypeError("content deve ser bytes")

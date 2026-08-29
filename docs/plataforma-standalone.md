@@ -52,6 +52,6 @@ configura automaticamente o bootstrap CURRENT.
 
 ## Maturidade
 
-Marcos 1 e 2 estão fechados. Marco 3 Block A está GREEN LOCAL; Blocks B/C não
-foram concluídos e Standalone V1 ainda não foi declarada. A visão de uma
-integração futura com o TCC permanece objetivo, não capability CURRENT.
+O core standalone está GREEN LOCAL para os contratos cobertos; a aceitação com
+modelo real permanece gated e Standalone V1 ainda não foi declarada. A visão de
+uma integração futura com o TCC permanece objetivo, não capability CURRENT.

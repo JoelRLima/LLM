@@ -58,10 +58,10 @@ não é usado como diretório gravável.
 
 ## Estado
 
-Marcos 1 e 2 estão fechados. No Marco 3, o Block A de avaliação está **GREEN
-LOCAL**; Blocks B e C não foram concluídos e a Standalone V1 ainda não foi
-declarada. Portanto, testes determinísticos atuais não devem ser interpretados
-como benchmark de modelo real ou gate final de release.
+A avaliação determinística atual está **GREEN LOCAL** para os contratos e
+cenários cobertos. Ela não deve ser interpretada como benchmark de modelo real
+nem como gate final de release; a execução com modelo real permanece separada,
+explicitamente autorizada e não é iniciada por estes comandos.
 
 ## Documentação e contribuição
 

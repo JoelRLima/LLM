@@ -4,12 +4,12 @@ import json
 
 import pytest
 
-from agent.evaluation.block7 import H_SERIES
 from agent.evaluation.real_model_readiness import (
     REAL_MODEL_READINESS_VERSION,
     readiness_campaign_policy,
     real_model_readiness_scenarios,
 )
+from agent.evaluation.scenario_contracts import H_SERIES
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import (
     ModelMessage,

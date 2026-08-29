@@ -203,12 +203,12 @@ validam cada path relevante contra a raiz antes de executar; tentativas de
 acessar uma sentinela externa falham sem expor seu conteúdo.
 
 Isso não é uma sandbox forte: `pytest`, por exemplo, executa código do projeto,
-que continua sujeito às permissões do processo do usuário. A fase 1 fecha
-escapes diretos de argumento; isolamento de processo permanece uma limitação
-deliberada, enquanto a autorização unificada por capability já está aplicada
-no gateway.
+que continua sujeito às permissões do processo do usuário. A validação atual
+fecha escapes diretos de argumento; isolamento de processo permanece uma
+limitação deliberada, enquanto a autorização unificada por capability já está
+aplicada no gateway.
 
-### Estado da capability de comandos no Marco 1
+### Estado atual da capability de comandos
 
 Nota de estado atual: a autorizacao unificada por capability nao e trabalho
 futuro; ela ja e aplicada pelo `ToolInvocationGateway`, com grants de

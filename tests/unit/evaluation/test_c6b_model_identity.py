@@ -3,10 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
-from agent.evaluation.block7_analysis_verdict import verdict
-from agent.evaluation.block7_campaign_report import _observed_identity_summary
-from agent.evaluation.block7_execution_evidence import identity_drift
-from agent.evaluation.block7_identity import campaign_config, model_config_identity, resume_compatible
+from agent.evaluation.analysis_verdict import verdict
+from agent.evaluation.campaign_report import _observed_identity_summary
+from agent.evaluation.evaluation_identity import campaign_config, model_config_identity, resume_compatible
+from agent.evaluation.execution_evidence import identity_drift
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 from agent.llm.identity import declared_provider_identity
@@ -205,7 +205,7 @@ def test_c6b_campaign_summary_keeps_large_ordered_identity_lossless() -> None:
 
 def test_c6b_resume_compares_ordered_full_identity_even_when_last_id_matches(tmp_path: Path) -> None:
     root = Path(__file__).parents[3]
-    config = campaign_config(root, output_dir=tmp_path / "block7")
+    config = campaign_config(root, output_dir=tmp_path / "evaluation")
     previous = _record(["model-A", "model-B"])["evidence"]["observed_model_identity"]
     changed = _record(["model-C", "model-B"])["evidence"]["observed_model_identity"]
     existing = deepcopy(config)
@@ -218,7 +218,7 @@ def test_c6b_resume_compares_ordered_full_identity_even_when_last_id_matches(tmp
 
 def test_c6b_resume_rejects_changed_external_identity(tmp_path: Path) -> None:
     root = Path(__file__).parents[3]
-    config = campaign_config(root, output_dir=tmp_path / "block7")
+    config = campaign_config(root, output_dir=tmp_path / "evaluation")
     existing = deepcopy(config)
     current = deepcopy(config)
     existing["observed_model_identity"] = _record(
@@ -231,19 +231,19 @@ def test_c6b_resume_rejects_changed_external_identity(tmp_path: Path) -> None:
     assert not resume_compatible(existing, current)
 
 
-def test_c6b_frozen_external_identity_is_part_of_phase5_model_config_resume_identity(
+def test_c6b_frozen_external_identity_is_part_of_live_model_config_resume_identity(
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).parents[3]
     existing_identity = model_config_identity(root, external_identity="frozen-provider-A")
     current_identity = model_config_identity(root, external_identity="frozen-provider-B")
     existing = {
-        **campaign_config(root, output_dir=tmp_path / "block7"),
+        **campaign_config(root, output_dir=tmp_path / "evaluation"),
         "model_identity": existing_identity,
         "model_config_fingerprint": existing_identity["model_config_fingerprint"],
     }
     current = {
-        **campaign_config(root, output_dir=tmp_path / "block7"),
+        **campaign_config(root, output_dir=tmp_path / "evaluation"),
         "model_identity": current_identity,
         "model_config_fingerprint": current_identity["model_config_fingerprint"],
     }
@@ -253,8 +253,8 @@ def test_c6b_frozen_external_identity_is_part_of_phase5_model_config_resume_iden
     assert not resume_compatible(existing, current)
 
 
-def test_c6b_phase5_cli_freezes_external_identity_without_provider_probe(tmp_path: Path, monkeypatch) -> None:
-    import scripts.run_block7 as run_block7
+def test_c6b_live_model_cli_freezes_external_identity_without_provider_probe(tmp_path: Path, monkeypatch) -> None:
+    import scripts.run_evaluation_campaign as run_evaluation_campaign
     from agent.llm.providers import openai_compatible
 
     class StubProvider:
@@ -270,20 +270,20 @@ def test_c6b_phase5_cli_freezes_external_identity_without_provider_probe(tmp_pat
         return {}
 
     monkeypatch.setattr(openai_compatible, "OpenAICompatibleGateway", StubProvider)
-    monkeypatch.setattr(run_block7, "run_real_model_campaign", fake_real_campaign)
+    monkeypatch.setattr(run_evaluation_campaign, "run_real_model_campaign", fake_real_campaign)
 
-    assert run_block7.main(
+    assert run_evaluation_campaign.main(
         [
-            "--phase",
-            "5",
+            "--mode",
+            "live-model",
             "--qwen-loaded",
             "--external-identity",
-            "frozen-phase5-provider",
+            "frozen-live-model-provider",
             "--output",
-            str(tmp_path / "phase5.json"),
+            str(tmp_path / "live-model.json"),
         ]
     ) == 0
     assert captured == {
-        "external_identity": "frozen-phase5-provider",
-        "gateway_external_identity": "frozen-phase5-provider",
+        "external_identity": "frozen-live-model-provider",
+        "gateway_external_identity": "frozen-live-model-provider",
     }

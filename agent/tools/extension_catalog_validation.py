@@ -253,7 +253,7 @@ def validate_catalog_document(
     document: ExtensionCatalogDocument,
     host_flavor: HostFlavor,
 ) -> tuple[CatalogDiagnostic, ...]:
-    """Preserve the Gate 2.2 diagnostic-only API."""
+    """Preserve the diagnostic-only catalog API."""
 
     return tuple(diagnostic for _, diagnostic in observe_catalog_document(document, host_flavor))
 

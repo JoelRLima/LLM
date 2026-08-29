@@ -10,7 +10,7 @@ from typing import Any
 
 
 class RecoveryScope(str, Enum):
-    """The bounded recovery mechanisms proven in the Wave-2 inventory."""
+    """The bounded recovery mechanisms provided by the runtime."""
 
     STRUCTURED_RESPONSE_REPAIRS = "structured_response_repairs"
     SEMANTIC_SELECTION_REPAIRS = "semantic_selection_repairs"

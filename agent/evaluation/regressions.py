@@ -1,4 +1,4 @@
-"""Curated permanent reproducers for the Marco 3 Regression Set.
+"""Curated permanent reproducers for the regression set.
 
 The cases intentionally point to focused pytest nodes rather than wrapping the
 test runner in a second execution framework.  Capability evals use the real

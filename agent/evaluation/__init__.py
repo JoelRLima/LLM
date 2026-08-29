@@ -1,19 +1,6 @@
 """Avaliação determinística das capacidades do agente."""
 
 from agent.evaluation.agent_executor import AgentApplicationScenarioExecutor
-from agent.evaluation.block7 import (
-    H_SERIES,
-    H_SERIES_VERSION,
-    CausalFailureClass,
-    EvidenceLevel,
-    HRunEvidence,
-    HSeriesArm,
-    HSeriesScenario,
-    RepetitionPolicy,
-    digest_fixture,
-    sanitize_evidence,
-    validate_h_series,
-)
 from agent.evaluation.contracts import (
     CapabilityScenario,
     EvaluationFailure,
@@ -31,6 +18,19 @@ from agent.evaluation.real_model_readiness import (
 )
 from agent.evaluation.regressions import CURATED_REGRESSION_SET, RegressionCase
 from agent.evaluation.runner import CapabilityEvaluator, EvaluationSetReport, ScenarioExecutor
+from agent.evaluation.scenario_contracts import (
+    H_SERIES,
+    H_SERIES_VERSION,
+    CausalFailureClass,
+    EvidenceLevel,
+    HRunEvidence,
+    HSeriesArm,
+    HSeriesScenario,
+    RepetitionPolicy,
+    digest_fixture,
+    sanitize_evidence,
+    validate_h_series,
+)
 from agent.evaluation.trace import RecordingGateway
 
 __all__ = [

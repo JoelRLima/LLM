@@ -163,7 +163,7 @@ projeto; confinamento de argumentos impede escapes diretos, mas não transforma
 o processo em isolamento forte. A capability `process` deve ser tratada como
 autoridade relevante.
 
-### Closure do Marco 1: ShellSkill reduzida
+### Estado atual: ShellSkill reduzida
 
 Na closure atual, `shell` e um **restricted validation/read-only command
 runner**. A superficie model-actionable exata e `ruff check` com caminhos do

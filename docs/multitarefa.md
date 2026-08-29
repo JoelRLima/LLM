@@ -149,7 +149,7 @@ O scheduler monta batches dos nós prontos:
 - cancelamento impede novos nós.
 
 Para o perfil `low_vram_8gb`, a skill usa `max_io_concurrency=2`. Processos de
-validação continuam sequenciais e chamadas de modelo usam gate 1.
+validação continuam sequenciais e chamadas de modelo usam uma única vaga.
 
 Antes de qualquer efeito, o scheduler rejeita nós que solicitam capacidades não
 concedidas pelo contexto pai. O executor de código também verifica que a action

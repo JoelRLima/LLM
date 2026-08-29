@@ -13,8 +13,8 @@
     "max_lines": 300,
     "allowed": {
       "agent/code/workflow_application.py": 341,
-      "agent/evaluation/block7_gateway_logic.py": 537,
-      "agent/evaluation/block7_scenarios.py": 688,
+      "agent/evaluation/scripted_gateway_logic.py": 537,
+      "agent/evaluation/h_series_scenarios.py": 688,
       "agent/planning/capability_manifest.py": 301,
       "agent/planning/completion_observations.py": 318,
       "agent/planning/step_executor.py": 307,

@@ -40,7 +40,7 @@ jobs:
           mypy --platform linux
           mypy --platform win32
 
-      - name: Marco 1 POSIX shell lifecycle
+      - name: POSIX shell lifecycle
         if: runner.os == 'Linux'
         run: >
           pytest -q

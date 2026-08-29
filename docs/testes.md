@@ -32,22 +32,21 @@ Comandos:
 git diff --check
 ```
 
-Para a prova arquitetural PRE-B7, acrescente os gates focados R1–R8, a matriz
-cross-root e a preparação determinística do Block 7:
+Para a prova arquitetural atual, acrescente os gates focados R1–R8, a matriz
+cross-root e a preparação determinística da campanha de avaliação:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q tests\unit\test_phase6_cross_root_matrix.py
-.venv\Scripts\python.exe -m pytest -q tests\unit\evaluation\test_r8_release_alignment.py tests\unit\evaluation\test_block7_corrective.py
+.venv\Scripts\python.exe -m pytest -q tests\unit\test_cross_root_matrix.py
+.venv\Scripts\python.exe -m pytest -q tests\unit\evaluation\test_r8_release_alignment.py tests\unit\evaluation\test_campaign_corrective.py
 .venv\Scripts\python.exe scripts\verify_installed_package.py --summary-json .audit-local\installed-acceptance.json
-.venv\Scripts\python.exe scripts\run_block7.py --phase dry-run --output .audit-local\out\block7-dry-run.json --write-config
-.venv\Scripts\python.exe scripts\run_block7.py --phase 4 --output .audit-local\out\block7-phase4.json
-.venv\Scripts\python.exe scripts\run_block7.py --phase corrective-ready --output .audit-local\out\block7-corrective-ready.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode adversarial-audit --output .audit-local\out\evaluation-adversarial-audit.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode corrective-ready --output .audit-local\out\evaluation-corrective-ready.json
 ```
 
-O caminho scripted não chama modelo vivo. Ele deve registrar H1–H12, validar o
-envelope antes do veredicto e terminar em
-`BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`; `INCONCLUSIVE` com
-`REAL_MODEL_EPOCH_REQUIRED` é esperado nessa etapa.
+O caminho scripted não chama modelo vivo. Ele valida o envelope antes do
+veredicto e mantém `INCONCLUSIVE` com `REAL_MODEL_EPOCH_REQUIRED`, pois a
+identidade e a evidência do modelo real ainda são pré-condições dessa etapa.
 
 Para desenvolvimento sem baixar ferramentas de build, acrescente
 `--no-build-isolation`. `--offline-diagnostic` reutiliza packages do ambiente e
@@ -110,11 +109,10 @@ As seis fixtures em `tests/fixtures/capabilities/` representam analyze,
 generate, modify, repair, review e multitask. O evaluator não aceita uma
 resposta textual convincente sem os efeitos esperados.
 
-O Marco 3 Block A acrescenta um core separado em `agent/evaluation/`: são **9**
-Capability Scenarios curados e **8** Regression Cases. O harness scripted prova
-efeitos e controle determinísticos sobre `AgentApplication`; não é evidência de
-qualidade de modelo real. Block A está GREEN LOCAL, Blocks B/C não foram
-concluídos e Standalone V1 ainda não foi declarada.
+A camada de avaliação em `agent/evaluation/` contém **9** Capability Scenarios
+curados e **8** Regression Cases. O harness scripted prova efeitos e controle
+determinísticos sobre `AgentApplication`; não é evidência de qualidade de
+modelo real.
 
 ## Runtime, skills e multitarefa
 

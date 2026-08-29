@@ -1,14 +1,14 @@
-"""Versioned Marco 3 readiness view over the existing capability scenarios."""
+"""Versioned model-readiness view over the existing capability scenarios."""
 
 from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
 
-from agent.evaluation.block7 import H_SERIES
 from agent.evaluation.contracts import CapabilityScenario
+from agent.evaluation.scenario_contracts import H_SERIES
 
-REAL_MODEL_READINESS_VERSION = "M3B-RMR-V1"
+REAL_MODEL_READINESS_VERSION = "CAPABILITY-READINESS-V1"
 READINESS_REPETITIONS_PER_SCENARIO = 3
 
 _READINESS_SOURCE: tuple[tuple[str, str, str], ...] = (

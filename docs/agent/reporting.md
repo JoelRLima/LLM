@@ -25,7 +25,7 @@ resposta do modelo dos fatos observáveis: tools executadas ou negadas, arquivos
 validação, rollback, causa e caminho do relatório. A satisfação do objetivo
 continua sendo responsabilidade de um avaliador externo.
 
-No Block 7, a projeção preserva a identidade declarada pelo runtime e a
+Na campanha de avaliação, a projeção preserva a identidade declarada pelo runtime e a
 identidade observada na resposta do provider em campos diferentes. Não há
 identidade observada disponível implícita: a ausência é registrada e produz
 resultado inconclusivo quando ela é pré-condição do veredicto. Contagens físicas

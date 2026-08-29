@@ -1,4 +1,4 @@
-"""Curated Marco 3 capability scenarios.
+"""Curated capability scenarios.
 
 These are intentionally small and declarative.  Runtime-specific preparation
 (for example creating a local Git repository or registering an extension) is

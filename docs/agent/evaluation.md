@@ -54,11 +54,11 @@ nem na planning view, que nenhuma tool é invocada e que o workspace não muda.
 O caminho positivo de modificação é protegido separadamente pelos testes de
 `code_task`.
 
-## Block 7 installed acceptance projection
+## Installed acceptance projection
 
 O gate canônico continua sendo `scripts/verify_installed_package.py`, que
 constrói e executa o wheel fora do checkout. Com `--summary-json`, ele também
-emite uma projeção limitada em `schema_version=1` para o relatório do Block 7;
+emite uma projeção limitada em `schema_version=1` para o relatório da campanha;
 essa projeção mapeia import/entry point, leitura/busca, resposta direta, shell e
 Git, `code_task`, rollback, bypass do writer, stdio/authority, terminalidade,
 measurement e isolamento do checkout. Ela não cria uma segunda jornada nem
@@ -66,13 +66,13 @@ reinterpreta o status canônico da aplicação.
 
 O modo de aceitação limpa com resolução de dependências é obrigatório para
 qualquer veredicto final. `--offline-diagnostic` é útil para diagnóstico, mas
-não satisfaz esse gate. A execução aceita deve ocorrer fora do checkout e a
-projeção limitada deve ser preservada com `--summary-json` quando o resultado
-for consumido pelo Block 7.
+não satisfaz esse requisito. A execução aceita deve ocorrer fora do checkout e
+a projeção limitada deve ser preservada com `--summary-json` quando o resultado
+for consumido pela campanha.
 
-## Block 7 deterministic closure
+## Deterministic campaign closure
 
-O envelope versionado do Block 7 é validado antes de calcular taxas,
+O envelope versionado da campanha é validado antes de calcular taxas,
 classificações ou veredicto. Cada relatório e cada run preservam separadamente
 `declared_model_identity` e `observed_model_identity`; identidade observada
 indisponível é explícita e mantém o resultado inconclusivo, nunca é inferida a
@@ -82,33 +82,32 @@ canônico do runtime, não de histórico ou cache projetado.
 O caminho sem modelo real é executado por:
 
 ```powershell
-.venv\Scripts\python.exe scripts\run_block7.py --phase dry-run --output .audit-local\out\block7-dry-run.json --write-config
-.venv\Scripts\python.exe scripts\run_block7.py --phase 4 --output .audit-local\out\block7-phase4.json
-.venv\Scripts\python.exe scripts\run_block7.py --phase corrective-ready --output .audit-local\out\block7-corrective-ready.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode adversarial-audit --output .audit-local\out\evaluation-adversarial-audit.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode corrective-ready --output .audit-local\out\evaluation-corrective-ready.json
 ```
 
-Esse caminho deve concluir H1–H18 com 110 execuções válidas, sem chamada de
+Esse caminho deve concluir H1–H19 com 164 execuções válidas, sem chamada de
 modelo vivo. Seu veredicto é deliberadamente `INCONCLUSIVE` com
-`REAL_MODEL_EPOCH_REQUIRED`; a saída final da preparação é
-`BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`. O comando de Phase 5 não é
-parte da preparação determinística.
+`REAL_MODEL_EPOCH_REQUIRED`; a execução live-model permanece fora da
+preparação determinística e exige autorização explícita.
 
-## Block 7 H-series real-model acceptance
+## H-series real-model acceptance
 
-O conjunto versionado `B7-HSERIES-V1.2` contém exatamente H1–H18 e é executado
+O conjunto versionado `H-SERIES-V1.5` contém exatamente H1–H19 e é executado
 pelo mesmo `CapabilityEvaluator` usado pelos cenários existentes. O recorder de
 modelo é observacional: não altera requests, respostas, retries, orçamento ou
 status canônico. Cada repetição usa workspace, home e identidade de tarefa
 novos, com fixture determinístico e evidência limitada/sanitizada.
 
-A política final exige cinco repetições válidas para H2. H1 e H3–H18 começam
+A política final exige cinco repetições válidas para H2. H1 e H3–H19 começam
 com três; cenários unânimes terminam em três e cenários mistos recebem
 exatamente duas repetições adicionais, sem rerun-until-pass. Falhas válidas são
 classificadas como `MODEL_VARIANCE`, `MODEL_CAPABILITY`, `HARNESS_DEFECT`,
 `RUNTIME_DEFECT`, `ENVIRONMENTAL` ou `UNKNOWN`; a análise final deve deixar
 `UNKNOWN` em zero para falhas.
 
-O epoch `B7-REAL-MODEL-EPOCH-1` avaliou o perfil Qwen local declarado
+O epoch `REAL-MODEL-EPOCH-1` avaliou o perfil Qwen local declarado
 `local_8gb` (`openai_compatible`, modelo `default`, temperatura `0.2`,
 `max_tokens=2048`, timeout de 300 segundos). Foram registrados 43 runs válidos:
 14 passaram e 29 foram classificados como `MODEL_CAPABILITY`; o veredicto
@@ -122,12 +121,12 @@ continua sendo insuficiente por si só. Um rerun de modelo real permanece
 authorization-gated:
 
 ```powershell
-.venv\Scripts\python.exe scripts\run_block7.py --phase 5 --qwen-loaded --profile local_8gb --epoch B7-REAL-MODEL-EPOCH-2 --output reports\acceptance\block7\epoch-2.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode live-model --qwen-loaded --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output reports\acceptance\h-series\epoch-2.json
 ```
 
-## Block 7 corrective campaign contract
+## Corrective campaign contract
 
-The Sol corrective runner is the canonical adaptive state machine: H1 counts
+The corrective runner is the canonical adaptive state machine: H1 counts
 paired scenario repetitions separately from arm executions; H2 always has five
 valid repetitions; other scenarios stop after unanimous three or extend mixed
 three-of-three samples by exactly two. Environmental attempts are preserved but
@@ -138,12 +137,12 @@ The report carries a semantic candidate manifest for runtime, evaluation,
 fixtures, provider configuration, and the campaign runner, plus a stable
 non-secret model/config fingerprint. The deterministic analyzer computes rates,
 incidents, causal counts, and one policy verdict from the preserved records;
-it does not call an LLM judge. `B7-REAL-MODEL-EPOCH-1` remains
+it does not call an LLM judge. `REAL-MODEL-EPOCH-1` remains
 `DIAGNOSTIC / SUPERSEDED_FOR_FINAL_SCORING` and is never combined with
-`B7-REAL-MODEL-EPOCH-2`.
+`REAL-MODEL-EPOCH-2`.
 
 The command above is authorization-gated. Deterministic preparation must stop
-at `BLOCK 7 CORRECTIVE READY — QWEN RELOAD REQUIRED`; the command is not run
+at the deterministic readiness artifact; the live-model command is not run
 until the user confirms that Qwen has been reloaded and explicitly authorizes
 the new epoch.
 
@@ -185,16 +184,16 @@ Measurement é coletado pelo executor e projetado no export de eval; o dado
 continua pertencendo ao runtime/reporting, não a uma métrica inventada pelo
 grader. Veja [reporting.md](reporting.md).
 
-## Estado do Marco 3
+## Estado atual
 
 ```text
-Block A = GREEN LOCAL
-Block 7 deterministic closure = GREEN LOCAL
-Block 7 real-model epoch = GATED / NOT RUN
+Evaluation core = GREEN LOCAL
+Deterministic campaign = GREEN LOCAL
+Real-model campaign = GATED / NOT RUN
 Standalone V1 = NOT YET DECLARED
 ```
 
-Block A entrega core reutilizável, 9 capability scenarios, 8 regression cases,
+O core de avaliação entrega 9 capability scenarios, 8 regression cases,
 grading determinístico, agregação/export e reuso de measurement. A preparação
-determinística do Block 7 e a aceitação fresh-wheel estão verdes localmente;
+determinística da campanha e a aceitação fresh-wheel estão verdes localmente;
 isso não declara benchmark real-model nem release final de modelo.

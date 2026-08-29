@@ -36,12 +36,12 @@ mas não substitui `PlanValidator`, authority ou schema de tools.
 
 ## Scripted/offline versus modelo real
 
-Testes e o Block A podem injetar respostas scripted preservando a application e
-o gateway reais. Isso prova controle, efeitos e grading de maneira
-determinística; não prova robustez de um modelo. `UnavailableModelGateway`
+Testes e a campanha determinística podem injetar respostas scripted preservando
+a application e o gateway reais. Isso prova controle, efeitos e grading de
+maneira determinística; não prova robustez de um modelo. `UnavailableModelGateway`
 permite falha explícita quando nenhum backend está disponível. Evidência
-real-model exige profile, endpoint, modelo e condições registrados e ainda não
-foi concluída no Marco 3 Block B.
+real-model exige profile, endpoint, modelo e condições registrados e permanece
+uma etapa separada da avaliação determinística.
 
 ## Non-guarantees
 

@@ -6,18 +6,18 @@ from typing import Any
 
 import pytest
 
-from agent.evaluation.block7 import H_SERIES, CausalFailureClass, EvidenceLevel
-from agent.evaluation.block7_analysis import CampaignAnalysisError, analyze_campaign, validate_campaign_report
-from agent.evaluation.block7_analysis_metrics import metric_summary
-from agent.evaluation.block7_analysis_verdict import installed_acceptance_state
-from agent.evaluation.block7_execution_attribution import classify_failure
-from agent.evaluation.block7_execution_evidence import critical_incidents, identity_drift
-from agent.evaluation.block7_identity import fake_model_identity, resume_compatible
-from agent.evaluation.block7_oracle import deterministic_oracle_evidence
+from agent.evaluation.analysis import CampaignAnalysisError, analyze_campaign, validate_campaign_report
+from agent.evaluation.analysis_metrics import metric_summary
+from agent.evaluation.analysis_verdict import installed_acceptance_state
+from agent.evaluation.evaluation_identity import fake_model_identity, resume_compatible
+from agent.evaluation.execution_attribution import classify_failure
+from agent.evaluation.execution_evidence import critical_incidents, identity_drift
+from agent.evaluation.oracle import deterministic_oracle_evidence
+from agent.evaluation.scenario_contracts import H_SERIES, CausalFailureClass, EvidenceLevel
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 from agent.reporting.metrics import project_run_metrics
-from tests.unit.evaluation.test_block7_corrective import _analysis_report
+from tests.unit.evaluation.test_campaign_corrective import _analysis_report
 
 
 def _observation(*, status: str, success: bool, outcome: dict[str, Any] | None = None) -> Any:
@@ -134,21 +134,21 @@ def test_observed_identity_is_explicit_and_resume_bound() -> None:
     expected = fake_model_identity()
     observed = {
         "available": True,
-        "provider_model_id": "block7-scripted",
-        "actual_provider_model_id": "block7-scripted",
-        "provider": "block7-scripted",
-        "model": "block7-scripted",
-        "endpoint_identity": "in-process://block7-scripted",
+        "provider_model_id": "scripted-evaluation",
+        "actual_provider_model_id": "scripted-evaluation",
+        "provider": "scripted-evaluation",
+        "model": "scripted-evaluation",
+        "endpoint_identity": "in-process://scripted-evaluation",
     }
     assert not identity_drift(expected, observed)
-    changed = dict(observed, provider_model_id="block7-scripted-v2", actual_provider_model_id="block7-scripted-v2", model="block7-scripted-v2")
+    changed = dict(observed, provider_model_id="scripted-evaluation-v2", actual_provider_model_id="scripted-evaluation-v2", model="scripted-evaluation-v2")
     assert identity_drift(expected, changed)
     assert identity_drift(expected, {"available": False})
 
     report = _analysis_report()
     current = dict(report)
     current["observed_model_identity"] = dict(report["observed_model_identity"])
-    current["observed_model_identity"]["provider_model_id"] = "block7-scripted-v2"
+    current["observed_model_identity"]["provider_model_id"] = "scripted-evaluation-v2"
     assert not resume_compatible(report, current)
 
 

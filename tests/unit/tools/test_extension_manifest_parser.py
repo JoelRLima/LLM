@@ -78,7 +78,7 @@ def test_protocol_error_is_typed() -> None:
         load_extension_manifest_bytes(json.dumps(payload).encode("utf-8"))
 
 
-def test_gate1_module_still_exports_protocol_and_path_wrapper(tmp_path) -> None:
+def test_manifest_module_exports_protocol_and_path_wrapper(tmp_path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(_payload()), encoding="utf-8")
 
@@ -90,7 +90,7 @@ def test_gate1_module_still_exports_protocol_and_path_wrapper(tmp_path) -> None:
     assert result.id == "demo.extension"
 
 
-def test_gate1_path_api_preserves_nan_and_duplicate_key_behavior(tmp_path) -> None:
+def test_path_api_preserves_nan_and_duplicate_key_behavior(tmp_path) -> None:
     manifest_path = tmp_path / "manifest.json"
     payload = _payload()
     payload["tools"][0]["schema"] = {"default": float("nan")}  # type: ignore[index]
@@ -123,7 +123,7 @@ def test_gate1_path_api_preserves_nan_and_duplicate_key_behavior(tmp_path) -> No
         ),
     ],
 )
-def test_gate1_path_api_preserves_historical_value_error_messages(
+def test_path_api_preserves_historical_value_error_messages(
     tmp_path, mutation: dict[str, object], message: str
 ) -> None:
     manifest_path = tmp_path / "manifest.json"
@@ -136,7 +136,7 @@ def test_gate1_path_api_preserves_historical_value_error_messages(
     assert str(caught.value) == message
 
 
-def test_gate1_path_api_preserves_unicode_decode_error(tmp_path) -> None:
+def test_path_api_preserves_unicode_decode_error(tmp_path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_bytes(b"\xff")
 
@@ -144,7 +144,7 @@ def test_gate1_path_api_preserves_unicode_decode_error(tmp_path) -> None:
         load_extension_manifest(manifest_path)
 
 
-def test_gate1_path_api_preserves_root_and_incomplete_messages(tmp_path) -> None:
+def test_path_api_preserves_root_and_incomplete_messages(tmp_path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text("[]", encoding="utf-8")
     with pytest.raises(ValueError, match="Manifest de extensão deve ser um objeto JSON"):

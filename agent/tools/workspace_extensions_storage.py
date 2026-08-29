@@ -21,7 +21,7 @@ from agent.tools.workspace_extensions_codec import (
 
 
 class WorkspaceExtensionsStorage:
-    """Reuse Gate 2.2 atomic primitives with a workspace-specific codec."""
+    """Reuse atomic catalog primitives with a workspace-specific codec."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)

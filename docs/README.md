@@ -138,9 +138,9 @@ condições de retirada.
 ## Estado de maturidade
 
 ```text
-Marcos 1 e 2 = CLOSED
-Marco 3 Block A = GREEN LOCAL
-Marco 3 Block B = NOT COMPLETED
-Marco 3 Block C = NOT COMPLETED
+Execution and planning core = CLOSED
+Evaluation core = GREEN LOCAL
+Real-model acceptance = GATED / NOT RUN
+Additional evaluation work = NOT COMPLETED
 Standalone V1 = NOT YET DECLARED
 ```

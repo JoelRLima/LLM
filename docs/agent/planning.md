@@ -62,4 +62,5 @@ hierárquico legado continua sequencial por compartilhar sessão e `AgentState`.
 O modelo pode escolher entre alternativas apresentadas e influenciar a persona
 dentro das policies estáticas, mas não registrar tools, alterar descriptor,
 criar grants ou promover output em authority. Robustez comparativa de planners
-e modelos ainda não foi demonstrada; isso pertence ao Marco 3 Block B.
+e modelos ainda não foi demonstrada; isso pertence a trabalho futuro separado
+do contrato de planning.

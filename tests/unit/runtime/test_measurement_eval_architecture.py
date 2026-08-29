@@ -61,7 +61,7 @@ def test_eval_code_does_not_own_task_budget_call_accounting() -> None:
 def test_readiness_set_reuses_existing_scenarios_contract_and_has_no_runner() -> None:
     source = (ROOT / "agent/evaluation/real_model_readiness.py").read_text(encoding="utf-8")
 
-    assert "from agent.evaluation.block7 import H_SERIES" in source
+    assert "from agent.evaluation.scenario_contracts import H_SERIES" in source
     assert "CapabilityScenario" in source
     assert "REAL_MODEL_READINESS_VERSION" in source
     assert "class ReadinessRunner" not in source
@@ -75,5 +75,5 @@ def test_eval_readiness_does_not_add_production_grammar_phrases() -> None:
     ]
     assert grammar_files
 
-    assert not _containing(grammar_files, "M3B-RMR-V1")
+    assert not _containing(grammar_files, "CAPABILITY-READINESS-V1")
     assert not _containing(grammar_files, "real_model_readiness")
