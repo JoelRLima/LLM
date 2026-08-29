@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any, Callable, Dict, Optional
 
 from agent.approval import ApprovalPort, RequireExplicitApproval
-from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
+from agent.runtime.budget import TaskBudgetLedger
 from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
@@ -20,6 +20,7 @@ from agent.tools.contracts import (
 from agent.tools.invocation_activity import InvocationActivityMixin
 from agent.tools.invocation_execution import InvocationExecutionMixin
 from agent.tools.invocation_lifecycle import InvocationAttempt
+from agent.tools.invocation_observability import InvocationObservabilityMixin
 from agent.tools.invocation_support import (
     check_authority,
     denial,
@@ -32,13 +33,20 @@ from agent.tools.mode_enforcement import check_capability_ceiling, required_capa
 from agent.tools.tool_registry import ToolRegistry
 
 
-class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
+class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin, InvocationObservabilityMixin):
     def __init__(
         self,
         registry: ToolRegistry,
         *,
         event_emitter: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        event_dispatcher: Any = None,
+        event_sink: Any = None,
+        correlation_provider: Callable[[], Any] | None = None,
+        event_fields_provider: Callable[[], Any] | None = None,
         state_recorder: Optional[Callable[[str, Dict[str, Any], ToolResult], None]] = None,
+        correlated_state_recorder: Optional[
+            Callable[[str, Dict[str, Any], ToolResult, Dict[str, Any] | None], None]
+        ] = None,
         incident_recorder: Optional[Callable[[Dict[str, Any]], None]] = None,
         state_recorder_is_canonical: bool = True,
         approval_port: ApprovalPort | None = None,
@@ -48,7 +56,11 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
     ) -> None:
         self.registry = registry
         self.event_emitter = event_emitter
+        self.event_dispatcher = event_dispatcher or event_sink
+        self.correlation_provider = correlation_provider
+        self.event_fields_provider = event_fields_provider
         self.state_recorder = state_recorder
+        self.correlated_state_recorder = correlated_state_recorder
         self.incident_recorder = incident_recorder
         self.state_recorder_is_canonical = bool(state_recorder_is_canonical)
         self.approval_port = approval_port or RequireExplicitApproval()
@@ -65,9 +77,6 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
 
     def set_budget_ledger(self, budget_ledger: TaskBudgetLedger) -> None:
         self.budget_ledger = budget_ledger
-
-    def set_incident_recorder(self, incident_recorder: Callable[[Dict[str, Any]], None] | None) -> None:
-        self.incident_recorder = incident_recorder
 
     def set_capability_ceiling(
         self,
@@ -115,23 +124,17 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin):
         if not self._begin_invocation(
             invocation.invocation_id,
             task_id=invocation.task_id,
+            run_id=request.run_id,
+            root_task_id=request.root_task_id,
+            parent_task_id=request.parent_task_id,
+            node_id=request.node_id,
             cancellation_event=invocation.cancellation_event,
         ):
             return self._duplicate_or_retry_block(invocation, record_result)
         try:
-            if self.budget_ledger is not None:
-                try:
-                    self.budget_ledger.reserve_tool_call()
-                except BudgetExhausted as exc:
-                    exhausted = denial(
-                        invocation,
-                        ToolStatus.BLOCKED,
-                        BudgetExhausted.code,
-                        str(exc),
-                        executed=False,
-                    )
-                    self._complete_denial(attempt, exhausted, False, invocation.tool_name, invocation.args)
-                    return exhausted
+            preflight_denial = self._preflight_denial(request, invocation, attempt, record_result)
+            if preflight_denial is not None:
+                return preflight_denial
             descriptor, authorization_error = self._authorize(
                 invocation,
                 active_skills,

@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 
 from agent.runtime.outcome_taxonomy import OperationalStatus
 from agent.tools.extension_state import validate_extension_id
+from agent.tools.invocation_request import ToolInvocationRequest as ToolInvocationRequest
 from agent.tools.json_snapshot import FrozenJsonObject as FrozenJsonObject
 from agent.tools.json_snapshot import freeze_json_like, thaw_json_like
 from agent.tools.provenance import normalize_argument_provenance
@@ -170,39 +171,6 @@ class ToolInvocation:
             return thaw_json_like(object.__getattribute__(self, "args"))
         return object.__getattribute__(self, name)
 
-@dataclass(frozen=True, slots=True)
-class ToolInvocationRequest:
-    """Validated invocation boundary prepared before gateway integration."""
-    invocation_id: str
-    tool_name: str
-    arguments: Mapping[str, Any] = field(default_factory=dict)
-    timeout_seconds: Optional[int] = None
-    task_id: Optional[str] = field(default=None, kw_only=True)
-
-    def __post_init__(self) -> None:
-        if self.invocation_id is not None and type(self.invocation_id) is not str:
-            raise TypeError("invocation_id deve usar str exata")
-        if self.tool_name is not None and type(self.tool_name) is not str:
-            raise TypeError("tool_name deve usar str exata")
-        if not isinstance(self.invocation_id, str) or not self.invocation_id.strip():
-            raise ValueError("invocation_id deve ser uma string não vazia")
-        if not isinstance(self.tool_name, str) or not self.tool_name.strip():
-            raise ValueError("tool_name deve ser uma string não vazia")
-        if not isinstance(self.arguments, Mapping):
-            raise TypeError("arguments deve ser um mapping")
-        object.__setattr__(self, "arguments", freeze_json_like(dict(self.arguments)))
-        if self.timeout_seconds is not None and (
-            type(self.timeout_seconds) is not int or self.timeout_seconds <= 0
-        ):
-            raise ValueError("timeout_seconds deve ser um inteiro positivo")
-        if self.task_id is not None and (
-            not isinstance(self.task_id, str) or not self.task_id.strip()
-        ):
-            raise ValueError("task_id deve ser uma string não vazia")
-    def __getattribute__(self, name: str) -> Any:
-        if name == "arguments":
-            return thaw_json_like(object.__getattribute__(self, "arguments"))
-        return object.__getattribute__(self, name)
 @dataclass(frozen=True)
 class AuthorizationContext:
     """Immutable grants for one invocation."""

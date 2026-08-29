@@ -36,9 +36,14 @@ def install_compatibility_gateway(
         registry,
         budget_ledger=orchestrator.task_budget,
         approval_port=RequireExplicitApproval(),
-        event_emitter=orchestrator._emit,
-        state_recorder=lambda name, args, result: orchestrator.agent_state.record_tool_result(
-            name, args, result
+        event_dispatcher=orchestrator.event_dispatcher,
+        correlation_provider=lambda: orchestrator.run_correlation,
+        event_fields_provider=lambda: {
+            "plan_id": getattr(orchestrator.agent_state, "plan_identity", None),
+            "step_id": getattr(orchestrator.agent_state, "current_step_id", None),
+        },
+        correlated_state_recorder=lambda name, args, result, correlation: orchestrator.agent_state.record_tool_result(
+            name, args, result, correlation=correlation
         ),
         incident_recorder=orchestrator.agent_state.record_execution_incident,
     )

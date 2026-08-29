@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from agent.reporting.metrics import (
     DURATION_KEYS,
@@ -18,16 +18,19 @@ def aggregate_metrics(
     tool_calls: int | None = None,
     history_records: int | None = None,
     budget_snapshot: Any = None,
+    snapshot: Any = None,
 ) -> Dict[str, Any]:
     """Compatibility adapter for callers that still consume a mapping."""
 
-    return project_run_metrics(
-        entries,
-        tools_called,
-        tool_calls=tool_calls,
-        history_records=history_records,
-        budget_snapshot=budget_snapshot,
-    ).to_dict()
+    if snapshot is None:
+        return project_run_metrics(
+            entries,
+            tools_called,
+            tool_calls=tool_calls,
+            history_records=history_records,
+            budget_snapshot=budget_snapshot,
+        ).to_dict()
+    return cast(Dict[str, Any], snapshot.metrics.to_dict())
 
 
 def render_markdown(report: Dict[str, Any]) -> str:
@@ -37,7 +40,7 @@ def render_markdown(report: Dict[str, Any]) -> str:
     cause = raw_cause if isinstance(raw_cause, dict) else {}
     reason_code = cause.get("code") or report.get("error")
     lines = [
-        f"# Relatório da Tarefa {report.get('task_id', '')}",
+        f"# Relatório da Tarefa {report.get('report_id', '')}",
         "",
         f"- **Objetivo:** {report.get('objective')}",
         f"- **Sucesso:** {'sim' if report.get('success') else 'não'}",

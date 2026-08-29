@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import io
 import threading
-import time
 from collections.abc import Callable
 from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
-from typing import Any, Iterable, Mapping, cast
-from uuid import uuid4
+from typing import Any, Iterable, Mapping
 
 from agent.application_cleanup import abort_startup, release_resources
-from agent.application_result import AgentRunResult
+from agent.application_result import AgentRunResult, finalize_application_result
 from agent.application_shutdown import require_application_invocations_drained
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import LegacyPayloadGateway
@@ -22,10 +20,8 @@ from agent.orchestrator import Orchestrator
 from agent.planning.completion_observations import publish_outcome
 from agent.planning.task_completion import mark_terminal_blocked
 from agent.reporting.run_receipt import (
-    canonical_public_status,
     derive_error,
     derive_status,
-    finalize_run_result,
     public_exception_message,
 )
 from agent.runtime.budget import BudgetExhausted
@@ -153,9 +149,14 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 application_authority=extension_bootstrap.authority,
                 task_authority=selected_task_authority,
                 approval_port=selected_approval,
-                event_emitter=orchestrator._emit,
-                state_recorder=lambda name, args, res: orchestrator.agent_state.record_tool_result(
-                    name, args, res
+                event_dispatcher=orchestrator.event_dispatcher,
+                correlation_provider=lambda: orchestrator.run_correlation,
+                event_fields_provider=lambda: {
+                    "plan_id": getattr(orchestrator.agent_state, "plan_identity", None),
+                    "step_id": getattr(orchestrator.agent_state, "current_step_id", None),
+                },
+                correlated_state_recorder=lambda name, args, res, correlation: orchestrator.agent_state.record_tool_result(
+                    name, args, res, correlation=correlation
                 ),
                 incident_recorder=orchestrator.agent_state.record_execution_incident,
             )
@@ -205,7 +206,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
             raise RuntimeError("A aplicação já foi encerrada.")
         captured = io.StringIO()
         self._task_attempted = True
-        vars(self.orchestrator).update({"_last_failure_code": None, "_last_failure_layer": None, "_run_id": None, "_task_start_time": 0.0, "_run_metric_recorded": False, "_metrics_start_line": None})
+        vars(self.orchestrator).update({"_last_failure_code": None, "_last_failure_layer": None, "_run_id": None, "_run_correlation": None, "_task_start_time": 0.0, "_run_metric_recorded": False, "_metrics_start_line": None, "_canonical_run_snapshot": None})
         try:
             output_context = redirect_stdout(captured) if stream_callback is None else nullcontext()
             callback_args = {} if stream_callback is None else {"stream_callback": stream_callback}
@@ -252,23 +253,16 @@ class AgentApplication(ApplicationOperationalModeMixin):
         receipt: dict[str, Any] | None = None,
         report_path: str | None = None,
     ) -> AgentRunResult:
-        effective_status = canonical_public_status(self.orchestrator, status)
-        record_metric = getattr(self.orchestrator, "_record_canonical_run_metric", None)
-        if callable(record_metric):
-            metrics_recorder = getattr(self.orchestrator, "metrics_recorder", None)
-            if metrics_recorder is not None:
-                if not getattr(self.orchestrator, "_run_id", None):
-                    self.orchestrator._run_id = uuid4().hex
-                if not getattr(self.orchestrator, "_task_start_time", 0.0):
-                    self.orchestrator._task_start_time = time.monotonic()
-                if getattr(self.orchestrator, "_metrics_start_line", None) is None:
-                    self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
-            record_metric(effective_status == "succeeded")
-        return cast(AgentRunResult, finalize_run_result(
-            AgentRunResult, self.workspace.root, self.orchestrator, effective_status, answer,
-            error=error, diagnostics=diagnostics, metadata=metadata,
-            receipt=receipt, report_path=report_path,
-        ))
+        return finalize_application_result(
+            self,
+            status,
+            answer,
+            error=error,
+            diagnostics=diagnostics,
+            metadata=metadata,
+            receipt=receipt,
+            report_path=report_path,
+        )
     def cancel(self) -> None:
         if not self._closed:
             self.orchestrator.cancel_task()

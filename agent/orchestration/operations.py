@@ -2,13 +2,21 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, cast
 
-from agent.contracts import AgentEvent, EventData, ToolArgs
+from agent.contracts import EventData, ToolArgs
 from agent.error_handler import ErrorHandler
+from agent.orchestration.operations_lifecycle import event_plan_step_ids, handle_step_failure, is_task_solved
+from agent.orchestration.operations_reporting import (
+    count_metrics_lines,
+    get_metrics_for_task,
+    record_canonical_run_metric,
+)
 from agent.orchestration.operations_tools import build_tools_description
+from agent.reporting.run_snapshot import CanonicalRunSnapshot
 from agent.reporting.task_report import TaskReportBuilder
+from agent.runtime.event_dispatch import append_state_event
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
-from agent.runtime.operational_outcome import project_operational_outcome
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 
 
@@ -24,6 +32,7 @@ class OrchestratorOperations:
     metrics_recorder: Any
     _metrics_start_line: int
     _run_id: str | None
+    event_dispatcher: Any
     _task_failed: bool
     _cancelled: bool
     cancellation_token: Any
@@ -103,14 +112,10 @@ class OrchestratorOperations:
         gateway = getattr(self, "tool_invocation_gateway", None)
         quiescent = getattr(gateway, "are_invocations_quiescent", None)
         if callable(quiescent) and not quiescent(mutating_only=True):
-            self.agent_state.events.append(
-                {
-                    "type": "checkpoint_deferred",
-                    "step": self.agent_state.plan_step,
-                    "data": {
-                        "reason": "task-owned mutating invocation is not quiescent",
-                    },
-                }
+            OrchestratorOperations._emit_checkpoint_event(
+                self,
+                "checkpoint_deferred",
+                {"reason": "task-owned mutating invocation is not quiescent"},
             )
             logger.warning("Checkpoint deferred while a mutating invocation is active.")
             return False
@@ -124,61 +129,81 @@ class OrchestratorOperations:
         # success by completing without an exception; every explicit false or
         # other value remains a failed confirmation.
         if saved is not True and saved is not None:
-            self.agent_state.events.append(
-                {
-                    "type": "checkpoint_persistence_failed",
-                    "step": self.agent_state.plan_step,
-                    "data": {"reason": "checkpoint write was not confirmed"},
-                }
+            OrchestratorOperations._emit_checkpoint_event(
+                self,
+                "checkpoint_persistence_failed",
+                {"reason": "checkpoint write was not confirmed"},
             )
             return False
         return True
+
+    def _emit_checkpoint_event(self, event_type: str, data: EventData) -> None:
+        emit = getattr(self, "_emit", None)
+        if callable(emit):
+            emit(event_type, data)
+            return
+        # Lightweight compatibility doubles do not install the orchestrator
+        # owner/dispatcher. They still use the one named legacy adapter.
+        append_state_event(
+            self.agent_state,
+            RuntimeEvent.from_legacy_fields(
+                event_type,
+                data,
+                step=getattr(self.agent_state, "plan_step", 0),
+            ),
+        )
 
     def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
         return cast(Optional[Dict[str, Any]], self.checkpoint_manager.load())
 
     def _delete_checkpoint(self) -> None:
         self.checkpoint_manager.delete()
-
     def _emit(self, event_type: str, data: Optional[EventData] = None) -> None:
-        event: AgentEvent = {"type": event_type, "step": self.agent_state.plan_step, "data": data or {}}
-        self.agent_state.events.append(event)
+        ensure_correlation = getattr(self, "_ensure_run_correlation", None)
+        if not callable(ensure_correlation):
+            raise RuntimeError("orchestrator does not expose the canonical runtime correlation owner")
+        correlation = ensure_correlation()
+        raw_data = data or {}
+        plan_id, step_id = event_plan_step_ids(raw_data, self.agent_state)
+        event = RuntimeEvent.from_fields(
+            event_type,
+            correlation,
+            raw_data,
+            plan_id=plan_id,
+            step_id=step_id,
+            step=self.agent_state.plan_step,
+        )
+        dispatcher = getattr(self, "event_dispatcher", None)
+        if dispatcher is not None:
+            dispatcher.emit(event)
+        else:
+            # Narrow fallback for lightweight compatibility doubles; the real
+            # Orchestrator always installs RuntimeEventDispatcher.
+            append_state_event(self.agent_state, event)
         if self.verbose:
             print(f"[{event_type}] {data}")
-        if event_type in {"step_completed", "step_failed", "step_skipped"}:
+        if dispatcher is None and event.kind.value in {"step_completed", "step_failed", "step_skipped"}:
             self._save_checkpoint()
 
     def _log_metric(self, entry: Dict[str, Any]) -> None:
         enriched = dict(entry)
-        if getattr(self, "_run_id", None) is not None:
+        correlation = getattr(self, "_run_correlation", None)
+        if correlation is not None:
+            enriched.setdefault("run_id", correlation.run_id)
+            enriched.setdefault("root_task_id", correlation.root_task_id)
+            enriched.setdefault("task_id", correlation.task_id)
+        elif getattr(self, "_run_id", None) is not None:
             enriched.setdefault("run_id", self._run_id)
         self.metrics_recorder.log_metric(enriched)
 
     def _record_canonical_run_metric(self, success: bool) -> None:
-        """Project the already-derived application outcome into JSONL once."""
-        if getattr(self, "_run_metric_recorded", False):
-            return
-        run_id = getattr(self, "_run_id", None)
-        started = getattr(self, "_task_start_time", 0.0)
-        if not run_id or not started:
-            return
-        import time
-        from datetime import datetime, timezone
-
-        self._log_metric({
-            "type": "run",
-            "metric_type": "run",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "duration_ms": max(0, int((time.monotonic() - started) * 1000)),
-            "success": bool(success),
-        })
-        self._run_metric_recorded = True
+        record_canonical_run_metric(self, success)
 
     def _count_metrics_lines(self) -> int:
-        return int(self.metrics_recorder.count_lines())
+        return count_metrics_lines(self)
 
     def _get_metrics_for_task(self) -> List[Dict[str, Any]]:
-        return cast(List[Dict[str, Any]], self.metrics_recorder.get_entries_since(self._metrics_start_line))
+        return get_metrics_for_task(self)
 
     def _generate_task_report(
         self,
@@ -187,6 +212,7 @@ class OrchestratorOperations:
         status: str | None = None,
         error: str | None = None,
         receipt: Dict[str, Any] | None = None,
+        snapshot: CanonicalRunSnapshot | None = None,
     ) -> str | None:
         try:
             config = (self.session.config or {}).get("task_report", {}) or {}
@@ -198,10 +224,11 @@ class OrchestratorOperations:
             builder = TaskReportBuilder(self.session.config)
             report = builder.build_report(
                 self.agent_state,
-                self._get_metrics_for_task(),
+                [] if snapshot is not None else self._get_metrics_for_task(),
                 final_answer,
                 canonical_outcome={"status": status, "error": error},
                 receipt=receipt,
+                snapshot=snapshot,
             )
             path = builder.save_report(report, format=config.get("format", "json"))
             saved_path = str(path)
@@ -213,21 +240,7 @@ class OrchestratorOperations:
             return None
 
     def _is_task_solved(self) -> bool:
-        from agent.planning.task_completion import review_task_completion
-
-        review = review_task_completion(self)
-        outcome = project_operational_outcome(
-            self.agent_state,
-            task_failed=bool(getattr(self, "_task_failed", False)),
-            cancelled=bool(getattr(self, "_cancelled", False)),
-        )
-        return (
-            review.accepted
-            and getattr(self.agent_state, "terminal_disposition", None)
-            in {"complete", "succeeded"}
-            and outcome.terminal_status == "succeeded"
-            and not outcome.pending_effects
-        )
+        return is_task_solved(self)
 
     @staticmethod
     def _sanitize_error(error_message: str) -> str:
@@ -242,15 +255,7 @@ class OrchestratorOperations:
         *,
         failure: FailureFact | None = None,
     ) -> str:
-        return str(ErrorHandler.handle_step_failure(
-            step_index,
-            reason,
-            tool,
-            args,
-            emit_callback=self._emit,
-            verbose=self.verbose,
-            failure=failure,
-        ))
+        return handle_step_failure(self, step_index, reason, tool, args, failure=failure)
 
     def _purge_stale_context(self) -> None:
         ErrorHandler.purge_stale_context(self.session, self.verbose)

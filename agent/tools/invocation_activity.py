@@ -17,6 +17,10 @@ class InvocationActivityMixin:
         invocation_id: str,
         *,
         task_id: str | None = None,
+        run_id: str | None = None,
+        root_task_id: str | None = None,
+        parent_task_id: str | None = None,
+        node_id: str | None = None,
         mutating: bool = False,
         cancellation_event: Any = None,
     ) -> bool:
@@ -28,6 +32,10 @@ class InvocationActivityMixin:
             self._active_invocations.add(invocation_id)
             self._active_invocation_meta[invocation_id] = {
                 "task_id": task_id,
+                "run_id": run_id,
+                "root_task_id": root_task_id,
+                "parent_task_id": parent_task_id,
+                "node_id": node_id,
                 "mutating": bool(mutating),
                 "cancellation_event": cancellation_event,
             }

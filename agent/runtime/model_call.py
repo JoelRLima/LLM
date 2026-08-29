@@ -50,6 +50,8 @@ class ModelCallService:
             cancellation=getattr(session, "cancellation_token", CancellationToken()),
             model_profile=profile,
             limits=RuntimeLimits.from_config(config),
+            correlation=getattr(session, "run_correlation", None),
+            event_sink=getattr(session, "event_sink", None) or None,
             metrics_sink=SessionMetricsSink(session),
             budget_ledger=session.budget_ledger,
             metadata=metadata,

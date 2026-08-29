@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
+from uuid import uuid4
 
 from agent.reporting.metrics import project_run_metrics
 from agent.reporting.observation_evidence import project_tool_observation
@@ -17,6 +17,13 @@ from agent.reporting.public_projection import (
     reconcile_report_status,
 )
 from agent.reporting.public_safety import sanitize_public_text
+from agent.reporting.run_projection_facts import thaw_projection
+from agent.reporting.task_report_events import (
+    extract_replan_events,
+    project_event,
+    project_events,
+    project_planner_outcome,
+)
 from agent.reporting.task_report_rendering import render_markdown
 from agent.runtime.paths import REPORTS_DIR
 
@@ -39,35 +46,66 @@ class TaskReportBuilder:
         metrics_entries: List[Dict[str, Any]],
         final_answer: str,
         *,
-        canonical_outcome: Dict[str, Any],
+        canonical_outcome: Dict[str, Any] | None = None,
         receipt: Dict[str, Any] | None = None,
+        snapshot: Any = None,
     ) -> Dict[str, Any]:
-        requested_status = canonical_outcome.get("status")
-        if not isinstance(requested_status, str) or not requested_status:
-            raise ValueError("canonical_outcome.status is required")
-        status = reconcile_report_status(agent_state, requested_status)
-        metrics_entries = metrics_entries or []
-        history = getattr(agent_state, "tool_history", None) or []
-        events = getattr(agent_state, "events", None) or []
-        steps = self._build_steps(history)
-        start, end = self._resolve_time_range(events, metrics_entries)
+        if snapshot is None:
+            if canonical_outcome is None:
+                raise TypeError("canonical_outcome is required without a canonical snapshot")
+            requested_status = canonical_outcome.get("status")
+            if not isinstance(requested_status, str) or not requested_status:
+                raise ValueError("canonical_outcome.status is required")
+            status = reconcile_report_status(agent_state, requested_status)
+            report_metrics = self._aggregate_task_metrics(
+                agent_state, metrics_entries or [], len(getattr(agent_state, "tool_history", None) or [])
+            )
+            operational_outcome = canonical_effect_projection(
+                agent_state, status
+            )["operational_outcome"]
+            metrics_entries = metrics_entries or []
+            history = getattr(agent_state, "tool_history", None) or []
+            events = getattr(agent_state, "events", None) or []
+            steps = self._build_steps(history)
+            start, end = self._resolve_time_range(events, metrics_entries)
+            objective = getattr(agent_state, "objective", None)
+            planner_outcome = self._project_planner_outcome(events)
+            event_summary = self._project_events(events)
+            replan_events = self._extract_replan_events(events)
+        else:
+            status = str(snapshot.status)
+            canonical_outcome = {
+                "status": status,
+                "error": (
+                    snapshot.failure_fact.message
+                    if snapshot.failure_fact is not None
+                    else snapshot.diagnostics[0].get("message")
+                    if snapshot.diagnostics and isinstance(snapshot.diagnostics[0], Mapping)
+                    else None
+                ),
+            }
+            report_metrics = snapshot.metrics.to_dict()
+            operational_outcome = snapshot.operational_outcome.to_dict()
+            facts = snapshot.projection_facts
+            steps = [thaw_projection(item) for item in facts.report_steps]
+            start = facts.report_start_time
+            end = facts.report_end_time
+            objective = facts.objective
+            planner_outcome = facts.planner_outcome
+            event_summary = [thaw_projection(item) for item in facts.event_summary]
+            replan_events = [thaw_projection(item) for item in facts.replan_events]
         answer = final_answer or ""
-        run_ids = sorted({
-            str(entry["run_id"])
-            for entry in metrics_entries
-            if isinstance(entry, dict) and entry.get("run_id")
-        })
         report = {
-            "task_id": self._generate_task_id(),
-            "objective": getattr(agent_state, "objective", None),
+            "report_id": self._generate_report_id(),
+            "objective": objective,
             "success": status == "succeeded",
             "start_time": start,
             "end_time": end,
             "steps": steps,
-            "planner_outcome": self._project_planner_outcome(events),
-            "event_summary": self._project_events(events),
-            "replan_events": self._extract_replan_events(events),
-            "metrics": self._aggregate_task_metrics(agent_state, metrics_entries, len(history)),
+            "planner_outcome": planner_outcome,
+            "event_summary": event_summary,
+            "replan_events": replan_events,
+            "metrics": report_metrics,
             "errors": self._collect_errors(steps),
             "final_answer_preview": sanitize_public_text(answer[:MAX_PREVIEW_CHARS]),
         }
@@ -76,15 +114,23 @@ class TaskReportBuilder:
         report["error"] = (
             sanitize_public_text(raw_error) if raw_error is not None else None
         )
-        report["operational_outcome"] = canonical_effect_projection(
-            agent_state, status
-        )["operational_outcome"]
-        if len(run_ids) == 1:
-            report["run_id"] = run_ids[0]
+        report["operational_outcome"] = operational_outcome
+        if snapshot is not None:
+            correlation = snapshot.correlation
+            report.update(
+                {
+                    "run_id": correlation.run_id,
+                    "root_task_id": correlation.root_task_id,
+                    "task_id": correlation.task_id,
+                }
+            )
         if receipt is not None:
-            receipt_projection = reconcile_receipt_projection(agent_state, status, receipt)
-            report["operational_outcome"] = receipt_projection["operational_outcome"]
-            report["receipt"] = receipt_projection
+            if snapshot is None:
+                receipt_projection = reconcile_receipt_projection(agent_state, status, receipt)
+                report["operational_outcome"] = receipt_projection["operational_outcome"]
+                report["receipt"] = receipt_projection
+            else:
+                report["receipt"] = dict(receipt)
         return report
 
     @staticmethod
@@ -92,15 +138,21 @@ class TaskReportBuilder:
         agent_state: Any,
         metrics_entries: List[Dict[str, Any]],
         history_records: int,
+        *,
+        snapshot: Any = None,
     ) -> Dict[str, Any]:
-        ledger = getattr(agent_state, "budget_ledger", None)
-        snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
-        return project_run_metrics(
-            metrics_entries,
-            tool_calls=(getattr(snapshot, "tool_calls", None) if snapshot is not None else None),
-            history_records=history_records,
-            budget_snapshot=snapshot,
-        ).to_dict()
+        if snapshot is not None:
+            return cast(Dict[str, Any], snapshot.metrics.to_dict())
+        if snapshot is None:
+            ledger = getattr(agent_state, "budget_ledger", None)
+            budget_snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
+            return cast(Dict[str, Any], project_run_metrics(
+                metrics_entries,
+                tool_calls=(getattr(budget_snapshot, "tool_calls", None) if budget_snapshot is not None else None),
+                history_records=history_records,
+                budget_snapshot=budget_snapshot,
+            ).to_dict())
+        return cast(Dict[str, Any], snapshot.metrics.to_dict())
 
     def save_report(
         self, report: Dict[str, Any], format: str = "json", path: Optional[str] = None
@@ -109,8 +161,9 @@ class TaskReportBuilder:
         selected = selected if selected in ("json", "markdown") else "json"
         if path is None:
             extension = "json" if selected == "json" else "md"
-            identity = str(report.get("task_id") or self._generate_task_id())
-            path = os.path.join(self.output_dir, f"task_{identity}.{extension}")
+            identity = str(report.get("report_id") or self._generate_report_id())
+            report["report_id"] = identity
+            path = os.path.join(self.output_dir, f"report_{identity}.{extension}")
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -126,9 +179,9 @@ class TaskReportBuilder:
         return path
 
     @staticmethod
-    def _generate_task_id() -> str:
+    def _generate_report_id() -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return f"{timestamp}-{uuid.uuid4().hex[:8]}"
+        return f"{timestamp}-{str(uuid4().hex)[:8]}"
 
     @staticmethod
     def _truncate(value: Any, max_chars: int = MAX_SUMMARY_CHARS) -> str:
@@ -202,75 +255,19 @@ class TaskReportBuilder:
 
     @staticmethod
     def _project_planner_outcome(events: List[Dict[str, Any]]) -> str | None:
-        outcome = None
-        for event in events or []:
-            if not isinstance(event, dict):
-                continue
-            event_type = event.get("type")
-            if event_type == "direct_response":
-                outcome = "direct_response"
-            elif event_type == "plan_created":
-                outcome = "use_tools"
-            elif event_type == "hard_block":
-                outcome = "blocked"
-        return outcome
+        return cast(str | None, project_planner_outcome(events))
 
     @staticmethod
     def _project_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Project the existing event taxonomy into bounded post-mortem evidence."""
-        projected: List[Dict[str, Any]] = []
-        for event in events or []:
-            summary = TaskReportBuilder._project_event(event)
-            if summary is not None:
-                projected.append(summary)
-            if len(projected) >= 50:
-                break
-        return projected
+        return cast(List[Dict[str, Any]], project_events(events))
 
     @staticmethod
     def _project_event(event: Any) -> Dict[str, Any] | None:
-        if not isinstance(event, dict):
-            return None
-        event_type = str(event.get("type") or "")
-        raw_data = event.get("data")
-        data: Dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
-        if event_type in {"direct_response", "hard_block", "plan_created"}:
-            summary: Dict[str, Any] = {"type": event_type}
-            if event_type == "plan_created":
-                summary["steps"] = int(data.get("steps") or 0)
-            elif event_type == "hard_block":
-                summary["reason_code"] = data.get("reason_code") or "PLAN_BLOCKED"
-            return summary
-        if event_type == "route_transition":
-            return {
-                "type": event_type,
-                "route": data.get("route"),
-                "disposition": data.get("disposition"),
-                "reason_code": data.get("reason_code"),
-                "next_route": data.get("next_route"),
-                "action": data.get("action"),
-            }
-        if event_type not in {"tool_start", "tool_end", "tool_denied"}:
-            return None
-        summary = {"type": event_type, "invocation_id": data.get("invocation_id")}
-        if event_type != "tool_start":
-            summary["status"] = data.get("status")
-        if event_type == "tool_denied":
-            summary["reason_code"] = data.get("reason_code") or data.get("reason")
-        return summary
+        return cast(Dict[str, Any] | None, project_event(event))
 
     @staticmethod
     def _extract_replan_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        replans = []
-        for event in events or []:
-            if not isinstance(event, dict) or event.get("type") != "replan":
-                continue
-            data = event.get("data") or {}
-            replans.append({
-                "original_step": data.get("original_step"), "error": sanitize_public_text(data.get("error", "")),
-                "strategy": data.get("strategy", ""), "replacement_steps": data.get("replacement_steps", 0),
-            })
-        return replans
+        return cast(List[Dict[str, Any]], extract_replan_events(events))
 
     @staticmethod
     def _collect_errors(steps: List[Dict[str, Any]]) -> List[str]:
@@ -292,8 +289,10 @@ class TaskReportBuilder:
         return now, now
 
     @staticmethod
-    def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int) -> Dict[str, Any]:
-        return project_run_metrics(entries, tools_called).to_dict()
+    def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int, *, snapshot: Any = None) -> Dict[str, Any]:
+        if snapshot is None:
+            return cast(Dict[str, Any], project_run_metrics(entries, tools_called).to_dict())
+        return cast(Dict[str, Any], snapshot.metrics.to_dict())
 
     @staticmethod
     def _render_markdown(report: Dict[str, Any]) -> str:

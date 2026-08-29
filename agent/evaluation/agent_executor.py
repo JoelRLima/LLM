@@ -19,7 +19,7 @@ from agent.llm.identity import (
     unavailable_observed_identity,
 )
 from agent.planning.plan_model import serialize_plan
-from agent.reporting.metrics import project_run_metrics
+from agent.reporting.run_projection_facts import thaw_projection
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.tools.authority import TaskAuthoritySnapshot
@@ -33,6 +33,20 @@ class GatewayFactory(Protocol):
 class ScenarioPreparation(Protocol):
     def __call__(self, objective: str, workspace: Path, paths: AppPaths) -> None:
         ...
+
+
+def snapshot_evaluation_projection(snapshot: Any) -> dict[str, Any]:
+    """Project deterministic evaluation evidence from the snapshot alone."""
+
+    facts = snapshot.projection_facts
+    return {
+        "history": [thaw_projection(item) for item in facts.invocation_evidence],
+        "canonical_plan": thaw_projection(facts.canonical_plan),
+        "route_events": [thaw_projection(item) for item in facts.route_events],
+        "validation_events": [thaw_projection(item) for item in facts.validation_events],
+        "output_chars": facts.output_chars,
+        "output_truncated": facts.output_truncated,
+    }
 
 
 class AgentApplicationScenarioExecutor:
@@ -68,7 +82,41 @@ class AgentApplicationScenarioExecutor:
                 configure_logging=False,
             ) as application:
                 result = application.run(objective)
-                history = list(application.orchestrator.agent_state.tool_history)
+                snapshot = result.snapshot
+                if snapshot is not None:
+                    projection = snapshot_evaluation_projection(snapshot)
+                    history = projection["history"]
+                    canonical_plan = projection["canonical_plan"]
+                    route_events = projection["route_events"]
+                    validation_events = projection["validation_events"]
+                else:
+                    history = list(application.orchestrator.agent_state.tool_history)
+                    canonical_plan = serialize_plan(
+                        application.orchestrator.agent_state.plan
+                    )
+                    events = list(application.orchestrator.agent_state.events)
+                    route_events = [
+                        event
+                        for event in events
+                        if isinstance(event, dict)
+                        and event.get("type") in {
+                            "hierarchical_started",
+                            "hierarchical_completed",
+                            "hierarchical_fallback",
+                            "continuation_plan_proposed",
+                            "hard_block",
+                            "task_outcome",
+                        }
+                    ]
+                    validation_events = [
+                        event
+                        for event in events
+                        if isinstance(event, dict)
+                        and event.get("type") in {
+                            "hard_block", "plan_created", "plan_extended", "replan",
+                            "tool_denied", "error",
+                        }
+                    ]
                 last = history[-1] if history else {}
                 raw = last.get("result", {}) if isinstance(last, Mapping) else {}
                 raw = raw if isinstance(raw, Mapping) else {}
@@ -81,50 +129,60 @@ class AgentApplicationScenarioExecutor:
                 ]
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 metadata = metadata if isinstance(metadata, dict) else {}
-                task_metrics = application.orchestrator._get_metrics_for_task()
-                budget_snapshot = application.orchestrator.task_budget.snapshot()
-                receipt_metrics = (
-                    result.receipt.get("metrics")
-                    if isinstance(result.receipt, dict)
-                    else None
-                )
                 canonical_metrics = (
-                    dict(receipt_metrics)
-                    if isinstance(receipt_metrics, dict)
-                    else project_run_metrics(
-                        task_metrics,
-                        tool_calls=budget_snapshot.tool_calls,
-                        history_records=len(history),
-                        budget_snapshot=budget_snapshot,
-                    ).to_dict()
+                    snapshot.metrics.to_dict()
+                    if snapshot is not None
+                    else dict(result.receipt.get("metrics", {}))
+                    if isinstance(result.receipt, dict)
+                    and isinstance(result.receipt.get("metrics"), dict)
+                    else {}
                 )
+                correlation = (
+                    snapshot.correlation.as_dict()
+                    if snapshot is not None
+                    else dict(result.receipt.get("correlation", {}))
+                    if isinstance(result.receipt, dict)
+                    and isinstance(result.receipt.get("correlation"), dict)
+                    else {}
+                )
+                runtime_status = snapshot.status if snapshot is not None else result.status
+                runtime_run_id = correlation.get("run_id")
+                runtime_root_task_id = correlation.get("root_task_id")
+                runtime_task_id = correlation.get("task_id")
                 measurement = {
+                    # Scenario task_id is deliberately not the runtime task
+                    # identity; the explicit fields below join evaluation to
+                    # the final canonical snapshot.
                     "task_id": f"eval:{objective.split(':', 1)[0].strip()}",
+                    "runtime_task_id": runtime_task_id,
+                    "root_task_id": runtime_root_task_id,
+                    "correlation": dict(correlation),
                     "duration_ms": int((time.monotonic() - started) * 1000),
                     "tools": [entry.get("tool") for entry in history if entry.get("tool")],
                     "invocation_id": invocation_ids[-1] if invocation_ids else None,
                     "invocation_ids": invocation_ids,
                     "invocations": [
-                        {"invocation_id": invocation_id, "outcome": result.status}
+                        {"invocation_id": invocation_id, "outcome": runtime_status}
                         for invocation_id in invocation_ids
                     ],
-                    "terminal_outcome": result.status,
+                    "terminal_outcome": runtime_status,
                     "error": (result.error or str(raw.get("error") or ""))[:500],
-                    "output_chars": int(metadata.get("total_chars", len(output))),
-                    "truncated": bool(metadata.get("truncated", False)),
-                    "tool_history_count": len(history),
-                    "tool_calls": canonical_metrics["tool_calls"],
-                    "model_calls": canonical_metrics["model_calls"],
-                    "gateway_calls": len(getattr(gateway, "calls", [])),
-                    "run_id": next(
-                        (
-                            str(entry["run_id"])
-                            for entry in task_metrics
-                            if isinstance(entry, dict) and entry.get("run_id")
-                        ),
-                        None,
+                    "output_chars": (
+                        projection["output_chars"]
+                        if snapshot is not None
+                        else int(metadata.get("total_chars", len(output)))
                     ),
-                    "status": result.status,
+                    "truncated": (
+                        projection["output_truncated"]
+                        if snapshot is not None
+                        else bool(metadata.get("truncated", False))
+                    ),
+                    "tool_history_count": len(history),
+                    "tool_calls": canonical_metrics.get("tool_calls", 0),
+                    "model_calls": canonical_metrics.get("model_calls", 0),
+                    "gateway_calls": len(getattr(gateway, "calls", [])),
+                    "run_id": runtime_run_id,
+                    "status": runtime_status,
                     "estimated_tokens": canonical_metrics.get("estimated_tokens", 0),
                     "accounted_tokens": canonical_metrics.get("accounted_tokens", 0),
                     "reserved_tokens": canonical_metrics.get("reserved_tokens", 0),
@@ -159,7 +217,6 @@ class AgentApplicationScenarioExecutor:
                     gateway,
                     profile=getattr(application.session, "model_profile", None),
                 )
-                events = list(application.orchestrator.agent_state.events)
                 gateway_evidence = {}
                 export_evidence = getattr(gateway, "export_evidence", None)
                 if callable(export_evidence):
@@ -186,33 +243,11 @@ class AgentApplicationScenarioExecutor:
                             "declared": declared_provider_identity,
                             "observed": dict(observed_provider_identity),
                         },
-                        "canonical_plan": serialize_plan(
-                            application.orchestrator.agent_state.plan
-                        ),
+                        "canonical_plan": canonical_plan,
                         "invocation_evidence": list(history),
-                        "route_events": [
-                            event
-                            for event in application.orchestrator.agent_state.events
-                            if isinstance(event, dict)
-                            and event.get("type") in {
-                                "hierarchical_started",
-                                "hierarchical_completed",
-                                "hierarchical_fallback",
-                                "continuation_plan_proposed",
-                                "hard_block",
-                                "task_outcome",
-                            }
-                        ],
-                        "validation_evidence": [
-                            event
-                            for event in events
-                            if isinstance(event, dict)
-                            and event.get("type") in {
-                                "hard_block", "plan_created", "plan_extended", "replan",
-                                "tool_denied", "error",
-                            }
-                        ],
-                        "terminal_status": result.status,
+                        "route_events": route_events,
+                        "validation_evidence": validation_events,
+                        "terminal_status": runtime_status,
                         "final_answer": result.answer,
                         "receipt": dict(result.receipt),
                     }

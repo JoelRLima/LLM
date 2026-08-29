@@ -392,6 +392,65 @@ def test_result_binding_executes_exact_observed_value_without_replanning(tmp_pat
     assert progression["continuations"] == 0
 
 
+def test_phase3_real_correlation_chain_reaches_final_snapshot(tmp_path: Path) -> None:
+    result, _gateway, _workspace, _history, progression = _run_queued_task(
+        tmp_path,
+        "phase3-observation",
+        "Read controle.txt and report the observed value.",
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"the observation is sufficient"}',
+            "The observed value is phase3-observation.",
+        ],
+    )
+
+    snapshot = result.snapshot
+    assert snapshot is not None
+    correlation = snapshot.correlation
+    events = progression["events"]
+    model_index = next(
+        index for index, event in enumerate(events) if event["type"] == "model_call_started"
+    )
+    plan_index = next(
+        index for index, event in enumerate(events) if event["type"] == "plan_created"
+    )
+    start_index = next(
+        index for index, event in enumerate(events) if event["type"] == "tool_start"
+    )
+    end_index = next(
+        index for index, event in enumerate(events) if event["type"] == "tool_end"
+    )
+    outcome_index = next(
+        index for index, event in enumerate(events) if event["type"] == "task_outcome"
+    )
+    assert model_index < plan_index < start_index < end_index < outcome_index
+
+    plan_event = events[plan_index]
+    plan_id = plan_event["plan_id"]
+    step_id = snapshot.projection_facts.canonical_plan[0]["_step_id"]
+    start = events[start_index]
+    end = events[end_index]
+    invocation_id = start["invocation_id"]
+    assert isinstance(plan_id, str) and plan_id
+    assert end["invocation_id"] == invocation_id
+    assert start["plan_id"] == plan_id
+    assert end["plan_id"] == plan_id
+    assert start["step_id"] == step_id
+    assert end["step_id"] == step_id
+
+    for event in (events[model_index], plan_event, start, end, events[outcome_index]):
+        assert event["run_id"] == correlation.run_id
+        assert event["root_task_id"] == correlation.root_task_id
+    evidence = snapshot.projection_facts.invocation_evidence
+    assert evidence[0]["invocation_id"] == invocation_id
+    assert evidence[0]["plan_id"] == plan_id
+    assert evidence[0]["step_id"] == step_id
+    assert snapshot.tool_observation_refs[0]["invocation_id"] == invocation_id
+    assert result.status == "succeeded"
+    assert snapshot.status == "succeeded"
+
+
 def test_invalid_provenance_gets_same_tool_binding_repair_and_executes(tmp_path: Path) -> None:
     result, gateway, workspace, history, progression = _run_queued_task(
         tmp_path,

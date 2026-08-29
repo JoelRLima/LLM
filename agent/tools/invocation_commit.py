@@ -12,6 +12,7 @@ from agent.execution_incidents import (
     EFFECT_PROVEN,
     EFFECT_UNKNOWN,
 )
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.logging import logger
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.contracts import ToolError, ToolInvocation, ToolResult, ToolStatus
@@ -155,6 +156,50 @@ class InvocationCommitMixin:
             )
 
     def _emit(self: Any, event_type: str, data: Dict[str, Any]) -> None:
+        dispatcher = getattr(self, "event_dispatcher", None)
+        correlation_provider = getattr(self, "correlation_provider", None)
+        correlation = correlation_provider() if callable(correlation_provider) else None
+        if dispatcher is not None and correlation is not None:
+            try:
+                event_data = dict(data)
+                invocation_id = event_data.get("invocation_id")
+                metadata = (
+                    self._active_invocation_meta.get(str(invocation_id), {})
+                    if invocation_id
+                    else {}
+                )
+                task_id = metadata.get("task_id")
+                event_fields_provider = getattr(self, "event_fields_provider", None)
+                event_fields = event_fields_provider() if callable(event_fields_provider) else {}
+                if not isinstance(event_fields, Mapping):
+                    event_fields = {}
+                dispatcher.emit(
+                    RuntimeEvent.from_fields(
+                        event_type,
+                        correlation,
+                        event_data,
+                        task_id=task_id if isinstance(task_id, str) else None,
+                        parent_task_id=(
+                            metadata.get("parent_task_id")
+                            if isinstance(metadata.get("parent_task_id"), str)
+                            else None
+                        ),
+                        node_id=(
+                            metadata.get("node_id")
+                            if isinstance(metadata.get("node_id"), str)
+                            else None
+                        ),
+                        plan_id=event_fields.get("plan_id") if isinstance(event_fields.get("plan_id"), str) else None,
+                        step_id=event_fields.get("step_id") if isinstance(event_fields.get("step_id"), str) else None,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[GATEWAY] Erro ao emitir evento '%s': %s",
+                    event_type,
+                    type(exc).__name__,
+                )
+            return
         if self.event_emitter is not None:
             try:
                 self.event_emitter(event_type, data)
@@ -172,10 +217,31 @@ class InvocationCommitMixin:
         result: ToolResult,
         record_result: bool,
     ) -> Exception | None:
-        if not record_result or self.state_recorder is None:
+        correlated_recorder = getattr(self, "correlated_state_recorder", None)
+        if not record_result or (
+            self.state_recorder is None and correlated_recorder is None
+        ):
             return None
         try:
-            self.state_recorder(tool_name, args, result)
+            metadata = dict(
+                self._active_invocation_meta.get(str(result.invocation_id), {})
+            )
+            lineage = {
+                name: metadata.get(name)
+                for name in (
+                    "run_id",
+                    "root_task_id",
+                    "task_id",
+                    "parent_task_id",
+                    "node_id",
+                )
+                if metadata.get(name) is not None
+            }
+            if correlated_recorder is not None:
+                correlated_recorder(tool_name, args, result, lineage or None)
+            else:
+                assert self.state_recorder is not None
+                self.state_recorder(tool_name, args, result)
         except Exception as exc:
             logger.warning(
                 "[GATEWAY] Erro ao registrar resultado no estado: %s",

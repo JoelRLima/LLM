@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, cast
 
 from agent.contracts import (
     AgentEvent,
@@ -11,6 +11,8 @@ from agent.memory.memory import AgentMemory
 from agent.planning.plan_model import Plan
 from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.events import RuntimeEvent, serialize_runtime_event
 from agent.runtime.recovery import (
     RecoveryBudgetState,
     RecoveryPolicy,
@@ -38,9 +40,14 @@ class AgentState(
         self,
         memory: AgentMemory | None = None,
         budget_ledger: TaskBudgetLedger | None = None,
+        root_task_id: str | None = None,
     ) -> None:
         # Dados da execução atual
         self.objective: Optional[str] = None
+        # Persisted logical runtime-task identity used to link resumed
+        # attempts without deriving identity from a report artifact.
+        self.root_task_id: str | None = root_task_id
+        self.runtime_correlation: Any = None
         self.plan: Plan = Plan()
         # Scope for causal observations. Step IDs are stable within a plan,
         # but old plans may remain in memory during hierarchical execution or
@@ -131,6 +138,7 @@ class AgentState(
         logical_slot: Optional[int] = None,
         *,
         plan_id: Optional[str] = None,
+        correlation: Mapping[str, Any] | None = None,
     ) -> None:
         """Registra o resultado de uma execução de ferramenta no estado global.
 
@@ -153,6 +161,26 @@ class AgentState(
             entry["status"] = str(getattr(canonical_result.status, "value", canonical_result.status))
         if logical_slot is not None:
             entry["logical_slot"] = logical_slot
+        ambient_correlation = getattr(self, "runtime_correlation", None)
+        selected_correlation = (
+            RunCorrelation.from_mapping(correlation)
+            if correlation is not None
+            else ambient_correlation
+        )
+        if correlation is not None and selected_correlation is None:
+            raise ValueError("tool result runtime correlation is incomplete")
+        if selected_correlation is not None and ambient_correlation is not None:
+            if (
+                selected_correlation.run_id != ambient_correlation.run_id
+                or selected_correlation.root_task_id != ambient_correlation.root_task_id
+            ):
+                raise ValueError("tool result runtime correlation crosses the active run")
+        if selected_correlation is not None:
+            entry["run_id"] = selected_correlation.run_id
+            entry["root_task_id"] = selected_correlation.root_task_id
+            entry["task_id"] = selected_correlation.task_id
+            entry["parent_task_id"] = selected_correlation.parent_task_id
+            entry["node_id"] = selected_correlation.node_id
 
         # Semantic observation is the validation boundary for the complete
         # canonical record.  Validate against a detached owner first so a
@@ -196,9 +224,15 @@ class AgentState(
         if clear_events:
             self.events.clear()
 
-    def add_event(self, event: AgentEvent) -> None:
-        """Adiciona um evento ao histórico de telemetria."""
-        self.events.append(event)
+    def add_event(self, event: AgentEvent | RuntimeEvent) -> None:
+        """Serialize one canonical event at the state compatibility boundary."""
+
+        serialized = (
+            serialize_runtime_event(event)
+            if isinstance(event, RuntimeEvent)
+            else dict(event)
+        )
+        self.events.append(cast(AgentEvent, serialized))
 
     def add_conversation_turn(self, user: str, agent: str) -> None:
         """Adiciona uma nova entrada ao histórico de conversa."""

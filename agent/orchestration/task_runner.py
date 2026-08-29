@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-from uuid import uuid4
 
 from agent.checkpoint_manager import CheckpointLoadError
 from agent.final_response import compose_operational_answer
@@ -68,6 +67,9 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                     reason_code="MISSING_REQUIRED_INPUT",
                     message="Nenhum objetivo foi fornecido e nenhum checkpoint valido foi encontrado.",
                 )
+            start_correlation = getattr(self.orchestrator, "_start_run_correlation", None)
+            if callable(start_correlation):
+                start_correlation(resumed=inputs.resumed)
             if inputs.resumed and self._has_terminal_disposition():
                 return self._resume_terminal_checkpoint(inputs.objective)
             self._prepare(inputs)
@@ -91,7 +93,6 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             return message
         finally:
             self._cleanup(original_count)
-
     def _resolve_inputs(self, objective: Optional[str], original_count: int) -> TaskInputs | None:
         if objective:
             return TaskInputs(objective, False, original_count)
@@ -108,6 +109,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             )
         except ValueError:
             self.orchestrator._preserve_checkpoint = True
+            self.orchestrator.agent_state.root_task_id = None
             objective = str(checkpoint.get("objective") or "checkpoint invalido")
             mark_terminal_blocked(
                 self.orchestrator,
@@ -130,12 +132,10 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             self.orchestrator._reset_task_state(inputs.objective)
             initialize_task_progression(self.orchestrator, inputs.objective)
         self.orchestrator._task_start_time = Watchdog.start_task()
-        self.orchestrator._run_id = uuid4().hex
         self.orchestrator._run_metric_recorded = False
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
         print(f"\nAnalisando: \"{inputs.objective}\"")
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
-
     def _execute(
         self, inputs: TaskInputs, on_chunk: Callable[[str], None] | None
     ) -> str:

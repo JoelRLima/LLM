@@ -30,6 +30,8 @@ from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.context import TaskExecutionContext
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.paths import WorkspacePaths
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
@@ -100,6 +102,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._task_start_time = 0.0
         self._metrics_start_line = 0
         self._run_id: str | None = None
+        self._run_correlation: RunCorrelation | None = None
         self._run_metric_recorded = False
         self.cancellation_token = CancellationToken()
         self._task_execution_context: TaskExecutionContext | None = None
@@ -126,6 +129,15 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self.session.set_model_call_callback(self._log_metric)
         self.agent_state = AgentState(memory=memory, budget_ledger=self.task_budget)
         self.agent_state.configure_recovery_policy(session.config)
+
+        def observe_step_checkpoint(_event: Any) -> None:
+            self._save_checkpoint()
+
+        self.event_dispatcher = RuntimeEventDispatcher(
+            state=self.agent_state,
+            checkpoint_observer=observe_step_checkpoint,
+        )
+        self.session.event_sink = self.event_dispatcher
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:
@@ -140,6 +152,9 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             self.legacy_tool_invoker = LegacyToolInvoker(self)
         if self.tool_invocation_gateway is not None:
             self.tool_invocation_gateway.set_budget_ledger(self.task_budget)
+            set_dispatcher = getattr(self.tool_invocation_gateway, "set_event_dispatcher", None)
+            if callable(set_dispatcher):
+                set_dispatcher(self.event_dispatcher, lambda: self.run_correlation)
             self.tool_invocation_gateway.set_incident_recorder(
                 self.agent_state.record_execution_incident
             )

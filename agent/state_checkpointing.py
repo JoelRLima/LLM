@@ -39,6 +39,7 @@ class StateCheckpointMixin:
             checkpoint_history.append(entry)
         raw: Dict[str, Any] = {
             "objective": self.objective,
+            "root_task_id": getattr(self, "root_task_id", None),
             "plan": serialize_plan(self.plan) if isinstance(self.plan, Plan) else self.plan,
             "plan_identity": self.plan_identity,
             "plan_step": self.plan_step,
@@ -166,6 +167,9 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
+    # A missing field is legacy evidence, not permission to reuse a previous
+    # in-memory task identity from another checkpoint/run.
+    root_task_id = data.get("root_task_id")
     events = data.get("events", state.events) or []
     history = data.get("conversation_history", state.conversation_history) or []
     persona = data.get("persona", state.persona)
@@ -175,6 +179,10 @@ def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
     budget = data.get("budget")
     if not isinstance(events, list):
         raise ValueError("Checkpoint events are invalid.")
+    if root_task_id is not None and (
+        not isinstance(root_task_id, str) or not root_task_id.strip()
+    ):
+        raise ValueError("Checkpoint root task identity is invalid.")
     if not isinstance(history, list) or any(not isinstance(entry, Mapping) for entry in history):
         raise ValueError("Checkpoint conversation history is invalid.")
     if persona is not None and not isinstance(persona, str):
@@ -186,6 +194,7 @@ def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
     if memory_state is not None and not isinstance(memory_state, Mapping):
         raise ValueError("Checkpoint memory state is invalid.")
     _restore_execution_incidents(state, incidents)
+    state.root_task_id = root_task_id
     state.events = events
     state.conversation_history = [dict(entry) for entry in history]
     state.persona = persona

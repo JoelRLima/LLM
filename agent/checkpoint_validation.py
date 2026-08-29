@@ -73,6 +73,11 @@ def _validate_semantics(path: Path, data: dict[str, Any]) -> None:
 
 
 def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
+    root_task_id = data.get("root_task_id")
+    if root_task_id is not None and (
+        not isinstance(root_task_id, str) or not root_task_id.strip()
+    ):
+        _invalid(path, "identidade de tarefa raiz invÃ¡lida")
     terminal = data.get("terminal_disposition")
     if terminal is not None and not isinstance(terminal, str):
         _invalid(path, "disposição terminal inválida")

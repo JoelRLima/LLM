@@ -61,6 +61,11 @@ class ToolHistoryEntry(TypedDict, total=False):
     step_id: Optional[str]
     plan_id: Optional[str]
     invocation_id: str
+    run_id: str
+    root_task_id: str
+    task_id: str
+    parent_task_id: Optional[str]
+    node_id: Optional[str]
     status: str
     logical_slot: int
     tool: str
@@ -74,6 +79,11 @@ class SerializedToolHistoryEntry(TypedDict, total=False):
     step_id: Optional[str]
     plan_id: Optional[str]
     invocation_id: str
+    run_id: str
+    root_task_id: str
+    task_id: str
+    parent_task_id: Optional[str]
+    node_id: Optional[str]
     status: str
     logical_slot: int
     tool: str
@@ -84,6 +94,15 @@ class SerializedToolHistoryEntry(TypedDict, total=False):
 class AgentEvent(TypedDict, total=False):
     type: str
     step: int
+    timestamp: str
+    run_id: str
+    root_task_id: str
+    task_id: Optional[str]
+    parent_task_id: Optional[str]
+    node_id: Optional[str]
+    plan_id: Optional[str]
+    step_id: Optional[str]
+    invocation_id: Optional[str]
     data: EventData
 
 
@@ -107,6 +126,7 @@ class StepRecordData(TypedDict, total=False):
 class CheckpointData(TypedDict, total=False):
     schema_version: int
     objective: Optional[str]
+    root_task_id: Optional[str]
     plan: List[PlanStep]
     plan_identity: Optional[str]
     plan_step: int

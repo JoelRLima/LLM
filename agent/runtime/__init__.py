@@ -9,6 +9,9 @@ from agent.runtime.context import (
     TaskResult,
     TaskStatus,
 )
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
+from agent.runtime.events import RuntimeEvent, RuntimeEventKind
 from agent.runtime.hardware import HardwareProfile, resolve_hardware_profile
 from agent.runtime.outcome_taxonomy import (
     ERROR_DEFINITIONS,
@@ -31,6 +34,10 @@ __all__ = [
     "HardwareProfile",
     "ModelCallBudget",
     "RuntimeLimits",
+    "RunCorrelation",
+    "RuntimeEvent",
+    "RuntimeEventDispatcher",
+    "RuntimeEventKind",
     "TaskExecutionContext",
     "TaskBudgetLedger",
     "TaskResult",

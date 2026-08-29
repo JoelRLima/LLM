@@ -45,17 +45,24 @@ class ToolExecutor:
     def run_canonical_tool(
         self, tool_name: str, args: ToolArgs, record_result: bool = True
     ) -> CanonicalToolResult:
-        request = ToolInvocationRequest(
-            str(uuid.uuid4()),
-            tool_name,
-            args,
-            task_id=self._task_id(),
-        )
+        request = self._request(str(uuid.uuid4()), tool_name, args)
         return self.run_tool_invocation_canonical(request, record_result=record_result)
 
     def _task_id(self) -> str | None:
         context = getattr(self.orchestrator, "_task_execution_context", None)
         return getattr(context, "task_id", None)
+
+    def _request(self, invocation_id: str, tool_name: str, args: Mapping[str, Any]) -> ToolInvocationRequest:
+        context = getattr(self.orchestrator, "task_execution_context", None)
+        builder = getattr(context, "tool_invocation_request", None)
+        if callable(builder):
+            return cast(ToolInvocationRequest, builder(invocation_id, tool_name, args))
+        return ToolInvocationRequest(
+            invocation_id,
+            tool_name,
+            args,
+            task_id=self._task_id(),
+        )
 
     def run_tool_invocation(
         self, request: ToolInvocationRequest, record_result: bool = True
@@ -208,12 +215,7 @@ class ToolExecutor:
                     record_result,
                 )
             )
-        request = ToolInvocationRequest(
-            invocation_id,
-            prepared.tool,
-            dict(prepared.args),
-            task_id=getattr(prepared, "task_id", None) or self._task_id(),
-        )
+        request = self._request(invocation_id, prepared.tool, dict(prepared.args))
         return self.run_tool_invocation_canonical(request, record_result=record_result)
 
     @staticmethod

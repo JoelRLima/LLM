@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.execution_incidents import CANONICAL_COMMIT_FAILED
-from agent.reporting.metrics import project_run_metrics
+from agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
 from agent.reporting.public_safety import sanitize_public_text
 from agent.runtime.outcome_taxonomy import failure_layer_for_code as _canonical_failure_layer_for_code
 
@@ -54,20 +54,38 @@ def receipt_cause(
     }
 
 
-def metrics_for_orchestrator(orchestrator: Any) -> dict[str, Any] | None:
-    getter = getattr(orchestrator, "_get_metrics_for_task", None)
-    if not callable(getter):
-        return None
-    entries = getter()
-    ledger = getattr(orchestrator, "task_budget", None)
-    snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
-    history = getattr(getattr(orchestrator, "agent_state", None), "tool_history", ()) or ()
-    return project_run_metrics(
-        entries,
-        tool_calls=(snapshot.tool_calls if snapshot is not None else None),
-        history_records=len(history),
-        budget_snapshot=snapshot,
-    ).to_dict()
+def metrics_for_orchestrator(
+    orchestrator: Any,
+    *,
+    snapshot: RunMetricsSnapshot | None = None,
+) -> dict[str, Any] | None:
+    if snapshot is None:
+        selected = metrics_snapshot_for_orchestrator(orchestrator)
+    else:
+        selected = snapshot
+    return selected.to_dict() if selected is not None else None
+
+
+def metrics_snapshot_for_orchestrator(
+    orchestrator: Any, *, snapshot: RunMetricsSnapshot | None = None
+) -> RunMetricsSnapshot | None:
+    if snapshot is not None:
+        return snapshot
+    if snapshot is None:
+        getter = getattr(orchestrator, "_get_metrics_for_task", None)
+        if not callable(getter):
+            return None
+        entries = getter()
+        ledger = getattr(orchestrator, "task_budget", None)
+        budget_snapshot = ledger.snapshot() if ledger is not None and hasattr(ledger, "snapshot") else None
+        history = getattr(getattr(orchestrator, "agent_state", None), "tool_history", ()) or ()
+        return project_run_metrics(
+            entries,
+            tool_calls=(budget_snapshot.tool_calls if budget_snapshot is not None else None),
+            history_records=len(history),
+            budget_snapshot=budget_snapshot,
+        )
+    return snapshot
 
 
 __all__ = [
@@ -75,5 +93,6 @@ __all__ = [
     "execution_incidents",
     "failure_layer_for_code",
     "metrics_for_orchestrator",
+    "metrics_snapshot_for_orchestrator",
     "receipt_cause",
 ]

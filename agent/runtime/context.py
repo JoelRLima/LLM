@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from threading import BoundedSemaphore
-from typing import Any, Dict, Mapping, Optional, Protocol
-from uuid import uuid4
+from typing import Any, Dict, Mapping, Optional, Protocol, TypeAlias, cast
 
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelGateway
@@ -20,12 +19,18 @@ from agent.runtime.budget_estimation import (
     RequestInputMeasurement,
     measure_model_request_input_tokens,
 )
+from agent.runtime.context_results import Artifact, TaskResult, TaskStatus
+from agent.runtime.context_tools import CorrelatedToolRequestMixin
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import dispatch_runtime_event
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.limits import default_runtime_limit, runtime_limit_values
-from agent.runtime.outcome_taxonomy import OperationalStatus
+
+__all__ = ["Artifact", "RuntimeLimits", "TaskExecutionContext", "TaskResult", "TaskStatus"]
 
 
 class EventSink(Protocol):
-    def emit(self, event_type: str, data: Dict[str, Any]) -> None:
+    def emit(self, event: RuntimeEvent) -> None:
         ...
 
 
@@ -35,8 +40,8 @@ class MetricsSink(Protocol):
 
 
 class NullEventSink:
-    def emit(self, event_type: str, data: Dict[str, Any]) -> None:
-        del event_type, data
+    def emit(self, event: RuntimeEvent) -> None:
+        del event
 
 
 class NullMetricsSink:
@@ -63,7 +68,7 @@ class ProcessConcurrencyGate(ModelConcurrencyGate):
     """Semáforo compartilhado para processos de validação."""
 
 
-ModelCallBudget = TaskBudgetLedger
+ModelCallBudget: TypeAlias = TaskBudgetLedger
 
 
 @dataclass(frozen=True)
@@ -90,24 +95,32 @@ class RuntimeLimits:
 
 
 @dataclass(frozen=True)
-class TaskExecutionContext:
+class TaskExecutionContext(CorrelatedToolRequestMixin):
     model_gateway: ModelGateway
     cancellation: CancellationToken
     model_profile: ResolvedModelProfile | None = None
     limits: RuntimeLimits = field(default_factory=RuntimeLimits)
-    event_sink: EventSink = field(default_factory=NullEventSink)
+    event_sink: EventSink | None = field(default_factory=NullEventSink)
     metrics_sink: MetricsSink = field(default_factory=NullMetricsSink)
     model_gate: Optional[ModelConcurrencyGate] = None
     process_gate: Optional[ProcessConcurrencyGate] = None
     model_call_budget: Optional[ModelCallBudget] = None
     budget_ledger: Optional[TaskBudgetLedger] = None
-    task_id: str = field(default_factory=lambda: uuid4().hex)
+    correlation: RunCorrelation | None = None
+    task_id: str | None = None
     parent_task_id: Optional[str] = None
     node_id: Optional[str] = None
     permissions: frozenset[str] = frozenset()
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        correlation = self.correlation
+        if correlation is None:
+            correlation = RunCorrelation.fresh(root_task_id=self.task_id)
+        object.__setattr__(self, "correlation", correlation)
+        object.__setattr__(self, "task_id", correlation.task_id)
+        object.__setattr__(self, "parent_task_id", correlation.parent_task_id)
+        object.__setattr__(self, "node_id", correlation.node_id)
         if self.model_profile is None:
             resolved_profile = getattr(self.model_gateway, "resolved_profile", None)
             if not isinstance(resolved_profile, ResolvedModelProfile):
@@ -139,6 +152,26 @@ class TaskExecutionContext:
         object.__setattr__(self, "budget_ledger", ledger)
         object.__setattr__(self, "model_call_budget", ledger)
 
+    @property
+    def run_id(self) -> str:
+        correlation = self.correlation
+        if correlation is None:
+            raise RuntimeError("task execution context has no runtime correlation")
+        return str(correlation.run_id)
+
+    @property
+    def root_task_id(self) -> str:
+        correlation = self.correlation
+        if correlation is None:
+            raise RuntimeError("task execution context has no runtime correlation")
+        return str(correlation.root_task_id)
+
+    def _runtime_correlation(self) -> RunCorrelation:
+        correlation = self.correlation
+        if correlation is None:
+            raise RuntimeError("task execution context has no runtime correlation")
+        return correlation
+
     def child(self, node_id: str, permissions: Optional[frozenset[str]] = None) -> "TaskExecutionContext":
         requested = self.permissions if permissions is None else frozenset(permissions)
         if not requested.issubset(self.permissions):
@@ -146,11 +179,13 @@ class TaskExecutionContext:
             raise PermissionError(
                 f"Child context requests capabilities outside its parent authority: {missing}"
             )
+        child_correlation = self._runtime_correlation().child(node_id)
         return replace(
             self,
-            task_id=uuid4().hex,
-            parent_task_id=self.task_id,
-            node_id=node_id,
+            correlation=child_correlation,
+            task_id=child_correlation.task_id,
+            parent_task_id=child_correlation.parent_task_id,
+            node_id=child_correlation.node_id,
             permissions=requested,
             metadata=dict(self.metadata),
         )
@@ -158,27 +193,32 @@ class TaskExecutionContext:
     def new_task(self) -> "TaskExecutionContext":
         """Start a new task identity while preserving runtime ownership."""
 
+        task_correlation = self._runtime_correlation().unrelated_task()
         return replace(
             self,
-            task_id=uuid4().hex,
-            parent_task_id=None,
-            node_id=None,
+            correlation=task_correlation,
+            task_id=task_correlation.task_id,
+            parent_task_id=task_correlation.parent_task_id,
+            node_id=task_correlation.node_id,
             metadata=dict(self.metadata),
         )
 
     def emit(self, event_type: str, data: Optional[Dict[str, Any]] = None) -> None:
-        correlated = {
-            "task_id": self.task_id,
-            "parent_task_id": self.parent_task_id,
-            "node_id": self.node_id,
-            **(data or {}),
-        }
-        self.event_sink.emit(event_type, correlated)
+        correlation = self.correlation
+        if correlation is None:
+            raise RuntimeError("task execution context has no runtime correlation")
+        dispatch_runtime_event(
+            self.event_sink,
+            RuntimeEvent.from_fields(event_type, correlation, data),
+        )
 
     def record_metric(self, metric_type: str, data: Optional[Dict[str, Any]] = None) -> None:
+        correlation = self._runtime_correlation()
         self.metrics_sink.record(
             {
                 "metric_type": metric_type,
+                "run_id": correlation.run_id,
+                "root_task_id": correlation.root_task_id,
                 "task_id": self.task_id,
                 "parent_task_id": self.parent_task_id,
                 "node_id": self.node_id,
@@ -209,13 +249,13 @@ class TaskExecutionContext:
                 request,
                 request_input_measurement=measurement,
             )
-        return ledger.reserve_model_call(token_allowance or 0)
+        return cast(int, ledger.reserve_model_call(token_allowance or 0))
 
     def reservation_for_model_call(self, call_number: int) -> int:
         ledger = self.budget_ledger
         if ledger is None:
             raise RuntimeError("Ledger de tarefa nao inicializado.")
-        return ledger.reservation_for(call_number)
+        return cast(int, ledger.reservation_for(call_number))
 
     def finalize_model_call(
         self, call_number: int, *, usage: Any = None, estimated_tokens: int = 0
@@ -233,7 +273,7 @@ class TaskExecutionContext:
         ledger = self.budget_ledger
         if ledger is None:
             raise RuntimeError("Ledger de tarefa não inicializado.")
-        return ledger.reserve_tool_call()
+        return cast(int, ledger.reserve_tool_call())
 
     def budget_snapshot(self) -> BudgetSnapshot:
         ledger = self.budget_ledger
@@ -247,36 +287,9 @@ class TaskExecutionContext:
             raise RuntimeError("Gate de modelo não inicializado.")
         return gate
 
+
     def process_slot(self) -> ProcessConcurrencyGate:
         gate = self.process_gate
         if gate is None:
             raise RuntimeError("Gate de processos não inicializado.")
         return gate
-
-
-# Compatibility name retained for callers that describe a task result. The
-# runtime has one terminal-status owner; graph, step, validation, and tracker
-# states remain separate subdomain state machines.
-TaskStatus = OperationalStatus
-
-
-@dataclass(frozen=True)
-class Artifact:
-    kind: str
-    path: Optional[str] = None
-    content: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class TaskResult:
-    status: TaskStatus
-    summary: str = ""
-    artifacts: tuple[Artifact, ...] = ()
-    diagnostics: tuple[Dict[str, Any], ...] = ()
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def ok(self) -> bool:
-        return self.status == TaskStatus.SUCCEEDED
