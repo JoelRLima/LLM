@@ -88,6 +88,192 @@ def _contains_name(node: ast.AST, names: set[str] | frozenset[str]) -> bool:
     return any(isinstance(item, ast.Name) and item.id in names for item in ast.walk(node))
 
 
+def _is_uuid_value_alias(node: ast.AST, aliases: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    if isinstance(node, ast.Attribute):
+        return isinstance(node.value, ast.Name) and node.value.id in aliases
+    if isinstance(node, ast.Call):
+        return (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "str"
+            and len(node.args) == 1
+            and not node.keywords
+            and _is_uuid_value_alias(node.args[0], aliases)
+        )
+    if isinstance(node, ast.JoinedStr):
+        if len(node.values) != 1 or not isinstance(node.values[0], ast.FormattedValue):
+            return False
+        formatted = node.values[0]
+        return (
+            formatted.format_spec is None
+            and formatted.conversion in (-1, ord("s"))
+            and _is_uuid_value_alias(formatted.value, aliases)
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return (
+            isinstance(node.left, ast.Constant)
+            and node.left.value == ""
+            and _is_uuid_value_alias(node.right, aliases)
+        ) or (
+            isinstance(node.right, ast.Constant)
+            and node.right.value == ""
+            and _is_uuid_value_alias(node.left, aliases)
+        )
+    return False
+
+
+def _assignment_target_names(node: ast.Assign | ast.AnnAssign) -> set[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+    return {target.id for target in targets if isinstance(target, ast.Name)}
+
+
+def _destructured_assignment_pairs(node: ast.Assign) -> tuple[tuple[ast.AST, ast.AST], ...]:
+    if len(node.targets) != 1:
+        return ()
+    target = node.targets[0]
+    value = node.value
+    if not isinstance(target, (ast.Tuple, ast.List)) or not isinstance(value, (ast.Tuple, ast.List)):
+        return ()
+    if len(target.elts) != len(value.elts):
+        return ()
+    return tuple(zip(target.elts, value.elts, strict=True))
+
+
+def _target_is_correlation(target: ast.AST) -> bool:
+    if isinstance(target, (ast.Name, ast.Attribute)):
+        name = target.id if isinstance(target, ast.Name) else target.attr
+        return name in CORRELATION_ID_NAMES
+    if isinstance(target, ast.Subscript):
+        return _literal_string(target.slice) in CORRELATION_ID_NAMES
+    return False
+
+
+def _contains_ast_node(container: ast.AST, target: ast.AST) -> bool:
+    return any(item is target for item in ast.walk(container))
+
+
+def _dict_value_contains_correlation_node(node: ast.Dict, target: ast.AST) -> bool:
+    return any(
+        _literal_string(key) in CORRELATION_ID_NAMES
+        and value is not None
+        and _contains_ast_node(value, target)
+        for key, value in zip(node.keys, node.values, strict=True)
+    )
+
+
+def _dict_value_uses_uuid_alias(node: ast.Dict, aliases: set[str]) -> bool:
+    return any(
+        _literal_string(key) in CORRELATION_ID_NAMES
+        and value is not None
+        and _is_uuid_value_alias(value, aliases)
+        for key, value in zip(node.keys, node.values, strict=True)
+    )
+
+
+def _uuid_assignment_aliases(
+    node: ast.Call, parents: dict[ast.AST, ast.AST]
+) -> set[str]:
+    current: ast.AST = node
+    while current in parents:
+        parent = parents[current]
+        if isinstance(parent, ast.Assign):
+            targets = _assignment_target_names(parent)
+            if targets:
+                return targets
+            return {
+                target.id
+                for target, value in _destructured_assignment_pairs(parent)
+                if isinstance(target, ast.Name) and _contains_ast_node(value, node)
+            }
+        if isinstance(parent, ast.AnnAssign):
+            return _assignment_target_names(parent)
+        current = parent
+    return set()
+
+
+def _uuid_scope(
+    node: ast.Call, parents: dict[ast.AST, ast.AST], tree: ast.AST
+) -> ast.AST:
+    current: ast.AST = node
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return current
+    return tree
+
+
+def _uuid_alias_assignment(
+    node: ast.Assign | ast.AnnAssign, aliases: set[str]
+) -> tuple[set[str], bool]:
+    if node.value is None:
+        return set(), False
+    if _is_uuid_value_alias(node.value, aliases):
+        targets = _assignment_target_names(node)
+        assignment_targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+        return targets, any(_target_is_correlation(target) for target in assignment_targets)
+    if isinstance(node, ast.Assign):
+        pairs = _destructured_assignment_pairs(node)
+        new_aliases = {
+            target.id
+            for target, value in pairs
+            if isinstance(target, ast.Name) and _is_uuid_value_alias(value, aliases)
+        }
+        return new_aliases, any(
+            _target_is_correlation(target)
+            for target, value in pairs
+            if _is_uuid_value_alias(value, aliases)
+        )
+    return set(), False
+
+
+def _uuid_alias_call_uses_correlation(
+    node: ast.Call, aliases: set[str], resolver: SymbolResolver
+) -> bool:
+    if any(
+        keyword.arg in CORRELATION_ID_NAMES
+        and keyword.value is not None
+        and _is_uuid_value_alias(keyword.value, aliases)
+        for keyword in node.keywords
+    ):
+        return True
+    if _terminal_name(resolver.resolve(node.func)) != "RunCorrelation":
+        return False
+    arguments = (*node.args, *(keyword.value for keyword in node.keywords if keyword.value is not None))
+    return any(_is_uuid_value_alias(argument, aliases) for argument in arguments)
+
+
+def _uuid_alias_reaches_correlation(
+    node: ast.Call,
+    resolver: SymbolResolver,
+    parents: dict[ast.AST, ast.AST],
+    tree: ast.AST,
+) -> bool:
+    aliases = _uuid_assignment_aliases(node, parents)
+    if not aliases:
+        return False
+    scope = _uuid_scope(node, parents, tree)
+    while True:
+        changed = False
+        for item in ast.walk(scope):
+            if isinstance(item, (ast.Assign, ast.AnnAssign)):
+                new_aliases, reaches_correlation = _uuid_alias_assignment(item, aliases)
+                if reaches_correlation:
+                    return True
+                new_aliases -= aliases
+                if new_aliases:
+                    aliases.update(new_aliases)
+                    changed = True
+            elif isinstance(item, ast.Dict) and _dict_value_uses_uuid_alias(item, aliases):
+                return True
+            elif isinstance(item, ast.Call) and _uuid_alias_call_uses_correlation(
+                item, aliases, resolver
+            ):
+                return True
+        if not changed:
+            return False
+
+
 def _target_name(target: ast.AST) -> str | None:
     if isinstance(target, ast.Name):
         return target.id
@@ -108,21 +294,30 @@ def _uuid_is_correlation_use(
     node: ast.Call,
     resolver: SymbolResolver,
     parents: dict[ast.AST, ast.AST],
+    tree: ast.AST,
 ) -> bool:
     current: ast.AST = node
     while current in parents:
         parent = parents[current]
         if isinstance(parent, (ast.Assign, ast.AnnAssign)):
             targets = parent.targets if isinstance(parent, ast.Assign) else (parent.target,)
-            if any(_target_name(target) in CORRELATION_ID_NAMES for target in targets):
+            if any(_target_is_correlation(target) for target in targets):
                 return True
+            if isinstance(parent, ast.Assign) and any(
+                _contains_ast_node(value, current) and _target_is_correlation(target)
+                for target, value in _destructured_assignment_pairs(parent)
+            ):
+                return True
+        if isinstance(parent, ast.Dict) and _dict_value_contains_correlation_node(parent, current):
+            return True
         if isinstance(parent, ast.Call):
             if any(keyword.arg in CORRELATION_ID_NAMES for keyword in parent.keywords):
                 return True
             if _terminal_name(resolver.resolve(parent.func)) == "RunCorrelation":
                 return True
         current = parent
-    return False
+
+    return _uuid_alias_reaches_correlation(node, resolver, parents, tree)
 
 
 def _enclosing_functions(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> tuple[str, ...]:
@@ -172,7 +367,14 @@ def _uuid_call_is_narrowly_allowed(
     relative: str,
     resolver: SymbolResolver,
     parents: dict[ast.AST, ast.AST],
+    tree: ast.AST,
 ) -> bool:
+    # A domain-owner allowlist can authorize only that domain's identity.  A
+    # correlation-shaped target remains forbidden outside the canonical
+    # correlation owner, even when the UUID call is nested in an allowed
+    # report/invocation/plan/etc. helper.
+    if relative != CORRELATION_OWNER and _uuid_is_correlation_use(node, resolver, parents, tree):
+        return False
     if relative == CORRELATION_OWNER:
         return True
     functions = _enclosing_functions(node, parents)
@@ -189,8 +391,6 @@ def _uuid_call_is_narrowly_allowed(
     }
     if any(function in allowed_functions for function in functions):
         return True
-    if _uuid_is_correlation_use(node, resolver, parents):
-        return False
     return _uuid_has_non_correlation_target(node, parents)
 
 
@@ -205,7 +405,7 @@ def _check_correlation_uuid(
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and resolver.resolve(node.func) in UUID_TARGETS
-        and not _uuid_call_is_narrowly_allowed(node, relative, resolver, parents)
+        and not _uuid_call_is_narrowly_allowed(node, relative, resolver, parents, tree)
     ]
 
 

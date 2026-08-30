@@ -44,6 +44,147 @@ def test_s4_flags_status_recomputation_inside_allowlisted_function_name() -> Non
     assert "W4-S4" in _gates(source, "agent/reporting/run_receipt.py")
 
 
+@pytest.mark.parametrize(
+    ('relative', 'function', 'foreign_identity'),
+    (
+        ('agent/reporting/task_report.py', '_generate_report_id', 'run_id'),
+        ('agent/tools/result_adapter.py', 'from_legacy_result', 'task_id'),
+    ),
+)
+def test_s1_semantic_correlation_identity_overrides_domain_owner_allowlist(
+    relative: str, function: str, foreign_identity: str
+) -> None:
+    source = (
+        'from uuid import uuid4 as make_id\n'
+        f'def {function}():\n'
+        f'    {foreign_identity} = make_id().hex\n'
+        f'    return {foreign_identity}'
+    )
+    assert 'W4-S1' in _gates(source, relative)
+
+
+@pytest.mark.parametrize(
+    ('relative', 'function', 'foreign_identity'),
+    (
+        ('agent/reporting/task_report.py', '_generate_report_id', 'run_id'),
+        ('agent/tools/result_adapter.py', 'from_legacy_result', 'task_id'),
+    ),
+)
+def test_s1_rejects_correlation_identity_through_local_uuid_alias(
+    relative: str, function: str, foreign_identity: str
+) -> None:
+    source = (
+        'from uuid import uuid4 as make_id\n'
+        f'def {function}():\n'
+        '    generated = make_id().hex\n'
+        f'    {foreign_identity} = generated\n'
+        f'    return {foreign_identity}'
+    )
+    assert 'W4-S1' in _gates(source, relative)
+
+
+@pytest.mark.parametrize(
+    'alias_assignment',
+    (
+        'run_id = str(generated)',
+        'run_id = f"{generated}"',
+        'run_id = generated + ""',
+        'run_id, other = generated, something',
+    ),
+)
+def test_s1_rejects_uuid_alias_through_value_preserving_local_wrappers(
+    alias_assignment: str,
+) -> None:
+    source = (
+        'from uuid import uuid4\n'
+        'def _generate_report_id():\n'
+        '    generated = uuid4().hex\n'
+        '    something = "other"\n'
+        f'    {alias_assignment}\n'
+        '    return run_id\n'
+    )
+    assert 'W4-S1' in _gates(source, 'agent/reporting/task_report.py')
+
+
+@pytest.mark.parametrize(
+    ('relative', 'function', 'source'),
+    (
+        (
+            'agent/reporting/task_report.py',
+            '_generate_report_id',
+            'from uuid import uuid4\n'
+            'def _generate_report_id():\n'
+            '    generated = uuid4().hex\n'
+            '    return {"run_id": generated}\n',
+        ),
+        (
+            'agent/tools/result_adapter.py',
+            'from_legacy_result',
+            'from uuid import uuid4\n'
+            'def from_legacy_result():\n'
+            '    generated = uuid4().hex\n'
+            '    data = {}\n'
+            '    data["task_id"] = generated\n'
+            '    return data\n',
+        ),
+        (
+            'agent/reporting/task_report.py',
+            '_generate_report_id',
+            'from uuid import uuid4\n'
+            'def _generate_report_id(holder):\n'
+            '    generated = uuid4().hex\n'
+            '    holder.root_task_id = generated\n'
+            '    return holder\n',
+        ),
+    ),
+)
+def test_s1_rejects_uuid_alias_through_structural_correlation_flows(
+    relative: str, function: str, source: str
+) -> None:
+    del function
+    assert 'W4-S1' in _gates(source, relative)
+
+
+def test_s1_rejects_uuid_alias_in_nested_correlation_mapping() -> None:
+    source = (
+        'from uuid import uuid4\n'
+        'def _generate_report_id():\n'
+        '    generated = uuid4().hex\n'
+        '    return {"metadata": {"node_id": generated}}\n'
+    )
+    assert 'W4-S1' in _gates(source, 'agent/reporting/task_report.py')
+
+
+def test_s1_allows_report_identity_inside_report_owner() -> None:
+    source = (
+        'from uuid import uuid4 as make_id\n'
+        'def _generate_report_id():\n'
+        '    report_id = make_id().hex\n'
+        '    return report_id'
+    )
+    assert 'W4-S1' not in _gates(source, 'agent/reporting/task_report.py')
+
+
+def test_s1_allows_invocation_identity_inside_invocation_owner() -> None:
+    source = (
+        'from uuid import uuid4 as make_id\n'
+        'def from_legacy_result():\n'
+        '    invocation_id = make_id().hex\n'
+        '    return invocation_id'
+    )
+    assert 'W4-S1' not in _gates(source, 'agent/tools/result_adapter.py')
+
+
+def test_s1_allows_correlation_identity_only_in_canonical_owner() -> None:
+    source = (
+        'from uuid import uuid4 as make_id\n'
+        'def fresh():\n'
+        '    run_id = make_id().hex\n'
+        '    return run_id'
+    )
+    assert 'W4-S1' not in _gates(source, 'agent/runtime/correlation.py')
+
+
 def test_s5_flags_metric_reconstruction_inside_allowlisted_function_name() -> None:
     source = (
         "from agent.reporting.metrics import project_run_metrics\n"

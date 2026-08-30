@@ -9,6 +9,7 @@ from agent.reporting.run_receipt import build_run_receipt
 from agent.reporting.run_snapshot import build_canonical_run_snapshot
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_data import bounded_event_data
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.events import MAX_EVENT_DATA_CHARS, RuntimeEvent, RuntimeEventKind
 from agent.runtime.failures import FailureFact
@@ -96,6 +97,207 @@ def test_runtime_event_payload_is_bounded_and_taxonomy_is_fail_closed() -> None:
     assert serialized["data"]
     with pytest.raises(ValueError, match="unsupported runtime event kind"):
         RuntimeEvent.from_fields("not_a_runtime_event", RunCorrelation.fresh())
+
+
+def test_bounded_event_data_redacts_sensitive_values_across_shapes() -> None:
+    payload = {
+        'run_id': 'run-diagnostic',
+        'task_id': 'task-diagnostic',
+        'plan_id': 'plan-diagnostic',
+        'step_id': 'step-diagnostic',
+        'invocation_id': 'invocation-diagnostic',
+        'path': 'src/app.py',
+        'pattern': 'H2_MARKER',
+        'status': 'failed',
+        'reason_code': 'TASK_AUTHORITY_DENIED',
+        'token_usage_complete': True,
+        'total_tokens': 7,
+        'authorization': 'AUTH_TOP_SECRET',
+        'api_key': 'API_UNDERSCORE_SECRET',
+        'api-key': 'API_DASH_SECRET',
+        'apikey': 'API_COMPACT_SECRET',
+        'token': 'TOKEN_TOP_SECRET',
+        'password': 'PASSWORD_TOP_SECRET',
+        'secret': 'SECRET_TOP_SECRET',
+        'nested': {
+            'Authorization': 'Bearer AUTH_NESTED_SECRET',
+            'items': [
+                {'api-key': 'API_NESTED_SECRET'},
+                ('apikey=INLINE_TUPLE_SECRET', 'path=src/app.py'),
+            ],
+        },
+        'set_values': {'api_key=INLINE_SET_SECRET', 'path=src/app.py'},
+        'frozen_values': frozenset({'token=INLINE_FROZEN_SECRET'}),
+        'text': (
+            'api_key=INLINE_API_SECRET api-key=INLINE_DASH_SECRET '
+            'apikey=INLINE_COMPACT_SECRET token=INLINE_TOKEN_SECRET '
+            'password=INLINE_PASSWORD_SECRET secret=INLINE_SECRET_SECRET '
+            'Authorization: Bearer INLINE_AUTH_SECRET Bearer INLINE_BEARER_SECRET'
+        ),
+    }
+
+    projected = bounded_event_data(payload)
+    rendered = repr(projected)
+
+    for secret in (
+        'AUTH_TOP_SECRET',
+        'API_UNDERSCORE_SECRET',
+        'API_DASH_SECRET',
+        'API_COMPACT_SECRET',
+        'TOKEN_TOP_SECRET',
+        'PASSWORD_TOP_SECRET',
+        'SECRET_TOP_SECRET',
+        'AUTH_NESTED_SECRET',
+        'API_NESTED_SECRET',
+        'INLINE_TUPLE_SECRET',
+        'INLINE_SET_SECRET',
+        'INLINE_FROZEN_SECRET',
+        'INLINE_API_SECRET',
+        'INLINE_DASH_SECRET',
+        'INLINE_COMPACT_SECRET',
+        'INLINE_TOKEN_SECRET',
+        'INLINE_PASSWORD_SECRET',
+        'INLINE_SECRET_SECRET',
+        'INLINE_AUTH_SECRET',
+        'INLINE_BEARER_SECRET',
+    ):
+        assert secret not in rendered
+
+    for name, value in (
+        ('run_id', 'run-diagnostic'),
+        ('task_id', 'task-diagnostic'),
+        ('plan_id', 'plan-diagnostic'),
+        ('step_id', 'step-diagnostic'),
+        ('invocation_id', 'invocation-diagnostic'),
+        ('path', 'src/app.py'),
+        ('pattern', 'H2_MARKER'),
+        ('status', 'failed'),
+        ('reason_code', 'TASK_AUTHORITY_DENIED'),
+    ):
+        assert projected[name] == value
+    assert projected['token_usage_complete'] is True
+    assert projected['total_tokens'] == 7
+
+
+def test_bounded_event_data_redacts_quoted_and_json_like_secrets() -> None:
+    payload = {
+        'quoted_authorization': 'Authorization="Bearer AUTH_SECRET"',
+        'json_api_key': '{"api_key": "API_SECRET"}',
+        'json_password': '{"password": "PASSWORD_SECRET"}',
+        'single_quoted_token': "token='TOKEN_SECRET'",
+        'spaced_password': 'password="hunter 2"',
+        'normal_diagnostics': {
+            'run_id': 'run-diagnostic',
+            'task_id': 'task-diagnostic',
+            'path': '/tmp/normal/path',
+            'pattern': '*.json',
+            'status': 'failed',
+            'reason_code': 'expected_failure',
+        },
+    }
+
+    rendered = repr(bounded_event_data(payload))
+
+    for secret in (
+        'AUTH_SECRET',
+        'API_SECRET',
+        'PASSWORD_SECRET',
+        'TOKEN_SECRET',
+        'hunter',
+        'hunter 2',
+    ):
+        assert secret not in rendered
+    for diagnostic in (
+        'run-diagnostic',
+        'task-diagnostic',
+        '/tmp/normal/path',
+        '*.json',
+        'expected_failure',
+    ):
+        assert diagnostic in rendered
+
+
+def test_bounded_event_data_redacts_authorization_schemes_and_composite_keys() -> None:
+    payload = {
+        'basic': 'Authorization: Basic BASIC_SECRET',
+        'access': '{"access_token":"ACCESS_SECRET"}',
+        'refresh': 'refresh_token=REFRESH_SECRET',
+        'client': 'client_secret=CLIENT_SECRET',
+        'bearer': 'Authorization: Bearer BEARER_SECRET',
+        'diagnostics': 'path=src/app.py status=failed reason_code=AUTH_DENIED',
+    }
+
+    rendered = repr(bounded_event_data(payload))
+
+    for secret in (
+        'BASIC_SECRET',
+        'ACCESS_SECRET',
+        'REFRESH_SECRET',
+        'CLIENT_SECRET',
+        'BEARER_SECRET',
+    ):
+        assert secret not in rendered
+    assert 'Authorization: Basic [REDACTED]' in rendered
+    assert 'Authorization: Bearer [REDACTED]' in rendered
+    assert 'Bearer [REDACTED]]' not in rendered
+    for diagnostic in ('src/app.py', 'status=failed', 'AUTH_DENIED'):
+        assert diagnostic in rendered
+
+
+def test_bounded_event_data_redacts_multipart_authorization_as_one_unit() -> None:
+    payload = {
+        'digest': (
+            'Authorization: Digest username="bob", realm="prod", '
+            'response="DIGEST_SECRET"'
+        ),
+        'aws': (
+            'Authorization: AWS4-HMAC-SHA256 '
+            'Credential=ACCESS_SECRET/20260830, SignedHeaders=host, Signature=SIG_SECRET'
+        ),
+        'diagnostics': 'path=src/app.py status=failed reason_code=AUTH_DENIED',
+    }
+
+    rendered = repr(bounded_event_data(payload))
+
+    for secret in (
+        'bob',
+        'prod',
+        'DIGEST_SECRET',
+        'ACCESS_SECRET',
+        '20260830',
+        'SIG_SECRET',
+    ):
+        assert secret not in rendered
+    assert 'Authorization: Digest [REDACTED]' in rendered
+    assert 'Authorization: AWS4-HMAC-SHA256 [REDACTED]' in rendered
+    for diagnostic in ('src/app.py', 'status=failed', 'AUTH_DENIED'):
+        assert diagnostic in rendered
+
+
+def test_bounded_event_data_preserves_innocent_credential_words() -> None:
+    message = 'tokenization secretariat passwordless Bearerish api-keyword'
+
+    projected = bounded_event_data({'message': message})
+
+    assert projected['message'] == message
+
+
+def test_runtime_event_uses_canonical_event_data_sanitization() -> None:
+    event = RuntimeEvent.from_fields(
+        'warning',
+        RunCorrelation.fresh(),
+        {
+            'message': 'authorization: Bearer EVENT_SECRET',
+            'path': 'src/app.py',
+            'reason_code': 'AUTH_DENIED',
+        },
+    )
+
+    serialized = event.to_legacy_dict()
+
+    assert 'EVENT_SECRET' not in repr(serialized)
+    assert serialized['data']['path'] == 'src/app.py'
+    assert serialized['data']['reason_code'] == 'AUTH_DENIED'
 
 
 def test_checkpoint_round_trip_preserves_root_task_identity() -> None:

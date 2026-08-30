@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -22,6 +23,98 @@ RESERVED_EVENT_IDENTITY_FIELDS = frozenset(
         "invocation_id",
     }
 )
+_EVENT_SECRET_KEY_PATTERN = (
+    r"(?:[A-Za-z][A-Za-z0-9-]*[_-])?"
+    r"(?:api[_-]?key|token|password|secret)"
+)
+_EVENT_AUTHORIZATION_QUOTED_PATTERN = re.compile(
+    r'''(?i)(\bauthorization\b\s*["']?\s*[:=]\s*)'''
+    r'''(?P<quote>["'])(?P<credentials>(?:\\.|(?!(?P=quote))[\s\S])*)(?P=quote)'''
+)
+_EVENT_AUTHORIZATION_TEXT_PATTERN = re.compile(
+    r'''(?i)(\bauthorization\b\s*["']?\s*[:=]\s*)'''
+    r'''(?!["'])'''
+    r'''(?:(?P<scheme>[A-Za-z][A-Za-z0-9_-]*)[^\S\r\n]+)?'''
+    r'''(?P<credentials>[^\r\n]*)'''
+)
+_EVENT_SECRET_PATTERNS = (
+    (
+        re.compile(
+            r'''(?i)(\b'''
+            + _EVENT_SECRET_KEY_PATTERN
+            + r'''\b\s*["']?\s*[:=]\s*)(?P<quote>["'])(.*?)(?P=quote)'''
+        ),
+        r'\1\g<quote>[REDACTED]\g<quote>',
+    ),
+    (
+        re.compile(
+            r'''(?i)(\b'''
+            + _EVENT_SECRET_KEY_PATTERN
+            + r'''\b\s*["']?\s*[:=]\s*)[^\s,;}\]"']+'''
+        ),
+        r'\1[REDACTED]',
+    ),
+    (
+        re.compile(r'''(?i)(\bbearer\s+)(?P<quote>["'])(.*?)(?P=quote)'''),
+        r'\1\g<quote>[REDACTED]\g<quote>',
+    ),
+    (
+        re.compile(r'''(?i)(\bbearer\s+)(?!\[REDACTED\])[^\s,;}\]"']+'''),
+        r'\1[REDACTED]',
+    ),
+)
+_SENSITIVE_EVENT_KEYS = frozenset(
+    {'authorization', 'apikey', 'token', 'password', 'secret'}
+)
+_SAFE_TOKEN_DIAGNOSTIC_KEYS = frozenset(
+    {'tokenusage', 'tokenusagecomplete', 'tokencount'}
+)
+
+
+def _sanitize_event_text(value: str) -> str:
+    sanitized = _EVENT_AUTHORIZATION_QUOTED_PATTERN.sub(
+        _sanitize_authorization_match,
+        value,
+    )
+    sanitized = _EVENT_AUTHORIZATION_TEXT_PATTERN.sub(
+        _sanitize_authorization_match,
+        sanitized,
+    )
+    for pattern, replacement in _EVENT_SECRET_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
+    return sanitized
+
+
+def _sanitize_authorization_match(match: re.Match[str]) -> str:
+    scheme = match.groupdict().get("scheme")
+    if scheme is None:
+        credentials = match.group("credentials")
+        scheme_match = re.match(
+            r"[A-Za-z][A-Za-z0-9_-]*(?=[^\S\r\n])",
+            credentials,
+        )
+        scheme = scheme_match.group(0) if scheme_match else None
+    scheme_text = f"{scheme} " if scheme else ""
+    quote = match.groupdict().get("quote")
+    if quote is None:
+        return f"{match.group(1)}{scheme_text}[REDACTED]"
+    return f"{match.group(1)}{quote}{scheme_text}[REDACTED]{quote}"
+
+
+def _normalized_event_key(value: Any) -> str:
+    return ''.join(character for character in str(value).casefold() if character.isalnum())
+
+
+def _is_sensitive_event_key(value: Any) -> bool:
+    normalized = _normalized_event_key(value)
+    if normalized in _SAFE_TOKEN_DIAGNOSTIC_KEYS:
+        return False
+    if normalized in _SENSITIVE_EVENT_KEYS:
+        return True
+    return (
+        normalized.startswith(('authorization', 'apikey', 'password', 'secret', 'token'))
+        or normalized.endswith(('authorization', 'apikey', 'password', 'secret', 'token'))
+    )
 
 
 def _bounded_text(value: Any, *, limit: int = MAX_EVENT_TEXT) -> str:
@@ -35,12 +128,17 @@ def _bounded_value(value: Any, depth: int) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return _bounded_text(value)
+        return _bounded_text(_sanitize_event_text(value))
     if isinstance(value, Mapping):
         projected: dict[str, Any] = {}
         items = list(value.items())
         for key, item in items[:MAX_EVENT_ITEMS]:
-            projected[_bounded_text(key, limit=128)] = _bounded_value(item, depth + 1)
+            projected_key = _bounded_text(_sanitize_event_text(str(key)), limit=128)
+            projected[projected_key] = (
+                '[REDACTED]'
+                if _is_sensitive_event_key(key)
+                else _bounded_value(item, depth + 1)
+            )
         if len(items) > MAX_EVENT_ITEMS:
             projected["__truncated_items__"] = len(items) - MAX_EVENT_ITEMS
         return projected
@@ -54,7 +152,7 @@ def _bounded_value(value: Any, depth: int) -> Any:
 
 
 def bounded_event_data(data: Mapping[str, Any] | None) -> Mapping[str, Any]:
-    """Project event diagnostics into a deterministic JSON-safe bounded map."""
+    """Project event diagnostics into a bounded, deterministic, secret-safe map."""
 
     raw = data if isinstance(data, Mapping) else {}
     projected = _bounded_value(raw, 0)
