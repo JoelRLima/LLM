@@ -83,7 +83,7 @@ malformado, mas não elimina a responsabilidade da skill de cumprir o contrato.
 | `directory_lister` | listagem restrita à raiz | read |
 | `echo` | infraestrutura/teste | nenhuma |
 | `file_reader` | leitura paginada e integração com workspace legado | read |
-| `file_writer` | escrita no workspace legado com confirmação | read, write |
+| `file_writer` | preparação no scratch e escrita final transacional com confirmação | read, write |
 | `git_reader` | metadados de histórico Git local | read, process, vcs_read |
 | `grep` | busca textual restrita à raiz | read |
 | `python_executor` | execução Python em workspace efêmero com defesas | process |
@@ -141,7 +141,7 @@ e legada da skill. O campo externo `ok` só é verdadeiro para `succeeded`;
 - varreduras de `grep` e `code_analyzer` resolvem cada arquivo descoberto e
   descartam symlinks que apontem para fora da raiz;
 - `file_writer` valida a requisição e delega backup, diff, confirmação e
-  escrita a `file_writer_runtime.py`;
+  escrita final via `ChangeSetTransaction` a `file_writer_runtime.py`;
 - `shell` usa `shlex.split`, `shell=False`, timeout, allowlist e validação dos
   argumentos que representam paths; `ruff` consulta `ApprovalPort` antes da
   execução;

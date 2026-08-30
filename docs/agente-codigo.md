@@ -9,7 +9,8 @@ O domínio `agent/code/` concentra análise, geração, alteração, validação
 reparo. Ele não conhece CLI, `Orchestrator` ou provider concreto.
 
 O caminho de alteração suportado pelo modelo é `code_task` → `ChangeSet` →
-`ProjectValidator`. `file_writer` não é uma alternativa model-actionable.
+`FileChange`/`ChangeSetTransaction` → `ProjectValidator`. `file_writer` não é
+uma alternativa model-actionable.
 
 ```text
 ProjectDiscovery -> ProjectProfile
@@ -144,6 +145,21 @@ detectada nessa revalidação é rejeitada como conflito; isso não é uma garan
 universal contra TOCTOU durante o apply, e não promete preservar toda alteração
 externa concorrente. A garantia cobre apenas os arquivos descritos no ChangeSet;
 não cobre efeitos arbitrários de shell, processos ou rede.
+
+### Owner mecânico das mutações duráveis
+
+No fluxo de mudanças do project/workspace, `ChangeSet`, `FileChange` e
+`ChangeSetTransaction` formam o owner mecânico canônico do commit. `FileWriter`
+pode preparar e revisar conteúdo em scratch, mas o target recebe uma transação
+com `CREATE` ou `MODIFY` e `base_hash` quando o arquivo já existe. Quando há um
+`WorkspaceManager`, a transação comitada é registrada para o rollback da task.
+
+No-op não é mutação física. Falha de commit não produz sucesso: o resultado
+expõe falha e informa o estado final (`restored`, `unknown` ou `unchanged`),
+conforme o ponto da falha e a restauração confirmada. O seam de compatibilidade `_save_code` do `AutoCoder` usa a mesma
+transação, a raiz do workspace pertencente ao contexto e `base_hash`, e registra
+a transação quando o manager está disponível. Essa mecânica não altera a
+exposição model-actionable nem substitui authority, approval ou `MutationEvidence`.
 
 ## Confiança e confirmação
 

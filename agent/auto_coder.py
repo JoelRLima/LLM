@@ -8,6 +8,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
+from agent.code.changes import (
+    ChangeKind,
+    ChangeSet,
+    ChangeSetError,
+    ChangeSetTransaction,
+    FileChange,
+    content_hash,
+)
 from agent.error_handler import ErrorHandler
 from agent.llm.admitted_decisions import (
     FinalGenerationDecision,
@@ -184,7 +192,8 @@ class AutoCoder:
             return "failed", current_code
         if passed:
             if attempt > 0:
-                self._save_code(target_path, current_code)
+                if not self._save_code(target_path, current_code):
+                    return 'failed', current_code
             return "passed", current_code
         if attempt >= 2:
             return "failed", current_code
@@ -194,13 +203,45 @@ class AutoCoder:
         self.orchestrator.context_manager.purge_stale_context()
         return "retry", corrected
 
-    @staticmethod
-    def _save_code(file_path: Path, code: str) -> None:
+    def _save_code(self, file_path: Path, code: str) -> bool:
+        workspace_manager = getattr(self.orchestrator, 'workspace', None)
+        workspace_root = getattr(workspace_manager, 'workspace_root', None)
+        if workspace_root is None:
+            workspace_root = getattr(self.orchestrator, 'workspace_root', None)
+        if workspace_root is None:
+            return False
+
+        root = Path(workspace_root).resolve()
         try:
-            with file_path.open("w", encoding="utf-8") as handle:
-                handle.write(code)
-        except OSError:
-            pass
+            target = file_path if file_path.is_absolute() else root / file_path
+            target = target.resolve()
+            relative = target.relative_to(root).as_posix()
+            before = target.read_bytes() if target.exists() else None
+            transaction = ChangeSetTransaction(
+                root,
+                ChangeSet(
+                    objective=f'AutoCoder correction: {relative}',
+                    changes=(
+                        FileChange(
+                            path=relative,
+                            kind=ChangeKind.MODIFY if before is not None else ChangeKind.CREATE,
+                            content=code,
+                            base_hash=content_hash(before) if before is not None else None,
+                        ),
+                    ),
+                    rationale='Commit the compatibility correction through the canonical transaction owner.',
+                ),
+            )
+            preview = transaction.prepare()
+            if not preview.mutation_occurred:
+                return True
+            transaction.commit()
+            register_transaction = getattr(workspace_manager, 'register_transaction', None)
+            if callable(register_transaction):
+                register_transaction(transaction)
+            return True
+        except (ChangeSetError, OSError, ValueError):
+            return False
 
     def _mark_correction_failure(self) -> bool:
         self.orchestrator.fail_task()

@@ -16,7 +16,7 @@ arquitetural rejeita imports dos aliases da raiz dentro de `agent/`.
 | `session.py` | `agent.llm.session` | integrações antigas | consumidores usarem `ModelGateway` ou a sessão canônica |
 | `benchmark.py` | `scripts.benchmark` | comando manual documentado | documentação usar somente o módulo |
 | `ModelClient` | `ModelGateway` + `structured_output` | integrações externas, testes e planos antigos | janela pública de compatibilidade encerrada e consumidores externos migrados |
-| `AutoCoder` | `agent.code` e `code_task` | gerador de conteúdo legado e callers explícitos de correção | toda alteração passar por `ChangeSet` e validação, com janela pública encerrada |
+| `AutoCoder` | `agent.code`, `ChangeSetTransaction` e `code_task` | gerador de conteúdo legado e callers explícitos de correção | toda persistência passar pelo owner transacional canônico, com janela pública encerrada |
 | alias `git` | skill `git_reader` | planos persistidos antigos | checkpoints incompatíveis anteriores deixarem de ser suportados |
 
 ## Disposições do Block 6
@@ -27,8 +27,8 @@ arquitetural rejeita imports dos aliases da raiz dentro de `agent/`.
 | `LegacyPayloadGateway`, `ChatSession.build_payload`, `build_legacy_request` e `send_non_streaming_request` | `RETAIN_COMPAT` | CLI, integrações externas e adapters antigos ainda dependem das fachadas; essas superfícies traduzem para `ModelRequest`/`ModelResponse` canônicos |
 | `ChatSession.send_request(stream=False)` | `DEFER_WITH_EVIDENCE` | contrato público retorna o objeto raw de `gateway.send_payload`; a boundary usa a mesma `TaskBudgetLedger`, contabiliza uma tentativa e registra falhas; retirar após migração dos consumidores públicos |
 | `PendingStream`, `send_request(stream=True)` e `ChatSession.process_stream` | `DEFER_WITH_EVIDENCE` | contrato público de stream legado em duas fases ainda exige envelope raw e consumo posterior; retirar após migração da CLI e callers públicos |
-| `AutoCoder` e correção direta | `DEFER_WITH_EVIDENCE` | `file_writer` legado e teste de compatibilidade ainda exercitam a superfície; novos writes usam `code_task`/`ChangeSet` |
-| `file_writer` de baixo nível | `RETAIN_COMPAT` | excluído do conjunto model-actionable; permanece para administração/callers explícitos com aprovação e limites de workspace |
+| `AutoCoder` e correção direta | `DEFER_WITH_EVIDENCE` | o seam legado `_save_code` converte a correção em `ChangeSet`/`FileChange`, usa `ChangeSetTransaction` com raiz do workspace e `base_hash`, e registra a transação quando possível; novos writes model-actionable usam `code_task`/`ChangeSet` |
+| `file_writer` de baixo nível | `RETAIN_COMPAT` | excluído do conjunto model-actionable; prepara no scratch e faz o commit final por `ChangeSetTransaction` para administração/callers explícitos, mantendo aprovação e limites de workspace |
 | arestas implícitas `file_writer` → `file_reader`/`code_analyzer` no grafo/optimizer | `REMOVE` | removidas de `dependency_map` e `PlanOptimizer`; dependências causais exigem `ResultBinding` explícito |
 | `check_inverted_dependencies` do `PlanValidator` | `RETAIN_COMPAT` | política de segurança que rejeita leitura anterior a uma escrita declarada; não cria aresta de execução nem substitui `ResultBinding` |
 | reordenação de leituras por caminho no `PlanOptimizer` | `REMOVE` | removida; o optimizer mantém a ordem declarada e só deduplica operações cacheáveis sem bindings |

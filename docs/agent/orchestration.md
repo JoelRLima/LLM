@@ -82,8 +82,11 @@ interna não podem desaparecer na projeção externa.
 Checkpoint v2 revalida o plano no resume e não persiste authority efetiva.
 Passos concluídos não repetem; `running` volta a `pending`; retry de failed ou
 skipped é opt-in. Cancelamento salva checkpoint. Falha da tarefa aciona
-rollback do `WorkspaceManager`; no domínio `code_task`, o `ChangeSet` possui
-seu próprio commit/validation/rollback transacional.
+rollback do `WorkspaceManager`; transações registradas, inclusive as criadas
+por `code_task`, `FileWriter` ou o seam de correção do `AutoCoder`, são
+revertidas antes dos restore points legados. No domínio `code_task`,
+`ChangeSet`/`FileChange`/`ChangeSetTransaction` possuem o próprio
+commit/validation/rollback transacional.
 
 Rollback cobre arquivos conhecidos pela operação, não efeitos arbitrários de
 processos ou rede. Falha ao persistir memória torna a tarefa falha e preserva

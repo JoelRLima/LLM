@@ -37,6 +37,8 @@ class FileWriterSkill(BaseSkill):
         config: Mapping[str, Any] | None = None,
         auto_confirm: bool | None = None,
         approval_policy: ApprovalPort | None = None,
+        workspace_manager: Any | None = None,
+        orchestrator: Any | None = None,
     ) -> None:
         self.base_dir = Path(base_dir).expanduser().resolve()
         self.scratch_dir = (
@@ -53,9 +55,18 @@ class FileWriterSkill(BaseSkill):
         self.approval_policy = approval_policy or (
             AutoApprove() if self.auto_confirm else RequireExplicitApproval()
         )
+        self.orchestrator = orchestrator
+        self.workspace_manager = workspace_manager
 
     def _is_auto_confirm(self) -> bool:
         return self.auto_confirm
+
+    def _task_workspace_manager(self) -> Any | None:
+        if self.workspace_manager is not None:
+            return self.workspace_manager
+        if self.orchestrator is None:
+            return None
+        return getattr(self.orchestrator, "workspace", None)
 
     def _get_workspace_path(self, original_path: Path) -> str:
         relative = original_path.relative_to(self.base_dir)
@@ -179,6 +190,8 @@ class FileWriterSkill(BaseSkill):
                 workspace_file_path,
                 self.approval_policy,
                 self._invalidate_cache,
+                workspace_root=self.base_dir,
+                workspace_manager=self._task_workspace_manager(),
             )
         except Exception as exc:
             logger.error("FileWriterSkill error: %s", exc, exc_info=True)

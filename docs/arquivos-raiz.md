@@ -100,8 +100,10 @@ não voltam a executar; retry de estados terminais é opt-in.
 ### Validação legada pós-escrita
 
 `validation` mantém `enabled`, `ruff`, `mypy`, `pytest`, `pytest_dir` e
-`fail_triggers_replan`. Ela atende ao `file_writer`/`WorkspaceManager` antigos.
-Os workflows de `agent/code` usam `ProjectValidator` e resultados normalizados.
+`fail_triggers_replan`. Ela permanece como compatibilidade para validação
+pós-escrita de `file_writer` e adapters do `WorkspaceManager`. O commit durável
+desses caminhos pertence a `ChangeSet`/`FileChange`/`ChangeSetTransaction`; os
+workflows de `agent/code` usam `ProjectValidator` e resultados normalizados.
 
 ### Política de propostas de código
 

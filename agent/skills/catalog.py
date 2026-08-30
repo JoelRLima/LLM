@@ -127,6 +127,7 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
             "scratch_dir": None,
             "config": {},
             "approval_policy": None,
+            "orchestrator": None,
         },
         capabilities=frozenset({C.READ, C.WRITE}),
         cost=8,

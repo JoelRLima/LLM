@@ -28,7 +28,7 @@ modelo. Uma tool apresentada ainda pode ser negada por authority ou approval.
 | `grep` | busca textual confinada | sim, conforme persona |
 | `code_analyzer` | análise AST/textual | sim, conforme persona |
 | `code_task` | analyze/review/generate/modify/repair/refactor/template/multitask | sim; é o caminho suportado de mudança |
-| `file_writer` | escrita direta legada/admin | **não**; excluído por `MODEL_ACTIONABLE_EXCLUDED` |
+| `file_writer` | preparação em scratch e commit administrativo via `ChangeSetTransaction` | **não**; excluído por `MODEL_ACTIONABLE_EXCLUDED` |
 | `shell` | runner reduzido | sim somente quando a persona possui todas as capabilities |
 | `git_reader` | histórico Git local | sim, conforme persona |
 | `python_executor` | Python com policy própria | sim, conforme persona; não é sandbox forte |
@@ -58,14 +58,24 @@ continuam bloqueados.
 O caminho model-actionable do coder é:
 
 ```text
-code_task → CodingApplicationService → ChangeSet → approval → commit
-          → ProjectValidator → succeeded | unverified | rollback + failed
+code_task → CodingApplicationService → ChangeSet
+          → ChangeSetTransaction.prepare → approval
+          → ChangeSetTransaction.commit → ProjectValidator
+          → succeeded | unverified | rollback + failed
 ```
 
 `file_writer` permanece registrado porque consumidores low-level e legados o
 usam, mas não aparece nas views do planner. Um plano do modelo que tente
 chamá-lo é filtrado/bloqueado e não deve mutar o workspace. Validação ausente
 gera `unverified`, nunca sucesso artificial.
+
+No caminho explícito, a forma mecânica do commit é
+`ChangeSetTransaction.prepare()` → approval → `ChangeSetTransaction.commit()`.
+Mesmo fora das views do planner, `file_writer` não possui atalho para o target:
+prepara conteúdo no scratch e, após a confirmação, aplica `FileChange` por
+`ChangeSetTransaction`, usando `base_hash` para arquivo existente. Authority,
+approval e `ToolInvocationGateway` continuam boundaries separadas; essa
+convergência mecânica não amplia a superfície model-actionable.
 
 ### Shell, Git e Ruff reduzidos
 

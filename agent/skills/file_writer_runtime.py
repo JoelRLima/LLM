@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import difflib
-import os
 import shutil
 from pathlib import Path
 from typing import Any, Callable
 
 from agent.approval import ApprovalDecision, ApprovalPort, ApprovalRequest
+from agent.code.changes import (
+    ChangeKind,
+    ChangeSet,
+    ChangeSetError,
+    ChangeSetState,
+    ChangeSetTransaction,
+    FileChange,
+    content_hash,
+)
 
 Result = dict[str, Any]
 AstPatcher = Callable[[Path, str, str, str | None], Result]
@@ -131,8 +139,13 @@ def review_and_commit(
     file_path: str,
     approval: ApprovalPort,
     invalidate: Callable[[str], None],
+    *,
+    workspace_root: Path | None = None,
+    workspace_manager: Any | None = None,
 ) -> Result:
-    original = requested.read_text(encoding="utf-8") if requested.exists() else ""
+    original_exists = requested.exists()
+    original = requested.read_text(encoding="utf-8") if original_exists else ""
+    original_bytes = requested.read_bytes() if original_exists else None
     proposed = workspace.read_text(encoding="utf-8")
     _show_diff(original, proposed, file_path)
     decision = approval.request(
@@ -148,20 +161,112 @@ def review_and_commit(
     )
     if denied is not None:
         return denied
-    temporary = Path(str(requested) + ".tmp")
-    temporary.write_text(proposed, encoding="utf-8")
-    os.replace(temporary, requested)
+
+    if original == proposed:
+        invalidate(file_path)
+        return {
+            "ok": True,
+            "done": True,
+            "message": f"Changes applied in '{file_path}'.",
+            "effect": "write",
+            "affected_files": (file_path,),
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "surviving_mutation": False,
+            "rollback_occurred": False,
+            "applied": True,
+            "final_state": "applied",
+        }
+
+    change = FileChange(
+        path=file_path,
+        kind=ChangeKind.MODIFY if original_bytes is not None else ChangeKind.CREATE,
+        content=proposed,
+        base_hash=content_hash(original_bytes) if original_bytes is not None else None,
+    )
+    transaction = ChangeSetTransaction(
+        Path(workspace_root or requested.parent),
+        ChangeSet(
+            objective=f"FileWriter apply: {file_path}",
+            changes=(change,),
+            rationale="Commit approved FileWriter proposal through the canonical transaction owner.",
+        ),
+    )
+    try:
+        preview = transaction.prepare()
+    except ChangeSetError as exc:
+        return {
+            "ok": False,
+            "done": True,
+            "status": "failed",
+            "message": f"Mudanças não aplicadas em '{file_path}'.",
+            "error": str(exc),
+            "effect": "write",
+            "affected_files": (file_path,),
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "surviving_mutation": False,
+            "rollback_occurred": False,
+            "applied": False,
+            "final_state": "unchanged",
+        }
+
+    if not preview.mutation_occurred:
+        invalidate(file_path)
+        return {
+            "ok": True,
+            "done": True,
+            "message": f"Changes applied in '{file_path}'.",
+            "effect": "write",
+            "affected_files": (file_path,),
+            "mutation_occurred": False,
+            "persisted_mutation": False,
+            "surviving_mutation": False,
+            "rollback_occurred": False,
+            "applied": True,
+            "final_state": "applied",
+        }
+
+    try:
+        transaction.commit()
+    except ChangeSetError as exc:
+        rolled_back = transaction.change_set.state is ChangeSetState.ROLLED_BACK
+        rollback_attempted = rolled_back or bool(transaction.rollback_errors)
+        final_state = "restored" if rolled_back else (
+            "unknown" if rollback_attempted else "unchanged"
+        )
+        return {
+            "ok": False,
+            "done": True,
+            "status": "failed",
+            "message": f"Mudanças não aplicadas em '{file_path}'.",
+            "error": str(exc),
+            "effect": "write",
+            "affected_files": (file_path,),
+            "mutation_occurred": preview.mutation_occurred,
+            "persisted_mutation": False,
+            "surviving_mutation": (
+                preview.mutation_occurred and final_state == "unknown"
+            ),
+            "rollback_occurred": rollback_attempted,
+            "applied": False,
+            "final_state": final_state,
+        }
+
+    register_transaction = getattr(workspace_manager, "register_transaction", None)
+    if callable(register_transaction):
+        register_transaction(transaction)
     invalidate(file_path)
-    mutation = original != proposed
     return {
         "ok": True,
         "done": True,
         "message": f"Changes applied in '{file_path}'.",
         "effect": "write",
         "affected_files": (file_path,),
-        "mutation_occurred": mutation,
-        "persisted_mutation": mutation,
+        "mutation_occurred": preview.mutation_occurred,
+        "persisted_mutation": preview.mutation_occurred,
+        "surviving_mutation": preview.mutation_occurred,
+        "rollback_occurred": False,
         "applied": True,
         "final_state": "applied",
     }
-    return {"ok": True, "done": True, "message": f"Mudanças aplicadas em '{file_path}'."}

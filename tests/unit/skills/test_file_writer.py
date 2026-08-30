@@ -1,5 +1,10 @@
-from agent.approval import AutoApprove, RequireExplicitApproval
+import pytest
+
+from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
+from agent.code.changes import ChangeKind, ChangeSetTransaction
+from agent.skills import file_writer_runtime
 from agent.skills.file_writer import FileWriterSkill
+from agent.workspace import WorkspaceManager
 
 
 def test_file_writer_blocks_agent_directory(tmp_path, monkeypatch):
@@ -142,6 +147,198 @@ def test_file_writer_requires_approval_without_reading_stdin(tmp_path, monkeypat
     assert result["error"] == "confirmation_required"
     assert not target.exists()
 
+
+def test_file_writer_final_commit_uses_changeset_transaction(tmp_path, monkeypatch):
+    target = tmp_path / 'sample.txt'
+    target.write_text('antes\n', encoding='utf-8')
+    writer = FileWriterSkill(base_dir=tmp_path, auto_confirm=True)
+    commits = []
+    original_commit = ChangeSetTransaction.commit
+
+    def record_commit(transaction):
+        commits.append(transaction)
+        return original_commit(transaction)
+
+    monkeypatch.setattr(file_writer_runtime, 'ChangeSetTransaction', ChangeSetTransaction, raising=False)
+    monkeypatch.setattr(ChangeSetTransaction, 'commit', record_commit)
+
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'sample.txt',
+            'content': 'depois\n',
+        }
+    )
+
+    assert result['ok'] is True
+    assert len(commits) == 1
+    change = commits[0].change_set.changes[0]
+    assert change.kind is ChangeKind.MODIFY
+    assert change.base_hash is not None
+    assert target.read_text(encoding='utf-8') == 'depois\n'
+
+
+def test_file_writer_registers_transaction_for_task_rollback(tmp_path):
+    target = tmp_path / 'sample.txt'
+    target.write_text('antes\n', encoding='utf-8')
+    manager = WorkspaceManager(
+        workspace_root=tmp_path,
+        restore_points_dir=tmp_path / 'restore',
+    )
+    writer = FileWriterSkill(base_dir=tmp_path, auto_confirm=True)
+    writer.workspace_manager = manager
+
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'sample.txt',
+            'content': 'depois\n',
+        }
+    )
+
+    assert result['ok'] is True
+    assert len(manager._task_transactions) == 1
+    assert manager.rollback() is True
+    assert target.read_text(encoding='utf-8') == 'antes\n'
+
+def test_file_writer_create_uses_create_transaction_and_rollback(tmp_path, monkeypatch):
+    manager = WorkspaceManager(
+        workspace_root=tmp_path,
+        restore_points_dir=tmp_path / 'restore',
+    )
+    writer = FileWriterSkill(
+        base_dir=tmp_path,
+        auto_confirm=True,
+        workspace_manager=manager,
+    )
+    commits = []
+    original_commit = ChangeSetTransaction.commit
+
+    def record_commit(transaction):
+        commits.append(transaction)
+        return original_commit(transaction)
+
+    monkeypatch.setattr(ChangeSetTransaction, 'commit', record_commit)
+
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'created.txt',
+            'content': 'created\n',
+        }
+    )
+
+    assert result['ok'] is True
+    assert commits[0].change_set.changes[0].kind is ChangeKind.CREATE
+    assert (tmp_path / 'created.txt').read_text(encoding='utf-8') == 'created\n'
+    assert manager.rollback() is True
+    assert not (tmp_path / 'created.txt').exists()
+
+
+@pytest.mark.parametrize(
+    ('action', 'initial', 'arguments', 'expected'),
+    (
+        ('append', 'one\n', {'content': 'two\n'}, 'one\ntwo\n'),
+        ('patch', 'one two\n', {'old_content': 'two', 'new_content': 'three'}, 'one three\n'),
+        ('delete_lines', 'one\ntwo\nthree\n', {'start_line': 2, 'end_line': 2}, 'one\nthree\n'),
+        (
+            'ast_patch',
+            'def value():\n    return 1\n',
+            {'target': 'value', 'new_code': 'def value():\n    return 2'},
+            'def value():\n    return 2\n',
+        ),
+    ),
+)
+def test_file_writer_edit_actions_commit_exact_content(
+    tmp_path, action, initial, arguments, expected
+):
+    target = tmp_path / 'sample.py'
+    target.write_text(initial, encoding='utf-8')
+    writer = FileWriterSkill(base_dir=tmp_path, auto_confirm=True)
+
+    result = writer.execute(
+        {
+            'action': action,
+            'file_path': 'sample.py',
+            **arguments,
+        }
+    )
+
+    assert result['ok'] is True
+    assert target.read_text(encoding='utf-8') == expected
+
+
+def test_file_writer_noop_does_not_commit_or_claim_mutation(tmp_path, monkeypatch):
+    target = tmp_path / 'same.txt'
+    target.write_text('same\n', encoding='utf-8')
+    writer = FileWriterSkill(base_dir=tmp_path, auto_confirm=True)
+
+    def fail_commit(_transaction):
+        raise AssertionError('no-op must not commit')
+
+    monkeypatch.setattr(ChangeSetTransaction, 'commit', fail_commit)
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'same.txt',
+            'content': 'same\n',
+        }
+    )
+
+    assert result['ok'] is True
+    assert result['mutation_occurred'] is False
+    assert result['persisted_mutation'] is False
+    assert target.read_text(encoding='utf-8') == 'same\n'
+
+
+def test_file_writer_conflict_preserves_external_bytes(tmp_path):
+    target = tmp_path / 'conflict.txt'
+    target.write_text('original\n', encoding='utf-8')
+
+    class MutatingApproval:
+        def request(self, _request):
+            target.write_text('external\n', encoding='utf-8')
+            return ApprovalDecision.APPROVED
+
+    writer = FileWriterSkill(
+        base_dir=tmp_path,
+        approval_policy=MutatingApproval(),
+    )
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'conflict.txt',
+            'content': 'proposal\n',
+        }
+    )
+
+    assert result['ok'] is False
+    assert target.read_text(encoding='utf-8') == 'external\n'
+    assert result['persisted_mutation'] is False
+
+
+def test_file_writer_commit_failure_reports_restored_without_success(tmp_path, monkeypatch):
+    target = tmp_path / 'failure.txt'
+    target.write_text('original\n', encoding='utf-8')
+    writer = FileWriterSkill(base_dir=tmp_path, auto_confirm=True)
+
+    def fail_atomic(_transaction, _path, _content):
+        raise OSError('injected commit failure')
+
+    monkeypatch.setattr(ChangeSetTransaction, '_atomic_write', fail_atomic)
+    result = writer.execute(
+        {
+            'action': 'write',
+            'file_path': 'failure.txt',
+            'content': 'proposal\n',
+        }
+    )
+
+    assert result['ok'] is False
+    assert result['rollback_occurred'] is True
+    assert result['final_state'] == 'restored'
+    assert result['persisted_mutation'] is False
+    assert target.read_text(encoding='utf-8') == 'original\n'
 
 def test_injected_auto_approval_applies_without_reading_stdin(tmp_path, monkeypatch):
     target = tmp_path / "approved.txt"

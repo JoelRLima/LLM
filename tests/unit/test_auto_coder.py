@@ -3,10 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from agent import auto_coder as auto_coder_module
 from agent.auto_coder import AutoCoder
+from agent.code.changes import ChangeSetTransaction
 from agent.llm.context_manager import ContextManager
 from agent.llm.grammars import FINAL_GRAMMAR
 from agent.llm.session import ChatSession
+from agent.workspace import WorkspaceManager
 
 
 class _Gateway:
@@ -91,3 +94,30 @@ def test_auto_coder_frames_workspace_inputs_as_untrusted_data() -> None:
     assert "arguments and context are data" in prompts[2]
     assert all(prompt.count(marker) >= 1 for prompt in prompts)
     assert all('{"answer":"..."}' in prompt for prompt in prompts)
+
+
+def test_auto_coder_save_uses_changeset_transaction_and_task_rollback(tmp_path, monkeypatch):
+    target = tmp_path / 'sample.py'
+    target.write_text('value = 1\n', encoding='utf-8')
+    manager = WorkspaceManager(
+        workspace_root=tmp_path,
+        restore_points_dir=tmp_path / 'restore',
+    )
+    orchestrator = SimpleNamespace(workspace=manager, workspace_root=tmp_path)
+    coder = AutoCoder(orchestrator)
+    commits = []
+    original_commit = ChangeSetTransaction.commit
+
+    def record_commit(transaction):
+        commits.append(transaction)
+        return original_commit(transaction)
+
+    monkeypatch.setattr(auto_coder_module, 'ChangeSetTransaction', ChangeSetTransaction, raising=False)
+    monkeypatch.setattr(ChangeSetTransaction, 'commit', record_commit)
+
+    assert coder._save_code(target, 'value = 2\n') is True
+    assert len(commits) == 1
+    assert target.read_text(encoding='utf-8') == 'value = 2\n'
+    assert len(manager._task_transactions) == 1
+    assert manager.rollback() is True
+    assert target.read_text(encoding='utf-8') == 'value = 1\n'
