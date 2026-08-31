@@ -32,7 +32,8 @@ def render_markdown(data: Dict[str, Any]) -> str:
     lines = [
         f"# Execução Hierárquica: {data.get('objective', '')}", "",
         f"**Status:** {data.get('status', '')}",
-        f"**Progresso:** {progress.get('completed', 0)}/{progress.get('total', 0)} ({progress.get('percent', 0.0)}%)",
+        f"**Conclusão bem-sucedida:** {progress.get('succeeded', progress.get('completed', 0))}/{progress.get('total', 0)} ({progress.get('successful_completion_percent', progress.get('percent', 0.0))}%)",
+        f"**Cobertura terminal:** {progress.get('terminal', 0)}/{progress.get('total', 0)} ({progress.get('terminal_coverage_percent', 0.0)}%)",
         f"**Métricas:** {metrics.get('steps', 0)} passos · {metrics.get('tool_calls', 0)} ferramentas · {metrics.get('llm_calls', 0)} chamadas LLM",
         "", "## Sub-objetivos", "",
     ]

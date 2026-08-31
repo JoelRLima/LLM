@@ -18,6 +18,7 @@ from agent.runtime.recovery import (
     RecoveryPolicy,
     RecoveryScope,
 )
+from agent.runtime.task_policy import TaskPolicyState
 from agent.state_checkpointing import StateCheckpointMixin
 from agent.state_failure_recovery import StateFailureRecoveryMixin
 from agent.state_incidents import StateIncidentMixin
@@ -74,6 +75,14 @@ class AgentState(
         # properties below are projections and cannot create an independent
         # ledger.
         self.recovery_budget = RecoveryBudgetState()
+        # W6 task-scoped consumed state.  Quantitative and recovery counters
+        # remain owned by their canonical ledgers; this owner stores only
+        # logical admissions and cumulative active duration.
+        self.task_policy_state = TaskPolicyState()
+        # An in-progress hierarchical macro is not resumable; the marker
+        # makes a restored checkpoint fail closed instead of silently
+        # reopening only its last microplan.
+        self.hierarchical_lifecycle: Dict[str, Any] = {"status": "inactive"}
         self._task_rollback_occurred: bool = False
         self._task_rollback_succeeded: bool | None = None
         self.reasoning_last_history_count: int = -1

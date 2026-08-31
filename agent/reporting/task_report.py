@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
+from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.metrics import project_run_metrics
 from agent.reporting.observation_evidence import project_tool_observation
 from agent.reporting.public_projection import (
@@ -30,7 +31,6 @@ from agent.runtime.paths import REPORTS_DIR
 TIMESTAMP_KEYS = ("timestamp", "time", "ts")
 MAX_SUMMARY_CHARS = 500
 MAX_PREVIEW_CHARS = 500
-
 
 class TaskReportBuilder:
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
@@ -72,6 +72,7 @@ class TaskReportBuilder:
             planner_outcome = self._project_planner_outcome(events)
             event_summary = self._project_events(events)
             replan_events = self._extract_replan_events(events)
+            progress = build_task_progress_projection(agent_state, operational_outcome=operational_outcome).to_dict()
         else:
             status = str(snapshot.status)
             canonical_outcome = {
@@ -94,6 +95,7 @@ class TaskReportBuilder:
             planner_outcome = facts.planner_outcome
             event_summary = [thaw_projection(item) for item in facts.event_summary]
             replan_events = [thaw_projection(item) for item in facts.replan_events]
+            progress = thaw_projection(facts.progress)
         answer = final_answer or ""
         report = {
             "report_id": self._generate_report_id(),
@@ -102,6 +104,7 @@ class TaskReportBuilder:
             "start_time": start,
             "end_time": end,
             "steps": steps,
+            "progress": progress,
             "planner_outcome": planner_outcome,
             "event_summary": event_summary,
             "replan_events": replan_events,
@@ -132,7 +135,6 @@ class TaskReportBuilder:
             else:
                 report["receipt"] = dict(receipt)
         return report
-
     @staticmethod
     def _aggregate_task_metrics(
         agent_state: Any,
@@ -153,7 +155,6 @@ class TaskReportBuilder:
                 budget_snapshot=budget_snapshot,
             ).to_dict())
         return cast(Dict[str, Any], snapshot.metrics.to_dict())
-
     def save_report(
         self, report: Dict[str, Any], format: str = "json", path: Optional[str] = None
     ) -> str:

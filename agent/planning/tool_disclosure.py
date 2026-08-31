@@ -236,9 +236,9 @@ def _ask_selection(orchestrator: Any, prompt: str) -> Any:
         base_prompt=None,
         log_metric_callback=getattr(orchestrator, "_log_metric", None),
     )
-
-
 def _authorize_semantic_selection_repair(orchestrator: Any) -> bool:
+    if (policy := getattr(orchestrator, "task_policy", None)) is not None:
+        return bool(policy.authorize_recovery(RecoveryScope.SEMANTIC_SELECTION_REPAIRS).allowed)
     budget = getattr(getattr(orchestrator, "agent_state", None), "recovery_budget", None)
     if budget is None:
         return True

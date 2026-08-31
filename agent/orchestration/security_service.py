@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.orchestration.route_result import RouteResult
 from agent.planning.task_completion import allow_linear_completion
+from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.operational_outcome import project_operational_outcome
 from agent.runtime.outcome_taxonomy import operational_status_for
@@ -13,6 +14,7 @@ from agent.security.security_scanner import consolidate
 from agent.tools.contracts import ToolResult
 from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import canonical_result_successful
+from agent.watchdog import Watchdog
 
 _ROUTE = "security"
 
@@ -34,12 +36,29 @@ class SecurityAnalysisService:
                 _ROUTE,
                 reason_code="SECURITY_GATEWAY_UNAVAILABLE",
             )
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            watchdog_reason = Watchdog.check_all(
+                getattr(self.orchestrator, "_task_start_time", None),
+                getattr(getattr(self.orchestrator, "agent_state", None), "tool_history", []),
+                getattr(getattr(self.orchestrator, "session", None), "config", {}) or {},
+                policy.active_elapsed_seconds,
+            )
+            admission = policy.admit_work_units(
+                1,
+                resource="tool_calls",
+                watchdog_reason=watchdog_reason,
+            )
+            blocked = policy_terminal_answer(self.orchestrator, admission)
+            if blocked is not None:
+                return RouteResult.handled(_ROUTE, answer=str(blocked), reason_code=admission.reason_code)
         try:
             res = gateway.run(
                 "code_analyzer",
                 {"target": target, "mode": "security"},
                 active_skills=getattr(self.orchestrator, "active_skills", None),
                 allowed_capabilities=getattr(self.orchestrator, "allowed_capabilities", None),
+                cancellation_token=getattr(self.orchestrator, "cancellation_token", None),
             )
             result = ensure_canonical_result(res)
         except BudgetExhausted:

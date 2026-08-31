@@ -26,6 +26,16 @@ from agent.runtime.outcome_taxonomy import (
     failure_layer_for_code,
     operational_status_for,
 )
+from agent.runtime.task_policy import (
+    PolicyDecision,
+    PolicyResult,
+    TaskPolicy,
+    TaskPolicyDecision,
+    TaskPolicyError,
+    TaskPolicyResult,
+    TaskPolicyState,
+    TaskRuntimePolicy,
+)
 
 __all__ = [
     "Artifact",
@@ -54,4 +64,12 @@ __all__ = [
     "failure_layer_for_code",
     "operational_status_for",
     "resolve_hardware_profile",
+    "PolicyDecision",
+    "PolicyResult",
+    "TaskPolicy",
+    "TaskPolicyDecision",
+    "TaskPolicyError",
+    "TaskPolicyResult",
+    "TaskPolicyState",
+    "TaskRuntimePolicy",
 ]

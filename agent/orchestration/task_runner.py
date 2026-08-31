@@ -22,9 +22,11 @@ from agent.planning.task_completion import (
     initialize_task_progression,
     mark_terminal_blocked,
 )
+from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.runtime.task_policy import TaskPolicyError
 from agent.watchdog import Watchdog
 
 
@@ -81,22 +83,33 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             return self._handle_interrupt()
         except CheckpointLoadError as exc:
             return checkpoint_error_answer(self.orchestrator, exc)
+        except TaskPolicyError as exc:
+            return self._handle_policy_error(exc)
         except BudgetExhausted:
-            self.orchestrator._preserve_checkpoint = True
-            compiler = getattr(self.orchestrator, "task_definition_compiler", None)
-            partial = getattr(compiler, "last_ref", None)
-            if partial is not None:
-                self.orchestrator.agent_state.task_definition_ref = partial
-            message = mark_terminal_blocked(
-                self.orchestrator,
-                reason_code=BudgetExhausted.code,
-                message="A tarefa atingiu o limite de execucao e nao pode prosseguir agora.",
-                status="block",
-            )
-            self.orchestrator._save_checkpoint()
-            return message
+            return self._handle_budget_exhausted()
         finally:
             self._cleanup(original_count)
+
+    def _handle_policy_error(self, exc: TaskPolicyError) -> str:
+        self.orchestrator._preserve_checkpoint = True
+        answer = policy_terminal_answer(self.orchestrator, exc.result)
+        self.orchestrator._save_checkpoint()
+        return str(answer or exc)
+
+    def _handle_budget_exhausted(self) -> str:
+        self.orchestrator._preserve_checkpoint = True
+        compiler = getattr(self.orchestrator, "task_definition_compiler", None)
+        partial = getattr(compiler, "last_ref", None)
+        if partial is not None:
+            self.orchestrator.agent_state.task_definition_ref = partial
+        message = mark_terminal_blocked(
+            self.orchestrator,
+            reason_code=BudgetExhausted.code,
+            message="A tarefa atingiu o limite de execucao e nao pode prosseguir agora.",
+            status="block",
+        )
+        self.orchestrator._save_checkpoint()
+        return message
 
     def _resolve_inputs(self, objective: Optional[str], original_count: int) -> TaskInputs | None:
         if objective:
@@ -118,6 +131,9 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                     self.orchestrator, "admission_authority", None
                 ),
             )
+            refresh_policy = getattr(self.orchestrator, "_refresh_task_policy", None)
+            if callable(refresh_policy):
+                refresh_policy()
         except ValueError:
             self.orchestrator._preserve_checkpoint = True
             self.orchestrator.agent_state.root_task_id = None
@@ -128,6 +144,19 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 message="O checkpoint contem um estado terminal incompativel e foi preservado.",
             )
             return TaskInputs(objective, True, original_count)
+        lifecycle = getattr(self.orchestrator.agent_state, "hierarchical_lifecycle", {})
+        if isinstance(lifecycle, Mapping) and lifecycle.get("status") == "running":
+            self.orchestrator._preserve_checkpoint = True
+            mark_terminal_blocked(
+                self.orchestrator,
+                reason_code="HIERARCHICAL_RESUME_UNSUPPORTED",
+                message=(
+                    "A execucao hierarquica interrompida nao pode ser retomada "
+                    "com seguranca; o checkpoint foi preservado para auditoria."
+                ),
+                status="block",
+            )
+            return TaskInputs(str(self.orchestrator.agent_state.objective or "checkpoint"), True, original_count)
         restored = self.orchestrator.agent_state.objective
         if not restored:
             self.orchestrator._delete_checkpoint()
@@ -143,6 +172,9 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             self.orchestrator._reset_task_state(inputs.objective)
             initialize_task_progression(self.orchestrator, inputs.objective)
         self.orchestrator._task_start_time = Watchdog.start_task()
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            policy.start_active_segment()
         self.orchestrator._run_metric_recorded = False
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
         print(chr(10) + 'Analisando: "' + inputs.objective + '"')

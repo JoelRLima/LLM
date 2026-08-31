@@ -13,6 +13,8 @@ O sistema mantém fatos em suas fontes operacionais e os projeta para relatório
 - resultados de invocation fornecem status e, quando o adapter os preserva,
   limites de saída; duração é uma métrica da tarefa/eval, não um campo garantido
   por invocation;
+- `TaskProgressProjection` deriva, sem mutar owners, os estados dos records de
+  execução, fatos semânticos e resultado operacional;
 - `TaskReportBuilder` agrega essas fontes em JSON ou Markdown;
 - o adapter de eval projeta um subconjunto de measurement para
   `ExecutionObservation` e exportação do cenário.
@@ -32,12 +34,34 @@ resultado inconclusivo quando ela é pré-condição do veredicto. Contagens fí
 de invocations e `tool_calls` são lidas do owner canônico de budget/measurement;
 histórico, cache e resumos não podem inflá-las.
 
+## Progresso, cobertura e sucesso
+
+`TaskProgressProjection` é uma projeção congelada e read-only. Ela não possui
+steps, semântica ou resultado terminal; apenas deriva fatos canônicos para
+prompts, trackers e relatórios. Quando aplicável, distingue
+`succeeded`, `failed`, `skipped`, `blocked`, `cancelled`, `unverified`,
+`pending` e `running`.
+
+Há duas porcentagens diferentes:
+
+- conclusão bem-sucedida: unidades `succeeded` divididas pelo total;
+- cobertura terminal: unidades terminais (`succeeded`, `failed`, `skipped`,
+  `blocked`, `cancelled` e `unverified`) divididas pelo total.
+
+Falha, skip, bloqueio, cancelamento e resultado não verificado nunca contam
+como conclusão bem-sucedida. Nenhuma porcentagem decide sucesso da tarefa:
+`OperationalOutcome` continua sendo a autoridade operacional terminal e
+`TaskSemantics` continua sendo a autoridade semântica/evidencial. Satisfação do
+objetivo permanece distinta desses fatos.
+
 ## Artefatos
 
 - `TaskReportBuilder`: relatório final com task id, objetivo, steps, replans,
   métricas, erros e preview limitado da resposta.
-- `TaskTracker`: JSON estruturado e renderização Markdown do progresso;
-  persistência atômica best-effort para observabilidade.
+- `TaskProgressProjection`: fatos read-only de status, contagem, conclusão
+  bem-sucedida e cobertura terminal;
+- `TaskTracker`: JSON estruturado e renderização Markdown do progresso, sem
+  definir sucesso; persistência atômica best-effort para observabilidade.
 - `IncrementalSummarizer`: limita conteúdo acumulado em execução hierárquica;
   seu resumo não substitui os resultados originais usados para controle.
 - `MetricsRecorder`: apêndice JSONL e leitura a partir de watermark.
@@ -48,4 +72,6 @@ Relatórios truncam previews e normalizam estruturas para serialização, mas n�
 constituem um sistema geral de DLP ou secret scanning. O chamador continua
 responsável por escolher paths e circulação dos artefatos. Reason codes são
 diagnóstico observável; sua precedência, quando múltiplos guards negariam a
-mesma invocation, não é estável salvo garantia explícita em contrato.
+mesma invocation, não é estável salvo garantia explícita em contrato. Portanto,
+`TaskTracker`, builders, renderização Markdown/JSON e outras superfícies de
+reporting não definem `OperationalOutcome` nem completude semântica.

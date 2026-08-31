@@ -198,6 +198,9 @@ class StatePlanExecutionMixin:
     def mark_step_skipped(self, index: int, reason: str = "") -> None:
         self._mark_step_terminal(index, StepStatus.SKIPPED, reason)
 
+    def mark_step_cancelled(self, index: int, reason: str = "") -> None:
+        self._mark_step_terminal(index, StepStatus.CANCELLED, reason)
+
     def mark_step_blocked(self, index: int, reason: str = "") -> None:
         self._mark_step_terminal(index, StepStatus.BLOCKED, reason)
 

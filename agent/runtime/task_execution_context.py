@@ -44,6 +44,9 @@ def build_task_execution_context(owner: Any) -> TaskExecutionContext:
         cancellation=owner.cancellation_token,
         limits=RuntimeLimits.from_config(config),
         budget_ledger=owner.task_budget,
+        policy_state=getattr(owner.agent_state, "task_policy_state", None),
+        recovery_budget=getattr(owner.agent_state, "recovery_budget", None),
+        task_policy=getattr(owner, "task_policy", None),
         correlation=correlation,
         event_sink=getattr(owner, "event_dispatcher", None),
         permissions=frozenset(item.value for item in ALL_CAPABILITIES),
@@ -85,6 +88,9 @@ class TaskExecutionOwnershipMixin:
         self.agent_state.root_task_id = correlation.root_task_id
         self.agent_state.runtime_correlation = correlation
         self.session.run_correlation = correlation
+        policy = getattr(self, "task_policy", None)
+        if policy is not None:
+            policy.set_correlation(correlation)
         event_dispatcher = getattr(self, "event_dispatcher", None)
         if event_dispatcher is not None:
             self.session.event_sink = event_dispatcher
@@ -118,6 +124,11 @@ class TaskExecutionOwnershipMixin:
         self.agent_state.reset_execution()
         self.agent_state.reset_task_progression()
         self.agent_state.reset_runtime_observation(clear_events=True)
+        self.agent_state.hierarchical_lifecycle = {"status": "inactive"}
+        policy_state = getattr(self.agent_state, "task_policy_state", None)
+        reset_policy = getattr(policy_state, "reset", None)
+        if callable(reset_policy):
+            reset_policy()
         self.context_manager._cached_project_context = None
         self.workspace.restore_points.clear()
         created_files = getattr(self.workspace, "created_files", None)

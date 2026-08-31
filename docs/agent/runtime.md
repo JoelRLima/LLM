@@ -2,7 +2,8 @@
 
 > **STATUS: CURRENT — PRIMARY HOME.** Paths e operação ficam em
 > [operação standalone](../operacao-standalone.md); orchestration lógica em
-> [orchestration.md](orchestration.md).
+> [orchestration.md](orchestration.md). A política task-scoped e a retomada
+> operacional são descritas aqui.
 
 ## Fronteiras
 
@@ -16,6 +17,44 @@ após configuração e workspace serem validados.
 `ConfigRepository` combina defaults empacotados, arquivo, ambiente allowlisted
 e overrides, valida schema e materializa o perfil selecionado. Config inválida
 falha antes de diretórios, lock, modelo ou tools.
+
+## Política de runtime por tarefa
+
+`TaskRuntimePolicy` é a única seam canônica e estreita para decisões de runtime
+no escopo da tarefa. Ela compõe fatos existentes e adapters de rota; não
+substitui os owners abaixo:
+
+- `RuntimeLimits` continua sendo a autoridade dos limites configurados;
+- `TaskBudgetLedger` continua sendo a autoridade quantitativa de modelo, tools
+  e tokens;
+- `RecoveryBudgetState` continua sendo a autoridade de consumo de recovery;
+- `CancellationToken` continua sendo a autoridade de cancelamento;
+- `Plan` e `StepExecutionRecord` continuam sendo a autoridade do plano
+  executável;
+- `TaskSemantics` continua sendo a autoridade semântica e de evidência;
+- `OperationalOutcome` continua sendo a autoridade operacional terminal;
+- W4 continua sendo a espinha de eventos e correlação;
+- a autoridade de Task Definition do W5.5 permanece inalterada.
+
+`TaskPolicyState` possui somente os fatos task-scoped novos: admissões de
+unidades lógicas de trabalho executável e duração ativa acumulada. A admissão é
+escopada à tarefa raiz: mudar a forma da rota, replanejar ou limpar um
+microplano não reinicia o consumo. Em batches paralelos, a admissão acontece
+antes do dispatch e o prefixo é truncado pela quantidade ainda disponível.
+
+A policy aplica a mesma verdade task-scoped, por adapters estreitos quando
+necessário, nas rotas linear, paralela, reativa, hierárquica, de analyzer de
+segurança, de nós de `TaskGraph`, de sessões/modelos aninhados e nos seams de
+recovery, replan ou continuação que participem da tarefa. A implementação pode
+variar por subsistema; a política efetiva não pode divergir.
+
+Quando vários fatos negam uma operação, a precedência finita da policy é:
+
+`cancellation` → exaustão quantitativa → exaustão de trabalho lógico → exaustão
+de wall-time ativo → fatos de watchdog/sem progresso → exaustão de recovery.
+
+Essa ordem é da policy task-scoped. Ela não generaliza os guards de invocation
+que possuem contratos próprios.
 
 ## Timeout, cancelamento e terminalidade
 
@@ -34,6 +73,11 @@ publicação, evento ou record de um worker tardio. Caminhos mutáveis devem
 quiescer antes da publicação ou permanecer sob o owner da invocation; o
 contrato é terminalidade observável e ausência de mutação canônica tardia, não
 preempção universal do worker Python.
+
+Contextos e sessões aninhados sob a mesma tarefa raiz reutilizam o
+`CancellationToken` canônico. Isso garante uma decisão única de cancelamento na
+árvore de execução, mas não implica preempção universal no provider: a
+interrupção do transporte só existe onde o transporte oferece esse suporte.
 
 ## Stdio 1.0
 
@@ -69,13 +113,28 @@ plataformas além das exercitadas pela matriz do projeto.
 
 Memória JSON/SQLite é inicializada explicitamente e persiste por workspace.
 Promoções JSON usam tempfile, fsync e `os.replace`; corrupção falha fechado.
-Checkpoint v2 persiste IDs/estados de passos; `running` volta a `pending`, e
-somente `failed`/`skipped` podem ser reabertos por flags explícitas. Estados
-`completed`, `blocked` e `unverified` permanecem terminais. O lock por workspace
+Checkpoint v2 persiste IDs/estados de passos e o estado task-scoped. Para passos
+comuns, `running` volta a `pending`, e somente `failed`/`skipped` podem ser
+reabertos por flags explícitas. Estados `completed`, `blocked` e `unverified`
+permanecem terminais. O lock por workspace
 mantém um guard advisory durante a vida do processo, registra PID e identidade
 de início quando o sistema fornece essa prova e recupera registros stale após
 uma morte anormal. JSON inválido ou identidade indeterminada falha fechado e
 pode exigir intervenção manual.
+
+O estado da policy persiste admissões lógicas e duração ativa acumulada. O
+checkpoint armazena a duração acumulada, não um timestamp monotônico; o início
+monotônico de cada segmento é transitório. Portanto, downtime enquanto o
+processo está parado não consome o limite de wall-time. Em uma reentrada
+suportada, o consumo task-scoped restaurado permanece e um novo segmento ativo
+é iniciado. Owners quantitativos e de recovery não são duplicados por esse
+estado.
+
+O lifecycle hierárquico macro é explícito e também faz parte do checkpoint. Um
+hierárquico interrompido no estado `running` não é pseudo-retomado: a reentrada
+é bloqueada de forma determinística com
+`HIERARCHICAL_RESUME_UNSUPPORTED`, preservando o checkpoint para auditoria.
+Limpar um microplano individual não altera o consumo da tarefa raiz.
 
 Task Definitions usam arquivos JSON canônicos e limitados, publicação atômica
 do manifest e criação exclusiva dos corpos versionados. Contract e Spec

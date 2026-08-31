@@ -15,6 +15,7 @@ from agent.llm.decision_contract import ModelRequestContract
 from agent.planning.planner_prompt_tools import build_planner_tools_description
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
+from agent.planning.task_policy_support import policy_terminal_answer
 from agent.planning.tool_disclosure import disclose_tools, render_tool_guidance
 from agent.reporting.observation_evidence import (
     observation_contract_instructions,
@@ -60,6 +61,27 @@ class ReactiveLoop:
     def _limit_answer(self, objective: str, step_number: int) -> str | None:
         history = self.orchestrator.agent_state.tool_history
         config = self.orchestrator.session.config
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            watchdog_reason = Watchdog.check_all(
+                getattr(self.orchestrator, "_task_start_time", None),
+                history,
+                config,
+                policy.active_elapsed_seconds,
+            )
+            decision = policy.check_current(watchdog_reason=watchdog_reason)
+            if decision.denied:
+                if watchdog_reason:
+                    self.orchestrator._emit(
+                        "watchdog",
+                        Watchdog.build_watchdog_event(
+                            watchdog_reason,
+                            getattr(self.orchestrator, "_task_start_time", None),
+                            policy.active_elapsed_seconds,
+                        ),
+                    )
+                return policy_terminal_answer(self.orchestrator, decision)
+            return None
         ledger = task_budget_for(self.orchestrator, config)
         if CostGuard.check_limits(step_number, history, 0, config, ledger):
             self.orchestrator._emit(

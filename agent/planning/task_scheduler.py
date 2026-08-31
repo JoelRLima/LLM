@@ -90,6 +90,13 @@ class TaskGraphScheduler:
         parent_context: TaskExecutionContext,
         state: Optional[TaskGraphState] = None,
     ) -> GraphExecutionResult:
+        """Execute a graph; ``state`` is the explicit graph resume boundary.
+
+        The root task checkpoint does not infer or duplicate graph progress.
+        Callers that support graph resume must persist and pass the existing
+        ``TaskGraphState`` owner back into this method.
+        """
+
         self._validate(graph, parent_context)
         current = state or TaskGraphState(graph)
         if current.graph != graph:
@@ -152,9 +159,28 @@ class TaskGraphScheduler:
         self, batch: list[TaskNode], state: TaskGraphState, parent: TaskExecutionContext
     ) -> Dict[str, TaskResult]:
         results: Dict[str, TaskResult] = {}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(batch)) as pool:
+        dispatch_batch = batch
+        policy = getattr(parent, "task_policy", None)
+        if policy is not None:
+            admission = policy.admit_work_units(len(batch))
+            dispatch_batch = batch[: admission.admitted_units]
+            if admission.denied:
+                dispatch_batch = []
+            synthetic_status = (
+                TaskStatus.CANCELLED
+                if admission.decision.value == "cancelled"
+                else TaskStatus.BLOCKED
+            )
+            for node in batch[len(dispatch_batch) :]:
+                results[node.node_id] = TaskResult(
+                    synthetic_status,
+                    error=admission.message or admission.reason_code,
+                )
+        if not dispatch_batch:
+            return results
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(dispatch_batch)) as pool:
             futures: Dict[concurrent.futures.Future[TaskResult], TaskNode] = {}
-            for node in batch:
+            for node in dispatch_batch:
                 state.states[node.node_id] = NodeState.RUNNING
                 child = parent.child(node.node_id, permissions=frozenset(node.capabilities))
                 child.emit("task_node_started", {"objective": node.objective})

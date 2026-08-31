@@ -6,17 +6,15 @@ from dataclasses import replace
 from time import monotonic
 from typing import Any, Dict, cast
 
-from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelRequest, ModelResponse, TokenUsage, response_text, response_usage
 from agent.llm.legacy_payload import legacy_payload
 from agent.runtime.budget import estimate_model_request_tokens
 from agent.runtime.budget_estimation import RequestInputMeasurement
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from agent.runtime.context import TaskExecutionContext
 from agent.runtime.logging import logger
 from agent.runtime.model_call_record import (
     ModelCallOutcome,
     ModelCallRecord,
-    SessionMetricsSink,
     finalize_record,
 )
 from agent.runtime.model_call_stream import (
@@ -24,6 +22,8 @@ from agent.runtime.model_call_stream import (
     consume_legacy_request,
     observed_stream_response,
 )
+from agent.runtime.model_call_support import context_for_session
+from agent.runtime.task_policy import TaskPolicyError
 
 
 class ModelCallService:
@@ -39,35 +39,30 @@ class ModelCallService:
 
     @classmethod
     def for_session(cls, session: Any) -> "ModelCallService":
-        config = getattr(session, "config", {})
-        profile = getattr(session, "model_profile", None)
-        metadata = {
-            "model": getattr(profile, "model", getattr(session.gateway, "model", None)),
-            "provider": getattr(profile, "provider", None),
-        }
-        context = TaskExecutionContext(
-            model_gateway=session.gateway,
-            cancellation=getattr(session, "cancellation_token", CancellationToken()),
-            model_profile=profile,
-            limits=RuntimeLimits.from_config(config),
-            correlation=getattr(session, "run_correlation", None),
-            event_sink=getattr(session, "event_sink", None) or None,
-            metrics_sink=SessionMetricsSink(session),
-            budget_ledger=session.budget_ledger,
-            metadata=metadata,
-        )
-        return cls(context, session=session)
+        return cls(context_for_session(session), session=session)
 
     @property
     def gateway(self) -> Any:
         return self.context.model_gateway
 
     def _admit(self, request: Any) -> tuple[RequestInputMeasurement, int, int, float]:
+        policy = getattr(self.context, "task_policy", None)
+        if policy is not None:
+            preliminary = policy.check_current(resource="model")
+            if preliminary.denied:
+                raise TaskPolicyError(preliminary)
         measurement = self.context.measure_request_input_tokens(request)
         output_limit = getattr(request, "max_output_tokens", 0)
         if isinstance(output_limit, bool) or not isinstance(output_limit, int):
             output_limit = 0
         allowance = max(1, (measurement.token_count or 0) + max(0, output_limit))
+        if policy is not None:
+            decision = policy.check_current(
+                resource="model",
+                token_allowance=allowance,
+            )
+            if decision.denied:
+                raise TaskPolicyError(decision)
         call_number = self.context.consume_model_call(
             request,
             token_allowance=allowance,

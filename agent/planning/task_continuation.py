@@ -22,6 +22,13 @@ def _consume_effect_budget(
     mark_unfinished_effect: Callable[..., str | None],
 ) -> str | None:
     state = orchestrator.agent_state
+    policy = getattr(orchestrator, "task_policy", None)
+    if policy is not None:
+        if not policy.authorize_recovery(
+            RecoveryScope.EFFECT_CONTINUATIONS
+        ).allowed:
+            return mark_unfinished_effect(orchestrator, objective)
+        return None
     budget = getattr(state, "recovery_budget", None)
     if budget is not None:
         if not budget.try_consume(RecoveryScope.EFFECT_CONTINUATIONS):

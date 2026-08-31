@@ -48,11 +48,19 @@ class Watchdog:
         return time.monotonic()
 
     @staticmethod
-    def check_global_timeout(start_time: Optional[float], config: Dict[str, Any]) -> Optional[str]:
+    def check_global_timeout(
+        start_time: Optional[float],
+        config: Dict[str, Any],
+        active_elapsed_seconds: Optional[float] = None,
+    ) -> Optional[str]:
         if start_time is None:
             return None
         max_seconds = runtime_limit_values(config)["max_task_wall_seconds"]
-        elapsed = time.monotonic() - start_time
+        elapsed = (
+            active_elapsed_seconds
+            if active_elapsed_seconds is not None
+            else time.monotonic() - start_time
+        )
         if elapsed > max_seconds:
             return f"Timeout global da tarefa atingido ({elapsed:.1f}s > {max_seconds}s)."
         return None
@@ -155,13 +163,14 @@ class Watchdog:
         start_time: Optional[float],
         tool_history: List[Dict[str, Any]],
         config: Dict[str, Any],
+        active_elapsed_seconds: Optional[float] = None,
     ) -> Optional[str]:
         """
         Executa todas as checagens determinísticas, na ordem. Retorna o
         motivo da primeira violação encontrada, ou None se tudo estiver ok.
         """
         return (
-            cls.check_global_timeout(start_time, config)
+            cls.check_global_timeout(start_time, config, active_elapsed_seconds)
             or cls.check_no_progress_loop(tool_history, config)
             or cls.check_consecutive_same_error(tool_history, config)
         )
@@ -171,8 +180,18 @@ class Watchdog:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def build_watchdog_event(reason: str, start_time: Optional[float]) -> Dict[str, Any]:
-        elapsed = round(time.monotonic() - start_time, 2) if start_time is not None else None
+    def build_watchdog_event(
+        reason: str,
+        start_time: Optional[float],
+        active_elapsed_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        elapsed = (
+            round(active_elapsed_seconds, 2)
+            if active_elapsed_seconds is not None
+            else round(time.monotonic() - start_time, 2)
+            if start_time is not None
+            else None
+        )
         return {
             "reason": reason,
             "elapsed_seconds": elapsed,

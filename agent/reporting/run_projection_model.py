@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 
@@ -38,6 +38,7 @@ class RunProjectionFacts:
     validation_events: tuple[Mapping[str, Any], ...]
     output_chars: int
     output_truncated: bool
+    progress: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {item.name: thaw_projection(getattr(self, item.name)) for item in fields(self)}

@@ -138,8 +138,11 @@ def replan(
             ctx.current_step.get("args", {}),
         )
         budget = _recovery_budget(orchestrator)
+        policy = getattr(orchestrator, "task_policy", None)
         if action is not None and (
-            budget is None or budget.try_consume(RecoveryScope.HEURISTIC_REPLANS)
+            policy.authorize_recovery(RecoveryScope.HEURISTIC_REPLANS).allowed
+            if policy is not None
+            else budget is None or budget.try_consume(RecoveryScope.HEURISTIC_REPLANS)
         ):
             action = _validate_and_optimize_new_steps(
                 action,
@@ -155,8 +158,12 @@ def replan(
             return action
     if validation_repair or (ctx.failure.retryable and not ctx.failure.hard):
         budget = _recovery_budget(orchestrator)
-        allowed = validation_repair or budget is None or budget.try_consume(
-            RecoveryScope.LLM_REPLANS
+        policy = getattr(orchestrator, "task_policy", None)
+        allowed = (
+            validation_repair
+            or policy.authorize_recovery(RecoveryScope.LLM_REPLANS).allowed
+            if policy is not None
+            else validation_repair or budget is None or budget.try_consume(RecoveryScope.LLM_REPLANS)
         )
         action = (
             ask_llm_for_alternative(

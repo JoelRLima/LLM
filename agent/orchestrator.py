@@ -30,11 +30,11 @@ from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
 from agent.runtime import paths
 from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.context import TaskExecutionContext
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.paths import WorkspacePaths
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
+from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
 from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
@@ -114,8 +114,8 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._run_id: str | None = None
         self._run_correlation: RunCorrelation | None = None
         self._run_metric_recorded = False
-        self.cancellation_token = CancellationToken()
-        self._task_execution_context: TaskExecutionContext | None = None
+        self.session.cancellation_token = self.cancellation_token = CancellationToken()
+        self._task_execution_context: Any | None = None
         self.checkpoint_file = str(
             checkpoint_file
             or (workspace_paths.checkpoint_file if workspace_paths else paths.CHECKPOINT_FILE)
@@ -147,6 +147,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             state=self.agent_state,
             checkpoint_observer=observe_step_checkpoint,
         )
+        self._refresh_task_policy()
         self.session.event_sink = self.event_dispatcher
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
@@ -171,6 +172,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
     @property
     def workspace(self) -> WorkspaceManager:
         return self.subsystems.workspace
+    _refresh_task_policy = refresh_orchestrator_task_policy
     @property
     def context_manager(self) -> ContextManager:
         return self.subsystems.context_manager

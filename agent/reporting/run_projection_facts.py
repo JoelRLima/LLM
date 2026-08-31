@@ -9,6 +9,7 @@ from typing import Any
 
 from agent.execution_incidents import MAX_EXECUTION_INCIDENTS
 from agent.planning.plan_model import Plan, serialize_plan
+from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.evaluation_arg_projection import project_evaluation_args
 from agent.reporting.observation_evidence import project_tool_observation
 from agent.reporting.public_safety import sanitize_public_text
@@ -172,7 +173,12 @@ def _canonical_plan(state: Any) -> Any:
     return _freeze(bounded_event_data({"steps": serialize_plan(plan)}).get("steps", ()))
 
 
-def build_run_projection_facts(state: Any, *, observed_at: str) -> RunProjectionFacts:
+def build_run_projection_facts(
+    state: Any,
+    *,
+    observed_at: str,
+    operational_outcome: Any = None,
+) -> RunProjectionFacts:
     history = tuple(
         item
         for item in (getattr(state, "tool_history", None) or ())[:MAX_PROJECTION_HISTORY]
@@ -272,6 +278,12 @@ def build_run_projection_facts(state: Any, *, observed_at: str) -> RunProjection
         ),
         output_truncated=(
             bool(metadata.get("truncated")) if isinstance(metadata, Mapping) else False
+        ),
+        progress=_freeze(
+            build_task_progress_projection(
+                state,
+                operational_outcome=operational_outcome,
+            ).to_dict()
         ),
     )
 

@@ -15,6 +15,7 @@ from agent.planning.semantic_projection import (
     projection_for_outcome,
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
@@ -43,13 +44,42 @@ class PlanExecutor(PlanExecutorSupportMixin):
         return run_plan_loop(self, objective, tool_usage_count, continue_after_plan)
     def _execute_index(self, index: int, objective: str, usage: Dict[str, int]) -> StepLoopResult:
         state = self.orchestrator.agent_state
-        if self.orchestrator.cancellation_token.cancelled:
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            step = state.plan[index]
+            if not self._check_dependencies_ok(index):
+                self.step_executor.finish_skipped(index, "dependency not satisfied")
+                state.set_plan_step(index + 1)
+                return StepLoopResult(index + 1)
+            if isinstance(step, ToolPlanStep) and step.tool in ("file_reader", "directory_lister"):
+                candidate_batch = self._collect_parallel_read_batch(index)
+                if len(candidate_batch) > 1:
+                    return self._execute_parallel_read_batch(candidate_batch, objective, usage)
+            admission = policy.admit_work_units(
+                1,
+                resource="tool_calls" if isinstance(step, ToolPlanStep) else None,
+                watchdog_reason=self._watchdog_reason(),
+            )
+            blocked = policy_terminal_answer(self.orchestrator, admission, step_index=index)
+            if blocked is not None:
+                return StepLoopResult(index, answer=blocked, stop=True)
+        if policy is None and self.orchestrator.cancellation_token.cancelled:
             return StepLoopResult(index, answer="Tarefa cancelada. O progresso concluído foi preservado.", stop=True)
-        step = state.plan[index]
         state.set_plan_step(index + 1)
-        blocked = self._check_watchdog() or self._check_cost_limits(index + 1)
+        blocked = (
+            None
+            if policy is not None
+            else self._check_watchdog() or self._check_cost_limits(index + 1)
+        )
         if blocked:
             return StepLoopResult(index, answer=blocked, stop=True)
+        return self._execute_admitted_step(index, objective, usage)
+
+    def _execute_admitted_step(
+        self, index: int, objective: str, usage: Dict[str, int]
+    ) -> StepLoopResult:
+        state = self.orchestrator.agent_state
+        step = state.plan[index]
         if is_deferred_condition(step):
             return self._execute_deferred_condition(index, objective)
         if not self._check_dependencies_ok(index):
@@ -63,6 +93,16 @@ class PlanExecutor(PlanExecutorSupportMixin):
             return self._execute_parallel_read_batch(batch, objective, usage)
         outcome = self.step_executor.execute(index, objective, usage)
         self.last_projection = projection_for_outcome(index, outcome)
+        return self._resolve_step_outcome(index, objective, step, tool, outcome)
+
+    def _resolve_step_outcome(
+        self,
+        index: int,
+        objective: str,
+        step: ToolPlanStep,
+        tool: str,
+        outcome: Any,
+    ) -> StepLoopResult:
         if outcome.kind in (
             StepOutcomeKind.FINAL,
             StepOutcomeKind.CANCELLED,
@@ -116,6 +156,29 @@ class PlanExecutor(PlanExecutorSupportMixin):
     def _execute_parallel_read_batch(
         self, batch_indices: List[int], objective: str, usage: Dict[str, int]
     ) -> StepLoopResult:
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            admission = policy.admit_work_units(
+                len(batch_indices),
+                resource="tool_calls",
+                watchdog_reason=self._watchdog_reason(),
+            )
+            blocked = policy_terminal_answer(
+                self.orchestrator,
+                admission,
+                step_index=batch_indices[0],
+            )
+            if blocked is not None:
+                return StepLoopResult(batch_indices[0], answer=blocked, stop=True)
+            dispatch_indices = batch_indices[: admission.admitted_units]
+            if not dispatch_indices:
+                return StepLoopResult(
+                    batch_indices[0], answer="Nenhum passo foi admitido.", stop=True
+                )
+            cached, results, correlations = self._run_parallel_tools(dispatch_indices)
+            return self._finalize_parallel(
+                dispatch_indices, cached, results, correlations, objective, usage
+            )
         remaining = self._remaining_tool_call_budget()
         if remaining <= 0:
             answer = self._check_cost_limits(batch_indices[0] + 1)

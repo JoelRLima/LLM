@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from agent.execution_state import StepStatus
 from agent.memory.json_persistence import write_json_atomic
+from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.task_tracker_rendering import render_markdown, step_to_dict
 from agent.runtime.logging import logger
 
@@ -42,7 +43,17 @@ class TaskTracker:
             now, metadata = _now_iso(), planning_metadata or {}
             self._data = {
                 "objective": objective, "status": TrackerTaskStatus.RUNNING.value,
-                "progress": {"completed": 0, "total": len(normalized), "percent": 0.0},
+                "progress": {
+                    "succeeded": 0,
+                    "terminal": 0,
+                    "total": len(normalized),
+                    "successful_completion_percent": 0.0,
+                    "terminal_coverage_percent": 0.0,
+                    # Legacy keys remain as an explicit success-only
+                    # projection, never as terminal coverage.
+                    "completed": 0,
+                    "percent": 0.0,
+                },
                 "metrics": {"steps": len(normalized), "tool_calls": 0, "llm_calls": 0},
                 "planning": {
                     "model": metadata.get("model", ""), "timestamp": metadata.get("timestamp", now),
@@ -76,6 +87,18 @@ class TaskTracker:
         self._update_step_status(step_id, StepStatus.SKIPPED, reason)
         self._recompute_progress()
 
+    def mark_blocked(self, step_id: str, reason: str = "") -> None:
+        self._update_step_status(step_id, StepStatus.BLOCKED, reason)
+        self._recompute_progress()
+
+    def mark_unverified(self, step_id: str, reason: str = "") -> None:
+        self._update_step_status(step_id, StepStatus.UNVERIFIED, reason)
+        self._recompute_progress()
+
+    def mark_cancelled(self, step_id: str, reason: str = "") -> None:
+        self._update_step_status(step_id, "cancelled", reason)
+        self._recompute_progress()
+
     def add_note(self, step_id: str, note: str) -> None:
         try:
             step = self._find_step(step_id)
@@ -100,7 +123,7 @@ class TaskTracker:
             logger.warning("TaskTracker: falha ao registrar métrica '%s': %s", key, exc)
 
     def _update_step_status(
-        self, step_id: str, status: StepStatus, summary: Optional[str] = None,
+        self, step_id: str, status: StepStatus | str, summary: Optional[str] = None,
         duration_seconds: Optional[float] = None,
     ) -> None:
         try:
@@ -108,7 +131,7 @@ class TaskTracker:
             if step is None:
                 logger.warning("TaskTracker: passo '%s' não encontrado.", step_id)
                 return
-            step["status"] = status.value
+            step["status"] = getattr(status, "value", status)
             if summary is not None:
                 step["summary"] = summary
             if duration_seconds is not None:
@@ -120,12 +143,19 @@ class TaskTracker:
 
     def _recompute_progress(self) -> None:
         steps = self._data.get("steps", [])
-        finished = {StepStatus.COMPLETED.value, StepStatus.FAILED.value, StepStatus.SKIPPED.value}
-        completed = sum(1 for step in steps if step.get("status") in finished)
-        total = len(steps)
+        projection = build_task_progress_projection(
+            statuses=[step.get("status", StepStatus.PENDING.value) for step in steps]
+        )
         self._data["progress"] = {
-            "completed": completed, "total": total,
-            "percent": round(completed / total * 100.0, 1) if total else 0.0,
+            "succeeded": projection.successful_units,
+            "terminal": projection.terminal_units,
+            "total": projection.total_units,
+            "successful_completion_percent": projection.successful_completion_percent,
+            "terminal_coverage_percent": projection.terminal_coverage_percent,
+            # Compatibility fields explicitly mean successful units only.
+            "completed": projection.successful_units,
+            "percent": projection.successful_completion_percent,
+            "status_counts": dict(projection.counts),
         }
 
     def finish_success(self, final_summary: str = "") -> None:

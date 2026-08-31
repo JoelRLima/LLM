@@ -99,6 +99,9 @@ class TaskLifecycleMixin:
     def _handle_interrupt(self) -> str:
         self.orchestrator.cancellation_token.cancel()
         self._require_invocation_lifetime_closed()
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            policy.pause_active_segment()
         message = mark_terminal_cancelled(self.orchestrator)
         saved = self.orchestrator._save_checkpoint()
         if saved:
@@ -113,6 +116,9 @@ class TaskLifecycleMixin:
     def _cleanup(self, original_count: int) -> None:
         orchestrator = self.orchestrator
         try:
+            policy = getattr(orchestrator, "task_policy", None)
+            if policy is not None:
+                policy.pause_active_segment()
             self._require_invocation_lifetime_closed()
             disposition = getattr(orchestrator.agent_state, "terminal_disposition", None)
             # ``unverified`` is the explicit assisted/approved escape hatch

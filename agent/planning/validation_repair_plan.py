@@ -133,8 +133,14 @@ def _replace_typed_step(
                 )
                 return accepted
 
+    policy = getattr(gateway.orchestrator, "task_policy", None)
     budget = getattr(gateway.orchestrator.agent_state, "recovery_budget", None)
-    if budget is not None and not budget.try_consume(RecoveryScope.VALIDATION_REPAIRS):
+    allowed_repair = (
+        policy.authorize_recovery(RecoveryScope.VALIDATION_REPAIRS).allowed
+        if policy is not None
+        else budget is None or budget.try_consume(RecoveryScope.VALIDATION_REPAIRS)
+    )
+    if not allowed_repair:
         logger.warning("Orcamento de reparo de validacao esgotado para o passo %s.", index + 1)
         return None
     context = ReplanContext(

@@ -23,11 +23,11 @@
 | `AgentApplication`, executor e consumo de resultados | [agent/orchestration.md](agent/orchestration.md) |
 | authority, grants, approval, eligibility e trust boundaries | [agent/security.md](agent/security.md) |
 | tools, skills e exposição ao modelo | [agent/tools.md](agent/tools.md) |
-| stdio, timeout, processos e diferenças de plataforma | [agent/runtime.md](agent/runtime.md) |
+| runtime task-scoped, stdio, timeout, processos e diferenças de plataforma | [agent/runtime.md](agent/runtime.md) |
 | provider/modelo e structured output | [agent/llm.md](agent/llm.md) |
 | memória persistente e camada semântica opcional | [agent/memory.md](agent/memory.md) |
 | eval core, Capability/Regression Sets e evidência | [agent/evaluation.md](agent/evaluation.md) |
-| measurement, projeções e relatórios | [agent/reporting.md](agent/reporting.md) |
+| measurement, projeção de progresso e relatórios | [agent/reporting.md](agent/reporting.md) |
 | health e diagnósticos | [agent/health.md](agent/health.md) |
 | desenvolvimento de extensions | [guia-extensao.md](guia-extensao.md) |
 | instalação, CLI e paths | [operacao-standalone.md](operacao-standalone.md) |

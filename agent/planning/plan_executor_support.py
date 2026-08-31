@@ -14,6 +14,7 @@ from agent.planning.dependency_map import (
 )
 from agent.planning.plan_model import Plan, ToolPlanStep
 from agent.planning.replan_execution import attempt_replan
+from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.budget import task_budget_for
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolError, ToolResult, ToolStatus
@@ -120,6 +121,12 @@ class PlanExecutorSupportMixin:
         self._step_dependencies = self._build_dependency_map(self.orchestrator.agent_state.plan)
 
     def _check_cost_limits(self, step_number: int) -> Optional[str]:
+        policy = getattr(self.orchestrator, "task_policy", None)
+        if policy is not None:
+            result = policy.check_current(resource="tool_calls")
+            if result.denied:
+                return policy_terminal_answer(self.orchestrator, result)
+            return None
         state, config = self.orchestrator.agent_state, self.orchestrator.session.config
         ledger = task_budget_for(self.orchestrator, config)
         if not CostGuard.check_limits(step_number, state.tool_history, 0, config, ledger):
@@ -145,6 +152,22 @@ class PlanExecutorSupportMixin:
 
     def _check_watchdog(self) -> Optional[str]:
         state = self.orchestrator.agent_state
+        policy = getattr(self.orchestrator, "task_policy", None)
+        reason = self._watchdog_reason()
+        if policy is not None:
+            result = policy.check_current(watchdog_reason=reason)
+            if result.denied:
+                if reason:
+                    self.orchestrator._emit(
+                        "watchdog",
+                        Watchdog.build_watchdog_event(
+                            reason,
+                            self.orchestrator._task_start_time,
+                            policy.active_elapsed_seconds,
+                        ),
+                    )
+                return policy_terminal_answer(self.orchestrator, result)
+            return None
         reason = Watchdog.check_all(
             self.orchestrator._task_start_time,
             state.tool_history,
@@ -160,3 +183,14 @@ class PlanExecutorSupportMixin:
         state.add_conversation_turn(str(state.objective), answer)
         self.orchestrator.fail_task()
         return answer
+
+    def _watchdog_reason(self) -> Optional[str]:
+        state = self.orchestrator.agent_state
+        policy = getattr(self.orchestrator, "task_policy", None)
+        elapsed = policy.active_elapsed_seconds if policy is not None else None
+        return Watchdog.check_all(
+            self.orchestrator._task_start_time,
+            state.tool_history,
+            self.orchestrator.session.config,
+            elapsed,
+        )

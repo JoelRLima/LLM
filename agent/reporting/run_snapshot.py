@@ -229,7 +229,11 @@ def build_canonical_run_snapshot(
     metric_snapshot = _metrics_for_snapshot(orchestrator, state, metrics)
     outcome = _outcome_for_snapshot(orchestrator, state, effective_status)
     failure_fact = _failure_fact(orchestrator, state, effective_status, error)
-    projection_facts = build_run_projection_facts(state, observed_at=observed_at)
+    projection_facts = build_run_projection_facts(
+        state,
+        observed_at=observed_at,
+        operational_outcome=outcome,
+    )
     diagnostic_values: Sequence[Mapping[str, Any]] = diagnostics
     if not diagnostic_values and error:
         diagnostic: dict[str, Any] = {

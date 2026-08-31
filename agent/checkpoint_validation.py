@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -79,6 +80,8 @@ def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
     _validate_history_fields(path, data)
     _validate_incidents(path, data)
     _validate_result_and_budget(path, data)
+    _validate_task_policy(path, data)
+    _validate_hierarchical_lifecycle(path, data)
 
 
 def _validate_task_definition_binding(path: Path, data: dict[str, Any]) -> None:
@@ -128,6 +131,35 @@ def _validate_result_and_budget(path: Path, data: dict[str, Any]) -> None:
     budget = data.get("budget")
     if budget is not None and not isinstance(budget, dict):
         _invalid(path, "snapshot de orcamento invalido")
+
+
+def _validate_task_policy(path: Path, data: dict[str, Any]) -> None:
+    policy = data.get("task_policy")
+    if policy is None:
+        return
+    if not isinstance(policy, dict):
+        _invalid(path, "estado de politica da tarefa invalido")
+    consumed = policy.get("logical_work_units_consumed", policy.get("consumed_logical_steps", 0))
+    elapsed = policy.get("active_elapsed_seconds", policy.get("active_elapsed", 0.0))
+    if isinstance(consumed, bool) or not isinstance(consumed, int) or consumed < 0:
+        _invalid(path, "contador de unidades logicas invalido")
+    if (
+        isinstance(elapsed, bool)
+        or not isinstance(elapsed, (int, float))
+        or not math.isfinite(float(elapsed))
+        or elapsed < 0
+    ):
+        _invalid(path, "duracao ativa acumulada invalida")
+
+
+def _validate_hierarchical_lifecycle(path: Path, data: dict[str, Any]) -> None:
+    lifecycle = data.get("hierarchical_lifecycle")
+    if lifecycle is None:
+        return
+    if not isinstance(lifecycle, dict):
+        _invalid(path, "ciclo de vida hierarquico invalido")
+    if lifecycle.get("status", "inactive") not in {"inactive", "running", "completed"}:
+        _invalid(path, "status de ciclo de vida hierarquico invalido")
 
 
 def _validate_step_record(path: Path, record: dict[str, Any]) -> None:

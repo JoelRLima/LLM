@@ -125,6 +125,13 @@ class ContextManager:
             logger.warning(f"Não foi possível contar tokens pelo provider: {e}")
             return None
     def _authorize_structured_response_repair(self) -> bool:
+        policy = getattr(self.session, "task_policy", None)
+        if policy is not None:
+            return bool(
+                policy.authorize_recovery(
+                    RecoveryScope.STRUCTURED_RESPONSE_REPAIRS
+                ).allowed
+            )
         budget = getattr(self.agent_state, "recovery_budget", None)
         if budget is None:
             return True

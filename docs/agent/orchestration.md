@@ -28,6 +28,7 @@ objetivo
 → TaskRunner
 → resposta trivial, quando aplicável
 → root_task_id para tarefa não trivial
+→ TaskRuntimePolicy + TaskPolicyState da tarefa raiz
 → compile/admit Contract e persistir imutavelmente
 → compile/admit Spec vinculada e persistir imutavelmente
 → bind TaskDefinitionRef completa
@@ -67,12 +68,18 @@ Uma task mantém objective, persona, plano e eventos. Cada passo possui
 `unverified`, `timed_out`, `permission_denied`, `protocol_error` ou
 `unavailable` quando o resultado terminal está projetado no `AgentState`.
 Somente `succeeded` deve produzir `success: true`; texto final ou output do
-modelo não promove status terminal de uma tool. Há uma limitação conhecida no
-executor hierárquico: o `TaskTracker` agrega falhas de macro-steps
-independentemente e esse agregado ainda não é projetado de forma universal em
-`AgentRunResult`. Portanto, uma mistura de falha e sucesso em um MacroPlan não
-é evidência suficiente para declarar o resultado da tarefa como sucesso; esse
-fechamento de runtime permanece fora deste audit documental.
+modelo não promove status terminal de uma tool. `TaskProgressProjection` é uma
+projeção read-only dos records de execução, fatos semânticos e resultado
+operacional. `TaskTracker`, builders e renderizadores consomem essa projeção,
+mas não definem sucesso. A autoridade operacional continua em
+`OperationalOutcome`, e a autoridade semântica/evidencial continua em
+`TaskSemantics`.
+
+O lifecycle macro hierárquico é representado explicitamente. Se uma execução
+hierárquica for interrompida enquanto `running`, o resume não restaura
+silenciosamente um microplano: ele é bloqueado de forma determinística com
+`HIERARCHICAL_RESUME_UNSUPPORTED`. Isso não declara suporte a resume no meio de
+um MacroPlan.
 
 ## Execução e ownership
 
@@ -81,16 +88,30 @@ fechamento de runtime permanece fora deste audit documental.
 `ToolInvocationRequest` e exige o gateway canônico; não possui fallback
 model-actionable para chamadas diretas.
 
+`TaskRuntimePolicy` é o seam task-scoped estreito que aplica admissões lógicas,
+wall-time ativo e a precedência dos fatos de runtime. Ele delega limites
+configurados, budget quantitativo, recovery, cancelamento, plano, semântica,
+resultado operacional e eventos aos owners existentes. As rotas usam adapters
+locais para preservar essa mesma verdade; não criam uma autoridade paralela.
+
 No lote paralelo, o gateway continua owner do enforcement. O finalizer do
 `PlanExecutor` é owner único do recording, registra cada slot uma vez em ordem
 lógica e só então aplica summarização ou decisão de replan. Completion física
 fora de ordem não altera a semântica sequencial.
 
-O caminho nested de produção não cria um ledger, token de cancelamento ou gate
-de concorrência independente. O contexto filho pode ter identidade de unidade
-de trabalho própria, mas a árvore de ownership, os limites efetivos e o
-resultado operacional continuam ligados à task pai; falhas de uma multitask
-interna não podem desaparecer na projeção externa.
+O caminho nested de produção não cria ledger, token de cancelamento, estado de
+policy ou gate de concorrência independente. O contexto filho pode ter
+identidade de unidade de trabalho própria, mas reutiliza a policy da tarefa
+raiz, o `TaskBudgetLedger`, o `RecoveryBudgetState` e o `CancellationToken`.
+A árvore de ownership, os limites efetivos e o resultado operacional continuam
+ligados à task pai; falhas de uma multitask interna não podem desaparecer na
+projeção externa.
+
+Essa paridade task-scoped cobre execução linear, slots paralelos, reativa,
+microplanos hierárquicos, analyzer de segurança, nós de `TaskGraph`, caminhos
+de modelo/sessão aninhados e recovery/replan/continuação quando aplicável.
+Adapters não precisam compartilhar implementação, mas precisam produzir a
+mesma verdade de tarefa raiz.
 
 ## Falha, rollback e retomada
 
@@ -101,6 +122,11 @@ repositório durável da workspace, valida identidade, versões e digests,
 preserva o `active_phase_id` confiável quando presente e só então materializa
 a autoridade normativa. Passos concluídos não repetem; `running` volta a
 `pending`; retry de failed ou skipped é opt-in. Cancelamento salva checkpoint.
+O checkpoint também preserva admissões lógicas e duração ativa acumulada da
+policy raiz; downtime não consome wall-time, e o timestamp monotônico de um
+segmento não é persistido. Um lifecycle hierárquico `running` interrompido é
+classificado como `HIERARCHICAL_RESUME_UNSUPPORTED` e bloqueado de forma
+fail-closed, em vez de ser pseudo-retomado.
 Falha da tarefa aciona
 rollback do `WorkspaceManager`; transações registradas, inclusive as criadas
 por `code_task`, `FileWriter` ou o seam de correção do `AutoCoder`, são

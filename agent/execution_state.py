@@ -14,6 +14,7 @@ class StepStatus(str, Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
     UNVERIFIED = "unverified"
 
 
@@ -22,6 +23,7 @@ TERMINAL_STEP_STATUSES = {
     StepStatus.FAILED,
     StepStatus.SKIPPED,
     StepStatus.BLOCKED,
+    StepStatus.CANCELLED,
     StepStatus.UNVERIFIED,
 }
 

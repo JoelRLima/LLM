@@ -25,6 +25,8 @@ from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import dispatch_runtime_event
 from agent.runtime.events import RuntimeEvent
 from agent.runtime.limits import default_runtime_limit, runtime_limit_values
+from agent.runtime.recovery import RecoveryBudgetState
+from agent.runtime.task_policy import TaskPolicyState, TaskRuntimePolicy, bind_task_execution_context
 
 __all__ = ["Artifact", "RuntimeLimits", "TaskExecutionContext", "TaskResult", "TaskStatus"]
 
@@ -112,6 +114,9 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
     node_id: Optional[str] = None
     permissions: frozenset[str] = frozenset()
     metadata: Dict[str, Any] = field(default_factory=dict)
+    policy_state: TaskPolicyState | None = None
+    recovery_budget: RecoveryBudgetState | None = None
+    task_policy: TaskRuntimePolicy | None = None
 
     def __post_init__(self) -> None:
         correlation = self.correlation
@@ -151,7 +156,7 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
             )
         object.__setattr__(self, "budget_ledger", ledger)
         object.__setattr__(self, "model_call_budget", ledger)
-
+        bind_task_execution_context(self, ledger=ledger, correlation=correlation)
     @property
     def run_id(self) -> str:
         correlation = self.correlation

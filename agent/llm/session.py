@@ -1,6 +1,7 @@
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from agent.cancellation import CancellationToken
 from agent.llm.contracts import (
     LegacyPayloadGateway,
     ModelConnectionError,
@@ -39,6 +40,8 @@ class ChatSession(LegacySessionMixin):
             self.gateway,
         )
         self.budget_ledger = budget_ledger or TaskBudgetLedger.from_config(config)
+        self.cancellation_token = CancellationToken()
+        self.task_policy: Any = None
         self.hardware_profile: HardwareProfile = resolve_hardware_profile(config)
         self.model_call_callback: Callable[[Dict[str, Any]], None] | None = None
         self._grammar_supports_grammar: Optional[bool] = None

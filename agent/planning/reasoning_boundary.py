@@ -152,6 +152,7 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
     if callable(configure):
         configure(config)
     budget = getattr(state, "recovery_budget", None)
+    policy = getattr(orchestrator, "task_policy", None)
     limit = (
         budget.limit(RecoveryScope.REASONING_CONTINUATIONS)
         if budget is not None
@@ -173,7 +174,12 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
         turns_used, limit, uninitialized_cursor, window, last_progress, progress
     ):
         return BoundaryContinuationResult(blocked=True)
-    if budget is not None:
+    if policy is not None:
+        if not policy.authorize_recovery(
+            RecoveryScope.REASONING_CONTINUATIONS
+        ).allowed:
+            return BoundaryContinuationResult(blocked=True)
+    elif budget is not None:
         if not budget.try_consume(RecoveryScope.REASONING_CONTINUATIONS):
             return BoundaryContinuationResult(blocked=True)
     else:

@@ -44,13 +44,49 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
         "reasoning_last_progress_token": state.reasoning_last_progress_token,
         "continue_after_plan": state.continue_after_plan,
         "terminal_disposition": state.terminal_disposition,
+        "task_policy": (
+            state.task_policy_state.to_checkpoint_dict()
+            if callable(getattr(getattr(state, "task_policy_state", None), "to_checkpoint_dict", None))
+            else None
+        ),
+        "hierarchical_lifecycle": dict(
+            getattr(state, "hierarchical_lifecycle", {"status": "inactive"})
+        ),
     }
 
 
 def restore_progression(state: Any, data: dict[str, Any]) -> None:
     _restore_semantics(state, data)
     _restore_counters(state, data)
+    _restore_task_policy(state, data)
+    _restore_hierarchical_lifecycle(state, data)
     _restore_terminal(state, data)
+
+
+def _restore_task_policy(state: Any, data: dict[str, Any]) -> None:
+    policy_state = getattr(state, "task_policy_state", None)
+    if policy_state is None:
+        return
+    raw = data.get("task_policy")
+    if raw is None:
+        policy_state.reset()
+        return
+    if not isinstance(raw, dict):
+        raise ValueError("Checkpoint task policy state is invalid.")
+    try:
+        policy_state.restore_checkpoint(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Checkpoint task policy state is invalid.") from exc
+
+
+def _restore_hierarchical_lifecycle(state: Any, data: dict[str, Any]) -> None:
+    raw = data.get("hierarchical_lifecycle", {"status": "inactive"})
+    if not isinstance(raw, dict):
+        raise ValueError("Checkpoint hierarchical lifecycle is invalid.")
+    status = raw.get("status", "inactive")
+    if status not in {"inactive", "running", "completed"}:
+        raise ValueError("Checkpoint hierarchical lifecycle status is invalid.")
+    state.hierarchical_lifecycle = dict(raw)
 
 
 def _restore_legacy_semantics(state: Any, data: dict[str, Any]) -> None:
