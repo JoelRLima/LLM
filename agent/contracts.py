@@ -147,6 +147,8 @@ class CheckpointData(TypedDict, total=False):
     reasoning_last_progress_token: Optional[str]
     continue_after_plan: bool
     recovery_budget: Dict[str, Any]
+    # Compact identity/binding only; bodies remain in the durable repository.
+    task_definition: Dict[str, Any]
 
 
 def __getattr__(name: str) -> Any:

@@ -416,11 +416,30 @@ def test_security_infrastructure_fallback_is_terminal_unavailable() -> None:
 
 def test_budget_exhaustion_becomes_blocked_and_keeps_checkpoint() -> None:
     state = AgentState()
+    state.root_task_id = "budget-task"
     checkpoint_saves = []
     deleted = []
+
+    class Compiler:
+        last_ref = None
+
+        def compile(self, task_id: str, _objective: str):
+            self.last_ref = SimpleNamespace(
+                task_id=task_id,
+                definition_state="complete",
+                is_complete=True,
+            )
+            return self.last_ref
+
+    class Resolver:
+        def resolve(self, _reference):
+            return object()
+
     orchestrator = SimpleNamespace(
         session=SimpleNamespace(messages=[], config={}),
         agent_state=state,
+        task_definition_compiler=Compiler(),
+        task_context_resolver=Resolver(),
         cancellation_token=_CancellationToken(),
         _cancelled=False,
         _task_failed=False,
@@ -446,7 +465,7 @@ def test_budget_exhaustion_becomes_blocked_and_keeps_checkpoint() -> None:
     assert answer
     assert state.terminal_disposition == "block"
     assert state.last_result["error_code"] == "TASK_BUDGET_EXHAUSTED"
-    assert checkpoint_saves == [True]
+    assert checkpoint_saves == [True, True]
     assert deleted == []
     assert orchestrator._preserve_checkpoint is True
 

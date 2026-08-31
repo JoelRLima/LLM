@@ -6,10 +6,18 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any, TypeGuard
 
+from agent.llm.task_definition_contract import (
+    valid_task_contract_decision as _valid_task_contract_decision,
+)
+from agent.llm.task_definition_contract import (
+    valid_task_spec_decision as _valid_task_spec_decision,
+)
 from agent.llm.tool_discovery_contract import valid_tool_discovery as _valid_tool_discovery
 
 
 class ModelRequestContract(str, Enum):
+    TASK_CONTRACT = 'task_contract'
+    TASK_SPEC = 'task_spec'
     INITIAL_PLAN = "initial_plan"
     EFFECT_OBSERVATION_CONTINUATION = "effect_observation_continuation"
     REASONING_BOUNDARY_CONTINUATION = "reasoning_boundary_continuation"
@@ -29,6 +37,8 @@ class ModelRequestContract(str, Enum):
 RequestContract = ModelRequestContract
 RequestContractId = ModelRequestContract
 _STEP_TYPE_CONTRACTS: dict[str, ModelRequestContract] = {
+    'task_contract': ModelRequestContract.TASK_CONTRACT,
+    'task_spec': ModelRequestContract.TASK_SPEC,
     "plan": ModelRequestContract.INITIAL_PLAN,
     "macro_plan": ModelRequestContract.MACRO_PLAN,
     "tool_decision": ModelRequestContract.REACTIVE_TOOL_DECISION,
@@ -228,8 +238,9 @@ def _valid_summarize(decision: dict[str, Any]) -> bool:
 def _valid_replan(decision: dict[str, Any]) -> bool:
     return decision.get("action") == "tool" and _valid_reactive_tool_decision(decision)
 
-
 _CONTRACT_VALIDATORS: dict[ModelRequestContract, Callable[[dict[str, Any]], bool]] = {
+    ModelRequestContract.TASK_CONTRACT: _valid_task_contract_decision,
+    ModelRequestContract.TASK_SPEC: _valid_task_spec_decision,
     ModelRequestContract.INITIAL_PLAN: _valid_initial_plan,
     ModelRequestContract.MACRO_PLAN: _valid_macro_plan,
     ModelRequestContract.REACTIVE_TOOL_DECISION: _valid_reactive_tool_decision,
@@ -245,46 +256,21 @@ def normalize_generic_model_decision(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     return {"action": "tool", **value} if "action" not in value and "tool" in value else dict(value)
-def _compat_initial(value: dict[str, Any]) -> dict[str, Any] | None:
-    if set(value) == {"plan"} and _valid_plan_items(value["plan"]):
-        return dict(value)
-    if _valid_plan_action(value, "continue_after_plan", obligations=True):
-        return dict(value)
-    return dict(value) if value == {"action": "replan"} else None
-def _compat_effect(value: dict[str, Any]) -> dict[str, Any] | None:
-    if _valid_plan_action(value, "continue_after_plan", obligations=False):
-        return dict(value)
-    candidate = dict(value)
-    candidate.pop("answer", None)
-    if set(value) == {"action", "observation_index", "answer"} and _valid_effect_observation_continuation(candidate):
-        return dict(value)
-    return None
 def legacy_model_decision_compatibility(
     value: Any,
     step_type: str | None = None,
     *,
     request_contract: Any = None,
 ) -> dict[str, Any] | None:
-    """Return only explicitly identified historical, non-canonical shapes."""
-    if not isinstance(value, dict):
-        return None
-    contract = resolve_request_contract(request_contract=request_contract, step_type=step_type)
-    if contract is ModelRequestContract.REACTIVE_TOOL_DECISION and value == {"action": "final"}:
-        return dict(value)
-    if contract is ModelRequestContract.REPLAN and "action" not in value:
-        candidate = {"action": "tool", **value}
-        return candidate if _valid_reactive_tool_decision(candidate) else None
-    if contract is ModelRequestContract.INITIAL_PLAN:
-        return _compat_initial(value)
-    if contract is ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION:
-        return _compat_effect(value)
-    if contract is ModelRequestContract.FINAL_GENERATION and (
-        set(value) == {"action", "answer"}
-        and value.get("action") == "final"
-        and _is_string(value["answer"])
-    ):
-        return dict(value)
-    return None
+    from agent.llm.task_definition_decision_compat import (
+        legacy_model_decision_compatibility as compatibility,
+    )
+
+    return compatibility(
+        value,
+        step_type=step_type,
+        request_contract=request_contract,
+    )
 def admit_model_decision_value(
     value: Any,
     step_type: str | None = None,

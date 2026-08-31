@@ -14,6 +14,12 @@ execução headless, diagnóstico e manutenção de configuração/estado para
 `AgentApplication`; não recompõe sessão e orquestrador por conta própria.
 `--help`, `--version` e `config path` não inicializam recursos.
 
+O subcomando `llm-agent task context --task-id ID [--phase PHASE_ID] [--json]`
+é uma consulta genérica, model-free e somente leitura da Task Definition
+persistida na workspace selecionada. Ele resolve a mesma identidade
+Contract/Spec usada pelo runtime; não inicializa `AgentApplication`, não chama
+modelo e não cria authority, grant, approval ou progresso.
+
 ## `commands.py`
 
 Alias de `agent.interfaces.cli.commands`. O módulo canônico implementa os comandos da CLI, incluindo configuração do prompt e thinking,
@@ -133,7 +139,9 @@ corrente. Authority, capabilities e grants são verificados separadamente.
 O arquivo da raiz é um alias. `AppPaths` separa configuração, dados, estado,
 cache e logs sem efeitos no construtor. `WorkspacePaths` particiona memória,
 checkpoint, métricas, relatórios, artifacts, histórico, benchmark, restore
-points e scratch pelo identificador estável do workspace.
+points, scratch e `task_definitions` pelo identificador estável do workspace.
+Os corpos imutáveis de Contract/Spec ficam em data; o checkpoint em state
+persiste somente a `TaskDefinitionRef` compacta.
 
 `LLM_AGENT_HOME` fixa uma raiz portátil. Sem ele, Windows usa
 `APPDATA`/`LOCALAPPDATA` e Unix usa XDG. `AGENT_RUNTIME_DIR` permanece somente

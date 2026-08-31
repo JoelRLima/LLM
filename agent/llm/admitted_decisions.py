@@ -1,9 +1,8 @@
-"""Typed projections after exact ``ModelRequestContract`` admission."""
+"""Typed projections after exact request-contract admission."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Any, cast
 
 from agent.llm.admitted_decision_core import (
@@ -24,10 +23,8 @@ from agent.llm.admitted_decision_core import (
     ReasoningBoundaryContinuationDecision,
     ReasoningBoundaryContinuationExecuteDecision,
     ReasoningBoundaryExecuteDecision,
-    _freeze_items,
-    _freeze_mapping,
-    _freeze_mappings,
 )
+from agent.llm.admitted_decision_projection import project_admitted
 from agent.llm.admitted_decision_variants import (
     DecisionBinding,
     FinalGenerationDecision,
@@ -40,6 +37,11 @@ from agent.llm.admitted_decision_variants import (
     ReactiveToolDecision,
     ReplanDecision,
     SummarizationDecision,
+    TaskContractBlockedDecision,
+    TaskContractDecision,
+    TaskContractNeedsInputDecision,
+    TaskSpecBlockedDecision,
+    TaskSpecDecision,
     ToolDiscoveryDecision,
 )
 from agent.llm.decision_contract import (
@@ -49,113 +51,7 @@ from agent.llm.decision_contract import (
     resolve_request_contract,
 )
 
-
-def _bindings(value: Mapping[str, Any]) -> Mapping[str, DecisionBinding]:
-    return MappingProxyType(
-        {
-            target: DecisionBinding(
-                from_step=binding["from_step"],
-                path=tuple(binding["path"]),
-            )
-            for target, binding in value.items()
-        }
-    )
-
-
-def _project_initial(value: Mapping[str, Any]) -> ModelDecisionValue:
-    if value.get("action") == "direct_response":
-        return DirectResponseDecision(answer=value["answer"])
-    obligations = value.get("obligations")
-    return InitialPlanDecision(
-        plan=_freeze_mappings(value["plan"]),
-        obligations=_freeze_items(obligations) if obligations is not None else None,
-    )
-
-
-def _project_effect(value: Mapping[str, Any]) -> ModelDecisionValue:
-    action = value.get("action")
-    if action == "execute":
-        return EffectObservationExecuteDecision(plan=_freeze_mappings(value["plan"]))
-    if action == "complete_without_effect":
-        return EffectObservationCompleteWithoutEffectDecision(
-            observation_index=value["observation_index"]
-        )
-    return EffectObservationBlockedDecision(reason=value["reason"])
-
-
-def _project_reasoning(value: Mapping[str, Any]) -> ModelDecisionValue:
-    action = value.get("action")
-    obligations = value.get("obligations")
-    frozen_obligations = _freeze_items(obligations) if obligations is not None else None
-    if action == "execute":
-        return ReasoningBoundaryExecuteDecision(
-            plan=_freeze_mappings(value["plan"]), obligations=frozen_obligations
-        )
-    if action == "complete":
-        return ReasoningBoundaryCompleteDecision(
-            reason=value["reason"], obligations=frozen_obligations
-        )
-    return ReasoningBoundaryBlockedDecision(reason=value["reason"])
-
-
-def _project_macro(value: Mapping[str, Any]) -> ModelDecisionValue:
-    return MacroPlanDecision(
-        steps=tuple(
-            MacroPlanStep(
-                id=step["id"],
-                title=step["title"],
-                goal=step["goal"],
-                priority=step["priority"],
-                depends_on=tuple(step["depends_on"]) if "depends_on" in step else None,
-                estimated_tools=(
-                    tuple(step["estimated_tools"])
-                    if "estimated_tools" in step
-                    else None
-                ),
-            )
-            for step in value["steps"]
-        )
-    )
-
-
-def _project_reactive(
-    value: Mapping[str, Any], contract: ModelRequestContract
-) -> ModelDecisionValue:
-    if contract is ModelRequestContract.REACTIVE_TOOL_DECISION and value.get("action") == "final":
-        return ReactiveFinalDecision(answer=value["answer"])
-    args = _freeze_mapping(value["args"])
-    raw_bindings = value.get("bindings")
-    bindings = _bindings(raw_bindings) if raw_bindings is not None else None
-    if contract is ModelRequestContract.REPLAN:
-        return ReplanDecision(tool=value["tool"], args=args, bindings=bindings)
-    return ReactiveToolDecision(tool=value["tool"], args=args, bindings=bindings)
-
-
-def _project_admitted(
-    value: Mapping[str, Any], contract: ModelRequestContract
-) -> ModelDecisionValue:
-    """Project a value already returned by ``admit_model_decision_value``."""
-
-    if contract is ModelRequestContract.INITIAL_PLAN:
-        return _project_initial(value)
-    if contract is ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION:
-        return _project_effect(value)
-    if contract is ModelRequestContract.REASONING_BOUNDARY_CONTINUATION:
-        return _project_reasoning(value)
-    if contract is ModelRequestContract.MACRO_PLAN:
-        return _project_macro(value)
-    if contract in {
-        ModelRequestContract.REACTIVE_TOOL_DECISION,
-        ModelRequestContract.REPLAN,
-    }:
-        return _project_reactive(value, contract)
-    if contract is ModelRequestContract.FINAL_GENERATION:
-        return FinalGenerationDecision(answer=value["answer"])
-    if contract is ModelRequestContract.SUMMARIZATION:
-        return SummarizationDecision(summary=value["summary"])
-    if contract is ModelRequestContract.TOOL_DISCOVERY:
-        return ToolDiscoveryDecision(tools=tuple(value["tools"]))
-    raise ValueError(f"unsupported request contract: {contract!r}")
+_project_admitted = project_admitted
 
 
 def admit_typed_model_decision(
@@ -232,13 +128,7 @@ def ask_model_decision_with_compatibility(
     step_type: str | None = None,
     **kwargs: Any,
 ) -> ModelDecisionWithCompatibility | None:
-    """Request one decision while keeping legacy responses explicitly noncanonical.
-
-    This is the bounded compatibility edge for old model fixtures and persisted
-    callers.  Canonical responses still take the exact admission path; a
-    retained compatibility shape is wrapped separately and never returned as
-    an ``AdmittedModelDecision``.
-    """
+    """Request one decision while keeping legacy responses noncanonical."""
 
     effective_step_type = step_type or request_contract.value
     result = context_manager.ask_model(
@@ -261,8 +151,15 @@ def ask_model_decision_with_compatibility(
         return None
     return LegacyModelDecision(
         contract=request_contract,
-        payload=_freeze_mapping(compatible),
+        payload=_freeze_compatibility_payload(compatible),
     )
+
+
+def _freeze_compatibility_payload(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    from agent.llm.admitted_decision_core import _freeze_mapping
+
+    return _freeze_mapping(value)
+
 
 __all__ = [
     "AdmittedModelDecision",
@@ -293,6 +190,11 @@ __all__ = [
     "ReasoningBoundaryExecuteDecision",
     "ReplanDecision",
     "SummarizationDecision",
+    "TaskContractBlockedDecision",
+    "TaskContractDecision",
+    "TaskContractNeedsInputDecision",
+    "TaskSpecBlockedDecision",
+    "TaskSpecDecision",
     "ToolDiscoveryDecision",
     "admit_typed_model_decision",
     "ask_model_decision_with_compatibility",

@@ -43,6 +43,7 @@ from agent.tools.tool_registry import ToolRegistry
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 from agent.watchdog import Watchdog
 from tests.support.offline_scenarios import OfflineLegacyGateway, OfflineModelGateway
+from tests.support.task_definition import task_definition_response
 
 
 def _initialized_paths(tmp_path: Path) -> AppPaths:
@@ -57,6 +58,15 @@ class _QueuedLegacyGateway(OfflineLegacyGateway):
         self.payloads = []
 
     def complete(self, request: ModelRequest):
+        request_contract = getattr(request.request_contract, "value", request.request_contract)
+        if request_contract in {
+            ModelRequestContract.TASK_CONTRACT.value,
+            ModelRequestContract.TASK_SPEC.value,
+        }:
+            authority = task_definition_response(self, request)
+            if authority is None:
+                raise AssertionError("task-definition request was not handled")
+            return ModelResponse(content=authority)
         if request.request_contract is ModelRequestContract.TOOL_DISCOVERY:
             marker = "<untrusted_tool_catalog>"
             end_marker = "</untrusted_tool_catalog>"
@@ -1600,6 +1610,13 @@ def test_resume_restores_persona_and_capabilities(tmp_path: Path) -> None:
         state.objective = "pesquise notícias sobre IA"
         state.persona = "researcher"
         state.persona_prompt = "Você é um pesquisador."
+        state.root_task_id = application.orchestrator.run_correlation.root_task_id
+        state.task_definition_ref = (
+            application.orchestrator.task_definition_compiler.compile(
+                state.root_task_id,
+                state.objective,
+            )
+        )
         state.set_plan([
             {"tool": "web_search", "args": {"query": "IA"}},
         ])

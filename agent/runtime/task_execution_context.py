@@ -114,6 +114,7 @@ class TaskExecutionOwnershipMixin:
         assert isinstance(self.task_budget, TaskBudgetLedger)
         self.task_budget.reset()
         self.agent_state.objective = objective
+        self.agent_state.task_definition_ref = None
         self.agent_state.reset_execution()
         self.agent_state.reset_task_progression()
         self.agent_state.reset_runtime_observation(clear_events=True)

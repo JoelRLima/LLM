@@ -39,12 +39,14 @@ class ContextManager:
         session: ChatSession,
         agent_state: AgentState,
         verbose: bool = False,
+        task_context_resolver: Any | None = None,
         workspace_root: str | Path = ".",
     ):
         self.session = session
         self.agent_state = agent_state
         self.verbose = verbose
         self.workspace_root = Path(workspace_root).expanduser().resolve()
+        self.task_context_resolver = task_context_resolver
         self.hardware_profile = resolve_hardware_profile(self.session.config)
         self._cached_project_context: Optional[str] = None
         self.semantic: SemanticMemory | None = None
@@ -84,6 +86,14 @@ class ContextManager:
         )
     def get_file_hints(self, objective: str) -> str:
         return get_file_hints(objective, self.semantic, self.workspace_root)
+
+    def build_trusted_task_context(self) -> str:
+        reference = getattr(self.agent_state, 'task_definition_ref', None)
+        resolver = self.task_context_resolver
+        if reference is None or resolver is None:
+            return ''
+        materialization = resolver.resolve(reference)
+        return str(materialization.trusted_text)
     def check_prompt_size(self, context_limit: int | None = None) -> None:
         effective_limit = (
             self.hardware_profile.context_limit
@@ -164,6 +174,7 @@ class ContextManager:
         grammar: str | None | AutoGrammar = AUTO_GRAMMAR,
         request_contract: ModelRequestContract | str | None = None,
         typed: bool = False,
+        include_task_definition: bool = True,
     ) -> Dict[str, Any] | ModelDecisionValue:
         """
         Prepara o contexto e resolve a decisão no ModelGateway canônico.
@@ -182,6 +193,7 @@ class ContextManager:
             grammar=grammar,
             request_contract=request_contract,
             typed=typed,
+            include_task_definition=include_task_definition,
             step_budgets=STEP_BUDGETS,
             default_max_tokens=DEFAULT_AGENT_MAX_TOKENS,
         )
@@ -191,6 +203,7 @@ class ContextManager:
         *,
         request_contract: ModelRequestContract | str,
         step_type: str | None = None,
+        include_task_definition: bool = True,
         **kwargs: Any,
     ) -> ModelDecisionValue | None:
         """Return only a successful canonical typed decision projection."""
@@ -205,6 +218,7 @@ class ContextManager:
             step_type=effective_step_type,
             request_contract=request_contract,
             typed=True,
+            include_task_definition=include_task_definition,
             **kwargs,
         )
         return result if isinstance(result, AdmittedModelDecision) else None

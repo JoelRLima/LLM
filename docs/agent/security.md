@@ -43,7 +43,12 @@ observações e bindings incompatíveis continuam fail-closed.
   a mesma `RuntimeSnapshotIdentity` do registry e os grants persistidos de cada
   extension.
 - `TaskAuthoritySnapshot`: authority explícita fornecida por uma camada
-  confiável para a tarefa. `None` é ausência, não um grant vazio.
+  confiável para capabilities de tools/extensions. `None` é ausência, não um
+  grant vazio.
+- `TaskContract`/`TaskSpec`: autoridade normativa imutável da definição da
+  tarefa; não é capability authority, grant ou approval.
+- `TaskDefinitionRef`: binding compacto para resolver a definição normativa
+  exata; não contém os corpos e não concede capabilities.
 - policy de persona: restrição estática de capabilities dos builtins; não
   aumenta task authority.
 - `active_skills`: allowlist de eligibility/apresentação. É derivada da persona,
@@ -105,6 +110,12 @@ Essa entrada nao e derivada do objetivo, do plano, da resposta do modelo, de
 `AutoApprove` somente para efeitos que ja passaram por authority; sem
 `--task-authority`, a extension continua invisivel para planning e negada pelo
 gateway. O caminho interativo nao cria um segundo mecanismo de authority.
+
+A Task Definition é compilada/admitida separadamente pelo contrato fechado de
+modelo e materializada como contexto confiável. Ela restringe a intenção
+normativa, mas não satisfaz os guards de capability do
+`ToolInvocationGateway`. Reciprocamente, `--task-authority` não cria nem
+substitui Contract, Spec ou binding.
 
 ## Falhas e observabilidade
 

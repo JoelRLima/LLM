@@ -18,20 +18,26 @@ from agent.llm.contracts import (
 )
 from agent.llm.session import ChatSession
 from agent.skills import load_skill_registry
+from tests.support.task_definition import task_definition_response
 
 
 class OfflineModelGateway:
     """In-memory model boundary used to exercise real code workflows."""
 
     provider_name = "offline-fixture"
+    supports_task_definition = True
     capabilities = ProviderCapabilities(streaming=False)
 
     def __init__(self, responses: list[Any]) -> None:
         self.responses = list(responses)
         self.calls: list[ModelRequest] = []
+        self._last_task_contract = None
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
+        authority = task_definition_response(self, request)
+        if authority is not None:
+            return ModelResponse(content=authority)
         if not self.responses:
             raise AssertionError("O cenário não forneceu resposta de modelo suficiente.")
         response = self.responses.pop(0)

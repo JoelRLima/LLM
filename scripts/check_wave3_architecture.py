@@ -13,8 +13,10 @@ AGENT_ROOT = ROOT / "agent"
 # exact admission, project measurements, or preserve a public legacy API.
 DECISION_BOUNDARY_FILES = {
     "agent/llm/admitted_decisions.py",
+    "agent/llm/admitted_decision_projection.py",
     "agent/llm/decision_contract.py",
     "agent/llm/decision_compat.py",
+    "agent/llm/task_definition_decision_compat.py",
     "agent/llm/structured_output.py",
     "agent/llm/model_client.py",
     "agent/llm/legacy_payload.py",
@@ -83,8 +85,13 @@ TYPED_DECISION_NAMES = frozenset(
         "ReasoningBoundaryCompleteDecision",
         "ReasoningBoundaryExecuteDecision",
         "ReplanDecision",
-        "SummarizationDecision",
-        "ToolDiscoveryDecision",
+       "SummarizationDecision",
+        "TaskContractBlockedDecision",
+        "TaskContractDecision",
+        "TaskContractNeedsInputDecision",
+        "TaskSpecBlockedDecision",
+        "TaskSpecDecision",
+       "ToolDiscoveryDecision",
     }
 )
 TYPED_PRODUCER_NAMES = frozenset(

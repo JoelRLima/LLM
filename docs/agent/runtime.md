@@ -8,8 +8,10 @@
 
 `AppPaths` separa config, data, state, cache e logs. `WorkspacePaths` particiona
 memória, checkpoint, métricas, relatórios, scratch, artifacts e locks por
-workspace. Construtores de paths não escrevem; criação ocorre após configuração
-e workspace serem validados.
+workspace. Contract, Spec e manifest de Task Definition ficam em
+`data/workspaces/<workspace-id>/task_definitions/<task-id>/`, separados do
+checkpoint operacional. Construtores de paths não escrevem; criação ocorre
+após configuração e workspace serem validados.
 
 `ConfigRepository` combina defaults empacotados, arquivo, ambiente allowlisted
 e overrides, valida schema e materializa o perfil selecionado. Config inválida
@@ -74,6 +76,15 @@ mantém um guard advisory durante a vida do processo, registra PID e identidade
 de início quando o sistema fornece essa prova e recupera registros stale após
 uma morte anormal. JSON inválido ou identidade indeterminada falha fechado e
 pode exigir intervenção manual.
+
+Task Definitions usam arquivos JSON canônicos e limitados, publicação atômica
+do manifest e criação exclusiva dos corpos versionados. Contract e Spec
+persistidos são imutáveis: conteúdo diferente para a mesma identidade é
+mismatch, não overwrite. O checkpoint guarda somente a `TaskDefinitionRef`;
+no resume, o repositório confere workspace, task id, versões, digests, arquivos
+referenciados, estado completo e fase selecionada antes de devolver os corpos.
+Link-like paths, arquivo ausente, corrupção ou identidade divergente falham
+fechado.
 
 O commit de observação valida a entrada canônica antes de publicar state e
 history. Colisão ou rejeição deixa essas fontes coerentes; telemetria auxiliar

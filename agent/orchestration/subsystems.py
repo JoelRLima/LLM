@@ -51,6 +51,7 @@ class AgentSubsystems:
             self.orchestrator.agent_state,
             verbose=self.orchestrator.verbose,
             workspace_root=self.orchestrator.workspace_root,
+            task_context_resolver=self.orchestrator.task_context_resolver,
         ))
 
     @property

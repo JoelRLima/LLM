@@ -120,40 +120,9 @@ def _print_json(document: Any) -> None:
 
 
 def _print_operational_receipt(result: Any) -> None:
-    receipt = getattr(result, "receipt", None)
-    if not isinstance(receipt, dict) or not receipt:
-        return
-    print("\nOperational receipt:")
-    print(f"  status: {getattr(result, 'status', receipt.get('status', ''))}")
-    print(f"  workspace: {receipt.get('workspace', getattr(result, 'workspace', ''))}")
-    tools = receipt.get("tools") or []
-    print("  tools:")
-    for item in tools:
-        if not isinstance(item, dict):
-            continue
-        identity = item.get("invocation_id") or "-"
-        print(
-            f"    {item.get('tool', '')}: status={item.get('status', '')} "
-            f"executed={item.get('executed')} invocation={identity}"
-        )
-    files = receipt.get("files_affected") or []
-    print(f"  files_affected: {', '.join(map(str, files)) if files else '[]'}")
-    if receipt.get("final_state") is not None:
-        print(f"  final_state: {receipt['final_state']}")
-    validation = receipt.get("validation")
-    if isinstance(validation, dict):
-        print(f"  validation: {validation.get('outcome') if validation.get('ran') else 'not_run'}")
-    rollback = receipt.get("rollback")
-    if isinstance(rollback, dict) and rollback.get("occurred"):
-        print(f"  rollback: {rollback.get('outcome') or 'restored'}")
-    if receipt.get("replan") is not None:
-        print(f"  replan: {receipt['replan']}")
-    cause = receipt.get("error")
-    if isinstance(cause, dict):
-        print(f"  cause: {cause.get('code')} ({cause.get('layer')}): {cause.get('message')}")
-    report_path = getattr(result, "report_path", None) or receipt.get("report_path")
-    if report_path:
-        print(f"  report_path: {report_path}")
+    from agent.interfaces.cli.operational_receipt import print_operational_receipt
+
+    print_operational_receipt(result)
 
 
 def _run_once(args: argparse.Namespace) -> int:
@@ -241,7 +210,22 @@ def _run_extensions(args: argparse.Namespace) -> int:
     )
 
 
+def _run_task_context(args: argparse.Namespace) -> int:
+    from agent.interfaces.cli.task_context import run_task_context
+
+    return run_task_context(
+        args,
+        app_paths=_app_paths(args),
+        workspace=argument_workspace(args),
+        print_json=_print_json,
+    )
+
+
 def _dispatch(args: argparse.Namespace) -> int:
+    if getattr(args, 'command', None) == 'task':
+        if _value(args, 'task_command') != 'context':
+            raise ValueError('subcomando task desconhecido')
+        return _run_task_context(args)
     command = args.command or "chat"
     if command == "chat":
         return _run_chat(args)
@@ -280,9 +264,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except Exception as exc:
         from agent.runtime.state_migration import StateMigrationError
+        from agent.task_definition.errors import TaskDefinitionError
 
         if isinstance(exc, ConfigNotFound):
             _emit_error(first_run.actionable_missing_config(args, exc), json_output=json_output)
+            return 2
+        if isinstance(exc, TaskDefinitionError):
+            _emit_error(str(exc), json_output=json_output)
             return 2
         if isinstance(exc, (FileNotFoundError, NotADirectoryError, PermissionError, ValueError)):
             _emit_error(str(exc), json_output=json_output)

@@ -28,6 +28,7 @@ def run_model_call(
     grammar: str | None | AutoGrammar,
     request_contract: ModelRequestContract | str | None,
     typed: bool,
+    include_task_definition: bool,
     step_budgets: Mapping[str, int],
     default_max_tokens: int,
 ) -> Dict[str, Any] | ModelDecisionValue:
@@ -50,6 +51,12 @@ def run_model_call(
         manager.check_prompt_size()
     try:
         context_addition = manager.build_context(prompt)
+        if include_task_definition:
+            trusted_builder = getattr(manager, 'build_trusted_task_context', None)
+            if callable(trusted_builder):
+                trusted_context = str(trusted_builder() or '')
+                if trusted_context:
+                    context_addition = trusted_context + '\n\n' + context_addition
         if base_prompt is None:
             base_prompt = manager.build_base_system_prompt("", "")
         manager.session.messages[0]["content"] = base_prompt + context_addition

@@ -19,6 +19,7 @@ from agent.orchestration.operations import OrchestratorOperations
 from agent.orchestration.route_result import RouteResult
 from agent.orchestration.security_service import SecurityAnalysisService
 from agent.orchestration.subsystems import AgentSubsystems
+from agent.orchestration.task_definition_components import task_definition_handles
 from agent.orchestration.task_runner import TaskRunner
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_builder import PlanBuilder
@@ -76,6 +77,15 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             session.budget_ledger = self.task_budget
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.workspace_paths = workspace_paths
+        (
+            self.task_definition_repository,
+            self.task_context_resolver,
+            self.task_definition_compiler,
+        ) = task_definition_handles(
+            workspace_paths,
+            lambda: self.context_manager,
+        )
+        self.task_definition_resolver = self.task_context_resolver
         self.analysis_notes_file = (
             workspace_paths.scratch_dir / "analysis_notes.md"
             if workspace_paths is not None
@@ -234,21 +244,9 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             self._build_tools_description(compact=True, planner_kind="linear"),
         )
     def _answer_trivial(self, objective: str) -> str:
-        normalized = objective.strip().lower().rstrip("!?.")
-        greetings = {"oi", "olá", "ola", "oie", "oii", "hey", "hello"}
-        wellbeing = ("como vai", "tudo bem", "tudo bom", "td bem", "td bom")
-        identity = ("quem é você", "o que você faz", "o que vc faz", "qual o seu nome", "qual seu nome")
-        if normalized in greetings:
-            answer = "Olá! Como posso ajudar você hoje?"
-        elif any(term in normalized for term in wellbeing):
-            answer = "Estou bem, obrigado! Como posso ajudar você hoje?"
-        elif any(term in normalized for term in identity):
-            answer = "Eu sou um agente de desenvolvimento assistido por IA. Posso analisar arquivos, escrever código e responder dúvidas técnicas."
-        else:
-            answer = "Olá! Como posso ajudar você hoje?"
-        self._emit("final", {"answer": answer[:100]})
-        self.agent_state.conversation_history.append({"user": objective, "agent": answer})
-        return answer
+        from agent.orchestration.trivial_response import answer_trivial
+
+        return str(answer_trivial(self, objective))
     def _get_valid_tool_names(self) -> List[str]:
         view = self.get_planning_view("linear")
         if view is not None:

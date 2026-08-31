@@ -12,6 +12,7 @@ workspace/config/paths
 → lock e logging
 → model session e builtin SkillRegistry
 → extension bootstrap e ToolRegistry congelado
+→ TaskDefinitionRepository / TaskContextResolver / TaskDefinitionCompiler
 → Orchestrator
 → ToolInvocationGateway
 ```
@@ -25,7 +26,13 @@ stdout/logging legados forem recursos globais do processo.
 ```text
 objetivo
 → TaskRunner
-→ trivial ou route persona
+→ resposta trivial, quando aplicável
+→ root_task_id para tarefa não trivial
+→ compile/admit Contract e persistir imutavelmente
+→ compile/admit Spec vinculada e persistir imutavelmente
+→ bind TaskDefinitionRef completa
+→ materializar authority confiável no ContextManager
+→ route persona
 → planning context
 → hierárquico | segurança | linear | fallback reativo
 → ExecutionGateway de plano
@@ -41,6 +48,14 @@ objetivo
 resume, dispatch e cleanup. `OrchestratorOperations` concentra checkpoint,
 memória, eventos, métricas e task reports. O caminho especializado de
 segurança também invoca `code_analyzer` pelo gateway quando ele existe.
+
+Os componentes de Task Definition são invariantes da
+`AgentApplication` associada a uma workspace, não uma capability opcional do
+provider. Para uma tarefa nova não trivial, `TaskRunner` só alcança routing,
+planner ou tools depois que Contract e Spec completos foram admitidos,
+persistidos, resolvidos e ligados ao estado. Compiler/resolver indisponível,
+resposta malformada ou oversized, falha de provider/admissão/persistência,
+binding ausente, mismatch ou fase inválida terminam em bloqueio explícito.
 
 ## Identidades e resultados
 
@@ -79,9 +94,14 @@ interna não podem desaparecer na projeção externa.
 
 ## Falha, rollback e retomada
 
-Checkpoint v2 revalida o plano no resume e não persiste authority efetiva.
-Passos concluídos não repetem; `running` volta a `pending`; retry de failed ou
-skipped é opt-in. Cancelamento salva checkpoint. Falha da tarefa aciona
+Checkpoint v2 revalida o plano no resume. Ele persiste a
+`TaskDefinitionRef` compacta, não Contract/Spec nem a
+`TaskAuthoritySnapshot` efetiva. A retomada resolve a referência no
+repositório durável da workspace, valida identidade, versões e digests,
+preserva o `active_phase_id` confiável quando presente e só então materializa
+a autoridade normativa. Passos concluídos não repetem; `running` volta a
+`pending`; retry de failed ou skipped é opt-in. Cancelamento salva checkpoint.
+Falha da tarefa aciona
 rollback do `WorkspaceManager`; transações registradas, inclusive as criadas
 por `code_task`, `FileWriter` ou o seam de correção do `AutoCoder`, são
 revertidas antes dos restore points legados. No domínio `code_task`,

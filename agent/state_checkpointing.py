@@ -9,6 +9,7 @@ from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
 from agent.planning.plan_model import Plan, deserialize_plan, serialize_plan
 from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_checkpoint_auxiliary import restore_auxiliary_state
 from agent.state_checkpoint_history import restore_histories as _restore_histories
 from agent.state_checkpoint_restore import (
     provisional_state as _provisional_state,
@@ -19,6 +20,7 @@ from agent.state_checkpoint_restore import (
 from agent.state_checkpoint_restore import (
     validate_restored_cross_fields as _validate_restored_cross_fields,
 )
+from agent.task_definition.models import TaskDefinitionRef
 from agent.tools.result_adapter import ensure_canonical_result, to_legacy_result
 
 
@@ -37,6 +39,9 @@ class StateCheckpointMixin:
             if "result" in entry:
                 entry["result"] = to_legacy_result(entry["result"])
             checkpoint_history.append(entry)
+        task_definition_ref: TaskDefinitionRef | None = getattr(
+            self, "task_definition_ref", None
+        )
         raw: Dict[str, Any] = {
             "objective": self.objective,
             "root_task_id": getattr(self, "root_task_id", None),
@@ -56,6 +61,9 @@ class StateCheckpointMixin:
             "persona": self.persona,
             "persona_prompt": self.persona_prompt,
             **progression_checkpoint(self),
+            "task_definition": (
+                task_definition_ref.to_dict() if task_definition_ref is not None else None
+            ),
         }
         if self.budget_ledger is not None:
             raw["budget"] = self.budget_ledger.snapshot().to_dict()
@@ -167,49 +175,4 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
 
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
-    # A missing field is legacy evidence, not permission to reuse a previous
-    # in-memory task identity from another checkpoint/run.
-    root_task_id = data.get("root_task_id")
-    events = data.get("events", state.events) or []
-    history = data.get("conversation_history", state.conversation_history) or []
-    persona = data.get("persona", state.persona)
-    persona_prompt = data.get("persona_prompt", state.persona_prompt)
-    memory_state = data.get("memory_state")
-    incidents = data.get("execution_incidents", getattr(state, "execution_incidents", []))
-    budget = data.get("budget")
-    if not isinstance(events, list):
-        raise ValueError("Checkpoint events are invalid.")
-    if root_task_id is not None and (
-        not isinstance(root_task_id, str) or not root_task_id.strip()
-    ):
-        raise ValueError("Checkpoint root task identity is invalid.")
-    if not isinstance(history, list) or any(not isinstance(entry, Mapping) for entry in history):
-        raise ValueError("Checkpoint conversation history is invalid.")
-    if persona is not None and not isinstance(persona, str):
-        raise ValueError("Checkpoint persona is invalid.")
-    if persona_prompt is not None and not isinstance(persona_prompt, str):
-        raise ValueError("Checkpoint persona prompt is invalid.")
-    if budget is not None and not isinstance(budget, Mapping):
-        raise ValueError("Checkpoint budget snapshot is invalid.")
-    if memory_state is not None and not isinstance(memory_state, Mapping):
-        raise ValueError("Checkpoint memory state is invalid.")
-    _restore_execution_incidents(state, incidents)
-    state.root_task_id = root_task_id
-    state.events = events
-    state.conversation_history = [dict(entry) for entry in history]
-    state.persona = persona
-    state.persona_prompt = persona_prompt
-    if state.budget_ledger is not None and isinstance(budget, Mapping):
-        state.budget_ledger.restore_snapshot(budget)
-    if memory_state is not None and hasattr(state.memory, "state"):
-        state.memory.state = dict(memory_state)
-
-
-def _restore_execution_incidents(state: Any, incidents: Any) -> None:
-    restore_incidents = getattr(state, "restore_execution_incidents", None)
-    if not callable(restore_incidents):
-        raise ValueError("Checkpoint incident owner is unavailable.")
-    try:
-        restore_incidents(incidents)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Checkpoint execution incident journal is invalid.") from exc
+    restore_auxiliary_state(state, data)

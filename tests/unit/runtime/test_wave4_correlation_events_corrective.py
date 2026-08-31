@@ -18,6 +18,7 @@ from agent.runtime.events import (
 )
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.state import AgentState
+from agent.task_definition.models import TaskDefinitionRef
 from agent.tools.contracts import (
     ToolDescriptor,
     ToolInvocation,
@@ -58,6 +59,12 @@ class _Owner(TaskExecutionOwnershipMixin):
             _cached_project_context=None,
             maybe_compress_context=lambda: None,
         )
+        self.task_definition_compiler = SimpleNamespace(
+            last_ref=None,
+            compile=lambda _task_id, _objective: None,
+            resume=lambda _task_id, reference: reference,
+        )
+        self.task_context_resolver = SimpleNamespace(resolve=lambda _reference: object())
         self._checkpoint = checkpoint
 
     def _load_checkpoint(self):
@@ -79,6 +86,14 @@ class _Owner(TaskExecutionOwnershipMixin):
 def _checkpoint(*, terminal: str | None = None) -> tuple[dict[str, object], str]:
     state = AgentState(root_task_id="root-authoritative")
     state.objective = "resume objective"
+    state.task_definition_ref = TaskDefinitionRef(
+        task_id="root-authoritative",
+        contract_version=1,
+        contract_digest="0" * 64,
+        spec_version=1,
+        spec_digest="1" * 64,
+        definition_state="complete",
+    )
     if terminal is not None:
         state.terminal_disposition = terminal
         state.last_result = {

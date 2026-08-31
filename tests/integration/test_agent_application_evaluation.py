@@ -29,6 +29,7 @@ from agent.tools.authority import TaskAuthoritySnapshot
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from tests.support.task_definition import task_definition_response
 
 
 class JourneyGateway:
@@ -36,11 +37,13 @@ class JourneyGateway:
     model = "eval-scripted"
     profile = {"temperature": 0.0, "max_tokens": 128}
     capabilities = ProviderCapabilities(streaming=False)
+    supports_task_definition = True
 
     def __init__(self, objective: str, scenario_id: str | None = None) -> None:
         self.objective = objective
         self.scenario_id = scenario_id or self._infer_scenario_id(objective)
         self.calls: list[ModelRequest] = []
+        self._last_task_contract = None
 
     @staticmethod
     def _infer_scenario_id(objective: str) -> str:
@@ -70,6 +73,9 @@ class JourneyGateway:
 
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
+        authority = task_definition_response(self, request)
+        if authority is not None:
+            return ModelResponse(content=authority)
         request_contract = getattr(request.request_contract, "value", request.request_contract)
         if request_contract == ModelRequestContract.TOOL_DISCOVERY.value:
             return ModelResponse(content=self._tool_discovery_response(request.messages[-1].content))
@@ -197,10 +203,17 @@ class JourneyGateway:
 
 
 class ProviderFailureGateway:
+    supports_task_definition = True
     _secret_message = (
         "request failed api_key=TOPSECRET Authorization: Bearer TOPSECRET "
         "token=TOPSECRET password=TOPSECRET"
     )
+
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        authority = task_definition_response(self, request)
+        if authority is not None:
+            return ModelResponse(content=authority)
+        raise RuntimeError(self._secret_message)
 
     def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
         return {"messages": [{"role": item.role, "content": item.content} for item in request.messages]}
@@ -427,7 +440,7 @@ def test_interactive_provider_failure_is_canonically_finalized(tmp_path: Path) -
     assert result.error == "Model provider request failed."
     assert report["status"] == "failed"
     assert report["metrics"]["run_calls"] == 1
-    assert report["metrics"]["model_calls"] == 1
+    assert report["metrics"]["model_calls"] == 3
     for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
         assert secret not in report_text
 
@@ -520,7 +533,7 @@ def test_direct_response_is_a_first_class_no_tool_result(
     assert report["metrics"]["tools_called"] == 0
     # ``DIRECT_*`` must not accidentally match the bounded ``dir`` listing
     # token; the normal route therefore performs router + discovery + planner calls.
-    assert report["metrics"]["model_calls"] == len(gateway.calls) == 3
+    assert report["metrics"]["model_calls"] == len(gateway.calls) == 5
 
 
 def test_direct_response_can_use_existing_conversation_context(tmp_path: Path) -> None:

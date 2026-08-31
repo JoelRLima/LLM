@@ -33,6 +33,7 @@ llm-agent config validate
 llm-agent config migrate --from ARQUIVO
 llm-agent state migrate --from DIRETÓRIO
 llm-agent extensions list|register|enable|disable|grant|revoke|inspect
+llm-agent task context --task-id ID [--phase PHASE_ID] [--json]
 ```
 
 As flags comuns `--home`, `--config`, `--workspace` e `--profile` são aceitas
@@ -73,6 +74,24 @@ Estados públicos:
 Saída `--json` contém exatamente um documento em stdout. Logs ficam fora desse
 stream. Exit code `0` representa sucesso, `1` um estado operacional não
 concluído e `2` erro de uso, configuração, workspace ou migração.
+
+### Consulta externa de Task Definition
+
+`task context` lê a autoridade normativa já persistida para uma task sem
+construir a aplicação ou chamar um modelo:
+
+```powershell
+llm-agent task context --workspace C:\projetos\app --task-id TASK_ID
+llm-agent task context --workspace C:\projetos\app --task-id TASK_ID --phase implementacao --json
+```
+
+Sem `--phase`, a referência pode selecionar seu `active_phase_id`; quando
+nenhuma fase está selecionada, a saída bounded representa a Spec completa.
+`--json` devolve identidade, versões, digests, workspace, fase e projeção
+estruturada. O comando é genérico, model-free e read-only, adequado a harnesses
+externos sem acoplamento a um produto específico. Task/phase ausente, binding
+incompleto, digest divergente, corrupção ou workspace incorreta falham fechado.
+Ele não avança fases, atualiza progresso, concede capability ou executa Plan.
 
 ### Diagnóstico
 
@@ -115,8 +134,11 @@ Sem override:
 Fallbacks XDG seguem `~/.config`, `~/.local/share`, `~/.local/state` e
 `~/.cache`. `AGENT_RUNTIME_DIR` existe apenas como ponte legada.
 
-Memória, checkpoint, métricas, relatórios, artifacts, restore points,
-histórico, benchmark, scratch e lock pertencem à partição do workspace.
+Memória, Task Definitions, checkpoint, métricas, relatórios, artifacts, restore
+points, histórico, benchmark, scratch e lock pertencem à partição do workspace.
+Contract, Spec e manifest ficam sob
+`data/workspaces/<workspace-id>/task_definitions/<task-id>/`; o checkpoint em
+`state` guarda apenas a `TaskDefinitionRef` compacta.
 Nenhum deles é gravado no pacote instalado ou inferido de um `runtime/` próximo.
 
 ## Configuração efetiva

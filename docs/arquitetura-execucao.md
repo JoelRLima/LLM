@@ -8,6 +8,11 @@
 ```text
 CLI / headless
 → AgentApplication.create()
+→ non-trivial objective + root_task_id
+→ admit/persist immutable TaskContract
+→ admit/persist immutable TaskSpec bound to Contract
+→ bind/resolve TaskDefinitionRef
+→ trusted authority materialization through ContextManager
 → planning context + persona/tool view
 → planner (linear, reactive ou hierarchical)
 → ExecutionGateway do plano (validate/optimize/revalidate)
@@ -23,14 +28,23 @@ Nenhum plano ou tool apresentada cria authority. Veja
 [planning](agent/planning.md), [orchestration](agent/orchestration.md) e
 [security](agent/security.md).
 
+Task Definition e capability authority são eixos distintos:
+`TaskContract`/`TaskSpec` definem a autoridade normativa;
+`TaskDefinitionRef` identifica essa definição; `TaskAuthoritySnapshot`
+autoriza capabilities; e `Plan` mantém ownership da execução. Tarefa não
+trivial sem definição completa bloqueia antes de routing/planning/tools.
+
 ## Estado e retomada
 
 Steps têm `_step_id` estável, tentativas e estados `pending`, `running`,
 `completed`, `failed`, `skipped`, `blocked` ou `unverified`. Checkpoint v2
 preserva plano e records. No resume, `running` volta a `pending`, concluídos,
 blocked e unverified permanecem terminais, e failed/skipped só voltam com flags
-explícitas. O plano restaurado é revalidado e authority é reconstruída do
-runtime atual; ela não é confiada ao checkpoint.
+explícitas. O checkpoint restaura a `TaskDefinitionRef` compacta; Contract e
+Spec são resolvidos no storage da mesma workspace e revalidados por identidade,
+versão, digest e fase antes de materializar authority normativa. O plano é
+revalidado e a capability authority é reconstruída do runtime atual; nenhuma
+`TaskAuthoritySnapshot` é confiada ao checkpoint.
 
 ## Paralelismo
 

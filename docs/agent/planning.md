@@ -21,6 +21,21 @@ não confiável.
 Planning context, apresentação, `active_skills`, persona e escolha do modelo
 são eligibility/guidance. Nenhum deles cria grant ou substitui o gateway.
 
+## Task Definition e Plan
+
+`TaskContract`/`TaskSpec` são a autoridade normativa admitida antes do
+planning; `TaskDefinitionRef` é o binding compacto que permite resolvê-la.
+`ContextManager` materializa essa autoridade como contexto confiável,
+separado de projeto, memória, histórico, summaries e outputs de tools não
+confiáveis.
+
+O `Plan` é o artefato executável: possui steps, tools, bindings e validação
+pelo `ExecutionGateway`. Contract e Spec não contêm tool calls, não concedem
+capabilities e não substituem o Plan. As fases descritivas da Spec também não
+implementam avanço autônomo, `TaskProgress`, retry/replan de longo horizonte
+ou policy dinâmica; o planning e o replan atuais conservam seus owners e
+budgets existentes.
+
 ## Caminhos de planejamento
 
 - linear: `PlanBuilder` solicita um plano sequencial mínimo e valida cada passo

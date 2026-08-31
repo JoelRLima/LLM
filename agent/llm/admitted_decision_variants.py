@@ -15,6 +15,7 @@ from agent.llm.admitted_decision_core import (
     _legacy,
 )
 from agent.llm.decision_contract import ModelRequestContract
+from agent.task_definition.models import TaskContract, TaskSpec
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -157,8 +158,65 @@ class ToolDiscoveryDecision(AdmittedModelDecision):
         return {"tools": list(self.tools)}
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class TaskContractDecision(AdmittedModelDecision):
+    CONTRACT: ClassVar[ModelRequestContract] = ModelRequestContract.TASK_CONTRACT
+    contract: TaskContract
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'action': 'define_contract', 'contract': self.contract.to_dict()}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class TaskContractNeedsInputDecision(AdmittedModelDecision):
+    CONTRACT: ClassVar[ModelRequestContract] = ModelRequestContract.TASK_CONTRACT
+    reason: str
+    question: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'action': 'needs_input', 'reason': self.reason, 'question': self.question}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class TaskContractBlockedDecision(AdmittedModelDecision):
+    CONTRACT: ClassVar[ModelRequestContract] = ModelRequestContract.TASK_CONTRACT
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'action': 'blocked', 'reason': self.reason}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class TaskSpecDecision(AdmittedModelDecision):
+    CONTRACT: ClassVar[ModelRequestContract] = ModelRequestContract.TASK_SPEC
+    spec: TaskSpec
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'action': 'define_spec', 'spec': self.spec.to_dict()}
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class TaskSpecBlockedDecision(AdmittedModelDecision):
+    CONTRACT: ClassVar[ModelRequestContract] = ModelRequestContract.TASK_SPEC
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'action': 'blocked', 'reason': self.reason}
+
+
+TaskContractDefinitionDecision = TaskContractDecision
+DefineTaskContractDecision = TaskContractDecision
+TaskSpecDefinitionDecision = TaskSpecDecision
+DefineTaskSpecDecision = TaskSpecDecision
+
+
 ModelDecisionValue: TypeAlias = (
-    InitialPlanDecision
+    TaskContractDecision
+    | TaskContractNeedsInputDecision
+    | TaskContractBlockedDecision
+    | TaskSpecDecision
+    | TaskSpecBlockedDecision
+    | InitialPlanDecision
     | DirectResponseDecision
     | EffectObservationContinuationDecision
     | ReasoningBoundaryContinuationDecision
@@ -175,6 +233,15 @@ ModelDecisionWithCompatibility: TypeAlias = ModelDecisionValue | LegacyModelDeci
 
 
 __all__ = [
+    'DefineTaskContractDecision',
+    'DefineTaskSpecDecision',
+    'TaskContractBlockedDecision',
+    'TaskContractDecision',
+    'TaskContractDefinitionDecision',
+    'TaskContractNeedsInputDecision',
+    'TaskSpecBlockedDecision',
+    'TaskSpecDecision',
+    'TaskSpecDefinitionDecision',
     "DecisionBinding",
     "FinalGenerationDecision",
     "LegacyModelDecision",

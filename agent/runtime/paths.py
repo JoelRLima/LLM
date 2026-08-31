@@ -52,6 +52,10 @@ class WorkspacePaths:
         return self.data_dir / "memory_backups"
 
     @property
+    def task_definitions_dir(self) -> Path:
+        return self.data_dir / 'task_definitions'
+
+    @property
     def checkpoint_file(self) -> Path:
         return self.state_dir / "agent_checkpoint.json"
 
@@ -120,6 +124,7 @@ class WorkspacePaths:
             self.state_dir,
             self.cache_dir,
             self.memory_backup_dir,
+            self.task_definitions_dir,
             self.reports_dir,
             self.artifacts_dir,
             self.restore_points_dir,

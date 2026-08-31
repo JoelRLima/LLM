@@ -11,11 +11,12 @@ def _common_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", metavar="ARQUIVO", help="arquivo de configuração explícito")
     parser.add_argument("--workspace", metavar="DIR", help="workspace da tarefa (padrão: diretório atual)")
     parser.add_argument("--profile", metavar="NOME", help="perfil de modelo configurado")
+
     return parser
 
-
 def build_parser() -> argparse.ArgumentParser:
-    """Build the parser without creating application resources."""
+    """Build the side-effect-free command parser."""
+
     from agent import __version__
 
     common = _common_parser()
@@ -100,4 +101,24 @@ def build_parser() -> argparse.ArgumentParser:
         item.add_argument("id", metavar="ID")
         item.add_argument("capability", metavar="CAPABILITY")
         item.add_argument("--json", action="store_true", dest="json_output", help="emite um unico documento JSON")
+    task = subcommands.add_parser(
+        "task",
+        parents=[common],
+        help="consulta autoridade persistida de uma tarefa",
+        argument_default=argparse.SUPPRESS,
+    )
+    task_commands = task.add_subparsers(dest="task_command", required=True)
+    context = task_commands.add_parser(
+        "context",
+        parents=[common],
+        help="mostra o contexto confiavel da task definition",
+    )
+    context.add_argument("--task-id", required=True, dest="task_id", metavar="ID")
+    context.add_argument("--phase", dest="phase_id", metavar="PHASE_ID")
+    context.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emite um unico documento JSON",
+    )
     return parser

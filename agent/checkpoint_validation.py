@@ -8,6 +8,7 @@ from typing import Any, NoReturn
 from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
 from agent.execution_incidents import normalize_execution_incidents
 from agent.execution_state import StepStatus
+from agent.task_definition.models import TaskDefinitionRef
 
 
 def validate_document(path: Path, data: Any) -> None:
@@ -24,77 +25,109 @@ def _validate_header(path: Path, data: dict[str, Any]) -> None:
     if isinstance(version, bool) or version != CHECKPOINT_SCHEMA_VERSION:
         _invalid(
             path,
-            f"versão incompatível ({version!r}); esperada {CHECKPOINT_SCHEMA_VERSION}",
+            f"versao incompativel ({version!r}); esperada {CHECKPOINT_SCHEMA_VERSION}",
             reason_code="CHECKPOINT_INCOMPATIBLE_SCHEMA",
         )
     objective = data.get("objective")
     if not isinstance(objective, str) or not objective.strip():
-        _invalid(path, "checkpoint sem objetivo textual válido")
+        _invalid(path, "checkpoint sem objetivo textual valido")
 
 
 def _validate_plan(path: Path, data: dict[str, Any]) -> None:
     plan = data.get("plan")
     if not isinstance(plan, list) or any(not isinstance(step, dict) for step in plan):
-        _invalid(path, "checkpoint com plano estruturalmente inválido")
+        _invalid(path, "checkpoint com plano estruturalmente invalido")
     records = data.get("step_records")
     if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
-        _invalid(path, "checkpoint sem registros de execução válidos")
+        _invalid(path, "checkpoint sem registros de execucao validos")
     for record in records:
         _validate_step_record(path, record)
     plan_identity = data.get("plan_identity")
     if plan_identity is not None and (
         not isinstance(plan_identity, str) or not plan_identity.strip()
     ):
-        _invalid(path, "identidade de plano inválida")
+        _invalid(path, "identidade de plano invalida")
     plan_step = data.get("plan_step", 0)
     if isinstance(plan_step, bool) or not isinstance(plan_step, int) or plan_step < 0:
-        _invalid(path, "cursor de plano inválido")
+        _invalid(path, "cursor de plano invalido")
     current_step_id = data.get("current_step_id")
     if current_step_id is not None and not isinstance(current_step_id, str):
-        _invalid(path, "identidade do passo atual inválida")
+        _invalid(path, "identidade do passo atual invalida")
 
 
 def _validate_semantics(path: Path, data: dict[str, Any]) -> None:
     raw_semantics = data.get("task_semantics")
     if "task_semantics" in data and raw_semantics is not None and not isinstance(raw_semantics, dict):
-        _invalid(path, "contrato semântico ausente ou inválido")
+        _invalid(path, "contrato semantico ausente ou invalido")
     if raw_semantics is not None:
         return
     legacy_keys = ("requested_effects", "executed_effects", "waived_effects")
     if any(key not in data for key in legacy_keys):
         _invalid(
             path,
-            "checkpoint antigo sem estado de obrigações migrável",
+            "checkpoint antigo sem estado de obrigacoes migravel",
             reason_code="CHECKPOINT_MIGRATION_AMBIGUOUS",
         )
     for key in legacy_keys + ("prohibited_effects",):
         if key in data and not _string_list(data[key]):
-            _invalid(path, f"campo de efeitos inválido: {key}")
+            _invalid(path, f"campo de efeitos invalido: {key}")
 
 
 def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
+    _validate_task_definition_binding(path, data)
+    _validate_root_and_terminal(path, data)
+    _validate_history_fields(path, data)
+    _validate_incidents(path, data)
+    _validate_result_and_budget(path, data)
+
+
+def _validate_task_definition_binding(path: Path, data: dict[str, Any]) -> None:
+    raw_task_definition = data.get("task_definition")
+    if raw_task_definition is None:
+        return
+    if not isinstance(raw_task_definition, dict):
+        _invalid(path, "binding de task definition invalido")
+    try:
+        task_definition_ref = TaskDefinitionRef.from_dict(raw_task_definition)
+    except (TypeError, ValueError):
+        _invalid(path, "binding de task definition invalido")
+    if data.get("root_task_id") != task_definition_ref.task_id:
+        _invalid(path, "binding de task definition nao corresponde a tarefa raiz")
+
+
+def _validate_root_and_terminal(path: Path, data: dict[str, Any]) -> None:
     root_task_id = data.get("root_task_id")
     if root_task_id is not None and (
         not isinstance(root_task_id, str) or not root_task_id.strip()
     ):
-        _invalid(path, "identidade de tarefa raiz invÃ¡lida")
+        _invalid(path, "identidade de tarefa raiz invalida")
     terminal = data.get("terminal_disposition")
     if terminal is not None and not isinstance(terminal, str):
-        _invalid(path, "disposição terminal inválida")
+        _invalid(path, "disposicao terminal invalida")
+
+
+def _validate_history_fields(path: Path, data: dict[str, Any]) -> None:
     for key in ("tool_history", "events", "conversation_history"):
         if key in data and not isinstance(data[key], list):
-            _invalid(path, f"campo de histórico inválido: {key}")
-    if "execution_incidents" in data:
-        try:
-            normalize_execution_incidents(data["execution_incidents"])
-        except (TypeError, ValueError):
-            _invalid(path, "diário de incidentes de execução inválido")
+            _invalid(path, f"campo de historico invalido: {key}")
+
+
+def _validate_incidents(path: Path, data: dict[str, Any]) -> None:
+    if "execution_incidents" not in data:
+        return
+    try:
+        normalize_execution_incidents(data["execution_incidents"])
+    except (TypeError, ValueError):
+        _invalid(path, "diario de incidentes de execucao invalido")
+
+
+def _validate_result_and_budget(path: Path, data: dict[str, Any]) -> None:
     last_result = data.get("last_result")
     if last_result is not None and not isinstance(last_result, dict):
-        _invalid(path, "último resultado inválido")
+        _invalid(path, "ultimo resultado invalido")
     budget = data.get("budget")
     if budget is not None and not isinstance(budget, dict):
-        _invalid(path, "snapshot de orçamento inválido")
+        _invalid(path, "snapshot de orcamento invalido")
 
 
 def _validate_step_record(path: Path, record: dict[str, Any]) -> None:
@@ -103,12 +136,12 @@ def _validate_step_record(path: Path, record: dict[str, Any]) -> None:
         _invalid(path, "registro sem step_id textual")
     status = record.get("status", StepStatus.PENDING.value)
     if not isinstance(status, str) or status not in {item.value for item in StepStatus}:
-        _invalid(path, f"status de passo inválido: {status!r}")
+        _invalid(path, f"status de passo invalido: {status!r}")
     attempts = record.get("attempts", 0)
     if isinstance(attempts, bool) or not isinstance(attempts, int) or attempts < 0:
-        _invalid(path, "número de tentativas inválido")
+        _invalid(path, "numero de tentativas invalido")
     if not isinstance(record.get("last_error", ""), str):
-        _invalid(path, "último erro do passo inválido")
+        _invalid(path, "ultimo erro do passo invalido")
 
 
 def _string_list(value: Any) -> bool:

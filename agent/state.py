@@ -23,6 +23,7 @@ from agent.state_failure_recovery import StateFailureRecoveryMixin
 from agent.state_incidents import StateIncidentMixin
 from agent.state_plan_execution import StatePlanExecutionMixin
 from agent.state_semantics import TaskSemanticsStateMixin
+from agent.task_definition.models import TaskDefinitionRef
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 from agent.tools.result_adapter import ensure_canonical_result
 
@@ -47,6 +48,8 @@ class AgentState(
         # Persisted logical runtime-task identity used to link resumed
         # attempts without deriving identity from a report artifact.
         self.root_task_id: str | None = root_task_id
+        # Compact durable binding; bodies stay in the workspace repository.
+        self.task_definition_ref: TaskDefinitionRef | None = None
         self.runtime_correlation: Any = None
         self.plan: Plan = Plan()
         # Scope for causal observations. Step IDs are stable within a plan,

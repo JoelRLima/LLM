@@ -95,10 +95,12 @@ from agent.approval import ApprovalDecision, AutoApprove
 from agent.skills import load_skill_registry
 from agent.application import AgentApplication
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
+from agent.llm.decision_contract import ModelRequestContract
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
+from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
 from agent.tools.authority import TaskAuthoritySnapshot
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
@@ -122,11 +124,70 @@ class DeterministicJourneyGateway:
     model = "installed-slice-a-fixture"
     profile = {"temperature": 0.0, "max_tokens": 256}
     capabilities = ProviderCapabilities(streaming=False)
+    supports_task_definition = True
 
     def __init__(self, objective, scenario_id):
         self.objective = objective
         self.scenario_id = scenario_id
         self.calls = []
+        self._last_task_contract = None
+
+    def _task_definition_response(self, request):
+        raw_contract = getattr(request, "request_contract", None)
+        request_contract = getattr(raw_contract, "value", raw_contract)
+        if request_contract in {
+            ModelRequestContract.TASK_CONTRACT.value,
+            ModelRequestContract.TASK_SPEC.value,
+        }:
+            self.calls.append({"request_contract": request_contract})
+        prompt = str(request.messages[-1].content) if request.messages else ""
+        if request_contract == ModelRequestContract.TASK_CONTRACT.value:
+            task_id = prompt.split("task_id exato: ", 1)[1].splitlines()[0].strip()
+            objective = prompt.split("objective exato: ", 1)[1].splitlines()[0]
+            contract = TaskContract(
+                task_id=task_id,
+                objective=objective,
+                summary="Installed deterministic task authority",
+                requirements=("execute the declared objective",),
+                constraints=("use the canonical planner and tool boundary",),
+                invariants=("persist Contract and Spec before normal execution",),
+                success_criteria=("produce bounded evidence",),
+                out_of_scope=("unrelated workspace changes",),
+                stop_conditions=("task authority cannot be admitted",),
+                assumptions=("the isolated workspace is available",),
+            )
+            self._last_task_contract = contract
+            return json.dumps(
+                {"action": "define_contract", "contract": contract.to_dict()},
+                ensure_ascii=False,
+            )
+        if request_contract == ModelRequestContract.TASK_SPEC.value:
+            contract = self._last_task_contract
+            if not isinstance(contract, TaskContract):
+                raise AssertionError("Task Spec requested before Task Contract")
+            spec = TaskSpec(
+                task_id=contract.task_id,
+                contract_version=contract.version,
+                contract_digest=contract.digest(),
+                phases=(
+                    TaskSpecPhase(
+                        phase_id="evaluation",
+                        title="Evaluate objective",
+                        goal="Produce bounded evidence",
+                        requirements=("read the relevant inputs",),
+                        invariants=("do not bypass the authority binding",),
+                        acceptance_criteria=("record bounded evidence",),
+                        evidence_requirements=("installed probe output",),
+                        depends_on=(),
+                    ),
+                ),
+                architecture="Descriptive specification above the executable Plan.",
+                global_requirements=("use the existing planning owner",),
+                global_invariants=("resolve authority before planner/tool execution",),
+                global_acceptance=("normal execution produces canonical evidence",),
+            )
+            return json.dumps({"action": "define_spec", "spec": spec.to_dict()}, ensure_ascii=False)
+        return None
 
     def build_payload(self, request):
         return {
@@ -237,6 +298,9 @@ class DeterministicJourneyGateway:
         return '{"persona": "coder"}'
 
     def complete(self, request):
+        task_definition_response = self._task_definition_response(request)
+        if task_definition_response is not None:
+            return ModelResponse(content=task_definition_response)
         return ModelResponse(content=self.complete_payload(self.build_payload(request)))
 
     def send_payload(self, payload, stream):
@@ -921,6 +985,43 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             content = '{"persona":"coder"}'
+        elif "Compile uma TaskContract normativa" in prompt:
+            task_id = prompt.split("task_id exato:", 1)[1].splitlines()[0].strip()
+            objective = prompt.split("objective exato:", 1)[1].splitlines()[0].strip()
+            content = json.dumps(
+                {
+                    "action": "define_contract",
+                    "contract": {
+                        "task_id": task_id,
+                        "objective": objective,
+                        "summary": "installed F1 acceptance",
+                    },
+                }
+            )
+        elif "Expand the admitted Contract into a bounded TaskSpec" in prompt:
+            task_id_match = re.search(r"'task_id': '([^']+)'", prompt)
+            version_match = re.search(r"Contract version: (\d+);", prompt)
+            digest_match = re.search(r"Contract digest: ([0-9a-f]{64})", prompt)
+            if task_id_match is None or version_match is None or digest_match is None:
+                content = '{"action":"blocked","reason":"fixture Contract binding missing"}'
+            else:
+                content = json.dumps(
+                    {
+                        "action": "define_spec",
+                        "spec": {
+                            "task_id": task_id_match.group(1),
+                            "contract_version": int(version_match.group(1)),
+                            "contract_digest": digest_match.group(1),
+                            "phases": [
+                                {
+                                    "phase_id": "execute",
+                                    "title": "Execute the requested tool",
+                                    "goal": "Run the explicitly authorized installed-tool probe.",
+                                }
+                            ],
+                        },
+                    }
+                )
         elif "TOOL DISCOVERY" in prompt:
             marker = "<untrusted_tool_catalog>"
             end_marker = "</untrusted_tool_catalog>"

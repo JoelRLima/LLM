@@ -195,7 +195,12 @@ string-array ::= "[" ws (string ("," ws string)*)? ws "]"
 )
 
 
+TASK_DEFINITION_GRAMMAR = _COMMON_RULES + '\nroot ::= object\n'
+
 _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
+    ModelRequestContract.TASK_CONTRACT: TASK_DEFINITION_GRAMMAR,
+    ModelRequestContract.TASK_SPEC: TASK_DEFINITION_GRAMMAR,
+
     ModelRequestContract.INITIAL_PLAN: PLAN_GRAMMAR,
     ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION: EFFECT_OBSERVATION_CONTINUATION_GRAMMAR,
     ModelRequestContract.REASONING_BOUNDARY_CONTINUATION: REASONING_BOUNDARY_CONTINUATION_GRAMMAR,
@@ -213,6 +218,8 @@ _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
 # ----------------------------------------------------------------------
 
 GRAMMARS: Dict[str, str] = {
+    'task_contract': TASK_DEFINITION_GRAMMAR,
+    'task_spec': TASK_DEFINITION_GRAMMAR,
     "plan": PLAN_GRAMMAR,
     "continuation_plan": CONTINUATION_PLAN_GRAMMAR,
     "macro_plan": MACRO_PLAN_GRAMMAR,
