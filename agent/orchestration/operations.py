@@ -13,7 +13,6 @@ from agent.orchestration.operations_reporting import (
 from agent.orchestration.operations_tools import build_tools_description
 from agent.reporting.run_snapshot import CanonicalRunSnapshot
 from agent.reporting.task_report import TaskReportBuilder
-from agent.runtime.event_dispatch import append_state_event
 from agent.runtime.events import RuntimeEvent
 from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
@@ -38,7 +37,6 @@ class OrchestratorOperations:
     cancellation_token: Any
     context_manager: Any
     workspace: Any
-    auto_coder: Any
     reactive_loop: Any
     tool_executor: Any
 
@@ -124,11 +122,9 @@ class OrchestratorOperations:
         except Exception as exc:
             logger.warning("Checkpoint persistence failed: %s", type(exc).__name__)
             saved = False
-        # CheckpointManager returns a strict bool.  ``None`` is retained only
-        # for legacy injected save ports whose historical contract reported
-        # success by completing without an exception; every explicit false or
-        # other value remains a failed confirmation.
-        if saved is not True and saved is not None:
+        # CheckpointManager returns a strict bool.  Completion without an
+        # explicit True is not a durable confirmation.
+        if saved is not True:
             OrchestratorOperations._emit_checkpoint_event(
                 self,
                 "checkpoint_persistence_failed",
@@ -138,20 +134,7 @@ class OrchestratorOperations:
         return True
 
     def _emit_checkpoint_event(self, event_type: str, data: EventData) -> None:
-        emit = getattr(self, "_emit", None)
-        if callable(emit):
-            emit(event_type, data)
-            return
-        # Lightweight compatibility doubles do not install the orchestrator
-        # owner/dispatcher. They still use the one named legacy adapter.
-        append_state_event(
-            self.agent_state,
-            RuntimeEvent.from_legacy_fields(
-                event_type,
-                data,
-                step=getattr(self.agent_state, "plan_step", 0),
-            ),
-        )
+        OrchestratorOperations._emit(self, event_type, data)
 
     def _load_checkpoint(self) -> Optional[Dict[str, Any]]:
         return cast(Optional[Dict[str, Any]], self.checkpoint_manager.load())
@@ -174,16 +157,14 @@ class OrchestratorOperations:
             step=self.agent_state.plan_step,
         )
         dispatcher = getattr(self, "event_dispatcher", None)
-        if dispatcher is not None:
-            dispatcher.emit(event)
-        else:
-            # Narrow fallback for lightweight compatibility doubles; the real
-            # Orchestrator always installs RuntimeEventDispatcher.
-            append_state_event(self.agent_state, event)
+        emit_event = getattr(dispatcher, "emit", None)
+        if not callable(emit_event):
+            raise RuntimeError(
+                "orchestrator does not expose the canonical runtime event dispatcher"
+            )
+        emit_event(event)
         if self.verbose:
             print(f"[{event_type}] {data}")
-        if dispatcher is None and event.kind.value in {"step_completed", "step_failed", "step_skipped"}:
-            self._save_checkpoint()
 
     def _log_metric(self, entry: Dict[str, Any]) -> None:
         enriched = dict(entry)
@@ -275,13 +256,6 @@ class OrchestratorOperations:
 
     def _maybe_summarize_and_store(self, tool_name: str, args: ToolArgs, result: CanonicalToolResult) -> None:
         self.tool_executor.maybe_summarize_and_store(tool_name, args, result)
-
-    def _test_and_correct(self, file_path: str, objective: str) -> bool:
-        return bool(self.auto_coder.test_and_correct(file_path, objective))
-
-    def _generate_content(self, tool: str, args: dict[str, Any], objective: str) -> Optional[str]:
-        generated = self.auto_coder.generate_content(tool, args, objective)
-        return str(generated) if generated is not None else None
 
     def _run_reactive(self, objective: str, usage: Dict[str, int], original_count: int) -> str:
         return str(self.reactive_loop.run_reactive(objective, usage, original_count))

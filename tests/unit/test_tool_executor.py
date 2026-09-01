@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from agent.planning.plan_model import Plan
 from agent.planning.step_contracts import PreparedInvocation
 from agent.tool_executor import ToolExecutor
 from agent.tools.contracts import ToolResult, ToolStatus
@@ -53,7 +54,7 @@ def test_stale_prepared_invocation_is_blocked_before_gateway_dispatch() -> None:
 
     state = SimpleNamespace(
         plan_identity="new-plan",
-        plan=[{"_step_id": "step-1", "tool": "echo", "args": {}}],
+        plan=Plan.from_raw([{"_step_id": "step-1", "tool": "echo", "args": {}}]),
         objective="",
         tool_history=[],
     )

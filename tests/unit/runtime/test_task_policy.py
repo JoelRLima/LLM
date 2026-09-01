@@ -118,6 +118,15 @@ def test_cancellation_precedes_simultaneous_quantitative_and_logical_exhaustion(
     assert result.terminal_status == "cancelled"
 
 
+def test_recovery_without_owner_fails_closed() -> None:
+    policy = _policy(recovery=None)
+
+    result = policy.authorize_recovery(RecoveryScope.LLM_REPLANS)
+
+    assert result.decision is TaskPolicyDecision.RECOVERY_EXHAUSTED
+    assert result.reason_code == "TASK_RECOVERY_OWNER_MISSING"
+
+
 def test_context_child_reuses_canonical_cancellation_and_policy_state() -> None:
     token = CancellationToken()
     context = TaskExecutionContext(

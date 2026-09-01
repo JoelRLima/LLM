@@ -11,19 +11,19 @@ from agent.planning.completion_observations_support import (
     observation_references,
 )
 from agent.planning.effect_intent import effect_intent_matches
-from agent.planning.failure_policy import (
-    FailureClass,
-    classify_failure,
-    local_failure_permitted,
-    unrecovered_local_failure_observations,
-)
-from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
 from agent.planning.task_semantics_effects import observed_effect_accesses, observed_effect_kinds
 from agent.planning.task_semantics_effects import (
     tool_capabilities as _tool_capabilities,
 )
 from agent.resources.contracts import WORKSPACE_RESOURCE, ResourceAccess, ResourceMode, ResourceProvenance
+from agent.runtime.failure_policy import (
+    FailureClass,
+    classify_failure,
+    local_failure_permitted,
+    unrecovered_local_failure_observations,
+)
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
 
 tool_capabilities = _tool_capabilities
 
@@ -286,7 +286,7 @@ def _last_result_is_terminal(
     if classification is FailureClass.LOCAL:
         local_failure = _local_failure_requires_terminal(orchestrator, include_invocation_history=True)
         return local_failure or not local_failure_permitted(state)
-    return str(result.get("status") or "") in TERMINAL_FAILURE_STATUSES
+    return str(result.get("status") or "") in NON_SUCCESS_STATUSES
 
 
 def terminal_failure(

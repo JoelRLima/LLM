@@ -17,7 +17,7 @@ from agent.tools.contracts import ToolStatus
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from tests.support.offline_scenarios import OfflineLegacyGateway
+from tests.support.offline_scenarios import OfflineChatGateway
 
 
 def _manifest(path: Path) -> None:
@@ -214,7 +214,7 @@ def test_product_task_authority_is_bound_to_current_application_snapshot(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         task_authority_capabilities=["read"],
         configure_logging=False,
     ) as application:
@@ -270,7 +270,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         approval_policy=AutoApprove(),
         configure_logging=False,
     ) as application:
@@ -283,7 +283,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         approval_policy=AutoApprove(),
         task_authority_capabilities=["read"],
         configure_logging=False,
@@ -297,7 +297,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         task_authority_capabilities=["read", "process"],
         configure_logging=False,
     ) as application:
@@ -310,7 +310,7 @@ def test_product_authority_and_yes_remain_separate_before_real_stdio_effect(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         approval_policy=AutoApprove(),
         task_authority_capabilities=["read", "process"],
         configure_logging=False,

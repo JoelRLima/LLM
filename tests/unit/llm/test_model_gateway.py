@@ -6,15 +6,16 @@ from agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    ModelResponseError,
     StreamEventType,
     StructuredOutputMode,
     StructuredOutputRequest,
-    UnsupportedModelCapability,
 )
-from agent.llm.providers.factory import create_model_gateway, resolve_model_profile
+from agent.llm.errors import ModelResponseError, UnsupportedModelCapability
+from agent.llm.model_profile import resolve_model_profile
+from agent.llm.providers.factory import create_model_gateway
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.model_call_stream import consume_events
 from agent.runtime.paths import AppPaths
 
 
@@ -68,7 +69,7 @@ def test_factory_receives_effective_environment_overrides(tmp_path):
     paths = AppPaths.discover(app_home=tmp_path / "home", env={})
     repository = ConfigRepository(paths)
     repository.initialize()
-    config = repository.load_legacy(
+    config = repository.load(
         environment={
             "LLM_AGENT_API_URL": "http://override.example/v1/chat/completions",
             "LLM_AGENT_MODEL": "override-model",
@@ -76,7 +77,7 @@ def test_factory_receives_effective_environment_overrides(tmp_path):
             "LLM_AGENT_MAX_TOKENS": "777",
             "LLM_AGENT_TIMEOUT": "42",
         }
-    )
+    ).to_dict()
 
     gateway = create_model_gateway(config)
 
@@ -123,7 +124,7 @@ def test_complete_normalizes_openai_response():
         "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
     }
 
-    with patch.object(gateway, "send_payload", return_value=response):
+    with patch.object(gateway, "_send_payload", return_value=response):
         result = gateway.complete(_request())
 
     assert result.content == "resultado"
@@ -131,7 +132,7 @@ def test_complete_normalizes_openai_response():
     assert result.finish_reason == "stop"
 
 
-def test_complete_payload_preserves_usage_envelope_and_missing_usage() -> None:
+def test_complete_preserves_usage_envelope_and_missing_usage() -> None:
     gateway = OpenAICompatibleGateway(
         {"api_url": "http://localhost/chat", "model": "local", "capabilities": {}}
     )
@@ -141,8 +142,8 @@ def test_complete_payload_preserves_usage_envelope_and_missing_usage() -> None:
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
-    with patch.object(gateway, "send_payload", return_value=response):
-        result = gateway.complete_payload({})
+    with patch.object(gateway, "_send_payload", return_value=response):
+        result = gateway.complete(_request())
 
     assert isinstance(result, ModelResponse)
     assert result.usage.available is True
@@ -168,7 +169,7 @@ def test_stream_normalizes_content_reasoning_and_done():
         b"data: [DONE]",
     ]
 
-    with patch.object(gateway, "send_payload", return_value=response):
+    with patch.object(gateway, "_send_payload", return_value=response):
         events = list(gateway.stream(_request(stream=True)))
 
     assert [event.type for event in events] == [
@@ -194,7 +195,7 @@ def test_stream_exposes_provider_usage_event() -> None:
         b"data: [DONE]",
     ]
 
-    with patch.object(gateway, "send_payload", return_value=response):
+    with patch.object(gateway, "_send_payload", return_value=response):
         events = list(gateway.stream(_request(stream=True)))
 
     usage_events = [event for event in events if event.type is StreamEventType.USAGE]
@@ -202,7 +203,7 @@ def test_stream_exposes_provider_usage_event() -> None:
     assert usage_events[0].data["total_tokens"] == 3
 
 
-def test_consume_stream_propagates_provider_error_before_content() -> None:
+def test_stream_events_propagate_provider_error_before_content() -> None:
     gateway = OpenAICompatibleGateway(
         {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
     )
@@ -211,12 +212,12 @@ def test_consume_stream_propagates_provider_error_before_content() -> None:
     errors: list[str] = []
 
     with pytest.raises(ModelResponseError, match="upstream failed"):
-        gateway.consume_stream(response, {"on_error": errors.append})
+        consume_events(gateway.iter_stream(response), {"on_error": errors.append})
 
     assert errors == ["upstream failed"]
 
 
-def test_consume_stream_error_preserves_partial_content() -> None:
+def test_stream_events_error_preserves_partial_content() -> None:
     gateway = OpenAICompatibleGateway(
         {"api_url": "http://localhost/chat", "model": "local", "capabilities": {"streaming": True}}
     )
@@ -228,7 +229,7 @@ def test_consume_stream_error_preserves_partial_content() -> None:
     chunks: list[str] = []
 
     with pytest.raises(ModelResponseError) as caught:
-        gateway.consume_stream(response, {"on_content_chunk": chunks.append})
+        consume_events(gateway.iter_stream(response), {"on_content_chunk": chunks.append})
 
     assert chunks == ["partial"]
     assert caught.value.partial_content == "partial"

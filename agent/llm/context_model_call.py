@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, Dict
 
 from agent.llm.admitted_decisions import ModelDecisionValue
-from agent.llm.decision_compat import (
-    build_request_with_contract,
-    build_retry_request,
-    record_legacy_metadata,
-)
 from agent.llm.decision_contract import ModelRequestContract, resolve_request_contract
 from agent.llm.grammars import AutoGrammar, get_grammar
 from agent.llm.structured_output import resolve_model_decision
@@ -32,6 +26,10 @@ def run_model_call(
     step_budgets: Mapping[str, int],
     default_max_tokens: int,
 ) -> Dict[str, Any] | ModelDecisionValue:
+    if log_metric_callback is not None and getattr(
+        manager.session, "model_call_callback", None
+    ) is None:
+        manager.session.set_model_call_callback(log_metric_callback)
     exact_contract = resolve_request_contract(
         request_contract=request_contract,
         step_type=step_type,
@@ -81,11 +79,10 @@ def run_model_call(
                 end="",
                 flush=True,
             )
-        started_at = time.monotonic()
         return resolve_model_decision(
             request,
             complete=manager.session.complete_request,
-            retry_request=lambda: build_retry_request(
+            retry_request=lambda: _build_retry_request(
                 manager.session,
                 effective_grammar,
                 manager.hardware_profile,
@@ -108,17 +105,6 @@ def run_model_call(
                 request_contract if request_contract is not None else exact_contract
             ),
             typed=typed,
-            on_initial_response=lambda response, parsed, active_request: record_legacy_metadata(
-                log_metric_callback,
-                response,
-                parsed,
-                active_request,
-                step_type,
-                started_at,
-                request_contract=(
-                    request_contract if request_contract is not None else exact_contract
-                ),
-            ),
         )
     finally:
         manager.session.messages = original_messages
@@ -162,8 +148,7 @@ def _build_request(
         original_messages = manager.session.messages
         manager.session.messages = compact_messages
         try:
-            request = build_request_with_contract(
-                manager.session,
+            request = manager.session.build_request(
                 grammar=grammar,
                 stream=False,
                 max_output_tokens=budget,
@@ -172,10 +157,42 @@ def _build_request(
         finally:
             manager.session.messages = original_messages
         return replace(request, context_compacted=True)
-    return build_request_with_contract(
-        manager.session,
+    return manager.session.build_request(
         grammar=grammar,
         stream=False,
         max_output_tokens=budget,
         request_contract=contract,
+    )
+
+
+def _build_retry_request(
+    session: Any,
+    effective_grammar: str | None,
+    hardware_profile: Any,
+    default_max_tokens: int,
+    request_contract: ModelRequestContract | str | None = None,
+) -> Any:
+    retry_grammar = (
+        effective_grammar
+        if getattr(session, "_grammar_supports_grammar", None) is not False
+        else None
+    )
+    config = getattr(session, "config", {})
+    configured = config.get("agent_max_tokens") if isinstance(config, Mapping) else None
+    if isinstance(configured, int) and not isinstance(configured, bool) and configured > 0:
+        retry_budget = configured
+    else:
+        profile_limit = getattr(hardware_profile, "default_output_tokens", None)
+        if (
+            not isinstance(profile_limit, int)
+            or isinstance(profile_limit, bool)
+            or profile_limit <= 0
+        ):
+            profile_limit = default_max_tokens * 2
+        retry_budget = min(default_max_tokens * 2, profile_limit)
+    return session.build_request(
+        grammar=retry_grammar,
+        stream=False,
+        max_output_tokens=int(retry_budget),
+        request_contract=request_contract,
     )

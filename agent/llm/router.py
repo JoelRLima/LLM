@@ -2,7 +2,7 @@ import json
 import re
 from typing import List, Tuple
 
-from agent.llm.contracts import ModelProviderError
+from agent.llm.errors import ModelProviderError
 from agent.llm.prompts import CODER_PROMPT, GENERAL_PROMPT, RESEARCHER_PROMPT, SECURITY_AUDITOR_PROMPT
 from agent.llm.session import ChatSession
 from agent.runtime.budget import BudgetExhausted
@@ -92,12 +92,8 @@ def get_persona_config(persona: str) -> Tuple[str, List[str]]:
 
 
 def _request_router_response(session: ChatSession) -> str:
-    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
-        request = session.build_request(stream=False)
-        return session.complete_request(request).content
-    payload = session.build_payload()
-    payload["stream"] = False
-    return session.send_non_streaming_request(payload)
+    request = session.build_request(stream=False)
+    return session.complete_request(request).content
 
 
 def route_objective(objective: str, session: ChatSession) -> Tuple[str, List[str], str]:

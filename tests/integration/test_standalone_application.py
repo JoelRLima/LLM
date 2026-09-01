@@ -42,7 +42,7 @@ from agent.tools.invocation_execution import InvocationLivenessError
 from agent.tools.tool_registry import ToolRegistry
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
 from agent.watchdog import Watchdog
-from tests.support.offline_scenarios import OfflineLegacyGateway, OfflineModelGateway
+from tests.support.offline_scenarios import OfflineChatGateway, OfflineModelGateway
 from tests.support.task_definition import task_definition_response
 
 
@@ -52,7 +52,7 @@ def _initialized_paths(tmp_path: Path) -> AppPaths:
     return paths
 
 
-class _QueuedLegacyGateway(OfflineLegacyGateway):
+class _QueuedChatGateway(OfflineChatGateway):
     def __init__(self, responses: list[str]) -> None:
         OfflineModelGateway.__init__(self, responses)
         self.payloads = []
@@ -331,7 +331,7 @@ def _run_queued_task(
     (workspace / "controle.txt").write_text(content, encoding="utf-8")
     for relative_path, extra_content in (extra_files or {}).items():
         (workspace / relative_path).write_text(extra_content, encoding="utf-8")
-    gateway = _QueuedLegacyGateway(responses)
+    gateway = _QueuedChatGateway(responses)
     with AgentApplication.create(
         paths=_initialized_paths(tmp_path),
         workspace=workspace,
@@ -590,7 +590,7 @@ def _run_manual_deferred_task(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "controle.txt").write_text(content, encoding="utf-8")
-    gateway = _QueuedLegacyGateway(responses)
+    gateway = _QueuedChatGateway(responses)
     approval = _CountingApproval()
     with AgentApplication.create(
         paths=_initialized_paths(tmp_path),
@@ -1416,7 +1416,7 @@ def test_application_runs_trivial_task_with_explicit_workspace(tmp_path: Path) -
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         result = application.run("oi")
@@ -1464,7 +1464,7 @@ def test_application_loads_ready_extension_from_catalog_and_workspace(tmp_path: 
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         assert "demo_tool" in application.tool_registry.names()
@@ -1511,7 +1511,7 @@ def test_extension_aware_bootstrap_does_not_start_processes(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         assert "echo" in application.tool_registry.names()
@@ -1559,7 +1559,7 @@ def test_extension_bootstrap_acceptance_drift_replace_and_workspace_isolation(tm
     with AgentApplication.create(
         paths=paths,
         workspace=workspace_a,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application_a:
         old_names = application_a.tool_registry.names()
@@ -1602,7 +1602,7 @@ def test_resume_restores_persona_and_capabilities(tmp_path: Path) -> None:
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         assert "web_search" in application.orchestrator.tool_registry.names()
@@ -1625,7 +1625,7 @@ def test_resume_restores_persona_and_capabilities(tmp_path: Path) -> None:
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as resumed_application:
         called: dict[str, object] = {}
@@ -1662,14 +1662,14 @@ def test_workspaces_do_not_share_state_or_scratch(tmp_path: Path) -> None:
     with AgentApplication.create(
         paths=paths,
         workspace=first,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as first_application:
         first_paths = first_application.workspace_paths
     with AgentApplication.create(
         paths=paths,
         workspace=second,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as second_application:
         second_paths = second_application.workspace_paths
@@ -1688,7 +1688,7 @@ def test_workspace_config_is_not_loaded_implicitly(tmp_path: Path) -> None:
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         assert application.config["auto_confirm"] is False
@@ -1703,7 +1703,7 @@ def test_application_requires_initialized_configuration(tmp_path: Path) -> None:
         AgentApplication.create(
             paths=paths,
             workspace=workspace,
-            gateway=OfflineLegacyGateway("unused"),
+            gateway=OfflineChatGateway("unused"),
             configure_logging=False,
         )
 
@@ -1727,7 +1727,7 @@ def test_application_rejects_corrupt_memory_json_and_releases_bootstrap_lock(
         AgentApplication.create(
             paths=paths,
             workspace=workspace,
-            gateway=OfflineLegacyGateway("unused"),
+            gateway=OfflineChatGateway("unused"),
             configure_logging=False,
         )
 
@@ -1736,7 +1736,7 @@ def test_application_rejects_corrupt_memory_json_and_releases_bootstrap_lock(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ):
         pass
@@ -1763,7 +1763,7 @@ def test_startup_failure_releases_only_owned_resources(
         AgentApplication.create(
             paths=paths,
             workspace=workspace,
-            gateway=OfflineLegacyGateway("unused"),
+            gateway=OfflineChatGateway("unused"),
             configure_logging=False,
         )
 
@@ -1780,7 +1780,7 @@ def test_close_releases_lock_when_memory_persistence_fails(
     application = AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     )
     monkeypatch.setattr(
@@ -1798,7 +1798,7 @@ def test_close_releases_lock_when_memory_persistence_fails(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ):
         pass
@@ -1832,7 +1832,7 @@ def test_terminal_checkpoint_cannot_resume_as_fresh_success(tmp_path: Path) -> N
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         state = application.orchestrator.agent_state
@@ -1843,7 +1843,7 @@ def test_terminal_checkpoint_cannot_resume_as_fresh_success(tmp_path: Path) -> N
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as resumed:
         result = resumed.run(None)
@@ -1878,7 +1878,7 @@ def test_incompatible_checkpoint_fails_safely_without_starting_new_task(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         result = application.run(None)
@@ -1896,7 +1896,7 @@ def test_close_is_idempotent(tmp_path: Path) -> None:
     application = AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     )
 
@@ -1917,7 +1917,7 @@ def test_close_does_not_persist_memory_twice_after_a_task(
     application = AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     )
     memory = application.orchestrator.agent_state.memory
@@ -1944,7 +1944,7 @@ def test_same_workspace_state_rejects_second_live_application(tmp_path: Path) ->
     first = AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     )
     try:
@@ -1952,7 +1952,7 @@ def test_same_workspace_state_rejects_second_live_application(tmp_path: Path) ->
             AgentApplication.create(
                 paths=paths,
                 workspace=workspace,
-                gateway=OfflineLegacyGateway("unused"),
+                gateway=OfflineChatGateway("unused"),
                 configure_logging=False,
             )
     finally:
@@ -1961,7 +1961,7 @@ def test_same_workspace_state_rejects_second_live_application(tmp_path: Path) ->
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ):
         pass
@@ -1976,7 +1976,7 @@ def test_process_stdout_capture_serializes_concurrent_applications(tmp_path: Pat
         AgentApplication.create(
             paths=paths,
             workspace=root,
-            gateway=OfflineLegacyGateway("unused"),
+            gateway=OfflineChatGateway("unused"),
             configure_logging=False,
         )
         for root in roots
@@ -2023,7 +2023,7 @@ def test_model_planned_file_writer_is_excluded_with_auto_approval_and_no_mutatio
     paths = _initialized_paths(tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    gateway = OfflineLegacyGateway("unused")
+    gateway = OfflineChatGateway("unused")
     gateway.responses = [
         '{"persona":"coder"}',
         '{"tools":["code_task"]}',
@@ -2064,7 +2064,7 @@ def test_unverified_tool_status_reaches_application_result(
     application = AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     )
     try:
@@ -2107,7 +2107,7 @@ def test_internal_notes_use_workspace_scratch_not_launch_cwd(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         notes_file = application.workspace_paths.scratch_dir / "analysis_notes.md"
@@ -2124,11 +2124,9 @@ def test_internal_notes_use_workspace_scratch_not_launch_cwd(
         assert sentinel.read_text(encoding="utf-8") == "sentinela externa"
 
 
-def test_auto_coder_reads_tests_and_writes_only_inside_workspace(
+def test_code_task_uses_workspace_bounded_canonical_workflow(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    paths = _initialized_paths(tmp_path)
     workspace = tmp_path / "workspace"
     launch_cwd = tmp_path / "launch-cwd"
     workspace.mkdir()
@@ -2141,55 +2139,27 @@ def test_auto_coder_reads_tests_and_writes_only_inside_workspace(
     )
     sentinel_content = "def sentinel():\n    return 'cwd-sentinel'\n"
     cwd_sentinel.write_text(sentinel_content, encoding="utf-8")
-    monkeypatch.chdir(launch_cwd)
+    from agent.skills.code_task import CodeTaskSkill
 
-    with AgentApplication.create(
-        paths=paths,
-        workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
-        configure_logging=False,
-    ) as application:
-        auto_coder = application.orchestrator.auto_coder
-        tested_paths: list[Path] = []
+    skill = CodeTaskSkill(
+        base_dir=workspace,
+        model_gateway=OfflineModelGateway([]),
+        config={"auto_confirm": True},
+    )
 
-        monkeypatch.setattr(
-            auto_coder,
-            "generate_tests",
-            lambda code, file_path: "assert target() == 'workspace-fixed'",
-        )
-        monkeypatch.setattr(
-            auto_coder,
-            "correct_code",
-            lambda original, file_path, tests, error: (
-                "def target():\n    return 'workspace-fixed'\n"
-            ),
-        )
+    result = skill.execute(
+        {"action": "analyze", "objective": "inspecionar sample.py", "targets": ["sample.py"]}
+    )
 
-        def run_generated_tests(
-            file_path: Path,
-            code: str,
-            test_code: str,
-        ) -> tuple[bool, str]:
-            del code, test_code
-            tested_paths.append(file_path)
-            return len(tested_paths) > 1, "falha simulada"
+    assert result["ok"] is True
+    assert result["data"]["status"] == "succeeded"
+    assert workspace_source.read_text(encoding="utf-8").startswith("def target")
+    assert cwd_sentinel.read_text(encoding="utf-8") == sentinel_content
 
-        monkeypatch.setattr(
-            auto_coder,
-            "_run_generated_tests",
-            run_generated_tests,
-        )
-
-        assert auto_coder.test_and_correct("sample.py", "corrigir sample.py") is True
-        assert tested_paths == [workspace_source.resolve(), workspace_source.resolve()]
-        assert (
-            workspace_source.read_text(encoding="utf-8")
-            == "def target():\n    return 'workspace-fixed'\n"
-        )
-        assert cwd_sentinel.read_text(encoding="utf-8") == sentinel_content
-
-        with pytest.raises(ValueError, match="fora do workspace"):
-            auto_coder.test_and_correct(str(cwd_sentinel), "arquivo externo")
+    outside = skill.execute(
+        {"action": "analyze", "objective": "inspecionar arquivo externo", "targets": [str(cwd_sentinel)]}
+    )
+    assert outside["ok"] is False
 
 
 def test_cache_and_summary_hash_the_workspace_file_not_cwd_sentinel(
@@ -2213,7 +2183,7 @@ def test_cache_and_summary_hash_the_workspace_file_not_cwd_sentinel(
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         configure_logging=False,
     ) as application:
         orchestrator = application.orchestrator

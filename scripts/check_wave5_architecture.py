@@ -11,7 +11,6 @@ AGENT_ROOT = ROOT / "agent"
 
 FILEWRITER_RUNTIME = "agent/skills/file_writer_runtime.py"
 FILEWRITER_SKILL = "agent/skills/file_writer.py"
-AUTOCODER = "agent/auto_coder.py"
 CODE_WORKFLOW = "agent/code/workflow_application.py"
 TRANSACTION_OWNER = "agent/code/change_transaction.py"
 
@@ -20,7 +19,6 @@ MODEL_WRITE_SURFACE = frozenset(
         FILEWRITER_SKILL,
         FILEWRITER_RUNTIME,
         "agent/skills/code_task.py",
-        AUTOCODER,
         TRANSACTION_OWNER,
         CODE_WORKFLOW,
         "agent/workspace.py",
@@ -44,7 +42,6 @@ SCRATCH_FUNCTIONS = {
             "_ast_patch",
         }
     ),
-    AUTOCODER: frozenset({"_run_generated_tests"}),
     "agent/workspace.py": frozenset({"create_restore_point", "_backup_file"}),
 }
 
@@ -323,10 +320,6 @@ def _check_model_surface(
         findings.extend(
             _write_findings(tree, relative, gate="W5-S1", allowed_functions=allowed)
         )
-    if relative == AUTOCODER:
-        findings.extend(
-            _write_findings(tree, relative, gate="W5-S2", allowed_functions=allowed)
-        )
     if relative == CODE_WORKFLOW:
         findings.extend(
             _write_findings(tree, relative, gate="W5-S3", allowed_functions=allowed)
@@ -338,16 +331,6 @@ def _check_model_surface(
                 relative,
                 function_name="review_and_commit",
                 gate="W5-S1",
-                required=required,
-            )
-        )
-    if relative == AUTOCODER:
-        findings.extend(
-            _required_transaction_finding(
-                tree,
-                relative,
-                function_name="_save_code",
-                gate="W5-S2",
                 required=required,
             )
         )

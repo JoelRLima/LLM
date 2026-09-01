@@ -51,10 +51,6 @@ class LegacyToolResult(TypedDict, total=False):
     source_extent: Dict[str, Any]
 
 
-# ``ToolResult`` remains available only through the module compatibility hook
-# below. New runtime code names this serialized shape explicitly.
-
-
 class ToolHistoryEntry(TypedDict, total=False):
     """Canonical live runtime history entry."""
 
@@ -149,11 +145,3 @@ class CheckpointData(TypedDict, total=False):
     recovery_budget: Dict[str, Any]
     # Compact identity/binding only; bodies remain in the durable repository.
     task_definition: Dict[str, Any]
-
-
-def __getattr__(name: str) -> Any:
-    """Preserve the old import without making it an internal type name."""
-
-    if name == "ToolResult":
-        return LegacyToolResult
-    raise AttributeError(name)

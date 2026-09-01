@@ -51,7 +51,7 @@ _CAPABILITY_KEYS = frozenset(
         "tool_calls",
     }
 )
-_GATEWAY_TYPE_NAMES = frozenset({"ModelGateway", "LegacyPayloadGateway"})
+_GATEWAY_TYPE_NAMES = frozenset({"ModelGateway"})
 _CONTEXT_TYPE_NAMES = frozenset({"TaskExecutionContext"})
 _CONTEXT_ROOT_NAMES = frozenset({"context", "execution_context", "task_context"})
 

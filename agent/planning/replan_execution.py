@@ -7,7 +7,7 @@ from typing import Any, Optional
 from agent.planning.plan_model import Plan, ToolPlanStep
 from agent.planning.replan import replan
 from agent.planning.replan_models import ReplanContext
-from agent.runtime.failures import FailureFact, failure_fact_from_legacy_message
+from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
 
@@ -30,7 +30,7 @@ def attempt_replan(
             step_id=step.step_id,
         )
     if typed_failure is None:
-        typed_failure = failure_fact_from_legacy_message(last_error)
+        typed_failure = FailureFact.unknown(message=last_error)
     error = str(last_error or typed_failure.message or typed_failure.code)
     context = ReplanContext(
         task=objective,

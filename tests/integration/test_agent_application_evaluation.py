@@ -5,7 +5,7 @@ import subprocess
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Iterator
+from typing import Any, Iterator
 
 import pytest
 from rich.console import Console
@@ -87,25 +87,6 @@ class JourneyGateway:
 
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
-
-    def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
-        return {"messages": [{"role": item.role, "content": item.content} for item in request.messages]}
-
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        messages = payload.get("messages", [])
-        prompt = str(messages[-1].get("content", ""))
-        self.calls.append(payload)  # type: ignore[arg-type]
-        if "TOOL DISCOVERY" in prompt:
-            return self._tool_discovery_response(prompt)
-        return self._response(str(messages[0].get("content", "")), str(messages[-1].get("content", "")))
-
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
-        del stream
-        return self.complete_payload(payload)
-
-    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
-        del callbacks
-        return str(response)
 
     def _tool_discovery_response(self, prompt: str) -> str:
         marker = "<untrusted_tool_catalog>"
@@ -213,21 +194,6 @@ class ProviderFailureGateway:
         authority = task_definition_response(self, request)
         if authority is not None:
             return ModelResponse(content=authority)
-        raise RuntimeError(self._secret_message)
-
-    def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
-        return {"messages": [{"role": item.role, "content": item.content} for item in request.messages]}
-
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        del payload
-        raise RuntimeError(self._secret_message)
-
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
-        del payload, stream
-        raise RuntimeError(self._secret_message)
-
-    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
-        del response, callbacks
         raise RuntimeError(self._secret_message)
 
     def count_tokens(self, text: str) -> int:

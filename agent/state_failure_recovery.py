@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent.execution_state import StepStatus
-from agent.planning.failure_policy import FailureClass, classify_failure
+from agent.runtime.failure_policy import FailureClass, classify_failure
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES, operational_status_for
 from agent.tools.result_completeness import legacy_result_successful
 

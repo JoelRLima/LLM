@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from time import monotonic
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 from agent.llm.contracts import ModelRequest, ModelResponse, TokenUsage, response_text, response_usage
-from agent.llm.legacy_payload import legacy_payload
 from agent.runtime.budget import estimate_model_request_tokens
 from agent.runtime.budget_estimation import RequestInputMeasurement
 from agent.runtime.context import TaskExecutionContext
@@ -19,7 +18,6 @@ from agent.runtime.model_call_record import (
 )
 from agent.runtime.model_call_stream import (
     consume_events,
-    consume_legacy_request,
     observed_stream_response,
 )
 from agent.runtime.model_call_support import context_for_session
@@ -115,17 +113,7 @@ class ModelCallService:
         )
 
     def _complete_provider(self, request: Any) -> Any:
-        complete = getattr(self.gateway, "complete", None)
-        if callable(complete):
-            return complete(request)
-        payload = legacy_payload(self.gateway, request)
-        complete_payload = getattr(self.gateway, "complete_payload", None)
-        if callable(complete_payload):
-            return complete_payload(payload)
-        send_payload = getattr(self.gateway, "send_payload", None)
-        if callable(send_payload):
-            return send_payload(payload, stream=False)
-        raise AttributeError("gateway has no supported completion transport")
+        return self.gateway.complete(request)
 
     def _outcome(
         self,
@@ -201,17 +189,10 @@ class ModelCallService:
         usage: Any = None
         try:
             with self.context.model_slot():
-                if callable(getattr(self.gateway, "stream", None)):
-                    visible, usage = consume_events(
-                        self.gateway.stream(request),
-                        callbacks,
-                    )
-                else:
-                    visible, usage = consume_legacy_request(
-                        self.gateway,
-                        request,
-                        callbacks,
-                    )
+                visible, usage = consume_events(
+                    self.gateway.stream(request),
+                    callbacks,
+                )
         except BaseException as exc:
             captured_usage = getattr(exc, "stream_usage", None)
             if captured_usage is not None:
@@ -255,39 +236,5 @@ class ModelCallService:
             usage=usage if usage is not None else TokenUsage(available=False),
         )
         return self._outcome(response, record, call_number, usage, visible.strip())
-
-    def start_legacy_request(
-        self,
-        payload: Dict[str, Any],
-        *,
-        stream: bool,
-    ) -> Any:
-        from agent.runtime.model_call_legacy import start_legacy_request
-
-        return start_legacy_request(
-            self,
-            payload,
-            stream=stream,
-            operation="legacy_request",
-        )
-
-    def consume_pending(
-        self,
-        pending: Any,
-        callbacks: Dict[str, Any],
-    ) -> ModelCallOutcome:
-        from agent.runtime.model_call_legacy import consume_pending_stream
-
-        return cast(ModelCallOutcome, consume_pending_stream(self, pending, callbacks))
-
-    def consume_external_stream(
-        self,
-        response: Any,
-        callbacks: Dict[str, Any],
-    ) -> str:
-        from agent.runtime.model_call_legacy import consume_external_stream
-
-        return consume_external_stream(self, response, callbacks)
-
 
 __all__ = ["ModelCallOutcome", "ModelCallRecord", "ModelCallService"]

@@ -12,11 +12,6 @@ from agent.llm.contracts import (
     StructuredOutputRequest,
 )
 from agent.llm.decision_contract import ModelRequestContract, coerce_request_contract
-from agent.llm.legacy_payload import (
-    build_legacy_model_request,
-    complete_legacy_payload_request,
-    legacy_payload_from_request,
-)
 from agent.llm.model_profile import (
     ResolvedModelProfile,
     resolve_gateway_model_profile,
@@ -115,10 +110,7 @@ def consume_model_stream(
 
 
 __all__ = [
-    "build_legacy_model_request",
     "build_model_request",
-    "complete_legacy_payload_request",
     "complete_model_request",
     "consume_model_stream",
-    "legacy_payload_from_request",
 ]

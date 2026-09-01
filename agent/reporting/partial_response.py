@@ -17,8 +17,6 @@ from agent.reporting.public_safety import sanitize_public_text
 from agent.runtime.operational_outcome import OperationalOutcome
 from agent.runtime.outcome_taxonomy import OperationalStatus, operational_status_for
 
-MAX_TOOL_RESULTS_SUMMARY_CHARS = MAX_OBSERVATION_EVIDENCE_CHARS
-MAX_TOOL_RESULT_SUMMARY_CHARS = MAX_OBSERVATION_RECORD_CHARS
 _PARTIAL_EVIDENCE_STATUSES = frozenset(
     {
         OperationalStatus.BLOCKED.value,
@@ -240,8 +238,8 @@ def _partial_fallback(outcome: OperationalOutcome, history: Any, descriptor_look
     if reason and reason not in status:
         status += f" Motivo observado: {reason}."
     evidence = serialize_tool_observations(
-        history or (), max_chars=MAX_TOOL_RESULTS_SUMMARY_CHARS,
-        max_record_chars=MAX_TOOL_RESULT_SUMMARY_CHARS, descriptor_lookup=descriptor_lookup,
+        history or (), max_chars=MAX_OBSERVATION_EVIDENCE_CHARS,
+        max_record_chars=MAX_OBSERVATION_RECORD_CHARS, descriptor_lookup=descriptor_lookup,
     )
     return f"{status}\n\nEvidência canônica das ferramentas:\n{evidence}" if evidence else status
 
@@ -278,8 +276,8 @@ def compose_operational_answer(
             return _partial_fallback(outcome, history, descriptor_lookup)
         return operational_renderer(outcome) or f"A tarefa terminou com status operacional: {outcome.terminal_status}."
     evidence = serialize_tool_observations(
-        history or (), max_chars=MAX_TOOL_RESULTS_SUMMARY_CHARS,
-        max_record_chars=MAX_TOOL_RESULT_SUMMARY_CHARS, descriptor_lookup=descriptor_lookup,
+        history or (), max_chars=MAX_OBSERVATION_EVIDENCE_CHARS,
+        max_record_chars=MAX_OBSERVATION_RECORD_CHARS, descriptor_lookup=descriptor_lookup,
     )
     candidate = sanitize_public_text(str(answer or "")).strip()
     if not candidate or _model_claims_global_success(candidate) or _model_claims_unsupported_effect(candidate):

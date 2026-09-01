@@ -20,7 +20,7 @@ def aggregate_metrics(
     budget_snapshot: Any = None,
     snapshot: Any = None,
 ) -> Dict[str, Any]:
-    """Compatibility adapter for callers that still consume a mapping."""
+    """Aggregate the canonical task-report snapshot into a mapping."""
 
     if snapshot is None:
         return project_run_metrics(

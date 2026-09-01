@@ -10,6 +10,7 @@ from agent.planning.capability_manifest import render_validation_repair_manual
 from agent.planning.execution_gateway import ExecutionGateway
 from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
 from agent.planning.plan_executor import PlanExecutor
+from agent.planning.plan_model import Plan
 from agent.planning.plan_optimizer import PlanOptimizer
 from agent.planning.plan_prompts import (
     PLANNING_GUIDANCE,
@@ -366,12 +367,12 @@ def test_two_grounded_grep_repairs_happen_before_llm_budget_and_then_dedup(tmp_p
 def test_deterministic_grounded_repair_does_not_consume_zero_llm_budget(tmp_path) -> None:
     orchestrator, model_calls = _repair_orchestrator(tmp_path)
     objective = "Onde a função format_name é usada neste projeto?"
-    plan = [
+    plan = Plan.from_raw([
         {
             "tool": "grep",
             "args": {"path": ".", "pattern": "def format_name"},
         }
-    ]
+    ])
     budget = {"remaining": 0}
 
     accepted = ExecutionGateway(orchestrator)._replace_blocked_step(
@@ -382,7 +383,7 @@ def test_deterministic_grounded_repair_does_not_consume_zero_llm_budget(tmp_path
     )
 
     assert accepted is True
-    assert plan[0]["args"]["pattern"] == "format_name"
+    assert orchestrator.agent_state.plan[0]["args"]["pattern"] == "format_name"
     assert budget == {"remaining": 0}
     assert model_calls == []
 
@@ -512,9 +513,6 @@ class _ExecutionContext:
     def _purge_stale_context(self):
         return None
 
-    def _generate_content(self, _tool, _args, _objective):
-        return None
-
     def _maybe_summarize_and_store(self, _tool, _args, _result):
         return None
 
@@ -522,15 +520,17 @@ class _ExecutionContext:
         self.failed = True
 
 
-def _execute_optimized_plan(plan: list[dict[str, object]]):
+def _execute_optimized_plan(
+    plan: list[dict[str, object]], memory: AgentMemory | None = None
+):
     report = PlanOptimizer().optimize(plan)
-    state = AgentState()
+    state = AgentState(memory=memory)
     state.set_plan(report.optimized_steps)
     context = _ExecutionContext(state)
     return report, state, context
 
 
-def test_mutation_invalidates_execution_repetition_and_cache_state() -> None:
+def test_mutation_invalidates_execution_repetition_and_cache_state(tmp_path) -> None:
     plan = [
         _analyzer("x.py"),
         {
@@ -539,7 +539,12 @@ def test_mutation_invalidates_execution_repetition_and_cache_state() -> None:
         },
         _analyzer("x.py"),
     ]
-    report, state, context = _execute_optimized_plan(plan)
+    memory = AgentMemory(
+        db_path=tmp_path / "memory.db",
+        default_file=tmp_path / "memory.json",
+        backup_dir=tmp_path / "backups",
+    )
+    report, state, context = _execute_optimized_plan(plan, memory)
     state.memory.state["file_hashes"] = {"x.py": "stale"}
     state.memory.state["file_cache_entries"] = {"x.py": {"data": "stale"}}
     usage: dict[str, int] = {}
@@ -560,7 +565,7 @@ def test_mutation_invalidates_execution_repetition_and_cache_state() -> None:
     assert state.memory.state["file_cache_entries"] == {}
 
 
-def test_reader_after_mutation_is_not_blocked_by_fully_read_marker() -> None:
+def test_reader_after_mutation_is_not_blocked_by_fully_read_marker(tmp_path) -> None:
     plan = [
         {"tool": "file_reader", "args": {"file_path": "x.py"}},
         {
@@ -569,7 +574,12 @@ def test_reader_after_mutation_is_not_blocked_by_fully_read_marker() -> None:
         },
         {"tool": "file_reader", "args": {"file_path": "x.py"}},
     ]
-    report, state, context = _execute_optimized_plan(plan)
+    memory = AgentMemory(
+        db_path=tmp_path / "memory.db",
+        default_file=tmp_path / "memory.json",
+        backup_dir=tmp_path / "backups",
+    )
+    report, state, context = _execute_optimized_plan(plan, memory)
     usage: dict[str, int] = {}
 
     assert len(report.optimized_steps) == 3
@@ -879,7 +889,7 @@ def test_read_only_code_task_effect_projection_does_not_invalidate(
     assert usage == _observation_usage()
 
 
-def test_legacy_writer_success_keeps_conservative_invalidation_fallback() -> None:
+def test_writer_success_keeps_conservative_invalidation_fallback() -> None:
     memory = _ObservationMemory()
     state, context = _observation_context(
         memory,

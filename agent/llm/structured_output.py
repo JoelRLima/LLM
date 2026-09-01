@@ -9,12 +9,7 @@ from agent.llm.admitted_decisions import (
     ModelDecisionValue,
     _project_exactly_admitted_model_decision,
 )
-from agent.llm.contracts import (
-    ModelProviderError,
-    ModelRequest,
-    ModelResponse,
-    response_text,
-)
+from agent.llm.contracts import ModelRequest, ModelResponse, response_text
 from agent.llm.decision_contract import (
     ModelRequestContract,
     admit_model_decision_value,
@@ -22,6 +17,7 @@ from agent.llm.decision_contract import (
     normalize_generic_model_decision,
     request_contract_for_request,
 )
+from agent.llm.errors import ModelProviderError
 from agent.llm.structured_output_strategy import (
     StructuredOutputError,
     StructuredOutputStrategy,

@@ -28,13 +28,13 @@ from agent.planning.tool_disclosure import (
     render_tool_guidance,
 )
 from agent.runtime.budget import BudgetExhausted
-from agent.runtime.failures import FailureFact, failure_fact_from_legacy_message
+from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
 
 
 def ask_llm_for_alternative(
     original_step: Dict[str, Any],
-    failure: FailureFact | str | None,
+    failure: FailureFact,
     orchestrator: Any,
     *,
     validation_repair: bool = False,
@@ -44,11 +44,7 @@ def ask_llm_for_alternative(
 ) -> Optional[ReplanAction]:
     if not hasattr(orchestrator, "context_manager"):
         return None
-    typed_failure = (
-        failure
-        if isinstance(failure, FailureFact)
-        else failure_fact_from_legacy_message(failure)
-    )
+    typed_failure = failure
     category = category_for_failure(typed_failure)
     disclosure: ToolDisclosureResult | None = None
     if validation_repair:

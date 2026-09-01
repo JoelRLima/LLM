@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from agent.planning.plan_model import Plan, ToolPlanStep
 from agent.planning.provenance_validation import grounded_user_literal_narrowing
@@ -15,34 +15,17 @@ from agent.runtime.recovery import RecoveryScope
 
 def replan_blocked_steps(
     gateway: Any,
-    plan: Plan | List[Dict[str, Any]],
+    plan: Plan,
     objective: str,
     blocked_steps: List[Any],
     planning_context: Any = None,
     planning_view: Any = None,
     repair_budget: Mapping[str, int] | None = None,
-) -> Optional[Plan | List[Dict[str, Any]]]:
+) -> Optional[Plan]:
     del repair_budget
-    if isinstance(plan, Plan):
-        return _replan_typed_plan(
-            gateway, plan, objective, blocked_steps, planning_context, planning_view
-        )
-    from agent.planning.validation_repair_legacy import replace_blocked_step
-
-    updated = list(plan)
-    allowed = {item.index for item in blocked_steps}
-    for blocked in sorted(blocked_steps, key=lambda item: item.index, reverse=True):
-        if not replace_blocked_step(
-            gateway,
-            updated,
-            objective,
-            blocked,
-            planning_context,
-            planning_view,
-            _allowed_blocked_indices=allowed,
-        ):
-            return None
-    return updated or None
+    return _replan_typed_plan(
+        gateway, plan, objective, blocked_steps, planning_context, planning_view
+    )
 
 
 def _replan_typed_plan(

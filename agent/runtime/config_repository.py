@@ -57,11 +57,6 @@ class ResolvedConfig:
     def to_dict(self) -> dict[str, Any]:
         return deepcopy(self._values)
 
-    def to_legacy_dict(self) -> dict[str, Any]:
-        values = self.to_dict()
-        values.pop("schema_version", None)
-        return values
-
     @property
     def model_profile(self) -> "ResolvedModelProfile":
         """Resolve the effective model profile through the canonical owner."""
@@ -146,19 +141,6 @@ class ConfigRepository:
             require_complete=True,
         )
         return ResolvedConfig(resolved)
-
-    def load_legacy(
-        self,
-        *,
-        overrides: Mapping[str, Any] | None = None,
-        environment: Mapping[str, str] | None = None,
-        allow_missing: bool = False,
-    ) -> dict[str, Any]:
-        return self.load(
-            overrides=overrides,
-            environment=environment,
-            allow_missing=allow_missing,
-        ).to_legacy_dict()
 
     def initialize(self) -> Path:
         """Create the packaged default once, without relying on the checkout."""

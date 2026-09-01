@@ -1,4 +1,4 @@
-"""Public compatibility surface for transactional source changes."""
+"""Canonical public aggregation for transactional source changes."""
 
 from agent.code.change_models import (
     ChangeConflictError,

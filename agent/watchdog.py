@@ -22,17 +22,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import stringify
-from agent.runtime.limits import (
-    default_runtime_limit,
-    runtime_limit_values,
-)
+from agent.runtime.limits import runtime_limit_values
 from agent.tools.result_completeness import legacy_result_successful
-
-# Compatibility constants for historical imports; the typed runtime-limit
-# owner supplies configured values at each boundary below.
-DEFAULT_MAX_TASK_WALL_SECONDS = default_runtime_limit("max_task_wall_seconds")
-DEFAULT_MAX_REPEATED_NO_PROGRESS = default_runtime_limit("max_repeated_no_progress")
-DEFAULT_MAX_CONSECUTIVE_SAME_ERROR = default_runtime_limit("max_consecutive_same_error")
 
 
 class Watchdog:

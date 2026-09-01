@@ -106,7 +106,7 @@ def test_hierarchical_flow_executes_each_microplan_through_gateway():
     assert len(gateway.calls) == 1
     assert gateway.calls[0][1] == "subobjetivo"
     assert tracker.completed is True
-    assert state.plan == []
+    assert len(state.plan) == 0
 
 
 def test_hierarchical_microstep_failure_is_not_overwritten_by_later_success():

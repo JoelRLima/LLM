@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from agent.planning.plan_model_types import (
@@ -35,12 +35,11 @@ def _default_id_factory(used: set[str]) -> Callable[[], str]:
 
 
 @dataclass(frozen=True, slots=True, repr=False, eq=False)
-class Plan(list):
-    """Immutable canonical plan value with a narrow legacy list identity.
+class Plan:
+    """Immutable canonical plan value.
 
-    The list base is deliberately storage-empty. Typed steps remain the only
-    live representation in ``steps``; the base class exists solely so older
-    read-only callers that asserted ``isinstance(plan, list)`` keep working.
+    List-shaped plans are decoded and encoded only at explicit model and
+    checkpoint boundaries. The live runtime owns this typed value directly.
     """
 
     steps: tuple[PlanStep, ...] = ()
@@ -158,54 +157,20 @@ class Plan(list):
     def __reversed__(self) -> Iterator[PlanStep]:
         return reversed(self.steps)
 
-    def copy(self) -> list[dict[str, Any]]:
-        """Return an explicit detached legacy projection."""
-
-        return self.to_legacy()
-
-    @staticmethod
-    def _immutable_mutation(*_args: Any, **_kwargs: Any) -> None:
-        raise TypeError("Plan is immutable; use an explicit plan replacement")
-
-    __delitem__ = _immutable_mutation
-    __setitem__ = _immutable_mutation
-    append = _immutable_mutation
-    clear = _immutable_mutation
-    extend = _immutable_mutation
-    insert = _immutable_mutation
-    pop = _immutable_mutation
-    remove = _immutable_mutation
-    reverse = _immutable_mutation
-    sort = _immutable_mutation
-
-    __iadd__ = _immutable_mutation  # type: ignore[assignment]
-    __imul__ = _immutable_mutation  # type: ignore[assignment]
-
     def __repr__(self) -> str:
         return f"Plan(steps={len(self.steps)})"
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "Plan":
+        return cast(Plan, memo.setdefault(id(self), Plan.from_raw(self.to_dict())))
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Plan):
             return self.steps == other.steps
-        if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
-            return _legacy_plan_equal(self, other)
         return NotImplemented
 
     def __ne__(self, other: object) -> bool:
         equal = self.__eq__(other)
         return NotImplemented if equal is NotImplemented else not equal
-
-def _legacy_plan_equal(plan: Plan, other: Sequence[Any]) -> bool:
-    for typed_step, raw_step in zip(plan.steps, other, strict=False):
-        if not isinstance(raw_step, Mapping):
-            return False
-        expected = typed_step.to_dict()
-        if "_step_id" not in raw_step:
-            expected.pop("_step_id", None)
-        if expected != dict(raw_step):
-            return False
-    return len(plan.steps) == len(other)
-
 
 def deserialize_plan(
     raw_plan: Sequence[Mapping[str, Any]],

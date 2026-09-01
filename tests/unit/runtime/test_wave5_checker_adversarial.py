@@ -50,9 +50,9 @@ def _save_code(path, code):
 """,
     ),
 )
-def test_s2_rejects_direct_autocoder_target_commit(source: str) -> None:
-    gates = _gates(source, "agent/auto_coder.py")
-    assert "W5-S2" in gates
+def test_s3_rejects_direct_code_workflow_target_commit(source: str) -> None:
+    gates = _gates(source, "agent/code/workflow_application.py")
+    assert "W5-S3" in gates
     assert "W5-S4" in gates
 
 
@@ -82,7 +82,7 @@ def _run_generated_tests(test_file, combined):
 """
     assert _gates(transaction, "agent/code/change_transaction.py") == set()
     assert _gates(scratch, "agent/skills/file_writer_runtime.py") == set()
-    assert _gates(generated_test, "agent/auto_coder.py") == set()
+    assert _gates(generated_test, "agent/code/validation_process.py") == set()
 
 
 @pytest.mark.parametrize(

@@ -15,9 +15,6 @@ class DummySession(ChatSession):
             "timeout": 10,
         })
 
-    def send_non_streaming_request(self, payload):
-        return json.dumps({"persona": "coder"})
-
     def complete_request(self, request):
         del request
         return ModelResponse(content=json.dumps({"persona": "coder"}))

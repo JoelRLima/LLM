@@ -167,7 +167,7 @@ class WorkspaceManager:
             print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
 
     def lint_check(self, file_path: str) -> Optional[str]:
-        """Compatibility adapter to the canonical project validation service."""
+        """Validate one Python file through the canonical project service."""
 
         target = self.resolve_path(file_path)
         if target.suffix != ".py":

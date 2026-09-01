@@ -3,7 +3,14 @@ from unittest.mock import patch
 
 import pytest
 
+from agent.llm.admitted_decisions import (
+    ReactiveFinalDecision,
+    ReactiveToolDecision,
+    ask_typed_model_decision,
+)
 from agent.llm.context_manager import ContextManager
+from agent.llm.contracts import ModelRequest, ModelResponse
+from agent.llm.decision_contract import ModelRequestContract
 from agent.llm.grammars import TOOL_DECISION_GRAMMAR
 from agent.llm.session import ChatSession
 from agent.parsers import validate_decision
@@ -44,12 +51,18 @@ class _RealDecisionGateway:
         self.responses = iter(responses)
         self.payloads = []
 
-    def build_payload(self, request):
-        return {"messages": list(request.messages), "model": request.model}
-
-    def complete_payload(self, payload):
-        self.payloads.append(dict(payload))
-        return next(self.responses)
+    def complete(self, request: ModelRequest):
+        payload = {
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in request.messages
+            ],
+            "model": request.model,
+        }
+        if request.structured_output is not None:
+            payload["grammar"] = request.structured_output.grammar
+        self.payloads.append(payload)
+        return ModelResponse(content=next(self.responses))
 
     def count_tokens(self, text):
         del text
@@ -199,7 +212,7 @@ def test_reactive_aborted_gateway_result_cannot_complete_task():
     )
 
     answer = ReactiveLoop(orchestrator)._handle_decision(
-        {"action": "tool", "tool": "echo", "args": {}},
+        ReactiveToolDecision(tool="echo", args={}),
         "responda",
         {},
         1,
@@ -217,8 +230,13 @@ def test_real_shaped_reactive_tool_decision_reaches_runtime_gateway():
         '{"action":"tool","tool":"echo","args":{},"bindings":{"text":{"from_step":1,"path":[]}}}',
     )
 
-    decision = context_manager.ask_model("responda", step_type="tool_decision")
-    valid, error = validate_decision(decision)
+    decision = ask_typed_model_decision(
+        context_manager,
+        "responda",
+        request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
+    )
+    assert decision is not None
+    valid, error = validate_decision(decision.to_dict())
     assert valid, error
 
     result = ReactiveLoop(orchestrator)._handle_decision(
@@ -239,8 +257,13 @@ def test_real_shaped_reactive_final_decision_reaches_runtime_terminal():
         '{"action":"final","answer":"resposta final"}',
     )
 
-    decision = context_manager.ask_model("responda", step_type="tool_decision")
-    valid, error = validate_decision(decision)
+    decision = ask_typed_model_decision(
+        context_manager,
+        "responda",
+        request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
+    )
+    assert decision is not None
+    valid, error = validate_decision(decision.to_dict())
     assert valid, error
 
     answer = ReactiveLoop(orchestrator)._handle_decision(
@@ -269,7 +292,7 @@ def test_reactive_prompt_grammar_and_parser_share_decision_envelope():
         assert valid, error
 
 
-def test_reactive_renderer_type_error_does_not_fallback_to_legacy() -> None:
+def test_reactive_renderer_type_error_does_not_bypass_canonical_gateway() -> None:
     orchestrator = _Orchestrator()
 
     def broken_renderer(*, compact=False, planner_kind=None):
@@ -292,7 +315,7 @@ def test_reactive_tool_terminal_answer_cannot_bypass_pending_effect_guard() -> N
     )
 
     answer = ReactiveLoop(orchestrator)._handle_decision(
-        {"action": "tool", "tool": "file_writer", "args": {}},
+        ReactiveToolDecision(tool="file_writer", args={}),
         "Altere o arquivo.",
         {},
         1,
@@ -308,7 +331,7 @@ def test_reactive_final_cannot_replace_canonical_write_waiver() -> None:
     orchestrator.agent_state.waived_effects = ["write"]
 
     answer = ReactiveLoop(orchestrator)._final_answer(
-        {"action": "final", "answer": "Arquivo alterado com sucesso."},
+        ReactiveFinalDecision(answer="Arquivo alterado com sucesso."),
         "Altere o arquivo somente se necessário.",
     )
 

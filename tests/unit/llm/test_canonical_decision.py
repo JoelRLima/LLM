@@ -9,15 +9,15 @@ import pytest
 
 from agent.llm.context_manager import ContextManager
 from agent.llm.contracts import (
-    ModelProviderError,
+    ModelMessage,
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     StructuredOutputMode,
     TokenUsage,
 )
+from agent.llm.errors import ModelProviderError
 from agent.llm.session import ChatSession
-from agent.llm.session_requests import legacy_payload_from_request
 from agent.llm.structured_output import resolve_model_decision
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.recovery import RecoveryScope
@@ -111,26 +111,26 @@ def _resolve(
     )
 
 
-def test_legacy_translation_preserves_provider_specific_options() -> None:
-    session, _, _ = _session([])
-    source = {
-        "messages": [{"role": "user", "content": "hello"}],
-        "model": "provider-model",
-        "max_tokens": 12,
-        "stream": False,
+def test_canonical_request_preserves_provider_specific_options() -> None:
+    session, gateway, _ = _session([ModelResponse(content='{"answer":"ok"}')])
+    request = ModelRequest(
+        messages=(ModelMessage(role="user", content="hello"),),
+        model="provider-model",
+        temperature=0.0,
+        max_output_tokens=12,
+        stream=False,
+        provider_options={
+            "top_p": 0.2,
+            "response_format": {"type": "json_object"},
+        },
+    )
+
+    session.complete_request(request)
+
+    assert gateway.requests[0].provider_options == {
         "top_p": 0.2,
         "response_format": {"type": "json_object"},
     }
-
-    request = session.build_legacy_request(source)
-    translated = legacy_payload_from_request(source, request)
-
-    assert request.provider_options == {
-        "top_p": 0.2,
-        "response_format": {"type": "json_object"},
-    }
-    assert translated["top_p"] == 0.2
-    assert translated["response_format"] == {"type": "json_object"}
 
 
 def test_canonical_request_acceptance_is_one_provider_attempt() -> None:

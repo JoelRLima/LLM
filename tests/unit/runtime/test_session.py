@@ -48,12 +48,12 @@ def test_clear_history(session):
     assert len(session.messages) == 1
     assert session.messages[0]["role"] == "system"
 
-def test_build_payload(session):
+def test_build_request(session):
     session.add_user_message("Ping")
-    payload = session.build_payload()
-    assert payload["model"] == "test"
-    assert payload["temperature"] == 0.5
-    assert len(payload["messages"]) == 2
-    assert payload["messages"][1]["content"] == "Ping"
-    assert payload["stream"] is True
-    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    request = session.build_request()
+    assert request.model == "test"
+    assert request.temperature == 0.5
+    assert len(request.messages) == 2
+    assert request.messages[1].content == "Ping"
+    assert request.stream is True
+    assert request.reasoning_budget == 0

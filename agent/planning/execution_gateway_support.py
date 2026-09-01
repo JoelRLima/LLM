@@ -1,4 +1,4 @@
-"""Non-owning compatibility and support methods for the execution gateway."""
+"""Non-owning typed support methods for the execution gateway."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from agent.planning.presentation import (
     PlanningPresentationSnapshot,
     validate_planning_view_binding,
 )
-from agent.planning.validation_repair import replace_blocked_step, replan_blocked_steps
+from agent.planning.validation_repair import replan_blocked_steps
 from agent.planning.validation_repair_plan import _replace_typed_step
 from agent.runtime.logging import logger
 
@@ -71,7 +71,8 @@ class ExecutionGatewaySupportMixin:
         planning_view: PlanningPresentationSnapshot | None = None,
         repair_budget: Mapping[str, int] | None = None,
     ) -> Optional[Plan]:
-        # Retained as a source-compatible, non-owning edge for older callers.
+        # Keep recovery orchestration non-owning; the gateway stores only the
+        # typed plan returned by the canonical repair owner.
         del repair_budget
         if not blocked:
             return plan
@@ -145,23 +146,19 @@ class ExecutionGatewaySupportMixin:
         repair_budget: Mapping[str, int] | None = None,
     ) -> bool:
         del repair_budget
-        if isinstance(plan, Plan):
-            recovered = _replace_typed_step(
-                self,
-                plan,
-                objective,
-                blocked,
-                planning_context,
-                planning_view,
-                {blocked.index},
-            )
-            if recovered is None:
-                return False
-            self.orchestrator.agent_state.set_plan(recovered)
-            return True
-        return replace_blocked_step(
-            self, plan, objective, blocked, planning_context, planning_view
+        recovered = _replace_typed_step(
+            self,
+            plan,
+            objective,
+            blocked,
+            planning_context,
+            planning_view,
+            {blocked.index},
         )
+        if recovered is None:
+            return False
+        self.orchestrator.agent_state.set_plan(recovered)
+        return True
 
     def _planning_view(
         self,

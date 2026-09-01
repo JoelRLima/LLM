@@ -9,12 +9,12 @@ from agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    ModelResponseError,
     ProviderCapabilities,
     StreamEvent,
     StreamEventType,
     TokenUsage,
 )
+from agent.llm.errors import ModelResponseError
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.budget_estimation import (
     PROVIDER_CHAT_INPUT_TOKENS,
@@ -89,23 +89,18 @@ class _Gateway:
             yield StreamEvent(StreamEventType.DONE)
 
 
-class _PayloadGateway:
-    provider_name = "payload-provider"
-    model = "payload-model"
+class _CanonicalPayloadGateway:
+    provider_name = "canonical-provider"
+    model = "canonical-model"
     capabilities = ProviderCapabilities(streaming=False)
 
     def __init__(self) -> None:
-        self.build_payload_calls = 0
-        self.complete_payload_calls = 0
+        self.complete_calls = 0
 
-    def build_payload(self, request: ModelRequest) -> dict[str, Any]:
-        self.build_payload_calls += 1
-        return {"model": request.model, "messages": []}
-
-    def complete_payload(self, payload: dict[str, Any]) -> ModelResponse:
-        self.complete_payload_calls += 1
-        assert payload["model"] == "payload-model"
-        return ModelResponse(content="payload")
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.complete_calls += 1
+        assert request.model == "canonical-model"
+        return ModelResponse(content="canonical")
 
 
 class _PartialUsageGateway:
@@ -141,51 +136,6 @@ class _PartialUsageGateway:
         else:
             yield StreamEvent(StreamEventType.DONE)
 
-
-class _LegacyPartialUsageGateway:
-    provider_name = "legacy-partial-provider"
-    model = "legacy-partial-model"
-    capabilities = ProviderCapabilities(streaming=True)
-
-    def __init__(self, usage: dict[str, int], *, fail: bool = False) -> None:
-        self.usage = usage
-        self.fail = fail
-        self.send_calls = 0
-        self.consume_calls = 0
-        self.measurement_calls = 0
-
-    def measure_request_input_tokens(
-        self, request: ModelRequest
-    ) -> RequestInputMeasurement:
-        del request
-        self.measurement_calls += 1
-        return RequestInputMeasurement(
-            3,
-            PROVIDER_CHAT_INPUT_TOKENS,
-            exact=True,
-            available=True,
-        )
-
-    def send_payload(self, payload: dict[str, Any], stream: bool) -> str:
-        del payload
-        assert stream is True
-        self.send_calls += 1
-        return "legacy-response"
-
-    def consume_stream(self, response: str, callbacks: dict[str, Any]) -> str:
-        del response
-        self.consume_calls += 1
-        visible = "legacy visible output with enough text"
-        if callbacks.get("on_content_chunk") is not None:
-            callbacks["on_content_chunk"](visible)
-        if callbacks.get("on_usage") is not None:
-            callbacks["on_usage"](self.usage)
-        if self.fail:
-            error = ModelResponseError("legacy partial stream failed", partial_content=visible)
-            raise error
-        if callbacks.get("on_done") is not None:
-            callbacks["on_done"]({})
-        return visible
 
 
 def _request(*, stream: bool = False) -> ModelRequest:
@@ -359,32 +309,6 @@ def test_native_partial_usage_keeps_visible_output_on_failure() -> None:
     assert entry["estimated_tokens"] > 3
 
 
-def test_legacy_partial_usage_keeps_visible_output_for_success_and_failure() -> None:
-    successful = _LegacyPartialUsageGateway({"prompt_tokens": 4})
-    context, sink = _context(successful)
-
-    outcome = ModelCallService.for_context(context).stream(_request(), {})
-
-    assert successful.send_calls == 1
-    assert successful.consume_calls == 1
-    assert outcome.text == "legacy visible output with enough text"
-    assert sink.entries[0]["input_tokens"] == 4
-    assert sink.entries[0]["token_usage_complete"] is False
-    assert sink.entries[0]["estimated_tokens"] > 3
-
-    failing = _LegacyPartialUsageGateway({"completion_tokens": 2}, fail=True)
-    failed_context, failed_sink = _context(failing)
-    with pytest.raises(ModelResponseError, match="legacy partial stream failed"):
-        ModelCallService.for_context(failed_context).stream(_request(), {})
-
-    assert failing.send_calls == 1
-    assert failing.consume_calls == 1
-    assert failed_sink.entries[0]["success"] is False
-    assert failed_sink.entries[0]["output_tokens"] == 2
-    assert failed_sink.entries[0]["token_usage_complete"] is False
-    assert failed_sink.entries[0]["estimated_tokens"] > 3
-
-
 def test_child_context_shares_ledger_but_independent_context_does_not() -> None:
     gateway = _Gateway()
     parent, _ = _context(gateway, max_model_calls=3)
@@ -401,20 +325,19 @@ def test_child_context_shares_ledger_but_independent_context_does_not() -> None:
     assert parent.budget_snapshot().model_calls == 1
 
 
-def test_service_uses_gateway_payload_owner_once_for_legacy_transport() -> None:
-    gateway = _PayloadGateway()
+def test_service_uses_the_canonical_gateway_once() -> None:
+    gateway = _CanonicalPayloadGateway()
     context, _ = _context(gateway)
     service = ModelCallService.for_context(context)
 
     outcome = service.complete(
         ModelRequest(
             messages=(ModelMessage("user", "request"),),
-            model="payload-model",
+            model="canonical-model",
             temperature=0.2,
             max_output_tokens=8,
         )
     )
 
-    assert outcome.response.content == "payload"
-    assert gateway.build_payload_calls == 1
-    assert gateway.complete_payload_calls == 1
+    assert outcome.response.content == "canonical"
+    assert gateway.complete_calls == 1

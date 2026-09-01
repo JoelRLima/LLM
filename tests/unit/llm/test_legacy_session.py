@@ -1,29 +1,39 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
+from agent.llm.contracts import ModelRequest, ModelResponse, StreamEvent, StreamEventType
 from agent.llm.session import ChatSession
 
 
-class _RawTransportGateway:
+class _CanonicalTransportGateway:
     provider_name = "raw-test"
     model = "raw-model"
 
     def __init__(self, response: Any = None, failure: BaseException | None = None) -> None:
         self.response = response
         self.failure = failure
-        self.calls: list[tuple[Dict[str, Any], bool]] = []
+        self.calls: list[ModelRequest] = []
 
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> Any:
-        self.calls.append((dict(payload), stream))
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        self.calls.append(request)
         if self.failure is not None:
             raise self.failure
-        return self.response
+        return self.response if isinstance(self.response, ModelResponse) else ModelResponse(
+            content=str(self.response)
+        )
+
+    def stream(self, request: ModelRequest):
+        self.calls.append(request)
+        if self.failure is not None:
+            raise self.failure
+        yield StreamEvent(StreamEventType.CONTENT, text=str(self.response))
+        yield StreamEvent(StreamEventType.DONE)
 
 
-def _session(gateway: _RawTransportGateway) -> ChatSession:
+def _session(gateway: _CanonicalTransportGateway) -> ChatSession:
     return ChatSession(
         "system",
         {"model": "raw-model", "max_model_calls": 4},
@@ -31,21 +41,18 @@ def _session(gateway: _RawTransportGateway) -> ChatSession:
     )
 
 
-def test_send_request_false_preserves_raw_response_and_finalizes_once() -> None:
-    raw_response = object()
-    gateway = _RawTransportGateway(response=raw_response)
+def test_complete_request_finalizes_one_typed_request() -> None:
+    gateway = _CanonicalTransportGateway(response=ModelResponse(content="ok"))
     session = _session(gateway)
+    session.add_user_message("hello")
     entries: list[dict[str, Any]] = []
     session.set_model_call_callback(entries.append)
 
-    result = session.send_request(
-        {"messages": [{"role": "user", "content": "hello"}]}, stream=False
-    )
+    result = session.complete_request(session.build_request(stream=False))
 
-    assert result is raw_response
-    assert gateway.calls == [
-        ({"messages": [{"role": "user", "content": "hello"}]}, False)
-    ]
+    assert result.content == "ok"
+    assert gateway.calls[0].messages[-1].content == "hello"
+    assert gateway.calls[0].stream is False
     snapshot = session.budget_ledger.snapshot()
     assert snapshot.model_calls == 1
     assert snapshot.accounted_tokens > 0
@@ -56,16 +63,15 @@ def test_send_request_false_preserves_raw_response_and_finalizes_once() -> None:
     assert entries[0]["streaming"] is False
 
 
-def test_send_request_false_failure_is_accounted_once() -> None:
-    gateway = _RawTransportGateway(failure=RuntimeError("provider failed"))
+def test_complete_request_failure_is_accounted_once() -> None:
+    gateway = _CanonicalTransportGateway(failure=RuntimeError("provider failed"))
     session = _session(gateway)
+    session.add_user_message("hello")
     entries: list[dict[str, Any]] = []
     session.set_model_call_callback(entries.append)
 
     with pytest.raises(RuntimeError, match="provider failed"):
-        session.send_request(
-            {"messages": [{"role": "user", "content": "hello"}]}, stream=False
-        )
+        session.complete_request(session.build_request(stream=False))
 
     assert len(gateway.calls) == 1
     snapshot = session.budget_ledger.snapshot()

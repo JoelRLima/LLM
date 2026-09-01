@@ -26,7 +26,7 @@ class StateEventSink:
 
 
 def append_state_event(state: Any, event: RuntimeEvent) -> None:
-    """Append only through the explicit state-event compatibility adapter."""
+    """Append one canonical runtime event at the state boundary."""
 
     add_event = getattr(state, "add_event", None)
     if callable(add_event):

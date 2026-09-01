@@ -100,12 +100,6 @@ class _Context:
     def _purge_stale_context(self):
         return None
 
-    def _generate_content(self, tool, args, objective):
-        return None
-
-    def _test_and_correct(self, file_path, objective):
-        return True
-
     def _maybe_summarize_and_store(self, tool_name, args, result):
         return None
 
@@ -117,10 +111,6 @@ def test_writer_post_process_does_not_run_implicit_model_correction(monkeypatch)
     state = _state(monkeypatch)
     context = _Context(state)
 
-    def forbidden_correction(*args, **kwargs):
-        raise AssertionError("correção implícita não deve ocorrer")
-
-    context._test_and_correct = forbidden_correction
     result = {"ok": True, "done": True, "status": "succeeded", "data": None}
 
     assert StepPolicies(context).post_process(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,6 @@ from agent.llm.contracts import (
     StreamEvent,
     StreamEventType,
 )
-from agent.llm.decision_compat import record_legacy_metadata
 from agent.llm.decision_contract import ModelRequestContract, legacy_model_decision_compatibility
 from agent.llm.grammars import (
     EFFECT_OBSERVATION_CONTINUATION_GRAMMAR,
@@ -259,27 +257,6 @@ def test_action_only_tool_final_is_compatibility_only() -> None:
 
     assert normalize_model_decision(response, step_type="tool_decision") is None
     assert is_model_decision_contract_valid(response, "tool_decision") is False
-    assert legacy_model_decision_compatibility(
-        {"action": "final"}, step_type="tool_decision"
-    ) == {"action": "final"}
-
-    entries: list[dict[str, Any]] = []
-    request = ModelRequest(
-        messages=(ModelMessage(role="user", content="test"),),
-        model="test-model",
-        temperature=0.0,
-        max_output_tokens=32,
-    )
-    record_legacy_metadata(
-        entries.append,
-        response,
-        {"action": "final"},
-        request,
-        "tool_decision",
-        time.monotonic(),
-    )
-    assert entries[0]["structured_decision_valid"] is False
-    assert entries[0]["success"] is False
 
 
 @pytest.mark.parametrize("step_type", [None, "unknown-step"])
@@ -335,25 +312,7 @@ def test_parseable_object_outside_step_contract_is_not_structurally_valid(
 ) -> None:
     response = ModelResponse(content='{"foo": 1}')
     decision = normalize_model_decision(response, step_type=step_type)
-    entries: list[dict[str, Any]] = []
-    request = ModelRequest(
-        messages=(ModelMessage(role="user", content="test"),),
-        model="test-model",
-        temperature=0.0,
-        max_output_tokens=32,
-    )
-
-    record_legacy_metadata(
-        entries.append,
-        response,
-        decision,
-        request,
-        step_type,
-        time.monotonic(),
-    )
-
     assert decision is None
-    assert entries[0]["structured_decision_valid"] is False
 
 
 @pytest.mark.parametrize(
@@ -369,48 +328,12 @@ def test_wrong_action_or_field_type_is_not_structurally_valid(
     content: str,
 ) -> None:
     response = ModelResponse(content=content)
-    entries: list[dict[str, Any]] = []
-    request = ModelRequest(
-        messages=(ModelMessage(role="user", content="test"),),
-        model="test-model",
-        temperature=0.0,
-        max_output_tokens=32,
-    )
-
-    record_legacy_metadata(
-        entries.append,
-        response,
-        normalize_model_decision(response, step_type=step_type),
-        request,
-        step_type,
-        time.monotonic(),
-    )
-
-    assert entries[0]["structured_decision_valid"] is False
+    assert normalize_model_decision(response, step_type=step_type) is None
 
 
 def test_malformed_response_is_measured_as_an_invalid_structured_decision() -> None:
     response = ModelResponse(content="not json")
-    entries: list[dict[str, Any]] = []
-    request = ModelRequest(
-        messages=(ModelMessage(role="user", content="test"),),
-        model="test-model",
-        temperature=0.0,
-        max_output_tokens=32,
-    )
-
-    record_legacy_metadata(
-        entries.append,
-        response,
-        normalize_model_decision(response, step_type="final"),
-        request,
-        "final",
-        time.monotonic(),
-    )
-
-    assert entries[0]["provider_call_succeeded"] is True
-    assert entries[0]["structured_decision_valid"] is False
-    assert entries[0]["success"] is False
+    assert normalize_model_decision(response, step_type="final") is None
 
 
 def test_model_call_measures_the_exact_dispatched_request_with_provenance() -> None:

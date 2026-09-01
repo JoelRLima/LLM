@@ -56,17 +56,11 @@ class SummarizeSkill(BaseSkill):
                 self.orchestrator.session.add_user_message(prompt)
                 session = self.orchestrator.session
                 try:
-                    if hasattr(session, "build_request") and hasattr(session, "complete_request"):
-                        request = session.build_request(
-                            stream=False,
-                            max_output_tokens=1024,
-                        )
-                        response = session.complete_request(request).content
-                    else:
-                        payload = session.build_payload()
-                        payload["stream"] = False
-                        payload["max_tokens"] = 1024
-                        response = session.send_non_streaming_request(payload)
+                    request = session.build_request(
+                        stream=False,
+                        max_output_tokens=1024,
+                    )
+                    response = session.complete_request(request).content
                     summary = response.strip()
                 finally:
                     session.messages[0]["content"] = original

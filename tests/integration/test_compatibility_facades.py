@@ -1,29 +1,29 @@
-import importlib
+from pathlib import Path
 
 
-def test_root_compatibility_modules_alias_the_canonical_implementations() -> None:
-    aliases = {
-        "cli_chat": "agent.interfaces.cli.chat",
-        "cli_streaming": "agent.interfaces.cli.streaming",
-        "command_handlers": "agent.interfaces.cli.command_handlers",
-        "command_ui": "agent.interfaces.cli.ui",
-        "commands": "agent.interfaces.cli.commands",
-        "config": "agent.runtime.config",
-        "config_validation": "agent.runtime.config_validation",
-        "logger": "agent.runtime.logging",
-        "paths": "agent.runtime.paths",
-        "session": "agent.llm.session",
-    }
+def test_root_compatibility_modules_are_retired() -> None:
+    root = Path(__file__).resolve().parents[2]
+    retired = (
+        "cli.py",
+        "cli_chat.py",
+        "cli_streaming.py",
+        "commands.py",
+        "command_handlers.py",
+        "command_ui.py",
+        "config.py",
+        "config_validation.py",
+        "logger.py",
+        "paths.py",
+        "session.py",
+        "benchmark.py",
+    )
 
-    for legacy, canonical in aliases.items():
-        assert importlib.import_module(legacy) is importlib.import_module(canonical)
+    assert all(not (root / name).exists() for name in retired)
 
 
-def test_script_facades_export_the_canonical_entry_points() -> None:
+def test_script_entry_points_are_explicitly_canonical() -> None:
     from agent.interfaces.cli.app import main as canonical_cli
-    from benchmark import main as legacy_benchmark
-    from cli import main as legacy_cli
     from scripts.benchmark import main as canonical_benchmark
 
-    assert legacy_cli is canonical_cli
-    assert legacy_benchmark is canonical_benchmark
+    assert callable(canonical_cli)
+    assert callable(canonical_benchmark)

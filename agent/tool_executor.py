@@ -75,9 +75,6 @@ class ToolExecutor:
         """Run a pre-correlated request without replacing its invocation ID."""
         gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
         if gateway is None:
-            # The legacy invoker remains available to explicit low-level/admin
-            # callers, but ToolExecutor is the model-actionable surface and
-            # never falls back to a direct skill call.
             raise RuntimeError(
                 "ToolInvocationGateway nao foi configurado para o runtime standalone."
             )
@@ -168,16 +165,7 @@ class ToolExecutor:
                 step.step_id == prepared.step_id for step in current_plan.steps
             )
         else:
-            # Explicit compatibility path for a low-level legacy context.
-            belongs_to_current_plan = (
-                prepared.plan_id is None
-                or not isinstance(current_plan, list)
-                or any(
-                    isinstance(step, Mapping)
-                    and step.get("_step_id") == prepared.step_id
-                    for step in current_plan
-                )
-            )
+            belongs_to_current_plan = prepared.plan_id is None
         if prepared.plan_id is not None and not belongs_to_current_plan:
             return self._prepared_block(
                 invocation_id,

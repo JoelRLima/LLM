@@ -39,10 +39,11 @@ def test_missing_configuration_is_explicit_or_can_resolve_defaults(
     resolved = repository.load(environment={}, allow_missing=True)
 
     assert resolved.schema_version == 1
-    assert resolved.to_legacy_dict()["hardware_profile"] == "low_vram_8gb"
-    assert resolved.to_legacy_dict()["semantic_memory_enabled"] is False
-    assert resolved.to_legacy_dict()["semantic_memory_model"] == "all-MiniLM-L6-v2"
-    assert resolved.to_legacy_dict()["max_reasoning_turns"] == 3
+    values = resolved.to_dict()
+    assert values["hardware_profile"] == "low_vram_8gb"
+    assert values["semantic_memory_enabled"] is False
+    assert values["semantic_memory_model"] == "all-MiniLM-L6-v2"
+    assert values["max_reasoning_turns"] == 3
 
 
 def test_initialize_uses_packaged_resource_outside_checkout_and_is_idempotent(
@@ -148,7 +149,7 @@ def test_invalid_values_fail_strictly_before_legacy_adaptation(
     _write(repository.path, document)
 
     with pytest.raises(ConfigError, match="temperature"):
-        repository.load_legacy(environment={})
+        repository.load(environment={})
 
 
 def test_future_or_missing_schema_version_is_rejected(
@@ -208,16 +209,16 @@ def test_agent_max_tokens_accepts_none_or_positive_integer_only(
         )
 
 
-def test_resolved_config_adapts_to_an_independent_legacy_dict(
+def test_resolved_config_to_dict_returns_an_independent_snapshot(
     repository: ConfigRepository,
 ) -> None:
     repository.initialize()
     resolved = repository.load(environment={})
 
-    legacy = resolved.to_legacy_dict()
-    legacy["validation"]["enabled"] = False
+    values = resolved.to_dict()
+    values["validation"]["enabled"] = False
 
-    assert "schema_version" not in legacy
+    assert values["schema_version"] == 1
     assert resolved.to_dict()["validation"]["enabled"] is True
 
 

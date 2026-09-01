@@ -15,11 +15,8 @@ DECISION_BOUNDARY_FILES = {
     "agent/llm/admitted_decisions.py",
     "agent/llm/admitted_decision_projection.py",
     "agent/llm/decision_contract.py",
-    "agent/llm/decision_compat.py",
     "agent/llm/task_definition_decision_compat.py",
     "agent/llm/structured_output.py",
-    "agent/llm/model_client.py",
-    "agent/llm/legacy_payload.py",
     "agent/parsers.py",
 }
 REQUEST_IDENTITY_BOUNDARY_FILES = DECISION_BOUNDARY_FILES | {
@@ -45,8 +42,6 @@ PLAN_COMPATIBILITY_FILES = {
     "agent/planning/replan_scope.py",
     "agent/planning/replan_llm.py",
     "agent/planning/validation_repair.py",
-    "agent/planning/validation_repair_legacy.py",
-    "agent/planning/grounded_repair.py",
     "agent/planning/planning_view_support.py",
     "agent/state_checkpointing.py",
     "agent/state_checkpoint_history.py",

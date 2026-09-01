@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import sys
 from pathlib import Path
@@ -18,8 +17,8 @@ from agent.health.core import (
     STATUS_OK,
     STATUS_WARNING,
     CheckResult,
-    ensure_sys_path,
 )
+from agent.runtime.config import carregar_config
 
 
 def check_python_version() -> CheckResult:
@@ -41,8 +40,7 @@ def check_config() -> CheckResult:
     missing = [key for key in REQUIRED_CONFIG_KEYS if key not in raw]
     details.update({"missing_keys": missing, "present_keys": list(raw)})
     try:
-        ensure_sys_path()
-        importlib.import_module("config").carregar_config(str(CONFIG_PATH))
+        carregar_config(str(CONFIG_PATH))
         details["loaded_ok"] = True
     except Exception as exc:
         details.update({"loaded_ok": False, "load_error": str(exc)})

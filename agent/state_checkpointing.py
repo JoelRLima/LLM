@@ -117,6 +117,8 @@ def _restore_plan(state: Any, data: Mapping[str, Any]) -> None:
     else:
         if not isinstance(raw_plan, list) or any(not isinstance(step, Mapping) for step in raw_plan):
             raise ValueError("Checkpoint plan is structurally invalid.")
+        if _contains_retired_tool_alias(raw_plan):
+            raise ValueError("W7_RETIRED_TOOL_ALIAS:git")
         try:
             restored_plan = deserialize_plan(
                 raw_plan,
@@ -134,6 +136,16 @@ def _restore_plan(state: Any, data: Mapping[str, Any]) -> None:
     if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0:
         raise ValueError("Checkpoint plan cursor is invalid.")
     state.plan_step = cursor
+
+
+def _contains_retired_tool_alias(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        if value.get("tool") == "git":
+            return True
+        return any(_contains_retired_tool_alias(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_retired_tool_alias(item) for item in value)
+    return False
 
 
 def _restore_step_records(state: Any, data: Mapping[str, Any]) -> None:

@@ -55,9 +55,6 @@ class StepExecutor:
             return self.finish_skipped(index, "passo bloqueado por repetição")
         if self.policies.is_impossible_chunk(tool, args, file_path):
             return self.finish_skipped(index, "intervalo de leitura fora do arquivo")
-        generated = self._ensure_writer_content(index, tool, args, objective)
-        if generated is not None:
-            return generated
         result_or_outcome = self._obtain_result(
             index, tool, args, file_path, prepared=prepared
         )
@@ -144,19 +141,6 @@ class StepExecutor:
                 failure=failure,
             )
 
-    def _ensure_writer_content(
-        self, index: int, tool: str, args: ToolArgs, objective: str
-    ) -> StepExecutionOutcome | None:
-        if tool != "file_writer" or args.get("content"):
-            return None
-        if self.fill_generated_content(index + 1, tool, args, objective):
-            return None
-        action = self.context._handle_step_failure(index + 1, "Conteúdo não gerado para file_writer", tool, args)
-        if action == "replan":
-            self.finish_failed(index, "conteúdo não gerado")
-            return StepExecutionOutcome(StepOutcomeKind.REPLAN, error="conteúdo não gerado")
-        return self.finish_failed(index, "conteúdo não gerado")
-
     def _obtain_result(
         self,
         index: int,
@@ -178,14 +162,11 @@ class StepExecutor:
             if callable(prepared_runner) and prepared is not None:
                 result = prepared_runner(prepared)
             else:
-                # Small test/compatibility contexts may not expose the owned
-                # preparation adapter.  The production Orchestrator does, so
-                # its model-actionable path never reconstructs a raw plan
-                # step at dispatch time.
+                # Direct unit contexts may omit the prepared adapter. The
+                # production Orchestrator always supplies it.
                 result = self.context._run_tool(tool, args)
-            # Compatibility contexts may still return a mapping; upgrade it
-            # once here. Gateway/tool-executor production paths already
-            # return the canonical value unchanged.
+            # Normalize the boundary once for direct unit contexts. Gateway
+            # and tool-executor production paths already return this value.
             result = ensure_canonical_result(result)
         except ToolNotFoundError as exc:
             failure = failure_from_exception(self.context, index, tool, exc)
@@ -284,19 +265,6 @@ class StepExecutor:
         if reason:
             data["reason"] = reason
         self.context._emit(event_type, data)
-
-    def fill_generated_content(self, step_number: int, tool: str, args: ToolArgs, objective: str) -> bool:
-        for _ in range(3):
-            generated = self.context._generate_content(tool, args, objective)
-            if generated:
-                args["content"] = generated
-                return True
-        action = self.context._handle_step_failure(step_number, "Conteúdo não gerado após 3 tentativas", tool, args)
-        if action == "continue":
-            self.context._purge_stale_context()
-        else:
-            self.context.fail_task()
-        return False
 
     def try_cache(
         self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None,

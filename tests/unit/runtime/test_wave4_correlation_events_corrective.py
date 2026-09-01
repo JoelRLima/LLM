@@ -1,4 +1,4 @@
-from types import MethodType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -323,7 +323,6 @@ def test_checkpoint_events_are_canonical_and_round_trip_all_identity_facts() -> 
         _ensure_run_correlation=lambda: correlation,
         verbose=False,
     )
-    owner._emit = MethodType(OrchestratorOperations._emit, owner)
     owner.tool_invocation_gateway = SimpleNamespace(
         are_invocations_quiescent=lambda **_kwargs: False
     )
@@ -347,3 +346,45 @@ def test_checkpoint_events_are_canonical_and_round_trip_all_identity_facts() -> 
         assert event.run_id == correlation.run_id
         assert event.root_task_id == correlation.root_task_id
         assert event.task_id == correlation.task_id
+
+
+def test_checkpoint_save_requires_explicit_true_confirmation() -> None:
+    correlation = RunCorrelation.fresh()
+    state = AgentState(root_task_id=correlation.root_task_id)
+    state.runtime_correlation = correlation
+    owner = SimpleNamespace(
+        agent_state=state,
+        event_dispatcher=RuntimeEventDispatcher(state=state),
+        _ensure_run_correlation=lambda: correlation,
+        verbose=False,
+        tool_invocation_gateway=SimpleNamespace(
+            are_invocations_quiescent=lambda **_kwargs: True
+        ),
+        checkpoint_manager=SimpleNamespace(save=lambda _state: None),
+    )
+
+    assert OrchestratorOperations._save_checkpoint(owner) is False
+    assert [event["type"] for event in state.events] == [
+        "checkpoint_persistence_failed"
+    ]
+
+
+def test_checkpoint_events_require_the_canonical_dispatcher() -> None:
+    correlation = RunCorrelation.fresh()
+    state = AgentState(root_task_id=correlation.root_task_id)
+    state.runtime_correlation = correlation
+    owner = SimpleNamespace(
+        agent_state=state,
+        event_dispatcher=None,
+        _ensure_run_correlation=lambda: correlation,
+        verbose=False,
+    )
+
+    with pytest.raises(RuntimeError, match="canonical runtime event dispatcher"):
+        OrchestratorOperations._emit_checkpoint_event(
+            owner,
+            "checkpoint_deferred",
+            {"reason": "test"},
+        )
+
+    assert state.events == []

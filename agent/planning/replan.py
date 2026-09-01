@@ -8,19 +8,13 @@ from agent.planning import replan_validation as _replan_validation
 from agent.planning.plan_model import ToolPlanStep
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
-from agent.planning.replan_compat import (
-    LegacyReplanContext,
-    RetryPolicy,
-    legacy_replan_context,
-    legacy_replan_failure,
-)
 from agent.planning.replan_llm import ask_llm_for_alternative
 from agent.planning.replan_models import (
     ErrorCategory,
     ReplanAction,
+    ReplanContext,
     category_for_failure,
 )
-from agent.planning.replan_models import ReplanContext as CoreReplanContext
 from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
 from agent.runtime.recovery import RecoveryScope
@@ -29,26 +23,10 @@ __all__ = [
     "ErrorCategory",
     "ReplanAction",
     "ReplanContext",
-    "RetryPolicy",
     "ask_llm_for_alternative",
     "replan",
     "try_heuristic",
 ]
-
-
-def _legacy_context(*args: Any, **kwargs: Any) -> CoreReplanContext | LegacyReplanContext:
-    """Keep old construction syntax outside the canonical context type."""
-    if any(
-        key in kwargs
-        for key in ("retry_counts", "heuristic_replans", "llm_replans")
-    ):
-        return legacy_replan_context(*args, **kwargs)
-    return CoreReplanContext(*args, **kwargs)
-
-
-# Compatibility symbols are construction facades, not policy owners.
-ReplanContext = _legacy_context
-ReplanContextCompat = _legacy_context
 
 _planning_view = _replan_validation._planning_view
 _recovery_budget = _replan_validation._recovery_budget
@@ -60,7 +38,7 @@ try_heuristic = _replan_validation.try_heuristic
 
 
 def _log_action(
-    context: CoreReplanContext, category: ErrorCategory, action: ReplanAction
+    context: ReplanContext, category: ErrorCategory, action: ReplanAction
 ) -> None:
     logger.info(
         "[REPLAN] step=%s tool=%s error=%s strategy=%s replacement=%s",
@@ -74,53 +52,10 @@ def _log_action(
         ],
     )
 
-
-def _canonical_context(
-    ctx: CoreReplanContext | LegacyReplanContext,
-    failure: FailureFact | str | None,
-) -> CoreReplanContext:
-    if isinstance(ctx, LegacyReplanContext):
-        typed_failure = (
-            failure
-            if isinstance(failure, FailureFact)
-            else legacy_replan_failure(failure)
-        )
-        return CoreReplanContext(
-            task=ctx.task,
-            current_step=ctx.current_step,
-            tool_history=ctx.tool_history,
-            failure=typed_failure,
-            last_exception=ctx.last_exception,
-            budget_remaining=ctx.budget_remaining,
-        )
-    if isinstance(failure, FailureFact):
-        if failure is ctx.failure:
-            return ctx
-        return CoreReplanContext(
-            task=ctx.task,
-            current_step=ctx.current_step,
-            tool_history=ctx.tool_history,
-            failure=failure,
-            last_tool_result=ctx.last_tool_result,
-            last_exception=ctx.last_exception,
-            budget_remaining=ctx.budget_remaining,
-        )
-    return CoreReplanContext(
-        task=ctx.task,
-        current_step=ctx.current_step,
-        tool_history=ctx.tool_history,
-        failure=legacy_replan_failure(failure),
-        last_tool_result=ctx.last_tool_result,
-        last_exception=ctx.last_exception,
-        budget_remaining=ctx.budget_remaining,
-    )
-
-
 def replan(
-    ctx: CoreReplanContext | LegacyReplanContext,
-    failure: FailureFact | str | None,
+    ctx: ReplanContext,
+    failure: FailureFact,
     orchestrator: Any,
-    retry_policy: RetryPolicy | None = None,
     *,
     planning_context: PlanningContextSnapshot | None = None,
     planning_view: PlanningPresentationSnapshot | None = None,
@@ -128,8 +63,6 @@ def replan(
     repairable_fields: tuple[str, ...] = (),
     prior_steps: tuple[Any, ...] = (),
 ) -> Optional[ReplanAction]:
-    del retry_policy
-    ctx = _canonical_context(ctx, failure)
     category = category_for_failure(ctx.failure)
     if not validation_repair and ctx.failure.retryable and not ctx.failure.hard:
         action = try_heuristic(

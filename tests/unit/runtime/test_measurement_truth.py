@@ -1,17 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from dataclasses import replace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from agent.cancellation import CancellationToken
 from agent.code.workflow_proposal import _complete
-from agent.llm.contracts import ModelResponse, ModelResponseError, ProviderCapabilities, TokenUsage
-from agent.llm.model_client import ModelClient, ModelProviderError
+from agent.llm.contracts import (
+    ModelRequest,
+    ModelResponse,
+    ProviderCapabilities,
+    StreamEvent,
+    StreamEventType,
+    TokenUsage,
+)
+from agent.llm.errors import ModelResponseError
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.llm.router import route_objective
 from agent.llm.session import ChatSession
+from agent.llm.structured_output import resolve_model_decision
 from agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
 from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
 from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
@@ -26,21 +35,18 @@ class _Gateway:
         self.fail = fail
         self.calls = 0
 
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        del payload
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        del request
         self.calls += 1
         if self.fail:
             raise RuntimeError("provider failed")
-        return '{"action":"final"}'
+        return ModelResponse(content='{"answer":"ok"}')
 
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> Any:
-        del payload, stream
+    def stream(self, request: ModelRequest):
+        del request
         self.calls += 1
-        return ["chunk"]
-
-    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
-        del response, callbacks
-        return "done"
+        yield StreamEvent(StreamEventType.CONTENT, text="done")
+        yield StreamEvent(StreamEventType.DONE)
 
 
 class _GrammarUnsupported(Exception):
@@ -50,16 +56,16 @@ class _GrammarUnsupported(Exception):
 
 
 class _FallbackGateway(_Gateway):
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
+    def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls += 1
-        if "grammar" in payload:
+        if request.structured_output is not None:
             raise _GrammarUnsupported()
-        return '{"action":"final"}'
+        return ModelResponse(content='{"answer":"ok"}')
 
 
 class _UsageGateway(_Gateway):
-    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
-        del payload
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        del request
         self.calls += 1
         return ModelResponse(
             content='{"action":"final"}',
@@ -72,8 +78,8 @@ class _TokenUsageGateway(_Gateway):
         super().__init__()
         self.usage = usage
 
-    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
-        del payload
+    def complete(self, request: ModelRequest) -> ModelResponse:
+        del request
         self.calls += 1
         return ModelResponse(content='{"action":"final"}', usage=self.usage)
 
@@ -83,34 +89,29 @@ class _RetryGateway(_Gateway):
         super().__init__()
         self.responses = iter(responses)
 
-    def build_payload(self, request: Any) -> Dict[str, Any]:
+    def complete(self, request: ModelRequest) -> ModelResponse:
         del request
-        return {"messages": []}
-
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        del payload
         self.calls += 1
-        return next(self.responses)
+        return ModelResponse(content=next(self.responses))
 
 
 class _RouterGateway(_Gateway):
-    def build_payload(self, request: Any) -> Dict[str, Any]:
+    def complete(self, request: ModelRequest) -> ModelResponse:
         del request
-        return {"messages": []}
-
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        del payload
         self.calls += 1
-        return '{"persona":"coder"}'
+        return ModelResponse(content='{"persona":"coder"}')
 
 
 class _StreamingUsageGateway(_Gateway):
-    def consume_stream(self, response: Any, callbacks: Dict[str, Any]) -> str:
-        del response
-        callbacks["on_usage"](
-            {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
+    def stream(self, request: ModelRequest):
+        del request
+        self.calls += 1
+        yield StreamEvent(
+            StreamEventType.USAGE,
+            data={"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
         )
-        return "done"
+        yield StreamEvent(StreamEventType.CONTENT, text="done")
+        yield StreamEvent(StreamEventType.DONE)
 
 
 class _ModernGateway:
@@ -128,7 +129,7 @@ class _ModernGateway:
         )
 
 
-def _session(gateway: _Gateway) -> ChatSession:
+def _session(gateway: Any) -> ChatSession:
     return ChatSession("system", {"model": "test-model"}, gateway=gateway)
 
 
@@ -138,8 +139,37 @@ def _openai_stream_session(lines: list[bytes]) -> tuple[ChatSession, Any]:
     )
     response = MagicMock()
     response.iter_lines.return_value = lines
-    gateway.send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
+    gateway._send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
     return ChatSession("system", {"model": "local"}, gateway=gateway), gateway
+
+
+def _resolve_final(session: ChatSession, grammar: str | None = None) -> dict[str, Any]:
+    request = session.build_request(
+        grammar=grammar,
+        stream=False,
+        max_output_tokens=10,
+    )
+
+    def retry_request() -> ModelRequest:
+        active_grammar = grammar if session._grammar_supports_grammar is not False else None
+        return session.build_request(
+            grammar=active_grammar,
+            stream=False,
+            max_output_tokens=10,
+        )
+
+    return resolve_model_decision(
+        request,
+        complete=session.complete_request,
+        retry_request=retry_request,
+        grammar=grammar,
+        grammar_supported=session._grammar_supports_grammar,
+        set_grammar_supported=lambda value: setattr(
+            session, "_grammar_supports_grammar", value
+        ),
+        fallback_request=lambda current: replace(current, structured_output=None),
+        step_type="final",
+    )
 
 
 def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> None:
@@ -148,9 +178,8 @@ def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> N
     session = _session(gateway)
     session.set_model_call_callback(entries.append)
 
-    session.send_non_streaming_request({})
-    response = session.send_request({}, stream=True)
-    session.process_stream(response, {})
+    session.complete_request(session.build_request(stream=False))
+    session.consume_stream_request(session.build_request(stream=True), {})
 
     assert gateway.calls == 2
     assert len(entries) == 2
@@ -160,10 +189,10 @@ def test_provider_request_is_counted_once_and_stream_chunks_are_not_calls() -> N
     assert entries[1]["streaming"] is True
 
 
-def test_legacy_transport_observes_typed_usage_before_unwrapping_text() -> None:
+def test_canonical_transport_observes_typed_usage() -> None:
     session = _session(_UsageGateway())
 
-    assert session.send_non_streaming_request({}) == '{"action":"final"}'
+    assert session.complete_request(session.build_request(stream=False)).content == '{"action":"final"}'
     snapshot = session.budget_ledger.snapshot()
 
     assert snapshot.reported_input_tokens == 4
@@ -183,7 +212,7 @@ def test_legacy_transport_observes_typed_usage_before_unwrapping_text() -> None:
         (TokenUsage(input_tokens=4), None, False),
     ],
 )
-def test_legacy_and_report_projection_follow_authoritative_usage(
+def test_canonical_and_report_projection_follow_authoritative_usage(
     usage: TokenUsage,
     expected_total: int | None,
     complete: bool,
@@ -192,7 +221,7 @@ def test_legacy_and_report_projection_follow_authoritative_usage(
     session = _session(_TokenUsageGateway(usage))
     session.set_model_call_callback(entries.append)
 
-    session.send_non_streaming_request({})
+    session.complete_request(session.build_request(stream=False))
     snapshot = session.budget_ledger.snapshot()
     metrics = aggregate_metrics(entries, budget_snapshot=snapshot)
 
@@ -215,9 +244,9 @@ def test_stream_usage_is_accounted_after_consumption_as_one_call() -> None:
     session = _session(gateway)
     session.set_model_call_callback(entries.append)
 
-    response = session.send_request({}, stream=True)
+    request = session.build_request(stream=True)
+    assert session.consume_stream_request(request, {}) == "done"
     assert session.budget_ledger.snapshot().model_calls == 1
-    assert session.process_stream(response, {}) == "done"
 
     snapshot = session.budget_ledger.snapshot()
     assert snapshot.reported_total_tokens == 5
@@ -232,13 +261,13 @@ def test_stream_error_before_content_is_failed_and_counted_once() -> None:
     )
     entries: list[dict[str, Any]] = []
     session.set_model_call_callback(entries.append)
-    pending = session.send_request({}, stream=True)
+    request = session.build_request(stream=True)
 
     with pytest.raises(ModelResponseError, match="stream failed before content"):
-        session.process_stream(pending, {})
+        session.consume_stream_request(request, {})
 
     snapshot = session.budget_ledger.snapshot()
-    assert gateway.send_payload.call_count == 1
+    assert gateway._send_payload.call_count == 1
     assert snapshot.model_calls == 1
     assert snapshot.reported_total_tokens == 0
     assert snapshot.token_usage_complete is False
@@ -256,16 +285,16 @@ def test_stream_error_after_partial_content_uses_partial_estimate() -> None:
     )
     entries: list[dict[str, Any]] = []
     session.set_model_call_callback(entries.append)
-    pending = session.send_request({}, stream=True)
+    request = session.build_request(stream=True)
 
     with pytest.raises(ModelResponseError, match="stream interrupted"):
-        session.process_stream(pending, {})
+        session.consume_stream_request(request, {})
 
     snapshot = session.budget_ledger.snapshot()
     expected_request_input = (len("system") + 3) // 4
     expected_output_estimate = (len("partial") + 3) // 4
     expected_estimate = expected_request_input + expected_output_estimate
-    assert gateway.send_payload.call_count == 1
+    assert gateway._send_payload.call_count == 1
     assert snapshot.model_calls == 1
     assert snapshot.reported_total_tokens == 0
     assert snapshot.token_usage_complete is False
@@ -288,13 +317,13 @@ def test_stream_error_after_usage_keeps_authoritative_usage_and_failed_call() ->
     )
     entries: list[dict[str, Any]] = []
     session.set_model_call_callback(entries.append)
-    pending = session.send_request({}, stream=True)
+    request = session.build_request(stream=True)
 
     with pytest.raises(ModelResponseError, match="stream interrupted"):
-        session.process_stream(pending, {})
+        session.consume_stream_request(request, {})
 
     snapshot = session.budget_ledger.snapshot()
-    assert gateway.send_payload.call_count == 1
+    assert gateway._send_payload.call_count == 1
     assert snapshot.accounted_tokens == 5
     assert snapshot.estimated_tokens == 0
     assert snapshot.token_usage_complete is True
@@ -310,7 +339,7 @@ def test_provider_failure_is_counted_at_the_transport_boundary() -> None:
     session.set_model_call_callback(entries.append)
 
     with pytest.raises(RuntimeError, match="provider failed"):
-        session.send_non_streaming_request({})
+        session.complete_request(session.build_request(stream=False))
 
     assert gateway.calls == 1
     assert len(entries) == 1
@@ -329,9 +358,9 @@ def test_model_budget_refuses_n_plus_one_before_provider_io() -> None:
     )
     session.set_model_call_callback(entries.append)
 
-    session.send_non_streaming_request({})
+    session.complete_request(session.build_request(stream=False))
     with pytest.raises(BudgetExhausted):
-        ModelClient.request(session, {})
+        session.complete_request(session.build_request(stream=False))
 
     assert gateway.calls == 1
     assert len(entries) == 1
@@ -344,9 +373,9 @@ def test_grammar_fallback_records_each_real_provider_request() -> None:
     session = _session(gateway)
     session.set_model_call_callback(entries.append)
 
-    result = ModelClient.request(session, {"max_tokens": 10}, grammar="grammar")
+    result = _resolve_final(session, grammar="grammar")
 
-    assert result == {"action": "final"}
+    assert result == {"answer": "ok"}
     assert gateway.calls == 2
     assert len(entries) == 2
     assert all(entry["success"] is True for entry in entries) is False
@@ -364,34 +393,33 @@ def test_grammar_fallback_refuses_second_provider_attempt_at_model_limit() -> No
         gateway=gateway,
     )
 
-    with pytest.raises(BudgetExhausted) as caught:
-        ModelClient.request(session, {"max_tokens": 10}, grammar="grammar")
+    with pytest.raises(BudgetExhausted):
+        _resolve_final(session, grammar="grammar")
 
-    assert not isinstance(caught.value, ModelProviderError)
     assert gateway.calls == 1
     assert session.budget_ledger.snapshot().model_calls == 1
 
 
 def test_parse_retry_gets_a_new_reservation_and_can_be_refused() -> None:
-    gateway = _RetryGateway(["not json", '{"action":"final"}'])
+    gateway = _RetryGateway(["not json", '{"answer":"final"}'])
     session = _session(gateway)
 
-    assert ModelClient.request(session, {}) == {"action": "final"}
+    assert _resolve_final(session) == {"answer": "final"}
     assert gateway.calls == 2
     assert session.budget_ledger.snapshot().model_calls == 2
 
-    limited_gateway = _RetryGateway(["not json", '{"action":"final"}'])
+    limited_gateway = _RetryGateway(["not json", '{"answer":"final"}'])
     limited_session = ChatSession(
         "system",
         {"model": "test-model", "max_model_calls": 1},
         gateway=limited_gateway,
     )
     with pytest.raises(BudgetExhausted):
-        ModelClient.request(limited_session, {})
+        _resolve_final(limited_session)
     assert limited_gateway.calls == 1
 
 
-def test_router_and_planner_share_legacy_session_ledger() -> None:
+def test_router_and_planner_share_canonical_session_ledger() -> None:
     gateway = _RouterGateway()
     session = ChatSession(
         "system",
@@ -403,7 +431,7 @@ def test_router_and_planner_share_legacy_session_ledger() -> None:
 
     assert persona == "coder"
     with pytest.raises(BudgetExhausted):
-        ModelClient.request(session, {})
+        session.complete_request(session.build_request(stream=False))
     assert gateway.calls == 1
 
 
@@ -560,7 +588,7 @@ def test_metrics_write_failure_does_not_change_ledger_truth() -> None:
         raise OSError("metrics unavailable")
 
     session.set_model_call_callback(fail)
-    assert session.send_non_streaming_request({}) == '{"action":"final"}'
+    assert session.complete_request(session.build_request(stream=False)).content == '{"action":"final"}'
 
     snapshot = session.budget_ledger.snapshot()
     assert snapshot.model_calls == 1

@@ -18,11 +18,11 @@ class _Session:
         self.prompt = content
         self.messages.append({"role": "user", "content": content})
 
-    def build_payload(self) -> dict[str, object]:
-        return {"messages": list(self.messages)}
+    def build_request(self, *, stream=True, max_output_tokens=None, request_contract=None):
+        return SimpleNamespace(request_contract=request_contract)
 
-    def send_non_streaming_request(self, _payload: dict[str, object]) -> str:
-        return "resumo"
+    def complete_request(self, _request):
+        return SimpleNamespace(content="resumo")
 
     def remove_last_user_message(self) -> None:
         if self.messages and self.messages[-1]["role"] == "user":

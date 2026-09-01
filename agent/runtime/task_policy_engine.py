@@ -106,10 +106,12 @@ def authorize_recovery(owner: Any, scope: RecoveryScope | str, amount: int) -> T
         budget = owner.recovery_budget
         if budget is None:
             return _publish_result(owner,
-                _owner_result(owner,
-                    TaskPolicyDecision.ALLOW,
+                _owner_result(
+                    owner,
+                    TaskPolicyDecision.RECOVERY_EXHAUSTED,
                     requested_units=amount,
-                    admitted_units=amount,
+                    reason_code="TASK_RECOVERY_OWNER_MISSING",
+                    message="A recuperação foi bloqueada porque não há RecoveryBudgetState proprietário.",
                 )
             )
         if not budget.try_consume(scope, amount):
@@ -212,13 +214,23 @@ def _check_without_logical(
             remaining_units=owner.remaining_work_units(),
             message=watchdog_reason or "O watchdog interrompeu a tarefa.",
         )
-    if recovery_scope is not None and owner.recovery_budget is not None and not owner.recovery_budget.can_attempt(recovery_scope):
-        return _owner_result(owner,
-            TaskPolicyDecision.RECOVERY_EXHAUSTED,
-            requested_units=requested_units,
-            remaining_units=owner.remaining_work_units(),
-            message=f"O limite de recuperação para {recovery_scope} foi atingido.",
-        )
+    if recovery_scope is not None:
+        if owner.recovery_budget is None:
+            return _owner_result(
+                owner,
+                TaskPolicyDecision.RECOVERY_EXHAUSTED,
+                requested_units=requested_units,
+                remaining_units=owner.remaining_work_units(),
+                reason_code="TASK_RECOVERY_OWNER_MISSING",
+                message="A recuperação foi bloqueada porque não há RecoveryBudgetState proprietário.",
+            )
+        if not owner.recovery_budget.can_attempt(recovery_scope):
+            return _owner_result(owner,
+                TaskPolicyDecision.RECOVERY_EXHAUSTED,
+                requested_units=requested_units,
+                remaining_units=owner.remaining_work_units(),
+                message=f"O limite de recuperação para {recovery_scope} foi atingido.",
+            )
     return None
 
 

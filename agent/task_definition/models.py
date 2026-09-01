@@ -1,4 +1,4 @@
-"""Public compatibility surface for immutable task-definition models."""
+"""Canonical public aggregation for immutable task-definition models."""
 
 from agent.task_definition.binding_model import (
     TaskDefinitionBinding,

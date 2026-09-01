@@ -260,7 +260,7 @@ def test_adapter_failure_has_one_terminal_event() -> None:
     assert events == ["tool_start", "tool_end"]
 
 
-def test_direct_orchestrator_builtin_compatibility_uses_gateway() -> None:
+def test_direct_orchestrator_builtin_routing_uses_gateway() -> None:
     session = ChatSession(
         "system",
         {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
@@ -269,7 +269,6 @@ def test_direct_orchestrator_builtin_compatibility_uses_gateway() -> None:
     orchestrator = Orchestrator(session, [EchoSkill()])
 
     assert orchestrator.tool_invocation_gateway is not None
-    assert orchestrator.legacy_tool_invoker is None
     result = orchestrator.tool_executor.run_tool("echo", {"message": "canonical"})
 
     assert result["ok"] is True

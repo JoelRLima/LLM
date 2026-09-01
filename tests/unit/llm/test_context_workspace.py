@@ -192,16 +192,10 @@ class _AskSession:
         self.config.update(config or {})
         self.gateway = MagicMock()
         self.messages = [{"role": "system", "content": "original system"}]
-        self.payloads = []
         self.requests = []
 
     def add_user_message(self, content):
         self.messages.append({"role": "user", "content": content})
-
-    def build_payload(self):
-        payload = {"messages": [message.copy() for message in self.messages]}
-        self.payloads.append(payload)
-        return payload
 
     def build_request(
         self,
@@ -210,6 +204,7 @@ class _AskSession:
         *,
         stream=True,
         max_output_tokens=None,
+        request_contract=None,
     ):
         del response_format
         request = ModelRequest(
@@ -228,6 +223,7 @@ class _AskSession:
                 if grammar is not None
                 else None
             ),
+            request_contract=request_contract,
         )
         self.requests.append(request)
         return request
@@ -397,11 +393,22 @@ class _CompressionSession:
     def add_user_message(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def build_payload(self) -> dict:
-        return {}
+    def build_request(self, *, stream=True, max_output_tokens=None):
+        del stream, max_output_tokens
+        return ModelRequest(
+            messages=tuple(
+                ModelMessage(role=item["role"], content=item["content"])
+                for item in self.messages
+            ),
+            model="test",
+            temperature=0.0,
+            max_output_tokens=1024,
+            stream=False,
+        )
 
-    def send_non_streaming_request(self, _payload: dict) -> str:
-        return self.summary
+    def complete_request(self, request):
+        del request
+        return ModelResponse(content=self.summary)
 
     def add_message(self, role: str, content: str) -> None:
         self.messages.append({"role": role, "content": content})

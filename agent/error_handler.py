@@ -2,7 +2,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from agent.runtime.failures import FailureFact, failure_fact_from_legacy_message
+from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
 
 
@@ -76,7 +76,7 @@ class ErrorHandler:
         # A mensagem sanitizada é apenas diagnóstico. Recovery policy consumes
         # the typed fact supplied by the canonical caller; a legacy text-only
         # call is deliberately converted to an unknown, non-retryable fact.
-        fact = failure or failure_fact_from_legacy_message(reason)
+        fact = failure or FailureFact.unknown(message=reason)
         if fact.retryable and not fact.hard:
             return "replan"
 

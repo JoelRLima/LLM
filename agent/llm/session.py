@@ -3,38 +3,32 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import (
-    LegacyPayloadGateway,
-    ModelConnectionError,
+    ModelGateway,
     ModelRequest,
     ModelResponse,
-    ModelTimeoutError,
 )
 from agent.llm.decision_contract import ModelRequestContract
 from agent.llm.model_profile import ResolvedModelProfile, resolve_gateway_model_profile
 from agent.llm.providers import create_model_gateway
-from agent.llm.session_legacy import LegacySessionMixin
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.hardware import HardwareProfile, resolve_hardware_profile
 from agent.runtime.logging import logger
 
-SessionTimeoutError = ModelTimeoutError
-SessionConnectionError = ModelConnectionError
 
-
-class ChatSession(LegacySessionMixin):
+class ChatSession:
     """Gerencia o histórico, o orçamento de pensamento e a comunicação com o servidor."""
 
     def __init__(
         self,
         system_prompt: str,
         config: Dict[str, Any],
-        gateway: Optional[LegacyPayloadGateway] = None,
+        gateway: Optional[ModelGateway] = None,
         budget_ledger: TaskBudgetLedger | None = None,
     ) -> None:
         self.messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
         self.thinking_budget: int = 0
         self.config: Dict[str, Any] = config
-        self.gateway: LegacyPayloadGateway = gateway or create_model_gateway(config)
+        self.gateway: ModelGateway = gateway or create_model_gateway(config)
         self.model_profile: ResolvedModelProfile = resolve_gateway_model_profile(
             config,
             self.gateway,

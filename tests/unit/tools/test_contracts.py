@@ -19,13 +19,16 @@ def test_tool_descriptor_preserves_historical_positional_fields() -> None:
     assert descriptor.extension_id is None
 
 
-def test_legacy_tool_result_name_is_only_an_edge_compatibility_projection() -> None:
+def test_legacy_tool_result_shape_is_not_a_live_tool_result_import() -> None:
+    import agent.contracts as contracts
     from agent.contracts import LegacyToolResult
-    from agent.contracts import ToolResult as LegacyName
     from agent.tools.contracts import ToolResult as CanonicalToolResult
 
-    assert LegacyName is LegacyToolResult
-    assert LegacyName is not CanonicalToolResult
+    assert LegacyToolResult is contracts.LegacyToolResult
+    assert not hasattr(contracts, "ToolResult")
+    with pytest.raises(ImportError):
+        exec("from agent.contracts import ToolResult", {})
+    assert LegacyToolResult is not CanonicalToolResult
 
 
 def test_tool_descriptor_new_origin_fields_are_keyword_only() -> None:

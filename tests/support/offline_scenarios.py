@@ -4,7 +4,7 @@ import io
 import json
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, Sequence
+from typing import Any, Dict, Iterator, Sequence
 
 from rich.console import Console
 
@@ -15,6 +15,7 @@ from agent.llm.contracts import (
     ModelResponse,
     ProviderCapabilities,
     StreamEvent,
+    StreamEventType,
 )
 from agent.llm.session import ChatSession
 from agent.skills import load_skill_registry
@@ -52,45 +53,28 @@ class OfflineModelGateway:
         return max(1, len(text) // 4)
 
 
-class OfflineLegacyGateway(OfflineModelGateway):
-    """Legacy chat transport with no sockets or HTTP calls."""
+class OfflineChatGateway(OfflineModelGateway):
+    """Canonical in-memory streaming chat gateway with no sockets or HTTP calls."""
 
     model = "offline-chat"
     profile = {"temperature": 0.0, "max_tokens": 128}
+    capabilities = ProviderCapabilities(streaming=True)
 
     def __init__(self, response: str) -> None:
         super().__init__([response])
-        self.payloads: list[Dict[str, Any]] = []
 
-    def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
-        return {
-            "model": request.model,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
-            ],
-            "stream": request.stream,
-        }
-
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> str:
-        self.payloads.append(dict(payload))
-        assert stream is True
-        return str(self.responses.pop(0))
-
-    def complete_payload(self, payload: Dict[str, Any]) -> str:
-        self.payloads.append(dict(payload))
-        return str(self.responses.pop(0))
-
-    def consume_stream(
-        self,
-        response: Any,
-        callbacks: Dict[str, Callable[..., Any]],
-    ) -> str:
-        text = str(response)
-        callbacks["on_raw_line"](text)
-        callbacks["on_content_chunk"](text)
-        callbacks["on_done"]({"prompt_n": 1, "predicted_n": 1})
-        return text
+    def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
+        self.calls.append(request)
+        authority = task_definition_response(self, request)
+        if authority is not None:
+            content = authority
+        elif self.responses:
+            response = self.responses.pop(0)
+            content = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False)
+        else:
+            raise AssertionError("O cenário não forneceu resposta de chat suficiente.")
+        yield StreamEvent(StreamEventType.CONTENT, text=content)
+        yield StreamEvent(StreamEventType.DONE, data={"prompt_n": 1, "predicted_n": 1})
 
 
 class OfflineScenarioExecutor:
@@ -116,7 +100,7 @@ class OfflineScenarioExecutor:
         objective: str,
         execution: Dict[str, Any],
     ) -> ExecutionObservation:
-        gateway = OfflineLegacyGateway(str(execution.get("response", "")))
+        gateway = OfflineChatGateway(str(execution.get("response", "")))
         session = ChatSession(
             "Você é um assistente de teste.",
             {"model": "offline-chat", "hardware_profile": "low_vram_8gb"},
@@ -129,7 +113,19 @@ class OfflineScenarioExecutor:
             success=bool(answer),
             answer=answer,
             steps=1,
-            artifacts=[{"kind": "chat_payload", "payload": gateway.payloads[0]}],
+            artifacts=[
+                {
+                    "kind": "chat_request",
+                    "request": {
+                        "model": gateway.calls[0].model,
+                        "messages": [
+                            {"role": message.role, "content": message.content}
+                            for message in gateway.calls[0].messages
+                        ],
+                        "stream": gateway.calls[0].stream,
+                    },
+                }
+            ],
         )
 
     def _run_skill(

@@ -41,7 +41,7 @@ def load_all_skills(
     config: Any = None,
     approval_policy: Any = None,
 ) -> List[BaseSkill]:
-    """Fachada compatível; código novo deve preferir `load_skill_registry`."""
+    """Return the canonical registry contents as an ordered skill collection."""
 
     registry = load_skill_registry(
         base_dir=base_dir,

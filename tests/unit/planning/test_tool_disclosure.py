@@ -6,12 +6,12 @@ import pytest
 
 from agent.llm.context_manager import ContextManager
 from agent.llm.contracts import (
-    ModelProviderError,
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     StructuredOutputMode,
 )
+from agent.llm.errors import ModelProviderError
 from agent.llm.session import ChatSession
 from agent.llm.tool_discovery_contract import (
     MAX_DISCLOSED_TOOLS,

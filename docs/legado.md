@@ -1,48 +1,229 @@
 # Compatibilidade e retirada de legado
 
-> **STATUS: CURRENT — DEPRECATION INVENTORY.** Este arquivo é atualizado quando
-> aliases entram ou saem; não é um relato histórico de milestone.
+> **STATUS: CURRENT — WAVE 7 INVENTORY.** Este arquivo é a fotografia viva das
+> compatibilidades que permanecem. Não é diário de Wave nem changelog.
 
-Este inventário impede que fachadas temporárias se tornem arquitetura
-permanente. Código novo deve importar somente o caminho canônico. O gate
-arquitetural rejeita imports dos aliases da raiz dentro de `agent/`.
+O caminho instalado e suportado é `llm-agent`, apontando para
+`agent.interfaces.cli.app`. Código novo usa as portas tipadas canônicas. As
+fachadas abaixo foram removidas depois da migração dos consumidores internos.
 
-| Compatibilidade | Caminho canônico | Consumidor restante | Condição de retirada |
-| :--- | :--- | :--- | :--- |
-| `cli.py` | `agent.interfaces.cli.app` | scripts e uso manual antigo | instalação pelo comando `llm-agent` adotada |
-| `commands.py`, `command_*.py`, `cli_*.py` | `agent.interfaces.cli/` | imports externos antigos | nenhuma integração externa conhecida depender da raiz |
-| `config.py`, `config_validation.py` | `agent.runtime.config*` | configurações e testes de terceiros | ciclo de migração anunciado antes da versão 1.0 |
-| `logger.py`, `paths.py` | `agent.runtime.logging`, `agent.runtime.paths` | extensões antigas | extensões usarem as portas canônicas |
-| `session.py` | `agent.llm.session` | integrações antigas | consumidores usarem `ModelGateway` ou a sessão canônica |
-| `benchmark.py` | `scripts.benchmark` | comando manual documentado | documentação usar somente o módulo |
-| `ModelClient` | `ModelGateway` + `structured_output` | integrações externas, testes e planos antigos | janela pública de compatibilidade encerrada e consumidores externos migrados |
-| `AutoCoder` | `agent.code`, `ChangeSetTransaction` e `code_task` | gerador de conteúdo legado e callers explícitos de correção | toda persistência passar pelo owner transacional canônico, com janela pública encerrada |
-| alias `git` | skill `git_reader` | planos persistidos antigos | checkpoints incompatíveis anteriores deixarem de ser suportados |
+## Removido
 
-## Disposições do Block 6
+- `agent/planning/failure_policy.py` e `agent/planning/operational_constants.py`,
+  que eram apenas reexportes de política/taxonomia; os consumidores usam os
+  donos `agent.runtime.failure_policy` e `agent.runtime.outcome_taxonomy`.
+- Os aliases de raiz `cli.py`, `cli_chat.py`, `cli_streaming.py`, `commands.py`,
+  `command_handlers.py`, `command_ui.py`, `config.py`, `config_validation.py`,
+  `logger.py`, `paths.py`, `session.py` e `benchmark.py`.
+- `ModelClient`, `LegacyPayloadGateway`, `PendingStream`, `LegacySessionMixin`,
+  os helpers de payload/sessão raw e a ponte `record_legacy_metadata`.
+- `LegacyToolInvoker`, `AutoCoder`, a composição de compatibilidade e o reparo
+  de plano em lista.
+- `agent/planning/replan_compat.py`, incluindo `LegacyReplanContext`, `RetryPolicy`,
+  `legacy_replan_context`, `legacy_replan_failure` e `ReplanContextCompat`.
+  O caminho vivo usa somente `agent.planning.replan_models.ReplanContext` e
+  `FailureFact` tipados.
+- O alias de skill `git`; planos/checkpoints que o encontrem falham fechados
+  com razão estável `W7_RETIRED_TOOL_ALIAS`.
+- Os aliases de política `consumed_logical_steps` e `active_elapsed`; estados
+  persistidos que os apresentem falham fechados com
+  `W7_RETIRED_TASK_POLICY_KEY`.
+- `TaskRuntimePolicy.admit()`; a admissão viva usa
+  `TaskRuntimePolicy.admit_work_units()`.
+- `ResourceClaim` e `normalize_resource_name` de
+  `agent.planning.task_resources`; o scheduler usa `ResourceAccess` e a
+  normalização canônica `normalize_resource_id`.
+- `agent/state_plan.py::canonicalize_plan_steps`; os consumidores usam
+  `Plan.from_raw(...)` e o método canônico de `StatePlanExecutionMixin`.
+- A importação de fonte `agent.contracts.ToolResult` e seu hook
+  `__getattr__`; resultados vivos usam `agent.tools.contracts.ToolResult`.
+- `RuntimeEvent.from_legacy_fields`; eventos de checkpoint usam o dono de
+  correlação canônico e a leitura persistida usa `RuntimeEvent.from_legacy`.
+- Os reexports de exceções de `agent.llm.contracts` e os métodos de fonte
+  `ConfigRepository.load_legacy()`/`ResolvedConfig.to_legacy_dict()`.
+- `failure_fact_from_legacy_message`; conversores internos usam
+  `FailureFact.unknown(...)` sem inferência de política a partir de texto.
+- O import dinâmico do root `config` em `agent/health/state_checks.py`; a
+  verificação usa diretamente `agent.runtime.config.carregar_config`.
+- Os aliases `DEFAULT_MAX_TASK_STEPS`, `DEFAULT_MAX_TASK_TOKENS` e
+  `DEFAULT_MAX_TASK_TOOL_CALLS` de `agent/cost_guard.py`, e
+  `DEFAULT_MAX_TASK_WALL_SECONDS`, `DEFAULT_MAX_REPEATED_NO_PROGRESS` e
+  `DEFAULT_MAX_CONSECUTIVE_SAME_ERROR` de `agent/watchdog.py`; os consumidores
+  usam `agent.runtime.limits.runtime_limit_values`/`default_runtime_limit`.
+- O fallback de emissão de eventos sem dispatcher em
+  `agent/orchestration/operations.py`; operações usam o
+  `RuntimeEventDispatcher` canônico e seu observer de checkpoint.
+- A confirmação de checkpoint por retorno `None`; somente `True` explícito de
+  `CheckpointManager.save(...)` confirma persistência.
 
-| Candidato | Disposição | Evidência e condição de fechamento |
+### Ledger exato de remoções Wave 7
+
+Cada linha abaixo registra a superfície, consumidores migrados, consumidor
+durável e condição de retirada. `REMOVE` significa que não há shim substituto.
+
+- `W7-R01` | `agent/planning/failure_policy.py::<module>` | owner `agent.runtime.failure_policy` | consumers: planning semantics | durable: none | source reexport sem consumer suportado | condição: já ausente, sem facade.
+- `W7-R02` | `agent/planning/operational_constants.py::<module>` | owner `agent.runtime.outcome_taxonomy` | consumers: planning completion dispatch | durable: none | source reexport sem consumer suportado | condição: já ausente, sem facade.
+- `W7-R03` | `agent/runtime/events.py::from_legacy_fields` | owner `RuntimeEvent` | consumers: checkpoint event operation migrado para emitter canônico | durable: none | construtor de campos legado era facade de construção | condição: já ausente; callers usam o owner canônico.
+- `W7-R04` | `agent/planning/replan_compat.py::<module>` | owner `agent.planning.replan_models.ReplanContext` | consumers: callers do replan migrados | durable: none | construção legada sem consumer durável | condição: já ausente, sem facade.
+- `W7-R05` | `agent/state_plan.py::canonicalize_plan_steps` | owner `agent.planning.plan_model.Plan.from_raw` | consumers: checkpoint e executor migrados | durable: none | decoder de lista duplicava admissão de Plan | condição: já ausente, sem wrapper substituto.
+- `W7-R06` | `agent/contracts.py::ToolResult` | owner `agent.tools.contracts.ToolResult` | consumers: imports runtime/test migrados | durable: none | hook de import de raiz era source compatibility | condição: já ausente, sem facade.
+- `W7-R07` | `agent/planning/task_resources.py::ResourceClaim` | owner `agent.planning.task_resources.ResourceAccess` | consumers: scheduler e testes migrados | durable: none | alias duplicava a autoridade de recursos | condição: já ausente, sem alias.
+- `W7-R08` | `agent/planning/task_resources.py::normalize_resource_name` | owner `agent.planning.task_resources.normalize_resource_id` | consumers: scheduler e testes migrados | durable: none | nome histórico sem consumer durável | condição: já ausente, sem alias.
+- `W7-R09` | `agent/llm/providers/factory.py::resolve_model_profile` | owner `agent.llm.model_profile.resolve_model_profile` | consumers: gateway callers migrados | durable: none | resolver local duplicava a ingressão canônica | condição: já ausente; import direto canônico.
+- `W7-R10` | `agent/final_response.py::summary/status aliases` | owner: observation-evidence constants | consumers: renderer e testes migrados | durable: none | aliases públicos eram source compatibility | condição: já ausente; somente nomes canônicos.
+- `W7-R11` | `agent/planning/reactive_loop.py::_compatibility_decision` | owner: typed `ReactiveToolDecision`/`ReactiveFinalDecision` | consumers: testes migrados | durable: none | admissão de dicionário privado duplicava a fronteira tipada | condição: já ausente; caller deve fornecer decisão admitida.
+- `W7-R12` | `agent/reporting/observation_evidence.py::PUBLIC_TOOL_ERROR_CODES` | owner: `agent.runtime.outcome_taxonomy.PUBLIC_ERROR_CODES` | consumers: módulo de evidence migrado | durable: none | alias duplicava o conjunto canônico de error codes | condição: já ausente; nome canônico.
+- `W7-R13` | `agent/reporting/observation_evidence.py::PUBLIC_TOOL_STATUSES` | owner: `agent.runtime.outcome_taxonomy.PUBLIC_TERMINAL_STATUSES` | consumers: módulo de evidence migrado | durable: none | alias duplicava o conjunto canônico de status | condição: já ausente; nome canônico.
+- `W7-R14` | `agent/reporting/partial_response.py::MAX_TOOL_RESULTS_SUMMARY_CHARS` | owner: `agent.reporting.observation_evidence.MAX_OBSERVATION_EVIDENCE_CHARS` | consumers: partial response migrado | durable: none | alias duplicava o limite canônico | condição: já ausente; nome canônico.
+- `W7-R15` | `agent/reporting/partial_response.py::MAX_TOOL_RESULT_SUMMARY_CHARS` | owner: `agent.reporting.observation_evidence.MAX_OBSERVATION_RECORD_CHARS` | consumers: partial response migrado | durable: none | alias duplicava o limite canônico | condição: já ausente; nome canônico.
+- `W7-R16` | `agent/planning/plan_model.py::Plan(list) identity` | owner: typed `agent.planning.plan_model.Plan` | consumers: typed plan callers | durable: none | Plan live não herda `list` nem expõe identidade de lista | condição: já ausente; serialização explícita.
+- `W7-R17` | `agent/final_response.py::MAX_TOOL_RESULTS_SUMMARY_CHARS` | owner: observation-evidence limits | consumers: final renderer migrado | durable: none | alias de summary era source compatibility | condição: já ausente; nome canônico.
+- `W7-R18` | `agent/final_response.py::MAX_TOOL_RESULT_SUMMARY_CHARS` | owner: observation-evidence limits | consumers: final renderer migrado | durable: none | alias de record era source compatibility | condição: já ausente; nome canônico.
+- `W7-R19` | `agent/final_response.py::PUBLIC_TOOL_ERROR_CODES` | owner: `agent.runtime.outcome_taxonomy.PUBLIC_ERROR_CODES` | consumers: final renderer migrado | durable: none | alias de error code era source compatibility | condição: já ausente; nome canônico.
+- `W7-R20` | `agent/final_response.py::PUBLIC_TOOL_STATUSES` | owner: `agent.runtime.outcome_taxonomy.PUBLIC_TERMINAL_STATUSES` | consumers: final renderer migrado | durable: none | alias de status era source compatibility | condição: já ausente; nome canônico.
+- `W7-R21` | `agent/resources/contracts.py::ResourceTrust` | owner: `agent.resources.contracts.ResourceProvenance` | consumers: nenhum repository consumer; nome canônico usado | durable: none | alias duplicava o vocabulário de provenance | condição: já ausente; sem alias substituto.
+- `W7-R22` | `agent/resources/contracts.py::ResourceOrigin` | owner: `agent.resources.contracts.ResourceProvenance` | consumers: nenhum repository consumer; nome canônico usado | durable: none | alias duplicava o vocabulário de provenance | condição: já ausente; sem alias substituto.
+
+- `W7-R23` | `agent/health/state_checks.py::dynamic root config import` | owner `agent.runtime.config.carregar_config` | consumers: health configuration check | durable: none | import dinâmico do root removido após a retirada de `config.py` | condição: já ausente; import canônico direto.
+- `W7-R24` | `agent/cost_guard.py::DEFAULT_MAX_* aliases` | owner `agent.runtime.limits.runtime_limit_values`/`default_runtime_limit` | consumers: testes e imports históricos | durable: none | constantes de módulo duplicavam o owner tipado de limites | condição: já ausente; APIs canônicas.
+- `W7-R25` | `agent/watchdog.py::DEFAULT_MAX_* aliases` | owner `agent.runtime.limits.runtime_limit_values`/`default_runtime_limit` | consumers: testes e imports históricos | durable: none | constantes de módulo duplicavam o owner tipado de limites | condição: já ausente; APIs canônicas.
+- `W7-R26` | `agent/orchestration/operations.py::dispatcher-less/legacy event emission fallback` | owner `RuntimeEventDispatcher` | consumers: doubles de checkpoint e rotas migrados para o dispatcher canônico | durable: none | emissão direta no estado bypassava o dispatcher e seu observer de checkpoint | condição: já ausente; dispatcher canônico obrigatório.
+- `W7-R27` | `agent/orchestration/operations.py::None checkpoint confirmation` | owner `CheckpointManager.save -> True` | consumers: doubles de checkpoint migrados para confirmação booleana explícita | durable: none | conclusão sem `True` não prova persistência durável | condição: já ausente; somente `True` literal confirma.
+
+## Retido como contrato de persistência ou leitura limitada
+
+| Superfície | Dono atual | Limite |
 | :--- | :--- | :--- |
-| `ModelClient` e `ModelProviderError` reexportado | `RETAIN_COMPAT` | símbolos públicos antigos continuam disponíveis; `ModelClient` só traduz payload e delega parsing, fallback, retry e métricas ao boundary canônico; retirar quando consumidores externos migrarem |
-| `LegacyPayloadGateway`, `ChatSession.build_payload`, `build_legacy_request` e `send_non_streaming_request` | `RETAIN_COMPAT` | CLI, integrações externas e adapters antigos ainda dependem das fachadas; essas superfícies traduzem para `ModelRequest`/`ModelResponse` canônicos |
-| `ChatSession.send_request(stream=False)` | `DEFER_WITH_EVIDENCE` | contrato público retorna o objeto raw de `gateway.send_payload`; a boundary usa a mesma `TaskBudgetLedger`, contabiliza uma tentativa e registra falhas; retirar após migração dos consumidores públicos |
-| `PendingStream`, `send_request(stream=True)` e `ChatSession.process_stream` | `DEFER_WITH_EVIDENCE` | contrato público de stream legado em duas fases ainda exige envelope raw e consumo posterior; retirar após migração da CLI e callers públicos |
-| `AutoCoder` e correção direta | `DEFER_WITH_EVIDENCE` | o seam legado `_save_code` converte a correção em `ChangeSet`/`FileChange`, usa `ChangeSetTransaction` com raiz do workspace e `base_hash`, e registra a transação quando possível; novos writes model-actionable usam `code_task`/`ChangeSet` |
-| `file_writer` de baixo nível | `RETAIN_COMPAT` | excluído do conjunto model-actionable; prepara no scratch e faz o commit final por `ChangeSetTransaction` para administração/callers explícitos, mantendo aprovação e limites de workspace |
-| arestas implícitas `file_writer` → `file_reader`/`code_analyzer` no grafo/optimizer | `REMOVE` | removidas de `dependency_map` e `PlanOptimizer`; dependências causais exigem `ResultBinding` explícito |
-| `check_inverted_dependencies` do `PlanValidator` | `RETAIN_COMPAT` | política de segurança que rejeita leitura anterior a uma escrita declarada; não cria aresta de execução nem substitui `ResultBinding` |
-| reordenação de leituras por caminho no `PlanOptimizer` | `REMOVE` | removida; o optimizer mantém a ordem declarada e só deduplica operações cacheáveis sem bindings |
-| alias de skill `git` | `RETAIN_COMPAT` | alias explícito para `git_reader`; retenção até expirar o suporte a planos/checkpoints históricos |
-| `CheckpointManager` e schema de checkpoint | `RETAIN_COMPAT` | schema v2, bindings, cursor e estados terminais continuam públicos; não há novo formato introduzido |
-| `compress_conversation` / `maybe_compress_context` | `DEFER_WITH_EVIDENCE` | cadeia viva de memória/contexto; usa request canônico sem alterar a semântica de resumo não confiável |
-| `model_metadata` histórico e leitores de métricas | `RETAIN_COMPAT` | writer autoritativo é `model_call`; leitores históricos continuam necessários sem dupla contagem |
-| `LegacyToolInvoker` e ponte de compatibilidade de invocação | `RETAIN_COMPAT` | reservado a callers administrativos/legados; standalone não o instala no caminho model-actionable |
+| checkpoint v2, `CheckpointManager` e serialização tipada de `Plan` | estado/checkpoint canônico | leitores validam a forma; não há dupla escrita nem interpretação silenciosa |
+| `model_metadata` histórico | leitores de métricas/relatórios | somente leitura; o writer atual é `model_call` |
+| `legacy_model_decision_compatibility` | admissão de resposta estruturada | somente leitura de envelopes de resposta delimitados; não é API de request |
+| `LegacyToolResult`, `SerializedToolHistoryEntry` | checkpoint v2 e histórico de ferramentas | `RETAIN_PERSISTENCE_CONTRACT`: projeção serializada somente nas fronteiras de checkpoint/histórico; o runtime usa `ToolResult` tipado |
+| `agent/tools/result_adapter.py`: `to_legacy_result`, `from_legacy_result`, `ensure_canonical_result` | `ToolResult` tipado, `AgentState` e restauração de checkpoint/histórico | `RETAIN_PERSISTENCE_CONTRACT`: conversão delimitada de dados persistidos ou resultados de extensões; não contém política de recuperação |
+| `Plan.from_legacy`, `Plan.to_legacy`, `deserialize_plan`, `serialize_plan` | `Plan` tipado | `RETAIN_PERSISTENCE_CONTRACT`: representação de lista permanece somente na fronteira durável/modelo; escrita canônica não cria outro dono |
+| `RuntimeEvent.from_legacy`, `RuntimeEvent.to_legacy_dict`, `serialize_runtime_event` | `RuntimeEvent` e dispatch/checkpoint | `RETAIN_PERSISTENCE_CONTRACT`: leitura/projeção delimitada para eventos históricos; eventos vivos são tipados |
+| `TaskSemantics.from_legacy` e restauração de semântica histórica | `TaskSemantics` | `RETAIN_PERSISTENCE_CONTRACT`: migração/reconstrução explícita de checkpoints antigos; sem reinterpretação silenciosa |
+| `model_profile_compat` e campos de perfil flat históricos | `ResolvedModelProfile` | `RETAIN_PERSISTENCE_CONTRACT`: leitura de configurações/profile data legados; escritores atuais usam o modelo tipado |
+| projeções de efeitos `requested_effects`, `executed_effects`, `waived_effects` e `prohibited_effects` | `TaskSemantics` e restauração de estado | `RETAIN_PERSISTENCE_CONTRACT`: compatibilidade de estado/checkpoint com dono semântico único |
 
-## Regras de migração
+### Ledger exato de contratos de persistência/leitura
 
-1. Não adicione funcionalidade nova a uma fachada.
-2. Migre primeiro consumidores internos e mantenha teste de compatibilidade.
-3. Registre quebra pública no changelog antes da retirada.
-4. Remova fachada, teste e linha deste inventário no mesmo PR.
-5. Não mantenha duas implementações: aliases apenas encaminham ao módulo
-   canônico.
+Todas as linhas são `RETAIN_PERSISTENCE_CONTRACT`: o owner canônico continua
+único no runtime; a borda só permanece para dados serializados, históricos,
+model-shapes ou migração explícita. A condição indicada é a retirada do
+formato antigo, não a criação de uma nova API de fonte.
+
+- `W7-P01` | `agent/contracts.py::LegacyToolResult` | owner `agent.tools.contracts.ToolResult` | consumers: adapters de checkpoint/history | durable: checkpoint v2 e entries históricas | condição: expirar/migrar entries suportadas.
+- `W7-P02` | `agent/contracts.py::SerializedToolHistoryEntry` | owner `ToolResult` canônico | consumers: readers de history | durable: tool history histórica | condição: expirar retenção histórica.
+- `W7-P03` | `agent/evaluation/evaluation_identity.py::resume_compatible` | owner: evaluation identity | consumers: resume validation | durable: campaign records | condição: aposentar versões armazenadas.
+- `W7-P04` | `agent/llm/admitted_decision_core.py::_legacy` | owner: typed admitted decisions | consumers: serialização de decisões | durable: response envelopes históricos/model | condição: aposentar envelopes suportados.
+- `W7-P05` | `agent/llm/admitted_decision_variants.py::LegacyModelDecision` | owner: typed admitted decisions | consumers: structured response admission | durable: response envelopes | condição: aposentar envelopes suportados.
+- `W7-P06` | `agent/llm/admitted_decision_variants.py::ModelDecisionWithCompatibility` | owner: typed admitted decisions | consumers: structured response admission | durable: response envelopes | condição: aposentar envelopes suportados.
+- `W7-P07` | `agent/llm/admitted_decisions.py::ask_model_decision_with_compatibility` | owner: typed decision admission | consumers: planning/replan response boundaries | durable: response envelopes | condição: aposentar envelopes suportados.
+- `W7-P08` | `agent/llm/admitted_decisions.py::_freeze_compatibility_payload` | owner: typed decision admission | consumers: response projection | durable: response envelopes | condição: remover com a borda de response.
+- `W7-P09` | `agent/llm/decision_contract.py::legacy_model_decision_compatibility` | owner: typed decision admission | consumers: structured response readers | durable: response envelopes | condição: aposentar response compatibility.
+- `W7-P10` | `agent/llm/task_definition_decision_compat.py::_compat_initial` | owner: Task Definition decision admission | consumers: task-definition response decoding | durable: response envelopes | condição: aposentar envelopes antigos.
+- `W7-P11` | `agent/llm/task_definition_decision_compat.py::_compat_effect` | owner: Task Definition decision admission | consumers: task-definition response decoding | durable: response envelopes | condição: aposentar envelopes antigos.
+- `W7-P12` | `agent/llm/task_definition_decision_compat.py::legacy_model_decision_compatibility` | owner: Task Definition decision admission | consumers: response decoding | durable: response envelopes | condição: aposentar envelopes antigos.
+- `W7-P13` | `agent/planning/observation_invalidation.py::_can_have_legacy_mutated` | owner: canonical observation/result contract | consumers: legacy result observations | durable: result fixtures | condição: aposentar fixtures históricas.
+- `W7-P14` | `agent/planning/plan_builder_compat.py::build_legacy_initial` | owner: typed `Plan` | consumers: model response plan boundary | durable: model plan responses | condição: aposentar model shapes suportados.
+- `W7-P15` | `agent/planning/plan_builder_compat.py::build_legacy_continuation` | owner: typed `Plan` | consumers: model response plan boundary | durable: model plan responses | condição: aposentar model shapes suportados.
+- `W7-P16` | `agent/planning/plan_builder_compat.py::legacy_plan` | owner: typed `Plan` | consumers: model response plan boundary | durable: list-shaped plans | condição: aposentar model shapes suportados.
+- `W7-P17` | `agent/planning/plan_model.py::from_legacy` | owner: typed `Plan` | consumers: checkpoint/model readers | durable: plan data | condição: aposentar dados antigos suportados.
+- `W7-P18` | `agent/planning/plan_model.py::to_legacy` | owner: typed `Plan` | consumers: checkpoint/model projections | durable: plan data | condição: aposentar dados antigos suportados.
+- `W7-P19` | `agent/planning/plan_optimizer.py::_legacy_projection` | owner: typed `Plan` | consumers: optimizer projection | durable: model plan consumers | condição: aposentar consumers de lista.
+- `W7-P20` | `agent/planning/task_completion.py::_legacy_continuation_increment` | owner: canonical recovery/replan state | consumers: continuation restore | durable: checkpoint counters | condição: aposentar counters antigos.
+- `W7-P21` | `agent/planning/task_semantics.py::from_legacy` | owner: canonical `TaskSemantics` | consumers: checkpoint restoration | durable: semantic checkpoints | condição: aposentar checkpoints históricos.
+- `W7-P22` | `agent/planning/task_semantics_checkpoint_authority.py::validate_trusted_nonproof_compatibility` | owner: `TaskSemantics` authority | consumers: checkpoint validation | durable: non-proof checkpoint fields | condição: aposentar versões de checkpoint.
+- `W7-P23` | `agent/reporting/run_receipt_builder.py::_legacy_outcome` | owner: canonical run receipt | consumers: receipt rendering | durable: historical receipt fields | condição: aposentar consumers históricos.
+- `W7-P24` | `agent/runtime/config_repository.py::_remove_legacy_state_paths` | owner: `ConfigRepository` | consumers: configuration migration | durable: legacy config files | condição: fechar janela de migração.
+- `W7-P25` | `agent/runtime/events.py::from_legacy` | owner: `RuntimeEvent` | consumers: event/checkpoint readers | durable: historical event records | condição: aposentar records suportados.
+- `W7-P26` | `agent/runtime/events.py::to_legacy_dict` | owner: `RuntimeEvent` | consumers: event/checkpoint projection | durable: historical event records | condição: aposentar records antigos.
+- `W7-P27` | `agent/runtime/recovery.py::restore_legacy_projection` | owner: `RecoveryBudgetState` | consumers: checkpoint restoration | durable: historical recovery projections | condição: aposentar projections históricas.
+- `W7-P28` | `agent/runtime/schema_validation.py::_legacy_property` | owner: schema validation | consumers: schema readers | durable: persisted/model schemas | condição: aposentar schemas antigos.
+- `W7-P29` | `agent/runtime/state_migration.py::migrate_legacy_state` | owner: canonical `AgentState` | consumers: maintenance migration | durable: legacy runtime state | condição: fechar janela de migração.
+- `W7-P30` | `agent/state_checkpoint.py::_restore_legacy_semantics` | owner: canonical `TaskSemantics` | consumers: checkpoint restoration | durable: historical semantics | condição: aposentar checkpoint versions.
+- `W7-P31` | `agent/state_checkpoint_counters.py::_validate_canonical_legacy_conflicts` | owner: canonical recovery state | consumers: checkpoint validation | durable: checkpoint counters | condição: aposentar counters antigos.
+- `W7-P32` | `agent/state_checkpoint_history.py::_rebuild_legacy_semantics` | owner: canonical `TaskSemantics` | consumers: history restoration | durable: checkpoint history | condição: aposentar history antigo.
+- `W7-P33` | `agent/tools/contracts.py::to_legacy_dict` | owner: canonical `ToolResult` | consumers: checkpoint/history projection | durable: serialized tool history | condição: aposentar history antigo.
+- `W7-P34` | `agent/tools/contracts.py::_compat_mapping` | owner: canonical `ToolResult` | consumers: result/reporting boundary | durable: historical result mappings | condição: aposentar mapping consumers.
+- `W7-P35` | `agent/tools/extension_catalog_errors.py::CatalogManifestIncompatibleError` | owner: extension catalog validation | consumers: catalog migration/validation | durable: persisted manifests | condição: aposentar manifest versions.
+- `W7-P36` | `agent/tools/extension_catalog_errors.py::LegacyMigrationError` | owner: extension catalog migration | consumers: maintenance migration | durable: legacy catalogs | condição: aposentar catalogs antigos.
+- `W7-P37` | `agent/tools/extension_catalog_migration.py::_read_legacy` | owner: extension catalog service | consumers: catalog migration | durable: legacy catalogs | condição: aposentar catalogs antigos.
+- `W7-P38` | `agent/tools/extension_catalog_migration.py::migrate_legacy` | owner: extension catalog service | consumers: catalog migration | durable: legacy catalogs | condição: aposentar catalogs antigos.
+- `W7-P39` | `agent/tools/extension_catalog_migration.py::_LEGACY_ENTRY_FIELDS` | owner: extension catalog service | consumers: catalog migration | durable: legacy catalogs | condição: aposentar catalogs antigos.
+- `W7-P40` | `agent/tools/result_adapter.py::to_legacy_result` | owner: canonical `ToolResult` | consumers: checkpoint/history and extension boundaries | durable: serialized history | condição: aposentar serialized consumers.
+- `W7-P41` | `agent/tools/result_adapter.py::from_legacy_result` | owner: canonical `ToolResult` | consumers: checkpoint/history and extension boundaries | durable: serialized history | condição: aposentar serialized consumers.
+- `W7-P42` | `agent/tools/result_adapter.py::ensure_canonical_result` | owner: canonical `ToolResult` | consumers: checkpoint/history and extension boundaries | durable: serialized history | condição: aposentar serialized consumers.
+- `W7-P43` | `agent/tools/result_completeness.py::is_legacy_complete_result` | owner: canonical result completeness | consumers: historical result readers | durable: result fixtures | condição: aposentar fixtures.
+- `W7-P44` | `agent/tools/result_completeness.py::legacy_result_successful` | owner: canonical result completeness | consumers: historical result readers | durable: result fixtures | condição: aposentar fixtures.
+- `W7-P45` | `agent/runtime/events.py::serialize_runtime_event` | owner: `RuntimeEvent` | consumers: event/checkpoint projection | durable: historical event records | condição: aposentar records antigos.
+- `W7-P46` | `agent/runtime/events.py::deserialize_runtime_event` | owner: `RuntimeEvent` | consumers: event/checkpoint readers | durable: historical event records | condição: aposentar records antigos.
+- `W7-W09` | `agent/planning/result_bindings.py::_resolve_ordinal` | owner: typed binding resolver | consumers: model/checkpoint binding readers | durable: historical binding data | condição: aposentar binding shapes.
+- `W7-W10` | `agent/runtime/failure_policy.py::failure_fact_for_result` | owner: canonical `FailureFact` | consumers: result/failure boundary | durable: historical result records | condição: aposentar records históricos.
+
+## Reclassificado como canônico
+
+- `ModelGateway`, `ModelRequest`, `ModelResponse`, `StreamEvent` e o ciclo
+  `ChatSession.build_request` → `complete_request`/`consume_stream_request`.
+- `ToolInvocationGateway`, `BuiltinToolAdapter`, `file_writer` administrativo
+  e `ChangeSetTransaction`; nenhuma dessas superfícies é um bypass
+  model-actionable.
+- `OpenAICompatibleGateway.build_payload`, como serialização do provider e
+  suporte à medição de entrada.
+- `compress_conversation` e `load_all_skills`, como comportamento vivo sob
+  seus donos canônicos.
+- `agent/code/changes.py` e `agent/task_definition/models.py`, como
+  agregações públicas estáveis sobre os donos canônicos.
+- `StatePlanExecutionMixin.canonicalize_plan_steps`, `ResourceAccess`,
+  `normalize_resource_id`, `TaskRuntimePolicy.admit_work_units()` e
+  `agent.runtime.context_results.TaskResult`, como contratos canônicos vivos.
+- `ConfigRepository.migrate()`, como operação administrativa explícita de
+  migração de configuração; a leitura normal usa `ConfigRepository.load()`.
+
+### Ledger exato de reclassificações canônicas
+
+Estas superfícies permanecem como comportamento vivo do owner indicado. O
+marcador histórico descreve protocolo, plataforma ou redação anterior; não é
+uma facade de source/API.
+
+- `W7-C01` | `agent/llm/providers/openai_compatible.py::OpenAICompatibleGateway` | owner: provider gateway contract | consumers: provider router | durable: none | motivo: compatible descreve protocolo do provider | condição: não retirar; implementação canônica.
+- `W7-C02` | `agent/tools/extension_path.py::is_compatible_with` | owner: extension path contract | consumers: extension catalog service | durable: none | motivo: validação host/platform, não source compatibility | condição: não retirar; check canônico.
+- `W7-C03` | `agent/workspace.py::lint_check` | owner: project validation service | consumers: workspace/orchestration validation | durable: none | motivo: operação viva de validação canônica | condição: não retirar; owner canônico.
+- `W7-C04` | `agent/reporting/task_report_rendering.py::aggregate_metrics` | owner: task report aggregation | consumers: reporting callers | durable: none | motivo: API estável de agregação | condição: não retirar; owner canônico.
+- `W7-C05` | `agent/runtime/event_dispatch.py::append_state_event` | owner: state event sink | consumers: runtime event dispatch | durable: checkpoint event storage | motivo: boundary canônica de eventos apesar da redação histórica | condição: não retirar; sink canônico.
+- `W7-C06` | `agent/task_definition/models.py::<module>` | owner: Task Definition models | consumers: task-definition runtime | durable: serialized task definitions | motivo: aggregate/model API tipada estável | condição: não retirar; owner canônico.
+- `W7-C07` | `agent/code/changes.py::<module>` | owner: `ChangeSetTransaction` | consumers: change planning/application | durable: change receipts | motivo: aggregate API sobre transactions canônicas | condição: não retirar; owner canônico.
+- `W7-C08` | `agent/orchestration/operations.py::_emit_checkpoint_event` | owner: canonical runtime event owner | consumers: checkpoint operation | durable: checkpoint event history | motivo: helper delega somente ao emitter canônico, sem construção legacy | condição: não retirar; helper canônico.
+- `W7-C09` | `agent/skills/__init__.py::load_all_skills` | owner: `SkillRegistry` | consumers: health e regression skill collection callers | durable: none | motivo: projeção ordenada estável do registry canônico, não facade | condição: não retirar; helper de coleção canônico.
+
+## Adiado para W8 com evidência bloqueante
+
+- `agent/runtime/paths.py` ainda expõe constantes process-globais e possui
+  consumidores amplos; removê-las exige injeção de caminhos além do escopo
+  estreito desta Wave.
+- `LegacyEventSinkAdapter` mantém a fronteira de sinks externos e testes de
+  observabilidade; sua remoção exige migração coordenada dos sinks.
+- `legacy_stdio_compatibility` é a fronteira controlada do protocolo stdio;
+  a substituição exigiria sincronização de protocolo, launcher e exemplos.
+- `docs/` permanente contém referências históricas não executáveis; a dívida
+  está registrada no arquivo local de documentação deferida.
+
+### Ledger exato de adiamentos W8
+
+Todas as linhas são `DEFER_TO_W8_WITH_BLOCKING_EVIDENCE`; cada bloqueador é
+uma mudança coordenada de contrato/consumidores, não uma permissão para
+manter uma facade de source/API sem justificativa.
+
+- `W7-W01` | `agent/runtime/paths.py::<module>` | owner: `WorkspacePaths` | consumers: broad process/runtime path consumers | durable: legacy runtime locations | bloqueador: path injection amplo fora do escopo | condição: W8 path-injection design e migração.
+- `W7-W01A` | `agent/orchestrator.py::resolve_user_path` | owner: `WorkspaceManager.resolve_path` | consumers: `AgentSubsystems` → `ToolExecutor`/`StepPolicies` e lightweight test doubles | durable: workspace-scoped file operations | bloqueador: fallback sem `WorkspacePaths` exige injeção coordenada | condição: W8 path-injection design, constructor contract e migração.
+- `W7-W02` | `agent/runtime/event_dispatch.py::LegacyEventSinkAdapter` | owner: canonical runtime event sink | consumers: external sinks/observability tests | durable: historical event projections | bloqueador: coordenação do protocolo de sinks | condição: W8 sink contract migration com evidence.
+- `W7-W03` | `agent/tools/builtin_adapter.py::<module>` | owner: `BuiltinToolAdapter` | consumers: SkillRegistry extension boundary | durable: installed extension metadata | bloqueador: adapter externo ainda traduz boundary suportada | condição: W8 extension registry migration.
+- `W7-W04` | `agent/skills/policy.py::<module>` | owner: skill policy contract | consumers: extension descriptors/legacy step validation | durable: persisted skill descriptors | bloqueador: contrato de policy de extensões | condição: W8 extension policy migration.
+- `W7-W05` | `agent/planning/reasoning_boundary.py::_call_extension` | owner: canonical extension seam | consumers: installed/test extensions | durable: none | bloqueador: assinaturas antigas no seam externo | condição: W8 extension signature migration e evidence.
+- `W7-W08` | `agent/planning/plan_builder.py::legacy_reviewer` | owner: typed obligation reviewer | consumers: older orchestrator/test doubles | durable: none | bloqueador: migração coordenada do reviewer port | condição: W8 reviewer-port migration.
+
+## Fora do escopo desta Wave
+
+Referências históricas em outros documentos permanentes permanecem anotadas
+em `.audit-local/WAVE_7_DEFERRED_DOC_SYNC.md` para a sincronização consolidada
+pós-base. Não há compatibilidade removida mantida por um novo alias.

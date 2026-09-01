@@ -14,7 +14,7 @@ from agent.memory.memory import MemoryLoadError
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
-from tests.support.offline_scenarios import OfflineLegacyGateway
+from tests.support.offline_scenarios import OfflineChatGateway
 
 
 def _initialized_context(tmp_path):
@@ -223,7 +223,7 @@ def test_doctor_rejects_the_corrupt_json_rejected_by_application_without_writes(
         AgentApplication.create(
             paths=paths,
             workspace=workspace,
-            gateway=OfflineLegacyGateway("unused"),
+            gateway=OfflineChatGateway("unused"),
             configure_logging=False,
         )
 

@@ -285,15 +285,7 @@ class FailureFact:
             step_id=step_id,
         )
 
-
-def failure_fact_from_legacy_message(message: str | None) -> FailureFact:
-    """Render-only compatibility adapter: text never selects a retry code."""
-
-    return FailureFact.unknown(message=message)
-
-
 __all__ = [
     "FailureFact",
     "UNKNOWN_FAILURE_CODE",
-    "failure_fact_from_legacy_message",
 ]

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_evidence import (
     _READ_TOOLS,
     arg_path,
@@ -21,6 +20,7 @@ from agent.planning.task_semantics_types import (
     TaskSemanticsError,
     _eligible_evidence_ref,
 )
+from agent.runtime.failure_policy import FailureClass, classify_failure
 
 
 def transition(

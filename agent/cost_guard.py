@@ -7,13 +7,7 @@ com valores de fallback divergentes. Este módulo é a única fonte de verdade p
 from typing import Any, Dict, List
 
 from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.limits import default_runtime_limit, runtime_limit_values
-
-# Compatibility constants for callers that imported the historical names.
-# Values now come from the typed runtime-limit owner.
-DEFAULT_MAX_TASK_STEPS = default_runtime_limit("max_steps")
-DEFAULT_MAX_TASK_TOKENS = default_runtime_limit("max_task_tokens")
-DEFAULT_MAX_TASK_TOOL_CALLS = default_runtime_limit("max_task_tool_calls")
+from agent.runtime.limits import runtime_limit_values
 
 
 class CostGuard:

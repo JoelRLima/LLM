@@ -16,6 +16,8 @@ from agent.memory.memory import AgentMemory
 from agent.orchestration.operations import OrchestratorOperations
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.run_receipt import build_run_receipt
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
 from agent.skills.registry import build_builtin_registry
 from agent.state import AgentState
@@ -482,11 +484,19 @@ def test_checkpoint_defers_while_mutating_invocation_is_active(tmp_path) -> None
     worker.start()
     assert started.wait(timeout=2)
 
+    correlation = RunCorrelation.fresh()
+    state = AgentState(root_task_id=correlation.root_task_id)
+    state.runtime_correlation = correlation
     saves: list[object] = []
     operations = SimpleNamespace(
         tool_invocation_gateway=gateway,
-        agent_state=SimpleNamespace(events=[], plan_step=0),
-        checkpoint_manager=SimpleNamespace(save=lambda state: saves.append(state)),
+        agent_state=state,
+        event_dispatcher=RuntimeEventDispatcher(state=state),
+        _ensure_run_correlation=lambda: correlation,
+        verbose=False,
+        checkpoint_manager=SimpleNamespace(
+            save=lambda checkpoint_state: saves.append(checkpoint_state) or True
+        ),
     )
 
     assert OrchestratorOperations._save_checkpoint(operations) is False

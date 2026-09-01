@@ -54,18 +54,6 @@ exclude = ["^\\.venv/", "^\\.temp_analysis/", "^runtime/"]
 files = [
     "agent",
     "scripts",
-    "benchmark.py",
-    "cli.py",
-    "cli_chat.py",
-    "cli_streaming.py",
-    "commands.py",
-    "command_handlers.py",
-    "command_ui.py",
-    "config.py",
-    "config_validation.py",
-    "logger.py",
-    "paths.py",
-    "session.py",
 ]
 
 [tool.pytest.ini_options]

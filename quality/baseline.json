@@ -17,7 +17,6 @@
       "agent/evaluation/h_series_scenarios.py": 688,
       "agent/planning/capability_manifest.py": 301,
       "agent/planning/completion_observations.py": 318,
-      "agent/planning/step_executor.py": 307,
       "agent/planning/task_semantics.py": 539,
       "agent/planning/task_semantics_effect_inference.py": 918,
       "agent/planning/task_semantics_inference.py": 367,

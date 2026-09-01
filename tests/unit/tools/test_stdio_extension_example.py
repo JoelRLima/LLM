@@ -10,7 +10,7 @@ from agent.runtime.workspace_context import WorkspaceContext
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
 from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from tests.support.offline_scenarios import OfflineLegacyGateway
+from tests.support.offline_scenarios import OfflineChatGateway
 
 
 def test_demo_extension_example_runs_via_stdio(tmp_path: Path) -> None:
@@ -35,7 +35,7 @@ def test_demo_extension_example_runs_via_stdio(tmp_path: Path) -> None:
     with AgentApplication.create(
         paths=paths,
         workspace=workspace,
-        gateway=OfflineLegacyGateway("unused"),
+        gateway=OfflineChatGateway("unused"),
         approval_policy=AutoApprove(),
         task_authority_capabilities=["read", "process"],
         configure_logging=False,

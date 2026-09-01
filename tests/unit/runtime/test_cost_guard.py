@@ -1,12 +1,13 @@
 
-from agent.cost_guard import DEFAULT_MAX_TASK_STEPS, DEFAULT_MAX_TASK_TOKENS, DEFAULT_MAX_TASK_TOOL_CALLS, CostGuard
+from agent.cost_guard import CostGuard
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.limits import default_runtime_limit
 
 
 def test_default_limits_coming_from_config_constants() -> None:
-    assert DEFAULT_MAX_TASK_STEPS == 30
-    assert DEFAULT_MAX_TASK_TOKENS == 200000
-    assert DEFAULT_MAX_TASK_TOOL_CALLS == 60
+    assert default_runtime_limit("max_steps") == 30
+    assert default_runtime_limit("max_task_tokens") == 200000
+    assert default_runtime_limit("max_task_tool_calls") == 60
 
 
 def test_check_limits_uses_config_values() -> None:
@@ -42,7 +43,7 @@ def test_check_limits_uses_defaults_if_config_missing() -> None:
     ledger.finalize_model_call(call_number, estimated_tokens=250001)
     assert CostGuard.check_limits(1, [], 0, config, ledger) is True
     tool_ledger = TaskBudgetLedger()
-    for _ in range(DEFAULT_MAX_TASK_TOOL_CALLS):
+    for _ in range(default_runtime_limit("max_task_tool_calls")):
         tool_ledger.reserve_tool_call()
     assert CostGuard.check_limits(1, [], 0, config, tool_ledger) is True
 

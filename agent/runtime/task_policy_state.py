@@ -25,16 +25,8 @@ class TaskPolicyState:
             return self._logical_work_units_consumed
 
     @property
-    def consumed_logical_steps(self) -> int:
-        return self.logical_work_units_consumed
-
-    @property
     def active_elapsed_seconds(self) -> float:
         return self.active_elapsed_at()
-
-    @property
-    def active_elapsed(self) -> float:
-        return self.active_elapsed_seconds
 
     def reset(self) -> None:
         with self._lock:
@@ -86,8 +78,20 @@ class TaskPolicyState:
     def restore_checkpoint(self, raw: Mapping[str, Any], *, maximum: int | None = None) -> None:
         if not isinstance(raw, Mapping):
             raise ValueError("task policy checkpoint must be an object")
-        consumed = raw.get("logical_work_units_consumed", raw.get("consumed_logical_steps", 0))
-        elapsed = raw.get("active_elapsed_seconds", raw.get("active_elapsed", 0.0))
+        retired = sorted(
+            key
+            for key in ("consumed_logical_steps", "active_elapsed")
+            if key in raw
+        )
+        if retired:
+            raise ValueError(
+                "W7_RETIRED_TASK_POLICY_KEY:" + ",".join(retired)
+            )
+        required = ("logical_work_units_consumed", "active_elapsed_seconds")
+        if any(key not in raw for key in required):
+            raise ValueError("W7_CANONICAL_TASK_POLICY_KEYS_REQUIRED")
+        consumed = raw["logical_work_units_consumed"]
+        elapsed = raw["active_elapsed_seconds"]
         _non_negative_int(consumed, "logical_work_units_consumed")
         elapsed = _finite_non_negative(elapsed, "active_elapsed_seconds")
         if maximum is not None and consumed > maximum:

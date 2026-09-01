@@ -2,7 +2,7 @@
 Fixtures compartilhadas para a suíte de regressão do agente.
 
 Fornece:
-- fake_model: mock do ModelClient que retorna respostas pré-definidas.
+- fake_model: gateway de teste que retorna respostas pré-definidas.
 - agent: instância do Orchestrator com o modelo fake injetado.
 - workspace: diretório temporário para testes de arquivos.
 - assert_agent_invariants: função de validação arquitetural.
@@ -32,12 +32,12 @@ from tests.support.task_definition import task_definition_response  # noqa: E402
 CURRENT_SCHEMA_VERSION = 1
 
 # ---------------------------------------------------------------------------
-# FakeModelClient
+# ScriptedModelGateway
 # ---------------------------------------------------------------------------
 
-class FakeModelClient:
+class ScriptedModelGateway:
     """
-    Substitui ModelClient.request() por um dicionário de respostas pré-definidas.
+    Substitui o transporte canônico por um dicionário de respostas pré-definidas.
     Indexado por (task_id, step_type).
 
     Modo strict (padrão para regressão): lança exceção se uma chamada não
@@ -71,7 +71,7 @@ class FakeModelClient:
         del prompt
         return "final"
 
-    def complete_request(self, session, request: ModelRequest) -> ModelResponse:
+    def complete(self, session, request: ModelRequest) -> ModelResponse:
         authority_response = task_definition_response(self, request)
         if authority_response is not None:
             return ModelResponse(content=authority_response)
@@ -87,14 +87,14 @@ class FakeModelClient:
         if step_type == "router":
             response: Dict[str, Any] = {"persona": "coder"}
         else:
-            response = self.request(
+            response = self.response_for(
                 session,
                 {"messages": [message.__dict__ for message in request.messages]},
                 step_type=step_type,
             )
         return ModelResponse(content=json.dumps(response, ensure_ascii=False))
 
-    def request(
+    def response_for(
         self,
         session,
         payload: Dict[str, Any],
@@ -132,7 +132,7 @@ class FakeModelClient:
         # Nenhuma resposta configurada
         if self.strict:
             raise ValueError(
-                f"FakeModelClient em modo strict: chamada não configurada.\n"
+                f"ScriptedModelGateway em modo strict: chamada não configurada.\n"
                 f"  step_type: {step_type}\n"
                 f"  prompt: {prompt[:150]}\n"
                 f"  Respostas configuradas: {list(self.responses.keys())}"
@@ -155,18 +155,18 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def fake_model() -> FakeModelClient:
+def fake_model() -> ScriptedModelGateway:
     """
-    Instância do FakeModelClient em modo strict.
+    Instância do ScriptedModelGateway em modo strict.
     Cada teste deve configurar as respostas necessárias via set_response().
     """
-    return FakeModelClient(strict=True)
+    return ScriptedModelGateway(strict=True)
 
 
 @pytest.fixture
-def agent(monkeypatch, fake_model: FakeModelClient, tmp_path: Path) -> Orchestrator:
+def agent(monkeypatch, fake_model: ScriptedModelGateway, tmp_path: Path) -> Orchestrator:
     """
-    Instância do Orchestrator com o ModelClient fake injetado via monkeypatch.
+    Instância do Orchestrator com o gateway fake injetado via monkeypatch.
     O patch permanece ativo durante todo o teste.
     """
     config = {
@@ -200,7 +200,7 @@ def agent(monkeypatch, fake_model: FakeModelClient, tmp_path: Path) -> Orchestra
     monkeypatch.setattr(
         ChatSession,
         "complete_request",
-        lambda self_session, request: fake_model.complete_request(
+        lambda self_session, request: fake_model.complete(
             self_session, request
         ),
     )
@@ -224,8 +224,10 @@ def assert_agent_invariants(result: str, agent_state: Any) -> None:
     Valida os contratos arquiteturais após uma execução do agente.
     Chamada por todo teste de regressão.
     """
-    # Plano deve ser uma lista
-    assert isinstance(agent_state.plan, list), "Plano deve ser uma lista."
+    # O plano vivo deve ser o valor tipado canônico.
+    from agent.planning.plan_model import Plan
+
+    assert isinstance(agent_state.plan, Plan), "Plano deve ser um valor tipado."
 
     # Tool history deve ser uma lista
     assert isinstance(agent_state.tool_history, list), "tool_history deve ser uma lista."

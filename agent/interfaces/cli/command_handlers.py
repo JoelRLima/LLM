@@ -245,11 +245,8 @@ def _skill_result(ctx: Any, name: str, args: dict[str, Any], *, empty: str = "")
             allowed_capabilities=getattr(ctx.orchestrator, "allowed_capabilities", None),
         ).to_legacy_dict()
     else:
-        legacy_invoker = getattr(ctx.orchestrator, "legacy_tool_invoker", None)
-        if legacy_invoker is None:
-            console.print(f"[red]Skill '{name}' não disponível.[/red]")
-            return
-        result = legacy_invoker.invoke(name, args, record_result=False)
+        console.print(f"[red]Skill '{name}' não disponível.[/red]")
+        return
     if result.get("status") == "unavailable":
         console.print(f"[red]Skill '{name}' não disponível.[/red]")
         return

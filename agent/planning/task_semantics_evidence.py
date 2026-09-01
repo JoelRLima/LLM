@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from agent.planning.failure_policy import FailureClass, classify_failure
 from agent.planning.task_semantics_types import _normalize_text
+from agent.runtime.failure_policy import FailureClass, classify_failure
 from agent.tools.result_completeness import (
     canonical_completeness,
     canonical_result_successful,

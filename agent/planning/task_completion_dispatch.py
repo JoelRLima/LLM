@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from agent.planning.completion_observations import publish_outcome
-from agent.planning.operational_constants import TERMINAL_FAILURE_STATUSES
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_terminal import (
     _canonical_last_result,
@@ -17,6 +16,7 @@ from agent.planning.task_terminal import (
     mark_unfinished_effect,
     mark_unfinished_obligation,
 )
+from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
 
 
 def accept_review(orchestrator: Any, existing: str | None) -> str | None:
@@ -35,7 +35,7 @@ def _terminal_failure_review(orchestrator: Any) -> str:
     mark_terminal_failure(orchestrator)
     publish_outcome(orchestrator)
     result = _canonical_last_result(orchestrator.agent_state)
-    if result is not None and str(getattr(result.status, "value", result.status) or "") in TERMINAL_FAILURE_STATUSES:
+    if result is not None and str(getattr(result.status, "value", result.status) or "") in NON_SUCCESS_STATUSES:
         return _terminal_message(orchestrator.agent_state) or "A tarefa não pôde ser concluída."
     return "A tarefa não pôde ser concluída."
 

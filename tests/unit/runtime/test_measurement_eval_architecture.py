@@ -17,13 +17,12 @@ def _containing(files: list[Path], token: str) -> list[Path]:
     return [path for path in files if token in path.read_text(encoding="utf-8")]
 
 
-def test_decision_validity_projection_cannot_use_action_key_presence() -> None:
-    source = (ROOT / "agent/llm/decision_compat.py").read_text(encoding="utf-8")
+def test_decision_validity_projection_uses_canonical_contract_admission() -> None:
+    source = (ROOT / "agent/llm/structured_output.py").read_text(encoding="utf-8")
 
     assert "is_model_decision_contract_valid(" in source
-    assert "request_contract=exact_contract" in source
-    assert "decision is not None" not in source
-    assert '"action" in decision' not in source
+    assert "admit_model_decision_value(" in source
+    assert "request_contract=request_contract" in source
 
 
 def test_decision_contract_production_has_no_regression_fixture_vocabulary() -> None:

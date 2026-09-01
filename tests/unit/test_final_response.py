@@ -4,10 +4,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent.final_response import MAX_TOOL_RESULTS_SUMMARY_CHARS, FinalResponder
-from agent.llm.model_client import ModelProviderError
+from agent.final_response import FinalResponder
+from agent.llm.errors import ModelProviderError
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 from agent.llm.session import ChatSession
+from agent.reporting.observation_evidence import MAX_OBSERVATION_EVIDENCE_CHARS
 from agent.reporting.operational_outcome import OperationalOutcome
 from agent.runtime.budget import BudgetExhausted
 from agent.tools.contracts import ToolDescriptor
@@ -21,15 +22,16 @@ class FailingSession:
     def add_user_message(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def build_payload(self):
-        return {"messages": self.messages}
+    def build_request(self, *, stream=True, max_output_tokens=None):
+        del stream, max_output_tokens
+        return SimpleNamespace()
 
-    def send_non_streaming_request(self, payload):
-        del payload
+    def complete_request(self, request):
+        del request
         raise RuntimeError(self.secret)
 
-    def send_request(self, payload, stream=True):
-        del payload, stream
+    def consume_stream_request(self, request, callbacks):
+        del request, callbacks
         raise RuntimeError(self.secret)
 
     def remove_last_user_message(self) -> None:
@@ -45,15 +47,21 @@ class GroundingSession:
     def add_user_message(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def build_payload(self):
-        return {"messages": list(self.messages)}
+    def build_request(self, *, stream=True, max_output_tokens=None):
+        del stream, max_output_tokens
+        return SimpleNamespace(
+            messages=tuple(
+                SimpleNamespace(role=item["role"], content=item["content"])
+                for item in self.messages
+            )
+        )
 
-    def send_non_streaming_request(self, payload):
-        self.final_prompt = payload["messages"][-1]["content"]
+    def complete_request(self, request):
+        self.final_prompt = request.messages[-1].content
         assert '"value":[]' in self.final_prompt
         assert '"present":true' in self.final_prompt
         assert "não invente arquivos" in self.final_prompt
-        return "O workspace está vazio; nenhum item foi observado."
+        return SimpleNamespace(content="O workspace está vazio; nenhum item foi observado.")
 
     def remove_last_user_message(self) -> None:
         if self.messages and self.messages[-1]["role"] == "user":
@@ -74,12 +82,18 @@ class PartialEvidenceSession:
     def add_user_message(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def build_payload(self):
-        return {"messages": list(self.messages)}
+    def build_request(self, *, stream=True, max_output_tokens=None):
+        del stream, max_output_tokens
+        return SimpleNamespace(
+            messages=tuple(
+                SimpleNamespace(role=item["role"], content=item["content"])
+                for item in self.messages
+            )
+        )
 
-    def send_non_streaming_request(self, payload):
-        self.final_prompt = payload["messages"][-1]["content"]
-        return self.response
+    def complete_request(self, request):
+        self.final_prompt = request.messages[-1].content
+        return SimpleNamespace(content=self.response)
 
     def remove_last_user_message(self) -> None:
         if self.messages and self.messages[-1]["role"] == "user":
@@ -93,13 +107,10 @@ class _FinalGateway:
     def __init__(self) -> None:
         self.calls = 0
 
-    def build_payload(self, request):
-        return {"messages": list(request.messages)}
-
-    def complete_payload(self, payload):
-        del payload
+    def complete(self, request):
+        del request
         self.calls += 1
-        return "resposta"
+        return SimpleNamespace(content="resposta")
 
 
 class _CanonicalFinalSession:
@@ -726,7 +737,7 @@ def test_tool_summary_has_one_global_budget_and_keeps_every_result() -> None:
 
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
-    assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
+    assert len(summary) <= MAX_OBSERVATION_EVIDENCE_CHARS
     assert summary.count('"observation":') == len(history)
     assert '"tool":"tool_0"' in summary
     assert '"tool":"tool_59"' in summary
@@ -750,7 +761,7 @@ def test_tool_summary_budget_includes_json_escaped_metadata() -> None:
 
     summary = FinalResponder(SimpleNamespace(agent_state=state))._tool_results_summary()
 
-    assert len(summary) <= MAX_TOOL_RESULTS_SUMMARY_CHARS
+    assert len(summary) <= MAX_OBSERVATION_EVIDENCE_CHARS
     assert "\x00" not in summary
     assert summary.count('"observation":') == len(history)
 
@@ -825,7 +836,7 @@ def test_final_responder_refuses_n_plus_one_provider_call() -> None:
         {"model": "final-model", "max_model_calls": 1},
         gateway=gateway,
     )
-    session.send_non_streaming_request({})
+    session.complete_request(session.build_request(stream=False))
     responder = FinalResponder(
         SimpleNamespace(session=session, agent_state=SimpleNamespace(tool_history=[]))
     )
@@ -845,7 +856,7 @@ def test_final_responder_does_not_accept_stream_error_as_successful_call() -> No
         b'data: {"choices":[{"delta":{"content":"partial"}}]}',
         b'data: {"error":{"message":"final stream failed"}}',
     ]
-    gateway.send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
+    gateway._send_payload = MagicMock(return_value=response)  # type: ignore[method-assign]
     session = ChatSession("system", {"model": "local"}, gateway=gateway)
     entries: list[dict[str, object]] = []
     session.set_model_call_callback(entries.append)
@@ -854,6 +865,6 @@ def test_final_responder_does_not_accept_stream_error_as_successful_call() -> No
     with pytest.raises(ModelProviderError, match="Model provider request failed"):
         responder._request_answer(lambda _chunk: None)
 
-    assert gateway.send_payload.call_count == 1
+    assert gateway._send_payload.call_count == 1
     assert len(entries) == 1
     assert entries[0]["success"] is False

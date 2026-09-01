@@ -85,7 +85,7 @@ def test_bound_method_aliases_do_not_create_unrelated_blanket_bans() -> None:
             "S1",
         ),
         (
-            "from agent.llm.contracts import LegacyPayloadGateway as GatewayPort\n"
+            "from agent.llm.contracts import ModelGateway as GatewayPort\n"
             "def rogue(client: GatewayPort, request):\n"
             "    first = client\n"
             "    second = first\n"

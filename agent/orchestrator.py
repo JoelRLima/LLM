@@ -4,7 +4,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
-from agent.auto_coder import AutoCoder
 from agent.cancellation import CancellationToken
 from agent.checkpoint_manager import CheckpointManager
 from agent.final_response import FinalResponder
@@ -12,7 +11,7 @@ from agent.llm.context_manager import ContextManager
 from agent.llm.router import is_security_objective, route_objective
 from agent.llm.session import ChatSession
 from agent.memory.memory import AgentMemory
-from agent.orchestration.compatibility import install_compatibility_gateway
+from agent.orchestration.builtin_composition import install_builtin_gateway
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
 from agent.orchestration.operational_modes import OperationalModeMixin, refresh_capability_projection
 from agent.orchestration.operations import OrchestratorOperations
@@ -45,7 +44,6 @@ from agent.tools.authority import (
     TaskAuthoritySnapshot,
 )
 from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.legacy_invoker import LegacyToolInvoker
 from agent.tools.tool_registry import ToolRegistry
 from agent.watchdog import Watchdog
 from agent.workspace import WorkspaceManager
@@ -99,7 +97,6 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._operational_mode: OperationalMode | None = None
         self._persona_allowed_capabilities: frozenset[str] | None = None
         self._planning_context: PlanningContextSnapshot | None = None
-        self.legacy_tool_invoker = None
         self.max_steps = 15
         self.max_total_actions = 20
         self.max_early_final_attempts = 3
@@ -154,13 +151,11 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         for skill in selected_skills:
             self.register_skill(skill)
         if self.tool_registry is None and selected_skills:
-            install_compatibility_gateway(
+            install_builtin_gateway(
                 self,
                 selected_skills,
                 skill_registry=skill_registry,
             )
-        if self.tool_invocation_gateway is None and self.tool_registry is None and not selected_skills:
-            self.legacy_tool_invoker = LegacyToolInvoker(self)
         if self.tool_invocation_gateway is not None:
             self.tool_invocation_gateway.set_budget_ledger(self.task_budget)
             set_dispatcher = getattr(self.tool_invocation_gateway, "set_event_dispatcher", None)
@@ -176,9 +171,6 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
     @property
     def context_manager(self) -> ContextManager:
         return self.subsystems.context_manager
-    @property
-    def auto_coder(self) -> AutoCoder:
-        return self.subsystems.auto_coder
     @property
     def reactive_loop(self) -> ReactiveLoop:
         return cast(ReactiveLoop, self.subsystems.reactive_loop)

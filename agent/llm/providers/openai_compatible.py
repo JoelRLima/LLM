@@ -7,23 +7,25 @@ Todos os detalhes de HTTP, `choices`, SSE, GBNF, `chat_template_kwargs` e
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional
 
 import requests
 from requests import Response
 from requests.exceptions import HTTPError, RequestException, Timeout
 
 from agent.llm.contracts import (
-    ModelConnectionError,
     ModelRequest,
     ModelResponse,
-    ModelResponseError,
-    ModelTimeoutError,
     ProviderCapabilities,
     StreamEvent,
     StreamEventType,
     StructuredOutputMode,
     TokenUsage,
+)
+from agent.llm.errors import (
+    ModelConnectionError,
+    ModelResponseError,
+    ModelTimeoutError,
     UnsupportedModelCapability,
 )
 from agent.llm.model_profile import ResolvedModelProfile, resolve_model_profile
@@ -110,7 +112,7 @@ class OpenAICompatibleGateway:
         payload.update({"stream_options": {**dict(payload.get("stream_options") or {}), "include_usage": True}} if request.stream else {})
         return payload
 
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> Response:
+    def _send_payload(self, payload: Dict[str, Any], stream: bool) -> Response:
         payload_with_stream = {**payload, "stream": stream}
         logger.debug(f"Enviando requisição POST para {self.api_url}")
         try:
@@ -125,7 +127,7 @@ class OpenAICompatibleGateway:
         except Timeout as exc:
             raise ModelTimeoutError(str(exc)) from exc
         except HTTPError as exc:
-            # Preserva o objeto HTTP na cadeia para o fallback de compatibilidade.
+            # Preserve the HTTP response for provider-error classification.
             raise ModelConnectionError(str(exc), response=exc.response) from exc
         except RequestException as exc:
             raise ModelConnectionError(str(exc)) from exc
@@ -160,16 +162,8 @@ class OpenAICompatibleGateway:
             },
         )
 
-    def complete_payload(self, payload: Dict[str, Any]) -> ModelResponse:
-        response = self.send_payload(payload, stream=False)
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise ModelResponseError("Resposta do servidor não contém JSON válido.") from exc
-        return self.parse_response(data)
-
     def complete(self, request: ModelRequest) -> ModelResponse:
-        response = self.send_payload(self.build_payload(request), stream=False)
+        response = self._send_payload(self.build_payload(request), stream=False)
         try:
             data = response.json()
         except ValueError as exc:
@@ -231,32 +225,8 @@ class OpenAICompatibleGateway:
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
         if not self.capabilities.streaming:
             raise UnsupportedModelCapability("O provider não suporta streaming.")
-        response = self.send_payload(self.build_payload(request), stream=True)
+        response = self._send_payload(self.build_payload(request), stream=True)
         yield from self.iter_stream(response)
-
-    def consume_stream(self, response: Response, callbacks: Dict[str, Callable[..., Any]]) -> str:
-        visible = ""
-        raw_callback = callbacks.get("on_raw_line")
-        # O adapter normalizado não expõe linhas brutas; mantém callback por
-        # compatibilidade com valor vazio em vez de fazer o core interpretar SSE.
-        if raw_callback:
-            raw_callback("")
-        for event in self.iter_stream(response):
-            if event.type == StreamEventType.REASONING and callbacks.get("on_thinking_chunk"):
-                callbacks["on_thinking_chunk"](event.text)
-            elif event.type == StreamEventType.CONTENT:
-                if callbacks.get("on_content_chunk"):
-                    callbacks["on_content_chunk"](event.text)
-                visible += event.text
-            elif event.type == StreamEventType.ERROR:
-                if callbacks.get("on_error"):
-                    callbacks["on_error"](event.text)
-                raise ModelResponseError(event.text, partial_content=visible)
-            elif event.type == StreamEventType.USAGE and callbacks.get("on_usage"):
-                callbacks["on_usage"](event.data)
-            elif event.type == StreamEventType.DONE and callbacks.get("on_done") and event.data:
-                callbacks["on_done"](event.data)
-        return visible.strip()
 
     def measure_request_input_tokens(self, request: ModelRequest) -> RequestInputMeasurement:
         return measure_request_input_tokens(self, request)

@@ -4,27 +4,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Iterator, Optional, Protocol, Sequence
+from typing import Any, Dict, Iterator, Optional, Protocol, Sequence
 
+from agent.llm import errors as _model_errors
 from agent.llm.decision_contract import ModelRequestContract, request_contract_value
-from agent.llm.errors import (
-    ModelConnectionError as ModelConnectionError,
-)
-from agent.llm.errors import (
-    ModelGatewayError as ModelGatewayError,
-)
-from agent.llm.errors import (
-    ModelProviderError as ModelProviderError,
-)
-from agent.llm.errors import (
-    ModelResponseError as ModelResponseError,
-)
-from agent.llm.errors import (
-    ModelTimeoutError as ModelTimeoutError,
-)
-from agent.llm.errors import (
-    UnsupportedModelCapability as UnsupportedModelCapability,
-)
 
 
 class StructuredOutputMode(str, Enum):
@@ -133,39 +116,6 @@ class ModelResponse:
     usage: TokenUsage = field(default_factory=lambda: TokenUsage(available=False))
     finish_reason: Optional[str] = None
     provider_metadata: Dict[str, Any] = field(default_factory=dict)
-class PendingStream:
-    """Legacy stream response carrying its task-budget reservation."""
-    __slots__ = (
-        "response",
-        "call_number",
-        "payload",
-        "started_at",
-        "request",
-        "request_input_measurement",
-        "service",
-        "operation",
-    )
-    def __init__(
-        self,
-        response: Any,
-        call_number: int,
-        payload: Dict[str, Any],
-        started_at: float,
-        request: Any = None,
-        request_input_measurement: Any = None,
-        service: Any = None,
-        operation: str | None = None,
-    ) -> None:
-        self.response = response
-        self.call_number = call_number
-        self.payload = payload
-        self.started_at = started_at
-        self.request = request
-        self.request_input_measurement = request_input_measurement
-        self.service = service
-        self.operation = operation
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.response, name)
 def response_usage(response: Any) -> Any:
     if isinstance(response, ModelResponse):
         return response.usage
@@ -178,14 +128,6 @@ def response_text(response: Any) -> str:
         if isinstance(content, str):
             return content
     return response if isinstance(response, str) else str(response)
-
-
-def build_model_call_metric(*args: Any, **kwargs: Any) -> Dict[str, Any]:
-    """Compatibility facade for the canonical model-call metric projection."""
-
-    from agent.llm.model_metrics import build_model_call_metric as project_metric
-
-    return project_metric(*args, **kwargs)
 
 
 class StreamEventType(str, Enum):
@@ -214,18 +156,6 @@ class ModelGateway(Protocol):
         ...
     def count_tokens(self, text: str) -> Optional[int]:
         ...
-class LegacyPayloadGateway(ModelGateway, Protocol):
-    """Compatibilidade temporária para os consumidores do antigo `ChatSession`.
-    Casos de uso novos devem usar apenas `ModelGateway`.
-    """
-    def build_payload(self, request: ModelRequest) -> Dict[str, Any]:
-        ...
-    def send_payload(self, payload: Dict[str, Any], stream: bool) -> Any:
-        ...
-    def complete_payload(self, payload: Dict[str, Any]) -> str | ModelResponse:
-        ...
-    def consume_stream(self, response: Any, callbacks: Dict[str, Callable[..., Any]]) -> str:
-        ...
 class UnavailableModelGateway:
     """Gateway explícito para casos de uso determinísticos sem modelo.
     Ele permite construir um ``TaskExecutionContext`` para análise/review sem
@@ -241,10 +171,10 @@ class UnavailableModelGateway:
     )
     def complete(self, request: ModelRequest) -> ModelResponse:
         del request
-        raise UnsupportedModelCapability("Esta operação exige um ModelGateway configurado.")
+        raise _model_errors.UnsupportedModelCapability("Esta operação exige um ModelGateway configurado.")
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
         del request
-        raise UnsupportedModelCapability("Esta operação exige um ModelGateway configurado.")
+        raise _model_errors.UnsupportedModelCapability("Esta operação exige um ModelGateway configurado.")
     def measure_request_input_tokens(self, request: ModelRequest) -> None:
         del request
         return None

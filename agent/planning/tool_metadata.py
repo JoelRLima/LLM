@@ -33,7 +33,7 @@ Observação sobre granularidade — `file_writer` e `file_reader`:
     quando isso é possível. `PlanOptimizer` usa `estimate_step_cost` para
     calcular os custos "antes/depois" reportados em `OptimizationReport`.
 
-Ferramentas sem custo de referência explícito no pedido original (`git`,
+Ferramentas sem custo de referência explícito no pedido original (`git_reader`,
 `calculator`, `session_memory`) recebem valores conservadores por analogia
 a ferramentas semelhantes — ajuste livremente se o custo real observado em
 produção divergir.
@@ -87,11 +87,6 @@ def _metadata_from_spec(spec: Any) -> ToolMetadata:
 TOOL_METADATA: Dict[str, ToolMetadata] = {
     spec.name: _metadata_from_spec(spec) for spec in BUILTIN_SKILL_SPECS
 }
-# Alias temporário para planos antigos; o nome público real da skill é
-# `git_reader` e novos planos recebem esse nome pelo catálogo.
-TOOL_METADATA["git"] = TOOL_METADATA["git_reader"]
-
-
 # Custo por `action` de `file_writer`, usado por `estimate_step_cost` para
 # refinar o valor padrão (pior caso) de TOOL_METADATA["file_writer"].cost.
 _FILE_WRITER_ACTION_COST: Dict[str, int] = {
@@ -119,8 +114,6 @@ def build_metadata_dict(registry: Any = None) -> Dict[str, ToolMetadata]:
     if registry is not None and hasattr(registry, "metadata_dict") and callable(registry.metadata_dict):
         dynamic = registry.metadata_dict()
         if dynamic:
-            if "git" not in dynamic and "git_reader" in dynamic:
-                dynamic["git"] = dynamic["git_reader"]
             return cast(Dict[str, ToolMetadata], dynamic)
     return dict(TOOL_METADATA)
 

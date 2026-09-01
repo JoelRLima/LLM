@@ -1,4 +1,4 @@
-"""Task result value objects retained by the runtime compatibility surface."""
+"""Canonical task execution result value objects."""
 
 from __future__ import annotations
 

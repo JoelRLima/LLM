@@ -8,7 +8,6 @@ from agent.final_response import (
 from agent.llm.admitted_decisions import (
     ReactiveFinalDecision,
     ReactiveToolDecision,
-    admit_typed_model_decision,
     ask_typed_model_decision,
 )
 from agent.llm.decision_contract import ModelRequestContract
@@ -40,13 +39,16 @@ class ReactiveLoop:
                 return stopped
             reactive_step += 1
             self._set_plan_step(reactive_step)
-            decision = ask_typed_model_decision(
-                self.orchestrator.context_manager,
-                self._build_prompt(objective),
-                step_type="tool_decision",
-                request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
-                base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
-                log_metric_callback=self.orchestrator._log_metric,
+            decision = cast(
+                ReactiveToolDecision | ReactiveFinalDecision | None,
+                ask_typed_model_decision(
+                    self.orchestrator.context_manager,
+                    self._build_prompt(objective),
+                    step_type="tool_decision",
+                    request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION,
+                    base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
+                    log_metric_callback=self.orchestrator._log_metric,
+                ),
             )
             if decision is None:
                 self.orchestrator._handle_step_failure(
@@ -153,8 +155,7 @@ class ReactiveLoop:
             f"  authoritative_tool_observation: {evidence}\n"
         )
 
-    def _final_answer(self, decision: ReactiveFinalDecision | Any, objective: str) -> str:
-        decision = self._compatibility_decision(decision)
+    def _final_answer(self, decision: ReactiveFinalDecision, objective: str) -> str:
         answer = (
             decision.answer
             if isinstance(decision, ReactiveFinalDecision)
@@ -184,12 +185,11 @@ class ReactiveLoop:
 
     def _handle_decision(
         self,
-        decision: ReactiveToolDecision | ReactiveFinalDecision | Any,
+        decision: ReactiveToolDecision | ReactiveFinalDecision,
         objective: str,
         usage: Dict[str, int],
         reactive_step: int,
     ) -> str | None:
-        decision = self._compatibility_decision(decision)
         if isinstance(decision, ReactiveFinalDecision):
             return self._final_answer(decision, objective)
         if not isinstance(decision, ReactiveToolDecision):
@@ -227,23 +227,6 @@ class ReactiveLoop:
         if result.final_answer:
             return self._canonical_answer(str(result.final_answer), objective)
         return None
-
-    @staticmethod
-    def _compatibility_decision(
-        decision: Any,
-    ) -> ReactiveToolDecision | ReactiveFinalDecision | None:
-        """Adapt old direct callers; production calls already carry a variant."""
-
-        if isinstance(decision, (ReactiveToolDecision, ReactiveFinalDecision)):
-            return decision
-        projected = admit_typed_model_decision(
-            decision, request_contract=ModelRequestContract.REACTIVE_TOOL_DECISION
-        )
-        return (
-            projected
-            if isinstance(projected, (ReactiveToolDecision, ReactiveFinalDecision))
-            else None
-        )
 
     def _set_plan_step(self, value: int) -> None:
         self.orchestrator.agent_state.set_plan_step(value)

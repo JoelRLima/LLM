@@ -37,12 +37,6 @@ class ResourceProvenance(str, Enum):
     OBSERVED_MUTATION = "observed_mutation"
 
 
-# Friendly compatibility names for callers that describe the same concept as
-# trust or origin.  The enum itself remains the single vocabulary owner.
-ResourceTrust = ResourceProvenance
-ResourceOrigin = ResourceProvenance
-
-
 def normalize_resource_id(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         return WORKSPACE_RESOURCE
@@ -136,9 +130,7 @@ def resources_conflict(left: ResourceAccess, right: ResourceAccess) -> bool:
 __all__ = [
     "ResourceAccess",
     "ResourceMode",
-    "ResourceOrigin",
     "ResourceProvenance",
-    "ResourceTrust",
     "WORKSPACE_RESOURCE",
     "normalize_resource_id",
     "resources_conflict",

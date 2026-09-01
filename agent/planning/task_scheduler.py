@@ -16,10 +16,10 @@ from agent.planning.task_graph import (
     TaskResource,
 )
 from agent.planning.task_resources import (
-    ResourceClaim,
     effective_resource_claims,
     resource_claims_conflict,
 )
+from agent.resources.contracts import ResourceAccess
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 
@@ -42,8 +42,8 @@ class GraphExecutionResult:
 
 def resources_conflict(left: tuple[TaskResource, ...], right: tuple[TaskResource, ...]) -> bool:
     return resource_claims_conflict(
-        tuple(ResourceClaim(item.name, item.mode) for item in left),
-        tuple(ResourceClaim(item.name, item.mode) for item in right),
+        tuple(ResourceAccess(item.name, item.mode) for item in left),
+        tuple(ResourceAccess(item.name, item.mode) for item in right),
     )
 
 

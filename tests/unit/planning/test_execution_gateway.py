@@ -1,6 +1,7 @@
 import pytest
 
 from agent.planning.execution_gateway import ExecutionGateway
+from agent.planning.plan_model import Plan
 from agent.planning.planning_context import PlanningContextError, PlanningContextSnapshot, PlanningTool
 from agent.planning.replan import _validate_and_optimize_new_steps
 from agent.planning.replan_models import ReplanAction
@@ -85,6 +86,14 @@ class _ContextOrchestrator(_Orchestrator):
 
     def get_planning_view(self, planner_kind):
         return self._context.present(planner_kind)
+
+
+def _assert_single_tool_plan(plan: Plan, tool_name: str) -> None:
+    assert isinstance(plan, Plan)
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.tool == tool_name
+    assert step.args == {}
 
 
 def test_gateway_validates_before_execution():
@@ -294,7 +303,7 @@ def test_context_validation_does_not_execute_extension() -> None:
         "objetivo",
     )
 
-    assert plan == [{"tool": "external", "args": {}}]
+    _assert_single_tool_plan(plan, "external")
     assert orchestrator.plan_executor.calls == 0
 
 
@@ -315,7 +324,7 @@ def test_explicit_context_derives_view_from_context_not_orchestrator() -> None:
         planning_context=context_b,
         planning_view=view_b,
     )
-    assert plan == [{"tool": "other", "args": {}}]
+    _assert_single_tool_plan(plan, "other")
 
 
 def test_explicit_divergent_context_requires_correlated_view() -> None:
@@ -335,12 +344,13 @@ def test_explicit_divergent_context_requires_correlated_view() -> None:
             [{"tool": "other", "args": {}}], "objetivo", planning_context=context_b
         )
     view_b = context_b.present("linear")
-    assert gateway.validate_and_optimize_plan(
+    accepted_plan = gateway.validate_and_optimize_plan(
         [{"tool": "other", "args": {}}],
         "objetivo",
         planning_context=context_b,
         planning_view=view_b,
-    ) == [{"tool": "other", "args": {}}]
+    )
+    _assert_single_tool_plan(accepted_plan, "other")
 
 
 def test_same_runtime_identity_but_different_context_snapshot_requires_view() -> None:
@@ -404,7 +414,7 @@ def test_replan_accepts_only_correlated_view_and_rejects_other_context() -> None
         view_b,
     )
     assert accepted is not None
-    assert accepted.steps == [{"tool": "other", "args": {}}]
+    _assert_single_tool_plan(accepted.steps, "other")
     with pytest.raises(PlanningContextError):
         _validate_and_optimize_new_steps(
             ReplanAction(steps=[{"tool": "other", "args": {}}], reason="probe"),

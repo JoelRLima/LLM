@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from agent.llm.contracts import ModelProviderError
+from agent.llm.errors import ModelProviderError
 from agent.reporting.observation_evidence import result_error_code
 from agent.reporting.public_safety import sanitize_public_text
 from agent.reporting.run_projection_facts import thaw_projection

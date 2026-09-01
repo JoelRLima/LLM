@@ -1,4 +1,4 @@
-"""Narrow compatibility adapters at legacy state/serialization boundaries."""
+"""Bounded persistence adapters at state, history, and extension boundaries."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def to_legacy_result(result: Any) -> LegacyToolResult:
 
 
 def from_legacy_result(result: Any) -> ToolResult:
-    """Adapt one compatibility mapping into the canonical runtime result.
+    """Adapt one persisted or boundary mapping into the canonical result.
 
     This is intentionally the only reverse adapter used at state/history
     boundaries.  Unknown legacy fields are retained as non-authoritative
@@ -112,9 +112,8 @@ def from_legacy_result(result: Any) -> ToolResult:
 def ensure_canonical_result(result: Any) -> ToolResult:
     """Return a canonical result without re-adapting an existing value.
 
-    Runtime callers use this at a compatibility seam that may still be
-    supplied by an older test/extension adapter.  A canonical result passes
-    through unchanged; only a legacy mapping is upgraded.
+    Boundary callers may receive a historical mapping or an extension result.
+    A canonical result passes through unchanged; only a mapping is upgraded.
     """
 
     return result if isinstance(result, ToolResult) else from_legacy_result(result)

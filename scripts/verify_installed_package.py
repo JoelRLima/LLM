@@ -189,17 +189,12 @@ class DeterministicJourneyGateway:
             return json.dumps({"action": "define_spec", "spec": spec.to_dict()}, ensure_ascii=False)
         return None
 
-    def build_payload(self, request):
-        return {
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
-            ],
-            "stream": request.stream,
-        }
-
-    def complete_payload(self, payload):
-        messages = payload.get("messages", [])
+    def _complete_request(self, request):
+        messages = [
+            {"role": message.role, "content": message.content}
+            for message in request.messages
+        ]
+        payload = {"messages": messages}
         self.calls.append(payload)
         if self.scenario_id == "a5_provider_failure":
             raise RuntimeError("provider request failed https://example.test/?api_key=TOPSECRET")
@@ -301,17 +296,7 @@ class DeterministicJourneyGateway:
         task_definition_response = self._task_definition_response(request)
         if task_definition_response is not None:
             return ModelResponse(content=task_definition_response)
-        return ModelResponse(content=self.complete_payload(self.build_payload(request)))
-
-    def send_payload(self, payload, stream):
-        del stream
-        return self.complete_payload(payload)
-
-    def consume_stream(self, response, callbacks):
-        text = str(response)
-        callbacks["on_content_chunk"](text)
-        callbacks["on_done"]({})
-        return text
+        return ModelResponse(content=self._complete_request(request))
 
     def count_tokens(self, text):
         return max(1, len(text) // 4)

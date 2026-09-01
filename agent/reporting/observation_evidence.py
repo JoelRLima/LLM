@@ -30,8 +30,6 @@ project_artifact_evidence = project_mutation_evidence
 MAX_OBSERVATION_EVIDENCE_CHARS = 12_000
 MAX_OBSERVATION_RECORD_CHARS = 2_000
 MAX_INVOCATION_ARGS_CHARS = 1_000
-PUBLIC_TOOL_ERROR_CODES = PUBLIC_ERROR_CODES
-PUBLIC_TOOL_STATUSES = PUBLIC_TERMINAL_STATUSES
 _NON_SUCCESS_STATUSES = NON_SUCCESS_STATUSES
 
 
@@ -39,7 +37,7 @@ def result_status(result: Mapping[str, Any]) -> str:
     """Return the bounded public status of one recorded tool result."""
 
     raw_status = result.get("status")
-    return raw_status if isinstance(raw_status, str) and raw_status in PUBLIC_TOOL_STATUSES else "unknown"
+    return raw_status if isinstance(raw_status, str) and raw_status in PUBLIC_TERMINAL_STATUSES else "unknown"
 
 
 def result_is_successful(result: Mapping[str, Any]) -> bool:
@@ -65,7 +63,7 @@ def result_error_code(result: Mapping[str, Any]) -> str | None:
     """Expose only known public error-code values."""
 
     value = result.get("error_code")
-    return value if isinstance(value, str) and value in PUBLIC_TOOL_ERROR_CODES else None
+    return value if isinstance(value, str) and value in PUBLIC_ERROR_CODES else None
 
 
 def result_has_data(result: Mapping[str, Any]) -> bool:
@@ -230,8 +228,8 @@ def observation_contract_instructions() -> str:
 __all__ = [
     "ArtifactEvidence", "MAX_INVOCATION_ARGS_CHARS", "MAX_OBSERVATION_EVIDENCE_CHARS",
     "MAX_OBSERVATION_RECORD_CHARS", "ObservationEvidence", "EvidenceProvenance",
-    "PUBLIC_TOOL_ERROR_CODES",
-    "PUBLIC_TOOL_STATUSES", "artifact_metadata", "metadata_is_persisted_mutation",
+    "PUBLIC_ERROR_CODES", "PUBLIC_TERMINAL_STATUSES", "artifact_metadata",
+    "metadata_is_persisted_mutation",
     "observation_contract_instructions", "project_executed_invocation", "project_tool_observation",
     "project_artifact_evidence", "result_error_code", "result_executed", "result_has_data",
     "result_is_failed", "result_is_successful", "result_status", "serialize_tool_observations",

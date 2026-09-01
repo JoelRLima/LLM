@@ -13,7 +13,7 @@ from agent.application_cleanup import abort_startup, release_resources
 from agent.application_result import AgentRunResult, finalize_application_result
 from agent.application_shutdown import require_application_invocations_drained
 from agent.approval import ApprovalPort, RequireExplicitApproval
-from agent.llm.contracts import LegacyPayloadGateway
+from agent.llm.contracts import ModelGateway
 from agent.llm.session import ChatSession
 from agent.orchestration.operational_modes import ApplicationOperationalModeMixin, OperationalMode
 from agent.orchestrator import Orchestrator
@@ -84,7 +84,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         config_path: str | Path | None = None,
         profile: str | None = None,
         overrides: Mapping[str, Any] | None = None,
-        gateway: LegacyPayloadGateway | None = None,
+        gateway: ModelGateway | None = None,
         approval_policy: ApprovalPort | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
         task_authority_capabilities: Iterable[str] | None = None,
@@ -99,7 +99,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         if profile is not None:
             config_overrides["default_model_profile"] = profile
         repository = ConfigRepository(app_paths, config_path=config_path)
-        config = repository.load_legacy(overrides=config_overrides)
+        config = repository.load(overrides=config_overrides).to_dict()
         app_paths.ensure_base_directories()
         workspace_paths.ensure_directories()
         instance_lock = InstanceLock.create(workspace_paths.lock_file)

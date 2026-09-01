@@ -1,4 +1,4 @@
-"""Compatibility composition for direct Orchestrator construction."""
+"""Canonical built-in skill composition for direct orchestrator construction."""
 
 from __future__ import annotations
 
@@ -13,23 +13,23 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 
-def install_compatibility_gateway(
+def install_builtin_gateway(
     orchestrator: Any,
     selected_skills: list[Any],
     *,
     skill_registry: SkillRegistry | None = None,
 ) -> bool:
-    """Install canonical enforcement when real skill metadata is available."""
+    """Install the canonical gateway for a direct orchestrator composition."""
 
-    compatibility_skills = skill_registry or SkillRegistry()
+    selected_registry = skill_registry or SkillRegistry()
     if skill_registry is None:
         for skill in selected_skills:
             spec = BUILTIN_SPEC_BY_NAME.get(str(getattr(skill, "name", "")))
             if spec is None:
                 return False
-            compatibility_skills.register(SkillDescriptor(spec=spec, skill=skill))
+            selected_registry.register(SkillDescriptor(spec=spec, skill=skill))
     registry = ToolRegistry()
-    registry.register_adapter(BuiltinToolAdapter(compatibility_skills))
+    registry.register_adapter(BuiltinToolAdapter(selected_registry))
     registry.freeze()
     orchestrator.tool_registry = registry
     orchestrator.tool_invocation_gateway = ToolInvocationGateway(
@@ -50,4 +50,4 @@ def install_compatibility_gateway(
     return True
 
 
-__all__ = ["install_compatibility_gateway"]
+__all__ = ["install_builtin_gateway"]

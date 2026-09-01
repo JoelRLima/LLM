@@ -6,7 +6,6 @@ from agent.planning.errors import ToolNotFoundError
 from agent.runtime.failures import (
     UNKNOWN_FAILURE_CODE,
     FailureFact,
-    failure_fact_from_legacy_message,
 )
 from agent.runtime.outcome_taxonomy import error_definition
 from agent.tools.contracts import ToolError, ToolResult, ToolStatus
@@ -121,7 +120,7 @@ def test_runtime_exception_adapter_preserves_tool_not_found_type_boundary() -> N
 
 
 def test_unknown_text_cannot_select_timeout_or_permission_policy() -> None:
-    fact = failure_fact_from_legacy_message("timeout permission denied sandbox")
+    fact = FailureFact.unknown(message="timeout permission denied sandbox")
 
     assert fact.code == UNKNOWN_FAILURE_CODE
     assert fact.retryable is False

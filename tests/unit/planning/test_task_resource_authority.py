@@ -11,9 +11,9 @@ from agent.planning.task_graph import ResourceMode, TaskGraph, TaskNode, TaskRes
 from agent.planning.task_resources import (
     WORKSPACE_RESOURCE,
     effective_resource_claims,
-    normalize_resource_name,
 )
 from agent.planning.task_scheduler import TaskGraphScheduler
+from agent.resources.contracts import normalize_resource_id
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
 
 
@@ -235,7 +235,8 @@ def test_unknown_mutating_footprint_becomes_workspace_write() -> None:
     assert len(_selected(unknown, concrete)) == 1
 
 
-def test_resource_normalization_handles_slashes_root_and_workspace_wildcard() -> None:
-    assert normalize_resource_name(r"src\pkg\..\a.py") == "src/a.py"
-    assert normalize_resource_name(".") == WORKSPACE_RESOURCE
-    assert normalize_resource_name("*") == WORKSPACE_RESOURCE
+def test_canonical_resource_normalization_preserves_conservative_scope() -> None:
+    assert normalize_resource_id(r"src\a.py") == "src/a.py"
+    assert normalize_resource_id(r"src\pkg\..\a.py") == WORKSPACE_RESOURCE
+    assert normalize_resource_id(".") == WORKSPACE_RESOURCE
+    assert normalize_resource_id("*") == WORKSPACE_RESOURCE

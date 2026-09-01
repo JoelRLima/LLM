@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
-from agent.auto_coder import AutoCoder
 from agent.final_response import FinalResponder
 from agent.llm.context_manager import ContextManager
 from agent.planning.execution_gateway import ExecutionGateway
@@ -53,16 +52,6 @@ class AgentSubsystems:
             workspace_root=self.orchestrator.workspace_root,
             task_context_resolver=self.orchestrator.task_context_resolver,
         ))
-
-    @property
-    def auto_coder(self) -> AutoCoder:
-        return self._get(
-            "auto_coder",
-            lambda: AutoCoder(
-                self.orchestrator,
-                path_resolver=self.orchestrator.resolve_user_path,
-            ),
-        )
 
     @property
     def reactive_loop(self) -> ReactiveLoop:

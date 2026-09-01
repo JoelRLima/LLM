@@ -124,31 +124,6 @@ class RuntimeEvent:
         )
 
     @classmethod
-    def from_legacy_fields(
-        cls,
-        kind: RuntimeEventKind | str,
-        data: Mapping[str, Any] | None = None,
-        *,
-        step: int | None = None,
-        timestamp: str | datetime | None = None,
-    ) -> "RuntimeEvent":
-        """Build a compatibility event without asking an edge for an envelope."""
-
-        selected_timestamp = (
-            timestamp.isoformat()
-            if isinstance(timestamp, datetime)
-            else timestamp or datetime.now(timezone.utc).isoformat()
-        )
-        return cls(
-            kind=RuntimeEventKind.coerce(kind),
-            run_id="legacy:unknown",
-            root_task_id="legacy:unknown",
-            timestamp=selected_timestamp,
-            step=step,
-            data=data or {},
-        )
-
-    @classmethod
     def from_legacy(
         cls,
         event: Mapping[str, Any],

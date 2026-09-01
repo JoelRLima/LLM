@@ -71,10 +71,6 @@ class TaskRuntimePolicy:
     def active_elapsed_seconds(self) -> float:
         return self.state.active_elapsed_at(self._clock())
 
-    @property
-    def active_elapsed(self) -> float:
-        return self.active_elapsed_seconds
-
     def set_correlation(self, correlation: Any) -> None:
         self._correlation = correlation
 
@@ -129,11 +125,6 @@ class TaskRuntimePolicy:
             recovery_scope=recovery_scope,
             consume=True,
         )
-
-    def admit(self, requested_units: int = 1, **kwargs: Any) -> TaskPolicyResult:
-        """Compatibility alias for the canonical admission method."""
-
-        return self.admit_work_units(requested_units, **kwargs)
 
     def authorize_recovery(
         self, scope: RecoveryScope | str, amount: int = 1

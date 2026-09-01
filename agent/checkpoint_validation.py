@@ -38,6 +38,12 @@ def _validate_plan(path: Path, data: dict[str, Any]) -> None:
     plan = data.get("plan")
     if not isinstance(plan, list) or any(not isinstance(step, dict) for step in plan):
         _invalid(path, "checkpoint com plano estruturalmente invalido")
+    if _contains_retired_tool_alias(plan):
+        _invalid(
+            path,
+            "checkpoint contém o alias de ferramenta aposentado: git; use git_reader",
+            reason_code="W7_RETIRED_TOOL_ALIAS",
+        )
     records = data.get("step_records")
     if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
         _invalid(path, "checkpoint sem registros de execucao validos")
@@ -139,8 +145,25 @@ def _validate_task_policy(path: Path, data: dict[str, Any]) -> None:
         return
     if not isinstance(policy, dict):
         _invalid(path, "estado de politica da tarefa invalido")
-    consumed = policy.get("logical_work_units_consumed", policy.get("consumed_logical_steps", 0))
-    elapsed = policy.get("active_elapsed_seconds", policy.get("active_elapsed", 0.0))
+    retired = sorted(
+        key
+        for key in ("consumed_logical_steps", "active_elapsed")
+        if key in policy
+    )
+    if retired:
+        _invalid(
+            path,
+            "checkpoint task policy contém nome W6 aposentado: " + ",".join(retired),
+            reason_code="W7_RETIRED_TASK_POLICY_KEY",
+        )
+    if "logical_work_units_consumed" not in policy or "active_elapsed_seconds" not in policy:
+        _invalid(
+            path,
+            "checkpoint task policy exige nomes canônicos W6",
+            reason_code="W7_CANONICAL_TASK_POLICY_KEYS_REQUIRED",
+        )
+    consumed = policy["logical_work_units_consumed"]
+    elapsed = policy["active_elapsed_seconds"]
     if isinstance(consumed, bool) or not isinstance(consumed, int) or consumed < 0:
         _invalid(path, "contador de unidades logicas invalido")
     if (
@@ -150,6 +173,16 @@ def _validate_task_policy(path: Path, data: dict[str, Any]) -> None:
         or elapsed < 0
     ):
         _invalid(path, "duracao ativa acumulada invalida")
+
+
+def _contains_retired_tool_alias(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get("tool") == "git":
+            return True
+        return any(_contains_retired_tool_alias(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_retired_tool_alias(item) for item in value)
+    return False
 
 
 def _validate_hierarchical_lifecycle(path: Path, data: dict[str, Any]) -> None:

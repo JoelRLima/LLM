@@ -2,6 +2,8 @@ import json
 from copy import deepcopy
 from types import SimpleNamespace
 
+from agent.llm.contracts import ModelResponse
+from agent.llm.structured_output import normalize_model_decision
 from agent.orchestration.operations import OrchestratorOperations
 from agent.planning.capability_manifest import render_active_harness_capabilities
 from agent.planning.dependency_map import build_dependency_map
@@ -19,6 +21,7 @@ from agent.planning.result_bindings import (
     resolve_bound_args,
     validate_result_bindings,
 )
+from agent.runtime.failures import FailureFact
 from agent.runtime.recovery import RecoveryScope
 from agent.skills import load_skill_registry
 from agent.state import AgentState
@@ -358,7 +361,6 @@ def test_binding_manual_is_not_advertised_when_gateway_lacks_binding_support():
 
 def test_rendered_repair_right_example_matches_binding_grammar():
     from agent.llm.grammars import get_grammar
-    from agent.llm.model_client import ModelClient
     from agent.parsers import validate_decision
     from agent.planning.capability_manifest import render_validation_repair_manual
 
@@ -374,7 +376,10 @@ def test_rendered_repair_right_example_matches_binding_grammar():
     right_line = next(line for line in manual.splitlines() if line.startswith("RIGHT: "))
     right = json.loads(right_line.removeprefix("RIGHT: "))
     assert right["action"] == "tool"
-    assert ModelClient._extract_decision(right_line.removeprefix("RIGHT: ")) == right
+    assert normalize_model_decision(
+        ModelResponse(content=right_line.removeprefix("RIGHT: ")),
+        step_type="replan",
+    ) == right
     valid, error = validate_decision(right)
     assert valid, error
     replan_grammar = get_grammar("replan", {"ENABLE_GBNF": True}) or ""
@@ -432,7 +437,7 @@ def test_h2_repair_context_uses_real_builtin_catalog_and_separates_input_from_re
             "tool": "grep",
             "args": {"path": ".", "recursive": True, "max_results": 20},
         },
-        "deterministic validation rejected argument field(s): pattern; validator detail: pattern lacks grounded provenance",
+        FailureFact.unknown(message="deterministic validation rejected argument field(s): pattern; validator detail: pattern lacks grounded provenance"),
         SimpleNamespace(
             context_manager=context,
             planning_context=planning_context,
@@ -525,7 +530,7 @@ def test_replan_preserves_optional_binding_for_grounded_correction():
 
     action = ask_llm_for_alternative(
         {"tool": "grep", "args": {"path": "."}},
-        "Argumento pattern requer proveniencia fundamentada",
+        FailureFact.unknown(message="Argumento pattern requer proveniencia fundamentada"),
         SimpleNamespace(context_manager=_Context()),
     )
     assert action is not None
@@ -776,7 +781,9 @@ def test_invalid_downstream_candidate_is_not_silently_pruned(tmp_path):
             "bindings": {"pattern": {"from_step": 1, "path": []}},
         },
     )
-    plan = _h2_invalid_plan() + [{"tool": "grep", "args": {"path": "."}}]
+    from agent.planning.plan_model import Plan
+
+    plan = Plan.from_raw(_h2_invalid_plan() + [{"tool": "grep", "args": {"path": "."}}])
     original = deepcopy(plan)
     blocked = BlockedStep(1, "pattern lacks grounded provenance", frozenset({"pattern"}))
 
@@ -907,7 +914,7 @@ def test_validation_repair_prompt_exposes_binding_and_rejects_placeholders():
                 "max_results": 20,
             },
         },
-        "deterministic validation rejected argument field(s): pattern",
+        FailureFact.unknown(message="deterministic validation rejected argument field(s): pattern"),
         SimpleNamespace(
             context_manager=context,
             execution_gateway=SimpleNamespace(_bind_deferred_references=lambda plan: plan),
@@ -941,8 +948,11 @@ def test_executed_file_failure_keeps_semantic_replan_available(tmp_path):
             task="localize missing file",
             current_step={"tool": "file_reader", "args": {"file_path": "missing.txt"}},
             tool_history=[],
+            failure=FailureFact.from_code(
+                "FILE_NOT_FOUND", message="FileNotFoundError: missing.txt"
+            ),
         ),
-        "FileNotFoundError: missing.txt",
+        FailureFact.from_code("FILE_NOT_FOUND", message="FileNotFoundError: missing.txt"),
         orchestrator,
     )
 
