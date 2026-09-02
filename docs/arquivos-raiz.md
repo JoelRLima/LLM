@@ -1,15 +1,17 @@
-# Fachadas da raiz e pontos canônicos
+# Arquivos da raiz e pontos canônicos
 
 > **STATUS: CURRENT — ROOT-FILES REFERENCE.** Este arquivo não define contratos
 > de subsistemas; veja o [índice técnico](README.md).
 
-A raiz mantém somente entry points, aliases de compatibilidade, configuração
-de empacotamento e documentação. Implementações novas pertencem ao pacote
-`agent/`; consulte também o [inventário de legado](legado.md).
+A raiz mantém configuração, empacotamento e documentação. Os aliases Python
+históricos da raiz foram removidos; implementações atuais pertencem ao pacote
+`agent/` ou aos scripts explicitamente nomeados. Consulte também o
+[inventário de legado](legado.md).
 
-## `cli.py`
+## `cli.py` (alias histórico removido)
 
-Fachada executável de `agent.interfaces.cli.app`. O módulo canônico adapta chat,
+O arquivo `cli.py` não existe mais na raiz. O entrypoint instalado `llm-agent`
+aponta para `agent.interfaces.cli.app:main`. O módulo canônico adapta chat,
 execução headless, diagnóstico e manutenção de configuração/estado para
 `AgentApplication`; não recompõe sessão e orquestrador por conta própria.
 `--help`, `--version` e `config path` não inicializam recursos.
@@ -20,34 +22,43 @@ persistida na workspace selecionada. Ele resolve a mesma identidade
 Contract/Spec usada pelo runtime; não inicializa `AgentApplication`, não chama
 modelo e não cria authority, grant, approval ou progresso.
 
-## `commands.py`
+## `commands.py` (alias histórico removido)
 
-Alias de `agent.interfaces.cli.commands`. O módulo canônico implementa os comandos da CLI, incluindo configuração do prompt e thinking,
+O arquivo `commands.py` não existe mais na raiz. Os comandos atuais ficam em
+`agent.interfaces.cli.commands`, com handlers e apresentação nos módulos
+vizinhos. O módulo canônico implementa configuração do prompt e thinking,
 histórico, modo agente, debug, memória, atalhos de leitura/busca, diagnóstico e
 retomada de checkpoint. `/code` usa parser e camada de aplicação determinísticos,
 sem router/planner, e mostra diff/confiança antes de pedir aprovação quando
-necessário. Operações persistentes usam os caminhos de `paths.py`.
+necessário. Operações persistentes usam `agent.runtime.paths`.
 
-## `session.py`
+## `session.py` (alias histórico removido)
 
-Alias de `agent.llm.session`, que mantém mensagens, configuração efetiva e compatibilidade com consumidores
-legados. Na construção, resolve um perfil e cria um `ModelGateway`. Os métodos
-`build_payload`, `send_request`, `send_non_streaming_request` e
-`process_stream` permanecem disponíveis para CLI e planejador antigo, mas
-delegam payload, transporte e SSE ao adapter de provider.
+O arquivo `session.py` não existe mais na raiz. A sessão atual fica em
+`agent.llm.session.ChatSession`: mantém mensagens e configuração efetiva,
+resolve o perfil e cria um `ModelGateway`. Sua fronteira tipada expõe
+`build_request`, `complete_request` e `consume_stream_request`; os métodos
+aposentados `build_payload`, `send_request`, `send_non_streaming_request` e
+`process_stream` não fazem parte da API atual.
 
-Código novo deve depender de `agent.llm.contracts.ModelGateway`, e não de
-`ChatSession` ou de objetos `requests.Response`.
+`complete_request` e `consume_stream_request` delegam o lifecycle comum a
+`ModelCallService`, que usa o gateway para o transporte. Código novo deve
+depender dos contratos tipados e de `agent.llm.contracts.ModelGateway`, sem
+acoplar-se a objetos `requests.Response`.
 
-## `config.py`, `agent/runtime/config_repository.py` e `config.example.json`
+## `config.py` (alias histórico removido), `agent/runtime/config_repository.py` e `config.example.json`
 
-`config.py` e `agent/runtime/config.py` são fachadas legadas.
-`ConfigRepository` é a fronteira standalone: carrega o default empacotado,
+O arquivo raiz `config.py` não existe mais. `ConfigRepository` é a fronteira
+standalone atual: carrega o default empacotado,
 exige `schema_version`, rejeita chaves desconhecidas e versões futuras, e
 aplica a precedência CLI, ambiente allowlisted, arquivo e default.
 `config_effective.py` materializa no perfil selecionado os overrides explícitos
 de endpoint, modelo, temperatura, tokens, timeout e GBNF; assim doctor,
 `ChatSession` e provider observam a mesma configuração efetiva.
+
+`agent/runtime/config.py` permanece como módulo de compatibilidade usado por
+consumidores legados de configuração; ele não é o alias histórico removido da
+raiz nem a entrada standalone para novos workflows.
 
 `llm-agent config init` cria o arquivo de maneira atômica; `path` apenas mostra
 o destino; `validate` resolve e valida; `migrate --from` copia uma origem
@@ -134,9 +145,9 @@ corrente. Authority, capabilities e grants são verificados separadamente.
 - `task_report`: habilitação e formato; o diretório é definido pelos paths do
   workspace.
 
-## `paths.py` e `agent/runtime/paths.py`
+## `paths.py` (alias histórico removido) e `agent/runtime/paths.py`
 
-O arquivo da raiz é um alias. `AppPaths` separa configuração, dados, estado,
+O arquivo `paths.py` não existe mais na raiz. `AppPaths` separa configuração, dados, estado,
 cache e logs sem efeitos no construtor. `WorkspacePaths` particiona memória,
 checkpoint, métricas, relatórios, artifacts, histórico, benchmark, restore
 points, scratch e `task_definitions` pelo identificador estável do workspace.
@@ -148,18 +159,20 @@ persiste somente a `TaskDefinitionRef` compacta.
 como compatibilidade. O scratch standalone fica no cache da aplicação;
 `.temp_analysis/` é fallback das skills antigas.
 
-## `logger.py` e `agent/runtime/logging.py`
+## `logger.py` (alias histórico removido) e `agent/runtime/logging.py`
 
-O arquivo da raiz é um alias. Importar o módulo canônico não abre arquivo.
+O arquivo `logger.py` não existe mais na raiz. Importar o módulo canônico não
+abre arquivo.
 `AgentApplication` chama `setup_logger()` após resolver os paths, e
 `teardown_logger()` libera o lease no lifecycle. Instâncias compatíveis
 compartilham handlers por contagem de referências; destinos simultâneos
 incompatíveis são rejeitados.
 
-## `benchmark.py`
+## `benchmark.py` (alias histórico removido) e `scripts/benchmark.py`
 
-Fachada de `scripts.benchmark`, que executa o fluxo completo contra o backend
-configurado, mede duração/passos e grava o resultado no estado do workspace. É
+O arquivo `benchmark.py` não existe mais na raiz. `scripts/benchmark.py` executa
+o fluxo completo contra o backend configurado, mede duração/passos e grava o
+resultado no estado do workspace. É
 um teste de integração com modelo real, não uma avaliação hermética. As tarefas
 de benchmark podem criar os arquivos de exercício que declaram. Timeout é
 cooperativo: o benchmark solicita cancelamento e aguarda a chamada em voo
@@ -179,8 +192,8 @@ ou validação básica.
 ## `pyproject.toml`
 
 Define o pacote instalável, o comando `llm-agent`, dependências, extras, Ruff,
-pytest e mypy. O mypy descobre todo o pacote `agent`, scripts e fachadas da raiz,
-com `disallow_untyped_defs` e sem overrides por módulo.
+pytest e mypy. O mypy analisa o pacote `agent` e os scripts, com
+`disallow_untyped_defs` e sem overrides por módulo.
 
 ## Política de qualidade
 

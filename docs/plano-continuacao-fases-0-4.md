@@ -3,6 +3,12 @@
 > **STATUS: HISTORICAL RUNBOOK.** Não execute como plano CURRENT. Consulte o
 > [índice técnico](README.md) e os primary homes para o estado vigente.
 
+> **NOTA DE SUPERSSESSÃO (W8, 2026-09-02).** Os status de Gate e a orientação
+> sobre `AutoCoder` neste runbook são uma fotografia pré-W8. A Wave 8 foi
+> publicada e fechada; a arquitetura atual e a disposição do Gate 2.7c estão
+> descritas no [checkpoint PRE-V1](pre-v1-freeze.md). O texto original abaixo
+> é preservado para manter a proveniência histórica.
+
 ## 1. Objetivo e escopo
 
 Este runbook contém somente o trabalho ainda necessário depois da execução de

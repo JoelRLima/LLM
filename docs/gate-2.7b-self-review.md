@@ -4,6 +4,11 @@
 > pertencem ao gate encerrado; consulte [security](agent/security.md) para o
 > contrato CURRENT.
 
+> **ATUALIZAÇÃO PÓS-W8 (2026-09-02).** As referências ao Gate 2.7c e aos hooks
+> low-level abaixo preservam o snapshot pré-W8. Elas não são o estado
+> operacional atual: a Wave 8 foi publicada e fechada, e suas disposições estão
+> registradas no checkpoint [PRE-V1](pre-v1-freeze.md).
+
 ## Estado inicial
 
 - Baseline: `8959378f95acf95992d51207d0eb1d1fddb8860a` em `main`.

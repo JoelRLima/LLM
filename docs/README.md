@@ -86,9 +86,10 @@ transportes stdio.
 | [guia-extensao.md](guia-extensao.md) | localização de mudanças e workflow de extension |
 | [testes.md](testes.md) | pirâmide de testes e gates |
 | [estrutura-diretorios.md](estrutura-diretorios.md) | árvore lógica |
-| [arquivos-raiz.md](arquivos-raiz.md) | fachadas e arquivos da raiz |
+| [arquivos-raiz.md](arquivos-raiz.md) | arquivos da raiz e pontos canônicos |
 | [perfil-hardware.md](perfil-hardware.md) | profile de ambiente limitado, não contrato universal |
 | [legado.md](legado.md) | inventário CURRENT de compatibilidade/deprecação |
+| [pre-v1-freeze.md](pre-v1-freeze.md) | checkpoint arquitetural permanente do PRE-V1 |
 | [EstruturaProjeto.md](../EstruturaProjeto.md) | mapa secundário do código; este índice prevalece para ownership documental |
 
 ## ADRs
@@ -133,7 +134,7 @@ condições de retirada.
 | extension developer/admin workflow | `guia-extensao.md` |
 | install/startup/CLI/paths | `operacao-standalone.md` e, se afetar escopo, `plataforma-standalone.md` |
 | TaskGraph/scheduler | `multitarefa.md` e `agent/planning.md` |
-| layout | `estrutura-diretorios.md`; `arquivos-raiz.md` para fachadas |
+| layout | `estrutura-diretorios.md`; `arquivos-raiz.md` para arquivos da raiz e pontos canônicos |
 
 ## Estado de maturidade
 

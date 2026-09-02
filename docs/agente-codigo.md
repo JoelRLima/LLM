@@ -156,10 +156,12 @@ com `CREATE` ou `MODIFY` e `base_hash` quando o arquivo já existe. Quando há u
 
 No-op não é mutação física. Falha de commit não produz sucesso: o resultado
 expõe falha e informa o estado final (`restored`, `unknown` ou `unchanged`),
-conforme o ponto da falha e a restauração confirmada. O seam de compatibilidade `_save_code` do `AutoCoder` usa a mesma
-transação, a raiz do workspace pertencente ao contexto e `base_hash`, e registra
-a transação quando o manager está disponível. Essa mecânica não altera a
-exposição model-actionable nem substitui authority, approval ou `MutationEvidence`.
+conforme o ponto da falha e a restauração confirmada. No fluxo atual,
+`CodingApplicationService`/`CodingWorkflowService` submetem o `ChangeSet` à
+`ChangeSetTransaction`, usando a raiz do workspace pertencente ao contexto e
+`base_hash`; quando o manager está disponível, a transação é registrada para
+rollback. Essa mecânica não altera a exposição model-actionable nem substitui
+authority, approval ou `MutationEvidence`.
 
 ## Confiança e confirmação
 
@@ -254,7 +256,7 @@ do modelo não pode promover o estado da tarefa nem dispensar confirmação.
 
 ## Comandos explícitos `/code`
 
-`commands.py` converte a sintaxe diretamente em `CodeRequest` e chama
+`agent/code/commands.py` converte a sintaxe diretamente em `CodeRequest` e chama
 `CodingApplicationService`; `Orchestrator`, router e planner não participam:
 
 ```text

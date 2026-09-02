@@ -88,13 +88,15 @@ ordem pode mudar o reason code observado; essa precedência é diagnóstica e n�
 ## Enforcement model-actionable
 
 `ToolExecutor` exige `ToolInvocationGateway`; se o gateway não estiver montado,
-falha e não chama `LegacyToolInvoker`. O gateway deriva origem e capabilities
-do `ToolDescriptor`, valida o request e chama somente a entrada privada do
-registry após os checks. `ToolRegistry.invoke()` bloqueia extensions diretas.
+falha fechado. O gateway deriva origem e capabilities do `ToolDescriptor`,
+valida o request e chama somente a entrada privada do registry após os checks.
+`ToolRegistry.invoke()` bloqueia extensions diretas.
 
-APIs diretas de skills, adapters, registry e `LegacyToolInvoker` existem para
-testes, administração ou compatibilidade. Elas não são a superfície suportada
-para decisões do modelo e não devem ser apresentadas como um segundo gateway.
+APIs diretas de skills, adapters e registry podem existir em boundaries de
+teste/administração ou compatibilidade de baixo nível. Elas não são a superfície
+suportada para decisões do modelo e não devem ser apresentadas como um segundo
+gateway. O antigo `LegacyToolInvoker` foi removido; o caminho suportado usa
+somente `ToolInvocationGateway`.
 
 ## Authority na superficie de produto
 

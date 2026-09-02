@@ -120,8 +120,9 @@ As dependências apontam para contratos estreitos:
   valida o retorno;
 - `context_manager.py`: budget de saída e compressão do histórico; a memória
   serializada não recebe um budget independente no caminho atual;
-- `model_client.py`: fachada do planejador legado. Casos de uso novos usam
-  `ModelGateway` diretamente.
+- `session.py` e `session_requests.py`: histórico, requests tipados e delegação
+  do lifecycle de model call; casos de uso novos usam `ModelGateway` pela
+  fronteira canônica.
 
 Adicionar um provider não deve criar condicionais em workflows ou skills.
 
@@ -129,7 +130,7 @@ Adicionar um provider não deve criar condicionais em workflows ou skills.
 
 Contém o entry point, loop interativo, comandos, handlers, streaming e
 apresentação. Essa camada adapta terminal e input humano aos casos de uso; o
-domínio não a importa. Os arquivos homônimos da raiz são aliases temporários.
+domínio não a importa. Os antigos arquivos homônimos da raiz foram removidos.
 
 ### `agent/application.py`
 
@@ -157,7 +158,7 @@ grant. Interação de terminal pertence exclusivamente ao adapter da CLI.
 - `config_repository.py`, `config_schema.py` e `config_effective.py`:
   configuração versionada, precedência explícita, materialização do perfil,
   validação estrita e migração atômica;
-- `paths.py`: separação entre configuração, dados, estado, cache, logs e
+- `paths.py` (`agent/runtime/paths.py`): separação entre configuração, dados, estado, cache, logs e
   partições por workspace;
 - `workspace_context.py`: raiz absoluta, identidade estável e confinamento;
 - `state_migration.py`: cópia explícita, bloqueada, transacional e conservadora
@@ -176,7 +177,7 @@ token de cancelamento e o limite global de chamadas ao modelo.
 - `intelligence.py`: análise, índice, busca de símbolos e cache por hash;
 - `changes.py`: proposta, preparação, diff, commit, validação e rollback;
 - `application.py`: entrada única de CLI e skill para casos de uso de código;
-- `commands.py`: parser determinístico e sem efeitos de `/code`;
+- `commands.py` (`agent/code/commands.py`): parser determinístico e sem efeitos de `/code`;
 - `context_selection.py`: ranking por target, diretório, nome, símbolo e import;
 - `diagnostics.py`: classificação de falhas antes do reparo;
 - `path_safety.py`: normalização canônica e confinamento de caminhos do domínio;
@@ -417,8 +418,8 @@ no [guia de contribuição](CONTRIBUTING.md).
 
 A avaliação de capacidades em `agent/evaluation/` usa cenários herméticos e
 oráculos de filesystem, resposta e limites. Ela valida efeitos reais sem
-precisar de rede ou modelo. `benchmark.py` é separado e mede o fluxo completo
-com o backend configurado.
+precisar de rede ou modelo. `scripts/benchmark.py` é separado e mede o fluxo
+completo com o backend configurado.
 
 ## 10. Garantias e limitações
 

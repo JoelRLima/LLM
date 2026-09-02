@@ -47,17 +47,17 @@ LLM/
 │   │   ├── contracts.py            # ModelGateway e contratos normalizados
 │   │   ├── context_manager.py
 │   │   ├── grammars.py
-│   │   ├── model_client.py          # compatibilidade legada
 │   │   ├── prompts.py
 │   │   ├── router.py
-│   │   ├── session.py              # histórico e gateway da sessão
+│   │   ├── session.py              # histórico e requests tipados
+│   │   ├── session_requests.py     # delegação ao lifecycle de model call
 │   │   └── structured_output.py
 │   ├── memory/
 │   │   ├── memory.py               # estado persistente e SQLite
 │   │   ├── json_persistence.py     # promoção JSON atômica
 │   │   ├── prompt_context.py       # projeção enxuta para prompts
 │   │   └── semantic_memory.py      # camada semântica opcional
-│   ├── orchestration/              # ciclo da tarefa e composição do facade
+│   ├── orchestration/              # ciclo da tarefa e composição do runtime
 │   ├── planning/
 │   │   ├── execution_gateway.py
 │   │   ├── plan_builder.py
@@ -83,6 +83,8 @@ LLM/
 │   │   ├── config_effective.py     # overrides no perfil selecionado
 │   │   ├── config_repository.py    # init/load/migrate versionados
 │   │   ├── config_schema.py        # schema estrito da configuração
+│   │   ├── model_call.py            # lifecycle compartilhado de model call
+│   │   ├── model_call_stream.py     # consumo canônico de StreamEvent
 │   │   ├── paths.py                # AppPaths e WorkspacePaths
 │   │   ├── workspace_context.py    # raiz explícita e identidade estável
 │   │   ├── state_migration.py      # migração conservadora do legado
@@ -132,13 +134,7 @@ LLM/
 │   ├── regression/
 │   └── ...                          # testes agrupados por responsabilidade
 ├── .github/workflows/               # gates de CI
-├── benchmark.py                     # entry point compatível
-├── cli.py                           # entry point compatível
-├── commands.py                     # alias compatível
-├── config.py                       # alias compatível
 ├── config.example.json
-├── paths.py                        # alias compatível
-├── session.py                      # alias compatível
 ├── pyproject.toml
 ├── requirements-core.txt
 ├── requirements-ml.txt
@@ -149,6 +145,12 @@ LLM/
 ├── README.md
 └── EstruturaProjeto.md
 ```
+
+Os aliases Python históricos `benchmark.py`, `cli.py`, `commands.py`,
+`config.py`, `paths.py` e `session.py` foram removidos da raiz. O entrypoint
+instalado é `llm-agent` (`agent.interfaces.cli.app:main`) e o benchmark atual
+fica em `scripts/benchmark.py`; compatibilidades restantes estão catalogadas
+em [legado.md](legado.md).
 
 ## Regras de localização
 

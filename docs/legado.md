@@ -56,11 +56,13 @@ fachadas abaixo foram removidas depois da migração dos consumidores internos.
 - A confirmação de checkpoint por retorno `None`; somente `True` explícito de
   `CheckpointManager.save(...)` confirma persistência.
 - `LegacyEventSinkAdapter` e o surface
-  `agent/runtime/event_dispatch.py::LegacyEventSinkAdapter` (`W7-W02`); sinks
-  repository-controlled usam apenas `RuntimeEvent` pelo dispatcher canônico.
+  `agent/runtime/event_dispatch.py::LegacyEventSinkAdapter` (`W7-W02`) foram
+  removidos; sinks repository-controlled usam apenas `RuntimeEvent` pelo
+  dispatcher canônico.
 - `agent/planning/reasoning_boundary.py::_call_extension` (`W7-W05`) e
-  `agent/planning/plan_builder.py::legacy_reviewer` (`W7-W08`); o seam usa
-  assinatura explícita e o reviewer exige o relatório tipado.
+  `agent/planning/plan_builder.py::legacy_reviewer` (`W7-W08`) foram removidos.
+  O seam vivo é `call_extension_boundary`, com assinatura suportada explícita,
+  e o reviewer vivo exige o relatório tipado.
 
 ### Ledger exato de remoções Wave 7
 
@@ -219,16 +221,16 @@ uma facade de source/API.
   deve ser retirada somente após a janela de compatibilidade e os imports
   downstream suportados serem aposentados.
 
-## Adiado para W8 com evidência bloqueante
+## Adiado para W8 com evidência bloqueante (histórico; disposições encerradas)
 
-Nenhuma compatibilidade de código produtivo permanece adiada para W9. A
-fronteira `legacy_stdio_compatibility` permanece explicitamente suportada e
-está classificada como `RETAIN_SUPPORTED_BOUNDARY` no inventário final
-`.audit-local/WAVE_8_W7_DEFER_DISPOSITIONS.md`; referências permanentes de
-`docs/` fora deste inventário aguardam a sincronização pós-W8.
+Nenhuma compatibilidade de código produtivo permanece adiada após a Wave 8. A
+fronteira `legacy_stdio_compatibility` permanece explicitamente suportada e é
+uma boundary delimitada de transporte/dados, não um owner alternativo de
+execução. O estado arquitetural consolidado está em
+[`pre-v1-freeze.md`](pre-v1-freeze.md).
 
-## Fora do escopo desta Wave
+## Contexto documental histórico
 
-Referências históricas em outros documentos permanentes permanecem anotadas
-em `.audit-local/WAVE_8_DEFERRED_DOC_SYNC.md` para a sincronização consolidada
-pós-W8. Não há compatibilidade removida mantida por um novo alias.
+Referências históricas em outros documentos permanentes preservam a decisão e
+o contexto da época com notas de supersessão; não são instruções operacionais
+atuais. Não há compatibilidade removida mantida por um novo alias.

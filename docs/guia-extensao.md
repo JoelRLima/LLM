@@ -166,9 +166,12 @@ Um workflow deve:
   semântica exata;
 - emitir artifacts e diagnósticos úteis à revisão.
 
-Não adicione novos fluxos ao `AutoCoder`; ele é uma fachada de compatibilidade.
-Se o caso de uso também for exposto na CLI e na skill, adicione-o primeiro a
-`CodingApplicationService`, mantendo essas duas bordas finas.
+Adicione novos fluxos ao `CodingApplicationService`, que é a entrada
+compartilhada pela CLI e pela skill, mantendo essas duas bordas finas. A
+aplicação delega o workflow a `CodingWorkflowService` e aplica mudanças por
+`ChangeSetTransaction`; não crie uma entrada paralela para alteração de código.
+`AutoCoder` é um nome histórico removido, não uma fachada de compatibilidade
+suportada.
 
 ## Adicionar uma tarefa concorrente
 

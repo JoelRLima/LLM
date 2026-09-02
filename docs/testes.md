@@ -11,8 +11,8 @@ relato deve registrar comando, host e resultado realmente observado.
 
 - pytest: executar na matriz suportada e reportar cada ambiente separadamente;
 - Ruff: repositório limpo;
-- mypy: pacote `agent`, scripts e fachadas da raiz analisados para Linux e
-  Windows, sem erros e sem overrides por módulo;
+- mypy: pacote `agent` e scripts analisados para Linux e Windows, sem erros e
+  sem overrides por módulo;
 - quality policy: zero exceções de complexidade/tamanho, fontes Python do projeto
   visíveis ao Git, limites arquiteturais, links locais válidos e textos em
   UTF-8 sem BOM;
@@ -102,7 +102,7 @@ instalado sem produzir escrita indevida.
 | [`test_capability_evaluation.py`](../tests/integration/test_capability_evaluation.py) | cenários herméticos, efeitos no filesystem, respostas, allowlist e limites |
 | [`test_model_gateway.py`](../tests/unit/llm/test_model_gateway.py) | perfil legado/novo, payload no adapter, resposta, stream e capacidades |
 | [`test_structured_output.py`](../tests/unit/llm/test_structured_output.py) | JSON Schema, GBNF, fallback por prompt e validação runtime |
-| [`test_session.py`](../tests/unit/runtime/test_session.py) | histórico e fachada de compatibilidade da sessão |
+| [`test_session.py`](../tests/unit/runtime/test_session.py) | histórico, requests tipados e lifecycle delegado da sessão |
 | [`test_grammar.py`](../tests/unit/llm/test_grammar.py) | seleção/fallback GBNF do caminho legado |
 
 As seis fixtures em `tests/fixtures/capabilities/` representam analyze,

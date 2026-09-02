@@ -7,6 +7,13 @@
 - Escopo: Gate 2.7b
 - Data: 2026-08-08
 
+> **ATUALIZAÇÃO PÓS-W8 (2026-09-02).** O parágrafo sobre o Gate 2.7c abaixo é
+> uma fotografia da decisão histórica e não descreve o estado operacional atual.
+> A Wave 8 publicou as disposições de ownership e compatibilidade, mantendo a
+> boundary stdio explícita e o `ToolInvocationGateway` como gateway canônico.
+> Para o estado atual, consulte o [hub técnico](../README.md) e o
+> [checkpoint PRE-V1](../pre-v1-freeze.md).
+
 ## Contexto
 
 O bootstrap publica um `ToolRegistry` congelado e uma

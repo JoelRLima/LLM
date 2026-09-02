@@ -23,7 +23,8 @@ necessidade.
 | memória semântica | desabilitada por default | evita stack ML e modelo de embeddings |
 
 Os limites de contexto, saída, concorrência e reparo vêm de
-`agent/runtime/hardware.py`; o orçamento de 20 chamadas vem de `config.py`.
+`agent/runtime/hardware.py`; o orçamento de 20 chamadas vem da configuração
+carregada por `agent/runtime/config_repository.py`.
 O arquivo exibido por `llm-agent config path` pode sobrescrever limites
 operacionais, mas
 `max_model_concurrency: 1` é o valor recomendado para essa placa.

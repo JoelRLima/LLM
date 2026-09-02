@@ -18,16 +18,18 @@ JSON.
 | `agent/llm/providers/factory.py` | seleciona o perfil e cria o adapter |
 | `agent/llm/providers/openai_compatible.py` | HTTP, Chat Completions, `choices`, SSE, GBNF, reasoning específico e `/tokenize` |
 | `agent/llm/structured_output.py` | escolhe schema nativo, GBNF ou JSON por prompt e valida o retorno |
-| `session.py` | histórico da conversa e fachada temporária para consumidores legados |
-| `agent/llm/model_client.py` | fachada de compatibilidade que traduz payloads e delega decisões a `structured_output`; casos de uso internos usam `ModelGateway` + `structured_output` |
+| `agent/llm/session.py` | histórico da conversa e construção de requests tipados na fronteira da sessão |
+| `agent/runtime/model_call.py` | lifecycle canônico de completion/stream, admissão, orçamento e observabilidade; delega transporte ao gateway |
 
-`ChatSession` ainda expõe `build_payload`, `send_request` e `process_stream` para
-não quebrar a CLI e o executor legado. As fachadas de completion traduzem para
-o contrato canônico. A chamada legada `send_request(stream=False)` preserva o
-objeto raw retornado por `gateway.send_payload` e contabiliza a tentativa na
-mesma `TaskBudgetLedger`; o stream raw em duas fases permanece explicitamente
-deferred até a migração dos callers públicos. O parsing de protocolo não
-permanece na sessão.
+`ChatSession` mantém o histórico e constrói `ModelRequest` tipados. As entradas
+`complete_request` e `consume_stream_request` delegam o lifecycle canônico ao
+`ModelCallService`, que faz a admissão, a contabilização e a chamada de
+`ModelGateway.complete` ou `ModelGateway.stream`. Adapters de provider continuam
+responsáveis pelo payload e pelo protocolo de transporte, produzindo ou
+projetando `StreamEvent`. O consumo canônico desses eventos ocorre em
+`ModelCallService.stream()` por meio de
+`agent.runtime.model_call_stream.consume_events`; isso não cria um segundo owner
+de chamadas de modelo. O parsing de protocolo não permanece na sessão.
 
 `UnavailableModelGateway` representa explicitamente a ausência de backend. Ele
 permite que análise e review construam um contexto sem modelo e falha fechada se
@@ -156,8 +158,7 @@ Não importe o adapter em `agent/code`, `agent/planning`, skills ou workflows.
 
 - existe um adapter real embutido: OpenAI-compatible;
 - a detecção automática de capacidades não substitui configuração explícita;
-- `ModelClient` permanece apenas como compatibilidade payload sobre a política
-  canônica; o planejador linear,
-  router, resposta final e resumo usam o gateway canônico;
+- o planejador linear, router, resposta final e resumo usam o lifecycle de
+  `ModelCallService` e o gateway canônico;
 - contagem exata depende do endpoint, caso contrário o runtime usa estimativa;
 - trocar provider não elimina diferenças de qualidade entre modelos.

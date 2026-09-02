@@ -129,8 +129,8 @@ classificado como `HIERARCHICAL_RESUME_UNSUPPORTED` e bloqueado de forma
 fail-closed, em vez de ser pseudo-retomado.
 Falha da tarefa aciona
 rollback do `WorkspaceManager`; transações registradas, inclusive as criadas
-por `code_task`, `FileWriter` ou o seam de correção do `AutoCoder`, são
-revertidas antes dos restore points legados. No domínio `code_task`,
+por `code_task` ou `FileWriter`, são revertidas antes dos restore points
+legados. No domínio `code_task`,
 `ChangeSet`/`FileChange`/`ChangeSetTransaction` possuem o próprio
 commit/validation/rollback transacional.
 
