@@ -3,6 +3,7 @@ import pytest
 from agent.cancellation import CancellationToken
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.hardware import LOW_VRAM_8GB, resolve_hardware_profile
 
 
@@ -15,8 +16,8 @@ class RecordingSink:
     def __init__(self):
         self.events = []
 
-    def emit(self, event_type, data):
-        self.events.append((event_type, data))
+    def emit(self, event: RuntimeEvent):
+        self.events.append(event)
 
 
 class RecordingMetrics:
@@ -51,7 +52,7 @@ def test_child_context_is_correlated_and_keeps_limits():
     assert child.parent_task_id == parent.task_id
     assert child.task_id != parent.task_id
     assert child.permissions == frozenset({"read"})
-    assert sink.events[0][1]["node_id"] == "analysis"
+    assert sink.events[0].node_id == "analysis"
     assert child.model_gate is parent.model_gate
     assert child.process_gate is parent.process_gate
     assert child.budget_ledger is parent.budget_ledger

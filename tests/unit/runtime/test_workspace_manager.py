@@ -47,6 +47,24 @@ def test_workspace_manager_rejects_paths_outside_workspace(tmp_path):
         manager.lint_check("../outside.py")
 
 
+def test_workspace_manager_expands_user_shorthand_before_confinement(tmp_path, monkeypatch):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    manager = WorkspaceManager(workspace_root=workspace, restore_points_dir=tmp_path / "restore")
+    expanded = tmp_path / "home" / "outside.py"
+    original_expanduser = Path.expanduser
+
+    def expanduser(path: Path) -> Path:
+        if str(path) == "~/outside.py":
+            return expanded
+        return original_expanduser(path)
+
+    monkeypatch.setattr(Path, "expanduser", expanduser)
+
+    with pytest.raises(ValueError, match="fora do workspace"):
+        manager.resolve_path("~/outside.py")
+
+
 def test_validation_delegates_to_canonical_service(tmp_path):
     workspace = tmp_path / "workspace"
     source = workspace / "src" / "sample.py"

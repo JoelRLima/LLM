@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from agent.cancellation import CancellationToken
-from agent.code.path_safety import resolve_workspace_path
 from agent.runtime.context import ProcessConcurrencyGate
+from agent.runtime.path_safety import resolve_workspace_path
 
 WINDOWS_NEW_PROCESS_GROUP = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 UNSAFE_VALIDATION_ENV = frozenset(

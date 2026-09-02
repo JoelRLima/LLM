@@ -1,12 +1,11 @@
 """Persistent progress tracking for hierarchical execution."""
 
-import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, cast
 
 from agent.execution_state import StepStatus
-from agent.memory.json_persistence import write_json_atomic
+from agent.memory.json_persistence import write_json_atomic, write_text_atomic
 from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.task_tracker_rendering import render_markdown, step_to_dict
 from agent.runtime.logging import logger
@@ -179,10 +178,7 @@ class TaskTracker:
 
     @staticmethod
     def _atomic_write(path: str, content: str) -> None:
-        temporary = f"{path}.tmp"
-        with open(temporary, "w", encoding="utf-8") as stream:
-            stream.write(content)
-        os.replace(temporary, path)
+        write_text_atomic(path, content)
 
     def _write_json(self) -> None:
         try:

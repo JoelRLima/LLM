@@ -11,7 +11,7 @@ from typing import Dict, Sequence, cast
 from agent.code.context_excerpt import excerpt_from_source
 from agent.code.contracts import CodeAnalysis, RepositoryIndex
 from agent.code.intelligence import CodeIntelligenceService
-from agent.code.path_safety import resolve_workspace_path
+from agent.runtime.path_safety import resolve_workspace_path
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _STOPWORDS = frozenset(

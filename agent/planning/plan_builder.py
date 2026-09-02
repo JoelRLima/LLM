@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from agent.llm.admitted_decisions import (
     DirectResponseDecision,
@@ -130,20 +130,11 @@ class PlanBuilder:
             return True, None
         state = getattr(self.orchestrator, "agent_state", None)
         report_reviewer = getattr(state, "review_task_obligations_report", None)
-        legacy_reviewer = getattr(state, "review_task_obligations", None)
-        if not callable(report_reviewer) and not callable(legacy_reviewer):
+        if not callable(report_reviewer):
             return False, None
         try:
-            if callable(report_reviewer):
-                reviewed = report_reviewer(obligations, source=source)
-                accepted = reviewed.accepted
-            else:
-                reviewed = cast(Callable[..., Any], legacy_reviewer)(
-                    obligations,
-                    source=source,
-                    collect_rejections=True,
-                )
-                accepted = tuple(reviewed)
+            reviewed = report_reviewer(obligations, source=source)
+            accepted = reviewed.accepted
         except (TaskSemanticsError, TypeError, ValueError):
             return False, None
         return (

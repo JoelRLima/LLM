@@ -13,6 +13,7 @@ from dataclasses import dataclass
 REMOVE = "REMOVE"
 MIGRATE_THEN_REMOVE = "MIGRATE_THEN_REMOVE"
 RETAIN_PERSISTENCE_CONTRACT = "RETAIN_PERSISTENCE_CONTRACT"
+RETAIN_SUPPORTED_BOUNDARY = "RETAIN_SUPPORTED_BOUNDARY"
 RECLASSIFY_CANONICAL = "RECLASSIFY_CANONICAL"
 DEFER_TO_W8_WITH_BLOCKING_EVIDENCE = "DEFER_TO_W8_WITH_BLOCKING_EVIDENCE"
 
@@ -21,6 +22,7 @@ DISPOSITIONS = frozenset(
         REMOVE,
         MIGRATE_THEN_REMOVE,
         RETAIN_PERSISTENCE_CONTRACT,
+        RETAIN_SUPPORTED_BOUNDARY,
         RECLASSIFY_CANONICAL,
         DEFER_TO_W8_WITH_BLOCKING_EVIDENCE,
     }
@@ -160,14 +162,19 @@ LEDGER = (
     _edge("W7-C08", "agent/orchestration/operations.py", "_emit_checkpoint_event", RECLASSIFY_CANONICAL, "canonical runtime event owner", "checkpoint operation", "checkpoint event history", "helper now delegates only to the canonical emitter and carries no legacy field construction", "no retirement; canonical operation helper"),
     _edge("W7-C09", "agent/skills/__init__.py", "load_all_skills", RECLASSIFY_CANONICAL, "SkillRegistry", "health and regression skill collection callers", "none", "stable ordered collection projection over the canonical registry, not a compatibility facade", "no retirement; canonical collection helper"),
 
+    # The package historically shipped this import path.  It remains a narrow
+    # source-compatibility projection while all repository-owned code imports
+    # the runtime owner directly.
+    _edge("W8-PATH-01", "agent/code/path_safety.py", "<module>", RETAIN_SUPPORTED_BOUNDARY, "agent.runtime.path_safety", "external imports of the historically shipped submodule; no productive repository consumer", "none", "package source compatibility is retained without a second confinement implementation", "remove after the supported compatibility window and downstream imports are retired"),
+
     # Explicitly bounded edges requiring a later coordinated contract change.
-    _edge("W7-W01", "agent/runtime/paths.py", "<module>", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "WorkspacePaths", "broad process/runtime path consumers", "legacy runtime state locations", "removal requires broad path injection beyond the current scope", "W8 path-injection design and consumer migration"),
-    _edge("W7-W01A", "agent/orchestrator.py", "resolve_user_path", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "WorkspaceManager.resolve_path", "AgentSubsystems -> ToolExecutor/StepPolicies; direct lightweight orchestrator test doubles", "workspace-scoped file operations", "the no-WorkspacePaths fallback preserves broad construction compatibility and removing it requires coordinated path injection", "W8 path-injection design, constructor contract, and consumer migration"),
-    _edge("W7-W02", "agent/runtime/event_dispatch.py", "LegacyEventSinkAdapter", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "canonical runtime event sink", "external sinks and observability tests", "historical event projections", "external sink protocol coordination is not complete", "W8 sink contract migration with downstream evidence"),
-    _edge("W7-W03", "agent/tools/builtin_adapter.py", "<module>", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "BuiltinToolAdapter", "SkillRegistry extension boundary", "installed extension metadata", "external registry adapter still translates a supported extension boundary", "W8 extension registry contract migration"),
-    _edge("W7-W04", "agent/skills/policy.py", "<module>", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "skill policy contract", "extension descriptors and legacy step validation", "persisted skill descriptors", "external extension descriptors still require a coordinated policy contract", "W8 extension policy migration"),
-    _edge("W7-W05", "agent/planning/reasoning_boundary.py", "_call_extension", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "canonical extension seam", "installed/test extensions", "none", "old extension call signatures remain at a narrow external seam", "W8 extension signature migration and downstream evidence"),
-    _edge("W7-W08", "agent/planning/plan_builder.py", "legacy_reviewer", DEFER_TO_W8_WITH_BLOCKING_EVIDENCE, "typed obligation reviewer", "older orchestrator/test doubles", "none", "reviewer signature migration requires coordinated extension/test-double changes", "W8 reviewer port migration"),
+    _edge("W7-W01", "agent/runtime/paths.py", "<module>", RECLASSIFY_CANONICAL, "WorkspacePaths", "explicit bootstrap and process-level compatibility callers", "legacy runtime state locations", "WorkspacePaths remains the canonical process-level path owner while productive task composition injects its instance explicitly", "no retirement; retain only the explicit process-level path boundary"),
+    _edge("W7-W01A", "agent/orchestrator.py", "resolve_user_path", RECLASSIFY_CANONICAL, "WorkspaceManager.resolve_path", "AgentSubsystems -> ToolExecutor/StepPolicies and direct test fixtures", "workspace-scoped file operations", "productive resolution always delegates to the WorkspaceManager and no longer guesses a path from a missing WorkspacePaths injection", "no retirement; canonical workspace path authority"),
+    _edge("W7-W02", "agent/runtime/event_dispatch.py", "LegacyEventSinkAdapter", REMOVE, "RuntimeEventDispatcher", "repository-controlled sinks and observability tests", "historical event projections", "the adapter had no external installed consumer; all repository sinks consume RuntimeEvent and historical readers remain read-only", "already absent; no replacement sink call shape"),
+    _edge("W7-W03", "agent/tools/builtin_adapter.py", "<module>", RECLASSIFY_CANONICAL, "BuiltinToolAdapter", "SkillRegistry and explicit extension admission boundary", "installed extension metadata", "BuiltinToolAdapter owns the explicit SkillRegistry-to-ToolResult boundary and does not expose a generic plugin facade", "no retirement; canonical builtin adapter boundary"),
+    _edge("W7-W04", "agent/skills/policy.py", "<module>", RECLASSIFY_CANONICAL, "skill policy contract", "extension descriptor projection and planning admission", "persisted skill descriptors", "the module owns the typed project extension-descriptor projection used by planning and bootstrap", "no retirement; canonical skill policy projection"),
+    _edge("W7-W05", "agent/planning/reasoning_boundary.py", "_call_extension", REMOVE, "canonical extension seam", "installed/test extensions through the explicit boundary", "none", "the old call shape was replaced by signature-aware keyword selection with no TypeError retry", "already absent; callers use call_extension_boundary"),
+    _edge("W7-W08", "agent/planning/plan_builder.py", "legacy_reviewer", REMOVE, "typed obligation reviewer", "orchestrator and test doubles through the typed reviewer port", "none", "the special legacy reviewer branch was removed; reviewer reports are required to be typed", "already absent; no replacement reviewer facade"),
     _edge("W7-W09", "agent/planning/result_bindings.py", "_resolve_ordinal", RETAIN_PERSISTENCE_CONTRACT, "typed binding resolver", "model/checkpoint binding readers", "historical binding data", "raw reference resolution is restricted to a persisted/model binding boundary", "remove after old binding shapes are retired"),
     _edge("W7-W10", "agent/runtime/failure_policy.py", "failure_fact_for_result", RETAIN_PERSISTENCE_CONTRACT, "canonical FailureFact", "result/failure boundary", "historical result records", "one explicit legacy result shape is classified without inferring policy from text", "remove after historical result records are retired"),
 )
@@ -215,6 +222,7 @@ __all__ = [
     "RECLASSIFY_CANONICAL",
     "REMOVE",
     "RETAIN_PERSISTENCE_CONTRACT",
+    "RETAIN_SUPPORTED_BOUNDARY",
     "find_edge",
     "validate_ledger",
 ]

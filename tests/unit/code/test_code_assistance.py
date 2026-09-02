@@ -184,7 +184,11 @@ def test_change_policy_fails_closed_for_external_paths(tmp_path: Path):
 
 
 def test_failure_classifier_prevents_retry_after_permission_error():
-    result = TaskResult(TaskStatus.BLOCKED, error="Capacidades ausentes para modify: write")
+    result = TaskResult(
+        TaskStatus.BLOCKED,
+        error="Capacidades ausentes para modify: write",
+        failure_code="PERMISSION_DENIED",
+    )
 
     classification = FailureClassifier().classify(result)
 
@@ -192,10 +196,40 @@ def test_failure_classifier_prevents_retry_after_permission_error():
     assert classification.retryable is False
 
     unavailable = FailureClassifier().classify(
-        TaskResult(TaskStatus.FAILED, error="Esta operação exige um ModelGateway configurado.")
+        TaskResult(
+            TaskStatus.FAILED,
+            error="Esta operação exige um ModelGateway configurado.",
+            failure_code="TOOL_UNAVAILABLE",
+        )
     )
     assert unavailable.category == FailureCategory.TOOL_UNAVAILABLE
     assert unavailable.retryable is False
+
+
+def test_failure_classifier_ignores_human_error_text_without_structured_fact():
+    result = TaskResult(
+        TaskStatus.FAILED,
+        error="permission denied and timeout; please retry",
+    )
+
+    classification = FailureClassifier().classify(result)
+
+    assert classification.category is FailureCategory.UNKNOWN
+    assert classification.retryable is False
+
+
+def test_failure_classifier_projects_structured_output_diagnostic_from_fact():
+    result = TaskResult(
+        TaskStatus.FAILED,
+        error="arbitrary provider wording",
+        diagnostics=({"code": "STRUCTURED_OUTPUT_FAILURE", "message": "arbitrary"},),
+        failure_code="MODEL_PROVIDER_ERROR",
+    )
+
+    classification = FailureClassifier().classify(result)
+
+    assert classification.category is FailureCategory.STRUCTURED_OUTPUT
+    assert classification.retryable is True
 
 
 def test_change_policy_factory_fails_closed_for_unvalidated_config():

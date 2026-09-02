@@ -7,6 +7,7 @@ import time
 from agent.cancellation import CancellationToken
 from agent.code.multitask import CodingTaskNodeExecutor
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
+from agent.llm.model_profile import resolve_gateway_model_profile
 from agent.planning.task_graph import ResourceMode, TaskGraph, TaskNode, TaskResource
 from agent.planning.task_resources import (
     WORKSPACE_RESOURCE,
@@ -146,6 +147,7 @@ def test_model_generated_disjoint_targets_with_shared_changeset_never_overlap(
     provider = FakeProposalProvider()
     context = TaskExecutionContext(
         model_gateway=provider,
+        model_profile=resolve_gateway_model_profile({}, provider),
         cancellation=CancellationToken(),
         limits=RuntimeLimits(max_model_concurrency=2),
         permissions=frozenset({"read", "write", "validate"}),

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from agent.memory.json_persistence import write_text_atomic
 from agent.runtime.config_effective import apply_selected_profile_overrides
 from agent.runtime.config_environment import environment_config
 from agent.runtime.config_errors import ConfigError, ConfigNotFound, ConfigVersionError
@@ -246,29 +246,10 @@ class ConfigRepository:
 
     @staticmethod
     def _write_atomic(path: Path, document: Mapping[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            dir=path.parent,
+        write_text_atomic(
+            path,
+            json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-                json.dump(
-                    document,
-                    handle,
-                    ensure_ascii=False,
-                    indent=2,
-                    sort_keys=True,
-                )
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
 
 
 __all__ = [

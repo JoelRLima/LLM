@@ -31,14 +31,14 @@ class AgentSubsystems:
     @property
     def workspace(self) -> WorkspaceManager:
         paths = self.orchestrator.workspace_paths
+        if paths is None:
+            raise RuntimeError("workspace subsystem requires explicit WorkspacePaths")
         return self._get(
             "workspace",
             lambda: WorkspaceManager(
                 verbose=self.orchestrator.verbose,
                 workspace_root=self.orchestrator.workspace_root,
-                restore_points_dir=(
-                    paths.restore_points_dir if paths is not None else None
-                ),
+                restore_points_dir=paths.restore_points_dir,
                 validation_config=self.orchestrator.session.config.get("validation"),
             ),
         )

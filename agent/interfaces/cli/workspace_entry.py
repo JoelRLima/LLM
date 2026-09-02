@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, cast
 
+from agent.memory.json_persistence import AtomicJsonWriteError, write_json_atomic
 from agent.runtime.workspace_context import WorkspaceContext
 
 
@@ -24,6 +24,21 @@ def canonical_workspace(path: str | Path) -> Path:
     """Resolve and validate one user-selected workspace."""
 
     return cast(Path, WorkspaceContext.create(path).root)
+
+
+def workspace_storage_path(ctx: Any, attribute: str, filename: str) -> str | Path:
+    """Return a path supplied by the active workspace authority."""
+
+    workspace_paths = getattr(ctx, "workspace_paths", None)
+    if workspace_paths is None:
+        raise RuntimeError("workspace storage requires explicit WorkspacePaths")
+    selected = getattr(workspace_paths, attribute, None)
+    if selected is None:
+        raise RuntimeError(
+            f"workspace storage authority does not provide {attribute}"
+        )
+    del filename
+    return cast(str | Path, selected)
 
 
 def load_last_workspace(app_paths: Any) -> Path | None:
@@ -54,27 +69,8 @@ def remember_workspace(app_paths: Any, workspace: str | Path) -> None:
     try:
         root = canonical_workspace(workspace)
         destination = Path(path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
-        )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-                json.dump(
-                    {"schema_version": 1, "workspace": str(root)},
-                    handle,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, destination)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
-    except (OSError, TypeError, ValueError):
+        write_json_atomic(destination, {"schema_version": 1, "workspace": str(root)})
+    except (AtomicJsonWriteError, OSError, TypeError, ValueError):
         # The optional convenience must never make a valid startup fail.
         return
 

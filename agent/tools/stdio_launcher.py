@@ -136,6 +136,12 @@ def launcher_status_error(status_path: Path) -> tuple[str, str] | None:
     return "LAUNCHER_STATUS_ERROR", "status privado invalido"
 
 
+def launcher_status_failure(status_path: Path | None) -> tuple[str, str] | None:
+    if status_path is None:
+        return "LAUNCHER_STATUS_ERROR", "status privado ausente"
+    return launcher_status_error(status_path)
+
+
 def _validate_envelope(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict) or set(payload) != _REQUIRED_FIELDS:
         raise ValueError("envelope privado invalido")

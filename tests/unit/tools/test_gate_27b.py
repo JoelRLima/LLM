@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
+from agent.runtime.events import RuntimeEvent
+from agent.runtime.paths import WorkspacePaths
 from agent.skills.descriptor import SkillDescriptor, SkillSpec
 from agent.skills.echo import EchoSkill
 from agent.skills.registry import SkillRegistry
@@ -39,6 +45,17 @@ class _Adapter:
         return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, data=self.result)
 
 
+def _workspace_paths(tmp_path: Path) -> WorkspacePaths:
+    paths = WorkspacePaths(
+        workspace_id="gate-27b",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    paths.ensure_directories()
+    return paths
+
+
 def _extension(
     *, name: str = "external", capabilities: frozenset[str] = frozenset({"read"})
 ) -> ToolDescriptor:
@@ -52,7 +69,24 @@ def _extension(
     )
 
 
-def _bound_gateway(adapter: _Adapter, *, task: TaskAuthoritySnapshot | None = None, approval=None):
+def _event_projection(events: list[tuple[str, dict[str, object]]]) -> tuple[RuntimeEventDispatcher, RunCorrelation]:
+    correlation = RunCorrelation.fresh()
+
+    def collect(event: RuntimeEvent) -> None:
+        payload = event.to_legacy_dict()["data"]
+        assert isinstance(payload, dict)
+        events.append((event.kind.value, payload))
+
+    return RuntimeEventDispatcher([collect]), correlation
+
+
+def _bound_gateway(
+    adapter: _Adapter,
+    *,
+    task: TaskAuthoritySnapshot | None = None,
+    approval=None,
+    events: list[tuple[str, dict[str, object]]] | None = None,
+):
     identity = RuntimeSnapshotIdentity("snapshot-a", "workspace-a")
     registry = ToolRegistry(identity)
     registry.register_adapter(adapter)
@@ -61,11 +95,19 @@ def _bound_gateway(adapter: _Adapter, *, task: TaskAuthoritySnapshot | None = No
         identity,
         extension_grants={"demo.extension": frozenset(adapter._descriptor.capabilities)},
     )
+    gateway_kwargs = {}
+    if events is not None:
+        dispatcher, correlation = _event_projection(events)
+        gateway_kwargs.update(
+            event_dispatcher=dispatcher,
+            correlation_provider=lambda: correlation,
+        )
     return ToolInvocationGateway(
         registry,
         application_authority=authority,
         task_authority=task,
         approval_port=approval or AutoApprove(),
+        **gateway_kwargs,
     ), registry, identity
 
 
@@ -174,8 +216,8 @@ def test_approval_denial_is_structured_and_has_no_start() -> None:
         adapter,
         task=TaskAuthoritySnapshot(frozenset({"write"}), runtime_identity=identity),
         approval=Reject(),
+        events=events,
     )
-    gateway.event_emitter = lambda kind, data: events.append((kind, data))
     result = gateway.run("external", {})
     assert result.error is not None
     assert result.error.code == "APPROVAL_DENIED"
@@ -253,20 +295,30 @@ def test_adapter_failure_has_one_terminal_event() -> None:
     adapter = _Adapter(ToolDescriptor("builtin", "builtin"), error=RuntimeError("boom"))
     registry = ToolRegistry()
     registry.register_adapter(adapter)
-    events: list[str] = []
-    gateway = ToolInvocationGateway(registry, event_emitter=lambda kind, data: events.append(kind))
+    events: list[tuple[str, dict[str, object]]] = []
+    dispatcher, correlation = _event_projection(events)
+    gateway = ToolInvocationGateway(
+        registry,
+        event_dispatcher=dispatcher,
+        correlation_provider=lambda: correlation,
+    )
     result = gateway.run("builtin", {})
     assert result.status is ToolStatus.FAILED
-    assert events == ["tool_start", "tool_end"]
+    assert [kind for kind, _ in events] == ["tool_start", "tool_end"]
 
 
-def test_direct_orchestrator_builtin_routing_uses_gateway() -> None:
+def test_direct_orchestrator_builtin_routing_uses_gateway(tmp_path: Path) -> None:
     session = ChatSession(
         "system",
         {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
         gateway=object(),
     )
-    orchestrator = Orchestrator(session, [EchoSkill()])
+    orchestrator = Orchestrator(
+        session,
+        [EchoSkill()],
+        workspace_root=tmp_path,
+        workspace_paths=_workspace_paths(tmp_path),
+    )
 
     assert orchestrator.tool_invocation_gateway is not None
     result = orchestrator.tool_executor.run_tool("echo", {"message": "canonical"})
@@ -275,7 +327,9 @@ def test_direct_orchestrator_builtin_routing_uses_gateway() -> None:
     assert result["data"] == "canonical"
 
 
-def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass() -> None:
+def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass(
+    tmp_path: Path,
+) -> None:
     class CustomEcho:
         name = "custom_echo"
         description = "custom echo"
@@ -293,7 +347,11 @@ def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass() ->
         {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
         gateway=object(),
     )
-    orchestrator = Orchestrator(session)
+    orchestrator = Orchestrator(
+        session,
+        workspace_root=tmp_path,
+        workspace_paths=_workspace_paths(tmp_path),
+    )
     skill = CustomEcho()
     orchestrator.register_skill(skill)
 
@@ -302,7 +360,9 @@ def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass() ->
     assert skill.calls == 0
 
 
-def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gateway() -> None:
+def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gateway(
+    tmp_path: Path,
+) -> None:
     class CustomEcho:
         name = "custom_echo"
         description = "custom echo"
@@ -328,7 +388,12 @@ def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gatewa
         {"api_url": "http://127.0.0.1:1", "model": "test", "timeout": 1},
         gateway=object(),
     )
-    orchestrator = Orchestrator(session, skill_registry=metadata)
+    orchestrator = Orchestrator(
+        session,
+        skill_registry=metadata,
+        workspace_root=tmp_path,
+        workspace_paths=_workspace_paths(tmp_path),
+    )
 
     assert orchestrator.tool_invocation_gateway is not None
     result = orchestrator.tool_executor.run_tool("custom_echo", {"message": "metadata"})
@@ -336,3 +401,47 @@ def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gatewa
     assert result["ok"] is True
     assert result["data"] == "metadata"
     assert skill.calls == 1
+
+
+def test_orchestrator_requires_explicit_workspace_authority(tmp_path: Path) -> None:
+    session = ChatSession("system", {}, gateway=object())
+    paths = _workspace_paths(tmp_path)
+
+    with pytest.raises(ValueError, match="explicit WorkspacePaths"):
+        Orchestrator(session, workspace_root=tmp_path, workspace_paths=None)
+
+    with pytest.raises(ValueError, match="explicit workspace_root"):
+        Orchestrator(session, workspace_paths=paths)
+
+
+def test_orchestrator_rejects_malformed_root_without_cwd_fallback(
+    tmp_path: Path,
+) -> None:
+    root_file = tmp_path / "root-file"
+    root_file.write_text("not a workspace", encoding="utf-8")
+
+    with pytest.raises(NotADirectoryError):
+        Orchestrator(
+            ChatSession("system", {}, gateway=object()),
+            workspace_root=root_file,
+            workspace_paths=_workspace_paths(tmp_path / "authority"),
+        )
+
+    with pytest.raises(FileNotFoundError):
+        Orchestrator(
+            ChatSession("system", {}, gateway=object()),
+            workspace_root=tmp_path / "missing-root",
+            workspace_paths=_workspace_paths(tmp_path / "missing-authority"),
+        )
+
+
+def test_direct_orchestrator_does_not_invent_test_runtime_storage(
+    tmp_path: Path,
+) -> None:
+    Orchestrator(
+        ChatSession("system", {}, gateway=object()),
+        workspace_root=tmp_path,
+        workspace_paths=_workspace_paths(tmp_path),
+    )
+
+    assert not (tmp_path / ".test_runtime").exists()

@@ -1,6 +1,6 @@
 # Compatibilidade e retirada de legado
 
-> **STATUS: CURRENT — WAVE 7 INVENTORY.** Este arquivo é a fotografia viva das
+> **STATUS: CURRENT — WAVE 8 INVENTORY.** Este arquivo é a fotografia viva das
 > compatibilidades que permanecem. Não é diário de Wave nem changelog.
 
 O caminho instalado e suportado é `llm-agent`, apontando para
@@ -55,6 +55,12 @@ fachadas abaixo foram removidas depois da migração dos consumidores internos.
   `RuntimeEventDispatcher` canônico e seu observer de checkpoint.
 - A confirmação de checkpoint por retorno `None`; somente `True` explícito de
   `CheckpointManager.save(...)` confirma persistência.
+- `LegacyEventSinkAdapter` e o surface
+  `agent/runtime/event_dispatch.py::LegacyEventSinkAdapter` (`W7-W02`); sinks
+  repository-controlled usam apenas `RuntimeEvent` pelo dispatcher canônico.
+- `agent/planning/reasoning_boundary.py::_call_extension` (`W7-W05`) e
+  `agent/planning/plan_builder.py::legacy_reviewer` (`W7-W08`); o seam usa
+  assinatura explícita e o reviewer exige o relatório tipado.
 
 ### Ledger exato de remoções Wave 7
 
@@ -179,6 +185,14 @@ formato antigo, não a criação de uma nova API de fonte.
   `agent.runtime.context_results.TaskResult`, como contratos canônicos vivos.
 - `ConfigRepository.migrate()`, como operação administrativa explícita de
   migração de configuração; a leitura normal usa `ConfigRepository.load()`.
+- `agent/runtime/paths.py::<module>` (`W7-W01`) permanece como owner explícito
+  de caminhos process-level; consumidores produtivos recebem `WorkspacePaths`.
+- `agent/orchestrator.py::resolve_user_path` (`W7-W01A`) delega sempre ao
+  `WorkspaceManager.resolve_path`.
+- `agent/tools/builtin_adapter.py::<module>` (`W7-W03`) é a fronteira canônica
+  explícita entre `SkillRegistry` e `ToolResult`.
+- `agent/skills/policy.py::<module>` (`W7-W04`) projeta descritores admitidos
+  para o planejamento e o bootstrap.
 
 ### Ledger exato de reclassificações canônicas
 
@@ -196,34 +210,25 @@ uma facade de source/API.
 - `W7-C08` | `agent/orchestration/operations.py::_emit_checkpoint_event` | owner: canonical runtime event owner | consumers: checkpoint operation | durable: checkpoint event history | motivo: helper delega somente ao emitter canônico, sem construção legacy | condição: não retirar; helper canônico.
 - `W7-C09` | `agent/skills/__init__.py::load_all_skills` | owner: `SkillRegistry` | consumers: health e regression skill collection callers | durable: none | motivo: projeção ordenada estável do registry canônico, não facade | condição: não retirar; helper de coleção canônico.
 
+## Retido como compatibilidade de import de pacote
+
+- `W8-PATH-01` | `agent/code/path_safety.py::<module>` permanece como uma
+  facade estreita de compatibilidade para o submódulo historicamente incluído
+  no pacote. Ela apenas reexporta `agent.runtime.path_safety`; código produtivo
+  controlado pelo repositório importa diretamente o owner runtime. A facade
+  deve ser retirada somente após a janela de compatibilidade e os imports
+  downstream suportados serem aposentados.
+
 ## Adiado para W8 com evidência bloqueante
 
-- `agent/runtime/paths.py` ainda expõe constantes process-globais e possui
-  consumidores amplos; removê-las exige injeção de caminhos além do escopo
-  estreito desta Wave.
-- `LegacyEventSinkAdapter` mantém a fronteira de sinks externos e testes de
-  observabilidade; sua remoção exige migração coordenada dos sinks.
-- `legacy_stdio_compatibility` é a fronteira controlada do protocolo stdio;
-  a substituição exigiria sincronização de protocolo, launcher e exemplos.
-- `docs/` permanente contém referências históricas não executáveis; a dívida
-  está registrada no arquivo local de documentação deferida.
-
-### Ledger exato de adiamentos W8
-
-Todas as linhas são `DEFER_TO_W8_WITH_BLOCKING_EVIDENCE`; cada bloqueador é
-uma mudança coordenada de contrato/consumidores, não uma permissão para
-manter uma facade de source/API sem justificativa.
-
-- `W7-W01` | `agent/runtime/paths.py::<module>` | owner: `WorkspacePaths` | consumers: broad process/runtime path consumers | durable: legacy runtime locations | bloqueador: path injection amplo fora do escopo | condição: W8 path-injection design e migração.
-- `W7-W01A` | `agent/orchestrator.py::resolve_user_path` | owner: `WorkspaceManager.resolve_path` | consumers: `AgentSubsystems` → `ToolExecutor`/`StepPolicies` e lightweight test doubles | durable: workspace-scoped file operations | bloqueador: fallback sem `WorkspacePaths` exige injeção coordenada | condição: W8 path-injection design, constructor contract e migração.
-- `W7-W02` | `agent/runtime/event_dispatch.py::LegacyEventSinkAdapter` | owner: canonical runtime event sink | consumers: external sinks/observability tests | durable: historical event projections | bloqueador: coordenação do protocolo de sinks | condição: W8 sink contract migration com evidence.
-- `W7-W03` | `agent/tools/builtin_adapter.py::<module>` | owner: `BuiltinToolAdapter` | consumers: SkillRegistry extension boundary | durable: installed extension metadata | bloqueador: adapter externo ainda traduz boundary suportada | condição: W8 extension registry migration.
-- `W7-W04` | `agent/skills/policy.py::<module>` | owner: skill policy contract | consumers: extension descriptors/legacy step validation | durable: persisted skill descriptors | bloqueador: contrato de policy de extensões | condição: W8 extension policy migration.
-- `W7-W05` | `agent/planning/reasoning_boundary.py::_call_extension` | owner: canonical extension seam | consumers: installed/test extensions | durable: none | bloqueador: assinaturas antigas no seam externo | condição: W8 extension signature migration e evidence.
-- `W7-W08` | `agent/planning/plan_builder.py::legacy_reviewer` | owner: typed obligation reviewer | consumers: older orchestrator/test doubles | durable: none | bloqueador: migração coordenada do reviewer port | condição: W8 reviewer-port migration.
+Nenhuma compatibilidade de código produtivo permanece adiada para W9. A
+fronteira `legacy_stdio_compatibility` permanece explicitamente suportada e
+está classificada como `RETAIN_SUPPORTED_BOUNDARY` no inventário final
+`.audit-local/WAVE_8_W7_DEFER_DISPOSITIONS.md`; referências permanentes de
+`docs/` fora deste inventário aguardam a sincronização pós-W8.
 
 ## Fora do escopo desta Wave
 
 Referências históricas em outros documentos permanentes permanecem anotadas
-em `.audit-local/WAVE_7_DEFERRED_DOC_SYNC.md` para a sincronização consolidada
-pós-base. Não há compatibilidade removida mantida por um novo alias.
+em `.audit-local/WAVE_8_DEFERRED_DOC_SYNC.md` para a sincronização consolidada
+pós-W8. Não há compatibilidade removida mantida por um novo alias.

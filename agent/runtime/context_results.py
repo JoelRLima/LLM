@@ -26,6 +26,7 @@ class TaskResult:
     diagnostics: tuple[Dict[str, Any], ...] = ()
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    failure_code: Optional[str] = None
 
     @property
     def ok(self) -> bool:

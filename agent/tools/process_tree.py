@@ -1,5 +1,4 @@
 """Process-tree lifecycle helpers for external tool extensions."""
-
 from __future__ import annotations
 
 import os
@@ -10,11 +9,10 @@ from typing import Any
 
 _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+_WAIT_OBJECT_0, _WAIT_TIMEOUT, _WAIT_FAILED = 0, 258, 0xFFFFFFFF
 _WINDOWS_TASKKILL_TIMEOUT_SECONDS = 2
 _PROCESS_WAIT_TIMEOUT_SECONDS = 1
 _POSIX_TERM_GRACE_SECONDS = 0.5
-
-
 def _trusted_taskkill_path() -> str | None:
     """Return the canonical Windows taskkill executable, never a bare name."""
 
@@ -32,8 +30,6 @@ def _trusted_taskkill_path() -> str | None:
         return str(resolved)
     except (OSError, ValueError):
         return None
-
-
 def _windows_system_directory() -> str | None:
     """Read the system directory from Win32, never from inherited env vars."""
 
@@ -69,8 +65,6 @@ def process_group_id(process: subprocess.Popen[Any]) -> int | None:
         return getpgid(process.pid) if getpgid is not None else process.pid
     except OSError:
         return process.pid
-
-
 def _configure_windows_api(kernel32: Any, ctypes: Any, wintypes: Any) -> None:
     """Declare the Win32 ABI explicitly so HANDLEs are never truncated."""
 
@@ -87,10 +81,10 @@ def _configure_windows_api(kernel32: Any, ctypes: Any, wintypes: Any) -> None:
     kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
     kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
     kernel32.TerminateJobObject.restype = wintypes.BOOL
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
-
-
 def create_windows_job() -> Any:
     """Create a kill-on-close job object for an extension process tree."""
 
@@ -144,8 +138,6 @@ def create_windows_job() -> Any:
         return kernel32, handle
     except (AttributeError, OSError, TypeError, ValueError):
         return None
-
-
 def assign_windows_job(job: Any, process: subprocess.Popen[Any]) -> bool:
     if job is None:
         return False
@@ -157,8 +149,6 @@ def assign_windows_job(job: Any, process: subprocess.Popen[Any]) -> bool:
         return bool(kernel32.AssignProcessToJobObject(handle, process_handle))
     except (AttributeError, OSError, TypeError, ValueError):
         return False
-
-
 def close_windows_job(job: Any) -> bool:
     if job is None:
         return True
@@ -167,8 +157,6 @@ def close_windows_job(job: Any) -> bool:
         return bool(kernel32.CloseHandle(handle))
     except (AttributeError, OSError, TypeError, ValueError):
         return False
-
-
 def terminate_windows_job(job: Any) -> bool:
     if job is None:
         return False
@@ -177,8 +165,21 @@ def terminate_windows_job(job: Any) -> bool:
         return bool(kernel32.TerminateJobObject(handle, 1))
     except (AttributeError, OSError, TypeError, ValueError):
         return False
-
-
+def _wait_for_windows_job(job: Any, timeout_seconds: float) -> str | None:
+    if job is None:
+        return None
+    kernel32, handle = job
+    try:
+        result = int(kernel32.WaitForSingleObject(handle, int(timeout_seconds * 1000)))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return "falha ao aguardar terminacao do Job Object"
+    if result == _WAIT_OBJECT_0:
+        return None
+    if result == _WAIT_TIMEOUT:
+        return "Job Object nao confirmou terminacao da arvore"
+    if result == _WAIT_FAILED:
+        return "WaitForSingleObject falhou ao confirmar terminacao da arvore"
+    return f"WaitForSingleObject retornou {result} ao confirmar terminacao da arvore"
 def _kill_process_group(group_id: int, sig: int) -> str | None:
     killpg = getattr(os, "killpg", None)
     if killpg is None:
@@ -193,7 +194,6 @@ def _kill_process_group(group_id: int, sig: int) -> str | None:
     except OSError as exc:
         return f"falha ao sinalizar grupo {group_id}: {exc}"
     return None
-
 
 def _terminate_posix_process(
     process: subprocess.Popen[Any], process_group_id: int | None
@@ -235,13 +235,17 @@ def _terminate_posix_process(
         return kill_error
     return term_error
 
-
 def _terminate_windows_process(
     process: subprocess.Popen[Any], windows_job: Any
 ) -> str | None:
     job_terminated = terminate_windows_job(windows_job)
+    job_wait_error = (
+        _wait_for_windows_job(windows_job, _PROCESS_WAIT_TIMEOUT_SECONDS)
+        if job_terminated
+        else None
+    )
     taskkill_failed = False
-    if not job_terminated or process.poll() is None:
+    if not job_terminated or job_wait_error is not None or process.poll() is None:
         taskkill = _trusted_taskkill_path()
         try:
             if taskkill is None:
@@ -258,11 +262,10 @@ def _terminate_windows_process(
             taskkill_failed = completed.returncode != 0
         except (OSError, subprocess.TimeoutExpired):
             taskkill_failed = True
-        if process.poll() is None:
-            try:
-                process.terminate()
-            except OSError:
-                pass
+        try:
+            process.terminate()
+        except OSError:
+            pass
     try:
         process.wait(timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -271,10 +274,13 @@ def _terminate_windows_process(
             process.wait(timeout=_PROCESS_WAIT_TIMEOUT_SECONDS)
         except (OSError, subprocess.TimeoutExpired):
             return "processo Windows nao terminou apos escalada"
+    if windows_job is not None and (not job_terminated or job_wait_error is not None):
+        job_wait_error = _wait_for_windows_job(windows_job, _PROCESS_WAIT_TIMEOUT_SECONDS)
+        if job_wait_error is not None:
+            return job_wait_error
     if taskkill_failed and not job_terminated:
         return "Job Object indisponivel e taskkill nao confirmou cleanup da arvore"
     return None
-
 
 def terminate_process(
     process: subprocess.Popen[Any],

@@ -88,17 +88,14 @@ def _decode_proposal(
 
 def _proposal_request(service: Any, prompt: str, structured: Any) -> ModelRequest:
     profile = getattr(service.context, "model_profile", None)
-    model = getattr(
-        profile,
-        "model",
-        service.context.metadata.get("model", "default"),
-    )
+    if profile is None or not isinstance(getattr(profile, "model", None), str):
+        raise RuntimeError("workflow proposal requires the resolved model profile")
     return ModelRequest(
         messages=(
             ModelMessage("system", "Você propõe mudanças revisáveis. Não escreva no filesystem."),
             ModelMessage("user", prompt),
         ),
-        model=str(model),
+        model=profile.model,
         temperature=0.1,
         max_output_tokens=service.context.limits.max_output_tokens,
         structured_output=structured,

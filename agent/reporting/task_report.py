@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
+from agent.memory.json_persistence import write_text_atomic
 from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.metrics import project_run_metrics
 from agent.reporting.observation_evidence import project_tool_observation
@@ -173,10 +174,7 @@ class TaskReportBuilder:
         if isinstance(receipt, dict):
             receipt["report_path"] = str(path)
         content = json.dumps(report, indent=2, ensure_ascii=False, default=str) if selected == "json" else render_markdown(report)
-        temporary = f"{path}.tmp"
-        with open(temporary, "w", encoding="utf-8") as stream:
-            stream.write(content)
-        os.replace(temporary, path)
+        write_text_atomic(path, content)
         return path
 
     @staticmethod

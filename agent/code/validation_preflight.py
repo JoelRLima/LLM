@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from agent.code.discovery import IGNORED_DIRECTORIES
-from agent.code.path_safety import is_link_like, resolve_workspace_path
+from agent.runtime.path_safety import is_link_like, resolve_workspace_path
 
 
 def find_external_link(

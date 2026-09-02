@@ -8,6 +8,9 @@ from agent.approval import AutoApprove
 from agent.execution_incidents import MAX_EXECUTION_INCIDENTS, MAX_INCIDENT_FILES
 from agent.reporting.operational_outcome import project_operational_outcome
 from agent.reporting.run_receipt import build_run_receipt
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
+from agent.runtime.events import RuntimeEvent
 from agent.state import AgentState
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
 from agent.tools.invocation_gateway import ToolInvocationGateway
@@ -26,6 +29,17 @@ class _EchoAdapter:
 
     def invoke(self, invocation: ToolInvocation) -> ToolResult:
         return ToolResult(invocation.invocation_id, ToolStatus.SUCCEEDED, data="ok")
+
+
+def _event_projection(events: list[tuple[str, dict[str, object]]]) -> tuple[RuntimeEventDispatcher, RunCorrelation]:
+    correlation = RunCorrelation.fresh()
+
+    def collect(event: RuntimeEvent) -> None:
+        payload = event.to_legacy_dict()["data"]
+        assert isinstance(payload, dict)
+        events.append((event.kind.value, payload))
+
+    return RuntimeEventDispatcher([collect]), correlation
 
 
 def test_semantic_rejection_leaves_all_canonical_projections_unchanged() -> None:
@@ -60,13 +74,15 @@ def test_semantic_rejection_leaves_all_canonical_projections_unchanged() -> None
 
 def test_gateway_publishes_unverified_when_canonical_commit_fails() -> None:
     events: list[tuple[str, dict[str, object]]] = []
+    dispatcher, correlation = _event_projection(events)
 
     def failing_recorder(_name: str, _args: dict[str, object], _result: ToolResult) -> None:
         raise RuntimeError("semantic commit rejected")
 
     gateway = ToolInvocationGateway(
         _registry(_EchoAdapter()),
-        event_emitter=lambda kind, data: events.append((kind, data)),
+        event_dispatcher=dispatcher,
+        correlation_provider=lambda: correlation,
         state_recorder=failing_recorder,
     )
     request = ToolInvocationRequest("commit-failure", "echo_commit")

@@ -69,6 +69,11 @@ def confined_process_environment(
     environment["GIT_CONFIG_GLOBAL"] = os.devnull
     environment["GIT_ATTR_NOSYSTEM"] = "1"
     environment["GIT_CONFIG_NOSYSTEM"] = "1"
+    # Git may otherwise discover a repository in an ancestor of the injected
+    # workspace (including the host checkout that contains a test workspace).
+    # Keep discovery local to this workspace while still allowing a repository
+    # rooted directly at the workspace itself.
+    environment["GIT_CEILING_DIRECTORIES"] = str(workspace.root.parent)
     environment["GIT_OPTIONAL_LOCKS"] = "0"
     environment["GIT_NO_LAZY_FETCH"] = "1"
     environment["GIT_PAGER"] = "cat"

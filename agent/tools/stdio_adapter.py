@@ -25,6 +25,7 @@ from agent.tools.extension_manifest_parser import (
 )
 from agent.tools.extension_manifest_parser import (
     ManifestParseError,
+    ManifestParserMode,
     ManifestProtocolError,
     ManifestStructureError,
     load_extension_manifest_bytes,
@@ -35,7 +36,6 @@ from agent.tools.stdio_process import ProcessFailure, run_stdio_process
 SUPPORTED_PROTOCOL = _SUPPORTED_PROTOCOL
 MAX_OUTPUT_BYTES = 1_048_576
 MAX_STDERR_BYTES = 1_048_576
-
 
 @dataclass(frozen=True)
 class ExtensionManifest:
@@ -49,7 +49,6 @@ class ExtensionManifest:
     timeout_seconds: int
     tools: Tuple[Dict[str, Any], ...] = field(default_factory=tuple)
 
-
 @dataclass(frozen=True, slots=True)
 class _ManifestSnapshot:
     id: str
@@ -60,13 +59,12 @@ class _ManifestSnapshot:
     timeout_seconds: int
     tools: Tuple[FrozenJsonObject, ...]
 
-
-def load_extension_manifest(path: str | Path) -> ExtensionManifest:
+def _load_extension_manifest(path: str | Path, *, mode: ManifestParserMode) -> ExtensionManifest:
     manifest_path = Path(path).expanduser().resolve()
     try:
         parsed = load_extension_manifest_bytes(
             manifest_path.read_bytes(),
-            mode="legacy_stdio_compatibility",
+            mode=mode,
         )
     except ManifestProtocolError as exc:
         raise ValueError(str(exc)) from None
@@ -82,6 +80,15 @@ def load_extension_manifest(path: str | Path) -> ExtensionManifest:
         tools=parsed.tools,
     )
 
+def load_extension_manifest(path: str | Path) -> ExtensionManifest:
+    """Read the historical stdio path API at its explicit protocol boundary."""
+
+    return _load_extension_manifest(path, mode="legacy_stdio_compatibility")
+
+def load_strict_extension_manifest(path: str | Path) -> ExtensionManifest:
+    """Read a manifest for registry/bootstrap use with strict catalog rules."""
+
+    return _load_extension_manifest(path, mode="strict_catalog")
 
 class StdioToolAdapter(ToolAdapter):
     """Executes a stdio-based tool extension as a subprocess."""

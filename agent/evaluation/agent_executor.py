@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 import time
 from collections.abc import Mapping
@@ -18,7 +17,6 @@ from agent.llm.identity import (
 from agent.llm.identity import (
     unavailable_observed_identity,
 )
-from agent.planning.plan_model import serialize_plan
 from agent.reporting.run_projection_facts import thaw_projection
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -83,45 +81,17 @@ class AgentApplicationScenarioExecutor:
             ) as application:
                 result = application.run(objective)
                 snapshot = result.snapshot
-                if snapshot is not None:
-                    projection = snapshot_evaluation_projection(snapshot)
-                    history = projection["history"]
-                    canonical_plan = projection["canonical_plan"]
-                    route_events = projection["route_events"]
-                    validation_events = projection["validation_events"]
-                else:
-                    history = list(application.orchestrator.agent_state.tool_history)
-                    canonical_plan = serialize_plan(
-                        application.orchestrator.agent_state.plan
-                    )
-                    events = list(application.orchestrator.agent_state.events)
-                    route_events = [
-                        event
-                        for event in events
-                        if isinstance(event, dict)
-                        and event.get("type") in {
-                            "hierarchical_started",
-                            "hierarchical_completed",
-                            "hierarchical_fallback",
-                            "continuation_plan_proposed",
-                            "hard_block",
-                            "task_outcome",
-                        }
-                    ]
-                    validation_events = [
-                        event
-                        for event in events
-                        if isinstance(event, dict)
-                        and event.get("type") in {
-                            "hard_block", "plan_created", "plan_extended", "replan",
-                            "tool_denied", "error",
-                        }
-                    ]
+                if snapshot is None:
+                    raise RuntimeError("canonical run snapshot is required for evaluation")
+                projection = snapshot_evaluation_projection(snapshot)
+                history = projection["history"]
+                canonical_plan = projection["canonical_plan"]
+                route_events = projection["route_events"]
+                validation_events = projection["validation_events"]
                 last = history[-1] if history else {}
                 raw = last.get("result", {}) if isinstance(last, Mapping) else {}
                 raw = raw if isinstance(raw, Mapping) else {}
                 data = raw.get("data")
-                output = json.dumps(data, ensure_ascii=False, default=str) if data is not None else ""
                 invocation_ids = [
                     entry.get("invocation_id")
                     for entry in history
@@ -129,23 +99,9 @@ class AgentApplicationScenarioExecutor:
                 ]
                 metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
                 metadata = metadata if isinstance(metadata, dict) else {}
-                canonical_metrics = (
-                    snapshot.metrics.to_dict()
-                    if snapshot is not None
-                    else dict(result.receipt.get("metrics", {}))
-                    if isinstance(result.receipt, dict)
-                    and isinstance(result.receipt.get("metrics"), dict)
-                    else {}
-                )
-                correlation = (
-                    snapshot.correlation.as_dict()
-                    if snapshot is not None
-                    else dict(result.receipt.get("correlation", {}))
-                    if isinstance(result.receipt, dict)
-                    and isinstance(result.receipt.get("correlation"), dict)
-                    else {}
-                )
-                runtime_status = snapshot.status if snapshot is not None else result.status
+                canonical_metrics = snapshot.metrics.to_dict()
+                correlation = snapshot.correlation.as_dict()
+                runtime_status = snapshot.status
                 runtime_run_id = correlation.get("run_id")
                 runtime_root_task_id = correlation.get("root_task_id")
                 runtime_task_id = correlation.get("task_id")
@@ -167,16 +123,8 @@ class AgentApplicationScenarioExecutor:
                     ],
                     "terminal_outcome": runtime_status,
                     "error": (result.error or str(raw.get("error") or ""))[:500],
-                    "output_chars": (
-                        projection["output_chars"]
-                        if snapshot is not None
-                        else int(metadata.get("total_chars", len(output)))
-                    ),
-                    "truncated": (
-                        projection["output_truncated"]
-                        if snapshot is not None
-                        else bool(metadata.get("truncated", False))
-                    ),
+                    "output_chars": projection["output_chars"],
+                    "truncated": projection["output_truncated"],
                     "tool_history_count": len(history),
                     "tool_calls": canonical_metrics.get("tool_calls", 0),
                     "model_calls": canonical_metrics.get("model_calls", 0),

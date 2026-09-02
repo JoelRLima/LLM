@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from agent.runtime.paths import AppPaths
 from agent.tools.extension_registry import ExtensionRegistry
-from agent.tools.stdio_adapter import load_extension_manifest
+from agent.tools.stdio_adapter import load_strict_extension_manifest
 
 
 def run_doctor(
@@ -146,7 +146,7 @@ def run_tools(
             manifest_path = entry.manifest_path
             exists = manifest_path.exists()
             if exists:
-                manifest = load_extension_manifest(manifest_path)
+                manifest = load_strict_extension_manifest(manifest_path)
                 print(f"{entry.id}: OK ({manifest.id}@{manifest.version})")
             else:
                 print(f"{entry.id}: MISSING MANIFEST")

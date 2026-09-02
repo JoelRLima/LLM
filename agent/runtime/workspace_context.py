@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent.runtime.path_safety import WorkspacePathError, resolve_workspace_path
+
 
 def _workspace_id(root: Path) -> str:
     normalized = os.path.normcase(str(root))
@@ -38,11 +40,10 @@ class WorkspaceContext:
         return cls(root=resolved, workspace_id=_workspace_id(resolved))
 
     def resolve(self, path: str | Path, *, must_exist: bool = False) -> Path:
-        requested = Path(path).expanduser()
-        candidate = requested.resolve() if requested.is_absolute() else (self.root / requested).resolve()
         try:
-            candidate.relative_to(self.root)
-        except ValueError as exc:
+            requested = Path(path).expanduser()
+            candidate = resolve_workspace_path(self.root, requested)
+        except WorkspacePathError as exc:
             raise PermissionError(f"Caminho fora do workspace: {path}") from exc
         if must_exist and not candidate.exists():
             raise FileNotFoundError(f"Caminho não encontrado no workspace: {path}")

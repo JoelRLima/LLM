@@ -26,6 +26,7 @@ from agent.tools.stdio_launcher import (
     prepare_launcher,
     remove_status_file,
 )
+from agent.tools.stdio_launcher import launcher_status_failure as launcher_status_failure_for_path
 from agent.tools.stdio_streams import StreamCapture as _StreamCapture
 from agent.tools.stdio_streams import close_pipes as _close_pipes
 from agent.tools.stdio_streams import drain_stream as _drain_stream  # noqa: F401
@@ -34,7 +35,6 @@ from agent.tools.stdio_streams import start_readers as _start_readers
 
 CLEANUP_TIMEOUT_SECONDS = 2.0
 
-
 @dataclass(frozen=True)
 class ProcessFailure:
     status: ToolStatus
@@ -42,12 +42,10 @@ class ProcessFailure:
     detail: str
     message: str
 
-
 @dataclass(frozen=True)
 class ProcessOutcome:
     completed: subprocess.CompletedProcess[Any] | None = None
     failure: ProcessFailure | None = None
-
 @dataclass
 class _ProcessContext:
     process: subprocess.Popen[Any]
@@ -75,7 +73,6 @@ def _limit_failure(
         return _failure(ToolStatus.PROTOCOL_ERROR, "STDERR_OUTPUT_LIMIT", f"Saída stderr da extensão excedeu o limite de {stderr_limit} bytes.", "Saída stderr da extensão excedeu o limite.")
     return None
 
-
 def _monitor_process(context: _ProcessContext, timeout_seconds: int, stdout_limit: int, stderr_limit: int, cancellation_token: Any | None = None, cancellation_event: Event | None = None) -> Optional[ProcessFailure]:
     deadline = time.monotonic() + timeout_seconds
     while context.process.poll() is None:
@@ -92,7 +89,6 @@ def _monitor_process(context: _ProcessContext, timeout_seconds: int, stdout_limi
         except subprocess.TimeoutExpired:
             continue
     return None
-
 
 def _join_readers(context: _ProcessContext) -> ProcessFailure | None:
     if context.readers_stopped:
@@ -131,7 +127,6 @@ def _join_readers(context: _ProcessContext) -> ProcessFailure | None:
             "Falha ao ler a saida da extensao.",
         )
     return None
-
 def _cleanup(
     context: _ProcessContext | None, *, terminate_tree: bool = False
 ) -> ProcessFailure | None:
@@ -165,7 +160,6 @@ def _cleanup(
             "Nao foi possivel finalizar a arvore da extensao.",
         )
     return reader_failure
-
 
 def _start_process(
     entrypoint: Tuple[str, ...], cwd: Path | None, stdout_limit: int, stderr_limit: int
@@ -213,14 +207,17 @@ def _start_process(
             raise _stdio_cleanup.PreContextCleanupError(exc, cleanup_detail, status_detail) from exc
         raise
 
-
 def _build_outcome(
-    context: _ProcessContext, stdout_limit: int, stderr_limit: int
+    context: _ProcessContext,
+    stdout_limit: int,
+    stderr_limit: int,
+    *,
+    check_launcher_status: bool = True,
 ) -> ProcessOutcome:
     limit_failure = _limit_failure(context.stdout, context.stderr, stdout_limit, stderr_limit)
     if limit_failure is not None:
         return ProcessOutcome(failure=limit_failure)
-    if os.name == "nt":
+    if os.name == "nt" and check_launcher_status:
         status_path = context.status_path
         if status_path is None:
             return ProcessOutcome(
@@ -253,7 +250,6 @@ def _build_outcome(
         return ProcessOutcome(failure=_failure(ToolStatus.PROTOCOL_ERROR, "INVALID_RESPONSE", str(exc), "Resposta inválida da extensão."))
     return ProcessOutcome(completed=subprocess.CompletedProcess(context.process.args, context.process.returncode, stdout_text, stderr))
 
-
 def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_seconds: int, payload: dict[str, Any], stdout_limit: int, stderr_limit: int, cancellation_token: Any | None = None, cancellation_event: Event | None = None) -> ProcessOutcome:
     context: _ProcessContext | None = None
     try:
@@ -269,16 +265,24 @@ def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_
             cleanup_failure = _cleanup(context, terminate_tree=True)
             return ProcessOutcome(failure=cleanup_failure or failure)
         context.process.wait()
-        reader_failure = _join_readers(context)
-        if reader_failure is not None:
-            cleanup_failure = _cleanup(context, terminate_tree=True)
-            return ProcessOutcome(failure=cleanup_failure or reader_failure)
-        outcome = _build_outcome(context, stdout_limit, stderr_limit)
-        # A successful response still owns the whole launcher process group.
-        # Closing pipes is insufficient when a descendant redirected them.
+        launcher_status_failure = (
+            launcher_status_failure_for_path(context.status_path) if os.name == "nt" else None
+        )
+        # A completed parent still owns the whole launcher process group.  Kill
+        # descendants before waiting for EOF: inherited stdio handles otherwise
+        # keep the reader threads blocked indefinitely.
         cleanup_failure = _cleanup(context, terminate_tree=True)
         if cleanup_failure is not None:
             return ProcessOutcome(failure=cleanup_failure)
+        outcome = _build_outcome(
+            context,
+            stdout_limit,
+            stderr_limit,
+            check_launcher_status=False,
+        )
+        if launcher_status_failure is not None:
+            code, detail = launcher_status_failure
+            return ProcessOutcome(failure=_failure(ToolStatus.UNAVAILABLE, code, detail, "Falha interna ao iniciar a extensao."))
         return outcome
     except _stdio_cleanup.PreContextCleanupError as exc:
         return ProcessOutcome(failure=_failure(*_stdio_cleanup.failure_parts(exc)))
@@ -290,8 +294,6 @@ def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_
         return ProcessOutcome(failure=_failure(ToolStatus.UNAVAILABLE, "PROCESS_ERROR", str(exc), "Não foi possível iniciar o processo da extensão."))
     finally:
         _cleanup(context, terminate_tree=True)
-
-
 def _safe_environment() -> dict[str, str]:
     """Allow only process essentials; secrets are never inherited by default."""
     allowed = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"}

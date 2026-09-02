@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Sequence
 
 from agent.code.contracts import ProjectProfile
-from agent.code.path_safety import (
+from agent.code.validation_process import CommandSpec
+from agent.runtime.path_safety import (
     resolve_workspace_path,
     workspace_command_argument,
 )
-from agent.code.validation_process import CommandSpec
 
 _SYNTAX_VALIDATION_CODE = (
     "import pathlib,sys;"

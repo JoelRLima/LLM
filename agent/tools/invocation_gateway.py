@@ -38,9 +38,7 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin, I
         self,
         registry: ToolRegistry,
         *,
-        event_emitter: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         event_dispatcher: Any = None,
-        event_sink: Any = None,
         correlation_provider: Callable[[], Any] | None = None,
         event_fields_provider: Callable[[], Any] | None = None,
         state_recorder: Optional[Callable[[str, Dict[str, Any], ToolResult], None]] = None,
@@ -55,8 +53,7 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin, I
         budget_ledger: TaskBudgetLedger | None = None,
     ) -> None:
         self.registry = registry
-        self.event_emitter = event_emitter
-        self.event_dispatcher = event_dispatcher or event_sink
+        self.event_dispatcher = event_dispatcher
         self.correlation_provider = correlation_provider
         self.event_fields_provider = event_fields_provider
         self.state_recorder = state_recorder

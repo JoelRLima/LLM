@@ -12,7 +12,6 @@ from agent.planning.hierarchical_executor import HierarchicalExecutor
 from agent.planning.hierarchical_planner import HierarchicalPlanner
 from agent.reporting.incremental_summarizer import IncrementalSummarizer
 from agent.reporting.task_tracker import TaskTracker
-from agent.runtime import paths
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
@@ -28,6 +27,7 @@ class HierarchicalExecutionService:
         self.orchestrator = orchestrator
 
     def run(self, objective: str, on_chunk: Callable[[str], None] | None = None) -> RouteResult:
+        self._require_workspace_paths()
         planning = self._planning_context()
         if isinstance(planning, RouteResult):
             return planning
@@ -101,18 +101,10 @@ class HierarchicalExecutionService:
     def _execute_macro_plan(
         self, macro_plan: Any, objective: str, on_chunk: Callable[[str], None] | None
     ) -> str | RouteResult | None:
-        workspace_paths = self.orchestrator.workspace_paths
+        workspace_paths = self._require_workspace_paths()
         tracker = TaskTracker(
-            json_path=str(
-                workspace_paths.task_tracker_json
-                if workspace_paths is not None
-                else paths.TASK_TRACKER_JSON
-            ),
-            markdown_path=str(
-                workspace_paths.task_tracker_markdown
-                if workspace_paths is not None
-                else paths.TASK_TRACKER_MD
-            ),
+            json_path=str(workspace_paths.task_tracker_json),
+            markdown_path=str(workspace_paths.task_tracker_markdown),
         )
         tracker.start(objective, macro_plan.steps, self._metadata(objective))
         executor = HierarchicalExecutor(
@@ -151,6 +143,19 @@ class HierarchicalExecutionService:
                 detail=detail,
             )
         return answer if isinstance(answer, str) else None
+
+    def _require_workspace_paths(self) -> Any:
+        workspace_paths = getattr(self.orchestrator, "workspace_paths", None)
+        if workspace_paths is None:
+            raise RuntimeError(
+                "HierarchicalExecutionService requires explicit workspace path authority"
+            )
+        for attribute in ("task_tracker_json", "task_tracker_markdown"):
+            if getattr(workspace_paths, attribute, None) is None:
+                raise RuntimeError(
+                    "HierarchicalExecutionService requires complete WorkspacePaths"
+                )
+        return workspace_paths
 
     def _fallback(self, reason_code: str, detail: str) -> RouteResult:
         result = RouteResult.fallback(

@@ -22,6 +22,15 @@ class AtomicJsonWriteError(RuntimeError):
         super().__init__(f"Falha ao persistir JSON em {path}: {cause}")
 
 
+class AtomicWriteError(RuntimeError):
+    """Indica que um arquivo de texto não pôde ser substituído atomicamente."""
+
+    def __init__(self, path: Path, cause: Exception) -> None:
+        self.path = path
+        self.cause = cause
+        super().__init__(f"Falha ao persistir texto em {path}: {cause}")
+
+
 class JsonObjectReadError(RuntimeError):
     """Indica que um arquivo esperado como objeto JSON não pôde ser lido."""
 
@@ -98,6 +107,48 @@ def write_json_atomic(
             except OSError as exc:
                 logger.warning(
                     "Falha ao remover arquivo temporário de memória %s: %s",
+                    temporary_path,
+                    exc,
+                )
+
+
+def write_text_atomic(path: str | Path, content: str) -> bool:
+    """Grava texto UTF-8 com a mesma garantia atômica do writer JSON."""
+
+    destination = Path(path)
+    temporary_path: Path | None = None
+    try:
+        if not isinstance(content, str):
+            raise TypeError("content deve ser str")
+        reject_link_like(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary_path = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        reject_link_like(destination)
+        os.replace(temporary_path, destination)
+        sync_parent_directory(destination)
+        temporary_path = None
+        return True
+    except Exception as exc:
+        raise AtomicWriteError(destination, exc) from exc
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "Falha ao remover arquivo temporário %s: %s",
                     temporary_path,
                     exc,
                 )

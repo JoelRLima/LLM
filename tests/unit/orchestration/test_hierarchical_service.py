@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ from agent.orchestration.hierarchical_service import HierarchicalExecutionServic
 from agent.orchestration.route_result import RouteDisposition, RouteResult
 from agent.planning.hierarchical_planner import MacroPlan, MacroStep
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.paths import WorkspacePaths
 
 
 class _Planner:
@@ -23,7 +25,14 @@ class _Planner:
         return self.result
 
 
-def _orchestrator():
+def _orchestrator(tmp_path: Path):
+    workspace_paths = WorkspacePaths(
+        workspace_id="hierarchical-tests",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    workspace_paths.ensure_directories()
     events = []
     state = SimpleNamespace()
     orchestrator = SimpleNamespace(
@@ -36,7 +45,7 @@ def _orchestrator():
         plan_executor=object(),
         session=SimpleNamespace(config={}),
         skills=[],
-        workspace_paths=None,
+        workspace_paths=workspace_paths,
         _emit=lambda event_type, data=None: events.append(
             {"type": event_type, "data": data or {}}
         ),
@@ -67,9 +76,17 @@ def test_selector_control_flow_distinguishes_not_applicable_from_fallback() -> N
     assert not_selected.disposition is not planner_fallback.disposition
 
 
-def test_planner_exception_returns_explicit_safe_fallback(monkeypatch) -> None:
+def test_hierarchical_service_requires_explicit_tracker_authority(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.workspace_paths = None
+
+    with pytest.raises(RuntimeError, match="explicit workspace path authority"):
+        HierarchicalExecutionService(orchestrator).run("objetivo")
+
+
+def test_planner_exception_returns_explicit_safe_fallback(monkeypatch, tmp_path: Path) -> None:
     _install_planner(monkeypatch, error=RuntimeError("planner\nfailed"))
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
 
     result = HierarchicalExecutionService(orchestrator).run("objetivo")
 
@@ -84,14 +101,16 @@ def test_planner_exception_returns_explicit_safe_fallback(monkeypatch) -> None:
     assert "\n" not in result.detail
 
 
-def test_planner_construction_exception_returns_explicit_fallback(monkeypatch) -> None:
+def test_planner_construction_exception_returns_explicit_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
     class _BrokenPlanner:
         def __init__(self, *args, **kwargs) -> None:
             del args, kwargs
             raise RuntimeError("constructor\nfailed")
 
     monkeypatch.setattr(hierarchical_service_module, "HierarchicalPlanner", _BrokenPlanner)
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
 
     result = HierarchicalExecutionService(orchestrator).run("objetivo")
 
@@ -100,9 +119,11 @@ def test_planner_construction_exception_returns_explicit_fallback(monkeypatch) -
     assert result.detail == "RuntimeError: constructor failed"
 
 
-def test_planning_context_failure_gets_non_recoverable_reason(monkeypatch) -> None:
+def test_planning_context_failure_gets_non_recoverable_reason(
+    monkeypatch, tmp_path: Path
+) -> None:
     _install_planner(monkeypatch, result=MacroPlan(objective="objetivo", steps=[]))
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
     orchestrator.get_planning_view = lambda _kind: (_ for _ in ()).throw(
         RuntimeError("planning context unavailable")
     )
@@ -119,10 +140,10 @@ def test_planning_context_failure_gets_non_recoverable_reason(monkeypatch) -> No
     ids=["missing", "empty"],
 )
 def test_empty_or_non_useful_macroplan_returns_deterministic_fallback(
-    monkeypatch, macro_plan
+    monkeypatch, macro_plan, tmp_path: Path
 ) -> None:
     _install_planner(monkeypatch, result=macro_plan)
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
 
     result = HierarchicalExecutionService(orchestrator).run("objetivo")
 
@@ -133,10 +154,12 @@ def test_empty_or_non_useful_macroplan_returns_deterministic_fallback(
     assert orchestrator.events[-1]["data"]["reason_code"] == result.reason_code
 
 
-def test_budget_exhaustion_is_reraised_without_fallback(monkeypatch) -> None:
+def test_budget_exhaustion_is_reraised_without_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
     error = BudgetExhausted("model_calls", 1, 1)
     _install_planner(monkeypatch, error=error)
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
 
     with pytest.raises(BudgetExhausted) as raised:
         HierarchicalExecutionService(orchestrator).run("objetivo")
@@ -145,7 +168,9 @@ def test_budget_exhaustion_is_reraised_without_fallback(monkeypatch) -> None:
     assert orchestrator.events == []
 
 
-def test_execution_returns_handled_answer_without_task_status_mutation(monkeypatch) -> None:
+def test_execution_returns_handled_answer_without_task_status_mutation(
+    monkeypatch, tmp_path: Path
+) -> None:
     plan = MacroPlan(
         objective="objetivo",
         steps=[MacroStep(id="step-1", title="Step", goal="Do the step")],
@@ -169,7 +194,7 @@ def test_execution_returns_handled_answer_without_task_status_mutation(monkeypat
 
     monkeypatch.setattr(hierarchical_service_module, "TaskTracker", _Tracker)
     monkeypatch.setattr(hierarchical_service_module, "HierarchicalExecutor", _Executor)
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
 
     result = HierarchicalExecutionService(orchestrator).run("objetivo")
 
@@ -184,7 +209,9 @@ def test_execution_returns_handled_answer_without_task_status_mutation(monkeypat
     ]
 
 
-def test_hard_execution_exception_returns_handled_non_success(monkeypatch) -> None:
+def test_hard_execution_exception_returns_handled_non_success(
+    monkeypatch, tmp_path: Path
+) -> None:
     plan = MacroPlan(
         objective="objetivo",
         steps=[MacroStep(id="step-1", title="Step", goal="Do the step")],
@@ -208,7 +235,7 @@ def test_hard_execution_exception_returns_handled_non_success(monkeypatch) -> No
 
     monkeypatch.setattr(hierarchical_service_module, "TaskTracker", _Tracker)
     monkeypatch.setattr(hierarchical_service_module, "HierarchicalExecutor", _Executor)
-    orchestrator = _orchestrator()
+    orchestrator = _orchestrator(tmp_path)
     orchestrator._task_failed = False
 
     result = HierarchicalExecutionService(orchestrator).run("objetivo")

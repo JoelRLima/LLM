@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from agent.code.contracts import ProjectProfile
-from agent.code.path_safety import (
+from agent.runtime.path_safety import (
     WorkspacePathError,
     is_link_like,
     resolve_workspace_path,

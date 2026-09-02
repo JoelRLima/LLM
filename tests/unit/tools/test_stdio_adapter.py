@@ -922,6 +922,69 @@ def test_stdio_adapter_success_terminates_detached_descendant(
             _cleanup_pidfd(pidfd)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Objects are unavailable on POSIX")
+def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_readers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ready_path = tmp_path / "success-inherited-ready.txt"
+    pid_path = tmp_path / "success-inherited.pid"
+    adapter = _adapter_for_script(
+        tmp_path,
+        f"""
+        import json
+        import pathlib
+        import subprocess
+        import sys
+        import time
+
+        payload = json.loads(sys.stdin.readline())
+        child = (
+            "import os,pathlib,time\\n"
+            f"pathlib.Path(r'{pid_path.as_posix()}').write_text(str(os.getpid()))\\n"
+            f"pathlib.Path(r'{ready_path.as_posix()}').write_text('ready')\\n"
+            "time.sleep(60)"
+        )
+        subprocess.Popen([sys.executable, '-c', child])
+        deadline = time.monotonic() + 5
+        while not pathlib.Path(r'{ready_path.as_posix()}').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        print(json.dumps({{"invocation_id": payload["invocation_id"], "status": "succeeded"}}), flush=True)
+        """,
+    )
+    result_box: list[Any] = []
+    windows_handle: tuple[Any, Any] | None = None
+
+    original_join = stdio_process_module._join_readers
+
+    def join_only_after_tree_termination(context: Any) -> object:
+        assert windows_handle is not None
+        assert _wait_for_windows_handle(*windows_handle, 0) == _WAIT_OBJECT_0
+        return original_join(context)
+
+    monkeypatch.setattr(
+        stdio_process_module, "_join_readers", join_only_after_tree_termination
+    )
+    worker = threading.Thread(
+        target=lambda: result_box.append(adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))),
+        daemon=True,
+    )
+    worker.start()
+    try:
+        assert _wait_for_path(ready_path)
+        assert _wait_for_path(pid_path)
+        windows_handle = _open_windows_process_handle(_read_test_pid(pid_path))
+        worker.join(timeout=8)
+        assert not worker.is_alive()
+        assert result_box
+        assert result_box[0].status == ToolStatus.SUCCEEDED
+        assert _wait_for_windows_handle(*windows_handle, 1000) == _WAIT_OBJECT_0
+    finally:
+        if windows_handle is not None:
+            _cleanup_windows_process_handle(*windows_handle)
+        if worker.is_alive():
+            worker.join(timeout=5)
+
+
 def test_stdio_adapter_terminates_descendant_before_probe_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

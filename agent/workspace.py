@@ -13,12 +13,11 @@ from typing import Any, Dict, List, Optional
 from agent.code.discovery import ProjectDiscovery
 from agent.code.validation import ProjectValidator, ValidationStatus
 from agent.planning.plan_model import Plan, ToolPlanStep
-from agent.runtime import paths
 from agent.runtime.config import DEFAULT_VALIDATION
 from agent.runtime.logging import logger
+from agent.runtime.path_safety import resolve_workspace_path
 from agent.workspace_rollback import remove_created_files, restore_backups, rollback_transactions
 
-RESTORE_POINTS_DIR = paths.RESTORE_POINTS_DIR
 # Compatibility projection: the authored defaults live in the packaged
 # configuration resource consumed by ``agent.runtime.config``.
 DEFAULT_VALIDATION_CONFIG = DEFAULT_VALIDATION
@@ -33,14 +32,16 @@ class WorkspaceManager:
         self,
         verbose: bool = False,
         workspace_root: str | Path = ".",
-        restore_points_dir: str | Path | None = RESTORE_POINTS_DIR,
+        restore_points_dir: str | Path | None = None,
         validation_config: Mapping[str, Any] | None = None,
         validation_service: ProjectValidator | None = None,
     ) -> None:
         self.verbose = verbose
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         effective_restore_dir = (
-            RESTORE_POINTS_DIR if restore_points_dir is None else restore_points_dir
+            self.workspace_root / ".agent-runtime" / "restore_points"
+            if restore_points_dir is None
+            else restore_points_dir
         )
         self.restore_points_dir = Path(effective_restore_dir).expanduser().resolve()
         self.validation_config = self._normalize_validation_config(validation_config)
@@ -77,17 +78,7 @@ class WorkspaceManager:
         return normalized
 
     def resolve_path(self, file_path: str | Path) -> Path:
-        raw = Path(file_path).expanduser()
-        candidate = (
-            raw.resolve()
-            if raw.is_absolute()
-            else (self.workspace_root / raw).resolve()
-        )
-        try:
-            candidate.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise ValueError(f"Caminho fora do workspace: {file_path}") from exc
-        return candidate
+        return resolve_workspace_path(self.workspace_root, Path(file_path).expanduser())
 
     def create_restore_point(
         self, plan: Plan | list[Mapping[str, Any]]

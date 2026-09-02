@@ -20,6 +20,7 @@ from agent.evaluation.measurement_projection import (
 from agent.evaluation.measurement_projection import (
     project_measurement_summary as _measurement_summary,
 )
+from agent.runtime.path_safety import WorkspacePathError, resolve_workspace_path
 
 
 class ScenarioExecutor(Protocol):
@@ -30,12 +31,10 @@ class ScenarioExecutor(Protocol):
 
 
 def _safe_relative_path(root: Path, relative: str) -> Path:
-    candidate = (root / relative).resolve()
     try:
-        candidate.relative_to(root.resolve())
-    except ValueError as exc:
+        return resolve_workspace_path(root, relative)
+    except (OSError, RuntimeError, WorkspacePathError) as exc:
         raise ValueError(f"Caminho fora do workspace do cenário: {relative}") from exc
-    return candidate
 
 
 def _snapshot(root: Path) -> Dict[str, str]:

@@ -8,11 +8,11 @@ from typing import Any, Dict, Protocol, Sequence
 
 from agent.approval import ApprovalDecision
 from agent.code.changes import ChangeKind, ChangePreview, ChangeSet, FileChange
-from agent.code.path_safety import (
+from agent.runtime.config import DEFAULT_CODE_POLICY
+from agent.runtime.path_safety import (
     resolve_workspace_path,
     workspace_relative_path,
 )
-from agent.runtime.config import DEFAULT_CODE_POLICY
 
 DEFAULT_AUTO_APPLY_MIN_CONFIDENCE = float(
     DEFAULT_CODE_POLICY["auto_apply_min_confidence"]

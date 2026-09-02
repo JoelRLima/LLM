@@ -10,6 +10,7 @@ from typing import Any, Mapping, cast
 
 from agent.memory.path_safety import LinkLikePathError, reject_link_like
 from agent.runtime.filesystem_primitives import sync_parent_directory
+from agent.runtime.path_safety import WorkspacePathError, resolve_workspace_path
 from agent.task_definition.errors import (
     TaskDefinitionError,
     TaskDefinitionMismatchError,
@@ -235,12 +236,10 @@ def validate_artifact_ref(
 
 
 def referenced_file(task_dir: Path, filename: str, label: str) -> Path:
-    candidate = task_dir / filename
     try:
-        candidate.resolve().relative_to(task_dir.resolve())
-    except ValueError as exc:
+        return resolve_workspace_path(task_dir, filename)
+    except (OSError, RuntimeError, WorkspacePathError) as exc:
         raise TaskDefinitionValidationError(f"arquivo de {label} fora da tarefa") from exc
-    return candidate
 
 
 def read_object(path: Path, label: str) -> dict[str, Any]:

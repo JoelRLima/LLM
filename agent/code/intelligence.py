@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from agent.code.contracts import CodeAnalysis, Diagnostic, RepositoryIndex, Symbol
 from agent.code.discovery import LANGUAGE_BY_EXTENSION, ProjectDiscovery
 from agent.code.languages import LanguageRegistry, default_language_registry
-from agent.code.path_safety import resolve_workspace_path
+from agent.runtime.path_safety import resolve_workspace_path
 
 
 class CodeIntelligenceService:

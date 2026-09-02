@@ -12,7 +12,6 @@ from agent.code.changes import ChangeSet, ChangeSetError
 from agent.code.context_selection import ContextSelector
 from agent.code.diagnostics import FailureClassifier
 from agent.code.intelligence import CodeIntelligenceService
-from agent.code.path_safety import resolve_workspace_path
 from agent.code.policy import ChangeApprovalPolicy, ChangeApprover
 from agent.code.validation import ProjectValidator
 from agent.code.workflow_application import apply_changes as apply_change_set
@@ -20,8 +19,28 @@ from agent.code.workflow_proposal import CHANGESET_SCHEMA
 from agent.code.workflow_proposal import propose_changes as build_proposal
 from agent.llm.structured_output import StructuredOutputError
 from agent.runtime.context import Artifact, TaskExecutionContext, TaskResult, TaskStatus
+from agent.runtime.failures import FailureFact
+from agent.runtime.path_safety import resolve_workspace_path
 
 __all__ = ["CHANGESET_SCHEMA", "CodingWorkflowService"]
+
+
+def _proposal_failure_projection(error: BaseException) -> tuple[str, tuple[Dict[str, Any], ...]]:
+    if isinstance(error, (StructuredOutputError, ChangeSetError)):
+        fact = FailureFact.from_code(
+            "MODEL_PROVIDER_ERROR",
+            status=TaskStatus.FAILED,
+            message=str(error),
+        )
+        return fact.code, ({"code": "STRUCTURED_OUTPUT_FAILURE", "message": str(error)},)
+
+    code = getattr(error, "code", None)
+    fact = (
+        FailureFact.from_code(code, status=TaskStatus.FAILED, message=str(error))
+        if isinstance(code, str) and code.strip()
+        else FailureFact.from_exception(error)
+    )
+    return fact.code, ()
 
 
 class CodingWorkflowService:
@@ -135,18 +154,37 @@ class CodingWorkflowService:
         seen: set[str] = set()
         for _ in range(attempts):
             if self.context.cancellation.cancelled:
-                return TaskResult(TaskStatus.CANCELLED, error="cancelled")
+                return TaskResult(
+                    TaskStatus.CANCELLED,
+                    error="cancelled",
+                    failure_code=FailureFact.from_code(
+                        "CANCELLED", status=TaskStatus.CANCELLED, message="cancelled"
+                    ).code,
+                )
             effective = self._repair_objective(objective, last_result)
             if effective is None and last_result is not None:
                 return last_result
             try:
                 proposal = self.propose_changes(effective or objective, target_files)
             except (StructuredOutputError, ChangeSetError, RuntimeError) as exc:
-                last_result = TaskResult(TaskStatus.FAILED, error=str(exc))
+                failure_code, diagnostics = _proposal_failure_projection(exc)
+                last_result = TaskResult(
+                    TaskStatus.FAILED,
+                    diagnostics=diagnostics,
+                    error=str(exc),
+                    failure_code=failure_code,
+                )
                 continue
             fingerprint = repr(proposal.changes)
             if fingerprint in seen:
-                return TaskResult(TaskStatus.FAILED, error="duplicate_proposal", summary="O modelo repetiu um ChangeSet já falho.")
+                return TaskResult(
+                    TaskStatus.FAILED,
+                    error="duplicate_proposal",
+                    summary="O modelo repetiu um ChangeSet já falho.",
+                    failure_code=FailureFact.unknown(
+                        status=TaskStatus.FAILED, message="duplicate_proposal"
+                    ).code,
+                )
             seen.add(fingerprint)
             last_result = self.apply_changes(proposal, include_tests=include_tests, requested_targets=target_files, approver=approver)
             if last_result.status in {TaskStatus.SUCCEEDED, TaskStatus.UNVERIFIED}:

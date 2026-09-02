@@ -18,6 +18,7 @@ try:
         RECLASSIFY_CANONICAL,
         REMOVE,
         RETAIN_PERSISTENCE_CONTRACT,
+        RETAIN_SUPPORTED_BOUNDARY,
         find_edge,
         validate_ledger,
     )
@@ -29,6 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         RECLASSIFY_CANONICAL,
         REMOVE,
         RETAIN_PERSISTENCE_CONTRACT,
+        RETAIN_SUPPORTED_BOUNDARY,
         find_edge,
         validate_ledger,
     )
@@ -143,6 +145,13 @@ INVENTORY_SECTIONS = {
         "agent/watchdog.py::DEFAULT_MAX_* aliases",
         "agent/orchestration/operations.py::dispatcher-less/legacy event emission fallback",
         "agent/orchestration/operations.py::None checkpoint confirmation",
+        "LegacyEventSinkAdapter",
+        "W7-W02",
+        "agent/runtime/event_dispatch.py::LegacyEventSinkAdapter",
+        "agent/planning/reasoning_boundary.py::_call_extension",
+        "W7-W05",
+        "agent/planning/plan_builder.py::legacy_reviewer",
+        "W7-W08",
     ),
     "## Retido como contrato de persistência ou leitura limitada": (
         "LegacyToolResult",
@@ -160,6 +169,10 @@ INVENTORY_SECTIONS = {
         "model_profile_compat",
         "requested_effects",
     ),
+    "## Retido como compatibilidade de import de pacote": (
+        "agent/code/path_safety.py",
+        "W8-PATH-01",
+    ),
     "## Reclassificado como canônico": (
         "agent/code/changes.py",
         "agent/task_definition/models.py",
@@ -172,11 +185,17 @@ INVENTORY_SECTIONS = {
         "compress_conversation",
         "load_all_skills",
         "ConfigRepository.migrate",
+        "agent/runtime/paths.py",
+        "W7-W01",
+        "agent/runtime/paths.py::<module>",
+        "agent/orchestrator.py::resolve_user_path",
+        "W7-W01A",
+        "agent/tools/builtin_adapter.py::<module>",
+        "W7-W03",
+        "agent/skills/policy.py::<module>",
+        "W7-W04",
     ),
     "## Adiado para W8 com evidência bloqueante": (
-        "agent/runtime/paths.py",
-        "LegacyEventSinkAdapter",
-        "legacy_stdio_compatibility",
     ),
 }
 CONTROLLED_STDIO_FILES = frozenset({"agent/tools/stdio_streams.py"})
@@ -1283,7 +1302,14 @@ def _check_inventory(root: Path) -> list[ArchitectureViolation]:
         REMOVE: "## Removido",
         MIGRATE_THEN_REMOVE: "## Removido",
         RETAIN_PERSISTENCE_CONTRACT: next(
-            heading for heading in INVENTORY_SECTIONS if heading.startswith("## Retido")
+            heading
+            for heading in INVENTORY_SECTIONS
+            if heading == "## Retido como contrato de persistência ou leitura limitada"
+        ),
+        RETAIN_SUPPORTED_BOUNDARY: next(
+            heading
+            for heading in INVENTORY_SECTIONS
+            if heading == "## Retido como compatibilidade de import de pacote"
         ),
         RECLASSIFY_CANONICAL: next(
             heading for heading in INVENTORY_SECTIONS if heading.startswith("## Reclassificado")

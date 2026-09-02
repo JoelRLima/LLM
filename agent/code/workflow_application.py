@@ -8,7 +8,8 @@ from typing import Any, Optional, Sequence
 from uuid import uuid4
 
 from agent.approval import ApprovalDecision
-from agent.code.changes import ChangeSet, ChangeSetError, ChangeSetTransaction
+from agent.code.changes import ChangeConflictError, ChangeSet, ChangeSetError, ChangeSetTransaction
+from agent.code.diagnostics import _failure_result
 from agent.code.discovery import ProjectDiscovery
 from agent.code.policy import ChangeApprover
 from agent.code.validation import ValidationStatus
@@ -107,16 +108,17 @@ def _allow_unverified_approved(service: Any) -> bool:
     )
     return value if isinstance(value, bool) else DEFAULT_ALLOW_UNVERIFIED_APPROVED
 
-
 def apply_changes(
     service: Any, change_set: ChangeSet, *, include_tests: bool = False,
     requested_targets: Sequence[str] = (), approver: Optional[ChangeApprover] = None,
 ) -> TaskResult:
+    """Apply one ChangeSet and project structured failure facts.
+    Validation and approval outcomes retain their canonical failure codes."""
     transaction = ChangeSetTransaction(service.root, change_set)
     try:
         preview = transaction.prepare()
     except ChangeSetError as exc:
-        return TaskResult(TaskStatus.FAILED, error=str(exc))
+        return _failure_result(code="TOOL_ERROR", diagnostics=({"code": "CHANGESET_CONFLICT" if isinstance(exc, ChangeConflictError) else "CHANGESET_ERROR", "message": str(exc)},), error=str(exc))
     assessment = service.approval_policy.assess(service.root, change_set, requested_targets)
     approval = _approval_authority(preview, assessment, approver)
     artifact = _artifact(preview, assessment, applied=False, approval=approval)
@@ -141,12 +143,7 @@ def apply_changes(
             final_state="restored" if rolled_back else "unknown",
             approval=approval,
         )
-        return TaskResult(
-            TaskStatus.FAILED,
-            artifacts=(artifact,),
-            error=str(exc),
-            metadata={"approval": approval.metadata},
-        )
+        return _failure_result(code="TOOL_ERROR", artifacts=(artifact,), diagnostics=({"code": "CHANGESET_CONFLICT" if isinstance(exc, ChangeConflictError) else "CHANGESET_ERROR", "message": str(exc)},), error=str(exc), metadata={"approval": approval.metadata})
     task_workspace = getattr(service.context, "metadata", {}).get("workspace_manager")
     register_transaction = getattr(task_workspace, "register_transaction", None)
     if callable(register_transaction):
@@ -188,8 +185,8 @@ def apply_changes(
                 final_state="restored" if rollback_ok else "unknown",
                 approval=approval,
             )
-            return TaskResult(
-                TaskStatus.FAILED,
+            return _failure_result(
+                code="TOOL_UNAVAILABLE",
                 summary=(
                     "Validação indisponível; alterações revertidas."
                     if rollback_ok
@@ -219,8 +216,8 @@ def apply_changes(
         approval=approval,
     )
     status = TaskStatus.CANCELLED if report.status == ValidationStatus.CANCELLED else TaskStatus.FAILED
-    return TaskResult(
-        status,
+    return _failure_result(
+        status=status,
         summary=(
             "Validação falhou; mudanças revertidas."
             if rollback_ok
@@ -232,6 +229,7 @@ def apply_changes(
         if not rollback_ok
         else f"validation:{report.status.value}",
         metadata={"approval": approval.metadata},
+        code="TOOL_UNAVAILABLE" if report.status == ValidationStatus.UNAVAILABLE else "TIMEOUT" if report.status == ValidationStatus.TIMED_OUT else "CANCELLED" if report.status == ValidationStatus.CANCELLED else "TOOL_ERROR",
     )
 
 
@@ -325,15 +323,17 @@ def _approval_result_v2(
     if authority.mode in {"autonomous", "approval_not_required", "explicit_approved"}:
         return None
     if authority.mode == "approval_pending":
-        return TaskResult(
-            TaskStatus.BLOCKED,
+        return _failure_result(
+            status=TaskStatus.BLOCKED,
+            code="APPROVAL_REQUIRED",
             summary="ChangeSet aguarda confirma\u00e7\u00e3o expl\u00edcita.",
             artifacts=(artifact,),
             error="confirmation_required",
             metadata={"assessment": asdict(assessment), "approval": authority.metadata},
         )
-    return TaskResult(
-        TaskStatus.CANCELLED,
+    return _failure_result(
+        status=TaskStatus.CANCELLED,
+        code="CANCELLED",
         summary="ChangeSet rejeitado pelo usu\u00e1rio.",
         artifacts=(artifact,),
         error="approval_rejected",

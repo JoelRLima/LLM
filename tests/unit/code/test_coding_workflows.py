@@ -4,9 +4,11 @@ from types import SimpleNamespace
 
 from agent.approval import AutoApprove, RequireExplicitApproval
 from agent.cancellation import CancellationToken
+from agent.code.diagnostics import FailureCategory, FailureClassifier
 from agent.code.validation import ValidationStatus
 from agent.code.workflows import CodingWorkflowService
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
+from agent.llm.model_profile import resolve_gateway_model_profile
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
 from agent.skills.code_task import CodeTaskSkill
 
@@ -74,6 +76,7 @@ def _service(
 ):
     context = TaskExecutionContext(
         model_gateway=gateway,
+        model_profile=resolve_gateway_model_profile({}, gateway),
         cancellation=CancellationToken(),
         limits=RuntimeLimits(max_output_tokens=512, max_repair_attempts=attempts),
         metrics_sink=metrics_sink or RecordingMetrics(),
@@ -501,6 +504,27 @@ def test_unavailable_validation_rolls_back_autonomous_non_code_mutation(tmp_path
     assert result.artifacts[0].metadata["approval_mode"] == "autonomous"
     assert result.artifacts[0].metadata["rollback_occurred"] is True
     assert result.artifacts[0].metadata["final_state"] == "restored"
+
+
+def test_validation_unavailable_is_canonical_and_never_retries_repair(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "notes.txt"
+    gateway = FakeGateway(
+        [_changes({"path": target.name, "kind": "create", "content": "documentacao\n"})]
+    )
+    service = _service(tmp_path, gateway, attempts=2)
+    service.validator = UnavailableValidator()
+
+    result = service.change("Crie notes.txt", repair=True)
+
+    assert result.status == TaskStatus.FAILED
+    assert result.failure_code == "TOOL_UNAVAILABLE"
+    classification = FailureClassifier().classify(result)
+    assert classification.category is FailureCategory.TOOL_UNAVAILABLE
+    assert classification.retryable is False
+    assert len(gateway.calls) == 1
+    assert not target.exists()
 
 
 def test_unavailable_autonomous_mutation_is_extension_independent(tmp_path: Path):

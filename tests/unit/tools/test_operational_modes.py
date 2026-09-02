@@ -15,6 +15,7 @@ from agent.interfaces.cli.parser import build_parser
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
+from agent.runtime.paths import WorkspacePaths
 from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
 from agent.tools.authority import OperationalMode, operational_mode_capabilities
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
@@ -73,6 +74,17 @@ def _gateway(
     registry.register_adapter(adapter)
     registry.freeze()
     return ToolInvocationGateway(registry, approval_port=approval or AutoApprove()), adapter, target
+
+
+def _workspace_paths(tmp_path: Path) -> WorkspacePaths:
+    paths = WorkspacePaths(
+        workspace_id="operational-modes",
+        data_dir=tmp_path / "data",
+        state_dir=tmp_path / "state",
+        cache_dir=tmp_path / "cache",
+    )
+    paths.ensure_directories()
+    return paths
 
 
 def test_read_only_gateway_denies_writer_before_auto_approval_or_adapter(
@@ -146,6 +158,8 @@ def test_orchestrator_mode_switch_updates_the_canonical_gateway(
         ChatSession("system", {}, gateway=object()),
         tool_registry=gateway.registry,
         tool_invocation_gateway=gateway,
+        workspace_root=tmp_path,
+        workspace_paths=_workspace_paths(tmp_path),
     )
 
     orchestrator.set_operational_mode(OperationalMode.READ_ONLY)

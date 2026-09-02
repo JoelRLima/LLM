@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +24,7 @@ from agent.health.standalone_checks import (
     check_state,
     check_workspace,
 )
+from agent.memory.json_persistence import write_text_atomic
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 
@@ -117,22 +116,10 @@ def render_health_report(
 
 def write_health_report(report: dict[str, Any], app_paths: AppPaths) -> Path:
     path = Path(app_paths.health_report_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
+    write_text_atomic(
+        path,
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
     )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
     return path
 
 

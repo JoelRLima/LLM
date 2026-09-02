@@ -1,8 +1,7 @@
-"""Canonical RuntimeEvent dispatch and compatibility sink adapters."""
+"""Canonical RuntimeEvent dispatch and explicit event projections."""
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol
 
@@ -37,33 +36,6 @@ def append_state_event(state: Any, event: RuntimeEvent) -> None:
         events.append(serialize_runtime_event(event))
 
 
-class LegacyEventSinkAdapter:
-    """Keep old ``emit(event_type, data)`` test/extension ports at the edge."""
-
-    def __init__(self, sink: Any) -> None:
-        self.sink = sink
-
-    def emit(self, event: RuntimeEvent) -> None:
-        target = getattr(self.sink, "emit", self.sink)
-        if not callable(target):
-            return
-        try:
-            parameters = inspect.signature(target).parameters.values()
-            positional = [
-                item
-                for item in parameters
-                if item.kind
-                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-            ]
-        except (TypeError, ValueError):
-            positional = []
-        if len(positional) >= 2:
-            legacy = event.to_legacy_dict()
-            target(event.kind.value, legacy["data"])
-        else:
-            target(event)
-
-
 def dispatch_runtime_event(sink: Any, event: RuntimeEvent) -> None:
     """Send a canonical event to one sink without changing the event fact."""
 
@@ -73,7 +45,10 @@ def dispatch_runtime_event(sink: Any, event: RuntimeEvent) -> None:
         sink.emit(event)
         return
     try:
-        LegacyEventSinkAdapter(sink).emit(event)
+        target = sink if callable(sink) else getattr(sink, "emit", None)
+        if not callable(target):
+            raise TypeError("runtime event sink must expose emit(RuntimeEvent)")
+        target(event)
     except Exception as exc:  # event observers cannot change domain behavior
         logger.warning("Runtime event sink failed: %s", type(exc).__name__)
 
@@ -124,7 +99,6 @@ def state_event_projection(event: RuntimeEvent) -> dict[str, Any]:
 
 
 __all__ = [
-    "LegacyEventSinkAdapter",
     "RuntimeEventDispatcher",
     "RuntimeEventSink",
     "StateEventSink",

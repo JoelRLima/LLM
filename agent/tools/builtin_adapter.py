@@ -1,4 +1,4 @@
-"""Adapter wrapping legacy SkillRegistry into the canonical ToolAdapter interface."""
+"""Canonical ToolAdapter boundary for the builtin SkillRegistry."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from agent.tools.result_completeness import canonical_completeness
 
 
 class BuiltinToolAdapter(ToolAdapter):
-    """Adapts builtin skills to canonical tool descriptors and invocations."""
+    """Own builtin descriptor projection and raw-skill result admission."""
 
     def __init__(self, skill_registry: SkillRegistry) -> None:
         self.skill_registry = skill_registry

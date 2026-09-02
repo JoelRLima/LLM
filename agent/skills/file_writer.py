@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from agent.approval import ApprovalPort, AutoApprove, RequireExplicitApproval
 from agent.runtime.logging import logger
+from agent.runtime.path_safety import resolve_workspace_path
 
 from .base import BaseSkill
 from .file_writer_runtime import (
@@ -76,7 +77,7 @@ class FileWriterSkill(BaseSkill):
 
     def _invalidate_cache(self, file_path: str) -> None:
         try:
-            original = (self.base_dir / file_path).resolve()
+            original = resolve_workspace_path(self.base_dir, file_path)
             relative = original.relative_to(self.base_dir)
             cached = self.scratch_dir / relative
             workspace = self.scratch_dir / "workspace" / relative
@@ -166,7 +167,7 @@ class FileWriterSkill(BaseSkill):
         if not file_path:
             return {"ok": False, "done": True, "error": "Nenhum file_path fornecido."}
         try:
-            requested = (self.base_dir / str(file_path)).resolve()
+            requested = resolve_workspace_path(self.base_dir, str(file_path))
             safe, reason = self._is_safe(requested)
             if not safe:
                 return {"ok": False, "done": True, "error": f"Escrita bloqueada: {reason}"}

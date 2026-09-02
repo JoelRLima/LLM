@@ -44,6 +44,35 @@ def test_workspace_resolution_blocks_escape(tmp_path: Path) -> None:
         workspace.resolve("../outside.txt")
 
 
+def test_workspace_resolution_expands_user_shorthand_before_confinement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = WorkspaceContext.create(root)
+    expanded = tmp_path / "home" / "outside.txt"
+    original_expanduser = Path.expanduser
+
+    def expanduser(path: Path) -> Path:
+        if str(path) == "~/outside.txt":
+            return expanded
+        return original_expanduser(path)
+
+    monkeypatch.setattr(Path, "expanduser", expanduser)
+
+    with pytest.raises(PermissionError, match="fora do workspace"):
+        workspace.resolve("~/outside.txt")
+
+
+def test_code_path_compatibility_facade_projects_runtime_owner() -> None:
+    from agent.code import path_safety as legacy
+    from agent.runtime import path_safety as canonical
+
+    assert legacy.resolve_workspace_path is canonical.resolve_workspace_path
+    assert legacy.workspace_relative_path is canonical.workspace_relative_path
+    assert legacy.workspace_command_argument is canonical.workspace_command_argument
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Windows possui paths case-insensitive")
 def test_case_sensitive_workspaces_have_distinct_ids(tmp_path: Path) -> None:
     upper = tmp_path / "A" / "work"

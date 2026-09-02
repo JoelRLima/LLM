@@ -20,7 +20,7 @@ from agent.code.change_models import (
     content_hash,
 )
 from agent.code.change_parsing import apply_text_edits
-from agent.code.path_safety import resolve_workspace_path, workspace_relative_path
+from agent.runtime.path_safety import resolve_workspace_path, workspace_relative_path
 
 
 class ChangeSetTransaction:

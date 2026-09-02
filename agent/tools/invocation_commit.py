@@ -199,16 +199,7 @@ class InvocationCommitMixin:
                     event_type,
                     type(exc).__name__,
                 )
-            return
-        if self.event_emitter is not None:
-            try:
-                self.event_emitter(event_type, data)
-            except Exception as exc:
-                logger.warning(
-                    "[GATEWAY] Erro ao emitir evento '%s': %s",
-                    event_type,
-                    type(exc).__name__,
-                )
+        return
 
     def _record(
         self: Any,

@@ -6,8 +6,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_result
-from agent.interfaces.cli.workspace_entry import render_active_workspace
-from agent.runtime import paths
+from agent.interfaces.cli.workspace_entry import render_active_workspace, workspace_storage_path
 from agent.runtime.logging import set_debug_level
 from agent.tools.authority import OperationalMode
 from agent.tools.invocation_semantics import CODE_TASK_ACTIONS
@@ -83,8 +82,7 @@ def clear_history(_: str, ctx: Any) -> None:
 
 
 def _history_path(prompt: str, ctx: Any) -> str:
-    workspace_paths = getattr(ctx, "workspace_paths", None)
-    default = workspace_paths.chat_history_file if workspace_paths is not None else paths.CHAT_HISTORY_FILE
+    default = workspace_storage_path(ctx, "chat_history_file", "chat_history.json")
     entered = console.input(f"[bold cyan]{prompt} (Enter para '{default}'):[/bold cyan] ").strip()
     return str(entered or default)
 
@@ -204,8 +202,7 @@ def clear_memory(_: str, ctx: Any) -> None:
 
 
 def _memory_path(ctx: Any) -> str:
-    workspace_paths = getattr(ctx, "workspace_paths", None)
-    default = workspace_paths.memory_file if workspace_paths is not None else paths.MEMORY_FILE
+    default = workspace_storage_path(ctx, "memory_file", "agent_memory.json")
     entered = console.input(f"[bold cyan]Caminho (Enter para '{default}'):[/bold cyan] ").strip()
     return str(entered or default)
 

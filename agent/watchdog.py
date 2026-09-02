@@ -22,8 +22,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from agent.parsers import stringify
+from agent.runtime.failure_policy import failure_fact_for_result
 from agent.runtime.limits import runtime_limit_values
-from agent.tools.result_completeness import legacy_result_successful
 
 
 class Watchdog:
@@ -127,19 +127,18 @@ class Watchdog:
             return None
 
         recent = tool_history[-max_same_error:]
-        errors = []
+        failures = []
         for h in recent:
             result = h.get("result") or {}
-            if legacy_result_successful(
-                result,
-                allow_bare_ok=True,
-            ):
-                return None  # houve sucesso recente, não é uma sequência de falhas
-            errors.append((result.get("error") or "").strip())
+            failure = failure_fact_for_result(result)
+            if failure is None:
+                return None
+            failures.append((failure.code, failure.status))
 
-        if errors and len(set(errors)) == 1 and errors[0]:
+        if failures and len(set(failures)) == 1:
+            code, _status = failures[0]
             return (
-                f"{max_same_error} falhas consecutivas com o mesmo erro: '{errors[0][:200]}'. "
+                f"{max_same_error} falhas consecutivas com o mesmo código de falha: '{code}'. "
                 "O agente parece preso na mesma abordagem inválida."
             )
         return None

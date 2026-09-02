@@ -10,6 +10,9 @@ from agent.approval import ApprovalDecision
 from agent.cancellation import CancellationToken
 from agent.interfaces.cli.approval import ConsoleApproval
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.correlation import RunCorrelation
+from agent.runtime.event_dispatch import RuntimeEventDispatcher
+from agent.runtime.events import RuntimeEvent
 from agent.skills import load_skill_registry
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
@@ -17,15 +20,28 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 
+def _event_projection(events: list[tuple[str, dict[str, object]]]) -> RuntimeEventDispatcher:
+    correlation = RunCorrelation.fresh()
+
+    def collect(event: RuntimeEvent) -> None:
+        payload = event.to_legacy_dict()["data"]
+        assert isinstance(payload, dict)
+        events.append((event.kind.value, payload))
+
+    return RuntimeEventDispatcher([collect]), correlation
+
+
 def test_gateway_run_success(tmp_path: Path) -> None:
     skill_reg = load_skill_registry(base_dir=tmp_path)
     registry = ToolRegistry()
     registry.register_adapter(BuiltinToolAdapter(skill_reg))
 
-    events = []
+    events: list[tuple[str, dict[str, object]]] = []
+    dispatcher, correlation = _event_projection(events)
     gateway = ToolInvocationGateway(
         registry,
-        event_emitter=lambda event_type, data: events.append((event_type, data)),
+        event_dispatcher=dispatcher,
+        correlation_provider=lambda: correlation,
     )
 
     result = gateway.run("echo", {"message": "hello"})
@@ -450,7 +466,12 @@ def test_gateway_timeout_has_one_terminal_publication_and_discards_late_completi
     events: list[tuple[str, dict[str, object]]] = []
     registry = ToolRegistry()
     registry.register_adapter(SlowAdapter())
-    gateway = ToolInvocationGateway(registry, event_emitter=lambda kind, data: events.append((kind, data)))
+    dispatcher, correlation = _event_projection(events)
+    gateway = ToolInvocationGateway(
+        registry,
+        event_dispatcher=dispatcher,
+        correlation_provider=lambda: correlation,
+    )
     result = gateway.run(ToolInvocationRequest("slow-id", "slow", timeout_seconds=1))
     assert result.status is ToolStatus.TIMED_OUT
     release.set()

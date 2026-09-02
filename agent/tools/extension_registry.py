@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from agent.memory.json_persistence import write_json_atomic
 
 
 @dataclass(frozen=True)
@@ -31,9 +31,9 @@ class ExtensionRegistry:
             raise ValueError("ID de extensão inválido")
         state = ExtensionState(id=id, manifest_path=Path(manifest_path).expanduser().resolve(), enabled=enabled)
         if state.manifest_path.exists():
-            from agent.tools.stdio_adapter import load_extension_manifest
+            from agent.tools.stdio_adapter import load_strict_extension_manifest
 
-            manifest = load_extension_manifest(state.manifest_path)
+            manifest = load_strict_extension_manifest(state.manifest_path)
             if manifest.id != id:
                 raise ValueError("manifest.id não corresponde ao ID registrado")
         self._data[state.id] = {
@@ -85,17 +85,7 @@ class ExtensionRegistry:
             }
 
     def _save(self) -> None:
-        payload = json.dumps(self._data, indent=2, sort_keys=True) + "\n"
-        fd, temporary = tempfile.mkstemp(prefix=f".{self.state_path.name}.", dir=self.state_path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.state_path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        write_json_atomic(self.state_path, self._data)
 
     def _iter_states(self) -> tuple[ExtensionState, ...]:
         return tuple(

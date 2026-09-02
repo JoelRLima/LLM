@@ -27,14 +27,14 @@ from agent.planning.planning_context import PlanningContextSnapshot, build_plann
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
-from agent.runtime import paths
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.paths import WorkspacePaths
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
-from agent.skills.policy import include_eligible_extensions, persona_allowed_capabilities
+from agent.runtime.workspace_context import WorkspaceContext
+from agent.skills.policy import persona_allowed_capabilities, project_eligible_extension_descriptors
 from agent.skills.registry import SkillRegistry
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
@@ -59,7 +59,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         checkpoint_file: str | None = None,
         *,
         metrics_file: str | None = None,
-        workspace_root: str | Path = ".",
+        workspace_root: str | Path | None = None,
         workspace_paths: WorkspacePaths | None = None,
         tool_registry: ToolRegistry | None = None,
         tool_invocation_gateway: ToolInvocationGateway | None = None,
@@ -73,8 +73,15 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             session.budget_ledger = self.task_budget
         else:
             session.budget_ledger = self.task_budget
-        self.workspace_root = Path(workspace_root).expanduser().resolve()
+        if workspace_root is None:
+            raise ValueError("Orchestrator requires an explicit workspace_root")
+        if workspace_paths is None:
+            raise ValueError("Orchestrator requires explicit WorkspacePaths")
+        if not isinstance(workspace_paths, WorkspacePaths):
+            raise TypeError("workspace_paths must be a WorkspacePaths instance")
+        self.workspace_root = WorkspaceContext.create(workspace_root).root
         self.workspace_paths = workspace_paths
+        effective_paths = workspace_paths
         (
             self.task_definition_repository,
             self.task_context_resolver,
@@ -85,9 +92,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         )
         self.task_definition_resolver = self.task_context_resolver
         self.analysis_notes_file = (
-            workspace_paths.scratch_dir / "analysis_notes.md"
-            if workspace_paths is not None
-            else Path("analysis_notes.md")
+            effective_paths.scratch_dir / "analysis_notes.md"
         )
         self.skills: Dict[str, Any] = {}
         self.tool_registry = tool_registry
@@ -115,22 +120,19 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._task_execution_context: Any | None = None
         self.checkpoint_file = str(
             checkpoint_file
-            or (workspace_paths.checkpoint_file if workspace_paths else paths.CHECKPOINT_FILE)
+            or effective_paths.checkpoint_file
         )
         selected_metrics = str(
             metrics_file
-            or (workspace_paths.metrics_file if workspace_paths else paths.METRICS_FILE)
+            or effective_paths.metrics_file
         )
-        self.memory_file = str(
-            workspace_paths.memory_file if workspace_paths else paths.MEMORY_FILE
-        )
+        self.memory_file = str(effective_paths.memory_file)
         memory = AgentMemory(
-            db_path=workspace_paths.memory_db_file if workspace_paths else None,
+            db_path=effective_paths.memory_db_file,
             default_file=self.memory_file,
-            backup_dir=workspace_paths.memory_backup_dir if workspace_paths else None,
+            backup_dir=effective_paths.memory_backup_dir,
         )
-        if workspace_paths is not None:
-            memory.initialize()
+        memory.initialize()
         self.checkpoint_manager = CheckpointManager(self.checkpoint_file)
         self.metrics_recorder = MetricsRecorder(selected_metrics)
         self.session.set_model_call_callback(self._log_metric)
@@ -193,14 +195,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
     def execution_gateway(self) -> ExecutionGateway:
         return cast(ExecutionGateway, self.subsystems.execution_gateway)
     def resolve_user_path(self, file_path: str | Path) -> Path:
-        """Resolve a user file through the standalone workspace boundary.
-        Direct ``Orchestrator`` consumers without ``WorkspacePaths`` retain the
-        legacy relative-path behavior.  The standalone composition always
-        supplies ``WorkspacePaths`` and therefore confines the result to the
-        injected workspace.
-        """
-        if self.workspace_paths is None:
-            return Path(file_path)
+        """Resolve every user file through the canonical workspace boundary."""
         return cast(Path, self.workspace.resolve_path(file_path))
 
     def _route_persona(self, objective: str) -> None:
@@ -262,7 +257,12 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             self.task_authority,
             self.allowed_capabilities,
         )
-        include_eligible_extensions(self.active_skills, self.skills, self._planning_context, self.tool_registry)
+        project_eligible_extension_descriptors(
+            self.active_skills,
+            self.skills,
+            self._planning_context,
+            self.tool_registry,
+        )
 
     def get_planning_view(self, planner_kind: str) -> PlanningPresentationSnapshot | None:
         """Derive a planner view without rebuilding or consulting runtime sources."""

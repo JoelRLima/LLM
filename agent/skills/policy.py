@@ -84,8 +84,10 @@ def builtin_skills_for_persona(persona: str, registry: Any = None) -> list[str]:
     ]
 
 
-def include_eligible_extensions(active: list[str], skills: dict[str, Any], context: Any, registry: Any) -> None:
-    """Bridge eligible extension descriptors into legacy step validation."""
+def project_eligible_extension_descriptors(
+    active: list[str], skills: dict[str, Any], context: Any, registry: Any
+) -> None:
+    """Project admitted extension descriptors into the planning tool view."""
     if context is None or registry is None:
         return
     for tool in context.tools:

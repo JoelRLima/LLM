@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 from agent.planning.plan_builder import PlanningDecisionKind
 from agent.planning.plan_model import Plan, serialize_plan
@@ -34,22 +35,12 @@ def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
     if raw is None:
         return True
     report_reviewer = getattr(orchestrator.agent_state, "review_task_obligations_report", None)
-    legacy_reviewer = getattr(orchestrator.agent_state, "review_task_obligations", None)
-    if not callable(report_reviewer) and not callable(legacy_reviewer):
+    if not callable(report_reviewer):
         return False
     try:
-        if callable(report_reviewer):
-            review = report_reviewer(raw, source="canonical_review")
-            added = review.accepted
-            rejected = review.rejected
-        else:
-            review = cast(Callable[..., Any], legacy_reviewer)(
-                raw,
-                source="canonical_review",
-                collect_rejections=True,
-            )
-            added = tuple(review)
-            rejected = ()
+        review = report_reviewer(raw, source="canonical_review")
+        added = review.accepted
+        rejected = review.rejected
     except (TaskSemanticsError, TypeError, ValueError):
         return False
     emit = getattr(orchestrator, "_emit", None)
@@ -249,7 +240,7 @@ def _extend_plan(
     if not callable(extender):
         return BoundaryContinuationResult(blocked=True)
     try:
-        validated = _call_extension(extender, plan, objective, planning_view)
+        validated = call_extension_boundary(extender, plan, objective, planning_view)
     except BudgetExhausted:
         raise
     except Exception:
@@ -259,34 +250,34 @@ def _extend_plan(
     return BoundaryContinuationResult(extended=True, planning_view=planning_view)
 
 
-def _call_extension(
+def call_extension_boundary(
     extender: Callable[..., Any], plan: Any, objective: str, planning_view: Any
 ) -> Any:
-    """Call the canonical extension seam with a narrow legacy compatibility retry."""
+    """Call the extension seam using its declared supported keyword shape.
+
+    Signature inspection happens before invocation.  A ``TypeError`` raised by
+    the extension body therefore remains an extension failure; it is never
+    interpreted as permission to retry under another call shape.
+    """
 
     extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}
     if planning_view is not None:
         extension_kwargs["planning_view"] = planning_view
     try:
-        return extender(plan, objective, **extension_kwargs)
-    except TypeError as exc:
-        message = str(exc)
-        keywords = ("allow_conditional_preview", "planning_view")
-        if not any(keyword in message for keyword in keywords):
-            raise
-        fallback_kwargs = {
-            key: value
-            for key, value in extension_kwargs.items()
-            if key not in message
+        parameters = inspect.signature(extender).parameters
+    except (TypeError, ValueError) as exc:
+        raise TypeError("extension seam has no inspectable signature") from exc
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+        supported_kwargs = extension_kwargs
+    else:
+        supported_kwargs = {
+            name: value
+            for name, value in extension_kwargs.items()
+            if name in parameters
+            and parameters[name].kind
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
         }
-        try:
-            return extender(plan, objective, **fallback_kwargs)
-        except TypeError as fallback_exc:
-            if fallback_kwargs and any(
-                keyword in str(fallback_exc) for keyword in keywords
-            ):
-                return extender(plan, objective)
-            raise
+    return extender(plan, objective, **supported_kwargs)
 
 
 __all__ = [

@@ -1,61 +1,35 @@
+"""Skill-facing path error adapter.
+
+The canonical workspace-confinement implementation lives in
+``agent.runtime.path_safety``. These helpers preserve the historical tuple
+return shape used by the file-oriented skills while delegating all path
+resolution and confinement to that owner.
+
+This module is an adapter, not a second confinement owner.
 """
-agent/skills/safe_path.py
 
-SafePathResolver — utilitário único de resolução segura de caminhos
-dentro de um diretório base (achado crítico 1.3).
+from __future__ import annotations
 
-Antes deste PR, 4 skills (grep.py, directory_reader.py, code_analyzer.py,
-file_reader.py) validavam o acesso ao diretório seguro com:
-
-    str(requested).startswith(str(self.base_dir))
-
-Essa checagem é falha: `/home/user/projeto` e `/home/user/projeto_secreto`
-"começam com" `/home/user/projeto` como string, sem respeitar limite de
-diretório — um path traversal ainda seria detectado corretamente na
-maioria dos casos óbvios (ex.: `../../etc/passwd`, que o `.resolve()` já
-normaliza para fora do prefixo), mas a comparação por string abre brecha
-para diretórios irmãos cujo nome estende o do diretório base.
-
-`file_writer.py` já usava a forma correta (`Path.relative_to()` dentro de
-um `try/except ValueError`); este módulo generaliza esse padrão para ser
-reaproveitado pelas 4 skills afetadas.
-"""
 from pathlib import Path
 from typing import Optional, Tuple
 
+from agent.runtime.path_safety import WorkspacePathError, resolve_workspace_path
+
 
 def resolve_safe_path(base_dir: Path, relative_path: str) -> Tuple[Optional[Path], Optional[str]]:
-    """
-    Resolve `relative_path` dentro de `base_dir` com segurança.
-
-    Retorna uma tupla (caminho_resolvido, erro):
-      - Em caso de sucesso: (Path resolvido, None).
-      - Em caso de falha (caminho inválido ou fora do diretório seguro):
-        (None, mensagem de erro).
-
-    Usa `Path.relative_to()` — que lança `ValueError` se `requested` não
-    estiver de fato dentro de `base_dir` — em vez de comparação de string
-    por prefixo (`startswith`), fechando a brecha do achado 1.3.
-    """
+    """Return the canonical path plus the skill-compatible error string."""
     try:
-        requested = (base_dir / relative_path).resolve()
-    except Exception as e:
-        return None, f"Caminho inválido: {relative_path} ({e})"
-
-    try:
-        requested.relative_to(base_dir)
-    except ValueError:
+        return resolve_workspace_path(base_dir, relative_path), None
+    except WorkspacePathError:
         return None, f"Acesso fora do diretório seguro: {relative_path}"
-
-    return requested, None
+    except (OSError, RuntimeError, ValueError) as exc:
+        return None, f"Caminho inválido: {relative_path} ({exc})"
 
 
 def resolve_confined_file(base_dir: Path, candidate: Path) -> Optional[Path]:
-    """Resolve um item descoberto e descarta symlinks que escapem da raiz."""
+    """Resolve one discovered file through the canonical path owner."""
 
     try:
-        resolved = candidate.resolve(strict=True)
-        resolved.relative_to(base_dir)
-    except (OSError, ValueError):
+        return resolve_workspace_path(base_dir, candidate, require_file=True)
+    except (OSError, RuntimeError, ValueError):
         return None
-    return resolved if resolved.is_file() else None

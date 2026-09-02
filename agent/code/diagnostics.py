@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
-from agent.runtime.context import TaskResult, TaskStatus
+from agent.runtime.context import Artifact, TaskResult, TaskStatus
+from agent.runtime.failures import FailureFact
 
 
 class FailureCategory(str, Enum):
@@ -27,74 +29,103 @@ class FailureClassification:
     guidance: str
 
 
+def _failure_result(
+    *, code: str | None, error: str | None = None,
+    status: TaskStatus = TaskStatus.FAILED, summary: str = "",
+    artifacts: tuple[Artifact, ...] = (),
+    diagnostics: tuple[dict[str, Any], ...] = (),
+    metadata: dict[str, Any] | None = None,
+) -> TaskResult:
+    fact = FailureFact.from_code(code, status=status, message=error)
+    return TaskResult(status, summary, artifacts, diagnostics, error, metadata or {}, fact.code)
+
+
+def _failure_fact(result: TaskResult) -> FailureFact | None:
+    if result.status == TaskStatus.SUCCEEDED:
+        return None
+    return FailureFact.from_code(
+        result.failure_code,
+        status=result.status,
+        message=result.error,
+    )
+
+
+def _diagnostic_codes(result: TaskResult) -> set[str]:
+    return {
+        str(item["code"]).strip().upper()
+        for item in result.diagnostics
+        if isinstance(item, dict) and item.get("code")
+    }
+
+
 class FailureClassifier:
     def classify(self, result: TaskResult) -> FailureClassification:
-        text = " ".join(
-            [
-                result.error or "",
-                result.summary,
-                *(
-                    str(item.get("code", "")) + " " + str(item.get("message", ""))
-                    for item in result.diagnostics
-                ),
-            ]
-        ).casefold()
-
-        if result.status == TaskStatus.CANCELLED or "cancel" in text:
+        fact = _failure_fact(result)
+        if fact is None:
+            return FailureClassification(
+                FailureCategory.UNKNOWN,
+                False,
+                "Nenhuma falha estruturada foi observada.",
+            )
+        if fact.status == TaskStatus.CANCELLED.value or fact.code == "CANCELLED":
             return FailureClassification(
                 FailureCategory.CANCELLED,
                 False,
                 "A operação foi cancelada; não tente novamente automaticamente.",
             )
-        if "permission" in text or "capacidade" in text or "fora do projeto" in text:
+
+        diagnostic_codes = _diagnostic_codes(result)
+        if fact.status in {TaskStatus.BLOCKED.value, TaskStatus.PERMISSION_DENIED.value} or fact.code in {
+            "AUTHORITY_DENIED",
+            "PERMISSION_DENIED",
+            "TOOL_BLOCKED",
+        }:
             return FailureClassification(
                 FailureCategory.PERMISSION,
                 False,
                 "A política de segurança bloqueou a operação; não contorne a restrição.",
             )
-        if "timeout" in text or "timed_out" in text or "tempo limite" in text:
+        if fact.status == TaskStatus.TIMED_OUT.value or fact.code in {"TIMEOUT", "WATCHDOG_TIMEOUT"}:
             return FailureClassification(
                 FailureCategory.TIMEOUT,
-                True,
+                fact.retryable,
                 "Reduza o escopo da mudança; não aumente timeouts nem instale ferramentas.",
             )
-        if (
-            "unavailable" in text
-            or "indispon" in text
-            or "exige um modelgateway" in text
-            or "não encontrado" in text and "comando" in text
-        ):
+        if fact.status == TaskStatus.UNAVAILABLE.value or fact.code == "TOOL_UNAVAILABLE":
             return FailureClassification(
                 FailureCategory.TOOL_UNAVAILABLE,
-                False,
+                fact.retryable,
                 "O validator não está disponível; não alegue que os testes passaram.",
             )
-        if "py_compile" in text or "syntax" in text or "syntaxerror" in text:
+        if diagnostic_codes & {"PYTHON_SYNTAX", "SYNTAX", "SYNTAX_ERROR", "VALIDATION_SYNTAX"}:
             return FailureClassification(
                 FailureCategory.SYNTAX,
-                True,
+                fact.retryable,
                 "Corrija somente a sintaxe indicada e preserve o restante do arquivo.",
             )
-        if "pytest" in text or "assert" in text or "test" in text and "failed" in text:
+        if diagnostic_codes & {"PYTEST", "TEST", "TEST_FAILED", "VALIDATION_FAILED"}:
             return FailureClassification(
                 FailureCategory.TEST,
-                True,
+                fact.retryable,
                 "Corrija a causa do teste falho sem remover ou enfraquecer o teste.",
             )
-        if "hash" in text or "conflict" in text or "divergente" in text:
+        if diagnostic_codes & {"CHANGE_CONFLICT", "CHANGESET_CONFLICT", "HASH_DIVERGED"}:
             return FailureClassification(
                 FailureCategory.CONFLICT,
-                True,
+                fact.retryable,
                 "Releia o arquivo e gere base_hash/expected_text a partir do estado atual.",
             )
-        if "json" in text or "changeset" in text or "estrutur" in text:
+        if fact.code == "INVALID_RESPONSE" or diagnostic_codes & {
+            "STRUCTURED_OUTPUT",
+            "STRUCTURED_OUTPUT_FAILURE",
+        }:
             return FailureClassification(
                 FailureCategory.STRUCTURED_OUTPUT,
-                True,
+                fact.retryable,
                 "Retorne apenas um ChangeSet válido conforme o schema, sem texto adicional.",
             )
         return FailureClassification(
             FailureCategory.UNKNOWN,
-            True,
+            fact.retryable,
             "Faça a menor alteração possível e não repita uma proposta idêntica.",
         )

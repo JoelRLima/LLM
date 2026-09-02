@@ -14,7 +14,7 @@ SUPPORTED_MODEL_PROVIDERS = frozenset({"openai_compatible"})
 
 def create_model_gateway(config: Mapping[str, Any] | Any) -> ModelGateway:
     profile = resolve_model_profile(config)
-    provider = str(profile.get("provider", "openai_compatible"))
+    provider = profile.provider
     if provider == "openai_compatible":
         return OpenAICompatibleGateway(profile)
     raise ValueError(f"Provider de modelo não suportado: {provider}")

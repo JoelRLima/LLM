@@ -17,6 +17,7 @@ from agent.llm.context_view_support import (
     tool_history_view,
 )
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.path_safety import resolve_workspace_path
 
 
 def build_compact_view(
@@ -169,12 +170,9 @@ def _line_hint(
     filename: str,
     semantic: bool = False,
 ) -> str | None:
-    path = (root / filename).resolve()
     try:
-        path.relative_to(root)
-    except ValueError:
-        return None
-    if not path.is_file():
+        path = resolve_workspace_path(root, filename, require_file=True)
+    except (OSError, RuntimeError, ValueError):
         return None
     try:
         with path.open("r", encoding="utf-8", errors="ignore") as handle:

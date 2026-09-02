@@ -10,10 +10,6 @@ from typing import Optional, Protocol, Sequence
 from agent.cancellation import CancellationToken
 from agent.code.contracts import Diagnostic, DiagnosticSeverity, ProjectProfile
 from agent.code.discovery import IGNORED_DIRECTORIES
-from agent.code.path_safety import (
-    resolve_workspace_path,
-    workspace_relative_path,
-)
 from agent.code.validation_external import (
     MypyValidationProvider,
     RuffValidationProvider,
@@ -27,6 +23,10 @@ from agent.code.validation_process import (
 )
 from agent.code.validation_python import PythonValidationProvider
 from agent.runtime.context import ProcessConcurrencyGate
+from agent.runtime.path_safety import (
+    resolve_workspace_path,
+    workspace_relative_path,
+)
 
 __all__ = [
     "CommandResult", "CommandSpec", "ProcessRunner", "ProjectValidator",

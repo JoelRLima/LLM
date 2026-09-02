@@ -67,7 +67,7 @@ def load_tool_registry(
     """Constrói o ToolRegistry populado com as ferramentas builtin e extensões habilitadas."""
     from agent.tools.builtin_adapter import BuiltinToolAdapter
     from agent.tools.extension_registry import ExtensionRegistry
-    from agent.tools.stdio_adapter import StdioToolAdapter, load_extension_manifest
+    from agent.tools.stdio_adapter import StdioToolAdapter, load_strict_extension_manifest
     from agent.tools.tool_registry import ToolRegistry
 
     skill_reg = skill_registry or load_skill_registry(
@@ -88,7 +88,7 @@ def load_tool_registry(
     for entry in registry.list():
         if not entry.enabled:
             continue
-        manifest = load_extension_manifest(entry.manifest_path)
+        manifest = load_strict_extension_manifest(entry.manifest_path)
         tool_reg.register_adapter(StdioToolAdapter(manifest, cwd=base_dir))
     return tool_reg
 

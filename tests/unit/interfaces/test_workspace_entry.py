@@ -11,7 +11,9 @@ from agent.interfaces.cli.workspace_entry import (
     choose_workspace,
     load_last_workspace,
     remember_workspace,
+    workspace_storage_path,
 )
+from agent.memory.json_persistence import AtomicJsonWriteError
 from agent.runtime.config_errors import ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -79,6 +81,38 @@ def test_last_workspace_state_round_trip_and_stale_state_fails_closed(
         encoding="utf-8",
     )
     assert load_last_workspace(app_paths) is None
+
+
+def test_workspace_storage_requires_explicit_path_authority(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="explicit WorkspacePaths"):
+        workspace_storage_path(
+            SimpleNamespace(workspace=SimpleNamespace(root=tmp_path)),
+            "chat_history_file",
+            "chat_history.json",
+        )
+
+    selected = tmp_path / "history.json"
+    context = SimpleNamespace(
+        workspace_paths=SimpleNamespace(chat_history_file=selected)
+    )
+    assert workspace_storage_path(context, "chat_history_file", "ignored.json") == selected
+
+
+def test_remember_workspace_absorbs_atomic_writer_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_paths = AppPaths.discover(app_home=tmp_path / "app")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def fail(_path: object, _payload: object) -> None:
+        raise AtomicJsonWriteError(Path("last-workspace.json"), OSError("read-only"))
+
+    monkeypatch.setattr(workspace_entry, "write_json_atomic", fail)
+
+    remember_workspace(app_paths, workspace)
+
+    assert not app_paths.last_workspace_file.exists()
 
 
 def test_stale_last_workspace_does_not_remove_normal_selection(
@@ -219,6 +253,37 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     rendered = "\n".join(output.output)
     assert rendered.count("Workspace ativo") == 1
     assert str(canonical_root.resolve()) in rendered
+
+
+def test_chat_continues_when_optional_workspace_persistence_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_home = tmp_path / "app-home"
+    app_paths = AppPaths.discover(app_home=app_home)
+    ConfigRepository(app_paths).initialize()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    application = SimpleNamespace(
+        session=SimpleNamespace(config={}),
+        orchestrator=SimpleNamespace(),
+        config={},
+        paths=app_paths,
+        workspace=SimpleNamespace(root=workspace.resolve()),
+        workspace_paths=SimpleNamespace(),
+        close=lambda: None,
+    )
+    reached_chat: list[bool] = []
+
+    def fail(_path: object, _payload: object) -> None:
+        raise AtomicJsonWriteError(Path("last-workspace.json"), OSError("read-only"))
+
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: application)
+    monkeypatch.setattr(cli, "_chat_loop", lambda _context: reached_chat.append(True))
+    monkeypatch.setattr(workspace_entry, "write_json_atomic", fail)
+
+    assert cli.main(["chat", "--home", str(app_home), "--workspace", str(workspace)]) == 0
+    assert reached_chat == [True]
 
 
 def test_chat_tty_reopens_persisted_last_workspace_and_records_active_root(
