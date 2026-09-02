@@ -104,6 +104,77 @@ def test_launcher_forwards_streams_and_writes_status(tmp_path: Path) -> None:
     assert json.loads(status_path.read_text(encoding="utf-8")) == {"state": "extension_started"}
 
 
+def test_launcher_tolerates_stdin_close_after_extension_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Stdin:
+        def write(self, _: bytes) -> int:
+            return 1
+
+        def close(self) -> None:
+            raise OSError(22, "Invalid argument")
+
+    class _ExitedProcess:
+        def __init__(self) -> None:
+            self.stdin = _Stdin()
+            self.returncode = 0
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def wait(self) -> int:
+            return self.returncode
+
+    process = _ExitedProcess()
+    status_path = tmp_path / "status.json"
+    envelope = {
+        "launcher_protocol": 1,
+        "command": [sys.executable, "extension.py"],
+        "request_line": "{}",
+        "status_path": str(status_path),
+    }
+    monkeypatch.setattr(stdio_launcher_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+
+    assert stdio_launcher_module._run(envelope) == 0
+    assert json.loads(status_path.read_text(encoding="utf-8")) == {"state": "extension_started"}
+
+
+def test_launcher_does_not_tolerate_stdin_write_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _Stdin:
+        def write(self, _: bytes) -> int:
+            raise OSError(22, "Invalid argument")
+
+        def close(self) -> None:
+            raise AssertionError("close must not run after write failure")
+
+    class _ExitedProcess:
+        def __init__(self) -> None:
+            self.stdin = _Stdin()
+            self.returncode = 0
+
+        def poll(self) -> int:
+            return self.returncode
+
+    process = _ExitedProcess()
+    status_path = tmp_path / "status.json"
+    envelope = {
+        "launcher_protocol": 1,
+        "command": [sys.executable, "extension.py"],
+        "request_line": "{}",
+        "status_path": str(status_path),
+    }
+    monkeypatch.setattr(stdio_launcher_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+
+    assert stdio_launcher_module._run(envelope) == 1
+    assert json.loads(status_path.read_text(encoding="utf-8")) == {
+        "state": "launcher_error",
+        "code": "EXTENSION_START_FAILED",
+        "message": "[Errno 22] Invalid argument",
+    }
+
+
 def test_launcher_without_envelope_stays_silent_and_fails() -> None:
     launcher = Path(__import__("agent.tools.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
     process = subprocess.Popen(

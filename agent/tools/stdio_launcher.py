@@ -217,7 +217,11 @@ def _run(envelope: dict[str, Any]) -> int:
         if process.stdin is None:
             raise OSError("stdin da extension nao foi criado")
         process.stdin.write(envelope["request_line"].encode("utf-8") + b"\n")
-        process.stdin.close()
+        try:
+            process.stdin.close()
+        except OSError:
+            if process.poll() is None:
+                raise
         return process.wait()
     except Exception as exc:
         if process is not None and process.poll() is None:
