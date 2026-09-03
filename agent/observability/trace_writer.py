@@ -278,7 +278,13 @@ class TraceWriterMixin:
         timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)
         deadline = time.monotonic() + timeout
         with self._condition:
-            while self._pending or self._pending_gaps or self._inflight or self._metadata_dirty:
+            while (
+                self._pending
+                or self._pending_gaps
+                or self._inflight
+                or self._metadata_dirty
+                or self._publication_in_flight > 0
+            ):
                 if self._writer_error is not None:
                     return False
                 remaining = deadline - time.monotonic()

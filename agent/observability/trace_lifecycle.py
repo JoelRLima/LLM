@@ -79,6 +79,8 @@ class TraceLifecycleMixin:
     def close(self: Any, *, timeout_seconds: float | None = None) -> TraceMetadata:
         timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)
         deadline = time.monotonic() + timeout
+        finalization_reserve = min(0.5, timeout / 4.0)
+        initial_drain_budget = max(0.0, timeout - finalization_reserve)
         if not self._worker_started:
             self.start()
         with self._condition:
@@ -88,7 +90,7 @@ class TraceLifecycleMixin:
             self._finalization_pending = True
             self._condition.notify_all()
 
-        clean_drain = self.flush(max(0.0, deadline - time.monotonic()))
+        clean_drain = self.flush(initial_drain_budget)
         with self._condition:
             # The worker is intentionally kept alive by ``_finalization_pending``
             # until the final snapshot below has been handed to its control

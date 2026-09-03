@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from agent.observability.trace_catalog import TraceCatalog
 
 DEFAULT_QUEUE_CAPACITY = 128
-DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 1.0
+DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 2.0
 
 
 class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):

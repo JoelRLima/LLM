@@ -190,14 +190,14 @@ class ObservationSession:
             except Exception:
                 pass
         self._stop.set()
-        heartbeat_thread = self._heartbeat_thread
-        if heartbeat_thread is not None and heartbeat_thread.is_alive():
-            heartbeat_thread.join(timeout=max(0.0, deadline - time.monotonic()))
         if self._dispatcher is not None:
             remove_sink = getattr(self._dispatcher, "remove_sink", None)
             if callable(remove_sink):
                 remove_sink(self)
         metadata = self.store.close(timeout_seconds=max(0.0, deadline - time.monotonic()))
+        heartbeat_thread = self._heartbeat_thread
+        if heartbeat_thread is not None and heartbeat_thread.is_alive():
+            heartbeat_thread.join(timeout=max(0.0, deadline - time.monotonic()))
         self._closed = True
         if self.store.finalization_settled:
             self._apply_retention()
