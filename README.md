@@ -45,6 +45,10 @@ llm-agent chat
 llm-agent run --workspace C:\caminho\projeto "Analise este repositório"
 llm-agent run --workspace C:\caminho\projeto --json "Resuma o projeto"
 llm-agent run --workspace C:\caminho\projeto --yes "Aplique a alteração"
+llm-agent inspect list --json
+llm-agent inspect show --json --run-id RUN_ID
+llm-agent inspect replay --json --run-id RUN_ID
+llm-agent inspect export --run-id RUN_ID --output trace.zip
 ```
 
 `run` é headless e nunca lê `stdin`. Se uma ação exigir consentimento e `--yes`
@@ -55,6 +59,11 @@ e não transforma validação ausente em sucesso.
 `--home DIR` fornece uma raiz portátil para configuração e estado; sem override,
 paths são resolvidos nos diretórios de usuário do sistema. O pacote instalado
 não é usado como diretório gravável.
+
+`llm-agent inspect` é uma superfície somente leitura para traces de runs ativos
+ou históricos. A trace é redigida, possui completude explícita e não é
+checkpoint, outcome, memória ou autoridade da tarefa. Veja o
+[guia de observabilidade e inspector](docs/observability-inspector.md).
 
 ## Estado
 

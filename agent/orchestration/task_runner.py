@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from agent.checkpoint_manager import CheckpointLoadError
 from agent.llm.router import _is_clearly_trivial
@@ -45,7 +45,18 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
 
     @staticmethod
     def _route_is_hierarchical(objective: str) -> bool:
-        return is_hierarchical(objective)
+        return cast(bool, is_hierarchical(objective))
+
+    def _start_observation(self, inputs: TaskInputs) -> None:
+        start_observation = getattr(self.orchestrator, "_on_observation_run_started", None)
+        if not callable(start_observation):
+            return
+        try:
+            start_observation(self.orchestrator.run_correlation, resumed=inputs.resumed)
+        except Exception as exc:
+            # Observation is an isolated projection; it cannot prevent
+            # the canonical task lifecycle from starting.
+            logger.warning("Observation session startup failed: %s", type(exc).__name__)
 
     def run(
         self, objective: Optional[str], stream_callback: Callable[[str], None] | None
@@ -58,31 +69,32 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             inputs = self._resolve_inputs(objective, original_count)
             if inputs is None:
                 self._reset_missing_input_state()
-                return mark_terminal_blocked(
+                return cast(str, mark_terminal_blocked(
                     self.orchestrator,
                     reason_code="MISSING_REQUIRED_INPUT",
                     message="Nenhum objetivo foi fornecido e nenhum checkpoint valido foi encontrado.",
-                )
+                ))
             start_correlation = getattr(self.orchestrator, "_start_run_correlation", None)
             if callable(start_correlation):
                 start_correlation(resumed=inputs.resumed)
+            self._start_observation(inputs)
             if inputs.resumed and self._has_terminal_disposition():
-                return self._resume_terminal_checkpoint(inputs.objective)
+                return cast(str, self._resume_terminal_checkpoint(inputs.objective))
             self._prepare(inputs)
             if not inputs.resumed and _is_clearly_trivial(inputs.objective):
-                return complete_direct_answer(
+                return cast(str, complete_direct_answer(
                     self.orchestrator,
                     inputs.objective,
                     str(self.orchestrator._answer_trivial(inputs.objective)),
-                )
+                ))
             definition_answer = self._ensure_task_definition(inputs)
             if definition_answer is not None:
                 return definition_answer
-            return self._execute(inputs, stream_callback)
+            return cast(str, self._execute(inputs, stream_callback))
         except KeyboardInterrupt:
-            return self._handle_interrupt()
+            return cast(str, self._handle_interrupt())
         except CheckpointLoadError as exc:
-            return checkpoint_error_answer(self.orchestrator, exc)
+            return cast(str, checkpoint_error_answer(self.orchestrator, exc))
         except TaskPolicyError as exc:
             return self._handle_policy_error(exc)
         except BudgetExhausted:
@@ -109,7 +121,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             status="block",
         )
         self.orchestrator._save_checkpoint()
-        return message
+        return cast(str, message)
 
     def _resolve_inputs(self, objective: Optional[str], original_count: int) -> TaskInputs | None:
         if objective:
@@ -181,7 +193,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
 
     def _ensure_task_definition(self, inputs: TaskInputs) -> str | None:
-        return ensure_task_definition(self, inputs)
+        return cast(str | None, ensure_task_definition(self, inputs))
 
     def _preserve_task_definition_checkpoint(self) -> None:
         preserve_task_definition_checkpoint(self)
@@ -189,7 +201,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
     def _execute(
         self, inputs: TaskInputs, on_chunk: Callable[[str], None] | None
     ) -> str:
-        return execute_task(self, inputs, on_chunk)
+        return cast(str, execute_task(self, inputs, on_chunk))
 
     def _execute_plan(
         self,
@@ -219,23 +231,23 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 status="block",
             )
             blocker = self._allow_linear_completion(objective)
-            return terminal_answer(
+            return cast(str, terminal_answer(
                 self.orchestrator, objective, on_chunk, str(blocker or answer)
-            )
+            ))
         self.orchestrator.agent_state.set_plan(result.validated_plan)
         self.orchestrator._save_checkpoint()
         if result.final_answer:
             blocker = self._allow_linear_completion(objective)
             if blocker is not None:
-                return terminal_answer(self.orchestrator, objective, on_chunk, blocker)
+                return cast(str, terminal_answer(self.orchestrator, objective, on_chunk, blocker))
             return self._final_plan_answer(objective, on_chunk)
         blocker = self._allow_linear_completion(objective)
         if blocker is not None:
-            return terminal_answer(self.orchestrator, objective, on_chunk, blocker)
+            return cast(str, terminal_answer(self.orchestrator, objective, on_chunk, blocker))
         return self._final_plan_answer(objective, on_chunk)
 
     def _allow_linear_completion(self, objective: str) -> str | None:
-        return allow_linear_completion(self.orchestrator, objective)
+        return cast(str | None, allow_linear_completion(self.orchestrator, objective))
 
     def _final_plan_answer(self, objective: str, on_chunk: Callable[[str], None] | None) -> str:
         outcome = project_operational_outcome(

@@ -41,6 +41,16 @@ if TYPE_CHECKING:
 __all__ = ["CommandContext", "ConsoleChangeApprover", "exibir_menu", "handle_command"]
 
 
+def inspect_command(_: str, ctx: CommandContext) -> None:
+    """Render the same inspector API used by the installed CLI."""
+
+    from agent.interfaces.cli.inspector import render_context_inspect
+
+    if ctx.workspace_paths is None:
+        raise RuntimeError("inspector requires explicit workspace paths")
+    render_context_inspect(ctx)
+
+
 class CommandContext:
     def __init__(
         self,
@@ -83,6 +93,7 @@ EXACT_HANDLERS = {
     "/workspace": show_workspace, "/diretorio": show_workspace, "/pwd": show_workspace,
     "/modo": mode_command, "/mode": mode_command, "/authority": mode_command,
     "/retry": retry, "/retomar": retry,
+    "/inspect": inspect_command,
 }
 PREFIX_HANDLERS = (
     ("/modo", mode_command), ("/mode", mode_command), ("/authority", mode_command),

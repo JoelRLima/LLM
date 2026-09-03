@@ -11,6 +11,13 @@ def _common_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", metavar="ARQUIVO", help="arquivo de configuração explícito")
     parser.add_argument("--workspace", metavar="DIR", help="workspace da tarefa (padrão: diretório atual)")
     parser.add_argument("--profile", metavar="NOME", help="perfil de modelo configurado")
+    parser.add_argument(
+        "--observability-mode",
+        choices=("normal", "verbose", "debug", "trace"),
+        dest="observability_mode",
+        metavar="MODE",
+        help="nível seguro de observabilidade da execução (padrão: normal)",
+    )
 
     return parser
 
@@ -121,4 +128,55 @@ def build_parser() -> argparse.ArgumentParser:
         dest="json_output",
         help="emite um unico documento JSON",
     )
+
+    inspect = subcommands.add_parser(
+        "inspect",
+        parents=[common],
+        help="inspeciona traces de observabilidade sem iniciar uma tarefa",
+        argument_default=argparse.SUPPRESS,
+    )
+
+    def add_inspect_options(item: argparse.ArgumentParser) -> None:
+        item.add_argument("--run-id", dest="inspect_run_id", metavar="RUN_ID", help="seleciona uma execução")
+        item.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
+        item.add_argument("--follow", action="store_true", help="acompanha um run ativo em terminal interativo")
+        item.add_argument("--limit", type=int, default=100, metavar="N", help="limite bounded de registros")
+        item.add_argument("--after", type=int, default=0, metavar="SEQ", help="começa após a sequência")
+        item.add_argument("--sequence", type=int, dest="inspect_sequence", metavar="SEQ", help="seleciona detalhe de uma sequência")
+        item.add_argument("--sequence-start", type=int, dest="inspect_sequence_start", metavar="SEQ")
+        item.add_argument("--sequence-end", type=int, dest="inspect_sequence_end", metavar="SEQ")
+        item.add_argument("--search", metavar="TEXT", help="busca apenas na representação redigida")
+        item.add_argument("--source", action="append", dest="inspect_sources", metavar="SOURCE")
+        item.add_argument("--kind", action="append", dest="inspect_kinds", metavar="KIND")
+        item.add_argument("--category", action="append", dest="inspect_categories", metavar="CATEGORY")
+        item.add_argument("--severity", action="append", dest="inspect_severities", metavar="SEVERITY")
+        item.add_argument("--status", action="append", dest="inspect_statuses", metavar="STATUS")
+        item.add_argument("--task-id", dest="inspect_task_id", metavar="ID")
+        item.add_argument("--root-task-id", dest="inspect_root_task_id", metavar="ID")
+        item.add_argument("--step", type=int, dest="inspect_step", metavar="N")
+        item.add_argument("--correlation-id", dest="inspect_correlation_id", metavar="ID")
+        item.add_argument("--invocation-id", dest="inspect_invocation_id", metavar="ID")
+        item.add_argument("--time-start", dest="inspect_time_start", metavar="ISO_TIME")
+        item.add_argument("--time-end", dest="inspect_time_end", metavar="ISO_TIME")
+        item.add_argument("--bookmarked-only", action="store_true", dest="inspect_bookmarked_only")
+
+    add_inspect_options(inspect)
+    inspect_commands = inspect.add_subparsers(dest="inspect_command")
+    inspect_list = inspect_commands.add_parser("list", parents=[common], help="lista runs retidos", argument_default=argparse.SUPPRESS)
+    add_inspect_options(inspect_list)
+    inspect_show = inspect_commands.add_parser("show", parents=[common], help="mostra um snapshot bounded", argument_default=argparse.SUPPRESS)
+    add_inspect_options(inspect_show)
+    inspect_replay = inspect_commands.add_parser("replay", parents=[common], help="reproduz uma trace sem execução", argument_default=argparse.SUPPRESS)
+    add_inspect_options(inspect_replay)
+    inspect_export = inspect_commands.add_parser("export", parents=[common], help="exporta uma trace redigida", argument_default=argparse.SUPPRESS)
+    add_inspect_options(inspect_export)
+    inspect_export.add_argument("--output", metavar="ARQUIVO", help="destino do bundle")
+    inspect_export.add_argument("--force", action="store_true", help="autoriza substituir o destino")
+    inspect_export.add_argument("--include-bookmarks", action="store_true", help="inclui anotações de bookmarks")
+    inspect_bookmark = inspect_commands.add_parser("bookmark", parents=[common], help="gerencia bookmarks da trace", argument_default=argparse.SUPPRESS)
+    inspect_bookmark.add_argument("bookmark_command", choices=("add", "remove", "list"))
+    inspect_bookmark.add_argument("--run-id", dest="inspect_run_id", metavar="RUN_ID")
+    inspect_bookmark.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
+    inspect_bookmark.add_argument("--sequence", type=int, dest="inspect_sequence", metavar="SEQ")
+    inspect_bookmark.add_argument("--note", metavar="NOTA")
     return parser

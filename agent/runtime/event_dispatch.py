@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from agent.runtime.events import RuntimeEvent, RuntimeEventKind, serialize_runtime_event
 from agent.runtime.logging import logger
@@ -78,7 +78,15 @@ class RuntimeEventDispatcher:
         self._checkpoint_observer = checkpoint_observer
 
     def add_sink(self, sink: Any) -> None:
-        self._sinks.append(sink)
+        if sink is self:
+            raise ValueError("runtime event dispatcher cannot observe itself")
+        if not any(item is sink for item in self._sinks):
+            self._sinks.append(sink)
+
+    def remove_sink(self, sink: Any) -> None:
+        """Detach one projection sink without changing semantic state sinks."""
+
+        self._sinks = [item for item in self._sinks if item is not sink]
 
     def emit(self, event: RuntimeEvent) -> None:
         if not isinstance(event, RuntimeEvent):
@@ -95,7 +103,7 @@ class RuntimeEventDispatcher:
 def state_event_projection(event: RuntimeEvent) -> dict[str, Any]:
     """Explicit named adapter for callers that need a serialized event."""
 
-    return serialize_runtime_event(event)
+    return cast(dict[str, Any], serialize_runtime_event(event))
 
 
 __all__ = [

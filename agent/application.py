@@ -9,12 +9,19 @@ from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from agent.application_cleanup import abort_startup, release_resources
+from agent.application_cleanup import abort_startup
+from agent.application_lifecycle import close_application
 from agent.application_result import AgentRunResult, finalize_application_result
-from agent.application_shutdown import require_application_invocations_drained
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.llm.contracts import ModelGateway
 from agent.llm.session import ChatSession
+from agent.observability.application_adapter import (
+    build_inspection_service,
+    finish_observation,
+    start_observation_session,
+)
+from agent.observability.live import ObservationSession
+from agent.observability.modes import ObservabilityMode, resolve_observability_mode
 from agent.orchestration.operational_modes import ApplicationOperationalModeMixin, OperationalMode
 from agent.orchestrator import Orchestrator
 from agent.planning.completion_observations import publish_outcome
@@ -58,6 +65,8 @@ class AgentApplication(ApplicationOperationalModeMixin):
         bootstrap_diagnostics: tuple[object, ...] = (),
         application_authority: ApplicationAuthoritySnapshot | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
+        observation_session: ObservationSession | None = None,
+        observability_mode: ObservabilityMode | str = ObservabilityMode.NORMAL,
     ) -> None:
         self.paths = paths
         self.workspace = workspace
@@ -72,9 +81,14 @@ class AgentApplication(ApplicationOperationalModeMixin):
         self.bootstrap_diagnostics = tuple(bootstrap_diagnostics)
         self.application_authority = application_authority
         self.task_authority = task_authority
+        self.observation_session = observation_session
+        self.observability_mode = resolve_observability_mode(observability_mode)
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
+        self.orchestrator._on_observation_run_started = lambda correlation, resumed=False: start_observation_session(
+            self, correlation, resumed=resumed
+        )
     @classmethod
     def create(
         cls,
@@ -91,6 +105,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         operational_mode: OperationalMode | None = None,
         configure_logging: bool = True,
         debug_mode: int = 0,
+        observability_mode: ObservabilityMode | str | None = None,
     ) -> "AgentApplication":
         app_paths = paths or AppPaths.discover()
         workspace_context = WorkspaceContext.create(workspace)
@@ -181,6 +196,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 bootstrap_diagnostics=extension_bootstrap.diagnostics,
                 application_authority=extension_bootstrap.authority,
                 task_authority=selected_task_authority,
+                observability_mode=resolve_observability_mode(observability_mode),
             )
             if operational_mode is not None:
                 app.orchestrator.set_operational_mode(operational_mode)
@@ -198,6 +214,11 @@ class AgentApplication(ApplicationOperationalModeMixin):
         report = raw_report if isinstance(raw_report, dict) else {}
         report["output_dir"] = str(workspace_paths.reports_dir)
         config["task_report"] = report
+
+    def inspection_service(self) -> Any:
+        """Return the shared read API for the interactive inspector adapter."""
+        return build_inspection_service(self)
+
     def run(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
         with _RUN_LOCK:
             return self._run_locked(objective, stream_callback=stream_callback)
@@ -253,7 +274,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         receipt: dict[str, Any] | None = None,
         report_path: str | None = None,
     ) -> AgentRunResult:
-        return finalize_application_result(
+        result = finalize_application_result(
             self,
             status,
             answer,
@@ -263,30 +284,13 @@ class AgentApplication(ApplicationOperationalModeMixin):
             receipt=receipt,
             report_path=report_path,
         )
+        finish_observation(self, result)
+        return result
     def cancel(self) -> None:
         if not self._closed:
             self.orchestrator.cancel_task()
     def close(self) -> None:
-        with _RUN_LOCK:
-            if self._closed:
-                return
-            primary_error: BaseException | None = None
-            cleanup_error: BaseException | None = None
-            drained = False
-            try:
-                require_application_invocations_drained(self.tool_invocation_gateway)
-                drained = True
-                if not self._task_attempted:
-                    self.orchestrator._persist_memory_to_file()
-            except BaseException as exc:
-                primary_error = exc
-            if drained:
-                cleanup_error = release_resources(self._instance_lock, self._owns_logging)
-                self._closed = True
-            if primary_error is not None:
-                raise primary_error
-            if cleanup_error is not None:
-                raise cleanup_error
+        close_application(self, _RUN_LOCK)
 
     def __enter__(self) -> "AgentApplication": return self
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None: self.close()

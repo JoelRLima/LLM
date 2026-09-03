@@ -32,6 +32,7 @@ def create_application(
         profile=getattr(args, "profile", None),
         approval_policy=approval_policy,
         task_authority_capabilities=getattr(args, "task_authority_capabilities", None),
+        observability_mode=getattr(args, "observability_mode", None),
         operational_mode=(OperationalMode.READ_ONLY if command == "chat" else None),
         configure_logging=configure_logging,
     )

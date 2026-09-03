@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -108,6 +109,36 @@ def sync_parent_directory(path: str | Path) -> None:
         os.close(descriptor)
 
 
+def write_bytes_atomic(path: str | Path, content: bytes) -> None:
+    """Publish already-serialized bytes through one durable atomic replacement."""
+
+    if not isinstance(content, bytes):
+        raise TypeError("content must be bytes")
+    destination = Path(path)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary_path = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, destination)
+        temporary_path = None
+        sync_parent_directory(destination)
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 __all__ = [
     "FinalPathInspection",
     "WINDOWS_REPARSE_POINT",
@@ -115,4 +146,5 @@ __all__ = [
     "inspect_final_path",
     "is_link_like",
     "sync_parent_directory",
+    "write_bytes_atomic",
 ]

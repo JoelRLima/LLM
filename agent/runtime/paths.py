@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from agent.runtime.workspace_trace_paths import WorkspaceTracePaths
+
 APP_DIRECTORY_NAME = "local-llm-agent"
 
 
@@ -31,7 +33,7 @@ def _environment_path(
 
 
 @dataclass(frozen=True)
-class WorkspacePaths:
+class WorkspacePaths(WorkspaceTracePaths):
     """All durable and disposable paths owned by one workspace."""
 
     workspace_id: str
@@ -129,6 +131,7 @@ class WorkspacePaths:
             self.artifacts_dir,
             self.restore_points_dir,
             self.scratch_dir,
+            *self.trace_directories,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

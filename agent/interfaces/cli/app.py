@@ -221,27 +221,36 @@ def _run_task_context(args: argparse.Namespace) -> int:
     )
 
 
+def _run_inspect(args: argparse.Namespace) -> int:
+    from agent.interfaces.cli.inspector import run_inspect
+
+    return run_inspect(args)
+
+
+def _dispatch_task(args: argparse.Namespace) -> int:
+    if _value(args, 'task_command') != 'context':
+        raise ValueError('subcomando task desconhecido')
+    return _run_task_context(args)
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     if getattr(args, 'command', None) == 'task':
-        if _value(args, 'task_command') != 'context':
-            raise ValueError('subcomando task desconhecido')
-        return _run_task_context(args)
+        return _dispatch_task(args)
     command = args.command or "chat"
-    if command == "chat":
-        return _run_chat(args)
-    if command == "run":
-        return _run_once(args)
-    if command == "doctor":
-        return _run_doctor(args)
-    if command == "config":
-        return _run_config(args)
-    if command == "state":
-        return _run_state(args)
-    if command == "tools":
-        return _run_tools(args)
-    if command == "extensions":
-        return _run_extensions(args)
-    raise ValueError(f"Comando desconhecido: {command}")
+    handlers = {
+        "chat": _run_chat,
+        "run": _run_once,
+        "doctor": _run_doctor,
+        "config": _run_config,
+        "state": _run_state,
+        "tools": _run_tools,
+        "extensions": _run_extensions,
+        "inspect": _run_inspect,
+    }
+    handler = handlers.get(command)
+    if handler is None:
+        raise ValueError(f"Comando desconhecido: {command}")
+    return handler(args)
 
 
 def _emit_error(message: str, *, json_output: bool) -> None:
@@ -263,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_error("Operação cancelada pelo usuário.", json_output=json_output)
         return 1
     except Exception as exc:
+        from agent.observability.trace_store import TraceCorruptError, TraceUnavailableError
         from agent.runtime.state_migration import StateMigrationError
         from agent.task_definition.errors import TaskDefinitionError
 
@@ -270,6 +280,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_error(first_run.actionable_missing_config(args, exc), json_output=json_output)
             return 2
         if isinstance(exc, TaskDefinitionError):
+            _emit_error(str(exc), json_output=json_output)
+            return 2
+        if isinstance(exc, (TraceUnavailableError, TraceCorruptError)):
             _emit_error(str(exc), json_output=json_output)
             return 2
         if isinstance(exc, (FileNotFoundError, NotADirectoryError, PermissionError, ValueError)):

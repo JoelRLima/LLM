@@ -29,6 +29,7 @@
 | eval core, Capability/Regression Sets e evidência | [agent/evaluation.md](agent/evaluation.md) |
 | measurement, projeção de progresso e relatórios | [agent/reporting.md](agent/reporting.md) |
 | health e diagnósticos | [agent/health.md](agent/health.md) |
+| observabilidade, inspector, replay e export | [observability-inspector.md](observability-inspector.md) |
 | desenvolvimento de extensions | [guia-extensao.md](guia-extensao.md) |
 | instalação, CLI e paths | [operacao-standalone.md](operacao-standalone.md) |
 | estratégia de testes e quality gates | [testes.md](testes.md) |
@@ -133,6 +134,7 @@ condições de retirada.
 | measurement/report/export | `agent/reporting.md` |
 | extension developer/admin workflow | `guia-extensao.md` |
 | install/startup/CLI/paths | `operacao-standalone.md` e, se afetar escopo, `plataforma-standalone.md` |
+| observabilidade/inspector/replay/export/redaction | `observability-inspector.md` |
 | TaskGraph/scheduler | `multitarefa.md` e `agent/planning.md` |
 | layout | `estrutura-diretorios.md`; `arquivos-raiz.md` para arquivos da raiz e pontos canônicos |
 
