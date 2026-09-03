@@ -14,6 +14,8 @@ MAX_SEARCH_CHARS = 256
 
 
 def _match_time(value: str, start: str | None, end: str | None) -> bool:
+    if start is None and end is None:
+        return True
     try:
         selected = parse_timestamp(value)
         start_value = parse_timestamp(start) if start is not None else None

@@ -16,7 +16,8 @@ def _as_datetime(value: Any) -> datetime:
     elif isinstance(value, (int, float)) and not isinstance(value, bool):
         selected = datetime.fromtimestamp(float(value), tz=timezone.utc)
     elif isinstance(value, str) and value.strip():
-        selected = datetime.fromisoformat(value)
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+        selected = datetime.fromisoformat(normalized)
     else:
         raise ValueError("clock/timestamp must be datetime, epoch seconds, or ISO text")
     if selected.tzinfo is None:
