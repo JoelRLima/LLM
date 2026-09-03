@@ -15,6 +15,7 @@ _EVENT_TITLES = {
 _EVENT_CATEGORIES: dict[str, str] = {
     "task_node_started": "task",
     "task_outcome": "final",
+    "task_resumed": "recovery",
     "task_blocked": "warning/error",
     "direct_response": "task",
     "plan_created": "plan",

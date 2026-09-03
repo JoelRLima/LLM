@@ -44,6 +44,10 @@ inclui a stack opcional de memória semântica; use `.[ml]` quando necessário.
 llm-agent chat
 llm-agent run --workspace C:\caminho\projeto "Analise este repositório"
 llm-agent run --workspace C:\caminho\projeto --json "Resuma o projeto"
+llm-agent task status --workspace C:\caminho\projeto
+llm-agent task status --workspace C:\caminho\projeto --json
+llm-agent task resume --workspace C:\caminho\projeto
+llm-agent task resume --workspace C:\caminho\projeto --json
 llm-agent run --workspace C:\caminho\projeto --yes "Aplique a alteração"
 llm-agent inspect list --json
 llm-agent inspect show --json --run-id RUN_ID
@@ -64,6 +68,37 @@ não é usado como diretório gravável.
 ou históricos. A trace é redigida, possui completude explícita e não é
 checkpoint, outcome, memória ou autoridade da tarefa. Veja o
 [guia de observabilidade e inspector](docs/observability-inspector.md).
+
+### Continuidade de tarefas
+
+Cada workspace possui um único slot de checkpoint. `task status` é uma consulta
+read-only, sem carregar modelo, criar `AgentApplication` ou adquirir o lock de
+execução; ele classifica o slot como `ABSENT`, `RESUMABLE`, `PAUSED`,
+`TERMINAL`, `UNSUPPORTED` ou `INVALID`. Use `--json` para um documento bounded
+e estável.
+
+`task resume` aceita somente a retomada explícita do checkpoint válido:
+
+```powershell
+llm-agent task status --workspace C:\caminho\projeto
+llm-agent task resume --workspace C:\caminho\projeto --yes
+```
+
+Uma retomada bem-sucedida cria um novo `run_id` para o mesmo `root_task_id` e
+preserva progresso, autoridade/referência de Task Definition e policy/budget;
+o tempo em que o processo esteve offline não conta como tempo ativo. Pausar ou
+interromper preserva um checkpoint não terminal; cancelar explicitamente é
+terminal e não pode ser reaberto por `task resume`.
+
+Checkpoint corrompido, incompatível ou hierárquico em estado `running` é
+reportado como `INVALID` ou `UNSUPPORTED`, com razão estável, preservado e sem
+execução. A limitação hierárquica usa
+`HIERARCHICAL_RESUME_UNSUPPORTED`: Wave 10 não faz pseudo-resume de um
+microplan em andamento.
+
+Quando houver observabilidade, `llm-agent inspect` pode mostrar o fato de
+retomada e a linhagem entre tentativas. Traces são enriquecimento opcional e
+não são a autoridade para classificar ou executar a continuidade.
 
 ## Estado
 

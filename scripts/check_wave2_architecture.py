@@ -670,7 +670,10 @@ def _numeric_recovery_constant(node: ast.Assign | ast.AnnAssign) -> bool:
         name = target.id.casefold()
         if (
             name.startswith("max_retry")
-            or any(token in name for token in ("replan", "repair", "continu", "recover"))
+            or any(
+                token in name and (token != "continu" or "continuity" not in name)
+                for token in ("replan", "repair", "continu", "recover")
+            )
         ) and isinstance(
             node.value, ast.Constant
         ) and isinstance(node.value.value, (int, float)) and not isinstance(node.value.value, bool):
@@ -700,7 +703,10 @@ def _numeric_recovery_default(node: ast.FunctionDef | ast.AsyncFunctionDef) -> b
             and not isinstance(default.value, bool)
             and (
                 name.startswith("max_retry")
-                or any(token in name for token in ("replan", "repair", "continu", "recover"))
+                or any(
+                    token in name and (token != "continu" or "continuity" not in name)
+                    for token in ("replan", "repair", "continu", "recover")
+                )
             )
         ):
             return True

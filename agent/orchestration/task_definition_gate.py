@@ -8,7 +8,47 @@ from agent.planning.task_completion import mark_terminal_blocked
 from agent.task_definition.errors import TaskDefinitionError, public_task_definition_error
 
 
+def revalidate_resume_task_definition(runner: Any) -> Any:
+    """Revalidate the persisted binding before a resume attempt is committed.
+
+    This is deliberately a pure admission step: the canonical compiler and
+    resolver may inspect their repository, but this function does not mutate
+    AgentState, emit events, persist a checkpoint, or mark a task terminal.
+    """
+
+    compiler = getattr(runner.orchestrator, "task_definition_compiler", None)
+    state = runner.orchestrator.agent_state
+    if compiler is None or not callable(getattr(compiler, "resume", None)):
+        raise TaskDefinitionError(
+            "compiler de task definition indisponivel para retomada",
+            code="TASK_DEFINITION_COMPILER_UNAVAILABLE",
+        )
+    root_task_id = getattr(state, "root_task_id", None)
+    if not isinstance(root_task_id, str) or not root_task_id.strip():
+        raise TaskDefinitionError(
+            "root_task_id ausente para retomada",
+            code="CHECKPOINT_ROOT_TASK_ID_MISSING",
+        )
+    reference = getattr(state, "task_definition_ref", None)
+    if reference is None:
+        raise TaskDefinitionError(
+            "checkpoint sem TaskDefinitionRef compacta",
+            code="TASK_DEFINITION_BINDING_MISSING",
+        )
+    reference = compiler.resume(root_task_id, reference)
+    resolver = getattr(runner.orchestrator, "task_context_resolver", None)
+    if resolver is None or not callable(getattr(resolver, "resolve", None)):
+        raise TaskDefinitionError(
+            "resolver de task definition indisponivel para retomada",
+            code="TASK_DEFINITION_RESOLVER_UNAVAILABLE",
+        )
+    resolver.resolve(reference)
+    return reference
+
+
 def ensure_task_definition(runner: Any, inputs: Any) -> str | None:
+    if inputs.resumed and getattr(runner, "_resume_task_definition_admitted", False):
+        return None
     compiler = getattr(runner.orchestrator, "task_definition_compiler", None)
     state = runner.orchestrator.agent_state
     try:

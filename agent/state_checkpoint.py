@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from agent.planning.task_completion_types import CompletionDisposition
@@ -11,6 +13,20 @@ from agent.state_checkpoint_counters import restore_counters as _restore_counter
 
 _VALID_TERMINAL_DISPOSITIONS = (
     frozenset(item.value for item in CompletionDisposition) | NON_SUCCESS_STATUSES
+)
+CONTINUITY_SCHEMA_VERSION = 1
+CONTINUITY_MAX_STRING_LENGTH = 512
+CONTINUITY_MAX_TIMESTAMP_LENGTH = 128
+_CONTINUITY_FIELDS = frozenset(
+    {
+        "schema_version",
+        "resume_generation",
+        "last_run_id",
+        "resumed_from_run_id",
+        "interrupted",
+        "interruption_reason",
+        "interrupted_at",
+    }
 )
 
 
@@ -26,7 +42,7 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
         )
         else None
     )
-    return {
+    checkpoint = {
         "requested_effects": state.requested_effects,
         "executed_effects": state.executed_effects,
         "waived_effects": state.waived_effects,
@@ -53,14 +69,118 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
             getattr(state, "hierarchical_lifecycle", {"status": "inactive"})
         ),
     }
+    continuity = continuity_checkpoint(state)
+    if continuity is not None:
+        checkpoint["continuity"] = continuity
+    return checkpoint
 
 
 def restore_progression(state: Any, data: dict[str, Any]) -> None:
+    _restore_continuity(state, data)
     _restore_semantics(state, data)
     _restore_counters(state, data)
     _restore_task_policy(state, data)
     _restore_hierarchical_lifecycle(state, data)
     _restore_terminal(state, data)
+
+
+def continuity_checkpoint(state: Any) -> dict[str, Any] | None:
+    raw = getattr(state, "continuity", None)
+    if raw is None:
+        return None
+    return validate_continuity_metadata(raw)
+
+
+def validate_continuity_metadata(raw: Any) -> dict[str, Any]:
+    """Validate and project the bounded schema-1 continuity object.
+
+    The top-level checkpoint remains schema 2.  This nested object is optional
+    so schema-2 checkpoints written before continuity existed remain valid.
+    """
+
+    if not isinstance(raw, Mapping):
+        raise ValueError("Checkpoint continuity metadata is invalid.")
+    keys = tuple(raw.keys())
+    if any(not isinstance(key, str) for key in keys):
+        raise ValueError("Checkpoint continuity metadata keys are invalid.")
+    unexpected = sorted(set(keys) - _CONTINUITY_FIELDS)
+    if unexpected:
+        raise ValueError(
+            "Checkpoint continuity metadata contains unsupported fields: "
+            + ",".join(unexpected)
+        )
+
+    schema_version = raw.get("schema_version")
+    if isinstance(schema_version, bool) or schema_version != CONTINUITY_SCHEMA_VERSION:
+        raise ValueError("Checkpoint continuity metadata schema is unsupported.")
+    generation = raw.get("resume_generation")
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+        raise ValueError("Checkpoint continuity resume generation is invalid.")
+    if "last_run_id" not in raw:
+        raise ValueError("Checkpoint continuity metadata lacks last_run_id.")
+    last_run_id = _bounded_continuity_text(raw.get("last_run_id"), "last_run_id")
+    if "interrupted" not in raw or not isinstance(raw.get("interrupted"), bool):
+        raise ValueError("Checkpoint continuity interruption flag is invalid.")
+    interrupted = bool(raw["interrupted"])
+    interruption_reason = _bounded_continuity_text(
+        raw.get("interruption_reason"), "interruption_reason"
+    )
+    interrupted_at = _bounded_timestamp(raw.get("interrupted_at"))
+    if not interrupted and (interruption_reason is not None or interrupted_at is not None):
+        raise ValueError(
+            "Checkpoint continuity metadata contradicts interrupted=false."
+        )
+    resumed_from_run_id = _bounded_continuity_text(
+        raw.get("resumed_from_run_id"), "resumed_from_run_id"
+    )
+    result: dict[str, Any] = {
+        "schema_version": CONTINUITY_SCHEMA_VERSION,
+        "resume_generation": generation,
+        "last_run_id": last_run_id,
+        "interrupted": interrupted,
+        "interruption_reason": interruption_reason,
+        "interrupted_at": interrupted_at,
+    }
+    if "resumed_from_run_id" in raw:
+        result["resumed_from_run_id"] = resumed_from_run_id
+    return result
+
+
+def _restore_continuity(state: Any, data: Mapping[str, Any]) -> None:
+    raw = data.get("continuity")
+    if raw is None:
+        state.continuity = None
+        state._continuity_bound_run_id = None
+        state._continuity_resume_pending = False
+        return
+    normalized = validate_continuity_metadata(raw)
+    state.continuity = normalized
+    state._continuity_bound_run_id = normalized.get("last_run_id")
+    state._continuity_resume_pending = False
+
+
+def _bounded_continuity_text(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Checkpoint continuity {name} is invalid.")
+    if len(value) > CONTINUITY_MAX_STRING_LENGTH:
+        raise ValueError(f"Checkpoint continuity {name} exceeds its bound.")
+    return value
+
+
+def _bounded_timestamp(value: Any) -> str | None:
+    text = _bounded_continuity_text(value, "interrupted_at")
+    if text is None:
+        return None
+    if len(text) > CONTINUITY_MAX_TIMESTAMP_LENGTH:
+        raise ValueError("Checkpoint continuity interrupted_at exceeds its bound.")
+    candidate = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ValueError("Checkpoint continuity interrupted_at is invalid.") from exc
+    return text
 
 
 def _restore_task_policy(state: Any, data: dict[str, Any]) -> None:

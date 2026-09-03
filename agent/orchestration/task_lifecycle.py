@@ -10,7 +10,6 @@ from agent.planning.completion_observations import publish_outcome
 from agent.planning.task_completion import (
     allow_linear_completion,
     mark_terminal_blocked,
-    mark_terminal_cancelled,
     mark_terminal_failure,
     review_task_completion,
 )
@@ -97,16 +96,20 @@ class TaskLifecycleMixin:
         return "A tarefa ja possui um resultado terminal no checkpoint."
 
     def _handle_interrupt(self) -> str:
+        self.orchestrator._preserve_checkpoint = True
         self.orchestrator.cancellation_token.cancel()
         self._require_invocation_lifetime_closed()
         policy = getattr(self.orchestrator, "task_policy", None)
         if policy is not None:
             policy.pause_active_segment()
-        message = mark_terminal_cancelled(self.orchestrator)
+        state = getattr(self.orchestrator, "agent_state", None)
+        record_interruption = getattr(state, "record_continuity_interruption", None)
+        if callable(record_interruption):
+            record_interruption()
         saved = self.orchestrator._save_checkpoint()
         if saved:
-            return f"{message} O progresso foi salvo e pode ser retomado posteriormente."
-        return f"{message} Não foi possível confirmar o salvamento do progresso; a retomada não está garantida."
+            return "Tarefa pausada por interrupcao. O progresso foi salvo e pode ser retomado posteriormente."
+        return "Tarefa pausada por interrupcao. Nao foi possivel confirmar o salvamento do progresso; a retomada nao esta garantida."
 
     def _require_invocation_lifetime_closed(self) -> None:
         gateway = getattr(self.orchestrator, "tool_invocation_gateway", None)
@@ -121,47 +124,12 @@ class TaskLifecycleMixin:
                 policy.pause_active_segment()
             self._require_invocation_lifetime_closed()
             disposition = getattr(orchestrator.agent_state, "terminal_disposition", None)
-            # ``unverified`` is the explicit assisted/approved escape hatch
-            # for a mutation whose validation is unavailable.  It remains a
-            # non-success public outcome, but preserving that mutation is
-            # allowed by policy.  Every actual failure/block/cancellation,
-            # including an unverified result that also carries the task
-            # failure flag, must still use the task rollback authority.
-            rollback_statuses = (NON_SUCCESS_STATUSES - {"unverified"}) | {
-                "fail",
-                "block",
-            }
-            should_rollback = bool(orchestrator._task_failed) or disposition in rollback_statuses
-            workspace = orchestrator.workspace
-            if should_rollback and _has_rollback_material(workspace):
-                observed_mutation = _has_observed_task_mutation(orchestrator.agent_state)
-                rollback_result = workspace.rollback()
-                # Real WorkspaceManager instances return a strict bool.  A
-                # narrow compatibility seam may still return None; retain
-                # its historical success convention without allowing any
-                # other falsey value to masquerade as restoration.
-                rollback_ok = rollback_result is not False
-                state = orchestrator.agent_state
-                state._task_rollback_occurred = observed_mutation
-                state._task_rollback_succeeded = bool(rollback_ok) if observed_mutation else None
-                if not rollback_ok:
-                    orchestrator._task_failed = True
-                    result = {
-                        "ok": False,
-                        "done": True,
-                        "status": "failed",
-                        "executed": False,
-                        "error": "TASK_CLEANUP_FAILURE",
-                        "error_code": "TASK_CLEANUP_FAILURE",
-                        "message": "Falha ao restaurar todas as mutações da tarefa.",
-                    }
-                    project = getattr(state, "project_last_result", None)
-                    if callable(project):
-                        project("orchestrator", {}, result)
-                    else:
-                        state.last_result = result
-                    mark_terminal_failure(orchestrator)
-                    publish_outcome(orchestrator)
+            interrupted_hard_failure, should_rollback = _rollback_decision(
+                orchestrator, disposition
+            )
+            if should_rollback:
+                _rollback_if_needed(orchestrator)
+            _finalize_interrupted_hard_failure(orchestrator, interrupted_hard_failure)
             while len(orchestrator.session.messages) > original_count:
                 orchestrator.session.messages.pop()
             maximum = orchestrator.agent_state.max_history_turns
@@ -201,3 +169,66 @@ class TaskLifecycleMixin:
 
 
 __all__ = ["TaskLifecycleMixin"]
+
+
+def _continuity_interrupted(state: Any) -> bool:
+    continuity = getattr(state, "continuity", None)
+    return (
+        isinstance(continuity, Mapping)
+        and continuity.get("interrupted") is True
+        and getattr(state, "terminal_disposition", None) is None
+    )
+
+
+def _rollback_decision(orchestrator: Any, disposition: Any) -> tuple[bool, bool]:
+    """Keep pause-only cleanup separate from canonical failure authority."""
+
+    interrupted = _continuity_interrupted(orchestrator.agent_state)
+    rollback_statuses = (NON_SUCCESS_STATUSES - {"unverified"}) | {"fail", "block"}
+    task_failed = bool(orchestrator._task_failed)
+    return task_failed and interrupted, task_failed or (not interrupted and disposition in rollback_statuses)
+
+
+def _rollback_if_needed(orchestrator: Any) -> None:
+    workspace = orchestrator.workspace
+    if not _has_rollback_material(workspace):
+        return
+    observed_mutation = _has_observed_task_mutation(orchestrator.agent_state)
+    rollback_result = workspace.rollback()
+    # Real WorkspaceManager instances return a strict bool.  A narrow
+    # compatibility seam may still return None; retain its historical success
+    # convention without allowing another falsey value to masquerade as restoration.
+    rollback_ok = rollback_result is not False
+    state = orchestrator.agent_state
+    state._task_rollback_occurred = observed_mutation
+    state._task_rollback_succeeded = bool(rollback_ok) if observed_mutation else None
+    if rollback_ok:
+        return
+    orchestrator._task_failed = True
+    result = {
+        "ok": False,
+        "done": True,
+        "status": "failed",
+        "executed": False,
+        "error": "TASK_CLEANUP_FAILURE",
+        "error_code": "TASK_CLEANUP_FAILURE",
+        "message": "Falha ao restaurar todas as mutações da tarefa.",
+    }
+    project = getattr(state, "project_last_result", None)
+    if callable(project):
+        project("orchestrator", {}, result)
+    else:
+        state.last_result = result
+    mark_terminal_failure(orchestrator)
+    publish_outcome(orchestrator)
+
+
+def _finalize_interrupted_hard_failure(orchestrator: Any, interrupted: bool) -> None:
+    if not interrupted:
+        return
+    # A hard failure that coincides with interruption is not a resumable pause.
+    # Reuse the canonical failure marker and remove the pause snapshot.
+    if getattr(orchestrator.agent_state, "terminal_disposition", None) is None:
+        mark_terminal_failure(orchestrator)
+        publish_outcome(orchestrator)
+    orchestrator._preserve_checkpoint = False

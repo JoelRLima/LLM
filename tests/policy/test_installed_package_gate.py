@@ -43,6 +43,14 @@ def test_gate_declares_required_installed_cli_journeys(tmp_path: Path) -> None:
             str(workspace),
             "oi",
         ),
+        "task-status": (
+            str(executable),
+            "task",
+            "status",
+            "--json",
+            "--workspace",
+            str(workspace),
+        ),
     }
 
 

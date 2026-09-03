@@ -31,7 +31,9 @@ persona ou extension não pode criar caminho alternativo model-actionable.
 - **negação**: capability/authority ausente encerra antes do efeito;
 - **extension**: catálogo e grants materializam descriptor/adapter; task
   authority ainda é obrigatória antes do stdio;
-- **retomada**: checkpoint v2 é revalidado e não restaura authority;
+- **continuidade/retomada**: há um slot de checkpoint v2 por workspace; `task
+  status` é model-free/read-only, e `task resume` revalida o checkpoint sem
+  restaurar authority, preservando o root e criando uma nova tentativa;
 - **troca de modelo**: provider fica atrás de `ModelGateway`.
 
 `run --yes` satisfaz approval local da execução, não concede authority. A

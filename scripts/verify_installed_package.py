@@ -40,6 +40,7 @@ INSTALLED_ACCEPTANCE_PROPERTIES = (
     {"id": "extension-stdio", "proof": "stdio success, authority denial, and operational failure"},
     {"id": "terminal-status", "proof": "canonical public terminal status"},
     {"id": "measurement", "proof": "canonical invocation/model/output measurement projection"},
+    {"id": "task-continuity-cli", "proof": "installed paused checkpoint and fresh resume identity"},
     {"id": "outside-checkout", "proof": "wheel is exercised from outside the source checkout"},
 )
 
@@ -857,6 +858,121 @@ print(
 )
 """
 
+INSTALLED_CONTINUITY_SEED_SOURCE = """\
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from agent.application import AgentApplication
+from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.paths import AppPaths
+from agent.runtime.workspace_context import WorkspaceContext
+from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+from agent.task_definition.repository import TaskDefinitionRepository
+
+
+app_home = Path(sys.argv[1]).resolve()
+workspace = Path(sys.argv[2]).resolve()
+workspace.mkdir(parents=True, exist_ok=True)
+marker = workspace / "resume-marker.txt"
+marker.write_text("INSTALLED_CONTINUITY_EVIDENCE\\n", encoding="utf-8")
+paths = AppPaths.discover(app_home)
+ConfigRepository(paths).initialize()
+workspace_context = WorkspaceContext.create(workspace)
+workspace_paths = paths.for_workspace(workspace_context.workspace_id)
+repository = TaskDefinitionRepository(workspace_paths)
+task_id = "installed-continuity-task"
+objective = "read the installed continuity marker"
+contract = TaskContract(
+    task_id=task_id,
+    objective=objective,
+    summary="Deterministic installed continuity fixture",
+    requirements=("read the resume marker",),
+    constraints=("do not write to the workspace",),
+    invariants=("preserve the logical task identity",),
+    success_criteria=("the marker is observed",),
+    out_of_scope=("unrelated workspace changes",),
+    stop_conditions=("the marker cannot be read",),
+    assumptions=("the isolated workspace is available",),
+)
+repository.save_contract(contract)
+reference = repository.save_spec(
+    TaskSpec(
+        task_id=task_id,
+        contract_version=contract.version,
+        contract_digest=contract.digest(),
+        phases=(
+            TaskSpecPhase(
+                phase_id="resume",
+                title="Resume the installed fixture",
+                goal="Observe the deterministic resume marker",
+                requirements=("read the marker",),
+                invariants=("keep the root task identity",),
+                acceptance_criteria=("the marker is observed",),
+                evidence_requirements=("installed CLI result",),
+            ),
+        ),
+        architecture="A deterministic installed continuity fixture.",
+        global_requirements=("use the canonical installed runtime",),
+        global_invariants=("do not replace the checkpoint authority",),
+        global_acceptance=("resume preserves root identity",),
+    )
+)
+
+application = AgentApplication.create(
+    paths=paths,
+    workspace=workspace,
+    configure_logging=False,
+)
+try:
+    state = application.orchestrator.agent_state
+    state.objective = objective
+    state.root_task_id = task_id
+    state.task_definition_ref = reference
+    state.set_plan(
+        [
+            {
+                "tool": "file_reader",
+                "args": {"file_path": marker.name},
+                "_step_id": "resume-step",
+            }
+        ]
+    )
+    state.plan_step = 0
+    state.continuity = {
+        "schema_version": 1,
+        "resume_generation": 0,
+        "last_run_id": "installed-prior-attempt",
+        "resumed_from_run_id": None,
+        "interrupted": True,
+        "interruption_reason": "installed_fixture",
+        "interrupted_at": "2026-09-03T00:00:00Z",
+    }
+    if application.orchestrator._save_checkpoint() is not True:
+        raise SystemExit("installed continuity fixture could not save checkpoint")
+    checkpoint = application.orchestrator.checkpoint_manager.load()
+    if not isinstance(checkpoint, dict):
+        raise SystemExit("installed continuity fixture did not reload checkpoint")
+    checkpoint_path = Path(application.orchestrator.checkpoint_file).resolve()
+finally:
+    application.close()
+
+print(
+    json.dumps(
+        {
+            "checkpoint": str(checkpoint_path),
+            "checkpoint_present": checkpoint_path.is_file(),
+            "root_task_id": task_id,
+            "prior_run_id": "installed-prior-attempt",
+            "task_definition": reference.to_dict(),
+        },
+        sort_keys=True,
+    )
+)
+"""
+
 EXTENSION_BOOTSTRAP_PROBE_SOURCE = """\
 from __future__ import annotations
 
@@ -1100,6 +1216,17 @@ def installed_cli_commands(
                 "--workspace",
                 str(workspace),
                 "oi",
+            ),
+        ),
+        (
+            "task-status",
+            (
+                str(executable),
+                "task",
+                "status",
+                "--json",
+                "--workspace",
+                str(workspace),
             ),
         ),
     )
@@ -1716,6 +1843,115 @@ def _verify_f1_installed(
         thread.join(timeout=5)
 
 
+def _verify_installed_continuity(
+    venv_python: Path,
+    entrypoint: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Exercise one positive checkpoint/resume journey through the wheel CLI."""
+
+    continuity_home = cwd.parent / "continuity-app-home"
+    continuity_workspace = cwd.parent / "continuity-workspace"
+    continuity_workspace.mkdir(parents=True, exist_ok=True)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _F1ModelHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    continuity_environment = dict(environment)
+    continuity_environment["LLM_AGENT_API_URL"] = (
+        f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
+    )
+    common = (
+        "--home",
+        str(continuity_home),
+        "--workspace",
+        str(continuity_workspace),
+    )
+    try:
+        seeded = _run(
+            "installed-continuity-seed",
+            (
+                str(venv_python),
+                "-I",
+                "-c",
+                INSTALLED_CONTINUITY_SEED_SOURCE,
+                str(continuity_home),
+                str(continuity_workspace),
+            ),
+            cwd=cwd,
+            environment=continuity_environment,
+        )
+        seed_payload = parse_json_output(seeded)
+        checkpoint = Path(str(seed_payload.get("checkpoint", ""))).resolve()
+        root_task_id = seed_payload.get("root_task_id")
+        prior_run_id = seed_payload.get("prior_run_id")
+        if (
+            seed_payload.get("checkpoint_present") is not True
+            or not checkpoint.is_file()
+            or not isinstance(root_task_id, str)
+            or not root_task_id
+            or prior_run_id != "installed-prior-attempt"
+        ):
+            raise VerificationError(
+                f"fixture de continuidade instalada nao criou checkpoint valido: {seed_payload!r}"
+            )
+
+        status_result = _run(
+            "installed-continuity-status",
+            (str(entrypoint), "task", "status", "--json", *common),
+            cwd=cwd,
+            environment=continuity_environment,
+        )
+        status_payload = parse_json_output(status_result)
+        status_continuity = status_payload.get("continuity")
+        status_binding = status_payload.get("task_definition_ref")
+        if (
+            status_payload.get("status") != "paused"
+            or status_payload.get("resumable") is not True
+            or status_payload.get("root_task_id") != root_task_id
+            or not isinstance(status_continuity, dict)
+            or status_continuity.get("resume_generation") != 0
+            or status_continuity.get("last_run_id") != prior_run_id
+            or status_continuity.get("interrupted") is not True
+            or not isinstance(status_binding, dict)
+            or status_binding.get("task_id") != root_task_id
+        ):
+            raise VerificationError(
+                f"status de continuidade instalada divergiu: {status_payload!r}"
+            )
+
+        resumed = _run(
+            "installed-continuity-resume",
+            (str(entrypoint), "task", "resume", "--json", "--yes", *common),
+            cwd=cwd,
+            environment=continuity_environment,
+        )
+        resume_payload = parse_json_output(resumed)
+        snapshot = resume_payload.get("snapshot")
+        correlation = snapshot.get("correlation") if isinstance(snapshot, dict) else None
+        receipt = resume_payload.get("receipt")
+        receipt_correlation = receipt.get("correlation") if isinstance(receipt, dict) else None
+        if (
+            resume_payload.get("success") is not True
+            or resume_payload.get("status") != "succeeded"
+            or not isinstance(correlation, dict)
+            or correlation.get("root_task_id") != root_task_id
+            or not isinstance(correlation.get("run_id"), str)
+            or not correlation["run_id"]
+            or correlation["run_id"] == prior_run_id
+            or not isinstance(receipt_correlation, dict)
+            or receipt_correlation.get("root_task_id") != root_task_id
+            or receipt_correlation.get("run_id") != correlation["run_id"]
+        ):
+            raise VerificationError(
+                f"resume positivo instalado nao preservou identidade: {resume_payload!r}"
+            )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def _verify_version(result: CommandResult) -> None:
     if not re.search(r"\b\d+\.\d+\.\d+\b", result.stdout):
         raise VerificationError(f"--version não informou versão semântica: {result.stdout!r}")
@@ -1851,6 +2087,12 @@ def verify_installed_package(
             external_cwd,
             runtime_environment,
         )
+        _verify_installed_continuity(
+            venv_python,
+            entrypoint,
+            external_cwd,
+            runtime_environment,
+        )
         _verify_import_origin(
             venv_python,
             site_packages,
@@ -1877,6 +2119,29 @@ def verify_installed_package(
         _verify_config(app_home)
         parse_json_output(results["doctor"])
         _verify_greeting(parse_json_output(results["run"]))
+        status_payload = parse_json_output(results["task-status"])
+        if status_payload.get("status") != "absent" or status_payload.get("resumable") is not False:
+            raise VerificationError(
+                f"task status instalado nao classificou ausencia: {status_payload!r}"
+            )
+        resume_result = _run_expected_failure(
+            "task-resume",
+            (
+                str(entrypoint),
+                "task",
+                "resume",
+                "--json",
+                "--workspace",
+                str(workspace),
+            ),
+            cwd=external_cwd,
+            environment=runtime_environment,
+        )
+        resume_payload = parse_json_output(resume_result)
+        if resume_payload.get("success") is not False or resume_payload.get("reason_code") != "CHECKPOINT_ABSENT":
+            raise VerificationError(
+                f"task resume instalado nao recusou ausencia explicitamente: {resume_payload!r}"
+            )
         if snapshot_tree(external_cwd) != cwd_before:
             raise VerificationError("A CLI escreveu no diretório externo de execução.")
         if snapshot_tree(workspace) != workspace_before:

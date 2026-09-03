@@ -48,6 +48,7 @@ _RECOVERY_KINDS = frozenset(
         "hierarchical_fallback",
         "step_cancelled",
         "task_blocked",
+        "task_resumed",
         "deferred_condition_blocked",
         "cost_limit",
     }

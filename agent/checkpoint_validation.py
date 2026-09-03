@@ -6,7 +6,9 @@ import math
 from pathlib import Path
 from typing import Any, NoReturn
 
+from agent.checkpoint_plan_consistency import plan_consistency_error
 from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
+from agent.checkpoint_validation_continuity import validate_continuity
 from agent.execution_incidents import normalize_execution_incidents
 from agent.execution_state import StepStatus
 from agent.task_definition.models import TaskDefinitionRef
@@ -60,6 +62,9 @@ def _validate_plan(path: Path, data: dict[str, Any]) -> None:
     current_step_id = data.get("current_step_id")
     if current_step_id is not None and not isinstance(current_step_id, str):
         _invalid(path, "identidade do passo atual invalida")
+    consistency_error = plan_consistency_error(plan, records, plan_step, current_step_id)
+    if consistency_error is not None:
+        _invalid(path, consistency_error)
 
 
 def _validate_semantics(path: Path, data: dict[str, Any]) -> None:
@@ -88,6 +93,7 @@ def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
     _validate_result_and_budget(path, data)
     _validate_task_policy(path, data)
     _validate_hierarchical_lifecycle(path, data)
+    validate_continuity(path, data)
 
 
 def _validate_task_definition_binding(path: Path, data: dict[str, Any]) -> None:
@@ -100,7 +106,7 @@ def _validate_task_definition_binding(path: Path, data: dict[str, Any]) -> None:
         task_definition_ref = TaskDefinitionRef.from_dict(raw_task_definition)
     except (TypeError, ValueError):
         _invalid(path, "binding de task definition invalido")
-    if data.get("root_task_id") != task_definition_ref.task_id:
+    if data.get("root_task_id") is not None and data.get("root_task_id") != task_definition_ref.task_id:
         _invalid(path, "binding de task definition nao corresponde a tarefa raiz")
 
 

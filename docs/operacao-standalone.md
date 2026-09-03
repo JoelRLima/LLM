@@ -34,6 +34,8 @@ llm-agent config migrate --from ARQUIVO
 llm-agent state migrate --from DIRETÓRIO
 llm-agent extensions list|register|enable|disable|grant|revoke|inspect
 llm-agent task context --task-id ID [--phase PHASE_ID] [--json]
+llm-agent task status [--json]
+llm-agent task resume [--json] [--yes]
 ```
 
 As flags comuns `--home`, `--config`, `--workspace` e `--profile` são aceitas
@@ -92,6 +94,39 @@ estruturada. O comando é genérico, model-free e read-only, adequado a harnesse
 externos sem acoplamento a um produto específico. Task/phase ausente, binding
 incompleto, digest divergente, corrupção ou workspace incorreta falham fechado.
 Ele não avança fases, atualiza progresso, concede capability ou executa Plan.
+
+### Continuidade e retomada
+
+O workspace possui um único slot de checkpoint. `task status` lê somente esse
+slot por meio do `CheckpointManager`, não constrói `AgentApplication`, não
+carrega modelo e não adquire o lock de execução. A saída classifica o estado
+como `ABSENT`, `RESUMABLE`, `PAUSED`, `TERMINAL`, `UNSUPPORTED` ou `INVALID` e
+inclui uma razão bounded; `--json` produz um documento único.
+
+```powershell
+llm-agent task status --workspace C:\projetos\app
+llm-agent task status --workspace C:\projetos\app --json
+llm-agent task resume --workspace C:\projetos\app
+llm-agent task resume --workspace C:\projetos\app --json --yes
+```
+
+`task resume` não aceita objetivo e não cria uma tarefa nova quando o slot está
+ausente, inválido, terminal ou não suportado. Uma retomada válida passa pelo
+mesmo limite de `AgentApplication`/`TaskRunner`, usa o lock existente, preserva
+o `root_task_id` e gera um novo `run_id`. O progresso concluído, a referência
+de Task Definition, authority e os contadores de policy/budget continuam sendo
+revalidados pelos donos atuais; downtime não é contado como tempo ativo.
+
+Interrupção/pausa deixa o checkpoint não terminal e retomável, sem rollback
+apenas por preservar progresso. `cancel` continua terminal e `task resume` não
+o reabre. Checkpoint corrompido ou incompatível é preservado e reportado como
+`INVALID`. Um checkpoint hierárquico com
+`hierarchical_lifecycle.status == running` é `UNSUPPORTED` com a razão
+`HIERARCHICAL_RESUME_UNSUPPORTED`; Wave 10 não faz pseudo-resume do microplan.
+
+`llm-agent inspect` pode exibir a linhagem e o evento `task_resumed` quando a
+observabilidade estiver disponível. Trace/liveness é apenas enriquecimento:
+ausência ou retenção de traces não altera a correção da retomada.
 
 ### Diagnóstico
 

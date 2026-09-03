@@ -26,6 +26,9 @@ from agent.tools.result_adapter import ensure_canonical_result, to_legacy_result
 
 class StateCheckpointMixin:
     def to_checkpoint_dict(self: Any) -> CheckpointData:
+        ensure_continuity = getattr(self, "ensure_continuity_for_current_run", None)
+        if callable(ensure_continuity):
+            ensure_continuity()
         memory_state = getattr(self.memory, "state", None)
         # The on-disk schema is a supported compatibility edge.  Keep live
         # state canonical and project only while constructing this snapshot.
@@ -97,6 +100,7 @@ class StateCheckpointMixin:
             retry_failed=retry_failed,
             retry_skipped=retry_skipped,
         )
+        provisional._continuity_resume_pending = _resume_continuity_supported(provisional)
         _validate_restored_cross_fields(provisional)
         _publish_provisional_state(self, provisional)
 
@@ -188,3 +192,10 @@ def _restore_last_result(state: Any, data: Mapping[str, Any]) -> None:
 
 def _restore_auxiliary_state(state: Any, data: Mapping[str, Any]) -> None:
     restore_auxiliary_state(state, data)
+
+
+def _resume_continuity_supported(state: Any) -> bool:
+    if getattr(state, "terminal_disposition", None) is not None:
+        return False
+    lifecycle = getattr(state, "hierarchical_lifecycle", {})
+    return not (isinstance(lifecycle, Mapping) and lifecycle.get("status") == "running")

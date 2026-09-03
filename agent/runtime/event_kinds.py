@@ -50,6 +50,7 @@ class RuntimeEventKind(str, Enum):
     TASK_NODE_STARTED = "task_node_started"
     TASK_OUTCOME = "task_outcome"
     TASK_POLICY_DECISION = "task_policy_decision"
+    TASK_RESUMED = "task_resumed"
     TOOL_DISCOVERY = "tool_discovery"
     TOOL_DENIED = "tool_denied"
     TOOL_END = "tool_end"

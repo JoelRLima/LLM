@@ -128,6 +128,43 @@ def build_parser() -> argparse.ArgumentParser:
         dest="json_output",
         help="emite um unico documento JSON",
     )
+    status = task_commands.add_parser(
+        "status",
+        parents=[common],
+        help="mostra o estado de continuidade da tarefa",
+        argument_default=argparse.SUPPRESS,
+    )
+    status.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emite um unico documento JSON",
+    )
+    resume = task_commands.add_parser(
+        "resume",
+        parents=[common],
+        help="retoma explicitamente a tarefa checkpointada",
+        argument_default=argparse.SUPPRESS,
+    )
+    resume.add_argument(
+        "--task-authority",
+        action="append",
+        dest="task_authority_capabilities",
+        metavar="CAPABILITY",
+        help="autoridade capability-wide da tarefa; repita para cada capability",
+    )
+    resume.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emite um unico documento JSON",
+    )
+    resume.add_argument(
+        "--yes",
+        action="store_true",
+        dest="assume_yes",
+        help="aprova efeitos que pedirem consentimento nesta execução",
+    )
 
     inspect = subcommands.add_parser(
         "inspect",

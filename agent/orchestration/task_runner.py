@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
 from agent.checkpoint_manager import CheckpointLoadError
@@ -10,9 +9,19 @@ from agent.orchestration.route_coordinator import RouteCoordinatorMixin
 from agent.orchestration.task_definition_gate import (
     ensure_task_definition,
     preserve_task_definition_checkpoint,
+    revalidate_resume_task_definition,
 )
 from agent.orchestration.task_execution import execute_task
 from agent.orchestration.task_lifecycle import TaskLifecycleMixin
+from agent.orchestration.task_runner_continuity import (
+    ExplicitResumeRefused,
+    TaskInputs,
+    emit_resume_event,
+    handle_explicit_resume_interrupt,
+    resolve_inputs,
+    resume_refusal_message,
+)
+from agent.orchestration.task_runner_resume_commit import start_explicit_resume_attempt
 from agent.orchestration.task_runner_support import checkpoint_error_answer, terminal_answer
 from agent.planning.complexity import is_hierarchical
 from agent.planning.plan_model import Plan
@@ -27,14 +36,8 @@ from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
 from agent.runtime.task_policy import TaskPolicyError
+from agent.task_definition.errors import TaskDefinitionError
 from agent.watchdog import Watchdog
-
-
-@dataclass
-class TaskInputs:
-    objective: str
-    resumed: bool
-    original_message_count: int
 
 
 class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
@@ -42,6 +45,10 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
 
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator = orchestrator
+        self._resume_task_definition_admitted = False
+        self._resume_commit_failed = False
+        self._resume_attempt_committed = False
+        self._resume_commit_expectation: Any = None
 
     @staticmethod
     def _route_is_hierarchical(objective: str) -> bool:
@@ -59,14 +66,26 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             logger.warning("Observation session startup failed: %s", type(exc).__name__)
 
     def run(
-        self, objective: Optional[str], stream_callback: Callable[[str], None] | None
+        self,
+        objective: Optional[str],
+        stream_callback: Callable[[str], None] | None,
+        *,
+        explicit_resume: bool = False,
     ) -> str:
         original_count = len(self.orchestrator.session.messages)
         self.orchestrator._cancelled = False
         self.orchestrator._preserve_checkpoint = False
         self.orchestrator.cancellation_token.reset()
+        self._resume_task_definition_admitted = False
+        self._resume_commit_failed = False
+        self._resume_attempt_committed = False
+        self._resume_commit_expectation = None
         try:
-            inputs = self._resolve_inputs(objective, original_count)
+            inputs = self._resolve_inputs(
+                objective,
+                original_count,
+                explicit_resume=explicit_resume,
+            )
             if inputs is None:
                 self._reset_missing_input_state()
                 return cast(str, mark_terminal_blocked(
@@ -74,10 +93,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                     reason_code="MISSING_REQUIRED_INPUT",
                     message="Nenhum objetivo foi fornecido e nenhum checkpoint valido foi encontrado.",
                 ))
-            start_correlation = getattr(self.orchestrator, "_start_run_correlation", None)
-            if callable(start_correlation):
-                start_correlation(resumed=inputs.resumed)
-            self._start_observation(inputs)
+            self._admit_and_start_attempt(inputs, explicit_resume=explicit_resume)
             if inputs.resumed and self._has_terminal_disposition():
                 return cast(str, self._resume_terminal_checkpoint(inputs.objective))
             self._prepare(inputs)
@@ -92,7 +108,16 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
                 return definition_answer
             return cast(str, self._execute(inputs, stream_callback))
         except KeyboardInterrupt:
-            return cast(str, self._handle_interrupt())
+            return cast(
+                str,
+                handle_explicit_resume_interrupt(self, explicit_resume)
+                or self._handle_interrupt(),
+            )
+        except ExplicitResumeRefused as exc:
+            self.orchestrator._preserve_checkpoint = True
+            self.orchestrator._resume_refusal_reason = exc.reason_code
+            self.orchestrator._last_failure_code = exc.reason_code
+            return resume_refusal_message(exc.reason_code)
         except CheckpointLoadError as exc:
             return cast(str, checkpoint_error_answer(self.orchestrator, exc))
         except TaskPolicyError as exc:
@@ -100,7 +125,38 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         except BudgetExhausted:
             return self._handle_budget_exhausted()
         finally:
+            # A failed explicit resume has only provisional in-memory state;
+            # cleanup must not turn that failed admission into another effect.
+            self._cleanup_after_run(original_count)
+
+    def _start_attempt(self, inputs: TaskInputs, *, commit_resume: bool = False) -> None:
+        start_correlation = getattr(self.orchestrator, "_start_run_correlation", None)
+        if commit_resume:
+            start_explicit_resume_attempt(self, start_correlation)
+        elif callable(start_correlation):
+            start_correlation(resumed=inputs.resumed)
+        self._start_observation(inputs)
+        if inputs.resumed:
+            self._emit_resume_event(inputs)
+
+    def _admit_and_start_attempt(self, inputs: TaskInputs, *, explicit_resume: bool) -> None:
+        if explicit_resume and inputs.resumed:
+            self._admit_resume_task_definition()
+            self._start_attempt(inputs, commit_resume=True)
+            return
+        self._start_attempt(inputs)
+
+    def _cleanup_after_run(self, original_count: int) -> None:
+        if not self._resume_commit_failed:
             self._cleanup(original_count)
+
+    def _admit_resume_task_definition(self) -> None:
+        try:
+            reference = revalidate_resume_task_definition(self)
+        except TaskDefinitionError as exc:
+            raise ExplicitResumeRefused(exc.reason_code) from exc
+        self.orchestrator.agent_state.task_definition_ref = reference
+        self._resume_task_definition_admitted = True
 
     def _handle_policy_error(self, exc: TaskPolicyError) -> str:
         self.orchestrator._preserve_checkpoint = True
@@ -123,59 +179,22 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self.orchestrator._save_checkpoint()
         return cast(str, message)
 
-    def _resolve_inputs(self, objective: Optional[str], original_count: int) -> TaskInputs | None:
-        if objective:
-            return TaskInputs(objective, False, original_count)
-        checkpoint = self.orchestrator._load_checkpoint()
-        if not checkpoint:
-            return None
-        try:
-            self.orchestrator.agent_state.from_checkpoint_dict(
-                checkpoint,
-                retry_failed=bool(
-                    self.orchestrator.session.config.get("resume_retry_failed", False)
-                ),
-                retry_skipped=bool(
-                    self.orchestrator.session.config.get("resume_retry_skipped", False)
-                ),
-                effect_authority=self.orchestrator,
-                admission_authority=getattr(
-                    self.orchestrator, "admission_authority", None
-                ),
-            )
-            refresh_policy = getattr(self.orchestrator, "_refresh_task_policy", None)
-            if callable(refresh_policy):
-                refresh_policy()
-        except ValueError:
-            self.orchestrator._preserve_checkpoint = True
-            self.orchestrator.agent_state.root_task_id = None
-            objective = str(checkpoint.get("objective") or "checkpoint invalido")
-            mark_terminal_blocked(
-                self.orchestrator,
-                reason_code="CHECKPOINT_INVALID_TERMINAL_DISPOSITION",
-                message="O checkpoint contem um estado terminal incompativel e foi preservado.",
-            )
-            return TaskInputs(objective, True, original_count)
-        lifecycle = getattr(self.orchestrator.agent_state, "hierarchical_lifecycle", {})
-        if isinstance(lifecycle, Mapping) and lifecycle.get("status") == "running":
-            self.orchestrator._preserve_checkpoint = True
-            mark_terminal_blocked(
-                self.orchestrator,
-                reason_code="HIERARCHICAL_RESUME_UNSUPPORTED",
-                message=(
-                    "A execucao hierarquica interrompida nao pode ser retomada "
-                    "com seguranca; o checkpoint foi preservado para auditoria."
-                ),
-                status="block",
-            )
-            return TaskInputs(str(self.orchestrator.agent_state.objective or "checkpoint"), True, original_count)
-        restored = self.orchestrator.agent_state.objective
-        if not restored:
-            self.orchestrator._delete_checkpoint()
-            return None
-        print(chr(10) + 'Checkpoint encontrado. Retomando tarefa: "' + str(restored) + '"')
-        logger.info("Retomando tarefa a partir de checkpoint: %s", restored)
-        return TaskInputs(str(restored), True, original_count)
+    def _resolve_inputs(
+        self,
+        objective: Optional[str],
+        original_count: int,
+        *,
+        explicit_resume: bool = False,
+    ) -> TaskInputs | None:
+        return resolve_inputs(
+            self,
+            objective,
+            original_count,
+            explicit_resume=explicit_resume,
+        )
+
+    def _emit_resume_event(self, inputs: TaskInputs) -> None:
+        emit_resume_event(self, inputs)
 
     def _prepare(self, inputs: TaskInputs) -> None:
         if inputs.resumed:

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import threading
 from collections.abc import Callable
-from contextlib import nullcontext, redirect_stdout
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -24,14 +22,6 @@ from agent.observability.live import ObservationSession
 from agent.observability.modes import ObservabilityMode, resolve_observability_mode
 from agent.orchestration.operational_modes import ApplicationOperationalModeMixin, OperationalMode
 from agent.orchestrator import Orchestrator
-from agent.planning.completion_observations import publish_outcome
-from agent.planning.task_completion import mark_terminal_blocked
-from agent.reporting.run_receipt import (
-    derive_error,
-    derive_status,
-    public_exception_message,
-)
-from agent.runtime.budget import BudgetExhausted
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.logging import setup_logger
@@ -41,7 +31,6 @@ from agent.skills import load_skill_registry
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot, bind_task_authority
 from agent.tools.builtin_adapter import BuiltinToolAdapter
 from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
-from agent.tools.invocation_execution import InvocationLivenessError
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
@@ -219,50 +208,45 @@ class AgentApplication(ApplicationOperationalModeMixin):
         """Return the shared read API for the interactive inspector adapter."""
         return build_inspection_service(self)
 
-    def run(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
-        with _RUN_LOCK:
-            return self._run_locked(objective, stream_callback=stream_callback)
-    def _run_locked(self, objective: str | None, *, stream_callback: Callable[[str], None] | None = None) -> AgentRunResult:
+    def run(
+        self,
+        objective: str | None,
+        *,
+        stream_callback: Callable[[str], None] | None = None,
+        explicit_resume: bool = False,
+    ) -> AgentRunResult:
         if self._closed:
             raise RuntimeError("A aplicação já foi encerrada.")
-        captured = io.StringIO()
-        self._task_attempted = True
-        vars(self.orchestrator).update({"_last_failure_code": None, "_last_failure_layer": None, "_run_id": None, "_run_correlation": None, "_task_start_time": 0.0, "_run_metric_recorded": False, "_metrics_start_line": None, "_canonical_run_snapshot": None})
-        try:
-            output_context = redirect_stdout(captured) if stream_callback is None else nullcontext()
-            callback_args = {} if stream_callback is None else {"stream_callback": stream_callback}
-            with output_context:
-                answer = str(self.orchestrator.run(objective, **callback_args))
-        except KeyboardInterrupt:
-            self.cancel()
-            return self._result("cancelled", "", error="Tarefa cancelada pelo usuário.")
-        except BudgetExhausted as exc:
-            vars(self.orchestrator)["_last_failure_code"] = BudgetExhausted.code
-            vars(self.orchestrator)["_last_failure_layer"] = "budget"
-            message = mark_terminal_blocked(
-                self.orchestrator,
-                reason_code=BudgetExhausted.code,
-                message="A tarefa atingiu o limite de execucao e nao pode prosseguir agora.",
-                status="block",
+        with _RUN_LOCK:
+            return self._run_locked(
+                objective,
+                stream_callback=stream_callback,
+                explicit_resume=explicit_resume,
             )
-            return self._result("blocked", "", error=message or public_exception_message(exc))
-        except InvocationLivenessError:
-            raise
-        except Exception as exc:
-            vars(self.orchestrator)["_last_failure_code"] = getattr(exc, "code", None)
-            vars(self.orchestrator)["_last_failure_layer"] = getattr(exc, "layer", None)
-            fail_task = getattr(self.orchestrator, "fail_task", None)
-            if callable(fail_task):
-                fail_task()
-            publish_outcome(self.orchestrator)
-            return self._result("failed", "", error=public_exception_message(exc))
-        status = derive_status(self.orchestrator)
-        metadata: dict[str, Any] = {}
-        legacy_output = captured.getvalue().strip()
-        if legacy_output:
-            metadata["legacy_output"] = legacy_output
-        error = derive_error(self.orchestrator, status)
-        return self._result(status, answer, error=error, metadata=metadata)
+
+    def resume(
+        self,
+        *,
+        stream_callback: Callable[[str], None] | None = None,
+    ) -> AgentRunResult:
+        """Resume the canonical checkpoint through the normal run boundary."""
+
+        return self.run(
+            None,
+            stream_callback=stream_callback,
+            explicit_resume=True,
+        )
+
+    def _run_locked(
+        self,
+        objective: str | None,
+        *,
+        stream_callback: Callable[[str], None] | None = None,
+        explicit_resume: bool = False,
+    ) -> AgentRunResult:
+        from agent.application_run import run_locked
+
+        return run_locked(self, objective, stream_callback=stream_callback, explicit_resume=explicit_resume)
     def _result(
         self,
         status: str,

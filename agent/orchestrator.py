@@ -288,5 +288,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self,
         objective: Optional[str] = None,
         stream_callback: Callable[[str], None] | None = None,
+        *,
+        explicit_resume: bool = False,
     ) -> str:
-        return cast(str, TaskRunner(self).run(objective, stream_callback))
+        return cast(str, TaskRunner(self).run(objective, stream_callback, explicit_resume=explicit_resume))

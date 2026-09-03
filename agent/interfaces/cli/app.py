@@ -228,9 +228,9 @@ def _run_inspect(args: argparse.Namespace) -> int:
 
 
 def _dispatch_task(args: argparse.Namespace) -> int:
-    if _value(args, 'task_command') != 'context':
-        raise ValueError('subcomando task desconhecido')
-    return _run_task_context(args)
+    from agent.interfaces.cli.task_continuity import dispatch_task
+
+    return dispatch_task(args, run_context=_run_task_context)
 
 
 def _dispatch(args: argparse.Namespace) -> int:

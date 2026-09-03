@@ -1,5 +1,5 @@
 import copy
-from typing import Any, Dict, List, Mapping, Optional, cast
+from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
 from agent.contracts import (
     AgentEvent,
@@ -20,6 +20,7 @@ from agent.runtime.recovery import (
 )
 from agent.runtime.task_policy import TaskPolicyState
 from agent.state_checkpointing import StateCheckpointMixin
+from agent.state_continuity import StateContinuityMixin
 from agent.state_failure_recovery import StateFailureRecoveryMixin
 from agent.state_incidents import StateIncidentMixin
 from agent.state_plan_execution import StatePlanExecutionMixin
@@ -30,6 +31,7 @@ from agent.tools.result_adapter import ensure_canonical_result
 
 
 class AgentState(
+    StateContinuityMixin,
     StatePlanExecutionMixin,
     TaskSemanticsStateMixin,
     StateFailureRecoveryMixin,
@@ -51,7 +53,7 @@ class AgentState(
         self.root_task_id: str | None = root_task_id
         # Compact durable binding; bodies stay in the workspace repository.
         self.task_definition_ref: TaskDefinitionRef | None = None
-        self.runtime_correlation: Any = None
+        self._runtime_correlation: Any = None
         self.plan: Plan = Plan()
         # Scope for causal observations. Step IDs are stable within a plan,
         # but old plans may remain in memory during hierarchical execution or
@@ -70,6 +72,9 @@ class AgentState(
         self.execution_incidents: List[Dict[str, Any]] = []
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
+        self.continuity: Dict[str, Any] | None = None
+        self._continuity_resume_pending = False
+        self._continuity_bound_run_id: str | None = None
         self._task_semantics = TaskSemantics.empty()
         # One task-owned recovery owner.  The compatibility counter
         # properties below are projections and cannot create an independent
@@ -97,12 +102,28 @@ class AgentState(
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history_turns: int = 6
 
+    def reset_task_progression(
+        self,
+        requested_effects: Sequence[str] = (),
+        *,
+        preserve_semantics: bool = False,
+    ) -> None:
+        """Reset task facts, including lineage for a genuinely new task."""
+
+        super().reset_task_progression(
+            requested_effects,
+            preserve_semantics=preserve_semantics,
+        )
+        self.continuity = None
+        self._continuity_resume_pending = False
+        self._continuity_bound_run_id = None
+
     def configure_recovery_policy(self, config: Mapping[str, Any] | None = None) -> None:
         self.recovery_budget.reconfigure(RecoveryPolicy.from_config(config))
 
     @property
     def continuation_attempts(self) -> int:
-        return self.recovery_budget.used(RecoveryScope.EFFECT_CONTINUATIONS)
+        return cast(int, self.recovery_budget.used(RecoveryScope.EFFECT_CONTINUATIONS))
 
     @continuation_attempts.setter
     def continuation_attempts(self, value: int) -> None:
@@ -133,7 +154,7 @@ class AgentState(
 
     @property
     def reasoning_turns_used(self) -> int:
-        return self.recovery_budget.used(RecoveryScope.REASONING_CONTINUATIONS)
+        return cast(int, self.recovery_budget.used(RecoveryScope.REASONING_CONTINUATIONS))
 
     @reasoning_turns_used.setter
     def reasoning_turns_used(self, value: int) -> None:
