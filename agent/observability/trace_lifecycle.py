@@ -69,12 +69,23 @@ class TraceLifecycleMixin:
             if self._read_only or self._closed or self._closing:
                 raise TraceClosedError("trace store is read-only or closed")
             self._metadata_values["last_observer_heartbeat"] = self._now_text() if timestamp is None else _time_text(timestamp)
-            self._mark_metadata_dirty_locked()
-        try:
-            self._publish_metadata(force=True)
-        except Exception as exc:
-            self._note_writer_failure(exc)
-            raise
+            if not self._metadata_dirty:
+                self._heartbeat_quiesced = False
+                if self._publication_in_flight == 0:
+                    self._mark_metadata_dirty_locked()
+                else:
+                    # The acknowledgement may have observed a clean snapshot
+                    # while its publication still owns the in-flight marker.
+                    # Keep this coalesced heartbeat pending without creating a
+                    # new independent revision.
+                    self._metadata_dirty = True
+            elif getattr(self, "_heartbeat_quiesced", False) and self._publication_in_flight == 0:
+                # A bounded recovery publication may settle while this latest
+                # observer tick remains dirty but quiesced.  The next ordinary
+                # tick re-arms one coalesced writer opportunity without adding
+                # another independent metadata revision.
+                self._heartbeat_quiesced = False
+            self._condition.notify_all()
 
     def close(self: Any, *, timeout_seconds: float | None = None) -> TraceMetadata:
         timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)

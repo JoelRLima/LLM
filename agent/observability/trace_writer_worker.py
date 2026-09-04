@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def _control_item(owner: Any) -> tuple[bool, Any | None] | None:
+def _terminal_control_item(owner: Any) -> tuple[bool, Any | None] | None:
     if owner._writer_error is not None:
         return False, None
     if owner._finalization_timed_out:
@@ -13,7 +13,11 @@ def _control_item(owner: Any) -> tuple[bool, Any | None] | None:
             owner._inflight = True
             return True, None
         return False, None
-    if owner._metadata_dirty:
+    return None
+
+
+def _ordinary_control_item(owner: Any) -> tuple[bool, Any | None] | None:
+    if owner._metadata_dirty and not getattr(owner, "_heartbeat_quiesced", False):
         owner._inflight = True
         return True, None
     return None
@@ -22,27 +26,24 @@ def _control_item(owner: Any) -> tuple[bool, Any | None] | None:
 def _next_item(owner: Any) -> tuple[bool, Any | None]:
     with owner._condition:
         while True:
-            if owner._pending or owner._pending_gaps:
-                break
-            control = _control_item(owner)
+            terminal = _terminal_control_item(owner)
+            if terminal is not None:
+                return terminal
+            if not owner._pending and owner._pending_gaps:
+                owner._materialize_gap_locked()
+            if owner._pending:
+                item = owner._pending.popleft()
+                owner._inflight = True
+                owner._materialize_gap_locked()
+                owner._condition.notify_all()
+                return True, item
+
+            control = _ordinary_control_item(owner)
             if control is not None:
                 return control
             if owner._closing and not owner._finalization_pending:
                 return False, None
             owner._condition.wait(timeout=0.25)
-
-        control = _control_item(owner)
-        if control is not None:
-            return control
-        if not owner._pending and owner._pending_gaps:
-            owner._materialize_gap_locked()
-        if not owner._pending:
-            return False, None
-        item = owner._pending.popleft()
-        owner._inflight = True
-        owner._materialize_gap_locked()
-        owner._condition.notify_all()
-        return True, item
 
 
 def _finish_inflight(owner: Any, *, clear_metadata: bool = False) -> None:

@@ -43,6 +43,8 @@ class TraceWriterMixin:
 
         self._metadata_revision += 1
         self._metadata_dirty = True
+        self._heartbeat_quiesced = False
+        self._heartbeat_recovery_pending = False
 
     def start(self: Any) -> None:
         """Start the bounded writer when construction was deferred for a test/owner."""
@@ -260,7 +262,6 @@ class TraceWriterMixin:
             if item.source is ObservationSource.GAP:
                 self._metadata_values["gap_count"] = int(self._metadata_values["gap_count"]) + 1
             self._mark_metadata_dirty_locked()
-        self._publish_metadata(force=True)
 
     def _persist_dirty_metadata(self: Any) -> None:
         """Publish loss state only from the writer/control path."""
@@ -282,7 +283,7 @@ class TraceWriterMixin:
                 self._pending
                 or self._pending_gaps
                 or self._inflight
-                or self._metadata_dirty
+                or (self._metadata_dirty and not getattr(self, "_heartbeat_quiesced", False))
                 or self._publication_in_flight > 0
             ):
                 if self._writer_error is not None:
