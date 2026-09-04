@@ -9,6 +9,11 @@ from typing import Any
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+from agent.runtime.task_directives import (
+    ABSENT,
+    TaskRunDirective,
+    validate_checkpoint_task_run_directive,
+)
 from agent.state_checkpoint_counters import restore_counters as _restore_counters
 
 _VALID_TERMINAL_DISPOSITIONS = (
@@ -69,6 +74,9 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
             getattr(state, "hierarchical_lifecycle", {"status": "inactive"})
         ),
     }
+    task_run_directive = getattr(state, "task_run_directive", None)
+    if isinstance(task_run_directive, TaskRunDirective):
+        checkpoint["task_run_directive"] = task_run_directive.to_checkpoint_dict()
     continuity = continuity_checkpoint(state)
     if continuity is not None:
         checkpoint["continuity"] = continuity
@@ -76,12 +84,38 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
 
 
 def restore_progression(state: Any, data: dict[str, Any]) -> None:
+    _restore_task_run_directive(state, data)
     _restore_continuity(state, data)
     _restore_semantics(state, data)
     _restore_counters(state, data)
     _restore_task_policy(state, data)
     _restore_hierarchical_lifecycle(state, data)
     _restore_terminal(state, data)
+
+
+def _restore_task_run_directive(state: Any, data: Mapping[str, Any]) -> None:
+    raw = data["task_run_directive"] if "task_run_directive" in data else ABSENT
+    try:
+        objective = getattr(state, "objective", None)
+        if not isinstance(objective, str):
+            if raw is ABSENT:
+                state.task_run_directive = None
+                return
+            raise ValueError("checkpoint objective must be a non-empty string")
+        if raw is ABSENT and not objective.strip():
+            state.task_run_directive = None
+            return
+        directive = validate_checkpoint_task_run_directive(
+            objective=objective,
+            raw=raw,
+            plan_present=bool(getattr(state, "plan", ())),
+            terminal_disposition=data.get("terminal_disposition"),
+        )
+        if directive is None:
+            raise ValueError("checkpoint task_run_directive could not be materialized")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Checkpoint task_run_directive is invalid: {exc}") from exc
+    state.task_run_directive = directive
 
 
 def continuity_checkpoint(state: Any) -> dict[str, Any] | None:

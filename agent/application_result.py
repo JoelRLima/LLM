@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from agent.reporting.run_receipt import finalize_run_result
 from agent.reporting.run_snapshot import CanonicalRunSnapshot, build_canonical_run_snapshot
+from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.task_execution_context import ensure_runtime_correlation
 
 
@@ -84,6 +85,15 @@ def finalize_application_result(
             record_metric=record_metric if callable(record_metric) else None,
         )
         orchestrator._canonical_run_snapshot = snapshot
+    effective_metadata = dict(metadata or {})
+    task_run_directive = getattr(getattr(orchestrator, "agent_state", None), "task_run_directive", None)
+    if isinstance(task_run_directive, TaskRunDirective):
+        effective_metadata.update(
+            {
+                "task_directive": task_run_directive.directive.value,
+                "deliberation_profile": task_run_directive.deliberation_profile.value,
+            }
+        )
     return cast(
         AgentRunResult,
         finalize_run_result(
@@ -94,7 +104,7 @@ def finalize_application_result(
             answer,
             error=error,
             diagnostics=diagnostics,
-            metadata=metadata,
+            metadata=effective_metadata,
             receipt=receipt,
             report_path=report_path,
             snapshot=snapshot,

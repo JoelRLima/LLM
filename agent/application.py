@@ -26,6 +26,7 @@ from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.logging import setup_logger
 from agent.runtime.paths import AppPaths, WorkspacePaths
+from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot, bind_task_authority
@@ -214,6 +215,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         *,
         stream_callback: Callable[[str], None] | None = None,
         explicit_resume: bool = False,
+        task_run_directive: TaskRunDirective | None = None,
     ) -> AgentRunResult:
         if self._closed:
             raise RuntimeError("A aplicação já foi encerrada.")
@@ -222,6 +224,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
                 objective,
                 stream_callback=stream_callback,
                 explicit_resume=explicit_resume,
+                task_run_directive=task_run_directive,
             )
 
     def resume(
@@ -243,10 +246,17 @@ class AgentApplication(ApplicationOperationalModeMixin):
         *,
         stream_callback: Callable[[str], None] | None = None,
         explicit_resume: bool = False,
+        task_run_directive: TaskRunDirective | None = None,
     ) -> AgentRunResult:
         from agent.application_run import run_locked
 
-        return run_locked(self, objective, stream_callback=stream_callback, explicit_resume=explicit_resume)
+        return run_locked(
+            self,
+            objective,
+            stream_callback=stream_callback,
+            explicit_resume=explicit_resume,
+            task_run_directive=task_run_directive,
+        )
     def _result(
         self,
         status: str,

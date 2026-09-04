@@ -202,8 +202,16 @@ def test_current_definition_binding_is_revalidated_before_one_resume_event(
 
     assert runner.run(None, None, explicit_resume=True) == "resumed"
 
-    assert len(emitted) == 1
+    assert len(emitted) == 2
     assert emitted[0][0] == RuntimeEventKind.TASK_RESUMED.value
+    assert emitted[1] == (
+        RuntimeEventKind.TASK_DIRECTIVE_SELECTED.value,
+        {
+            "directive": "auto",
+            "deliberation_profile": "normal",
+            "resumed": True,
+        },
+    )
     assert observed["root_task_id"] == "real-resume-task"
     assert observed["run_id"] != "real-resume-task"
     assert owner.agent_state.continuity["last_run_id"] == observed["run_id"]

@@ -50,6 +50,29 @@ resume, dispatch e cleanup. `OrchestratorOperations` concentra checkpoint,
 memória, eventos, métricas e task reports. O caminho especializado de
 segurança também invoca `code_analyzer` pelo gateway quando ele existe.
 
+## Diretivas e perfis de tarefa
+
+Na entrada de uma tarefa, `TaskRunDirective` é o valor tipado que atravessa a
+fronteira `AgentApplication` → `Orchestrator` → `TaskRunner`. A diretiva não
+concede capability, grant, approval ou `OperationalMode`. `READ` aplica apenas
+a interseção `read`, `vcs_read`, `analyze`; `/do` continua sujeito à autoridade
+e à aprovação existentes.
+
+`PLAN` usa o objetivo canônico de plan-only, passa pela `TaskDefinition` e pela
+validação do `ExecutionGateway`, e termina em um preview bounded. Ele não entra
+no executor nem grava o preview em `AgentState.plan`. `/continue` continua sendo
+o boundary de resume do W10: restaura o objeto tipado persistido e não aceita
+um novo objetivo, diretiva ou perfil.
+
+O perfil deliberativo só ajusta temporariamente o `thinking_budget` task-local;
+o runtime restaura esse valor ao terminar a tentativa. Ele não escolhe
+provider/modelo nem altera budgets quantitativos, authority ou approval. O
+evento `task_directive_selected` é uma projeção bounded de
+`directive`, `deliberation_profile` e `resumed`; falhas de observação não mudam
+o estado canônico. O `AgentRunResult.metadata` usa o mesmo
+`AgentState.task_run_directive` restaurado/admitido, inclusive após
+`/continue`.
+
 Os componentes de Task Definition são invariantes da
 `AgentApplication` associada a uma workspace, não uma capability opcional do
 provider. Para uma tarefa nova não trivial, `TaskRunner` só alcança routing,

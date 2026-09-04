@@ -24,6 +24,11 @@ from agent.orchestration.task_runner_resume_commit import (
 )
 from agent.planning.task_completion import mark_terminal_blocked
 from agent.runtime.logging import logger
+from agent.runtime.task_directives import (
+    DeliberationProfile,
+    TaskDirective,
+    TaskRunDirective,
+)
 
 REASON_TASK_RESUME_INTERRUPTED_BEFORE_COMMIT = "TASK_RESUME_INTERRUPTED_BEFORE_COMMIT"
 
@@ -34,6 +39,17 @@ class TaskInputs:
     resumed: bool
     original_message_count: int
     resume_reason: str | None = None
+    task_run_directive: TaskRunDirective | None = None
+
+    def __post_init__(self) -> None:
+        if self.task_run_directive is None:
+            self.task_run_directive = TaskRunDirective(
+                TaskDirective.AUTO,
+                DeliberationProfile.NORMAL,
+                self.objective,
+            )
+        elif not isinstance(self.task_run_directive, TaskRunDirective):
+            raise TypeError("task_run_directive must be a TaskRunDirective")
 
 
 def resume_refusal_message(reason_code: str) -> str:
@@ -59,14 +75,31 @@ def resolve_inputs(
     original_count: int,
     *,
     explicit_resume: bool = False,
+    task_run_directive: TaskRunDirective | None = None,
 ) -> TaskInputs | None:
     """Resolve a fresh objective or restore one supported checkpoint."""
 
     orchestrator = runner.orchestrator
+    if explicit_resume and task_run_directive is not None:
+        raise ExplicitResumeRefused("TASK_RESUME_DIRECTIVE_OVERRIDE_NOT_ALLOWED")
     if explicit_resume and objective:
         raise ExplicitResumeRefused("TASK_RESUME_OBJECTIVE_NOT_ALLOWED")
     if objective:
-        return TaskInputs(objective, False, original_count)
+        selected = task_run_directive or TaskRunDirective(
+            TaskDirective.AUTO,
+            DeliberationProfile.NORMAL,
+            objective,
+        )
+        if selected.subject != objective:
+            raise ValueError("TASK_DIRECTIVE_SUBJECT_MISMATCH")
+        return TaskInputs(
+            selected.canonical_objective(),
+            False,
+            original_count,
+            task_run_directive=selected,
+        )
+    if task_run_directive is not None:
+        raise ValueError("TASK_DIRECTIVE_OBJECTIVE_REQUIRED")
     checkpoint = _load_checkpoint(orchestrator, explicit_resume=explicit_resume)
     if checkpoint is None:
         if explicit_resume:
@@ -119,7 +152,16 @@ def _restore_checkpoint(
             reason_code="CHECKPOINT_INVALID_TERMINAL_DISPOSITION",
             message="O checkpoint contem um estado terminal incompativel e foi preservado.",
         )
-        return TaskInputs(restored_objective, True, original_count)
+        return TaskInputs(
+            restored_objective,
+            True,
+            original_count,
+            task_run_directive=TaskRunDirective(
+                TaskDirective.AUTO,
+                DeliberationProfile.NORMAL,
+                restored_objective,
+            ),
+        )
     lifecycle = getattr(orchestrator.agent_state, "hierarchical_lifecycle", {})
     if isinstance(lifecycle, Mapping) and lifecycle.get("status") == "running":
         if explicit_resume:
@@ -134,7 +176,13 @@ def _restore_checkpoint(
             ),
             status="block",
         )
-        return TaskInputs(str(orchestrator.agent_state.objective or "checkpoint"), True, original_count)
+        resumed_objective = str(orchestrator.agent_state.objective or "checkpoint")
+        return TaskInputs(
+            resumed_objective,
+            True,
+            original_count,
+            task_run_directive=getattr(orchestrator.agent_state, "task_run_directive", None),
+        )
     restored = orchestrator.agent_state.objective
     if not restored:
         orchestrator._delete_checkpoint()
@@ -149,7 +197,16 @@ def _restore_checkpoint(
             resume_reason = "keyboard_interrupt"
         elif raw_continuity.get("interrupted") is True:
             resume_reason = "task_paused"
-    return TaskInputs(str(restored), True, original_count, resume_reason)
+    task_run_directive = getattr(orchestrator.agent_state, "task_run_directive", None)
+    if not isinstance(task_run_directive, TaskRunDirective):
+        raise ValueError("Checkpoint task_run_directive is missing after restore.")
+    return TaskInputs(
+        str(restored),
+        True,
+        original_count,
+        resume_reason,
+        task_run_directive=task_run_directive,
+    )
 
 
 def _require_explicit_resume_checkpoint(orchestrator: Any, checkpoint: Any) -> None:

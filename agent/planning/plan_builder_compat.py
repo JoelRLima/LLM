@@ -13,7 +13,10 @@ if TYPE_CHECKING:
 
 
 def build_legacy_initial(
-    builder: Any, decision: LegacyModelDecision
+    builder: Any,
+    decision: LegacyModelDecision,
+    *,
+    require_executable_plan: bool = False,
 ) -> "PlanBuildResult":
     """Adapt the retained initial-plan response without making it canonical."""
 
@@ -22,13 +25,15 @@ def build_legacy_initial(
     plan = legacy_plan(builder, decision)
     if plan is None:
         return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-    obligations = decision.payload.get("obligations")
-    obligations_ok, reviewed_obligations = builder._review_obligations(
-        obligations if isinstance(obligations, Sequence) else None,
-        source="initial_plan_compatibility",
-    )
-    if not obligations_ok:
-        return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+    reviewed_obligations = None
+    if not require_executable_plan:
+        obligations = decision.payload.get("obligations")
+        obligations_ok, reviewed_obligations = builder._review_obligations(
+            obligations if isinstance(obligations, Sequence) else None,
+            source="initial_plan_compatibility",
+        )
+        if not obligations_ok:
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
     if not plan:
         return PlanBuildResult(kind=PlanningDecisionKind.REPLAN)
     return PlanBuildResult(

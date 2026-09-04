@@ -19,6 +19,10 @@ from agent.continuity.snapshot import (
 )
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES, OperationalStatus
+from agent.runtime.task_directives import (
+    ABSENT,
+    validate_checkpoint_task_run_directive,
+)
 
 REASON_CHECKPOINT_ABSENT = "CHECKPOINT_ABSENT"
 REASON_CHECKPOINT_RESUMABLE = "CHECKPOINT_RESUMABLE"
@@ -102,6 +106,21 @@ def _project_checkpoint(
         raise _ProjectionError(REASON_CHECKPOINT_INVALID)
     root_task_id = _optional_text(checkpoint.get("root_task_id"), "root_task_id")
     terminal = _terminal_disposition(checkpoint.get("terminal_disposition"))
+    raw_directive = (
+        checkpoint["task_run_directive"]
+        if "task_run_directive" in checkpoint
+        else ABSENT
+    )
+    try:
+        validate_checkpoint_task_run_directive(
+            objective=objective,
+            raw=raw_directive,
+            plan_present=bool(checkpoint.get("plan")),
+            terminal_disposition=terminal,
+            materialize=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise _ProjectionError(REASON_CHECKPOINT_INVALID) from exc
     hierarchical_status = _hierarchical_status(checkpoint.get("hierarchical_lifecycle"))
     continuity = _continuity(checkpoint.get("continuity"))
     task_definition = _task_definition(checkpoint.get("task_definition"))

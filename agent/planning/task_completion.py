@@ -59,12 +59,17 @@ def _legacy_continuation_increment(orchestrator: Any) -> None:
     orchestrator.agent_state.continuation_attempts += 1
 
 
-def initialize_task_progression(orchestrator: Any, objective: str) -> None:
+def initialize_task_progression(
+    orchestrator: Any,
+    objective: str,
+    *,
+    plan_only: bool = False,
+) -> None:
     state = orchestrator.agent_state
     if hasattr(state, "initialize_task_semantics") and isinstance(
         getattr(state, "task_semantics", None), TaskSemantics
     ):
-        state.initialize_task_semantics(objective)
+        state.initialize_task_semantics(objective, plan_only=plan_only)
         state.reset_task_progression(
             state.task_semantics.requested_effects,
             preserve_semantics=True,
@@ -73,7 +78,12 @@ def initialize_task_progression(orchestrator: Any, objective: str) -> None:
         # Even compatibility orchestrators must receive the canonical
         # positive-authority projection; the advisory requested list is not a
         # durable permission source.
-        requested = TaskSemantics.from_objective(objective).requested_effects
+        semantics = (
+            TaskSemantics.from_plan_directive_objective(objective)
+            if plan_only
+            else TaskSemantics.from_objective(objective)
+        )
+        requested = semantics.requested_effects
         state.reset_task_progression(requested)
     orchestrator.agent_state.reasoning_last_history_count = len(
         orchestrator.agent_state.tool_history

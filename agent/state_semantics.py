@@ -45,9 +45,13 @@ class TaskSemanticsStateMixin:
             raise TypeError("semantics de tarefa invalida")
         self._task_semantics = semantics
 
-    def initialize_task_semantics(self, objective: str) -> None:
+    def initialize_task_semantics(self, objective: str, *, plan_only: bool = False) -> None:
         self.objective = objective
-        self._task_semantics = TaskSemantics.from_objective(objective)
+        self._task_semantics = (
+            TaskSemantics.from_plan_directive_objective(objective)
+            if plan_only
+            else TaskSemantics.from_objective(objective)
+        )
 
     @property
     def task_intent(self) -> Any:

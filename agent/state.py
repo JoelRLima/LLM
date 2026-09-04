@@ -18,6 +18,7 @@ from agent.runtime.recovery import (
     RecoveryPolicy,
     RecoveryScope,
 )
+from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.task_policy import TaskPolicyState
 from agent.state_checkpointing import StateCheckpointMixin
 from agent.state_continuity import StateContinuityMixin
@@ -73,6 +74,7 @@ class AgentState(
         self.persona: Optional[str] = None
         self.persona_prompt: Optional[str] = None
         self.continuity: Dict[str, Any] | None = None
+        self.task_run_directive: TaskRunDirective | None = None
         self._continuity_resume_pending = False
         self._continuity_bound_run_id: str | None = None
         self._task_semantics = TaskSemantics.empty()

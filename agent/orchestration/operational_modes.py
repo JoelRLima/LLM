@@ -50,9 +50,13 @@ def refresh_capability_projection(orchestrator: Any) -> None:
         granted = task_capabilities if granted is None else granted & task_capabilities
     ceiling = operational_mode_capabilities(orchestrator._operational_mode) if orchestrator._operational_mode else None
     if granted is None:
-        orchestrator.allowed_capabilities = frozenset() if ceiling is None else ceiling
+        effective = frozenset() if ceiling is None else ceiling
     else:
-        orchestrator.allowed_capabilities = granted if ceiling is None else granted & ceiling
+        effective = granted if ceiling is None else granted & ceiling
+    directive_ceiling = getattr(orchestrator, "_task_directive_capability_ceiling", None)
+    if directive_ceiling is not None:
+        effective = effective & frozenset(directive_ceiling)
+    orchestrator.allowed_capabilities = effective
     if persona is None or orchestrator.tool_registry is None:
         return
     active = builtin_skills_for_persona(

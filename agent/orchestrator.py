@@ -31,6 +31,7 @@ from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.paths import WorkspacePaths
+from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
 from agent.runtime.workspace_context import WorkspaceContext
@@ -100,6 +101,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self.application_authority = application_authority
         self.task_authority = task_authority
         self._operational_mode: OperationalMode | None = None
+        self._task_directive_capability_ceiling: frozenset[str] | None = None
         self._persona_allowed_capabilities: frozenset[str] | None = None
         self._planning_context: PlanningContextSnapshot | None = None
         self.max_steps = 15
@@ -290,5 +292,14 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         stream_callback: Callable[[str], None] | None = None,
         *,
         explicit_resume: bool = False,
+        task_run_directive: TaskRunDirective | None = None,
     ) -> str:
-        return cast(str, TaskRunner(self).run(objective, stream_callback, explicit_resume=explicit_resume))
+        return cast(
+            str,
+            TaskRunner(self).run(
+                objective,
+                stream_callback,
+                explicit_resume=explicit_resume,
+                task_run_directive=task_run_directive,
+            ),
+        )

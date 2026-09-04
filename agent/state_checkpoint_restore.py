@@ -50,6 +50,14 @@ def _clone_budget_ledger(budget: Any) -> Any:
 
 
 def validate_restored_cross_fields(state: Any) -> None:
+    task_run_directive = getattr(state, "task_run_directive", None)
+    if (
+        getattr(task_run_directive, "directive", None) is not None
+        and getattr(getattr(task_run_directive, "directive", None), "value", None) == "plan"
+        and bool(getattr(state, "plan", ()))
+        and getattr(state, "terminal_disposition", None) is None
+    ):
+        raise ValueError("Checkpoint PLAN directive cannot resume with an executable plan.")
     if getattr(state, "terminal_disposition", None) != "complete":
         return
     pending_effects = tuple(getattr(state, "pending_effects", lambda: ())())

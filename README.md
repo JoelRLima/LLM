@@ -55,6 +55,25 @@ llm-agent inspect replay --json --run-id RUN_ID
 llm-agent inspect export --run-id RUN_ID --output trace.zip
 ```
 
+### Diretivas por tarefa (W11)
+
+As diretivas e perfis deliberativos usam prefixos slash na entrada da tarefa:
+
+```powershell
+llm-agent run "/read /smart Analyze the repository"
+llm-agent run "/plan /cautious Refactor parser.py"
+llm-agent run "/do Apply the change"
+llm-agent run "/continue"
+```
+
+`/read` é uma diretiva de tarefa diferente do comando interativo `/read <arquivo>`;
+o dispatcher do chat preserva o segundo significado. `/do` não
+concede authority nem substitui `--yes`. `/plan` valida e mostra um preview,
+mas não executa o plano. `/continue` reutiliza o checkpoint e o owner de
+continuidade do W10, sem iniciar uma tarefa nova. `/economy`, `/normal`,
+`/smart` e `/cautious` são perfis de deliberação, não o `--profile` de modelo;
+eles não selecionam provider ou modelo.
+
 `run` é headless e nunca lê `stdin`. Se uma ação exigir consentimento e `--yes`
 não estiver presente, ela termina bloqueada sem executar o efeito. `--yes`
 fornece aprovação para aquela execução; não cria capability, grant ou authority

@@ -41,8 +41,9 @@ class _Application:
         self.workspace = SimpleNamespace(root=Path.cwd())
         self.workspace_paths = SimpleNamespace()
 
-    def run(self, objective: str) -> _Result:
+    def run(self, objective: str, *, task_run_directive: Any = None) -> _Result:
         self.objective = objective
+        self.task_run_directive = task_run_directive
         return self.result
 
     def close(self) -> None:

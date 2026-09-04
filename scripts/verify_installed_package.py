@@ -868,6 +868,7 @@ from pathlib import Path
 from agent.application import AgentApplication
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
+from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
 from agent.task_definition.repository import TaskDefinitionRepository
@@ -929,6 +930,11 @@ application = AgentApplication.create(
 try:
     state = application.orchestrator.agent_state
     state.objective = objective
+    state.task_run_directive = TaskRunDirective(
+        TaskDirective.READ,
+        DeliberationProfile.SMART,
+        objective,
+    )
     state.root_task_id = task_id
     state.task_definition_ref = reference
     state.set_plan(
@@ -1922,11 +1928,12 @@ def _verify_installed_continuity(
 
         resumed = _run(
             "installed-continuity-resume",
-            (str(entrypoint), "task", "resume", "--json", "--yes", *common),
+            (str(entrypoint), "run", "--json", "--yes", *common, "/continue"),
             cwd=cwd,
             environment=continuity_environment,
         )
         resume_payload = parse_json_output(resumed)
+        resume_metadata = resume_payload.get("metadata")
         snapshot = resume_payload.get("snapshot")
         correlation = snapshot.get("correlation") if isinstance(snapshot, dict) else None
         receipt = resume_payload.get("receipt")
@@ -1942,6 +1949,9 @@ def _verify_installed_continuity(
             or not isinstance(receipt_correlation, dict)
             or receipt_correlation.get("root_task_id") != root_task_id
             or receipt_correlation.get("run_id") != correlation["run_id"]
+            or not isinstance(resume_metadata, dict)
+            or resume_metadata.get("task_directive") != "read"
+            or resume_metadata.get("deliberation_profile") != "smart"
         ):
             raise VerificationError(
                 f"resume positivo instalado nao preservou identidade: {resume_payload!r}"
@@ -1985,6 +1995,52 @@ def _verify_missing_config_recovery(
         raise VerificationError("Installed CLI did not expose missing-config recovery.")
     if (app_home / "config" / "config.json").exists():
         raise VerificationError("Installed CLI created config without non-interactive consent.")
+
+
+def _verify_w11_cli(
+    entrypoint: Path,
+    workspace_parent: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Verify the installed W11 parser/help surface without a model call."""
+
+    help_result = _run(
+        "installed-w11-run-help",
+        (str(entrypoint), "run", "--help"),
+        cwd=cwd,
+        environment=environment,
+    )
+    help_text = help_result.stdout
+    for expected in (
+        "/read /smart",
+        "/plan /cautious",
+        "/continue",
+        "/do nao substitui --yes",
+    ):
+        if expected not in help_text:
+            raise VerificationError(f"Help instalada nao documentou a diretiva W11: {expected!r}")
+
+    absent_workspace = workspace_parent / "w11-continue-absent-workspace"
+    absent_workspace.mkdir(parents=True, exist_ok=True)
+    absent = _run_expected_failure(
+        "installed-w11-continue-absent",
+        (
+            str(entrypoint),
+            "run",
+            "--json",
+            "--workspace",
+            str(absent_workspace),
+            "/continue",
+        ),
+        cwd=cwd,
+        environment=environment,
+    )
+    payload = parse_json_output(absent)
+    if payload.get("success") is not False or payload.get("reason_code") != "CHECKPOINT_ABSENT":
+        raise VerificationError(
+            f"/continue instalada nao preservou a falha deterministica: {payload!r}"
+        )
 
 
 def _verify_greeting(payload: Mapping[str, Any]) -> None:
@@ -2102,6 +2158,13 @@ def verify_installed_package(
         _verify_missing_config_recovery(
             entrypoint,
             temp / "missing-config-home",
+            external_cwd,
+            runtime_environment,
+        )
+
+        _verify_w11_cli(
+            entrypoint,
+            temp,
             external_cwd,
             runtime_environment,
         )

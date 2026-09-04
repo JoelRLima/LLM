@@ -34,7 +34,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subcommands = parser.add_subparsers(dest="command")
     subcommands.add_parser("chat", parents=[common], help="abre o chat interativo (comando padrão)", argument_default=argparse.SUPPRESS)
-    run = subcommands.add_parser("run", parents=[common], help="executa um objetivo sem abrir o chat", argument_default=argparse.SUPPRESS)
+    run = subcommands.add_parser(
+        "run",
+        parents=[common],
+        help="executa um objetivo sem abrir o chat",
+        argument_default=argparse.SUPPRESS,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Exemplos de diretivas W11:\n"
+            '  llm-agent run "/read /smart Analise o repositorio"\n'
+            '  llm-agent run "/plan /cautious Refatore parser.py"\n'
+            '  llm-agent run "/continue"\n'
+            "\n/do nao substitui --yes ou grants de autoridade."
+        ),
+    )
     run.add_argument("objective", nargs="+", metavar="OBJETIVO")
     run.add_argument(
         "--task-authority",

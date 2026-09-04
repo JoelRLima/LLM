@@ -13,7 +13,14 @@ from rich.console import Console
 from agent.interfaces.cli import first_run
 from agent.interfaces.cli.parser import build_parser
 from agent.interfaces.cli.workspace_entry import argument_workspace, remember_workspace, render_active_workspace
+from agent.interfaces.task_directives import (
+    ParsedTaskRequest,
+    TaskDirectiveParseError,
+    TaskRequestAction,
+    parse_task_request,
+)
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
+from agent.runtime.task_directives import TaskRunDirective
 
 console = Console()
 NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
@@ -94,6 +101,15 @@ def _create_application(args: argparse.Namespace, *, configure_logging: bool) ->
     return create_application(args, configure_logging=configure_logging)
 
 
+def _run_application_task(application: Any, request: ParsedTaskRequest) -> Any:
+    """Call the typed application boundary without dropping W11 state."""
+
+    directive = request.directive_state
+    if not isinstance(directive, TaskRunDirective) or not isinstance(request.subject, str):
+        raise ValueError("RUN requires a TaskRunDirective")
+    return application.run(request.subject, task_run_directive=directive)
+
+
 def _run_chat(args: argparse.Namespace) -> int:
     first_run.prepare_chat_workspace(args, console=console, app_paths=_app_paths(args))
     interactive = first_run.is_interactive_terminal()
@@ -127,9 +143,26 @@ def _print_operational_receipt(result: Any) -> None:
 
 def _run_once(args: argparse.Namespace) -> int:
     json_output = bool(_value(args, "json_output", False))
+    objective = " ".join(args.objective)
+    try:
+        request = parse_task_request(objective)
+    except TaskDirectiveParseError as exc:
+        _emit_error(exc.detail, json_output=json_output, reason_code=exc.reason_code)
+        return 2
+
+    if request.action is TaskRequestAction.CONTINUE:
+        from agent.interfaces.cli.task_continuity import run_task_resume
+
+        return run_task_resume(
+            args,
+            create_application=_create_application,
+            print_json=_print_json,
+            print_receipt=_print_operational_receipt,
+        )
+
     application = _create_application(args, configure_logging=not json_output)
     try:
-        result = application.run(" ".join(args.objective))
+        result = _run_application_task(application, request)
     finally:
         application.close()
 
@@ -253,11 +286,15 @@ def _dispatch(args: argparse.Namespace) -> int:
     return handler(args)
 
 
-def _emit_error(message: str, *, json_output: bool) -> None:
+def _emit_error(message: str, *, json_output: bool, reason_code: str | None = None) -> None:
     if json_output:
-        _print_json({"error": message, "status": "failed", "success": False})
+        document: dict[str, Any] = {"error": message, "status": "failed", "success": False}
+        if reason_code is not None:
+            document["reason_code"] = reason_code
+        _print_json(document)
     else:
-        print(f"Erro: {message}", file=sys.stderr)
+        prefix = f"Erro [{reason_code}]: " if reason_code is not None else "Erro: "
+        print(f"{prefix}{message}", file=sys.stderr)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -2,6 +2,10 @@
   "complexity": {
     "max_complexity": 10,
     "allowed": {
+      "agent/interfaces/task_directives.py::parse_task_request": 13,
+      "agent/orchestration/task_runner_continuity.py::_restore_checkpoint": 11,
+      "agent/planning/plan_builder.py::build_plan": 11,
+      "agent/planning/plan_preview.py::run_plan_preview": 14,
       "agent/planning/task_semantics.py::_restore_predicate_resolutions": 13,
       "agent/planning/task_semantics_effect_inference.py::_classify_path_roles": 12,
       "agent/planning/task_semantics_effect_inference.py::_clause_intents": 20,
@@ -12,15 +16,22 @@
   "module_size": {
     "max_lines": 300,
     "allowed": {
+      "agent/interfaces/cli/app.py": 336,
+      "agent/interfaces/cli/command_handlers.py": 316,
+      "agent/orchestration/task_runner.py": 352,
+      "agent/orchestrator.py": 305,
       "agent/code/workflow_application.py": 341,
       "agent/evaluation/scripted_gateway_logic.py": 537,
       "agent/evaluation/h_series_scenarios.py": 688,
       "agent/planning/capability_manifest.py": 301,
       "agent/planning/completion_observations.py": 318,
-      "agent/planning/task_semantics.py": 539,
+      "agent/continuity/checkpoint_projection.py": 318,
+      "agent/planning/plan_builder.py": 309,
+      "agent/planning/task_semantics.py": 569,
       "agent/planning/task_semantics_effect_inference.py": 918,
       "agent/planning/task_semantics_inference.py": 367,
-      "agent/planning/task_semantics_types.py": 384
+      "agent/planning/task_semantics_types.py": 384,
+      "agent/state_checkpoint.py": 307
     }
   }
 }

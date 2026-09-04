@@ -172,6 +172,36 @@ class TaskSemantics(TaskSemanticsProjectionMixin, TaskSemanticsAdmissionMixin):
         )
 
     @classmethod
+    def from_plan_directive_objective(cls, canonical_objective: str) -> "TaskSemantics":
+        """Build proposal-only semantics without installing effect obligations."""
+
+        if not isinstance(canonical_objective, str) or not canonical_objective.strip():
+            raise TaskSemanticsError("objetivo de plano invalido")
+        candidates = infer_effect_semantics(canonical_objective)
+        proposal_candidates = EffectSemantics(
+            candidates.requested,
+            candidates.prohibited,
+            candidates.intents,
+            proposal_only=True,
+        )
+        authority = admit_effect_authority(canonical_objective, proposal_candidates)
+        prohibited = tuple(
+            dict.fromkeys(item.effect for item in authority.constraint_intents)
+        )
+        return cls(
+            TaskIntent(
+                canonical_objective,
+                (),
+                prohibited,
+                effect_intents=authority.admitted_intents,
+            ),
+            (),
+            effect_authority=authority,
+            candidate_effect_intents=proposal_candidates.intents,
+            _strict_evidence=True,
+        )
+
+    @classmethod
     def from_legacy(
         cls,
         objective: str,

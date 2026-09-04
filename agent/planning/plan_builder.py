@@ -86,11 +86,19 @@ class PlanBuilder:
         self.analysis_notes_file = Path(analysis_notes_file)
         self._last_planning_view: PlanningPresentationSnapshot | None = None
 
-    def build_plan(self, objective: str) -> PlanBuildResult:
+    def build_plan(
+        self,
+        objective: str,
+        *,
+        require_executable_plan: bool = False,
+    ) -> PlanBuildResult:
         self._clear_analysis_notes()
         decision = ask_model_decision_with_compatibility(
             self.orchestrator.context_manager,
-            self._build_prompt(objective), step_type="plan",
+            self._build_prompt(
+                objective,
+                require_executable_plan=require_executable_plan,
+            ), step_type="plan",
             base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.INITIAL_PLAN,
@@ -98,19 +106,35 @@ class PlanBuilder:
         if self.orchestrator.verbose:
             print(f"[DEBUG] plan_decision admitido: {decision!r}")
         if isinstance(decision, DirectResponseDecision):
+            if require_executable_plan:
+                return PlanBuildResult(
+                    blocked_answer="PLAN_PREVIEW_PLAN_REQUIRED",
+                    kind=PlanningDecisionKind.BLOCK,
+                )
             self.orchestrator._emit("direct_response", {})
             return PlanBuildResult(direct_answer=decision.answer)
         if isinstance(decision, LegacyModelDecision):
-            return build_legacy_initial(self, decision)
+            return build_legacy_initial(
+                self,
+                decision,
+                require_executable_plan=require_executable_plan,
+            )
         if not isinstance(decision, InitialPlanDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        obligations_ok, reviewed_obligations = self._review_obligations(
-            decision.obligations, source="initial_plan"
-        )
-        if not obligations_ok:
-            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        reviewed_obligations: Optional[List[Dict[str, Any]]] = None
+        if not require_executable_plan:
+            obligations_ok, reviewed_obligations = self._review_obligations(
+                decision.obligations, source="initial_plan"
+            )
+            if not obligations_ok:
+                return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         plan = self._project_plan(decision)
         if plan is None:
+            if require_executable_plan:
+                return PlanBuildResult(
+                    blocked_answer="PLAN_PREVIEW_PLAN_REQUIRED",
+                    kind=PlanningDecisionKind.BLOCK,
+                )
             return PlanBuildResult()
         if self.orchestrator.verbose:
             print(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
@@ -237,10 +261,20 @@ class PlanBuilder:
         except OSError:
             pass
 
-    def _build_prompt(self, objective: str) -> str:
+    def _build_prompt(
+        self,
+        objective: str,
+        *,
+        require_executable_plan: bool = False,
+    ) -> str:
         hints = self.orchestrator.context_manager.get_file_hints(objective)
         tools = self._tool_guidance(objective, force_refresh=False)
-        return build_plan_prompt(objective, hints, tools)
+        return build_plan_prompt(
+            objective,
+            hints,
+            tools,
+            require_executable_plan=require_executable_plan,
+        )
 
     def _build_continuation_prompt(self, objective: str, observations: str, effect_evidence: str, observation_references: str, plan_progress: str) -> str:
         tools = self._tool_guidance(objective, force_refresh=True)

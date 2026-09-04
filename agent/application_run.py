@@ -13,6 +13,7 @@ from agent.planning.completion_observations import publish_outcome
 from agent.planning.task_completion import mark_terminal_blocked
 from agent.reporting.run_receipt import derive_error, derive_status, public_exception_message
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.task_directives import TaskRunDirective
 from agent.tools.invocation_execution import InvocationLivenessError
 
 
@@ -69,6 +70,7 @@ def run_locked(
     *,
     stream_callback: Callable[[str], None] | None = None,
     explicit_resume: bool = False,
+    task_run_directive: TaskRunDirective | None = None,
 ) -> AgentRunResult:
     if bool(getattr(application, "_closed", False)):
         raise RuntimeError("A aplicação já foi encerrada.")
@@ -91,7 +93,14 @@ def run_locked(
             "_canonical_run_snapshot": None,
         }
     )
-    invocation = _invoke(application, objective, captured, stream_callback, explicit_resume)
+    invocation = _invoke(
+        application,
+        objective,
+        captured,
+        stream_callback,
+        explicit_resume,
+        task_run_directive,
+    )
     if isinstance(invocation, AgentRunResult):
         return invocation
     answer = invocation
@@ -125,6 +134,7 @@ def _invoke(
     captured: io.StringIO,
     stream_callback: Callable[[str], None] | None,
     explicit_resume: bool,
+    task_run_directive: TaskRunDirective | None,
 ) -> str | AgentRunResult:
     output_context = redirect_stdout(captured) if stream_callback is None else nullcontext()
     callback_args: dict[str, Any] = (
@@ -132,6 +142,8 @@ def _invoke(
     )
     if explicit_resume:
         callback_args["explicit_resume"] = True
+    if task_run_directive is not None:
+        callback_args["task_run_directive"] = task_run_directive
     try:
         with output_context:
             return str(application.orchestrator.run(objective, **callback_args))

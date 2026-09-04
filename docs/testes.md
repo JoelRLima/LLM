@@ -23,6 +23,7 @@ Comandos:
 
 ```powershell
 .venv\Scripts\python.exe scripts\check_quality.py
+.venv\Scripts\python.exe scripts\check_wave11_architecture.py
 .venv\Scripts\python.exe -m ruff check .
 .venv\Scripts\python.exe -m mypy --platform linux
 .venv\Scripts\python.exe -m mypy --platform win32
@@ -65,7 +66,9 @@ o comando de aceitação usado no CI.
 O gate do pacote instalado constrói o wheel sem depender do checkout, instala-o
 com suas dependências declaradas em um venv limpo e executa `--version`,
 `config init`, `doctor --json` e uma tarefa headless a partir de outro
-diretório. Um probe externo carrega o catálogo empacotado, executa uma revisão
+diretório. Ele também verifica a ajuda das diretivas W11, a falha determinística
+de `run "/continue"` sem checkpoint e uma retomada instalada com diretiva
+READ/perfil SMART. Um probe externo carrega o catálogo empacotado, executa uma revisão
 real que precisa detectar `PYSEC001`, valida metadados locais com `git log`,
 rejeita remerge e tenta escapar do workspace com o leitor de arquivos,
 `ShellSkill` e `GitSkill`. O regression test POSIX cobre adicionalmente
@@ -84,6 +87,7 @@ instalado sem produzir escrita indevida.
 | [`test_executable_baseline.py`](../tests/integration/test_executable_baseline.py) | jornadas herméticas de chat, leitura e negação de path, além das capacidades existentes |
 | [`test_standalone_application.py`](../tests/integration/test_standalone_application.py) | composição headless, aprovação, status terminais, lifecycle, concorrência, lock e isolamento entre workspaces |
 | [`test_cli_v2.py`](../tests/unit/interfaces/test_cli_v2.py) | comandos, JSON puro, códigos de saída e bootstrap sem efeitos |
+| [`test_wave11_cli_adapters.py`](../tests/unit/interfaces/test_wave11_cli_adapters.py) | diretivas headless/interativas, `/continue`, compatibilidade `/read`, perfis e projeção de resultado |
 | [`test_app_paths.py`](../tests/unit/runtime/test_app_paths.py) | Windows/XDG, override portátil e partições por workspace |
 | [`test_config_repository.py`](../tests/unit/runtime/test_config_repository.py) | schema, precedência, init e migração atômica |
 | [`test_standalone_health.py`](../tests/unit/runtime/test_standalone_health.py) | doctor somente leitura, perfil efetivo, modos do workspace e integridade da memória |
@@ -94,6 +98,8 @@ instalado sem produzir escrita indevida.
 | [`test_benchmark.py`](../tests/unit/scripts/test_benchmark.py) | composição standalone, paths e timeout cooperativo sem liberar execução em voo |
 | [`test_tree_read_confinement.py`](../tests/unit/skills/test_tree_read_confinement.py) | varredura de árvore ignora symlinks de arquivo que escapam do workspace |
 | [`test_installed_package_gate.py`](../tests/policy/test_installed_package_gate.py) | invariantes estruturais do verificador de wheel |
+| [`test_wave11_architecture_checker.py`](../tests/unit/runtime/test_wave11_architecture_checker.py) | checker W11 positivo e amostras adversariais de ownership |
+| [`test_wave11_observability.py`](../tests/unit/runtime/test_wave11_observability.py) | evento bounded de diretiva e isolamento de falha de observação |
 
 ## Capacidades e modelos
 

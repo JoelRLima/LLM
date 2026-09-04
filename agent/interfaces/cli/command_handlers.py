@@ -7,6 +7,11 @@ from rich.table import Table
 
 from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_result
 from agent.interfaces.cli.workspace_entry import render_active_workspace, workspace_storage_path
+from agent.interfaces.task_directives import (
+    TaskDirectiveParseError,
+    TaskRequestAction,
+    parse_task_request,
+)
 from agent.runtime.logging import set_debug_level
 from agent.tools.authority import OperationalMode
 from agent.tools.invocation_semantics import CODE_TASK_ACTIONS
@@ -114,12 +119,32 @@ def agent_command(text: str, ctx: Any) -> None:
         ctx.modo_agente = not ctx.modo_agente
         console.print(f"Modo agente {'LIGADO' if ctx.modo_agente else 'DESLIGADO'}.")
         return
-    objective = parts[1]
-    console.print(f"[bold magenta]Executando objetivo avulso:[/bold magenta] {objective}")
     try:
-        answer = ctx.orchestrator.run(objective)
-        console.print(Panel(answer, title="[bold blue]Agente[/bold blue]"))
-        ctx.session.add_assistant_message(answer)
+        request = parse_task_request(parts[1])
+    except TaskDirectiveParseError as exc:
+        console.print(f"[bold red]Erro [{exc.reason_code}]: {exc.detail}[/bold red]")
+        return
+    try:
+        if request.action is TaskRequestAction.CONTINUE:
+            resume = getattr(ctx.application, "resume", None)
+            if not callable(resume):
+                raise RuntimeError("A retomada da tarefa nao esta disponivel nesta sessao.")
+            result = resume()
+        else:
+            directive = request.directive
+            if directive is None:
+                raise RuntimeError("RUN requires a TaskRunDirective")
+            console.print(
+                f"[bold magenta]Executando objetivo avulso:[/bold magenta] {directive.subject}"
+            )
+            result = ctx.application.run(
+                directive.subject,
+                task_run_directive=directive,
+            )
+        answer = getattr(result, "answer", result)
+        answer_text = str(answer)
+        console.print(Panel(answer_text, title="[bold blue]Agente[/bold blue]"))
+        ctx.session.add_assistant_message(answer_text)
     except KeyboardInterrupt:
         console.print("\n[bold red]Agente interrompido.[/bold red]")
 

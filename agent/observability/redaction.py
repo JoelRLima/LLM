@@ -37,6 +37,7 @@ _SENSITIVE_KEY_NAMES = frozenset(
     {
         "api_key",
         "apikey",
+        "token",
         "apitoken",
         "access_token",
         "accesstoken",
@@ -96,7 +97,7 @@ _BEARER_RE = re.compile(
     r"(?i)(\bbearer\s+)(?!\[REDACTED\])([^\s,;\]}\"']+)"
 )
 _ASSIGNMENT_RE = re.compile(
-    r"(?i)(\b(?:api[ _-]?key|api[ _-]?token|access[ _-]?token|refresh[ _-]?token|"
+    r"(?i)(\b(?:api[ _-]?key|api[ _-]?token|access[ _-]?token|refresh[ _-]?token|token|"
     r"authorization|cookie|session[ _-]?secret|password|passphrase|secret|credentials?|"
     r"task[ _-]?authority(?:[ _-]?token)?|(?:capability|authority)[ _-]?token)\b"
     r"\s*[:=]\s*)(?P<quote>[\"']?)(?P<value>[^\s,;}\]\"']+)(?P=quote)"

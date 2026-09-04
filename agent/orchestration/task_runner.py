@@ -11,6 +11,11 @@ from agent.orchestration.task_definition_gate import (
     preserve_task_definition_checkpoint,
     revalidate_resume_task_definition,
 )
+from agent.orchestration.task_directive_runtime import (
+    TaskDirectiveRuntimeRestore,
+    apply_task_run_directive_runtime,
+    restore_task_run_directive_runtime,
+)
 from agent.orchestration.task_execution import execute_task
 from agent.orchestration.task_lifecycle import TaskLifecycleMixin
 from agent.orchestration.task_runner_continuity import (
@@ -33,8 +38,10 @@ from agent.planning.task_completion import (
 )
 from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.event_kinds import RuntimeEventKind
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.runtime.task_directives import TaskDirective, TaskRunDirective
 from agent.runtime.task_policy import TaskPolicyError
 from agent.task_definition.errors import TaskDefinitionError
 from agent.watchdog import Watchdog
@@ -49,9 +56,13 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self._resume_commit_failed = False
         self._resume_attempt_committed = False
         self._resume_commit_expectation: Any = None
+        self._directive_runtime_restore: TaskDirectiveRuntimeRestore | None = None
 
-    @staticmethod
-    def _route_is_hierarchical(objective: str) -> bool:
+    def _route_is_hierarchical(self, objective: str) -> bool:
+        state = getattr(self.orchestrator, "agent_state", None)
+        directive = getattr(state, "task_run_directive", None)
+        if isinstance(directive, TaskRunDirective) and not directive.hierarchical_allowed():
+            return False
         return cast(bool, is_hierarchical(objective))
 
     def _start_observation(self, inputs: TaskInputs) -> None:
@@ -71,6 +82,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         stream_callback: Callable[[str], None] | None,
         *,
         explicit_resume: bool = False,
+        task_run_directive: TaskRunDirective | None = None,
     ) -> str:
         original_count = len(self.orchestrator.session.messages)
         self.orchestrator._cancelled = False
@@ -80,11 +92,13 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self._resume_commit_failed = False
         self._resume_attempt_committed = False
         self._resume_commit_expectation = None
+        self._directive_runtime_restore = None
         try:
             inputs = self._resolve_inputs(
                 objective,
                 original_count,
                 explicit_resume=explicit_resume,
+                task_run_directive=task_run_directive,
             )
             if inputs is None:
                 self._reset_missing_input_state()
@@ -97,7 +111,12 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             if inputs.resumed and self._has_terminal_disposition():
                 return cast(str, self._resume_terminal_checkpoint(inputs.objective))
             self._prepare(inputs)
-            if not inputs.resumed and _is_clearly_trivial(inputs.objective):
+            if (
+                not inputs.resumed
+                and inputs.task_run_directive is not None
+                and inputs.task_run_directive.trivial_shortcut_allowed()
+                and _is_clearly_trivial(inputs.objective)
+            ):
                 return cast(str, complete_direct_answer(
                     self.orchestrator,
                     inputs.objective,
@@ -117,7 +136,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             self.orchestrator._preserve_checkpoint = True
             self.orchestrator._resume_refusal_reason = exc.reason_code
             self.orchestrator._last_failure_code = exc.reason_code
-            return resume_refusal_message(exc.reason_code)
+            return cast(str, resume_refusal_message(exc.reason_code))
         except CheckpointLoadError as exc:
             return cast(str, checkpoint_error_answer(self.orchestrator, exc))
         except TaskPolicyError as exc:
@@ -147,8 +166,13 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self._start_attempt(inputs)
 
     def _cleanup_after_run(self, original_count: int) -> None:
-        if not self._resume_commit_failed:
-            self._cleanup(original_count)
+        try:
+            if not self._resume_commit_failed:
+                self._cleanup(original_count)
+        finally:
+            restore = self._directive_runtime_restore
+            self._directive_runtime_restore = None
+            restore_task_run_directive_runtime(self.orchestrator, restore)
 
     def _admit_resume_task_definition(self) -> None:
         try:
@@ -185,12 +209,14 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         original_count: int,
         *,
         explicit_resume: bool = False,
+        task_run_directive: TaskRunDirective | None = None,
     ) -> TaskInputs | None:
         return resolve_inputs(
             self,
             objective,
             original_count,
             explicit_resume=explicit_resume,
+            task_run_directive=task_run_directive,
         )
 
     def _emit_resume_event(self, inputs: TaskInputs) -> None:
@@ -201,7 +227,30 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             self.orchestrator._task_failed = False
         else:
             self.orchestrator._reset_task_state(inputs.objective)
-            initialize_task_progression(self.orchestrator, inputs.objective)
+            input_directive = cast(TaskRunDirective, inputs.task_run_directive)
+            self.orchestrator.agent_state.task_run_directive = input_directive
+            initialize_task_progression(
+                self.orchestrator,
+                inputs.objective,
+                plan_only=input_directive.directive is TaskDirective.PLAN,
+            )
+        state = getattr(self.orchestrator, "agent_state", None)
+        state_directive: object = getattr(state, "task_run_directive", None)
+        if isinstance(state_directive, TaskRunDirective):
+            task_run_directive = state_directive
+        else:
+            fallback_directive: object = inputs.task_run_directive
+            if not isinstance(fallback_directive, TaskRunDirective):
+                raise ValueError("TaskRunner requires an admitted TaskRunDirective")
+            task_run_directive = fallback_directive
+            if state is not None:
+                state.task_run_directive = task_run_directive
+        if getattr(self.orchestrator, "session", None) is not None:
+            self._directive_runtime_restore = apply_task_run_directive_runtime(
+                self.orchestrator,
+                task_run_directive,
+            )
+        self._emit_task_directive_selected(inputs)
         self.orchestrator._task_start_time = Watchdog.start_task()
         policy = getattr(self.orchestrator, "task_policy", None)
         if policy is not None:
@@ -210,6 +259,26 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
         print(chr(10) + 'Analisando: "' + inputs.objective + '"')
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
+
+    def _emit_task_directive_selected(self, inputs: TaskInputs) -> None:
+        """Publish a bounded W11 selection fact after runtime application."""
+
+        directive = getattr(getattr(self.orchestrator, "agent_state", None), "task_run_directive", None)
+        emit = getattr(self.orchestrator, "_emit", None)
+        if not isinstance(directive, TaskRunDirective) or not callable(emit):
+            return
+        try:
+            emit(
+                RuntimeEventKind.TASK_DIRECTIVE_SELECTED.value,
+                {
+                    "directive": directive.directive.value,
+                    "deliberation_profile": directive.deliberation_profile.value,
+                    "resumed": bool(inputs.resumed),
+                },
+            )
+        except Exception as exc:
+            # Event observers are projections; they cannot change task truth.
+            logger.warning("W11 directive event emission failed: %s", type(exc).__name__)
 
     def _ensure_task_definition(self, inputs: TaskInputs) -> str | None:
         return cast(str | None, ensure_task_definition(self, inputs))

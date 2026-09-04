@@ -14,6 +14,7 @@ from agent.llm.contracts import ModelRequest, ModelResponse
 from agent.llm.decision_contract import ModelRequestContract
 from agent.memory.memory import MemoryLoadError
 from agent.orchestration.task_runner import TaskRunner
+from agent.planning.plan_model import Plan
 from agent.planning.step_policies import StepPolicies
 from agent.planning.task_completion import (
     allow_linear_completion,
@@ -23,6 +24,7 @@ from agent.runtime.config_errors import ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLockError
 from agent.runtime.paths import AppPaths
+from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
 from agent.tools.authority import OperationalMode
@@ -1241,6 +1243,100 @@ def test_read_only_mutation_request_remains_blocked_before_approval(tmp_path: Pa
     assert progression["pending"] == ["write"]
     assert progression["terminal"] == "block"
     assert len(gateway.payloads) >= 3
+
+
+def test_w11_read_directive_blocks_mutation_at_real_invocation_boundary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    objective = "Altere controle.txt para que contenha apenas modificado"
+    directive = TaskRunDirective(TaskDirective.READ, DeliberationProfile.NORMAL, objective)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "controle.txt"
+    target.write_bytes(b"original\n")
+    before = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+    gateway = _QueuedChatGateway(
+        [
+            '{"persona":"coder"}',
+            '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"Altere controle.txt para que contenha apenas modificado","targets":["controle.txt"]}}]}',
+        ]
+    )
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=gateway,
+        approval_policy=AutoApprove(),
+        task_authority_capabilities=[
+            "read",
+            "write",
+            "process",
+            "network",
+            "memory",
+            "analyze",
+            "vcs_read",
+            "vcs_write",
+            "package_install",
+            "validate",
+        ],
+        operational_mode=OperationalMode.FULL,
+        configure_logging=False,
+    ) as application:
+        invocation_calls: list[str] = []
+        registry = application.tool_invocation_gateway.registry
+        original_invoke = registry._invoke_from_gateway
+
+        def record_invocation(invocation):
+            invocation_calls.append(invocation.tool_name)
+            return original_invoke(invocation)
+
+        monkeypatch.setattr(registry, "_invoke_from_gateway", record_invocation)
+
+        # Keep the real READ capability ceiling while exposing the broad
+        # mutating descriptor to the deterministic planner.  This adversarial
+        # seam forces the request through the canonical invocation gateway so
+        # the test proves the final capability denial, rather than only the
+        # earlier planning-visibility filter.
+        original_route = application.orchestrator._route_persona
+
+        def route_with_adversarial_mutator(subject: str) -> None:
+            original_route(subject)
+            application.orchestrator.active_skills.append("code_task")
+
+        monkeypatch.setattr(
+            application.orchestrator,
+            "_route_persona",
+            route_with_adversarial_mutator,
+        )
+
+        # The normal execution gateway already rejects this step during plan
+        # admission.  Bypass only that earlier duplicate gate in this
+        # adversarial test so the same real application run reaches the final
+        # ToolInvocationGateway capability check.
+        def admit_for_invocation_boundary(
+            candidate,
+            _objective: str,
+            **_kwargs,
+        ) -> Plan:
+            return candidate if isinstance(candidate, Plan) else Plan.from_raw(candidate)
+
+        monkeypatch.setattr(
+            application.orchestrator.execution_gateway,
+            "validate_and_optimize_plan",
+            admit_for_invocation_boundary,
+        )
+        result = application.run(objective, task_run_directive=directive)
+        state = application.orchestrator.agent_state
+        after = {path.relative_to(workspace): path.read_bytes() for path in workspace.rglob("*") if path.is_file()}
+
+    assert result.success is False
+    assert result.status != "succeeded"
+    assert "validada com sucesso" not in result.answer.casefold()
+    assert invocation_calls == []
+    assert state.task_run_directive == directive
+    assert before == after
+    assert "code_task" in [entry["tool"] for entry in state.tool_history]
+    assert application.orchestrator._task_directive_capability_ceiling is None
 
 
 def test_malformed_code_task_arguments_reach_canonical_validation(tmp_path: Path) -> None:

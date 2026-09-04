@@ -18,9 +18,11 @@ from agent.orchestration.route_coordinator import (
 from agent.orchestration.route_result import RouteResult
 from agent.orchestration.task_runner_support import terminal_answer
 from agent.planning.plan_builder import PlanningDecisionKind
+from agent.planning.plan_preview import run_plan_preview
 from agent.planning.planning_view_support import resume_planning_view
-from agent.planning.task_completion import complete_direct_answer
+from agent.planning.task_completion import complete_direct_answer, mark_terminal_blocked
 from agent.runtime.operational_outcome import project_operational_outcome
+from agent.runtime.task_directives import TaskDirective, TaskRunDirective
 
 
 def execute_task(
@@ -30,6 +32,22 @@ def execute_task(
 ) -> str:
     usage: Dict[str, int] = {}
     orchestrator = runner.orchestrator
+    directive = getattr(orchestrator.agent_state, "task_run_directive", None)
+    if (
+        inputs.resumed
+        and isinstance(directive, TaskRunDirective)
+        and directive.directive is TaskDirective.PLAN
+        and getattr(orchestrator.agent_state, "plan", None)
+    ):
+        orchestrator._preserve_checkpoint = True
+        return str(
+            mark_terminal_blocked(
+                orchestrator,
+                reason_code="PLAN_PREVIEW_EXECUTABLE_PLAN_PRESENT",
+                message="A retomada PLAN foi bloqueada porque o checkpoint contem plano executavel.",
+                status="block",
+            )
+        )
     if inputs.resumed and orchestrator.agent_state.plan:
         orchestrator._restore_persona_from_state()
         plan = orchestrator.agent_state.plan
@@ -47,6 +65,11 @@ def execute_task(
         )
     orchestrator._route_persona(inputs.objective)
     orchestrator._save_checkpoint()
+    if (
+        isinstance(directive, TaskRunDirective)
+        and directive.directive is TaskDirective.PLAN
+    ):
+        return str(run_plan_preview(orchestrator, directive.subject))
     hierarchical = runner._try_hierarchical(inputs.objective, on_chunk)
     route_answer = runner._consume_route_result(
         hierarchical,
