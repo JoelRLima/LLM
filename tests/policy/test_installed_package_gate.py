@@ -41,7 +41,8 @@ def test_gate_declares_required_installed_cli_journeys(tmp_path: Path) -> None:
             "--json",
             "--workspace",
             str(workspace),
-            "oi",
+            "/read",
+            "notes.txt",
         ),
         "task-status": (
             str(executable),
@@ -230,6 +231,21 @@ def test_installed_probe_covers_external_stdio_slice_d() -> None:
     source = inspect.getsource(_validate_slice_d_payload)
     assert 'payload.get("slice_d")' in source
     assert "spawned" in source
+
+
+def test_installed_probe_covers_wave12_strict_interaction_journeys() -> None:
+    for marker in (
+        "InteractionJourneyGateway",
+        "ModelRequestContract.INTERACTION_RESOLUTION",
+        "w12_natural_read",
+        "w12_task_respond",
+        "w12_explicit_read",
+        "w12_invalid",
+        "w12_json_prompt",
+        "w12_resume",
+        "resolve_effective_reasoning_budget",
+    ):
+        assert marker in INSTALLED_PROBE_SOURCE
 
 
 def test_installed_runtime_objectives_do_not_embed_slice_scenario_labels() -> None:

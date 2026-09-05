@@ -85,11 +85,19 @@ def run_agent_turn(console: Console, ctx: Any, text: str) -> Any:
         print(chunk, end="", flush=True)
 
     console.print("[bold blue]Agente:[/bold blue]")
-    result = ctx.application.run(text, stream_callback=on_chunk)
+    interact = getattr(ctx.application, "interact", None)
+    if callable(interact):
+        result = interact(text, boundary="natural", stream_callback=on_chunk)
+    else:
+        from agent.interfaces.cli.legacy_compat import dispatch_natural_facade
+
+        result = dispatch_natural_facade(ctx, text)
     answer = result.answer
     print()
     if answer and not streamed:
         console.print(answer)
-    ctx.session.add_user_message(text)
-    ctx.session.add_assistant_message(answer)
+    if not callable(interact):
+        from agent.interfaces.cli.legacy_compat import append_legacy_turn
+
+        append_legacy_turn(ctx, text, answer)
     return result

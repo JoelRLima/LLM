@@ -403,15 +403,48 @@ def _imported_names(tree: ast.AST, module: str) -> set[str]:
     return names
 
 
+def _model_call_service_names(tree: ast.AST) -> set[str]:
+    """Track local variables bound to the canonical model-call service."""
+
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+            continue
+        value = node.value
+        if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Attribute):
+            continue
+        receiver = value.func.value
+        if not isinstance(receiver, ast.Name) or receiver.id != "ModelCallService":
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names.update(target.id for target in targets if isinstance(target, ast.Name))
+    return names
+
+
+def _is_model_call_service_invocation(call: ast.Call, service_names: set[str]) -> bool:
+    if not isinstance(call.func, ast.Attribute):
+        return False
+    receiver = call.func.value
+    if isinstance(receiver, ast.Name) and receiver.id in service_names:
+        return True
+    return any(
+        isinstance(node, ast.Name) and node.id == "ModelCallService"
+        for node in ast.walk(receiver)
+    )
+
+
 def _check_provider_bypass(root: Path) -> list[ArchitectureViolation]:
     violations: list[ArchitectureViolation] = []
     for relative, tree in _trees(root):
         if relative in PROVIDER_OWNERS:
             continue
+        model_call_service_names = _model_call_service_names(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 method = _call_attribute(node)
-                if method in {"complete", "stream"}:
+                if method in {"complete", "stream"} and not _is_model_call_service_invocation(
+                    node, model_call_service_names
+                ):
                     violations.append(
                         _violation(
                             "W8-S1",

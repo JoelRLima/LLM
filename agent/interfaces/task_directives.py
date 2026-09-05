@@ -55,6 +55,9 @@ class TaskDirectiveParseError(ValueError):
 class ParsedTaskRequest:
     action: TaskRequestAction
     directive: TaskRunDirective | None
+    directive_explicit: bool = False
+    profile_explicit: bool = False
+    prefix_recognized: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, TaskRequestAction):
@@ -65,12 +68,25 @@ class ParsedTaskRequest:
             raise ValueError("CONTINUE cannot carry a TaskRunDirective")
 
     @classmethod
-    def run(cls, directive: TaskRunDirective) -> "ParsedTaskRequest":
-        return cls(TaskRequestAction.RUN, directive)
+    def run(
+        cls,
+        directive: TaskRunDirective,
+        *,
+        directive_explicit: bool = False,
+        profile_explicit: bool = False,
+        prefix_recognized: bool = False,
+    ) -> "ParsedTaskRequest":
+        return cls(
+            TaskRequestAction.RUN,
+            directive,
+            directive_explicit,
+            profile_explicit,
+            prefix_recognized,
+        )
 
     @classmethod
     def continue_(cls) -> "ParsedTaskRequest":
-        return cls(TaskRequestAction.CONTINUE, None)
+        return cls(TaskRequestAction.CONTINUE, None, False, False, True)
 
     @property
     def task_run_directive(self) -> TaskRunDirective | None:
@@ -131,6 +147,8 @@ def parse_task_request(raw: str) -> ParsedTaskRequest:
             profile = _PROFILE_TOKENS[normalized]
             seen_profile = True
         else:
+            if index > 0 and _looks_like_absolute_path(token):
+                break
             raise TaskDirectiveParseError(TASK_DIRECTIVE_UNKNOWN_PREFIX_TOKEN)
         index += 1
 
@@ -138,7 +156,12 @@ def parse_task_request(raw: str) -> ParsedTaskRequest:
         raise TaskDirectiveParseError(TASK_DIRECTIVE_OBJECTIVE_REQUIRED)
 
     subject = text[tokens[index][1] :]
-    return ParsedTaskRequest.run(_build_directive(directive, profile, subject))
+    return ParsedTaskRequest.run(
+        _build_directive(directive, profile, subject),
+        directive_explicit=seen_directive,
+        profile_explicit=seen_profile,
+        prefix_recognized=True,
+    )
 
 
 def _build_directive(
@@ -182,6 +205,12 @@ def _token_spans(text: str) -> list[tuple[str, int, int]]:
             index += 1
         result.append((text[start:index], start, index))
     return result
+
+
+def _looks_like_absolute_path(token: str) -> bool:
+    return token.startswith("/") and (
+        "/" in token[1:] or "\\" in token[1:] or "." in token[1:]
+    )
 
 
 __all__ = [

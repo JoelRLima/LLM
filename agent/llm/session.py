@@ -50,14 +50,21 @@ class ChatSession:
         self.messages[0]["content"] = prompt
     def get_effective_system_prompt(self) -> str:
         """Retorna o prompt com a instrução de pensamento, se ativo."""
-        if self.thinking_budget > 0:
-            return (
-                self.messages[0]["content"]
-                + f"\n\n[THINKING]: You may spend up to {self.thinking_budget} tokens thinking. "
-                "This is a maximum limit, not a target. Stop as soon as you have a satisfactory answer. "
-                "Be concise."
-            )
-        return self.messages[0]["content"]
+        from agent.llm.session_requests import (
+            build_effective_system_prompt_for_budget,
+            resolve_effective_reasoning_budget,
+        )
+
+        output = max(1, int(self.model_profile.max_output_tokens))
+        effective = resolve_effective_reasoning_budget(
+            self.thinking_budget,
+            output,
+            bool(self.model_profile.capabilities.reasoning),
+        )
+        return build_effective_system_prompt_for_budget(
+            self.messages[0]["content"],
+            effective,
+        )
     def add_message(self, role: str, content: str) -> None:
         """Adiciona uma mensagem com role arbitrário (user, assistant, tool, function, etc.)."""
         self.messages.append({"role": role, "content": content})
@@ -87,11 +94,13 @@ class ChatSession:
         try:
             with open(caminho, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                from agent.interaction.transcript import validate_transcript_messages
+                try:
+                    validate_transcript_messages(data)
+                except (TypeError, ValueError):
+                    raise
             if not isinstance(data, list):
-                return False, "Formato inválido (esperado lista de mensagens)."
-            for msg in data:
-                if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
-                    return False, "Mensagens devem ter 'role' e 'content'."
+                return False, "Histórico estruturalmente inválido."
             self.messages = data
             logger.info(f"Histórico carregado de {caminho}")
             return True, ""

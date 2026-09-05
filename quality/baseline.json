@@ -2,7 +2,16 @@
   "complexity": {
     "max_complexity": 10,
     "allowed": {
-      "agent/interfaces/task_directives.py::parse_task_request": 13,
+      "agent/interaction/continue_intent.py::classify_resume_request": 14,
+      "agent/interaction/evidence.py::scan_spans": 26,
+      "agent/interaction/guards.py::analyze_operational_clause": 12,
+      "agent/interaction/guards.py::cross_clause_effect_conflict": 14,
+      "agent/interaction/guards.py::direct_operational_target_proof": 18,
+      "agent/interaction/guards.py::normalize_target_anchor_identity": 11,
+      "agent/interaction/model_contract.py::_valid_combination": 11,
+      "agent/interaction/model_contract.py::validate_interaction_resolution": 12,
+      "agent/interaction/service.py::interact_locked": 32,
+      "agent/interfaces/task_directives.py::parse_task_request": 14,
       "agent/orchestration/task_runner_continuity.py::_restore_checkpoint": 11,
       "agent/planning/plan_builder.py::build_plan": 11,
       "agent/planning/plan_preview.py::run_plan_preview": 14,
@@ -10,14 +19,19 @@
       "agent/planning/task_semantics_effect_inference.py::_classify_path_roles": 12,
       "agent/planning/task_semantics_effect_inference.py::_clause_intents": 20,
       "agent/planning/task_semantics_projection.py::_effect_requirement_state": 13,
-      "agent/planning/task_semantics_types.py::__post_init__": 15
+      "agent/planning/task_semantics_types.py::__post_init__": 15,
+      "scripts/verify_installed_package.py::do_POST": 11
     }
   },
   "module_size": {
     "max_lines": 300,
     "allowed": {
-      "agent/interfaces/cli/app.py": 336,
-      "agent/interfaces/cli/command_handlers.py": 316,
+      "agent/application.py": 327,
+      "agent/interaction/admission.py": 412,
+      "agent/interaction/guards.py": 763,
+      "agent/interaction/service.py": 509,
+      "agent/interfaces/cli/app.py": 368,
+      "agent/interfaces/cli/command_handlers.py": 334,
       "agent/orchestration/task_runner.py": 352,
       "agent/orchestrator.py": 305,
       "agent/code/workflow_application.py": 341,

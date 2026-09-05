@@ -5,7 +5,11 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
+
+if TYPE_CHECKING:
+    from agent.interaction.service import InteractionService
+    from agent.interaction.types import AgentInteractionResult
 
 from agent.application_cleanup import abort_startup
 from agent.application_lifecycle import close_application
@@ -76,6 +80,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         self._owns_logging = owns_logging
         self._closed = False
         self._task_attempted = False
+        self._interaction_service: InteractionService | None = None
         self.orchestrator._on_observation_run_started = lambda correlation, resumed=False: start_observation_session(
             self, correlation, resumed=resumed
         )
@@ -209,6 +214,35 @@ class AgentApplication(ApplicationOperationalModeMixin):
         """Return the shared read API for the interactive inspector adapter."""
         return build_inspection_service(self)
 
+    def interaction_service(self) -> InteractionService:
+        """Return the unified W12 interaction owner."""
+        if self._interaction_service is None:
+            from agent.interaction.service import InteractionService
+
+            self._interaction_service = InteractionService(self)
+        return self._interaction_service
+
+    def interact(
+        self,
+        text: str,
+        *,
+        boundary: str = "natural",
+        visible_user_text: str | None = None,
+        task_payload: str | None = None,
+        stream_callback: Callable[[str], None] | None = None,
+    ) -> AgentInteractionResult:
+        """Admit and execute one natural or TASK-boundary interaction."""
+        if self._closed:
+            raise RuntimeError("A aplicação já foi encerrada.")
+        with _RUN_LOCK:
+            return self.interaction_service().interact_locked(
+                text,
+                boundary=boundary,
+                visible_user_text=visible_user_text,
+                task_payload=task_payload,
+                stream_callback=stream_callback,
+            )
+
     def run(
         self,
         objective: str | None,
@@ -282,6 +316,8 @@ class AgentApplication(ApplicationOperationalModeMixin):
         return result
     def cancel(self) -> None:
         if not self._closed:
+            if self.interaction_service().cancel_active_model_call():
+                return
             self.orchestrator.cancel_task()
     def close(self) -> None:
         close_application(self, _RUN_LOCK)

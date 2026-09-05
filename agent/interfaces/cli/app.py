@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from rich.console import Console
 
@@ -44,16 +44,13 @@ def _prompt(ctx: Any) -> str | None:
 
 
 def _handle_input(text: str, ctx: Any) -> bool:
-    from agent.interfaces.cli.chat import run_agent_turn, run_chat_turn
+    from agent.interfaces.cli.chat import run_agent_turn
     from agent.interfaces.cli.commands import handle_command
 
     handled, should_exit = handle_command(text, ctx)
     if handled:
         return bool(should_exit)
-    if ctx.modo_agente and not text.startswith("/"):
-        run_agent_turn(console, ctx, text)
-    else:
-        run_chat_turn(console, ctx.session, text, ctx.modo_diagnostico)
+    run_agent_turn(console, ctx, text)
     return False
 
 
@@ -101,12 +98,26 @@ def _create_application(args: argparse.Namespace, *, configure_logging: bool) ->
     return create_application(args, configure_logging=configure_logging)
 
 
-def _run_application_task(application: Any, request: ParsedTaskRequest) -> Any:
+def _run_application_task(
+    application: Any,
+    request: ParsedTaskRequest,
+    *,
+    visible_text: str | None = None,
+) -> Any:
     """Call the typed application boundary without dropping W11 state."""
 
     directive = request.directive_state
     if not isinstance(directive, TaskRunDirective) or not isinstance(request.subject, str):
         raise ValueError("RUN requires a TaskRunDirective")
+    interact = getattr(application, "interact", None)
+    if callable(interact):
+        surface = visible_text if visible_text is not None else request.subject
+        return interact(
+            request.subject,
+            boundary="task",
+            visible_user_text=surface,
+            task_payload=surface,
+        )
     return application.run(request.subject, task_run_directive=directive)
 
 
@@ -117,7 +128,7 @@ def _run_chat(args: argparse.Namespace) -> int:
         application = _create_application(args, configure_logging=True)
     except ConfigNotFound:
         if _value(args, "config") is None and interactive:
-            return first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args))
+            return cast(int, first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args)))
         raise
     try:
         context = _context_from_application(
@@ -153,16 +164,19 @@ def _run_once(args: argparse.Namespace) -> int:
     if request.action is TaskRequestAction.CONTINUE:
         from agent.interfaces.cli.task_continuity import run_task_resume
 
-        return run_task_resume(
-            args,
-            create_application=_create_application,
-            print_json=_print_json,
-            print_receipt=_print_operational_receipt,
+        return cast(
+            int,
+            run_task_resume(
+                args,
+                create_application=_create_application,
+                print_json=_print_json,
+                print_receipt=_print_operational_receipt,
+            ),
         )
 
     application = _create_application(args, configure_logging=not json_output)
     try:
-        result = _run_application_task(application, request)
+        result = _run_application_task(application, request, visible_text=objective)
     finally:
         application.close()
 
@@ -186,13 +200,16 @@ def _run_doctor(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.maintenance import run_doctor
 
     json_output = bool(_value(args, "json_output", False))
-    return run_doctor(
-        app_paths=_app_paths(args),
-        workspace=argument_workspace(args),
-        config_path=_value(args, "config"),
-        profile=_value(args, "profile"),
-        json_output=json_output,
-        write_report=bool(_value(args, "write_report", False)),
+    return cast(
+        int,
+        run_doctor(
+            app_paths=_app_paths(args),
+            workspace=argument_workspace(args),
+            config_path=_value(args, "config"),
+            profile=_value(args, "profile"),
+            json_output=json_output,
+            write_report=bool(_value(args, "write_report", False)),
+        ),
     )
 
 
@@ -205,65 +222,80 @@ def _config_repository(args: argparse.Namespace) -> Any:
 def _run_config(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.maintenance import run_config
 
-    return run_config(
-        args,
-        app_paths=_app_paths(args),
-        config_path=_value(args, "config"),
-        profile=_value(args, "profile"),
+    return cast(
+        int,
+        run_config(
+            args,
+            app_paths=_app_paths(args),
+            config_path=_value(args, "config"),
+            profile=_value(args, "profile"),
+        ),
     )
 
 
 def _run_state(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.maintenance import run_state
 
-    return run_state(
-        args,
-        app_paths=_app_paths(args),
-        workspace=argument_workspace(args),
+    return cast(
+        int,
+        run_state(
+            args,
+            app_paths=_app_paths(args),
+            workspace=argument_workspace(args),
+        ),
     )
 
 
 def _run_tools(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.maintenance import run_tools
 
-    return run_tools(
-        args,
-        app_paths=_app_paths(args),
-        workspace=argument_workspace(args),
+    return cast(
+        int,
+        run_tools(
+            args,
+            app_paths=_app_paths(args),
+            workspace=argument_workspace(args),
+        ),
     )
 
 
 def _run_extensions(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.extensions import run_extensions
 
-    return run_extensions(
-        args,
-        app_paths=_app_paths(args),
-        workspace=argument_workspace(args),
+    return cast(
+        int,
+        run_extensions(
+            args,
+            app_paths=_app_paths(args),
+            workspace=argument_workspace(args),
+        ),
     )
 
 
 def _run_task_context(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.task_context import run_task_context
 
-    return run_task_context(
-        args,
-        app_paths=_app_paths(args),
-        workspace=argument_workspace(args),
-        print_json=_print_json,
+    return cast(
+        int,
+        run_task_context(
+            args,
+            app_paths=_app_paths(args),
+            workspace=argument_workspace(args),
+            print_json=_print_json,
+        ),
     )
 
 
 def _run_inspect(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.inspector import run_inspect
 
-    return run_inspect(args)
+    return cast(int, run_inspect(args))
 
 
 def _dispatch_task(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.task_continuity import dispatch_task
 
-    return dispatch_task(args, run_context=_run_task_context)
+    return cast(int, dispatch_task(args, run_context=_run_task_context))
 
 
 def _dispatch(args: argparse.Namespace) -> int:

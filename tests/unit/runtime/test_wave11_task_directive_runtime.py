@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent.llm.session import ChatSession
+from agent.llm.session_requests import resolve_effective_reasoning_budget
 from agent.orchestration import task_runner as task_runner_module
 from agent.orchestration.operational_modes import refresh_capability_projection
 from agent.orchestration.task_directive_runtime import (
@@ -156,7 +157,11 @@ def test_profile_changes_only_canonical_request_reasoning_budget(
     )
     request = session.build_request(stream=False)
 
-    assert request.reasoning_budget == expected_budget
+    assert request.reasoning_budget == resolve_effective_reasoning_budget(
+        expected_budget,
+        request.max_output_tokens,
+        baseline_profile.capabilities.reasoning,
+    )
     assert request.model == baseline_profile.model
     assert request.temperature == baseline_profile.temperature
     assert request.max_output_tokens == baseline_profile.max_output_tokens

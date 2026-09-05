@@ -20,7 +20,7 @@ from agent.evaluation import (
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.interfaces.cli.chat import run_agent_turn
-from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
+from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent, StreamEventType
 from agent.llm.decision_contract import ModelRequestContract
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -77,13 +77,22 @@ class JourneyGateway:
         if authority is not None:
             return ModelResponse(content=authority)
         request_contract = getattr(request.request_contract, "value", request.request_contract)
+        if request_contract == ModelRequestContract.INTERACTION_RESOLUTION.value:
+            return ModelResponse(content=self._interaction_response())
         if request_contract == ModelRequestContract.TOOL_DISCOVERY.value:
             return ModelResponse(content=self._tool_discovery_response(request.messages[-1].content))
-        return ModelResponse(content=self._response(request.messages[0].content, request.messages[-1].content))
+        return ModelResponse(
+            content=self._response(
+                request.messages[0].content,
+                request.messages[-1].content,
+                request_contract,
+            )
+        )
 
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
-        del request
-        raise AssertionError("eval journey must use non-streaming planner calls")
+        response = self.complete(request)
+        yield StreamEvent(StreamEventType.CONTENT, text=response.content)
+        yield StreamEvent(StreamEventType.DONE, data={"prompt_n": 1, "predicted_n": 1})
 
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
@@ -111,7 +120,49 @@ class JourneyGateway:
         selected.extend(name for name in names if name not in selected)
         return json.dumps({"tools": selected[:8]})
 
-    def _response(self, system: str, prompt: str) -> str:
+    def _interaction_response(self) -> str:
+        direct_answers = {
+            "DIRECT_EXACT": "abacaxi azul",
+            "DIRECT_CAPITAL": "A capital da França é Paris.",
+            "DIRECT_SKY": "O céu parece azul porque a atmosfera dispersa mais a luz azul.",
+        }
+        for marker in direct_answers:
+            if marker in self.objective:
+                return json.dumps(
+                    {
+                        "action": "respond",
+                        "directive": "none",
+                        "ambiguity": "none",
+                        "grounding": "none",
+                        "operation_requested": False,
+                        "proposal_only": False,
+                        "resume_requested": False,
+                        "evidence": "",
+                    }
+                )
+        return json.dumps(
+            {
+                "action": "run",
+                "directive": "do" if self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"} else "read",
+                "ambiguity": "none",
+                "grounding": "current_turn",
+                "operation_requested": self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"},
+                "proposal_only": False,
+                "resume_requested": False,
+                "evidence": self.objective,
+            }
+        )
+
+    def _response(self, system: str, prompt: str, request_contract: str | None = None) -> str:
+        if request_contract is None:
+            direct_answers = {
+                "DIRECT_EXACT": "abacaxi azul",
+                "DIRECT_CAPITAL": "A capital da França é Paris.",
+                "DIRECT_SKY": "O céu parece azul porque a atmosfera dispersa mais a luz azul.",
+            }
+            for marker, answer in direct_answers.items():
+                if marker in self.objective:
+                    return answer
         if "You are a Router Agent" in system:
             return '{"persona":"coder"}'
         if "Escolha exatamente uma das duas respostas JSON" in prompt:
@@ -318,55 +369,53 @@ def _interactive_turn(application: AgentApplication, objective: str) -> Any:
     return run_agent_turn(console, context, objective)
 
 
-def test_interactive_runs_share_canonical_finalization_and_keep_prior_report(tmp_path: Path) -> None:
+def test_interactive_admission_keeps_response_and_task_boundaries_separate(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "notes.txt").write_text("CAP_READ_EVIDENCE\n", encoding="utf-8")
     direct_objective = "DIRECT_CAPITAL: Qual e a capital da Franca?"
-    read_objective = "CAP_READ: leia notes.txt e informe CAP_READ_EVIDENCE."
-    gateway = JourneyGateway(direct_objective)
+    read_objective = "leia notes.txt e informe CAP_READ_EVIDENCE."
+    gateway = JourneyGateway(direct_objective, "CAP_READ")
     with AgentApplication.create(
         paths=_initialized_paths(tmp_path), workspace=workspace,
         gateway=gateway,
         configure_logging=False,
     ) as application:
         direct = _interactive_turn(application, direct_objective)
-        direct_report_path = Path(direct.report_path)
-        direct_report_before = json.loads(direct_report_path.read_text(encoding="utf-8"))
-        direct_events = list(application.orchestrator.agent_state.events)
+        direct_messages = list(application.session.messages)
         gateway.objective = read_objective
         read = _interactive_turn(application, read_objective)
-        read_report = json.loads(Path(read.report_path).read_text(encoding="utf-8"))
-        current_events = list(application.orchestrator.agent_state.events)
-        direct_report_after = json.loads(direct_report_path.read_text(encoding="utf-8"))
+        assert read.run_result is not None
+        read_report = json.loads(Path(read.run_result.report_path).read_text(encoding="utf-8"))
 
-    assert direct.receipt["tools"] == [] and direct.receipt["executed"] is None
-    assert direct_report_before["planner_outcome"] == "direct_response"
-    assert direct_report_before == direct_report_after
-    assert direct_report_before["report_path"] == direct.report_path
-    assert direct.report_path != read.report_path
-    assert direct_report_before["run_id"] != read_report["run_id"]
-    assert [event["type"] for event in direct_report_before["event_summary"]] == ["direct_response"]
-    assert any(event.get("type") == "direct_response" for event in direct_events)
-    assert any(event.get("type") == "tool_end" for event in current_events)
+    assert direct.success is True
+    assert direct.answer == "A capital da França é Paris."
+    assert direct.resolution is not None and direct.resolution.action.value == "respond"
+    assert direct.run_result is None
+    assert direct_messages[-2:] == [
+        {"role": "user", "content": direct_objective},
+        {"role": "assistant", "content": "A capital da França é Paris."},
+    ]
+    assert read.resolution is not None and read.resolution.action.value == "run"
+    assert read.resolution.directive is not None and read.resolution.directive.value == "read"
+    assert read.run_result is not None and read.run_result.success is True
     assert read_report["planner_outcome"] == "use_tools"
-    assert read_report["report_path"] == read.report_path
+    assert read_report["report_path"] == str(read.run_result.report_path)
     step = read_report["steps"][0]
     assert step["tool"] == "file_reader"
     assert step["args"] == {"file_path": "notes.txt"}
     assert step["invocation_id"]
     assert step["result"]["executed"] is True
-    assert read.receipt["tools"][0]["invocation_id"] == step["invocation_id"]
-    assert read.receipt["tools"][0]["executed"] is True
-    for report in (direct_report_before, read_report):
-        assert report["metrics"]["run_calls"] == 1
+    assert read.run_result.receipt["tools"][0]["invocation_id"] == step["invocation_id"]
+    assert read.run_result.receipt["tools"][0]["executed"] is True
+    assert read_report["metrics"]["run_calls"] == 1
 
 
 def test_interactive_denial_is_bounded_and_survives_a_later_run(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    denial_objective = "CAP_DENIAL: leia ../outside.txt"
-    gateway = JourneyGateway(denial_objective)
+    denial_objective = "leia ../outside.txt"
+    gateway = JourneyGateway(denial_objective, "CAP_DENIAL")
     with AgentApplication.create(
         paths=_initialized_paths(tmp_path), workspace=workspace,
         gateway=gateway,
@@ -374,14 +423,16 @@ def test_interactive_denial_is_bounded_and_survives_a_later_run(tmp_path: Path) 
         configure_logging=False,
     ) as application:
         denied = _interactive_turn(application, denial_objective)
-        denied_path = Path(denied.report_path)
+        assert denied.run_result is not None
+        denied_path = Path(denied.run_result.report_path)
         gateway.objective = "DIRECT_CAPITAL"
         _interactive_turn(application, "DIRECT_CAPITAL: Qual e a capital da Franca?")
         report = json.loads(denied_path.read_text(encoding="utf-8"))
 
     assert denied.success is False
-    assert denied.receipt["tools"] == []
-    assert denied.receipt["executed"] is None
+    assert denied.run_result is not None
+    assert denied.run_result.receipt["tools"] == []
+    assert denied.run_result.receipt["executed"] is None
     assert report["steps"] == []
     assert report["planner_outcome"] == "blocked"
     assert any(
@@ -398,17 +449,17 @@ def test_interactive_provider_failure_is_canonically_finalized(tmp_path: Path) -
         paths=_initialized_paths(tmp_path), workspace=workspace,
         gateway=ProviderFailureGateway(), configure_logging=False,
     ) as application:
+        before = list(application.session.messages)
         result = _interactive_turn(application, "leia notes.txt")
 
-    report_text = Path(result.report_path).read_text(encoding="utf-8")
-    report = json.loads(report_text)
     assert result.status == "failed"
-    assert result.error == "Model provider request failed."
-    assert report["status"] == "failed"
-    assert report["metrics"]["run_calls"] == 1
-    assert report["metrics"]["model_calls"] == 3
+    assert result.resolution is None
+    assert result.reason_code == "INTERACTION_INTERNAL_FAILED"
+    assert result.error is not None
+    assert result.answer == ""
+    assert application.session.messages == before
     for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
-        assert secret not in report_text
+        assert secret not in repr(result.to_dict())
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:

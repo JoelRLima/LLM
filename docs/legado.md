@@ -220,6 +220,12 @@ uma facade de source/API.
   controlado pelo repositório importa diretamente o owner runtime. A facade
   deve ser retirada somente após a janela de compatibilidade e os imports
   downstream suportados serem aposentados.
+- `W12-CLI-01` | `agent/interfaces/cli/legacy_compat.py::append_legacy_answer`
+  permanece como projeção estreita para facades de teste offline; o caminho
+  produtivo entra por `InteractionService` e `AgentInteractionResult`.
+- `W12-CLI-02` | `agent/interfaces/cli/legacy_compat.py::append_legacy_turn`
+  permanece como projeção estreita para facades de teste offline; o caminho
+  produtivo entra por `InteractionService` e `AgentInteractionResult`.
 
 ## Adiado para W8 com evidência bloqueante (histórico; disposições encerradas)
 

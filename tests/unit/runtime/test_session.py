@@ -1,6 +1,7 @@
 import pytest
 
 from agent.llm.session import ChatSession
+from agent.llm.session_requests import resolve_effective_reasoning_budget
 
 
 @pytest.fixture
@@ -28,7 +29,12 @@ def test_effective_prompt_com_thinking(session):
     session.thinking_budget = 1000
     effective = session.get_effective_system_prompt()
     assert "[THINKING]" in effective
-    assert "1000" in effective
+    expected = resolve_effective_reasoning_budget(
+        1000,
+        session.model_profile.max_output_tokens,
+        session.model_profile.capabilities.reasoning,
+    )
+    assert str(expected) in effective
 
 def test_add_messages(session):
     session.add_user_message("Olá")

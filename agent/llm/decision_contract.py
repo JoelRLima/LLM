@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from enum import Enum
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, cast
 
 from agent.llm.task_definition_contract import (
     valid_task_contract_decision as _valid_task_contract_decision,
@@ -16,6 +16,7 @@ from agent.llm.tool_discovery_contract import valid_tool_discovery as _valid_too
 
 
 class ModelRequestContract(str, Enum):
+    INTERACTION_RESOLUTION = "interaction_resolution"
     TASK_CONTRACT = 'task_contract'
     TASK_SPEC = 'task_spec'
     INITIAL_PLAN = "initial_plan"
@@ -266,10 +267,13 @@ def legacy_model_decision_compatibility(
         legacy_model_decision_compatibility as compatibility,
     )
 
-    return compatibility(
-        value,
-        step_type=step_type,
-        request_contract=request_contract,
+    return cast(
+        dict[str, Any] | None,
+        compatibility(
+            value,
+            step_type=step_type,
+            request_contract=request_contract,
+        ),
     )
 def admit_model_decision_value(
     value: Any,

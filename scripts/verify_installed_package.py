@@ -41,6 +41,7 @@ INSTALLED_ACCEPTANCE_PROPERTIES = (
     {"id": "terminal-status", "proof": "canonical public terminal status"},
     {"id": "measurement", "proof": "canonical invocation/model/output measurement projection"},
     {"id": "task-continuity-cli", "proof": "installed paused checkpoint and fresh resume identity"},
+    {"id": "interaction-admission", "proof": "installed unified interaction admission with strict deterministic fixtures"},
     {"id": "outside-checkout", "proof": "wheel is exercised from outside the source checkout"},
 )
 
@@ -226,6 +227,9 @@ class DeterministicJourneyGateway:
                 "d1_success": ("demo_tool",),
                 "d3_denied": ("demo_tool",),
                 "d4_failure": ("demo_tool",),
+                "w12_natural_read": ("file_reader",),
+                "w12_task_respond": ("file_reader",),
+                "w12_explicit_read": ("file_reader",),
             }
             selected = [name for name in preferred.get(self.scenario_id, ("file_reader",)) if name in names]
             selected.extend(name for name in names if name not in selected)
@@ -251,6 +255,8 @@ class DeterministicJourneyGateway:
             if self.scenario_id in {"d1_success", "d3_denied", "d4_failure"}:
                 marker = "D1_EXTERNAL_EVIDENCE" if self.scenario_id == "d1_success" else ("D3_AUTHORITY_DENIED" if self.scenario_id == "d3_denied" else "D4_EXTERNAL_FAILURE")
                 return '{"plan":[{"tool":"demo_tool","args":{"text":"%s"}}]}' % marker
+            if self.scenario_id in {"w12_natural_read", "w12_task_respond", "w12_explicit_read"}:
+                return '{"plan":[{"tool":"file_reader","args":{"file_path":"parser.py"}}]}'
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
         if "Uma fronteira sem" in prompt:
             return '{"action":"complete","reason":"as observacoes reais bastam"}'
@@ -301,6 +307,205 @@ class DeterministicJourneyGateway:
 
     def count_tokens(self, text):
         return max(1, len(text) // 4)
+
+
+class InteractionJourneyGateway(DeterministicJourneyGateway):
+    # Strict-contract fixture for the installed W12 interaction boundary.
+
+    def complete(self, request):
+        raw_contract = getattr(request, "request_contract", None)
+        request_contract = getattr(raw_contract, "value", raw_contract)
+        if request_contract == ModelRequestContract.INTERACTION_RESOLUTION.value:
+            self.calls.append({"request_contract": request_contract, "request": request})
+            if self.scenario_id == "w12_invalid":
+                return ModelResponse(content="prose is not a W12 object")
+            if self.scenario_id == "w12_json_prompt":
+                return ModelResponse(
+                    content=json.dumps(
+                        {
+                            "action": "respond",
+                            "directive": "none",
+                            "ambiguity": "none",
+                            "grounding": "none",
+                            "operation_requested": False,
+                            "proposal_only": False,
+                            "resume_requested": False,
+                            "evidence": "",
+                        }
+                    )
+                )
+            if self.scenario_id == "w12_task_respond":
+                action = "respond"
+                directive = "none"
+                evidence = ""
+            else:
+                action = "run"
+                directive = "read"
+                evidence = self.objective
+            return ModelResponse(
+                content=json.dumps(
+                    {
+                        "action": action,
+                        "directive": directive,
+                        "ambiguity": "none",
+                        "grounding": "none" if action == "respond" else "current_turn",
+                        "operation_requested": False,
+                        "proposal_only": False,
+                        "resume_requested": False,
+                        "evidence": evidence,
+                    }
+                )
+            )
+        if self.scenario_id == "w12_json_prompt":
+            return ModelResponse(content="installed JSON_PROMPT response")
+        if self.scenario_id in {"w12_natural_read", "w12_task_respond", "w12_explicit_read"}:
+            prompt = str(request.messages[-1].content) if request.messages else ""
+            if "Resultados das ferramentas executadas:" in prompt:
+                return ModelResponse(content="A análise encontrou value = 12 em parser.py.")
+        return super().complete(request)
+
+
+def run_interaction_journeys(app_home, workspace):
+    from agent.llm.session import ChatSession
+    from agent.llm.session_requests import resolve_effective_reasoning_budget
+
+    parser_file = workspace / "parser.py"
+    parser_file.write_text("value = 12\\n", encoding="utf-8")
+
+    def create_app(scenario, objective="Read parser.py and report value."):
+        paths = AppPaths.discover(app_home / scenario, env={})
+        ConfigRepository(paths).initialize()
+        gateway = InteractionJourneyGateway(objective, scenario)
+        application = AgentApplication.create(
+            paths=paths,
+            workspace=workspace,
+            gateway=gateway,
+            configure_logging=False,
+        )
+        return application, gateway
+
+    application, gateway = create_app("w12_natural_read")
+    try:
+        result = application.interact("Read parser.py and report value.")
+        if not result.success or result.resolution is None or result.resolution.directive.value != "read":
+            raise AssertionError(f"installed W12 natural READ failed: {result.to_dict()!r}")
+        if sum(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls) != 1:
+            raise AssertionError(f"installed W12 natural READ resolver count diverged: {gateway.calls!r}")
+    finally:
+        application.close()
+
+    application, gateway = create_app("w12_task_respond")
+    try:
+        result = application.interact(
+            "What is an AST?",
+            boundary="task",
+            visible_user_text="/agent What is an AST?",
+            task_payload="What is an AST?",
+        )
+        if not result.success or result.resolution is None or result.resolution.directive.value != "read":
+            raise AssertionError(f"installed W12 TASK safe READ failed: {result.to_dict()!r}")
+    finally:
+        application.close()
+
+    application, gateway = create_app("w12_explicit_read")
+    try:
+        result = application.interact(
+            "/read parser.py",
+            boundary="task",
+            visible_user_text="/agent /read parser.py",
+            task_payload="/read parser.py",
+        )
+        if not result.success or result.resolution is None or result.resolution.directive.value != "read":
+            raise AssertionError(f"installed W12 explicit READ failed: {result.to_dict()!r}")
+        if any(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls):
+            raise AssertionError("installed explicit /read called the W12 resolver")
+    finally:
+        application.close()
+
+    application, gateway = create_app("w12_invalid")
+    try:
+        result = application.interact("hello")
+        if result.reason_code != "INTERACTION_RESOLVER_INVALID" or result.error is not None:
+            raise AssertionError(f"installed W12 invalid resolver projection diverged: {result.to_dict()!r}")
+    finally:
+        application.close()
+
+    application, gateway = create_app("w12_json_prompt")
+    try:
+        result = application.interact("What is an AST?")
+        resolver_requests = [
+            item["request"]
+            for item in gateway.calls
+            if item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value
+        ]
+        if not result.success or result.answer != "installed JSON_PROMPT response" or len(resolver_requests) != 1:
+            raise AssertionError(f"installed W12 JSON_PROMPT response failed: {result.to_dict()!r}")
+        structured = resolver_requests[0].structured_output
+        if structured is None or structured.mode.value != "json_prompt":
+            raise AssertionError("installed W12 did not exercise JSON_PROMPT")
+    finally:
+        application.close()
+
+    application, _gateway = create_app("w12_input")
+    try:
+        before = list(application.session.messages)
+        empty = application.interact("   ")
+        oversized = application.interact("x" * 8193)
+        invalid = application.interact(
+            "/read",
+            boundary="task",
+            visible_user_text="/agent /read",
+            task_payload="/read",
+        )
+        if empty.resolution is None or oversized.resolution is None:
+            raise AssertionError("installed W12 input failures lacked deterministic CLARIFY")
+        if application.session.messages[:1] != before or invalid.reason_code != "INTERACTION_INPUT_INVALID":
+            raise AssertionError(
+                f"installed W12 input projection mutated or misclassified transcript: "
+                f"first={application.session.messages[:1]!r}, before={before!r}, invalid={invalid.to_dict()!r}"
+            )
+    finally:
+        application.close()
+
+    application, gateway = create_app("w12_resume")
+    try:
+        result = application.interact(
+            "/continue",
+            boundary="task",
+            visible_user_text="/agent /continue",
+            task_payload="/continue",
+        )
+        if result.resolution is None or result.resolution.action.value != "continue":
+            raise AssertionError("installed W12 resume alias did not admit CONTINUE")
+        if any(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls):
+            raise AssertionError("installed explicit resume alias called the resolver")
+    finally:
+        application.close()
+
+    for requested, output in ((2048, 2048), (2048, 1024), (2048, 512)):
+        effective = resolve_effective_reasoning_budget(requested, output, True)
+        if effective >= output:
+            raise AssertionError(f"installed W12 request geometry invalid: {effective} >= {output}")
+    geometry_session = ChatSession(
+        "system",
+        {"hardware_profile": "low_vram_8gb", "max_tokens": 512, "ENABLE_GBNF": False},
+        gateway=InteractionJourneyGateway("geometry", "w12_geometry"),
+    )
+    geometry_session.thinking_budget = 2048
+    request = geometry_session.build_request(stream=False)
+    if request.reasoning_budget >= request.max_output_tokens:
+        raise AssertionError("installed W12 emitted invalid reasoning/output geometry")
+
+    return {
+        "natural_read": True,
+        "task_safe_read": True,
+        "explicit_read_zero_resolver": True,
+        "resolver_invalid": True,
+        "json_prompt": True,
+        "input_projection": True,
+        "resume_alias": True,
+        "geometry": True,
+    }
 
 
 class GatewayApprovePreviewPolicy:
@@ -838,6 +1043,12 @@ extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
 if len(extension_measurements) != 3:
     raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
 lock_recovery = run_lock_recovery_journey(workspace.parent / "lock-recovery")
+interaction_workspace = workspace.parent / "interaction-workspace"
+interaction_workspace.mkdir(parents=True, exist_ok=True)
+interaction = run_interaction_journeys(
+    workspace.parent / "interaction-app-home",
+    interaction_workspace,
+)
 print(
     json.dumps(
         {
@@ -850,6 +1061,7 @@ print(
             "slice_b": modify_measurements,
             "slice_d": extension_measurements,
             "lock_recovery": lock_recovery,
+            "interaction": interaction,
             "status": "ok",
         },
         ensure_ascii=False,
@@ -1138,10 +1350,14 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
                 names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
             except (IndexError, KeyError, TypeError, json.JSONDecodeError):
                 names = []
-            selected = ["wheel_tool"] if "wheel_tool" in names else names[:1]
+            preferred = "wheel_tool" if "wheel_tool" in names else "file_reader"
+            selected = [preferred] if preferred in names else names[:1]
             content = json.dumps({"tools": selected})
         elif "Escolha exatamente uma das duas respostas JSON" in prompt:
-            content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
+            if "notes.txt" in prompt:
+                content = '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
+            else:
+                content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
         elif "Uma fronteira sem" in prompt:
             content = '{"action":"complete","reason":"a evidencia real basta"}'
         elif "Resultados das ferramentas executadas:" in prompt:
@@ -1221,7 +1437,8 @@ def installed_cli_commands(
                 "--json",
                 "--workspace",
                 str(workspace),
-                "oi",
+                "/read",
+                "notes.txt",
             ),
         ),
         (
@@ -1565,6 +1782,7 @@ def _verify_installed_probe(
     _validate_slice_c_payload(payload)
     _validate_slice_b_payload(payload)
     _validate_slice_d_payload(payload)
+    _validate_interaction_payload(payload)
     lock_recovery = payload.get("lock_recovery")
     if lock_recovery != {
         "stale_owner_left_record": True,
@@ -1684,6 +1902,23 @@ def _validate_slice_d_payload(payload: Mapping[str, Any]) -> None:
         raise VerificationError("Slice D perdeu invocation_id externo.")
     if not all("duration_ms" in item and "output_chars" in item for item in extension):
         raise VerificationError("Slice D nao reutilizou measurement minimo.")
+
+
+def _validate_interaction_payload(payload: Mapping[str, Any]) -> None:
+    expected = {
+        "natural_read": True,
+        "task_safe_read": True,
+        "explicit_read_zero_resolver": True,
+        "resolver_invalid": True,
+        "json_prompt": True,
+        "input_projection": True,
+        "resume_alias": True,
+        "geometry": True,
+    }
+    if payload.get("interaction") != expected:
+        raise VerificationError(
+            f"Probe instalado nao confirmou os fixtures W12: {payload.get('interaction')!r}"
+        )
 
 
 def _verify_extension_aware_bootstrap(
@@ -1812,7 +2047,7 @@ def _verify_f1_installed(
                 "--json",
                 "--yes",
                 *common,
-                "Use wheel_tool sem task authority",
+                "/do Use wheel_tool sem task authority",
             ),
             cwd=cwd,
             environment=f1_environment,
@@ -1831,7 +2066,7 @@ def _verify_f1_installed(
                 "--task-authority",
                 "process",
                 *common,
-                "Use wheel_tool with F1_EXTERNAL_EVIDENCE",
+                "/do Use wheel_tool with F1_EXTERNAL_EVIDENCE",
             ),
             cwd=cwd,
             environment=f1_environment,
@@ -2045,10 +2280,10 @@ def _verify_w11_cli(
 
 def _verify_greeting(payload: Mapping[str, Any]) -> None:
     rendered = json.dumps(payload, ensure_ascii=False).casefold()
-    if not any(term in rendered for term in ("olá", "ola", "ajudar")):
-        raise VerificationError("run headless não retornou a resposta trivial esperada.")
-    if payload.get("success") is False or payload.get("ok") is False:
-        raise VerificationError("run headless reportou falha.")
+    if payload.get("success") is not True:
+        raise VerificationError("run headless não confirmou sucesso.")
+    if "f1_installed_evidence" not in rendered:
+        raise VerificationError("run headless não retornou a evidência instalada esperada.")
 
 
 def verify_installed_package(
@@ -2169,24 +2404,36 @@ def verify_installed_package(
             runtime_environment,
         )
 
-        results: dict[str, CommandResult] = {}
-        for name, command in installed_cli_commands(entrypoint, workspace):
-            results[name] = _run(
-                name,
-                command,
-                cwd=external_cwd,
-                environment=runtime_environment,
-            )
+        cli_server = ThreadingHTTPServer(("127.0.0.1", 0), _F1ModelHandler)
+        cli_thread = threading.Thread(target=cli_server.serve_forever, daemon=True)
+        cli_thread.start()
+        cli_environment = dict(runtime_environment)
+        cli_environment["LLM_AGENT_API_URL"] = (
+            f"http://127.0.0.1:{cli_server.server_port}/v1/chat/completions"
+        )
+        try:
+            results: dict[str, CommandResult] = {}
+            for name, command in installed_cli_commands(entrypoint, workspace):
+                results[name] = _run(
+                    name,
+                    command,
+                    cwd=external_cwd,
+                    environment=cli_environment,
+                )
 
-        _verify_version(results["version"])
-        _verify_config(app_home)
-        parse_json_output(results["doctor"])
-        _verify_greeting(parse_json_output(results["run"]))
-        status_payload = parse_json_output(results["task-status"])
-        if status_payload.get("status") != "absent" or status_payload.get("resumable") is not False:
-            raise VerificationError(
-                f"task status instalado nao classificou ausencia: {status_payload!r}"
-            )
+            _verify_version(results["version"])
+            _verify_config(app_home)
+            parse_json_output(results["doctor"])
+            _verify_greeting(parse_json_output(results["run"]))
+            status_payload = parse_json_output(results["task-status"])
+            if status_payload.get("status") != "absent" or status_payload.get("resumable") is not False:
+                raise VerificationError(
+                    f"task status instalado nao classificou ausencia: {status_payload!r}"
+                )
+        finally:
+            cli_server.shutdown()
+            cli_server.server_close()
+            cli_thread.join(timeout=5)
         resume_result = _run_expected_failure(
             "task-resume",
             (

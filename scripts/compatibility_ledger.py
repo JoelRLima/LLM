@@ -167,6 +167,11 @@ LEDGER = (
     # the runtime owner directly.
     _edge("W8-PATH-01", "agent/code/path_safety.py", "<module>", RETAIN_SUPPORTED_BOUNDARY, "agent.runtime.path_safety", "external imports of the historically shipped submodule; no productive repository consumer", "none", "package source compatibility is retained without a second confinement implementation", "remove after the supported compatibility window and downstream imports are retired"),
 
+    # W12 keeps the old lightweight CLI test-facade append operations behind
+    # an explicit adapter while the real application enters InteractionService.
+    _edge("W12-CLI-01", "agent/interfaces/cli/legacy_compat.py", "append_legacy_answer", RETAIN_SUPPORTED_BOUNDARY, "AgentInteractionResult/InteractionService", "offline compatibility facades only", "none", "historical test facades still need a bounded transcript append projection", "remove when those facades are retired"),
+    _edge("W12-CLI-02", "agent/interfaces/cli/legacy_compat.py", "append_legacy_turn", RETAIN_SUPPORTED_BOUNDARY, "AgentInteractionResult/InteractionService", "offline compatibility facades only", "none", "historical test facades still need a bounded user/assistant pair projection", "remove when those facades are retired"),
+
     # Explicitly bounded edges requiring a later coordinated contract change.
     _edge("W7-W01", "agent/runtime/paths.py", "<module>", RECLASSIFY_CANONICAL, "WorkspacePaths", "explicit bootstrap and process-level compatibility callers", "legacy runtime state locations", "WorkspacePaths remains the canonical process-level path owner while productive task composition injects its instance explicitly", "no retirement; retain only the explicit process-level path boundary"),
     _edge("W7-W01A", "agent/orchestrator.py", "resolve_user_path", RECLASSIFY_CANONICAL, "WorkspaceManager.resolve_path", "AgentSubsystems -> ToolExecutor/StepPolicies and direct test fixtures", "workspace-scoped file operations", "productive resolution always delegates to the WorkspaceManager and no longer guesses a path from a missing WorkspacePaths injection", "no retirement; canonical workspace path authority"),

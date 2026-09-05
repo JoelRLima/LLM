@@ -9,7 +9,6 @@ from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_
 from agent.interfaces.cli.workspace_entry import render_active_workspace, workspace_storage_path
 from agent.interfaces.task_directives import (
     TaskDirectiveParseError,
-    TaskRequestAction,
     parse_task_request,
 )
 from agent.runtime.logging import set_debug_level
@@ -116,8 +115,24 @@ def toggle_debug(_: str, ctx: Any) -> None:
 def agent_command(text: str, ctx: Any) -> None:
     parts = text.strip().split(maxsplit=1)
     if len(parts) == 1:
-        ctx.modo_agente = not ctx.modo_agente
-        console.print(f"Modo agente {'LIGADO' if ctx.modo_agente else 'DESLIGADO'}.")
+        console.print(
+            "Modo agente: unificado. Use /agent <objetivo> para abrir uma tarefa "
+            "ou /agent /continue para retomar a tarefa anterior."
+        )
+        return
+    interact = getattr(ctx.application, "interact", None)
+    if callable(interact):
+        try:
+            result = interact(
+                parts[1],
+                boundary="task",
+                visible_user_text=text,
+                task_payload=parts[1],
+            )
+            answer = str(getattr(result, "answer", ""))
+            console.print(Panel(answer, title="[bold blue]Agente[/bold blue]"))
+        except KeyboardInterrupt:
+            console.print("\n[bold red]Agente interrompido.[/bold red]")
         return
     try:
         request = parse_task_request(parts[1])
@@ -125,26 +140,15 @@ def agent_command(text: str, ctx: Any) -> None:
         console.print(f"[bold red]Erro [{exc.reason_code}]: {exc.detail}[/bold red]")
         return
     try:
-        if request.action is TaskRequestAction.CONTINUE:
-            resume = getattr(ctx.application, "resume", None)
-            if not callable(resume):
-                raise RuntimeError("A retomada da tarefa nao esta disponivel nesta sessao.")
-            result = resume()
-        else:
-            directive = request.directive
-            if directive is None:
-                raise RuntimeError("RUN requires a TaskRunDirective")
-            console.print(
-                f"[bold magenta]Executando objetivo avulso:[/bold magenta] {directive.subject}"
-            )
-            result = ctx.application.run(
-                directive.subject,
-                task_run_directive=directive,
-            )
+        from agent.interfaces.cli.legacy_compat import dispatch_task_facade
+
+        result = dispatch_task_facade(ctx, request)
         answer = getattr(result, "answer", result)
         answer_text = str(answer)
         console.print(Panel(answer_text, title="[bold blue]Agente[/bold blue]"))
-        ctx.session.add_assistant_message(answer_text)
+        from agent.interfaces.cli.legacy_compat import append_legacy_answer
+
+        append_legacy_answer(ctx, answer_text)
     except KeyboardInterrupt:
         console.print("\n[bold red]Agente interrompido.[/bold red]")
 
@@ -308,9 +312,23 @@ def web_search(text: str, ctx: Any) -> None:
         _skill_result(ctx, "web_search", {"query": query})
 
 
-def retry(_: str, ctx: Any) -> None:
+def retry(text: str, ctx: Any) -> None:
     console.print("[bold yellow]Verificando checkpoint...[/bold yellow]")
-    result = ctx.application.run(None)
+    interact = getattr(ctx.application, "interact", None)
+    if callable(interact):
+        result = interact(
+            "/continue",
+            boundary="task",
+            visible_user_text=text or "/retry",
+            task_payload="/continue",
+        )
+    else:
+        from agent.interfaces.cli.legacy_compat import dispatch_task_facade
+
+        result = dispatch_task_facade(ctx, parse_task_request("/continue"))
     answer = result.answer
     console.print(Panel(answer, title="[bold blue]Agente[/bold blue]"))
-    ctx.session.add_assistant_message(answer)
+    if not callable(interact):
+        from agent.interfaces.cli.legacy_compat import append_legacy_answer
+
+        append_legacy_answer(ctx, answer)

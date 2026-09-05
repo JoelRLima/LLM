@@ -3,7 +3,6 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 from pathlib import Path
 
 import pytest
@@ -262,10 +261,17 @@ def test_real_task_runner_defers_interrupt_terminal_and_cleanup_until_quiescent(
     mutator_threads: list[threading.Thread] = []
     mutator_errors: list[BaseException] = []
     cleanup_while_active: list[bool] = []
+    gateway = _QueuedChatGateway(
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"task_runner_liveness_writer","args":{}}]}',
+        ]
+    )
 
     application = AgentApplication.create(
         paths=paths,
         workspace=workspace,
+        gateway=gateway,
         approval_policy=AutoApprove(),
         configure_logging=False,
     )
@@ -289,8 +295,10 @@ def test_real_task_runner_defers_interrupt_terminal_and_cleanup_until_quiescent(
     monkeypatch.setattr(
         TaskRunner,
         "_execute",
-        partial(
-            _interrupting_task_runner_execute,
+        lambda runner, inputs, on_chunk: _interrupting_task_runner_execute(
+            runner,
+            inputs,
+            on_chunk,
             target_orchestrator=application.orchestrator,
             original_execute=original_execute,
             started=started,
@@ -304,7 +312,14 @@ def test_real_task_runner_defers_interrupt_terminal_and_cleanup_until_quiescent(
 
     try:
         with pytest.raises(InvocationLivenessError):
-            application.run("interrupt while the mutator is active")
+            application.run(
+                "interrupt while the mutator is active",
+                task_run_directive=TaskRunDirective(
+                    directive=TaskDirective.DO,
+                    deliberation_profile=DeliberationProfile.NORMAL,
+                    subject="interrupt while the mutator is active",
+                ),
+            )
         assert application.orchestrator.agent_state.terminal_disposition is None
         assert application.orchestrator._cancelled is False
         assert cleanup_while_active == []
