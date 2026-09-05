@@ -64,7 +64,6 @@ from .types import (
 
 MAX_STRING_LENGTH = 8192
 
-
 class InteractionService:
     """Serialize W12 work through the application's existing lock boundary."""
     def __init__(self, application: Any) -> None:
@@ -432,6 +431,8 @@ class InteractionService:
                 context=context,
             )
         if resolution.action is InteractionAction.RESPOND:
+            profile = resolution.deliberation_profile
+            assert profile is not None
             if context is None:
                 context = build_interaction_context(self.session)
             try:
@@ -440,7 +441,7 @@ class InteractionService:
                     context,
                     snapshot,
                     subject,
-                    profile=resolution.deliberation_profile,
+                    profile=profile,
                     stream=stream_callback is not None,
                 )
                 response = self._response_call(context, plan.request, callback=stream_callback)
@@ -504,6 +505,5 @@ class InteractionService:
             error=public_explanation(INTERACTION_INTERNAL_FAILED),
             context=context,
         )
-
 
 __all__ = ["InteractionService"]

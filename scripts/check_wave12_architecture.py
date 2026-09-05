@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
@@ -599,10 +600,10 @@ def check_architecture(root: str | Path = ".") -> list[ArchitectureViolation]:
     resolved = Path(root).expanduser().resolve()
     findings = [finding for check in _CHECKS for finding in check(resolved)]
     try:
-        from scripts import check_wave11_architecture
+        wave11_checker = importlib.import_module("scripts.check_wave11_architecture")
     except ImportError:
         try:
-            import check_wave11_architecture
+            wave11_checker = importlib.import_module("check_wave11_architecture")
         except ImportError as exc:
             findings.append(_violation("W12-S8", "scripts/check_wave11_architecture.py", f"W11 checker unavailable: {type(exc).__name__}"))
             return findings
@@ -612,7 +613,7 @@ def check_architecture(root: str | Path = ".") -> list[ArchitectureViolation]:
         return findings
     findings.extend(
         ArchitectureViolation(item.rule_id, item.path, item.detail, item.line)
-        for item in check_wave11_architecture.check_architecture(resolved)
+        for item in wave11_checker.check_architecture(resolved)
     )
     return findings
 
