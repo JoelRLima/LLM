@@ -145,7 +145,8 @@ def _cleanup_shell_resources(
 def run_bounded_process(
     argv: list[str], *, workspace: Any, environment: dict[str, str], timeout: int,
     cancellation_token: Any | None = None, cancellation_event: Event | None = None,
-) -> subprocess.CompletedProcess[str]:
+    binary_output: bool = False,
+) -> subprocess.CompletedProcess[Any]:
     """Run an allowlisted command with concurrent bounded stream drains."""
 
     selected_argv = list(argv)
@@ -207,8 +208,12 @@ def run_bounded_process(
             raise ShellProcessError("failed", reader_error)
         return subprocess.CompletedProcess(
             argv, process.returncode,
-            bytes(stdout.content).decode("utf-8", errors="replace"),
-            bytes(stderr.content).decode("utf-8", errors="replace"),
+            bytes(stdout.content)
+            if binary_output
+            else bytes(stdout.content).decode("utf-8", errors="replace"),
+            bytes(stderr.content)
+            if binary_output
+            else bytes(stderr.content).decode("utf-8", errors="replace"),
         )
     finally:
         cleanup_error = _cleanup_shell_resources(

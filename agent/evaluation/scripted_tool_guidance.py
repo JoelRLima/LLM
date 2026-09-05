@@ -3,23 +3,40 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from agent.llm.tool_discovery_contract import MAX_DISCLOSED_TOOLS
 
 
-def selection_response(prompt: str, *, limit: int = MAX_DISCLOSED_TOOLS) -> str:
-    """Select only names present in the exact framed Level-0 index."""
+def selection_response(
+    prompt: str,
+    *,
+    limit: int = MAX_DISCLOSED_TOOLS,
+    required_tools: Sequence[str] = (),
+) -> str:
+    """Prioritize fixture-plan tools while preserving the exact catalog boundary."""
 
     try:
         catalog_text = prompt.split("<untrusted_tool_catalog>", 1)[1].split(
             "</untrusted_tool_catalog>", 1
         )[0]
         catalog = json.loads(catalog_text.strip())
-        names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+        names = [
+            entry["name"]
+            for entry in catalog
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+        ]
     except (IndexError, KeyError, TypeError, json.JSONDecodeError):
         names = []
-    return json.dumps({"tools": names[:limit]})
+    catalog_names = tuple(dict.fromkeys(names))
+    required = tuple(
+        dict.fromkeys(
+            tool for tool in required_tools if isinstance(tool, str) and tool in catalog_names
+        )
+    )
+    selected = required + tuple(name for name in catalog_names if name not in required)
+    return json.dumps({"tools": list(selected[:limit])})
 
 
 def semantic_boundary_count(gateway: Any) -> int:

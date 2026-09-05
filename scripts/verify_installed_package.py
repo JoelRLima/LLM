@@ -1293,6 +1293,20 @@ class CommandResult:
     stderr: str
 
 
+def _installed_tool_discovery_content(prompt: str) -> str:
+    marker = "<untrusted_tool_catalog>"
+    end_marker = "</untrusted_tool_catalog>"
+    try:
+        catalog_text = prompt.split(marker, 1)[1].split(end_marker, 1)[0]
+        catalog = json.loads(catalog_text.strip())
+        names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
+    except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+        names = []
+    preferred = "wheel_tool" if "wheel_tool" in names else "file_reader"
+    selected = [preferred] if preferred in names else names[:1]
+    return json.dumps({"tools": selected})
+
+
 class _F1ModelHandler(BaseHTTPRequestHandler):
     """Deterministic OpenAI-compatible model used by installed F1 acceptance."""
 
@@ -1304,6 +1318,8 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
         prompt = str(messages[-1].get("content", "")) if messages else ""
         if "You are a Router Agent" in system:
             content = '{"persona":"coder"}'
+        elif "W13_HEALTH_OK" in prompt:
+            content = '{"sentinel":"W13_HEALTH_OK"}'
         elif "Compile uma TaskContract normativa" in prompt:
             task_id = prompt.split("task_id exato:", 1)[1].splitlines()[0].strip()
             objective = prompt.split("objective exato:", 1)[1].splitlines()[0].strip()
@@ -1342,17 +1358,7 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
                     }
                 )
         elif "TOOL DISCOVERY" in prompt:
-            marker = "<untrusted_tool_catalog>"
-            end_marker = "</untrusted_tool_catalog>"
-            try:
-                catalog_text = prompt.split(marker, 1)[1].split(end_marker, 1)[0]
-                catalog = json.loads(catalog_text.strip())
-                names = [entry["name"] for entry in catalog if isinstance(entry, dict)]
-            except (IndexError, KeyError, TypeError, json.JSONDecodeError):
-                names = []
-            preferred = "wheel_tool" if "wheel_tool" in names else "file_reader"
-            selected = [preferred] if preferred in names else names[:1]
-            content = json.dumps({"tools": selected})
+            content = _installed_tool_discovery_content(prompt)
         elif "Escolha exatamente uma das duas respostas JSON" in prompt:
             if "notes.txt" in prompt:
                 content = '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
@@ -1429,6 +1435,7 @@ def installed_cli_commands(
         ("version", (str(executable), "--version")),
         ("config-init", (str(executable), "config", "init")),
         ("doctor", (str(executable), "doctor", "--json")),
+        ("doctor-online", (str(executable), "doctor", "--online", "--json")),
         (
             "run",
             (
@@ -2424,6 +2431,13 @@ def verify_installed_package(
             _verify_version(results["version"])
             _verify_config(app_home)
             parse_json_output(results["doctor"])
+            online_payload = parse_json_output(results["doctor-online"])
+            online_readiness = online_payload.get("readiness", {})
+            if not isinstance(online_readiness, dict):
+                raise VerificationError("doctor --online instalado nao retornou readiness")
+            online = online_payload.get("online", {})
+            if not isinstance(online, dict) or online.get("state") not in {"ready", "degraded", "unavailable"}:
+                raise VerificationError("doctor --online instalado nao retornou estado online")
             _verify_greeting(parse_json_output(results["run"]))
             status_payload = parse_json_output(results["task-status"])
             if status_payload.get("status") != "absent" or status_payload.get("resumable") is not False:

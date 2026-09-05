@@ -198,7 +198,6 @@ def _run_once(args: argparse.Namespace) -> int:
 
 def _run_doctor(args: argparse.Namespace) -> int:
     from agent.interfaces.cli.maintenance import run_doctor
-
     json_output = bool(_value(args, "json_output", False))
     return cast(
         int,
@@ -209,6 +208,7 @@ def _run_doctor(args: argparse.Namespace) -> int:
             profile=_value(args, "profile"),
             json_output=json_output,
             write_report=bool(_value(args, "write_report", False)),
+            online=bool(_value(args, "online", False)),
         ),
     )
 

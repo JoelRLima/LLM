@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
-from types import MappingProxyType
 from typing import Any
 
 from agent.execution_incidents import MAX_EXECUTION_INCIDENTS
@@ -12,8 +10,14 @@ from agent.planning.plan_model import Plan, serialize_plan
 from agent.planning.task_progress_projection import build_task_progress_projection
 from agent.reporting.evaluation_arg_projection import project_evaluation_args
 from agent.reporting.observation_evidence import project_tool_observation
-from agent.reporting.public_safety import sanitize_public_text
 from agent.reporting.run_projection_model import RunProjectionFacts, thaw_projection
+from agent.reporting.run_projection_validation_support import _canonical_validation_detail
+from agent.reporting.run_projection_value_support import (
+    _canonical_code_outcome,
+    _freeze,
+    _project_args,
+    _text,
+)
 from agent.reporting.run_receipt_support import executed_projection, execution_incidents
 from agent.reporting.task_report_events import (
     extract_replan_events,
@@ -27,39 +31,6 @@ MAX_PROJECTION_HISTORY = 50
 MAX_PROJECTION_FILES = 128
 MAX_PROJECTION_PATH_CHARS = 512
 MAX_PROJECTION_TEXT = 500
-
-
-def _freeze(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze(item) for item in value)
-    return value
-
-
-def _text(value: Any, limit: int = MAX_PROJECTION_TEXT) -> str:
-    if value is None:
-        raw = ""
-    elif isinstance(value, str):
-        raw = value
-    else:
-        try:
-            raw = json.dumps(value, ensure_ascii=False, default=str)
-        except (TypeError, ValueError):
-            raw = str(value)
-    safe = str(sanitize_public_text(raw))
-    return safe[:limit] + ("..." if len(safe) > limit else "")
-
-
-def _project_args(raw: Any) -> dict[str, str]:
-    if not isinstance(raw, Mapping):
-        return {}
-    projected: dict[str, str] = {}
-    for key in ("file_path", "path", "target", "mode", "action"):
-        value = raw.get(key)
-        if isinstance(value, (str, int, float, bool)):
-            projected[key] = _text(value, 200)
-    return projected
 
 
 def _project_history_entry(
@@ -231,6 +202,8 @@ def build_run_projection_facts(
     metadata = last_data.get("metadata") if isinstance(last_data, Mapping) else None
     output = _text(last_data) if last_data is not None else ""
     total_chars = metadata.get("total_chars") if isinstance(metadata, Mapping) else None
+    code_outcome = _canonical_code_outcome(history)
+    validation_detail = _canonical_validation_detail(history)
     return RunProjectionFacts(
         objective=_text(getattr(state, "objective", None)) or None,
         tools=tools,
@@ -285,6 +258,8 @@ def build_run_projection_facts(
                 operational_outcome=operational_outcome,
             ).to_dict()
         ),
+        code_outcome=code_outcome,
+        validation_detail=validation_detail,
     )
 
 

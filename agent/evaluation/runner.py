@@ -64,6 +64,13 @@ class CapabilityEvaluator:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
 
+        # Fixture state belongs to the measured initial condition. Executors
+        # that need it may expose this optional seam; older executors remain
+        # valid and continue directly to the byte snapshot.
+        prepare_workspace = getattr(self.executor, "prepare_workspace", None)
+        if callable(prepare_workspace):
+            prepare_workspace(scenario.objective, workspace)
+
         before = _snapshot(workspace)
         observation = self.executor.execute(scenario.objective, workspace)
         after = _snapshot(workspace)

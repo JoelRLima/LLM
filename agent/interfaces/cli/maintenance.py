@@ -20,6 +20,7 @@ def run_doctor(
     profile: str | None,
     json_output: bool,
     write_report: bool,
+    online: bool = False,
 ) -> int:
     from agent.health_check import run_health_check
 
@@ -30,11 +31,16 @@ def run_doctor(
         workspace=workspace,
         config_path=config_path,
         profile=profile,
+        online=online,
     )
     if json_output:
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     readiness = report.get("readiness", {})
-    return 0 if isinstance(readiness, dict) and readiness.get("offline_ready") is True else 1
+    if not isinstance(readiness, dict) or readiness.get("offline_ready") is not True:
+        return 1
+    if online and readiness.get("online_ready") is not True:
+        return 1
+    return 0
 
 
 def config_repository(

@@ -25,8 +25,9 @@ class RuffValidationProvider:
         project: ProjectProfile,
         changed_files: Sequence[str],
         include_tests: bool,
+        selected_test_files: Sequence[str] = (),
     ) -> tuple[CommandSpec, ...]:
-        del include_tests
+        del include_tests, selected_test_files
         files = _python_files(project, changed_files)
         if not files:
             return ()
@@ -49,8 +50,9 @@ class MypyValidationProvider:
         project: ProjectProfile,
         changed_files: Sequence[str],
         include_tests: bool,
+        selected_test_files: Sequence[str] = (),
     ) -> tuple[CommandSpec, ...]:
-        del include_tests
+        del include_tests, selected_test_files
         files = _python_files(project, changed_files)
         if not files:
             return ()

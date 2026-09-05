@@ -39,6 +39,7 @@ class PythonValidationProvider:
         project: ProjectProfile,
         changed_files: Sequence[str],
         include_tests: bool,
+        selected_test_files: Sequence[str] = (),
     ) -> tuple[CommandSpec, ...]:
         if "python" not in project.languages:
             return ()
@@ -47,10 +48,10 @@ class PythonValidationProvider:
         python_files = self.python_files(root, changed_files)
         if python_files:
             commands.append(self._syntax_command(python_files))
-        if include_tests and project.test_roots:
-            test_roots = self._test_roots(root, project.test_roots)
-            if test_roots:
-                commands.append(self._pytest_command(test_roots))
+        if include_tests:
+            test_files = self._test_files(root, selected_test_files)
+            if test_files:
+                commands.append(self._pytest_command(test_files))
         return tuple(commands)
 
     @staticmethod
@@ -73,22 +74,22 @@ class PythonValidationProvider:
         return tuple(python_files)
 
     @staticmethod
-    def _test_roots(
+    def _test_files(
         root: Path,
-        test_roots: Sequence[str],
+        test_files: Sequence[str],
     ) -> tuple[str, ...]:
-        safe_roots: list[str] = []
-        for test_root in test_roots:
+        safe_files: list[str] = []
+        for test_file in test_files:
             try:
                 resolved = resolve_workspace_path(
                     root,
-                    test_root,
-                    require_directory=True,
+                    test_file,
+                    require_file=True,
                 )
             except (OSError, ValueError):
                 continue
-            safe_roots.append(workspace_command_argument(root, resolved))
-        return tuple(safe_roots)
+            safe_files.append(workspace_command_argument(root, resolved))
+        return tuple(safe_files)
 
     @staticmethod
     def _syntax_command(python_files: Sequence[str]) -> CommandSpec:
@@ -108,17 +109,17 @@ class PythonValidationProvider:
         )
 
     @staticmethod
-    def _pytest_command(test_roots: Sequence[str]) -> CommandSpec:
+    def _pytest_command(test_files: Sequence[str]) -> CommandSpec:
         argv = (
             sys.executable,
             "-B",
             "-c",
             _PYTEST_VALIDATION_CODE,
-            *test_roots,
+            *test_files,
         )
         return CommandSpec(
             "pytest",
             argv,
             timeout_seconds=120,
-            workspace_arg_indices=tuple(range(5, len(argv))),
+            workspace_arg_indices=tuple(range(4, len(argv))),
         )

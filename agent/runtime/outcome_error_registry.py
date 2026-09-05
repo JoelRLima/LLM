@@ -62,6 +62,21 @@ def build_error_registry(
             retryable=True,
         ),
         *definitions(
+            (
+                "CODE_OUTCOME_CONTRADICTED",
+                "CODE_EVIDENCE_STALE",
+                "CODE_CHANGE_NOOP",
+            ),
+            layer=failure_layer.TOOL,
+            default_status=operational_status.FAILED.value,
+            retryable=True,
+        ),
+        *definitions(
+            ("CODE_INPUT_REQUIRED", "CODE_VERIFICATION_INSUFFICIENT"),
+            layer=failure_layer.TOOL,
+            default_status=operational_status.BLOCKED.value,
+        ),
+        *definitions(
             ("DUPLICATE_INVOCATION_ID", "INVALID_RESPONSE", "INVALID_RESULT", "INVALID_STATUS", "INVOCATION_ID_MISMATCH"),
             layer=failure_layer.GATEWAY,
             hard=True,

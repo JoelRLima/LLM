@@ -61,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subcommands.add_parser("doctor", parents=[common], help="executa o diagnóstico local", argument_default=argparse.SUPPRESS)
     doctor.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
     doctor.add_argument("--write-report", action="store_true", help="persiste o relatório no estado da aplicação")
+    doctor.add_argument("--online", action="store_true", help="executa também a sonda online limitada do provider")
     config = subcommands.add_parser("config", parents=[common], help="gerencia a configuração versionada", argument_default=argparse.SUPPRESS)
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("init", parents=[common], help="inicializa a configuração default")

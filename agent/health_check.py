@@ -45,6 +45,7 @@ def run_health_check(
     profile: str | None = None,
     environment: Mapping[str, str] | None = None,
     output_format: OutputFormat = "human",
+    online: bool = False,
 ) -> Dict[str, Any]:
     paths = app_paths or AppPaths.discover()
     selected_workspace = workspace or Path.cwd()
@@ -55,6 +56,7 @@ def run_health_check(
         profile=profile,
         environment=environment,
         write_report=write_report,
+        online=online,
     )
     if verbose:
         print(render_health_report(report, output_format))

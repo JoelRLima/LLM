@@ -26,6 +26,9 @@ def planned_model_profile(repo_root: str | Path, profile_name: str = DEFAULT_PRO
         "profile": resolved.name,
         "configured_model_id": resolved.model,
         "model": resolved.model,
+        # Keep the exact runtime-profile identity separate from the broader
+        # campaign model/config identity computed below.
+        "runtime_profile_fingerprint": resolved.fingerprint,
         "temperature": resolved.temperature,
         "max_tokens": resolved.max_output_tokens,
         "timeout": resolved.timeout,

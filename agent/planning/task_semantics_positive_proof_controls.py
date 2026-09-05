@@ -45,6 +45,7 @@ def _parse_neutral_fragment(
         _parse_exact_read_or_response,
         _parse_first_read,
         _parse_exact_source,
+        _parse_bounded_input_declaration,
         _parse_source_only_output,
     ):
         spec = parser(cleaned, values)
@@ -116,6 +117,22 @@ def _parse_source_only_output(
         index for index, item in enumerate(cleaned) if item is path_items[0]
     )
     return _make_neutral_spec(cleaned, target_index, "NEUTRAL_SOURCE_ONLY_OUTPUT_V1")
+
+
+def _parse_bounded_input_declaration(
+    cleaned: Sequence[_Lexeme], values: tuple[str, ...]
+) -> _NeutralContextSpec | None:
+    """Consume the fixed user-choice declaration without granting authority."""
+
+    if values != ("eu", "nao", "forneci", "preferencia"):
+        return None
+    return _NeutralContextSpec(
+        production_id="NEUTRAL_USER_CHOICE_DECLARATION_V1",
+        span=(cleaned[0].start, cleaned[-1].end),
+        target=WORKSPACE_RESOURCE,
+        arguments=(),
+        consumed_tokens=tuple(values),
+    )
 
 
 def _make_neutral_spec(

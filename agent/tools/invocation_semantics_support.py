@@ -21,7 +21,9 @@ _MEMORY_WRITE_ACTIONS = frozenset({"set", "delete"})
 _CODE_ACTION_CAPABILITIES = {
     "analyze": capability_values((Capability.READ, Capability.ANALYZE)),
     "review": capability_values((Capability.READ, Capability.ANALYZE)),
-    "generate": capability_values((Capability.READ, Capability.WRITE)),
+    # W13 P3.16.1: generate enters CodingWorkflowService and therefore
+    # truthfully advertises the canonical VALIDATE capability.
+    "generate": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
     "modify": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
     "repair": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
     "refactor": capability_values((Capability.READ, Capability.WRITE, Capability.VALIDATE)),
@@ -205,8 +207,6 @@ def _refine_code_task_semantics(
     elif action == "multitask" and not durable:
         capabilities -= {item.value for item in WRITE_CAPABILITIES}
         capabilities.discard("validate")
-    elif action == "generate":
-        capabilities.discard("validate")
     if not read_only and bool(arguments.get("include_tests")):
         capabilities.add("process")
 
@@ -232,7 +232,12 @@ def _resolve_accesses(
         return (
             ResourceAccess(WORKSPACE_RESOURCE, ResourceMode.WRITE, ResourceProvenance.TRUSTED_DERIVED),
         )
-    if not targets and read_only and name in {"code_task", "shell", "git_reader"}:
+    if not targets and read_only and name in {
+        "code_task",
+        "shell",
+        "git_reader",
+        "repository_state",
+    }:
         return (
             ResourceAccess(WORKSPACE_RESOURCE, ResourceMode.READ, ResourceProvenance.TRUSTED_DERIVED),
         )

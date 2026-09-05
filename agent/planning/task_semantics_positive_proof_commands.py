@@ -8,7 +8,10 @@ from agent.planning.task_semantics_positive_proof_command_support import (
     _memory_fragment,
     _memory_payload_supported,
     _mutation_tail_supported,
+    _natural_mutation_tail_supported,
+    _natural_target_prefix_supported,
     _supported_prefix,
+    _supported_sequence_prefix,
 )
 from agent.planning.task_semantics_positive_proof_constraints import _parse_negative_fragment
 from agent.planning.task_semantics_positive_proof_controls import _parse_neutral_fragment
@@ -86,7 +89,9 @@ def _parse_verb_fragment(
     fallback_target: str | None,
     predicate: _Predicate | None,
 ) -> tuple[tuple[_ProofSpec, ...], bool]:
-    if not _supported_prefix(values[:verb_index]):
+    if not _supported_prefix(values[:verb_index]) and not _supported_sequence_prefix(
+        values, verb_index
+    ):
         return ((), False)
     verb = values[verb_index]
     if verb in _OUTPUT_VERBS:
@@ -115,6 +120,69 @@ def _parse_verb_fragment(
     return ((mutation,), True) if mutation is not None else ((), False)
 
 
+def _symbolic_mutation_target(
+    after: Sequence[_Lexeme],
+    *,
+    predicate: _Predicate | None,
+) -> tuple[str, tuple[str, ...], bool] | None:
+    symbolic_index = next(
+        (
+            index
+            for index, item in enumerate(after)
+            if item.value not in _ARTICLES
+            and item.value not in _PUNCTUATION
+            and item.value not in {"`", "\"", "“", "”", "‘", "’"}
+        ),
+        None,
+    )
+    if symbolic_index is None:
+        return None
+    symbolic = after[symbolic_index].value
+    if predicate is not None:
+        remaining = tuple(
+            item.value
+            for item in after
+            if item.value not in _ARTICLES and item.value not in _PUNCTUATION
+        )
+        if len(remaining) != 1 or not _bounded_symbol(remaining[0]):
+            return None
+        return remaining[0], (), False
+    if not _bounded_symbol(symbolic):
+        return None
+    tail = tuple(item.value for item in after[symbolic_index + 1 :])
+    natural_target = _natural_mutation_tail_supported(tail)
+    return (symbolic, tail, natural_target) if natural_target else None
+
+
+def _explicit_mutation_target(
+    lexemes: Sequence[_Lexeme],
+    verb_index: int,
+    after: Sequence[_Lexeme],
+    target: str,
+    target_index: int | None,
+) -> tuple[str, tuple[str, ...], bool] | None:
+    if target_index is None:
+        tail = tuple(item.value for item in after if item.value not in _PUNCTUATION)
+        return target, tail, False
+    before_target = tuple(
+        item.value
+        for item in lexemes[verb_index + 1 : target_index]
+        if item.value not in _PUNCTUATION
+        and item.value not in {"`", "\"", "“", "”", "‘", "’"}
+    )
+    natural_target = False
+    if before_target and not all(value in _ARTICLES for value in before_target):
+        if not _natural_target_prefix_supported(before_target):
+            return None
+        natural_target = True
+    tail = tuple(
+        item.value
+        for item in lexemes[target_index + 1 :]
+        if item.value not in _PUNCTUATION
+    )
+    return target, tail, natural_target
+
+
 def _parse_mutation_command(
     lexemes: Sequence[_Lexeme],
     verb_index: int,
@@ -129,37 +197,28 @@ def _parse_mutation_command(
         (index for index in range(verb_index + 1, len(lexemes)) if _path_value(lexemes[index].raw)),
         None,
     )
-    if target is None:
-        symbolic = tuple(
-            item.value
-            for item in after
-            if item.value not in _ARTICLES and item.value not in _PUNCTUATION
+    target_data = (
+        _symbolic_mutation_target(after, predicate=predicate)
+        if target is None
+        else _explicit_mutation_target(
+            lexemes,
+            verb_index,
+            after,
+            target,
+            target_index,
         )
-        if predicate is None or len(symbolic) != 1 or not _bounded_symbol(symbolic[0]):
-            return None
-        target = symbolic[0]
-        tail: tuple[str, ...] = ()
-    else:
-        if target_index is None:
-            tail = tuple(item.value for item in after if item.value not in _PUNCTUATION)
-        else:
-            before_target = tuple(
-                item.value
-                for item in lexemes[verb_index + 1 : target_index]
-                if item.value not in _PUNCTUATION
-            )
-            if before_target and not all(value in _ARTICLES for value in before_target):
-                return None
-            tail = tuple(
-                item.value
-                for item in lexemes[target_index + 1 :]
-                if item.value not in _PUNCTUATION
-            )
-    if not _mutation_tail_supported(tail):
+    )
+    if target_data is None:
+        return None
+    target, tail, natural_target = target_data
+    if not natural_target and _natural_mutation_tail_supported(tail):
+        natural_target = True
+    if not _mutation_tail_supported(tail) and not (
+        natural_target and _natural_mutation_tail_supported(tail)
+    ):
         return None
     production = "WRITE_MUTATION_EXACT_V1" if predicate is None else "WRITE_CONDITIONAL_EXACT_V1"
     return _ProofSpec("write", normalize_resource_id(target), production, "MUTATION_TARGET", predicate)
-
 
 def _parse_output_command(
     lexemes: Sequence[_Lexeme],

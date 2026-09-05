@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -11,7 +12,100 @@ from agent.evaluation.scripted_gateway_logic import scripted_plan_response, scri
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
 from agent.llm.decision_contract import ModelRequestContract
+from agent.runtime.outcome_contracts import MAX_VERIFIER_EVIDENCE_IDS
 from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+
+
+def _json_envelopes(text: str) -> tuple[Mapping[str, Any], ...]:
+    """Find complete canonical envelopes without interpreting prompt prose."""
+
+    decoder = json.JSONDecoder()
+    envelopes: list[Mapping[str, Any]] = []
+    cursor = 0
+    attempts = 0
+    while attempts < 256:
+        start = text.find("{", cursor)
+        if start < 0:
+            break
+        attempts += 1
+        try:
+            value, consumed = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            cursor = start + 1
+            continue
+        cursor = start + consumed
+        if (
+            isinstance(value, Mapping)
+            and value.get("schema") == "w13.untrusted_context.v1"
+            and isinstance(value.get("records"), list)
+        ):
+            envelopes.append(value)
+    return tuple(envelopes)
+
+
+def _required_evidence_records(request: ModelRequest) -> tuple[Mapping[str, Any], ...]:
+    text = "\n".join(str(message.content) for message in request.messages)
+    records: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for envelope in _json_envelopes(text):
+        for record in envelope.get("records", ())[:32]:
+            if not isinstance(record, Mapping):
+                continue
+            source_id = record.get("source_id")
+            if not isinstance(source_id, str) or not source_id.strip() or source_id in seen:
+                continue
+            seen.add(source_id)
+            records.append(record)
+    return tuple(records)
+
+
+def _record_data(record: Mapping[str, Any]) -> Mapping[str, Any]:
+    data = record.get("data")
+    return data if isinstance(data, Mapping) else {}
+
+
+def _record_kind(record: Mapping[str, Any]) -> str | None:
+    data = _record_data(record)
+    kind = data.get("kind", record.get("kind"))
+    return kind if isinstance(kind, str) else None
+
+
+def _complete_lossless_file(record: Mapping[str, Any]) -> bool:
+    data = _record_data(record)
+    return (
+        _record_kind(record) == "FILE_CONTENT"
+        and record.get("complete") is True
+        and record.get("truncated") is not True
+        and data.get("complete") is True
+        and data.get("truncated") is not True
+        and data.get("text_lossless") is True
+    )
+
+
+def _select_verifier_evidence(
+    request: ModelRequest,
+    decision: str,
+) -> tuple[str, ...]:
+    records = _required_evidence_records(request)
+    file_ids = [
+        str(record["source_id"])
+        for record in records
+        if _complete_lossless_file(record)
+    ]
+    literal_ids = [
+        str(record["source_id"])
+        for record in records
+        if _record_kind(record) == "USER_LITERAL"
+        and record.get("complete") is True
+        and record.get("truncated") is not True
+    ]
+    if decision == "NEEDS_INPUT":
+        selected_literal = literal_ids[:1]
+        remaining = MAX_VERIFIER_EVIDENCE_IDS - len(selected_literal)
+        selected = file_ids[:remaining] + selected_literal
+    else:
+        selected = file_ids[:1]
+    return tuple(dict.fromkeys(selected))[:MAX_VERIFIER_EVIDENCE_IDS]
 
 
 class ScriptedEvaluationGateway:
@@ -43,12 +137,38 @@ class ScriptedEvaluationGateway:
             content = self._task_contract_response(prompt)
         elif request_contract == ModelRequestContract.TASK_SPEC.value:
             content = self._task_spec_response()
+        elif "Decision to verify:" in prompt or "Decisão a verificar:" in prompt:
+            content = self._verifier_response(request)
         else:
             content = self._response(system, prompt)
         return ModelResponse(
             content=content,
             provider_metadata={"observed_provider_model_id": self.provider_model_id},
         )
+
+    @staticmethod
+    def _verifier_response(request: ModelRequest) -> str:
+        """Return a supported verdict citing a runtime-bound record from the envelope."""
+
+        decision_prompt = str(request.messages[-1].content) if request.messages else ""
+        decision = (
+            "NEEDS_INPUT"
+            if "Decision to verify: NEEDS_INPUT" in decision_prompt
+            or "Decisão a verificar: NEEDS_INPUT" in decision_prompt
+            else "NO_CHANGE"
+        )
+        selected = _select_verifier_evidence(request, decision)
+        if not selected:
+            return json.dumps({
+                "verdict": "INSUFFICIENT",
+                "reason": "nenhum registro runtime-bound disponível",
+                "evidence_ids": [],
+            }, ensure_ascii=False)
+        return json.dumps({
+            "verdict": "SUPPORTED",
+            "reason": "registro runtime-bound completo",
+            "evidence_ids": list(selected),
+        }, ensure_ascii=False)
 
     def stream(self, request: ModelRequest) -> Iterable[StreamEvent]:
         del request

@@ -19,6 +19,7 @@ from agent.evaluation.campaign_runner import (
     run_real_model_campaign,
     run_scripted_campaign,
 )
+from agent.evaluation.practical import run_practical_scripted
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,7 +28,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluation campaign")
     parser.add_argument(
         "--mode",
-        choices=("dry-run", "adversarial-audit", "live-model", "corrective-ready"),
+        choices=(
+            "dry-run",
+            "practical-dry-run",
+            "adversarial-audit",
+            "live-model",
+            "corrective-ready",
+        ),
         default="dry-run",
     )
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
@@ -35,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(".audit-local/out/evaluation-dry-run.json"),
+        default=None,
         help="bounded local campaign report path",
     )
     parser.add_argument(
@@ -54,7 +61,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="write the frozen campaign configuration beside the report",
     )
     arguments = parser.parse_args(argv)
-    output = arguments.output
+    output = arguments.output or (
+        Path(".audit-local/out/evaluation-practical-v1.json")
+        if arguments.mode == "practical-dry-run"
+        else Path(".audit-local/out/evaluation-dry-run.json")
+    )
+
+    if arguments.mode == "practical-dry-run":
+        report = run_practical_scripted(ROOT, output_path=output)
+        summary = report["summary"]
+        passed = summary["failed"] == 0 and summary["unknown_failures"] == 0
+        print(
+            json.dumps(
+                {
+                    "status": "passed" if passed else "failed",
+                    "mode": "practical-dry-run",
+                    "total": summary["total"],
+                    "passed": summary["passed"],
+                    "failed": summary["failed"],
+                    "report": str(output),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0 if passed else 1
 
     if arguments.mode == "corrective-ready":
         dry_path = ROOT / ".audit-local" / "out" / "evaluation-corrective-dry-run.json"

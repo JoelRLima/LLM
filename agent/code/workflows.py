@@ -15,8 +15,10 @@ from agent.code.intelligence import CodeIntelligenceService
 from agent.code.policy import ChangeApprovalPolicy, ChangeApprover
 from agent.code.validation import ProjectValidator
 from agent.code.workflow_application import apply_changes as apply_change_set
+from agent.code.workflow_outcome_support import WorkflowOutcomeMixin
 from agent.code.workflow_proposal import CHANGESET_SCHEMA
 from agent.code.workflow_proposal import propose_changes as build_proposal
+from agent.code.workflows_change_support import run_change_attempt
 from agent.llm.structured_output import StructuredOutputError
 from agent.runtime.context import Artifact, TaskExecutionContext, TaskResult, TaskStatus
 from agent.runtime.failures import FailureFact
@@ -43,7 +45,7 @@ def _proposal_failure_projection(error: BaseException) -> tuple[str, tuple[Dict[
     return fact.code, ()
 
 
-class CodingWorkflowService:
+class CodingWorkflowService(WorkflowOutcomeMixin):
     def __init__(
         self, root: str | Path, context: TaskExecutionContext,
         intelligence: Optional[CodeIntelligenceService] = None,
@@ -135,24 +137,42 @@ class CodingWorkflowService:
     def propose_changes(self, objective: str, target_files: Sequence[str] = ()) -> ChangeSet:
         return build_proposal(self, objective, target_files)
 
+    def propose_code_decision(
+        self,
+        objective: str,
+        target_files: Sequence[str] = (),
+    ) -> tuple[Any, Any]:
+        from agent.code.workflow_proposal import propose_code_decision
+
+        return propose_code_decision(self, objective, target_files)
+
     def apply_changes(
         self, change_set: ChangeSet, *, include_tests: bool = False,
         requested_targets: Sequence[str] = (), approver: Optional[ChangeApprover] = None,
+        evidence_manifest: Any = None,
+        repair_attempt: bool = False,
     ) -> TaskResult:
         return apply_change_set(
             self, change_set, include_tests=include_tests,
             requested_targets=requested_targets, approver=approver,
+            evidence_manifest=evidence_manifest,
+            repair_attempt=repair_attempt,
         )
 
     def change(
-        self, objective: str, target_files: Sequence[str] = (), *,
-        include_tests: bool = False, repair: bool = False,
+        self,
+        objective: str,
+        target_files: Sequence[str] = (),
+        *,
+        include_tests: bool = False,
+        repair: bool = False,
+        decision_mode: bool = False,
         approver: Optional[ChangeApprover] = None,
     ) -> TaskResult:
         attempts = self.context.limits.max_repair_attempts if repair else 1
         last_result: Optional[TaskResult] = None
         seen: set[str] = set()
-        for _ in range(attempts):
+        for attempt in range(attempts):
             if self.context.cancellation.cancelled:
                 return TaskResult(
                     TaskStatus.CANCELLED,
@@ -160,35 +180,26 @@ class CodingWorkflowService:
                     failure_code=FailureFact.from_code(
                         "CANCELLED", status=TaskStatus.CANCELLED, message="cancelled"
                     ).code,
-                )
-            effective = self._repair_objective(objective, last_result)
-            if effective is None and last_result is not None:
-                return last_result
-            try:
-                proposal = self.propose_changes(effective or objective, target_files)
-            except (StructuredOutputError, ChangeSetError, RuntimeError) as exc:
-                failure_code, diagnostics = _proposal_failure_projection(exc)
-                last_result = TaskResult(
+            )
+            result, stop = run_change_attempt(
+                self,
+                objective,
+                target_files,
+                include_tests=include_tests,
+                decision_mode=decision_mode,
+                approver=approver,
+                attempt=attempt,
+                last_result=last_result,
+                seen=seen,
+                proposal_failure_projection=_proposal_failure_projection,
+            )
+            if result is not None:
+                last_result = result
+            if stop:
+                return result if result is not None else last_result or TaskResult(
                     TaskStatus.FAILED,
-                    diagnostics=diagnostics,
-                    error=str(exc),
-                    failure_code=failure_code,
+                    error="Nenhuma tentativa executada.",
                 )
-                continue
-            fingerprint = repr(proposal.changes)
-            if fingerprint in seen:
-                return TaskResult(
-                    TaskStatus.FAILED,
-                    error="duplicate_proposal",
-                    summary="O modelo repetiu um ChangeSet já falho.",
-                    failure_code=FailureFact.unknown(
-                        status=TaskStatus.FAILED, message="duplicate_proposal"
-                    ).code,
-                )
-            seen.add(fingerprint)
-            last_result = self.apply_changes(proposal, include_tests=include_tests, requested_targets=target_files, approver=approver)
-            if last_result.status in {TaskStatus.SUCCEEDED, TaskStatus.UNVERIFIED}:
-                return last_result
         return last_result or TaskResult(TaskStatus.FAILED, error="Nenhuma tentativa executada.")
 
     def _repair_objective(self, objective: str, result: Optional[TaskResult]) -> str | None:

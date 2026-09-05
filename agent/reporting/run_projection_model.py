@@ -39,6 +39,11 @@ class RunProjectionFacts:
     output_chars: int
     output_truncated: bool
     progress: Mapping[str, Any] = field(default_factory=dict)
+    # Small canonical facts selected from raw runtime records before generic
+    # event bounding.  They are evaluation/reporting projections, not a new
+    # authority or execution channel.
+    code_outcome: Mapping[str, Any] = field(default_factory=dict)
+    validation_detail: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {item.name: thaw_projection(getattr(self, item.name)) for item in fields(self)}

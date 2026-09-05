@@ -6,7 +6,7 @@ import tempfile
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from agent.application import AgentApplication
 from agent.approval import ApprovalPort
@@ -33,6 +33,11 @@ class ScenarioPreparation(Protocol):
         ...
 
 
+class WorkspacePreparation(Protocol):
+    def __call__(self, objective: str, workspace: Path) -> None:
+        ...
+
+
 def snapshot_evaluation_projection(snapshot: Any) -> dict[str, Any]:
     """Project deterministic evaluation evidence from the snapshot alone."""
 
@@ -42,6 +47,8 @@ def snapshot_evaluation_projection(snapshot: Any) -> dict[str, Any]:
         "canonical_plan": thaw_projection(facts.canonical_plan),
         "route_events": [thaw_projection(item) for item in facts.route_events],
         "validation_events": [thaw_projection(item) for item in facts.validation_events],
+        "code_outcome": thaw_projection(facts.code_outcome),
+        "validation_detail": thaw_projection(facts.validation_detail),
         "output_chars": facts.output_chars,
         "output_truncated": facts.output_truncated,
     }
@@ -52,16 +59,26 @@ class AgentApplicationScenarioExecutor:
 
     def __init__(
         self,
-        gateway_factory: GatewayFactory,
+        gateway_factory: Callable[[str, Path], Any],
         *,
         approval_policy: ApprovalPort | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
         prepare: ScenarioPreparation | None = None,
+        prepare_workspace: WorkspacePreparation | None = None,
+        prepare_application: ScenarioPreparation | None = None,
     ) -> None:
         self.gateway_factory = gateway_factory
         self.approval_policy = approval_policy
         self.task_authority = task_authority
-        self.prepare = prepare
+        self._prepare_workspace = prepare_workspace
+        # ``prepare`` is the pre-existing application-home seam. Keep it as
+        # a compatibility alias while practical fixtures use the measured
+        # workspace seam separately.
+        self.prepare = prepare_application if prepare_application is not None else prepare
+
+    def prepare_workspace(self, objective: str, workspace: Path) -> None:
+        if self._prepare_workspace is not None:
+            self._prepare_workspace(objective, workspace)
 
     def execute(self, objective: str, workspace: Path) -> ExecutionObservation:
         started = time.monotonic()
@@ -195,6 +212,8 @@ class AgentApplicationScenarioExecutor:
                         "invocation_evidence": list(history),
                         "route_events": route_events,
                         "validation_evidence": validation_events,
+                        "code_outcome": projection["code_outcome"],
+                        "validation_detail": projection["validation_detail"],
                         "terminal_status": runtime_status,
                         "final_answer": result.answer,
                         "receipt": dict(result.receipt),

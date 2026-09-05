@@ -23,6 +23,7 @@ from agent.runtime.context import (
     TaskResult,
     TaskStatus,
 )
+from agent.runtime.hardware import resolve_hardware_profile
 from agent.tools.invocation_semantics import CODE_WRITE_ACTIONS
 
 
@@ -51,6 +52,7 @@ def build_code_context(
         return parent_context.child("code_task", permissions=child_permissions)
     selected_gateway = model_gateway or UnavailableModelGateway()
     resolved_profile = resolve_gateway_model_profile(config, selected_gateway)
+    hardware_profile = resolve_hardware_profile(config)
     limits = RuntimeLimits.from_config(config)
     return TaskExecutionContext(
         model_gateway=selected_gateway,
@@ -73,6 +75,7 @@ def build_code_context(
             "temperature": resolved_profile.temperature,
             "max_output_tokens": resolved_profile.max_output_tokens,
             "timeout": resolved_profile.timeout,
+            "context_limit": hardware_profile.context_limit,
             "model_config_fingerprint": resolved_profile.fingerprint,
         },
     )
@@ -128,6 +131,7 @@ class CodingApplicationService:
                 request.targets,
                 include_tests=request.include_tests,
                 repair=request.action == "repair",
+                decision_mode=request.action in {"modify", "repair", "refactor"},
                 approver=approver,
             )
         if request.action in {"multitask", "template"}:

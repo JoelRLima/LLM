@@ -11,6 +11,12 @@ from agent.evaluation.contracts import (
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.evaluation.loader import load_scenario, load_scenarios
+from agent.evaluation.practical import run_practical_scripted
+from agent.evaluation.practical_scenarios import (
+    PRACTICAL_SET_VERSION,
+    PRACTICAL_V1,
+    practical_fixture_identity,
+)
 from agent.evaluation.real_model_readiness import (
     REAL_MODEL_READINESS_VERSION,
     readiness_campaign_policy,
@@ -64,4 +70,8 @@ __all__ = [
     "real_model_readiness_scenarios",
     "sanitize_evidence",
     "validate_h_series",
+    "PRACTICAL_SET_VERSION",
+    "PRACTICAL_V1",
+    "practical_fixture_identity",
+    "run_practical_scripted",
 ]

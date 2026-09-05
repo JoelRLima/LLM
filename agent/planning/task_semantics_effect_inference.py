@@ -8,12 +8,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from agent.planning.task_semantics_lexicon import (
+    CANONICAL_SEMANTIC_LEXICON,
+    LexemeClass,
+    LexiconRoute,
+)
 from agent.planning.task_semantics_types import EffectIntent, _normalize_text
 
 _WORD_RE = re.compile(r"[\w]+", re.UNICODE)
 _FILE_RE = re.compile(r"(?<!\w)([\w./\\-]+\.[A-Za-z0-9]{1,16})(?!\w)", re.UNICODE)
-_NEGATION_WORDS = frozenset(
-    {"nao", "sem", "never", "nunca", "jamais", "without", "no"}
+_CANDIDATE_ROUTE = LexiconRoute.CANDIDATE_INFERENCE
+_NEGATION_WORDS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.NEGATION
 )
 _COPULA_TOKEN = "__copula__"
 _PROHIBITION_WORDS = frozenset(
@@ -53,31 +59,19 @@ _PREDICATE_OPERATOR_TOKENS = frozenset(
     {"contain", "contains", "contem", "conter", "contiver", "equal", "equals", "for", "is", _COPULA_TOKEN}
 )
 _DIRECT_TEXT_WORDS = frozenset({"exatamente", "exactly"})
-_MUTATION_VERBS = frozenset(
-    {
-        "adicione", "adicionar", "ajuste", "ajustar", "alter", "alterar", "altere",
-        "aplicar", "aplique", "aplicacao", "change", "changing", "corrija",
-        "corrigir", "delete", "edit", "edite", "editar", "fix", "modify",
-        "modifique", "modificar", "modificacao", "mudanca", "remove", "remova",
-        "remover", "refactor", "replace", "substitua", "substituir", "touch",
-        "update", "tocar", "toque",
-    }
+_MUTATION_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.MUTATION
 )
-_OUTPUT_VERBS = frozenset(
-    {
-        "create", "crie", "criar", "escreva", "escrever", "write", "produza",
-        "produzir", "produce", "gere", "gerar", "gera", "generate",
-    }
+_OUTPUT_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.OUTPUT
 )
 _PERSISTENCE_VERBS = frozenset(
-    {"salve", "salvar", "save", "guardar", "guarde", "store", "armazenar"}
+    CANONICAL_SEMANTIC_LEXICON.tokens(
+        _CANDIDATE_ROUTE, LexemeClass.PERSISTENCE
+    )
 )
-_RESPONSE_VERBS = frozenset(
-    {
-        "resuma", "resumir", "summarize", "summarise", "explique", "explicar",
-        "explain", "analise", "analisar", "analyze", "descreva", "descrever",
-        "describe",
-    }
+_RESPONSE_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.RESPONSE
 )
 _EXPLICIT_TARGET_WORDS = frozenset(
     {
@@ -96,33 +90,13 @@ _OUTPUT_ONLY_NOUNS = frozenset(
 _NEGATED_DURABLE_OUTPUT_MARKERS = frozenset(
     {"nada", "anything", "arquivos", "files", "arquivo", "file"}
 )
-_EFFECT_TERMS = {
-    "adicione": "write", "adicionar": "write", "ajuste": "write", "ajustar": "write",
-    "alter": "write", "alterar": "write", "altere": "write", "alteracao": "write", "aplicar": "write",
-    "aplique": "write", "aplicacao": "write", "change": "write", "corrija": "write",
-    "corrigir": "write", "create": "write", "crie": "write", "criar": "write",
-    "delete": "write", "edit": "write", "edite": "write", "editar": "write",
-    "escreva": "write", "escrever": "write", "fix": "write", "modifique": "write",
-    "modificar": "write", "modificacao": "write", "modify": "write", "mudanca": "write", "remova": "write", "remover": "write",
-    "refactor": "write", "replace": "write", "substitua": "write", "substituir": "write",
-    "update": "write", "write": "write", "produza": "write", "produzir": "write",
-    "gere": "write", "gerar": "write", "gera": "write", "generate": "write",
-    "produce": "write", "changing": "write", "touch": "write", "toque": "write", "tocar": "write",
-    "salve": "write", "salvar": "write", "save": "write", "guardar": "write",
-    "guarde": "write", "store": "write", "armazenar": "write",
-}
+_EFFECT_TERMS = CANONICAL_SEMANTIC_LEXICON.effect_terms(_CANDIDATE_ROUTE)
 _MEMORY_CONTEXT_WORDS = frozenset({"memoria", "memory"})
-_MEMORY_DIRECT_TERMS = frozenset(
-    {
-        "lembre", "lembrar", "remember", "memorize", "memorise", "memorizar",
-        "esqueca", "esquecer", "forget",
-    }
+_MEMORY_DIRECT_TERMS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.MEMORY_DIRECT
 )
-_MEMORY_CONTEXT_TERMS = frozenset(
-    {
-        "salve", "salvar", "save", "guardar", "guarde", "store", "armazenar",
-        "remova", "remover", "remove", "delete", "apague", "apagar",
-    }
+_MEMORY_CONTEXT_TERMS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.MEMORY_CONTEXT
 )
 _OBLIGATION_TERMS = {
     "leia": "read", "ler": "read", "read": "read", "inspect": "read",
@@ -133,8 +107,8 @@ _OBLIGATION_TERMS = {
     "comparar": "compare", "diff": "compare", "analise": "analyze", "analisar": "analyze",
     "analyze": "analyze",
 }
-_READ_VERBS = frozenset(
-    {"leia", "ler", "read", "inspect", "inspecione", "examinar", "examine", "consulte", "consultar"}
+_READ_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _CANDIDATE_ROUTE, LexemeClass.READ
 )
 _SEARCH_FILLER = frozenset(
     {

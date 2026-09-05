@@ -4,7 +4,6 @@ Adicionar uma skill interna requer um `SkillSpec` aqui e a implementação da
 classe. Construção, custo, capacidade e timeout não vivem mais em mapas
 independentes.
 """
-
 from __future__ import annotations
 
 from agent.skills.descriptor import SkillCapability as C
@@ -163,6 +162,23 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         ),
     ),
     SkillSpec(
+        "agent.skills.repository_state",
+        "RepositoryStateSkill",
+        "repository_state",
+        kwargs={"base_dir": ".", "timeout": 20},
+        capabilities=frozenset({C.READ, C.VCS_READ, C.PROCESS}),
+        cost=5,
+        idempotent=True,
+        timeout_seconds=20,
+        category="READ",
+        # The fixed status subprocess is bounded and killed by the existing
+        # process-tree owner on timeout/cancellation.
+        cancellation_safety=S.PROCESS_KILLABLE,
+        usage_examples=(
+            {"args": {}, "purpose": "Read bounded structured local repository state."},
+        ),
+    ),
+    SkillSpec(
         "agent.skills.grep",
         "GrepSkill",
         "grep",
@@ -280,6 +296,5 @@ BUILTIN_SKILL_SPECS: tuple[SkillSpec, ...] = (
         ),
     ),
 )
-
 
 BUILTIN_SPEC_BY_NAME = {spec.name: spec for spec in BUILTIN_SKILL_SPECS}

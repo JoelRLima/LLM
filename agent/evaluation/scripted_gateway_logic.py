@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agent.evaluation.practical_gateway_logic import (
+    practical_engineering_response,
+    practical_final_answer,
+    practical_plan_payload,
+)
 from agent.evaluation.scripted_gateway_fixture import bind_code_task_objective
-from agent.evaluation.scripted_tool_guidance import h5_response, selection_response
 from agent.evaluation.structured_proof_fixtures import H19_FINAL_ANSWERS, H19_PLAN_PAYLOADS
 
 
@@ -355,6 +359,9 @@ def scripted_plan_response(objective: str, prompt: str) -> str:
     # prompt first would dispatch the wrong scripted branch.
     fixture_marker = objective.split(":", 1)[0].strip()
     runtime_objective = objective.split(":", 1)[1].strip() if ":" in objective else objective
+    practical = practical_plan_payload(fixture_marker)
+    if practical is not None:
+        return json.dumps(bind_code_task_objective(practical, runtime_objective), ensure_ascii=False)
     for marker, payload in _PLAN_PAYLOADS:
         if marker == fixture_marker:
             return json.dumps(bind_code_task_objective(payload, runtime_objective))
@@ -364,80 +371,78 @@ def scripted_plan_response(objective: str, prompt: str) -> str:
     return '{"action":"direct_response","answer":"sem decisão"}'
 
 
-def _repair_response(combined: str, prompt: str) -> str | None:
-    if "CONSTRAINED VALIDATION REPAIR" not in prompt or "H6" not in combined:
-        return None
-    return json.dumps(
-        {"action": "tool", "tool": "file_reader", "args": {"file_path": 123}}
-    )
+def _plan_tool_names(value: Any, output: list[str], depth: int = 0) -> None:
+    if depth > 16:
+        return
+    if isinstance(value, dict):
+        tool = value.get("tool")
+        if isinstance(tool, str) and tool not in output:
+            output.append(tool)
+        for child in value.values():
+            _plan_tool_names(child, output, depth + 1)
+    elif isinstance(value, list):
+        for child in value[:64]:
+            _plan_tool_names(child, output, depth + 1)
 
-def _h11_response(combined: str, prompt: str) -> str | None:
-    if "UNTRUSTED TOOL FAILURE EVIDENCE" in prompt and "H11" in combined:
-        return '{"action":"final","answer":"falha parcial observada"}'
-    if "Objetivo complexo:" not in prompt or "H11" not in combined:
-        return None
-    return json.dumps(
-        {
-            "steps": [
-                {
-                    "id": "h11-missing",
-                    "title": "missing observation",
-                    "goal": "H11_MISSING: leia h11_missing.txt",
-                    "priority": "high",
-                    "depends_on": [],
-                    "estimated_tools": ["file_reader"],
-                },
-                {
-                    "id": "h11-present",
-                    "title": "present observation",
-                    "goal": "H11_PRESENT: leia h11_present.txt",
-                    "priority": "medium",
-                    "depends_on": [],
-                    "estimated_tools": ["file_reader"],
-                },
-            ]
-        }
-    )
+
+def scripted_required_tools(objective: str) -> tuple[str, ...]:
+    """Read required tool names from the same fixture plan the gateway returns."""
+
+    try:
+        payload = json.loads(scripted_plan_response(objective, ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ()
+    names: list[str] = []
+    _plan_tool_names(payload, names)
+    return tuple(names)
+
+
+_ENGINEERING_FIXTURES: tuple[tuple[tuple[str, ...], dict[str, Any]], ...] = (
+    (("H19_POSITIVE",), {"path": "h19_target.txt", "kind": "modify", "content": "H19_DONE\n"}),
+    (("H13_DEST", "H13_MIXED"), {"path": "resumo.md", "kind": "create", "content": "Resumo de foo.py\n"}),
+    (("H14_PT", "H14_MIXED", "H14_SCOPE"), {"path": "permitido.txt", "kind": "modify", "content": "alterado\n"}),
+    (("H14_EN",), {"path": "allowed.txt", "kind": "modify", "content": "edited\n"}),
+    (("H15_TRUE", "H15_NEGATIVE"), {"path": "h15_target.txt", "kind": "create", "content": "H15_DONE\n"}),
+    (("H17_AUTONOMOUS",), {"path": "notes.md", "kind": "modify", "content": "H17_AUTO\n"}),
+    (("H17_EXPLICIT",), {"path": "settings.json", "kind": "modify", "content": "H17_EXPLICIT\n"}),
+    (("H17_EXTENSION",), {"path": "extension.md", "kind": "modify", "content": "H17_EXTENSION\n"}),
+)
+
+
+def _known_engineering_response(combined: str) -> dict[str, Any] | None:
+    for markers, change in _ENGINEERING_FIXTURES:
+        if any(marker in combined for marker in markers):
+            return change
+    return None
+
+
+def _h12_engineering_response() -> dict[str, Any]:
+    return {
+        "path": "h12_module.py",
+        "kind": "edit",
+        "edits": [
+            {
+                "operation": "replace",
+                "start_line": 2,
+                "end_line": 2,
+                "content": "    return 2\n",
+            }
+        ],
+    }
 
 
 def _engineering_response(objective: str, prompt: str) -> str:
     combined = f"{objective}\n{prompt}"
-    if "H19_POSITIVE" in combined:
-        return json.dumps({"changes": [{"path": "h19_target.txt", "kind": "modify", "content": "H19_DONE\n"}]})
-    if "H13_DEST" in combined or "H13_MIXED" in combined:
-        return json.dumps({"changes": [{"path": "resumo.md", "kind": "create", "content": "Resumo de foo.py\n"}]})
-    if "H14_PT" in combined or "H14_MIXED" in combined or "H14_SCOPE" in combined:
-        return json.dumps({"changes": [{"path": "permitido.txt", "kind": "modify", "content": "alterado\n"}]})
-    if "H14_EN" in combined:
-        return json.dumps({"changes": [{"path": "allowed.txt", "kind": "modify", "content": "edited\n"}]})
-    if "H15_TRUE" in combined or "H15_NEGATIVE" in combined:
-        return json.dumps({"changes": [{"path": "h15_target.txt", "kind": "create", "content": "H15_DONE\n"}]})
-    if "H17_AUTONOMOUS" in combined:
-        return json.dumps({"changes": [{"path": "notes.md", "kind": "modify", "content": "H17_AUTO\n"}]})
-    if "H17_EXPLICIT" in combined:
-        return json.dumps({"changes": [{"path": "settings.json", "kind": "modify", "content": "H17_EXPLICIT\n"}]})
-    if "H17_EXTENSION" in combined:
-        return json.dumps({"changes": [{"path": "extension.md", "kind": "modify", "content": "H17_EXTENSION\n"}]})
+    fixture_marker = objective.split(":", 1)[0].strip()
+    practical = practical_engineering_response(fixture_marker, objective)
+    if practical is not None:
+        return practical
+    known = _known_engineering_response(combined)
+    if known is not None:
+        return json.dumps({"changes": [known]})
     if "H12" not in combined:
         return json.dumps({"changes": []})
-    return json.dumps(
-        {
-            "changes": [
-                {
-                    "path": "h12_module.py",
-                    "kind": "edit",
-                    "edits": [
-                        {
-                            "operation": "replace",
-                            "start_line": 2,
-                            "end_line": 2,
-                            "content": "    return 2\n",
-                        }
-                    ],
-                }
-            ]
-        }
-    )
+    return json.dumps({"changes": [_h12_engineering_response()]})
 
 
 _FINAL_ANSWERS = (
@@ -479,6 +484,10 @@ _FINAL_ANSWERS = (
 
 def _final_response(objective: str, prompt: str) -> str:
     text = f"{objective}\n{prompt}"
+    fixture_marker = objective.split(":", 1)[0].strip()
+    practical = practical_final_answer(fixture_marker)
+    if practical is not None:
+        return practical
     if "H15_UNRESOLVED" in text:
         return next(answer for marker, answer in _FINAL_ANSWERS if marker == "H15_UNRESOLVED")
     if "H15_NEGATIVE" in text:
@@ -493,45 +502,10 @@ def _final_response(objective: str, prompt: str) -> str:
     return "A resposta foi limitada às observações reais."
 
 
-def _standard_response(objective: str, prompt: str) -> str:
-    if "Escolha exatamente uma das duas respostas JSON" in prompt:
-        return scripted_plan_response(objective, prompt)
-    if "Uma fronteira sem" in prompt:
-        # The production runtime now treats plan exhaustion as an
-        # observation frontier, so every deterministic successful arm needs
-        # the same explicit completion decision that a real model would make.
-        # H5 has its own continuation sequence above; all other arms have
-        # enough evidence at this boundary to close the task.
-        return '{"action":"complete","reason":"as observacoes reais bastam"}'
-    if "Objetivo de engenharia:" in prompt:
-        return _engineering_response(objective, prompt)
-    if "Resultados das ferramentas executadas:" in prompt:
-        return _final_response(objective, prompt)
-    if "Os resultados a seguir foram obtidos" in prompt:
-        return "H11 terminou com falha parcial pública; o resultado posterior não apagou a falha."
-    return '{"action":"final","answer":"decisão scripted"}'
-
-
 def scripted_response(gateway: Any, system: str, prompt: str) -> str:
-    """Dispatch the deterministic fixture without changing product policy.
+    from agent.evaluation.scripted_gateway_dispatch import dispatch_scripted_response
 
-    Discovery responses select from the exact current index.
-    All other responses retain the pre-existing scenario handlers.
-    Selection remains visibility-only and never authorizes a tool.
-    This adapter is used only by the local deterministic campaign.
-    """
-    dispatch_objective = getattr(gateway, "dispatch_objective", gateway.objective)
-    combined = f"{dispatch_objective}\n{prompt}"
-    if "You are a Router Agent" in system:
-        return '{"persona":"coder"}'
-    if "TOOL DISCOVERY" in prompt:
-        return selection_response(prompt)
-    for handler in (_repair_response, _h11_response):
-        response = handler(combined, prompt)
-        if response is not None:
-            return response
-    response = h5_response(gateway, combined, prompt)
-    return response if response is not None else _standard_response(dispatch_objective, prompt)
+    return dispatch_scripted_response(gateway, system, prompt)
 
 
 __all__ = ["scripted_plan_response", "scripted_response"]

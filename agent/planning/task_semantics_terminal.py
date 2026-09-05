@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from agent.planning.task_semantics_effects import effect_observation_proves_terminal
+from agent.planning.task_semantics_effects import (
+    effect_observation_proves_terminal,
+    verified_code_abstention_proves_waiver,
+)
 from agent.planning.task_semantics_evidence import (
     _READ_TOOLS,
     arg_path,
@@ -15,6 +18,7 @@ from agent.planning.task_semantics_evidence import (
     matches_requirement,
     same_identity,
 )
+from agent.planning.task_semantics_terminal_support import failure_matches_obligation
 from agent.planning.task_semantics_types import (
     ObligationStatus,
     TaskSemanticsError,
@@ -57,6 +61,7 @@ def validate_terminal_evidence(
             effect_authority,
             status,
             observations,
+            obligation=obligation,
         )
         return
     if not _evidence_set_proves_requirement(owner, obligation, status, refs, observations):
@@ -87,11 +92,25 @@ def _validate_effect_observations(
     authority: Any,
     status: ObligationStatus,
     observations: Sequence[Mapping[str, Any]],
+    *,
+    obligation: Any,
 ) -> None:
-    if authority is None or not all(
-        effect_observation_proves_terminal(authority, status, observation)
-        for observation in observations
-    ):
+    if authority is None:
+        raise TaskSemanticsError("evidencia nao prova o efeito operacional")
+    for observation in observations:
+        if effect_observation_proves_terminal(authority, status, observation):
+            continue
+        if (
+            status is ObligationStatus.WAIVED
+            and obligation.kind == "effect"
+            and obligation.effect == "write"
+            and verified_code_abstention_proves_waiver(
+                authority,
+                effect="write",
+                observation=observation,
+            )
+        ):
+            continue
         raise TaskSemanticsError("evidencia nao prova o efeito operacional")
 
 
@@ -245,27 +264,10 @@ def _blocked_evidence_set_proves(
         return covered == {0, 1}
     return all(
         classify_failure(_observation_parts(observation)[1]) is not FailureClass.NONE
-        and _failure_matches_obligation(obligation, observation)
+        and failure_matches_obligation(obligation, observation)
         and not _failure_belongs_to_matching_fallback(owner, obligation, observation)
         for _ref, observation in zip(refs, observations, strict=True)
     )
-
-
-def _failure_matches_obligation(obligation: Any, observation: Mapping[str, Any]) -> bool:
-    tool, result, args = _observation_parts(observation)
-    if obligation.kind == "read":
-        return tool in _READ_TOOLS and same_identity(obligation.target, arg_path(args))
-    if obligation.kind == "search":
-        return tool in {"grep", "search"} and (
-            same_identity(obligation.query, args.get("pattern") if args else None)
-            or same_identity(obligation.query, args.get("query") if args else None)
-        )
-    if obligation.kind == "analyze":
-        return tool in {"code_analyzer", "analyze"} and (
-            same_identity(obligation.target, arg_path(args))
-            or same_identity(obligation.query, args.get("query") if args else None)
-        )
-    return obligation.kind == "fallback" and matches_fallback(obligation, tool, result, args)
 
 
 def _evidence_proves_satisfied(

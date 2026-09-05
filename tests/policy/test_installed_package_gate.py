@@ -35,6 +35,7 @@ def test_gate_declares_required_installed_cli_journeys(tmp_path: Path) -> None:
         "version": (str(executable), "--version"),
         "config-init": (str(executable), "config", "init"),
         "doctor": (str(executable), "doctor", "--json"),
+        "doctor-online": (str(executable), "doctor", "--online", "--json"),
         "run": (
             str(executable),
             "run",

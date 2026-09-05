@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import difflib
+import inspect
 import shutil
 from collections.abc import Mapping
 from dataclasses import replace
@@ -172,13 +173,28 @@ class WorkspaceManager:
                 test_roots=(str(self.validation_config["pytest_dir"]),),
             )
         relative = target.relative_to(self.workspace_root).as_posix()
-        report = self.validation_service.validate(
-            profile,
-            [relative],
-            include_tests=False,
-        )
-        if report.status in {ValidationStatus.PASSED, ValidationStatus.UNAVAILABLE}:
-            if report.status is ValidationStatus.UNAVAILABLE:
+        try:
+            accepts_model_boundary = "model_actionable" in inspect.signature(
+                self.validation_service.validate
+            ).parameters
+        except (TypeError, ValueError):
+            accepts_model_boundary = False
+        if accepts_model_boundary:
+            report = self.validation_service.validate(
+                profile,
+                [relative],
+                include_tests=False,
+                model_actionable=True,
+            )
+        else:
+            report = self.validation_service.validate(
+                profile,
+                [relative],
+                include_tests=False,
+            )
+        effective_status = getattr(report, "effective_status", report.status)
+        if effective_status in {ValidationStatus.PASSED, ValidationStatus.UNAVAILABLE}:
+            if effective_status is ValidationStatus.UNAVAILABLE:
                 logger.warning(
                     "Validação opcional indisponível para '%s'; ignorada.",
                     file_path,

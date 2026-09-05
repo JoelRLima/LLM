@@ -39,6 +39,14 @@ def _summary(errors: int, offline_ready: bool, operation_mode: str) -> str:
     return "Sistema pronto para inicialização offline."
 
 
+def _apply_online_report(report: dict[str, Any], online: dict[str, Any]) -> None:
+    state = str(online.get("state", "unavailable"))
+    report["online"] = online
+    readiness = report["readiness"]
+    readiness["online_ready"] = online.get("online_ready") is True
+    readiness["backend_connectivity"] = state
+
+
 def _report(
     checks: list[tuple[str, CheckResult]],
     app_paths: AppPaths,
@@ -111,6 +119,18 @@ def render_health_report(
             "Conectividade do backend: NÃO TESTADA",
         )
     )
+    if "online" in report:
+        online = report["online"]
+        lines[-1] = (
+            "Conectividade do backend: "
+            f"{str(readiness['backend_connectivity']).upper()}"
+        )
+        lines.extend(
+            (
+                f"Prontidão online: {'SIM' if readiness.get('online_ready') else 'NÃO'}",
+                f"Requisições online: {online.get('request_count', 0)}",
+            )
+        )
     return "\n".join(lines)
 
 
@@ -131,6 +151,7 @@ def run_standalone_health_check(
     profile: str | None = None,
     environment: Mapping[str, str] | None = None,
     write_report: bool = False,
+    online: bool = False,
 ) -> dict[str, Any]:
     workspace_result, workspace_context = check_workspace(workspace)
     config_result, config, resolved_config_path = check_config(
@@ -163,6 +184,15 @@ def run_standalone_health_check(
         "written": False,
         "path": str(app_paths.health_report_file),
     }
+    if online:
+        from agent.health.online_model import run_online_model_health_probe
+
+        online_report = (
+            run_online_model_health_probe(config)
+            if config is not None
+            else run_online_model_health_probe(None)
+        )
+        _apply_online_report(report, online_report)
     if write_report:
         report["persistence"]["written"] = True
         try:

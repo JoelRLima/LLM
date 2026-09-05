@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import re
 
+from agent.planning.task_semantics_lexicon import (
+    CANONICAL_SEMANTIC_LEXICON,
+    LexemeClass,
+    LexiconRoute,
+)
+
 _MAX_OBJECTIVE_CHARS = 4_096
 _MAX_SCOPE_CHARS = 1_024
 
@@ -12,64 +18,12 @@ _LEXEME_RE = re.compile(
     re.UNICODE,
 )
 _PATH_RE = re.compile(r"[\w./\\-]+\.[A-Za-z0-9]{1,16}", re.UNICODE)
-_MUTATION_VERBS = frozenset(
-    {
-        "adicione",
-        "adicionar",
-        "ajuste",
-        "ajustar",
-        "alter",
-        "alterar",
-        "altere",
-        "aplicar",
-        "aplique",
-        "change",
-        "corrija",
-        "corrigir",
-        "create",
-        "crie",
-        "criar",
-        "delete",
-        "edit",
-        "edite",
-        "editar",
-        "fix",
-        "modify",
-        "modifique",
-        "modificar",
-        "refactor",
-        "remove",
-        "remova",
-        "remover",
-        "replace",
-        "substitua",
-        "substituir",
-        "touch",
-        "toque",
-        "update",
-    }
+_AUTHORITY_ROUTE = LexiconRoute.POSITIVE_AUTHORITY
+_MUTATION_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.MUTATION
 )
-_OUTPUT_VERBS = frozenset(
-    {
-        "create",
-        "crie",
-        "criar",
-        "escreva",
-        "escrever",
-        "generate",
-        "gere",
-        "gerar",
-        "produce",
-        "produza",
-        "produzir",
-        "save",
-        "salve",
-        "salvar",
-        "store",
-        "guarde",
-        "guardar",
-        "write",
-    }
+_OUTPUT_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.OUTPUT
 )
 # Only these output verbs can describe a source-only response without a
 # durable destination. Persistence-shaped verbs remain in ``_OUTPUT_VERBS``
@@ -85,50 +39,17 @@ _NEUTRAL_SOURCE_ONLY_OUTPUT_VERBS = frozenset(
         "produzir",
     }
 )
-_MEMORY_DIRECT_VERBS = frozenset(
-    {
-        "esqueca",
-        "esquecer",
-        "forget",
-        "lembre",
-        "lembrar",
-        "memorise",
-        "memorize",
-        "memorizar",
-        "remember",
-    }
+_MEMORY_DIRECT_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.MEMORY_DIRECT
 )
-_MEMORY_CONTEXT_VERBS = frozenset(
-    {
-        "apague",
-        "apagar",
-        "delete",
-        "guarde",
-        "guardar",
-        "remove",
-        "remova",
-        "remover",
-        "save",
-        "salve",
-        "salvar",
-        "store",
-    }
+_MEMORY_CONTEXT_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.MEMORY_CONTEXT
 )
-_AUTHORITY_VERBS = _MUTATION_VERBS | _OUTPUT_VERBS | _MEMORY_DIRECT_VERBS
-_NEGATION_TOKENS = frozenset(
-    {
-        "avoid",
-        "forbid",
-        "forbidden",
-        "jamais",
-        "nao",
-        "never",
-        "not",
-        "proibido",
-        "prohibited",
-        "sem",
-        "without",
-    }
+_AUTHORITY_VERBS = (
+    _MUTATION_VERBS | _OUTPUT_VERBS | _MEMORY_DIRECT_VERBS
+)
+_NEGATION_TOKENS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.NEGATION
 )
 _DIRECT_REQUEST_PREFIXES = frozenset(
     {
@@ -186,24 +107,11 @@ _OUTPUT_GRAMMAR_WORDS = frozenset(
     }
 )
 _DESTINATION_RELATIONS = frozenset({"em", "in", "into", "na", "no", "to"})
-_RESPONSE_VERBS = frozenset(
-    {
-        "analise",
-        "analisar",
-        "analyze",
-        "descreva",
-        "describe",
-        "explique",
-        "explain",
-        "resuma",
-        "resumir",
-        "summarise",
-        "summarize",
-        "use",
-    }
+_RESPONSE_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.RESPONSE
 )
-_READ_VERBS = frozenset(
-    {"consulte", "examine", "inspect", "inspecione", "leia", "ler", "read"}
+_READ_VERBS = CANONICAL_SEMANTIC_LEXICON.tokens(
+    _AUTHORITY_ROUTE, LexemeClass.READ
 )
 _VALIDATION_TAILS = (
     ("e", "valide"),
