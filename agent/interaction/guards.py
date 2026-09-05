@@ -237,16 +237,9 @@ def _negative_effect(value: str) -> tuple[str, str, str] | None:
     for family, scopes in NEGATIVE_INFINITIVE_FORMS.items():
         for scope, forms in scopes.items():
             for form in sorted(forms, key=len, reverse=True):
-                if value == form:
-                    if scope == "FAMILY_ALL":
-                        return family, scope, ""
-                    continue
-                prefix = form + " "
-                if not value.startswith(prefix):
-                    continue
-                remainder = value[len(prefix) :]
-                if scope == "FAMILY_ALL" or remainder:
-                    return family, scope, remainder
+                suffix = value.removeprefix(form)
+                if (scope == "FAMILY_ALL" and not suffix) or (suffix.startswith(" ") and suffix[1:]):
+                    return family, scope, suffix.strip()
     return None
 
 
