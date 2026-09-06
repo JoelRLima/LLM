@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.evaluation.contracts import ExecutionObservation
 from agent.evaluation.scripted_gateway import ScriptedEvaluationGateway
+from agent.tools.result_adapter import result_data
 
 
 def _walk(value: Any, depth: int = 0) -> Sequence[Mapping[str, Any]]:
@@ -43,7 +44,7 @@ def _invocations(observation: ExecutionObservation) -> tuple[Mapping[str, Any], 
 
 def _tool_data(invocation: Mapping[str, Any]) -> Any:
     result = invocation.get("result")
-    return result.get("data") if isinstance(result, Mapping) else None
+    return result_data(result) if isinstance(result, Mapping) else None
 
 
 def _all_text(value: Any) -> str:

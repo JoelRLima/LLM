@@ -13,6 +13,7 @@ from agent.runtime.failure_policy import (
     unrecovered_local_failure_observations,
 )
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+from agent.tools.result_adapter import result_status
 
 
 def _later_recovery(state: Any, index: int, entry: Mapping[str, Any]) -> bool:
@@ -112,7 +113,7 @@ def _last_result_is_terminal(
     if classification is FailureClass.LOCAL:
         local_failure = _local_failure_requires_terminal(orchestrator, include_invocation_history=True)
         return local_failure or not local_failure_permitted(state)
-    return str(result.get("status") or "") in NON_SUCCESS_STATUSES
+    return result_status(result) in NON_SUCCESS_STATUSES
 
 __all__ = [
     "_hard_failure_from_state",

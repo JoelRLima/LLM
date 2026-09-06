@@ -6,7 +6,6 @@ import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from agent.code.change_models import FileChange
 from agent.llm.context_projection import (
@@ -14,6 +13,7 @@ from agent.llm.context_projection import (
     UNTRUSTED_WORKSPACE,
     ContextSourceRecord,
 )
+from agent.runtime.correlation import new_runtime_id
 from agent.runtime.path_safety import assert_no_link_ancestors, resolve_workspace_path
 
 from .outcome_evidence import (
@@ -27,7 +27,7 @@ from .outcome_evidence import (
 
 
 def _new_evidence_id(kind: str) -> str:
-    return f"code-evidence:{kind.casefold()}:{uuid4().hex}"
+    return f"code-evidence:{kind.casefold()}:{new_runtime_id()}"
 
 
 def bind_selected_file_evidence(
@@ -113,7 +113,7 @@ def bind_selected_file_evidence(
         )
         total_text += len(text)
     manifest = CodeEvidenceManifest(
-        manifest_id=f"code-manifest:{uuid4().hex}",
+        manifest_id=f"code-manifest:{new_runtime_id()}",
         records=tuple(records),
         complete=complete and omitted == 0,
         omitted_count=omitted,

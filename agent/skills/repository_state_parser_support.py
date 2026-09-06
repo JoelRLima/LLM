@@ -7,6 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agent.runtime.path_safety import WorkspacePathError, assert_owned_path
+
 if TYPE_CHECKING:
     from agent.skills.repository_state import RepositoryStateEntry, RepositoryStateSnapshot
 
@@ -47,9 +49,8 @@ def _strict_repository_path(root: Path, path: str) -> str:
     if any(part in {"", ".", ".."} for part in parts):
         raise _RepositoryStateError("UNSAFE_PATH")
     try:
-        resolved = (root / Path(*parts)).resolve()
-        resolved.relative_to(root)
-    except (OSError, RuntimeError, ValueError) as exc:
+        assert_owned_path(root, Path(*parts))
+    except (OSError, RuntimeError, ValueError, WorkspacePathError) as exc:
         raise _RepositoryStateError("UNSAFE_PATH") from exc
     return "/".join(parts)
 

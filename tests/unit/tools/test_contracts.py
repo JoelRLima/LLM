@@ -185,5 +185,26 @@ def test_every_shipped_builtin_has_one_schema_validated_usage_example() -> None:
     registry = build_builtin_registry()
 
     descriptors = tuple(registry)
-    assert len(descriptors) == 14
+    names = {descriptor.name for descriptor in descriptors}
+    assert {
+        "calculator",
+        "code_analyzer",
+        "code_task",
+        "directory_lister",
+        "echo",
+        "file_reader",
+        "file_writer",
+        "git_reader",
+        "grep",
+        "python_executor",
+        "session_memory",
+        "repository_state",
+        "shell",
+        "summarize",
+        "web_search",
+    } == names
+    repository_state = registry.descriptor("repository_state")
+    assert repository_state.spec.usage_examples == (
+        {"args": {}, "purpose": "Read bounded structured local repository state."},
+    )
     assert all(len(descriptor.spec.usage_examples) == 1 for descriptor in descriptors)

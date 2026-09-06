@@ -119,4 +119,41 @@ def ensure_canonical_result(result: Any) -> ToolResult:
     return result if isinstance(result, ToolResult) else from_legacy_result(result)
 
 
-__all__ = ["ensure_canonical_result", "from_legacy_result", "to_legacy_result"]
+def result_data(result: Any) -> Any:
+    """Project the typed data field at the canonical result boundary."""
+
+    return ensure_canonical_result(result).data
+
+
+def result_status(result: Any) -> str:
+    """Project the typed status field at the canonical result boundary."""
+
+    return ensure_canonical_result(result).status.value
+
+
+def result_metadata(result: Any) -> Mapping[str, Any]:
+    """Project compatibility metadata without making it an authority channel."""
+
+    canonical = ensure_canonical_result(result)
+    metadata = dict(canonical.metadata)
+    nested = metadata.pop("metadata", None)
+    if isinstance(nested, Mapping):
+        metadata.update(nested)
+    return metadata
+
+
+def result_artifacts(result: Any) -> tuple[Any, ...]:
+    """Project typed artifacts at the canonical result boundary."""
+
+    return ensure_canonical_result(result).artifacts
+
+
+__all__ = [
+    "ensure_canonical_result",
+    "from_legacy_result",
+    "result_artifacts",
+    "result_data",
+    "result_metadata",
+    "result_status",
+    "to_legacy_result",
+]

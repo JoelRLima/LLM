@@ -191,7 +191,7 @@ def project_metadata(metadata: Mapping[str, Any]) -> MetadataProjection:
     if survives and not surviving_paths:
         surviving_paths = affected_paths
     raw_validation = metadata.get("validation")
-    if raw_validation is None:
+    if not isinstance(raw_validation, str):
         raw_validation = metadata.get("validation_status")
     return MetadataProjection(
         attempted=attempted,

@@ -19,6 +19,7 @@ from agent.health.online_model_support import (
     _restore_probe_timeout,
     _set_probe_timeout,
     _structured_request,
+    complete_health_probe,
 )
 from agent.llm.contracts import (
     ModelMessage,
@@ -41,10 +42,11 @@ def _complete_probe(
     report: dict[str, Any],
     structured_required: bool,
     original_timeout: Any,
+    profile: ResolvedModelProfile,
 ) -> tuple[bool, Any]:
     started = time.monotonic()
     try:
-        return True, gateway.complete(request)
+        return True, complete_health_probe(gateway, request, profile)
     except UnsupportedModelCapability:
         report.update(
             reachable=True,
@@ -159,6 +161,7 @@ def run_online_model_health_probe(
         report,
         structured_required,
         original_timeout,
+        profile,
     )
     return report if not completed else _project_probe_response(
         report,

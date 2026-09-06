@@ -18,6 +18,12 @@ def _new_runtime_id() -> str:
     return uuid4().hex
 
 
+def new_runtime_id() -> str:
+    """Create a domain identity through the canonical runtime boundary."""
+
+    return _new_runtime_id()
+
+
 def _required_id(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
@@ -124,4 +130,4 @@ class RunCorrelation:
         }
 
 
-__all__ = ["RunCorrelation"]
+__all__ = ["RunCorrelation", "new_runtime_id"]

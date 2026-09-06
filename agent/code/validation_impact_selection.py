@@ -116,7 +116,7 @@ class ValidationImpactSelectionMixin:
             for item in changed_files
             if Path(item).suffix.casefold() in {".py", ".pyi"}
         ]
-        mapped, reasons = direct_test_mappings(python_changes, test_files)
+        mapped, reasons = direct_test_mappings(changed_files, test_files)
         index_test_mappings(
             self.intelligence,
             python_changes,

@@ -46,7 +46,7 @@
               "id": "write_summary",
               "objective": "Produza summary.md com os dois resultados",
               "depends_on": ["analyze_api", "analyze_model"],
-              "capabilities": ["read", "write", "process"],
+              "capabilities": ["read", "write", "process", "validate"],
               "resources": [
                 {"name": "model", "mode": "write"},
                 {"name": "summary.md", "mode": "write"}
@@ -55,7 +55,7 @@
                 "action": "generate",
                 "targets": ["api.py", "model.py"],
                 "include_tests": true
-              }
+                }
             }
           ]
         }
@@ -71,7 +71,7 @@
           ]
         }
       ],
-      "expected_model_calls": 1
+      "expected_model_calls": 2
     }
   }
 }

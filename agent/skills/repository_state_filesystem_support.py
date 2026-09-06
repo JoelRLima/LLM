@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from agent.runtime.filesystem_primitives import has_reparse_point
+from agent.runtime.path_safety import WorkspacePathError, assert_owned_path
 
 from .repository_state_support import _RepositoryStateError
 
@@ -43,16 +44,17 @@ def _safe_metadata_path(
             raise _RepositoryStateError("UNSAFE_PATH") from exc
         if stat.S_ISLNK(metadata.st_mode) or has_reparse_point(metadata):
             raise _RepositoryStateError("UNSAFE_PATH")
-        try:
-            resolved = current.resolve(strict=True)
-            resolved.relative_to(git_dir)
-        except (OSError, RuntimeError, ValueError) as exc:
-            raise _RepositoryStateError("GITDIR_OUTSIDE_WORKSPACE") from exc
+    try:
+        selected = assert_owned_path(git_dir, Path(relative))
+    except WorkspacePathError as exc:
+        raise _RepositoryStateError("GITDIR_OUTSIDE_WORKSPACE") from exc
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise _RepositoryStateError("GITDIR_OUTSIDE_WORKSPACE") from exc
     if directory is True and not stat.S_ISDIR(metadata.st_mode):
         raise _RepositoryStateError("GIT_UNAVAILABLE")
     if directory is False and not stat.S_ISREG(metadata.st_mode):
         raise _RepositoryStateError("GIT_UNAVAILABLE")
-    return current
+    return selected
 
 
 def _walk_metadata(
@@ -186,8 +188,7 @@ def _resolved_git_directory(workspace: Any) -> tuple[Path, Path]:
     if not stat.S_ISDIR(metadata.st_mode):
         raise _RepositoryStateError("GITDIR_OUTSIDE_WORKSPACE")
     try:
-        resolved_git = git_dir.resolve(strict=True)
-        resolved_git.relative_to(root)
+        resolved_git = assert_owned_path(root, Path(".git"))
     except (OSError, RuntimeError, ValueError) as exc:
         raise _RepositoryStateError("GITDIR_OUTSIDE_WORKSPACE") from exc
     return root, resolved_git

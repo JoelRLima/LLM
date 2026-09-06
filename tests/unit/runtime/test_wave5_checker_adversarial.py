@@ -113,5 +113,39 @@ def review_and_commit(requested, proposed):
     assert _gates(source, "agent/skills/file_writer_runtime.py") == set()
 
 
+def test_delegated_code_workflow_transaction_boundary_is_accepted() -> None:
+    source = """
+from agent.code.changes import ChangeSetTransaction
+
+def apply_changes(service, change_set):
+    return run_apply_changes(
+        service,
+        change_set,
+        transaction_factory=ChangeSetTransaction,
+    )
+"""
+    assert _gates(source, "agent/code/workflow_application.py") == set()
+
+
+@pytest.mark.parametrize(
+    "transaction_argument",
+    ("", "transaction_factory=OtherTransaction,"),
+)
+def test_delegated_code_workflow_requires_the_canonical_transaction_factory(
+    transaction_argument: str,
+) -> None:
+    source = f"""
+from agent.code.changes import ChangeSetTransaction
+
+def apply_changes(service, change_set):
+    return run_apply_changes(
+        service,
+        change_set,
+        {transaction_argument}
+    )
+"""
+    assert "W5-S3" in _gates(source, "agent/code/workflow_application.py")
+
+
 def test_hardened_repository_checker_passes() -> None:
     assert run_checks() == []

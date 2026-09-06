@@ -3,34 +3,20 @@
 from __future__ import annotations
 
 import hashlib
-import os
-import subprocess
 from pathlib import Path
 
 from agent.evaluation.contracts import CapabilityScenario
+from agent.evaluation.evaluation_identity import run_fixture_git
 from agent.memory.memory import AgentMemory
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 
 
 def _run_git(root: Path, *arguments: str) -> None:
-    environment = os.environ.copy()
-    environment["GIT_CONFIG_GLOBAL"] = os.devnull
-    environment["GIT_CONFIG_NOSYSTEM"] = "1"
-    command = [
-        "git",
-        "-c",
-        "core.autocrlf=false",
-        *arguments,
-    ]
-    subprocess.run(
-        command,
-        cwd=root,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    return_code, stdout, stderr = run_fixture_git(root, *arguments)
+    if return_code != 0:
+        detail = (stderr or stdout or "git fixture command failed").strip()
+        raise RuntimeError(detail[-2_000:])
 
 
 def prepare_practical_workspace(
@@ -48,9 +34,9 @@ def prepare_practical_workspace(
         _run_git(
             workspace,
             "-c",
-            "user.name=Wave13 Fixture",
+            "user.name=Practical Fixture",
             "-c",
-            "user.email=wave13-fixture@example.invalid",
+            "user.email=practical-fixture@example.invalid",
             "commit",
             "-m",
             "fixture baseline",

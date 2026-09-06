@@ -1,9 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from agent.cancellation import CancellationToken
 from agent.capabilities import Capability
 from agent.code.contracts import ProjectProfile
 from agent.code.discovery import ProjectDiscovery
+from agent.code.multitask import CodingTaskNodeExecutor
 from agent.code.validation import (
     CommandResult,
     ProjectValidator,
@@ -12,6 +14,11 @@ from agent.code.validation import (
     ValidationStatus,
 )
 from agent.code.validation_impact import TestCoverage as Coverage
+from agent.code.workflows import CodingWorkflowService
+from agent.llm.contracts import ProviderCapabilities
+from agent.llm.model_profile import resolve_gateway_model_profile
+from agent.planning.task_graph import TaskNode
+from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 from agent.tools.invocation_semantics import resolve_invocation_components
 
 
@@ -51,6 +58,95 @@ def test_p3_mapping_uses_convention_and_imports_but_excludes_unrelated_tests(
     assert selection.targets == ("tests/test_foo.py", "tests/test_import.py")
     assert "test_unrelated.py" not in selection.targets
     assert plan.test_coverage is Coverage.TARGETED_COMPLETE
+
+
+def test_p3_non_python_changes_use_conventional_test_mapping(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "summary.md").write_text("summary\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_summary.py").write_text(
+        "def test_summary():\n    assert True\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests" / "test_unrelated.py").write_text(
+        "def test_unrelated():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    plan = ValidationImpactPlanner(tmp_path).plan(
+        _profile(tmp_path),
+        ("summary.md",),
+        include_tests=True,
+    )
+
+    selection = plan.pytest_selection
+    assert selection is not None
+    assert selection.scope is ValidationScope.TARGETED_TESTS
+    assert selection.targets == ("tests/test_summary.py",)
+    assert plan.test_coverage is Coverage.TARGETED_COMPLETE
+
+
+def test_p3_non_python_changes_without_conventional_mapping_remain_unavailable(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "summary.md").write_text("summary\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_other.py").write_text(
+        "def test_other():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    plan = ValidationImpactPlanner(tmp_path).plan(
+        _profile(tmp_path),
+        ("summary.md",),
+        include_tests=True,
+    )
+
+    selection = plan.pytest_selection
+    assert selection is not None
+    assert selection.targets == ()
+    assert plan.test_coverage is Coverage.UNAVAILABLE
+
+
+def test_multitask_unknown_test_targets_do_not_reach_validation_authority(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class Gateway:
+        provider_name = "unused"
+        capabilities = ProviderCapabilities()
+
+    captured: dict[str, object] = {}
+
+    def fake_change(self, objective, targets, **kwargs):
+        del self, objective, targets
+        captured.update(kwargs)
+        return TaskResult(TaskStatus.SUCCEEDED)
+
+    monkeypatch.setattr(CodingWorkflowService, "change", fake_change)
+    gateway = Gateway()
+    context = TaskExecutionContext(
+        model_gateway=gateway,
+        model_profile=resolve_gateway_model_profile({}, gateway),
+        cancellation=CancellationToken(),
+        permissions=frozenset({"read", "write", "process", "validate"}),
+    )
+    node = TaskNode(
+        "write_summary",
+        "Produza summary.md",
+        capabilities=frozenset({"read", "write", "process", "validate"}),
+        metadata={
+            "action": "generate",
+            "targets": ["api.py", "model.py"],
+            "include_tests": True,
+            "test_targets": ["src/arbitrary.py"],
+        },
+    )
+
+    result = CodingTaskNodeExecutor(tmp_path).execute(node, context)
+
+    assert result.status is TaskStatus.SUCCEEDED
+    assert captured["include_tests"] is True
+    assert "explicit_test_targets" not in captured
 
 
 def test_p3_changed_test_file_validates_itself(tmp_path: Path) -> None:

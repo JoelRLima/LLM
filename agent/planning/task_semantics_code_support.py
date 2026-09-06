@@ -21,6 +21,7 @@ from agent.resources.contracts import (
 )
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.invocation_semantics import CODE_WRITE_ACTIONS
+from agent.tools.result_adapter import result_data
 
 
 def _code_outcome_parts(
@@ -31,7 +32,7 @@ def _code_outcome_parts(
     result = observation.get("result")
     if not isinstance(result, Mapping):
         return None
-    data = result.get("data")
+    data = result_data(result)
     metadata = data.get("metadata") if isinstance(data, Mapping) else None
     if not isinstance(metadata, Mapping):
         return None

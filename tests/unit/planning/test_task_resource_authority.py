@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 
@@ -47,6 +48,50 @@ def _selected(*nodes: TaskNode) -> list[TaskNode]:
     return TaskGraphScheduler(_NoopExecutor(), max_workers=2)._select_batch(list(nodes))
 
 
+def _verifier_response(request):
+    if not any(
+        "independent engineering outcome verifier" in message.content
+        for message in request.messages
+    ):
+        return None
+    evidence_ids = re.findall(
+        r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+        "\n".join(message.content for message in request.messages),
+    )
+    return ModelResponse(
+        content=json.dumps(
+            {
+                "verdict": "SUPPORTED",
+                "reason": "evidence is sufficient",
+                "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+            }
+        )
+    )
+
+
+def _resource_model_response(request, call):
+    verifier = _verifier_response(request)
+    if verifier is not None:
+        return verifier
+    return ModelResponse(
+        content=json.dumps(
+            {
+                "decision": "CHANGE",
+                "rationale": "apply requested change",
+                "reason_code": "NONE",
+                "question": "",
+                "changes": [
+                    {
+                        "path": "shared.py",
+                        "kind": "modify",
+                        "content": f"value = {call}\n",
+                    }
+                ],
+            }
+        )
+    )
+
+
 def test_same_file_writes_without_resources_are_serialized() -> None:
     assert len(_selected(_change("one", "src/a.py"), _change("two", "src/a.py"))) == 1
 
@@ -86,7 +131,6 @@ def test_model_generated_disjoint_targets_with_shared_changeset_never_overlap(
             self.max_active = 0
 
         def complete(self, request):
-            del request
             with self._lock:
                 self._calls += 1
                 call = self._calls
@@ -94,19 +138,7 @@ def test_model_generated_disjoint_targets_with_shared_changeset_never_overlap(
                 self.max_active = max(self.max_active, self._active)
             try:
                 time.sleep(0.05)
-                return ModelResponse(
-                    content=json.dumps(
-                        {
-                            "changes": [
-                                {
-                                    "path": "shared.py",
-                                    "kind": "modify",
-                                    "content": f"value = {call}\n",
-                                }
-                            ]
-                        }
-                    )
-                )
+                return _resource_model_response(request, call)
             finally:
                 with self._lock:
                     self._active -= 1

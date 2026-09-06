@@ -166,7 +166,7 @@ def test_pytest_validation_ignores_project_addopts_that_escape_workspace(
 
     report = ProjectValidator(tmp_path).validate(
         profile,
-        [],
+        ["tests/test_safe.py"],
         include_tests=True,
     )
 
@@ -284,7 +284,7 @@ def test_process_runner_sanitizes_python_and_pytest_environment(
     ]
 
 
-def test_configured_test_policy_cannot_be_suppressed_by_include_tests_false(
+def test_configured_pytest_does_not_run_for_a_model_task_without_explicit_test_request(
     tmp_path: Path,
 ) -> None:
     tests = tmp_path / "tests"
@@ -299,11 +299,13 @@ def test_configured_test_policy_cannot_be_suppressed_by_include_tests_false(
     )
     commands = registry.build_profile(profile, ["tests/test_safe.py"], include_tests=False)
 
-    assert any(command.name == "pytest" for command in commands.commands)
+    assert not any(command.name == "pytest" for command in commands.commands)
     report = ProjectValidator(tmp_path, registry=registry).validate(
         profile,
         ["tests/test_safe.py"],
         include_tests=False,
         profile=ValidationProfile(()),
+        model_actionable=True,
     )
-    assert any(check.name == "pytest" for check in report.checks)
+    assert all(check.name != "pytest" for check in report.checks)
+    assert report.test_coverage.value == "not_requested"

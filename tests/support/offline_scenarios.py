@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Dict, Iterator, Sequence
@@ -39,6 +40,21 @@ class OfflineModelGateway:
         authority = task_definition_response(self, request)
         if authority is not None:
             return ModelResponse(content=authority)
+        if request.messages and "independent engineering outcome verifier" in request.messages[0].content:
+            prompt = "\n".join(message.content for message in request.messages)
+            evidence_ids = re.findall(
+                r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+                prompt,
+            )
+            return ModelResponse(
+                content=json.dumps(
+                    {
+                        "verdict": "SUPPORTED",
+                        "reason": "evidence is sufficient",
+                        "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+                    }
+                )
+            )
         if not self.responses:
             raise AssertionError("O cenário não forneceu resposta de modelo suficiente.")
         response = self.responses.pop(0)

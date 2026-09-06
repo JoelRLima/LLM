@@ -6,9 +6,12 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from agent.cancellation import CancellationToken
 from agent.llm.contracts import StructuredOutputMode, StructuredOutputRequest
 from agent.llm.identity import observed_provider_model_id
 from agent.llm.model_profile import ResolvedModelProfile
+from agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from agent.runtime.model_call import ModelCallService
 
 HEALTH_SENTINEL = "W13_HEALTH_OK"
 HEALTH_PROMPT = (
@@ -28,6 +31,28 @@ HEALTH_SCHEMA: dict[str, object] = {
 }
 MAX_PROBE_TIMEOUT_SECONDS = 30.0
 _MISSING_TIMEOUT = object()
+
+
+def complete_health_probe(
+    gateway: Any,
+    request: Any,
+    profile: ResolvedModelProfile,
+) -> Any:
+    """Route the bounded health completion through the canonical call owner."""
+
+    context = TaskExecutionContext(
+        model_gateway=gateway,
+        cancellation=CancellationToken(),
+        model_profile=profile,
+        limits=RuntimeLimits(
+            max_model_calls=1,
+            max_output_tokens=request.max_output_tokens,
+        ),
+    )
+    return ModelCallService.for_context(context).complete(
+        request,
+        operation="online_model_health_probe",
+    ).response
 
 
 def _profile_text(value: Any, *, limit: int = 256) -> str:

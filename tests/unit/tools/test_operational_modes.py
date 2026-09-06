@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -265,10 +267,28 @@ def test_direct_code_edit_respects_read_only_then_editor_approval(tmp_path: Path
         provider_name = "fake"
         capabilities = ProviderCapabilities()
 
-        def complete(self, _request):
+        def complete(self, request):
+            if any(
+                "independent engineering outcome verifier" in message.content
+                for message in request.messages
+            ):
+                evidence_ids = re.findall(
+                    r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+                    "\n".join(message.content for message in request.messages),
+                )
+                return ModelResponse(
+                    content=json.dumps(
+                        {
+                            "verdict": "SUPPORTED",
+                            "reason": "evidence is sufficient",
+                            "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+                        }
+                    )
+                )
             return ModelResponse(
                 content=(
-                    '{"changes":[{"path":"controle.txt","kind":"edit",'
+                    '{"decision":"CHANGE","rationale":"Aplicar a alteraÃ§Ã£o solicitada.",'
+                    '"reason_code":"NONE","question":"", "changes":[{"path":"controle.txt","kind":"edit",'
                     '"edits":[{"operation":"replace","start_line":1,"end_line":1,'
                     '"content":"modificado","expected_text":"original"}]}]}'
                 )

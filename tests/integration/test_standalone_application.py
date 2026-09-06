@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -92,6 +93,22 @@ class _QueuedChatGateway(OfflineChatGateway):
             if request.structured_output.grammar is not None:
                 payload["grammar"] = request.structured_output.grammar
         self.payloads.append(payload)
+        if request.messages and "independent engineering outcome verifier" in request.messages[0].content:
+            prompt = "\n".join(message.content for message in request.messages)
+            evidence_ids = re.findall(
+                r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+                prompt,
+            )
+            self.calls.append(request)
+            return ModelResponse(
+                content=json.dumps(
+                    {
+                        "verdict": "SUPPORTED",
+                        "reason": "evidence is sufficient",
+                        "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+                    }
+                )
+            )
         return super().complete(request)
 
 
@@ -659,7 +676,7 @@ def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) 
             "original",
             [
                 '{"persona":"coder"}',
-                '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+                '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
             ],
         )
     )
@@ -675,8 +692,8 @@ def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) 
     assert snapshot["terminal"] == "unverified"
     assert snapshot["step_statuses"][-1] == "unverified"
     assert approval.requests
-    assert len(gateway.payloads) == 2  # router plus the canonical code proposal
-    assert len(gateway.calls) == 2
+    assert len(gateway.payloads) == 3  # router, proposal, and verifier
+    assert len(gateway.calls) == 3
     resolved = next(
         event
         for event in snapshot["events"]
@@ -762,7 +779,7 @@ def test_real_initial_planner_deferred_true_promotes_write_without_continuation(
         [
             '{"persona":"coder"}',
             _planner_deferred_response(),
-            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+            '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
         ],
         approval_policy=approval,
     )
@@ -785,8 +802,8 @@ def test_real_initial_planner_deferred_true_promotes_write_without_continuation(
         "code_task",
         "apply_changeset",
     ]
-    assert len(gateway.payloads) == 3  # router, plan, and canonical code proposal
-    assert len(gateway.calls) == 3
+    assert len(gateway.payloads) == 4  # router, plan, proposal, and verifier
+    assert len(gateway.calls) == 4
     assert "continuation_plan" not in str(gateway.payloads)
     assert not any(event.get("type") == "replan" for event in progression["events"])
 
@@ -865,7 +882,7 @@ def test_simple_edit_executes_from_initial_plan_without_rediscovery(tmp_path: Pa
         [
             '{"persona":"coder"}',
             '{"action":"use_tools","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Altere controle.txt para modificado","targets":["controle.txt"]}}]}',
-            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
+            '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado"}]}]}',
         ],
     )
 
@@ -874,8 +891,8 @@ def test_simple_edit_executes_from_initial_plan_without_rediscovery(tmp_path: Pa
     assert history == ["code_task"]
     assert progression["step_statuses"] == ["unverified"]
     assert progression["continuations"] == 0
-    assert len(gateway.payloads) == 3  # router, plan, and canonical code proposal
-    assert len(gateway.calls) == 3
+    assert len(gateway.payloads) == 4  # router, plan, proposal, and verifier
+    assert len(gateway.calls) == 4
     assert "continuation_plan" not in str(gateway.payloads)
 
 
@@ -888,7 +905,7 @@ def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
             '{"persona":"coder"}',
             '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
             '{"action":"execute","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Altere controle.txt para que contenha apenas modificado","targets":["controle.txt"]}}]}',
-            '{"changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado","expected_text":"original"}]}]}',
+            '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"controle.txt","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"modificado","expected_text":"original"}]}]}',
         ],
     )
 
@@ -907,7 +924,7 @@ def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
     assert outcome_event["data"]["status"] == "unverified"
     assert outcome_event["data"]["mutation_occurred"] is True
     assert outcome_event["data"]["executed_effects"] == ["write"]
-    assert len(gateway.payloads) == 4  # router, plan, continuation, code proposal
+    assert len(gateway.payloads) == 4  # router, plan, continuation, and proposal
     continuation_grammar = gateway.payloads[2]["grammar"]
     assert "complete_without_effect" in continuation_grammar
     assert "observation_index" in continuation_grammar
@@ -1159,25 +1176,26 @@ def test_noop_code_task_does_not_prove_a_pending_write(tmp_path: Path) -> None:
             '{"persona":"coder"}',
             '{"plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
             '{"action":"execute","plan":[{"tool":"code_task","args":{"action":"modify","objective":"Mantenha controle.txt como modificado","targets":["controle.txt"]}}]}',
-            '{"changes":[{"path":"controle.txt","kind":"modify","content":"modificado"}]}',
+            '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"controle.txt","kind":"modify","content":"modificado"}]}',
         ],
     )
 
-    assert result.status == "unverified"
+    assert result.status == "failed"
+    assert result.error == "CODE_CHANGE_NOOP"
     assert result.success is False
     assert workspace.joinpath("controle.txt").read_text(encoding="utf-8") == "modificado"
     assert history == ["file_reader", "code_task"]
     assert progression["executed"] == []
     assert progression["waived"] == []
-    assert progression["pending"] == ["write"]
-    assert progression["terminal"] == "unverified"
+    assert progression["pending"] == []
+    assert progression["terminal"] == "fail"
     assert result.receipt["mutation_occurred"] is False
-    assert result.receipt["operational_outcome"]["pending_effects"] == ["write"]
+    assert result.receipt["operational_outcome"]["pending_effects"] == []
     outcome_event = next(
         event for event in progression["events"] if event.get("type") == "task_outcome"
     )
-    assert outcome_event["data"]["status"] == "unverified"
-    assert outcome_event["data"]["pending_effects"] == ["write"]
+    assert outcome_event["data"]["status"] == "fail"
+    assert outcome_event["data"]["pending_effects"] == []
 
 
 def test_effect_waiver_rejects_unbound_observation_reference(tmp_path: Path) -> None:

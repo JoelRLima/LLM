@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from io import StringIO
 from pathlib import Path
@@ -76,6 +77,21 @@ class JourneyGateway:
         authority = task_definition_response(self, request)
         if authority is not None:
             return ModelResponse(content=authority)
+        if request.messages and "independent engineering outcome verifier" in request.messages[0].content:
+            prompt = "\n".join(message.content for message in request.messages)
+            evidence_ids = re.findall(
+                r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+                prompt,
+            )
+            return ModelResponse(
+                content=json.dumps(
+                    {
+                        "verdict": "SUPPORTED",
+                        "reason": "evidence is sufficient",
+                        "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+                    }
+                )
+            )
         request_contract = getattr(request.request_contract, "value", request.request_contract)
         if request_contract == ModelRequestContract.INTERACTION_RESOLUTION.value:
             return ModelResponse(content=self._interaction_response())
@@ -170,9 +186,9 @@ class JourneyGateway:
         if "Uma fronteira" in prompt:
             return '{"action":"complete","reason":"a evidencia observada basta"}'
         if "Objetivo de engenharia:" in prompt and self.scenario_id == "CAP_MODIFY":
-            return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
+            return '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
         if "Objetivo de engenharia:" in prompt and self.scenario_id == "CAP_RECOVERY":
-            return '{"changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
+            return '{"decision":"CHANGE","rationale":"Aplicar a alteração solicitada.","reason_code":"NONE","question":"","changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
         if "Resultados das ferramentas executadas:" in prompt:
             return self._result_response(prompt)
         return '{"persona":"coder"}'

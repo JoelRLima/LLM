@@ -249,6 +249,15 @@ def _contains_changeset_call(
         and (
             _terminal_name(item.func) == "ChangeSetTransaction"
             or (isinstance(item.func, ast.Name) and item.func.id in changeset_aliases)
+            or (
+                _terminal_name(item.func) == "run_apply_changes"
+                and any(
+                    keyword.arg == "transaction_factory"
+                    and isinstance(keyword.value, ast.Name)
+                    and keyword.value.id in changeset_aliases
+                    for keyword in item.keywords
+                )
+            )
         )
         for item in ast.walk(node)
     )

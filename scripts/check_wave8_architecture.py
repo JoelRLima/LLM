@@ -965,7 +965,7 @@ def _check_prior_gates(root: Path) -> list[ArchitectureViolation]:
                 # over 90 seconds on a constrained Windows runner.  This is
                 # a bounded runner allowance, not a product or gate bypass:
                 # failures and non-zero exits remain violations.
-                timeout=150,
+                timeout=300,
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:

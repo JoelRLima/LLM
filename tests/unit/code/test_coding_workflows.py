@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,21 @@ class FakeGateway:
 
     def complete(self, request):
         self.calls.append(request)
+        if request.messages and "independent engineering outcome verifier" in request.messages[0].content:
+            prompt = "\n".join(message.content for message in request.messages)
+            evidence_ids = re.findall(
+                r'"(?:source_id|evidence_id)"\s*:\s*"([^"]+)"',
+                prompt,
+            )
+            return ModelResponse(
+                content=json.dumps(
+                    {
+                        "verdict": "SUPPORTED",
+                        "reason": "evidence is sufficient",
+                        "evidence_ids": list(dict.fromkeys(evidence_ids))[:8],
+                    }
+                )
+            )
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -172,9 +188,10 @@ def test_one_line_edit_uses_inclusive_eof_range_and_applies(tmp_path: Path):
     assert result.status == TaskStatus.UNVERIFIED
     assert target.read_text(encoding="utf-8") == "modificado"
     assert result.artifacts[0].metadata["mutation_occurred"] is True
-    proposal_prompt = gateway.calls[0].messages[1].content
-    assert "--- controle.txt ---" in proposal_prompt
-    assert "original" in proposal_prompt
+    proposal_prompt = gateway.calls[0].messages[-1].content
+    proposal_evidence = gateway.calls[0].messages[1].content
+    assert '"path":"controle.txt"' in proposal_evidence
+    assert "original" in proposal_evidence
     assert "inclusivas e 1-based" in proposal_prompt
     assert "end_line nunca pode exceder" in proposal_prompt
     assert "start_line=1 e end_line=1" in proposal_prompt
@@ -182,7 +199,7 @@ def test_one_line_edit_uses_inclusive_eof_range_and_applies(tmp_path: Path):
     assert "runtime vincula expected_text e base_hash" in proposal_prompt
 
 
-def test_noop_changeset_is_applied_without_claiming_a_mutation(tmp_path: Path):
+def test_noop_changeset_is_rejected_without_claiming_a_mutation(tmp_path: Path):
     target = tmp_path / "controle.txt"
     target.write_text("modificado", encoding="utf-8")
     gateway = FakeGateway(
@@ -195,10 +212,11 @@ def test_noop_changeset_is_applied_without_claiming_a_mutation(tmp_path: Path):
         approver=ApproveAll(),
     )
 
-    assert result.status == TaskStatus.UNVERIFIED
+    assert result.status == TaskStatus.FAILED
+    assert result.error == "CODE_CHANGE_NOOP"
     assert target.read_text(encoding="utf-8") == "modificado"
     assert result.artifacts[0].content == ""
-    assert result.artifacts[0].metadata["applied"] is True
+    assert result.artifacts[0].metadata["final_state"] == "no_change"
     assert result.artifacts[0].metadata["mutation_occurred"] is False
 
 
@@ -232,11 +250,13 @@ def test_invalid_model_range_is_not_clamped_or_sent_to_approval(tmp_path: Path):
     assert result.status == TaskStatus.FAILED
     assert "fora do arquivo" in (result.error or "")
     assert len(gateway.calls) == 2
-    assert "Faixa fora do arquivo: 1..3" in gateway.calls[1].messages[1].content
-    assert "1 linhas disponiveis; limites 1..1" in gateway.calls[1].messages[1].content
-    assert "Traceback" not in gateway.calls[1].messages[1].content
-    assert invalid not in gateway.calls[1].messages[1].content
-    assert [item["call_number"] for item in metrics.entries] == [1, 2]
+    repair_prompt = gateway.calls[1].messages[-1].content
+    assert "Faixa fora do arquivo: 1..3" in repair_prompt
+    assert "1 linhas disponiveis; limites 1..1" in repair_prompt
+    assert "Traceback" not in repair_prompt
+    assert invalid not in repair_prompt
+    model_metrics = [item for item in metrics.entries if item.get("metric_type") == "model_call"]
+    assert [item["call_number"] for item in model_metrics] == [1, 2]
     assert approver.calls == 0
     assert target.read_text(encoding="utf-8") == "original"
 
@@ -272,7 +292,8 @@ def test_invalid_model_range_gets_one_bounded_retry_then_applies_valid_range(tmp
 
     assert result.status == TaskStatus.UNVERIFIED
     assert len(gateway.calls) == 2
-    assert [item["call_number"] for item in metrics.entries] == [1, 2]
+    model_metrics = [item for item in metrics.entries if item.get("metric_type") == "model_call"]
+    assert [item["call_number"] for item in model_metrics] == [1, 2]
     assert approver.calls == 1
     assert target.read_text(encoding="utf-8") == "modificado"
 
@@ -308,7 +329,7 @@ def test_modify_repairs_one_malformed_structured_proposal(tmp_path: Path):
     assert result.status == TaskStatus.UNVERIFIED
     assert target.read_text(encoding="utf-8") == "modificado"
     assert len(gateway.calls) == 2
-    assert "Não retorne {}" in gateway.calls[1].messages[1].content
+    assert "Não retorne {}" in gateway.calls[1].messages[-1].content
 
 
 def test_modify_repairs_one_canonically_empty_proposal(tmp_path: Path):
@@ -372,7 +393,8 @@ def test_second_proposal_provider_failure_is_measured_once(tmp_path: Path):
     assert result.status == TaskStatus.FAILED
     assert result.error == "provider failed"
     assert len(gateway.calls) == 2
-    assert [(item["call_number"], item["success"]) for item in metrics.entries] == [
+    model_metrics = [item for item in metrics.entries if item.get("metric_type") == "model_call"]
+    assert [(item["call_number"], item["success"]) for item in model_metrics] == [
         (1, True),
         (2, False),
     ]
@@ -454,7 +476,23 @@ def test_proposal_only_code_task_never_applies_even_with_auto_approval(tmp_path:
     original = "value = 1\n"
     (tmp_path / "module.py").write_text(original, encoding="utf-8")
     gateway = FakeGateway(
-        [_changes({"path": "module.py", "kind": "modify", "content": "value = 2\n"})]
+        [
+            json.dumps(
+                {
+                    "decision": "CHANGE",
+                    "rationale": "Aplicar a alteração solicitada.",
+                    "reason_code": "NONE",
+                    "question": "",
+                    "changes": [
+                        {
+                            "path": "module.py",
+                            "kind": "modify",
+                            "content": "value = 2\n",
+                        }
+                    ],
+                }
+            )
+        ]
     )
 
     result = CodeTaskSkill(
@@ -627,7 +665,7 @@ def test_repair_retries_with_bounded_model_calls_and_rolls_back_failed_attempt(t
 
     assert result.status == TaskStatus.SUCCEEDED
     assert "return 1" in (tmp_path / "module.py").read_text(encoding="utf-8")
-    assert len(gateway.calls) == 2
+    assert len(gateway.calls) == 4
 
 
 def test_low_confidence_changeset_is_not_applied_without_approval(tmp_path: Path):

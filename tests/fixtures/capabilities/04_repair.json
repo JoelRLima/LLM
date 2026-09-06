@@ -25,6 +25,10 @@
       },
       "model_responses": [
         {
+          "decision": "CHANGE",
+          "rationale": "Corrigir a ordem dos limites.",
+          "reason_code": "NONE",
+          "question": "",
           "changes": [
             {
               "path": "limits.py",
@@ -34,7 +38,7 @@
           ]
         }
       ],
-      "expected_model_calls": 1
+      "expected_model_calls": 2
     }
   }
 }

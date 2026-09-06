@@ -23,6 +23,10 @@
       },
       "model_responses": [
         {
+          "decision": "CHANGE",
+          "rationale": "Aplicar a normalização solicitada.",
+          "reason_code": "NONE",
+          "question": "",
           "changes": [
             {
               "path": "text.py",
@@ -32,7 +36,7 @@
           ]
         }
       ],
-      "expected_model_calls": 1
+      "expected_model_calls": 2
     }
   }
 }

@@ -16,6 +16,7 @@ from agent.llm.context_projection import (
 )
 from agent.memory.prompt_context import build_memory_prompt_context
 from agent.skills.repository_state import RepositoryStateSnapshot
+from agent.tools.result_adapter import result_artifacts, result_data, result_metadata, result_status
 
 
 def requires_compaction(messages: Sequence[Mapping[str, Any]]) -> bool:
@@ -40,18 +41,17 @@ def recent_message_views(
     return views, dict(latest) if latest is not None else None
 
 
-def _is_mutating_history_entry(tool_name: str, result: Mapping[str, Any]) -> bool:
+def _is_mutating_history_entry(tool_name: str, result: Any) -> bool:
     if tool_name not in {"code_task", "file_writer", "shell", "python_executor"}:
         return False
-    metadata = result.get("metadata")
-    if isinstance(metadata, Mapping) and metadata.get("mutation_occurred") is True:
+    metadata = result_metadata(result)
+    if metadata.get("mutation_occurred") is True:
         return True
-    artifacts = result.get("artifacts")
-    return isinstance(artifacts, (list, tuple)) and any(
+    return any(
         isinstance(item, Mapping)
         and isinstance(item.get("metadata"), Mapping)
         and item["metadata"].get("mutation_occurred") is True
-        for item in artifacts
+        for item in result_artifacts(result)
     )
 
 
@@ -66,14 +66,13 @@ def repository_state_records(
         if not isinstance(entry, Mapping):
             continue
         result = entry.get("result")
-        result_mapping = result if isinstance(result, Mapping) else {}
         tool_name = str(entry.get("tool", ""))[:128]
-        if tool_name == "repository_state" and result_mapping.get("status") in {
+        if tool_name == "repository_state" and isinstance(result, Mapping) and result_status(result) in {
             "succeeded",
             "success",
         }:
             try:
-                raw_snapshot = result_mapping.get("data")
+                raw_snapshot = result_data(result)
                 snapshot = RepositoryStateSnapshot.from_dict(
                     raw_snapshot if isinstance(raw_snapshot, Mapping) else {}
                 )
@@ -96,7 +95,7 @@ def repository_state_records(
                     freshness="CURRENT_TOOL_OBSERVATION",
                 )
                 mutated_after = False
-        elif latest is not None and _is_mutating_history_entry(tool_name, result_mapping):
+        elif latest is not None and _is_mutating_history_entry(tool_name, result):
             mutated_after = True
     return (latest,) if latest is not None and not mutated_after else ()
 
@@ -106,11 +105,10 @@ def tool_history_view(tool_history: Sequence[Mapping[str, Any]]) -> dict[str, An
     for entry in list(tool_history)[-6:]:
         if isinstance(entry, Mapping):
             result = entry.get("result")
-            result_mapping = result if isinstance(result, Mapping) else {}
             records.append(
                 {
                     "tool": str(entry.get("tool", ""))[:128],
-                    "status": str(entry.get("status") or result_mapping.get("status", ""))[:32],
+                    "status": str(entry.get("status") or (result_status(result) if isinstance(result, Mapping) else ""))[:32],
                     "invocation_id": str(entry.get("invocation_id", ""))[:128],
                 }
             )

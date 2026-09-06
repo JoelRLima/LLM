@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
 
 from agent.code.discovery import ProjectDiscovery
 from agent.code.validation import ValidationStatus
 from agent.runtime.context import TaskResult, TaskStatus
+from agent.runtime.correlation import new_runtime_id
 
 from .workflow_application_support import (
     _allow_unverified_approved,
@@ -32,7 +32,7 @@ def _validation_metadata(report: Any, include_tests: bool) -> tuple[Any, str, di
             "selections": [],
         },
     )
-    return effective_status, str(uuid4()), validation_metadata
+    return effective_status, new_runtime_id(), validation_metadata
 
 
 def _unavailable_validation_result(
@@ -139,7 +139,7 @@ def _validate_and_project(
     include_tests: bool,
     validate_model_code_task: Any,
 ) -> TaskResult:
-    validation_invocation_id = str(uuid4())
+    validation_invocation_id = new_runtime_id()
     report = validate_model_code_task(
         service.validator,
         ProjectDiscovery(service.root).discover(),

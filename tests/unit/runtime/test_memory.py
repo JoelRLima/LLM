@@ -35,7 +35,11 @@ def test_memory_load_from_file_does_not_overwrite_sqlite_sections(tmp_path, monk
     temp_memory = tmp_path / "agent_memory.json"
     monkeypatch.setattr(paths, "MEMORY_FILE", str(temp_memory))
 
-    mem = AgentMemory()
+    mem = AgentMemory(
+        db_path=tmp_path / "agent_memory.db",
+        default_file=temp_memory,
+        backup_dir=tmp_path / "memory_backups",
+    )
     mem.state["project_map"] = {"a.py": "ok"}
     mem.save_to_file()
 

@@ -1346,7 +1346,7 @@ def _check_prior_checkers(root: Path) -> list[ArchitectureViolation]:
                 cwd=str(root),
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=180,
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:

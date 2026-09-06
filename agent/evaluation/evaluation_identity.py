@@ -10,6 +10,7 @@ epoch.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Mapping
@@ -31,6 +32,31 @@ from agent.llm.identity import (
 CAMPAIGN_SCHEMA_VERSION = "CAMPAIGN-V2.0"
 DEFAULT_DRY_RUN_EPOCH = "DRY-RUN-V2"
 DEFAULT_REAL_MODEL_EPOCH = "REAL-MODEL-EPOCH-2"
+
+
+def run_fixture_git(repo_root: str | Path, *arguments: str) -> tuple[int, str, str]:
+    """Run one fixed, non-shell Git fixture command in the evaluation owner."""
+
+    environment = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    completed = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.autocrlf=false",
+            *arguments,
+        ],
+        cwd=Path(repo_root).resolve(),
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return completed.returncode, completed.stdout, completed.stderr
 
 
 def _git_head(repo_root: Path) -> str:

@@ -8,13 +8,13 @@ from typing import Any
 
 
 def direct_test_mappings(
-    python_changes: Sequence[str],
+    changed_files: Sequence[str],
     test_files: Sequence[str],
 ) -> tuple[set[str], dict[str, set[str]]]:
     mapped: set[str] = set()
     reasons: dict[str, set[str]] = {}
     test_set = set(test_files)
-    for changed in python_changes:
+    for changed in changed_files:
         if changed in test_set:
             mapped.add(changed)
             reasons.setdefault(changed, set()).add("changed test file")
