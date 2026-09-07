@@ -23,6 +23,12 @@ from agent.resources.contracts import ResourceAccess
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
 
+from .graph_authority import (
+    GraphAuthorityError,
+    GraphAuthorityRequirements,
+    preflight_graph_capabilities,
+)
+
 
 class TaskNodeExecutor(Protocol):
     def execute(self, node: TaskNode, context: TaskExecutionContext) -> TaskResult: ...
@@ -48,9 +54,15 @@ def resources_conflict(left: tuple[TaskResource, ...], right: tuple[TaskResource
 
 
 class TaskGraphScheduler:
-    def __init__(self, executor: TaskNodeExecutor, max_workers: int = 1) -> None:
+    def __init__(
+        self,
+        executor: TaskNodeExecutor,
+        max_workers: int = 1,
+        trusted_tool_registry: object | None = None,
+    ) -> None:
         self.executor = executor
         self.max_workers = max(1, max_workers)
+        self.trusted_tool_registry = trusted_tool_registry
 
     @staticmethod
     def _sort_ready(graph: TaskGraph, ids: list[str]) -> list[TaskNode]:
@@ -97,7 +109,7 @@ class TaskGraphScheduler:
         ``TaskGraphState`` owner back into this method.
         """
 
-        self._validate(graph, parent_context)
+        requirements = self._validate(graph, parent_context)
         current = state or TaskGraphState(graph)
         if current.graph != graph:
             raise ValueError("Estado pertence a outro TaskGraph.")
@@ -113,25 +125,52 @@ class TaskGraphScheduler:
             if not ready:
                 break
             batch = self._select_batch(ready)
-            batch_results = self._run_batch(batch, current, parent_context)
+            batch_results = self._run_batch(batch, current, parent_context, requirements)
             fail_fast = self._record_batch(batch, batch_results, current, results, order)
         return GraphExecutionResult(dict(current.states), results, tuple(order), dict(current.errors))
 
-    @staticmethod
-    def _validate(graph: TaskGraph, context: TaskExecutionContext) -> None:
+    def _validate(
+        self,
+        graph: TaskGraph,
+        context: TaskExecutionContext,
+    ) -> GraphAuthorityRequirements:
         validation = TaskGraphValidator().validate(graph)
         if not validation.valid:
             raise ValueError("TaskGraph inválido: " + "; ".join(validation.errors))
         if len(graph.nodes) > context.limits.max_steps:
             raise ValueError(f"TaskGraph excede o limite de {context.limits.max_steps} nós.")
-        unauthorized = {
-            node.node_id: sorted(node.capabilities - context.permissions)
-            for node in graph.nodes if not node.capabilities.issubset(context.permissions)
-        }
-        if unauthorized:
-            detail = "; ".join(f"{node_id}: {', '.join(items)}" for node_id, items in unauthorized.items())
-            raise PermissionError("TaskGraph solicita capacidades não autorizadas: " + detail)
-
+        strict_w14 = (
+            isinstance(getattr(context, "metadata", None), dict)
+            and context.metadata.get("w14_semantic_task") is True
+        )
+        try:
+            requirements = preflight_graph_capabilities(
+                graph,
+                context.permissions,
+                trusted_tool_registry=self.trusted_tool_registry,
+                strict_w14=strict_w14,
+            )
+        except GraphAuthorityError as exc:
+            if callable(getattr(context, "emit", None)):
+                context.emit(
+                    "graph_authority_preflight",
+                    {
+                        "admitted": False,
+                        "reason_code": getattr(exc, "reason_code", "GRAPH_PREFLIGHT_FAILED"),
+                        "missing_capabilities": list(getattr(exc, "missing_capabilities", ())),
+                    },
+                )
+            raise
+        if callable(getattr(context, "emit", None)):
+            context.emit(
+                "graph_authority_preflight",
+                {
+                    "admitted": True,
+                    "required_capabilities": sorted(requirements.required_capabilities),
+                    "nodes": requirements.to_dict()["nodes"],
+                },
+            )
+        return requirements
     @staticmethod
     def _active(state: TaskGraphState) -> bool:
         return any(status in {NodeState.PENDING, NodeState.RUNNING} for status in state.states.values())
@@ -156,8 +195,13 @@ class TaskGraphScheduler:
         return all(state.states[dependency] in accepted for dependency in node.depends_on)
 
     def _run_batch(
-        self, batch: list[TaskNode], state: TaskGraphState, parent: TaskExecutionContext
+        self,
+        batch: list[TaskNode],
+        state: TaskGraphState,
+        parent: TaskExecutionContext,
+        requirements: GraphAuthorityRequirements | None = None,
     ) -> Dict[str, TaskResult]:
+        requirements = requirements or self._validate(state.graph, parent)
         results: Dict[str, TaskResult] = {}
         dispatch_batch = batch
         policy = getattr(parent, "task_policy", None)
@@ -182,7 +226,11 @@ class TaskGraphScheduler:
             futures: Dict[concurrent.futures.Future[TaskResult], TaskNode] = {}
             for node in dispatch_batch:
                 state.states[node.node_id] = NodeState.RUNNING
-                child = parent.child(node.node_id, permissions=frozenset(node.capabilities))
+                node_requirement = requirements.for_node(node.node_id)
+                child = parent.child(
+                    node.node_id,
+                    permissions=frozenset(node_requirement.required_capabilities),
+                )
                 child.emit("task_node_started", {"objective": node.objective})
                 futures[pool.submit(self.executor.execute, node, child)] = node
             for future in concurrent.futures.as_completed(futures):

@@ -66,6 +66,7 @@ class InteractionModelDecision:
     proposal_only: bool
     resume_requested: bool
     evidence: str
+    intent_claim: Any | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "action", _enum(self.action, InteractionAction, "action"))
@@ -81,9 +82,14 @@ class InteractionModelDecision:
                 raise ValueError(f"{name} must be a boolean")
         if type(self.evidence) is not str:
             raise ValueError("evidence must be a string")
+        if self.intent_claim is not None:
+            from .intent_claim import IntentClaimV1
+
+            if not isinstance(self.intent_claim, IntentClaimV1):
+                raise ValueError("intent_claim must be an IntentClaimV1")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "action": self.action.value,
             "directive": self.directive.value if self.directive is not None else "none",
             "ambiguity": self.ambiguity.value,
@@ -93,6 +99,9 @@ class InteractionModelDecision:
             "resume_requested": self.resume_requested,
             "evidence": self.evidence,
         }
+        if self.intent_claim is not None:
+            result["intent_claim"] = self.intent_claim.to_dict()
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +114,8 @@ class InteractionResolution:
     ambiguity: InteractionAmbiguity
     subject: str | None
     reason_code: str | None
+    intent_claim: Any | None = None
+    admitted_intent: Any | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "action", _enum(self.action, InteractionAction, "action"))
@@ -126,11 +137,21 @@ class InteractionResolution:
             raise ValueError("subject must be a string or None")
         if self.reason_code is not None and type(self.reason_code) is not str:
             raise ValueError("reason_code must be a string or None")
+        if self.intent_claim is not None:
+            from .intent_claim import IntentClaimV1
+
+            if not isinstance(self.intent_claim, IntentClaimV1):
+                raise ValueError("intent_claim must be an IntentClaimV1")
+        if self.admitted_intent is not None:
+            from agent.planning.intent_admission import AdmittedIntent
+
+            if not isinstance(self.admitted_intent, AdmittedIntent):
+                raise ValueError("admitted_intent must be an AdmittedIntent")
 
     def to_dict(self) -> dict[str, Any]:
         """Bounded public projection; advisory evidence is deliberately omitted."""
 
-        return {
+        result: dict[str, Any] = {
             "action": self.action.value,
             "boundary": self.boundary.value,
             "directive": self.directive.value if self.directive is not None else None,
@@ -142,6 +163,17 @@ class InteractionResolution:
             "subject": self.subject,
             "reason_code": self.reason_code,
         }
+        if self.intent_claim is not None:
+            result["intent_claim"] = self.intent_claim.to_dict()
+        if self.admitted_intent is not None:
+            result["admitted_intent"] = {
+                "operation": self.admitted_intent.operation,
+                "admitted_effects": list(self.admitted_intent.admitted_effects),
+                "grounded_targets": list(self.admitted_intent.grounded_targets),
+                "requires_grounding": self.admitted_intent.requires_grounding,
+                "authority_identity": self.admitted_intent.authority_identity,
+            }
+        return result
 
 
 @dataclass(frozen=True, slots=True)

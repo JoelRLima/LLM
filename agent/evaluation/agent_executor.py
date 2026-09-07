@@ -96,7 +96,24 @@ class AgentApplicationScenarioExecutor:
                 task_authority=self.task_authority,
                 configure_logging=False,
             ) as application:
-                result = application.run(objective)
+                if bool(getattr(gateway, "supports_semantic_intent", False)):
+                    interaction = application.interact(objective, boundary="natural")
+                    result = interaction.run_result
+                    if result is None:
+                        return ExecutionObservation(
+                            success=False,
+                            answer=interaction.answer,
+                            error=interaction.reason_code or interaction.error,
+                            measurement={
+                                "status": "blocked",
+                                "model_calls": interaction.interaction_usage.get("model_calls", 0),
+                                "accounted_tokens": interaction.interaction_usage.get("accounted_tokens", 0),
+                                "token_usage_complete": interaction.interaction_usage.get("token_usage_complete", True),
+                            },
+                            evidence={"interaction_resolution": interaction.resolution.to_dict() if interaction.resolution else {}},
+                        )
+                else:
+                    result = application.run(objective)
                 snapshot = result.snapshot
                 if snapshot is None:
                     raise RuntimeError("canonical run snapshot is required for evaluation")

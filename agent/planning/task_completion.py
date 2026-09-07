@@ -1,5 +1,3 @@
-"""Canonical task-level completion policy for the linear execution path."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +13,11 @@ from agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as _reasoning_boundary,
 )
 from agent.planning.requested_effects import infer_requested_effects
+from agent.planning.task_completion_constraints import (
+    emit_completion_constraint_audit,
+    proposal_only_mutation_observed,
+    required_validation_satisfied,
+)
 from agent.planning.task_completion_dispatch import accept_review, reject_review
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_continuation import (
@@ -36,7 +39,6 @@ from agent.runtime.recovery import RecoveryPolicy, RecoveryScope
 @dataclass(frozen=True, slots=True)
 class CompletionReview:
     """Read-only decision produced by the canonical completion owner."""
-
     accepted: bool
     reason_code: str | None = None
     existing_disposition: str | None = None
@@ -192,21 +194,24 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         hard_failure,
     )
     if reason is None:
-        return CompletionReview(
+        review = CompletionReview(
             accepted=True,
             existing_disposition=existing,
         )
-    return CompletionReview(
-        accepted=False,
-        reason_code=reason,
-        existing_disposition=existing,
-        pending_effects=pending_effects,
-        pending_obligations=pending_obligations,
-        blocked_obligations=blocked_obligations,
-        prohibited_effects=prohibited,
-        unrequested_effects=unrequested,
-        unrecovered_failure=hard_failure or reason == "terminal_failure",
-    )
+    else:
+        review = CompletionReview(
+            accepted=False,
+            reason_code=reason,
+            existing_disposition=existing,
+            pending_effects=pending_effects,
+            pending_obligations=pending_obligations,
+            blocked_obligations=blocked_obligations,
+            prohibited_effects=prohibited,
+            unrequested_effects=unrequested,
+            unrecovered_failure=hard_failure or reason == "terminal_failure",
+        )
+    emit_completion_constraint_audit(orchestrator, review)
+    return review
 
 
 def _completion_block_reason(
@@ -223,6 +228,8 @@ def _completion_block_reason(
     checks = (
         ("cancelled", lambda: bool(getattr(orchestrator, "_cancelled", False))),
         ("terminal_failure", lambda: hard_failure),
+        ("proposal_only_mutation", lambda: proposal_only_mutation_observed(orchestrator)),
+        ("required_validation_missing", lambda: not required_validation_satisfied(orchestrator)),
         ("prohibited_effect_occurred", lambda: bool(prohibited)),
         ("unrequested_effect_occurred", lambda: bool(unrequested)),
         (
@@ -289,4 +296,5 @@ __all__ = [
     "mark_unfinished_effect", "mark_reasoning_boundary_blocked",
     "mark_unfinished_obligation",
     "needs_effect_continuation", "refresh_executed_effects", "review_task_completion",
+    "required_validation_satisfied",
 ]

@@ -383,9 +383,15 @@ def _check_s15(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s16(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/interaction/resolver.py") or ""
+    source = "\n".join(
+        _source(root, relative) or ""
+        for relative in (
+            "agent/interaction/resolver.py",
+            "agent/interaction/resolver_runtime.py",
+        )
+    )
     calls = source.count("ModelCallService.for_context(context).complete")
-    return [] if calls <= 1 and "raise ResolverInvalid" in source else [_violation("W12-S16", "agent/interaction/resolver.py", "resolver has a same-turn retry or no invalid projection")]
+    return [] if calls <= 1 and "raise ResolverInvalid" in source else [_violation("W12-S16", "agent/interaction/resolver_runtime.py", "resolver has a same-turn retry or no invalid projection")]
 
 
 def _check_s17(root: Path) -> list[ArchitectureViolation]:
@@ -559,7 +565,7 @@ def _check_s48(root: Path) -> list[ArchitectureViolation]:
 def _check_s49(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative, transport, barrier in (
-        ("agent/interaction/resolver.py", "ModelCallService.for_context(context).complete", "if token.cancelled"),
+        ("agent/interaction/resolver_runtime.py", "ModelCallService.for_context(context).complete", "if token.cancelled"),
         ("agent/interaction/service.py", "complete_response", "if token.cancelled"),
     ):
         source = _source(root, relative) or ""

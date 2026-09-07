@@ -15,6 +15,7 @@ from agent.runtime.task_directives import (
     validate_checkpoint_task_run_directive,
 )
 from agent.state_checkpoint_counters import restore_counters as _restore_counters
+from agent.state_checkpoint_w14 import project_w14_continuation, restore_w14_continuation
 
 _VALID_TERMINAL_DISPOSITIONS = (
     frozenset(item.value for item in CompletionDisposition) | NON_SUCCESS_STATUSES
@@ -80,12 +81,14 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
     continuity = continuity_checkpoint(state)
     if continuity is not None:
         checkpoint["continuity"] = continuity
+    project_w14_continuation(state, checkpoint)
     return checkpoint
 
 
 def restore_progression(state: Any, data: dict[str, Any]) -> None:
     _restore_task_run_directive(state, data)
     _restore_continuity(state, data)
+    restore_w14_continuation(state, data)
     _restore_semantics(state, data)
     _restore_counters(state, data)
     _restore_task_policy(state, data)
@@ -126,11 +129,8 @@ def continuity_checkpoint(state: Any) -> dict[str, Any] | None:
 
 
 def validate_continuity_metadata(raw: Any) -> dict[str, Any]:
-    """Validate and project the bounded schema-1 continuity object.
+    """Validate and project the bounded schema-1 continuity object."""
 
-    The top-level checkpoint remains schema 2.  This nested object is optional
-    so schema-2 checkpoints written before continuity existed remain valid.
-    """
 
     if not isinstance(raw, Mapping):
         raise ValueError("Checkpoint continuity metadata is invalid.")

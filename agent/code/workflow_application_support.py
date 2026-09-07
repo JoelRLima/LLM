@@ -128,6 +128,13 @@ def _rollback_transaction(transaction: Any) -> tuple[bool, str | None]:
     return True, None
 
 
+def _register_transaction(service: Any, transaction: Any) -> None:
+    task_workspace = getattr(service.context, "metadata", {}).get("workspace_manager")
+    register_transaction = getattr(task_workspace, "register_transaction", None)
+    if callable(register_transaction):
+        register_transaction(transaction)
+
+
 def _artifact(
     preview: Any,
     assessment: Any,

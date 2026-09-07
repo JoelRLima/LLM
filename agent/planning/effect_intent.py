@@ -5,10 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from agent.planning.effect_intent_constraints import semantic_effect_error
 from agent.planning.task_semantics_authority import admit_effect_authority
 from agent.planning.task_semantics_inference import predicate_resolutions_from_observations
 from agent.planning.task_semantics_types import PredicateEvidence, PredicateResolutionState
-from agent.resources.contracts import WORKSPACE_RESOURCE, ResourceAccess, ResourceMode, resources_overlap
+from agent.resources.contracts import (
+    WORKSPACE_RESOURCE,
+    ResourceAccess,
+    ResourceMode,
+    resource_is_within,
+)
 from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
@@ -113,9 +119,7 @@ def _intent_matches(
         return False
     if not _predicate_is_active(intent, predicate_resolutions):
         return False
-    return intent.target == WORKSPACE_RESOURCE or resources_overlap(
-        intent.target, access.name
-    )
+    return resource_is_within(intent.target, access.name)
 
 
 def effect_intent_matches(
@@ -138,6 +142,8 @@ def effect_intent_error(
     *,
     predicate_resolutions: Mapping[str, Any] | None = None,
     available_observations: Any = None,
+    admitted_intent: Any = None,
+    grounded_targets: Any = None,
 ) -> str | None:
     """Reject model-proposed durable effects absent from trusted task intent."""
 
@@ -146,6 +152,24 @@ def effect_intent_error(
     effect = operation_durable_effect(tool_name, args, contract)
     if effect is None:
         return None
+    if admitted_intent is not None:
+        descriptor = (
+            contract
+            if str(getattr(contract, "name", "")).strip().casefold() == normalized_tool
+            else _semantic_descriptor(normalized_tool, contract)
+        )
+        invocation_semantics = resolve_invocation_semantics(descriptor, concrete_args)
+        accesses = _operation_accesses(tool_name, args, contract)
+        if not accesses:
+            accesses = (ResourceAccess(WORKSPACE_RESOURCE, ResourceMode.WRITE),)
+        return semantic_effect_error(
+            tool_name,
+            effect,
+            accesses,
+            admitted_intent,
+            grounded_targets,
+            invocation_semantics,
+        )
     authority = admit_effect_authority(objective)
     if predicate_resolutions is None and available_observations is not None:
         predicate_resolutions = predicate_resolutions_from_observations(
@@ -219,6 +243,4 @@ def effect_intent_error(
             f"'{effect}' nao solicitado pelo objetivo."
         )
     return None
-
-
 __all__ = ["effect_intent_error", "effect_intent_matches", "operation_durable_effect"]

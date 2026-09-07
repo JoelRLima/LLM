@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent.interfaces.task_directives import ParsedTaskRequest, TaskRequestAction
 from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
@@ -39,6 +39,7 @@ from .guards import (
     evidence_is_current_plain,
     evidence_is_within_one_clause,
 )
+from .intent_claim import IntentClaimError, IntentClaimV1, bind_current_subject_evidence
 from .profile import select_fresh_profile
 from .types import (
     InteractionAction,
@@ -49,6 +50,9 @@ from .types import (
     InteractionResolution,
 )
 
+if TYPE_CHECKING:
+    from agent.planning.intent_admission import AdmittedIntent, AuthorityEnvelope
+
 
 @dataclass(frozen=True, slots=True)
 class AdmissionContext:
@@ -57,6 +61,7 @@ class AdmissionContext:
     subject: str
     parsed_task: ParsedTaskRequest | None = None
     model_decision: InteractionModelDecision | None = None
+    authority_envelope: AuthorityEnvelope | None = None
 
 
 def _resolution(
@@ -69,6 +74,8 @@ def _resolution(
     ambiguity: InteractionAmbiguity = InteractionAmbiguity.NONE,
     subject: str | None = None,
     reason_code: str | None = None,
+    intent_claim: IntentClaimV1 | None = None,
+    admitted_intent: AdmittedIntent | None = None,
 ) -> InteractionResolution:
     return InteractionResolution(
         action=action,
@@ -79,7 +86,25 @@ def _resolution(
         ambiguity=ambiguity,
         subject=subject,
         reason_code=reason_code,
+        intent_claim=intent_claim,
+        admitted_intent=admitted_intent,
     )
+
+
+def _admit_semantic_candidate(
+    context: AdmissionContext,
+    decision: InteractionModelDecision,
+    claim: IntentClaimV1,
+) -> InteractionResolution:
+    """Route a parsed claim without positive lexical inference."""
+
+    try:
+        bind_current_subject_evidence(claim, context.subject)
+    except IntentClaimError as exc:
+        raise InteractionAdmissionError(INTERACTION_EVIDENCE_MISMATCH) from exc
+    from .semantic_admission import admit_semantic_candidate
+
+    return admit_semantic_candidate(context, decision, claim)
 
 
 def project_guard_result(
@@ -89,67 +114,9 @@ def project_guard_result(
     task_respond: bool = False,
 ) -> InteractionResolution:
     """One deterministic guard-result-to-CLARIFY projection table (P18.8)."""
+    from .guard_projection import project_guard_result as _project
 
-    if result in {ReadClassification.CONTEXTUAL, PlanClassification.CONTEXTUAL, OperationalClassification.CONTEXTUAL, ResumeClassification.CONTEXTUAL}:
-        return _resolution(
-            action=InteractionAction.CLARIFY,
-            boundary=boundary,
-            directive=None,
-            profile=None,
-            provenance=InteractionProvenance.DETERMINISTIC,
-            ambiguity=InteractionAmbiguity.GROUNDING if result is not ResumeClassification.CONTEXTUAL else InteractionAmbiguity.CONTINUATION,
-            reason_code=(INTERACTION_CONTEXT_GROUNDING_REQUIRED if result is not ResumeClassification.CONTEXTUAL else INTERACTION_CONTINUATION_AMBIGUOUS),
-        )
-    if result in {OperationalClassification.CONFLICT, LocalConflictClassification.CONFLICT, CrossClauseRelation.FAMILY_CONFLICT, CrossClauseRelation.SAME_TARGET_CONFLICT, CrossClauseRelation.GLOBAL_CONFLICT, CrossClauseRelation.UNKNOWN_RELATION_CONFLICT, MixedIntentClassification.MIXED_EFFECT, ReadClassification.OPERATIONAL, ReadClassification.PROPOSAL, PlanClassification.OPERATIONAL}:
-        return _resolution(
-            action=InteractionAction.CLARIFY,
-            boundary=boundary,
-            directive=None,
-            profile=None,
-            provenance=InteractionProvenance.DETERMINISTIC,
-            ambiguity=InteractionAmbiguity.CONFLICT,
-            reason_code=INTERACTION_CONFLICT,
-        )
-    if result is ResumeClassification.OVERRIDE:
-        return _resolution(
-            action=InteractionAction.CLARIFY,
-            boundary=boundary,
-            directive=None,
-            profile=None,
-            provenance=InteractionProvenance.DETERMINISTIC,
-            ambiguity=InteractionAmbiguity.CONFLICT,
-            reason_code=INTERACTION_RESUME_OVERRIDE_FORBIDDEN,
-        )
-    if result in {
-        OperationalClassification.NEGATED,
-        OperationalClassification.HYPOTHETICAL,
-        OperationalClassification.QUOTED,
-        OperationalClassification.META,
-        OperationalClassification.UNKNOWN,
-        ResumeClassification.NEGATED,
-        ResumeClassification.HYPOTHETICAL,
-        ResumeClassification.META,
-        ResumeClassification.UNKNOWN,
-        TargetProof.UNPROVEN,
-    }:
-        return _resolution(
-            action=InteractionAction.CLARIFY,
-            boundary=boundary,
-            directive=None,
-            profile=None,
-            provenance=InteractionProvenance.DETERMINISTIC,
-            ambiguity=(InteractionAmbiguity.CONTINUATION if isinstance(result, ResumeClassification) else InteractionAmbiguity.EFFECT),
-            reason_code=(INTERACTION_CONTINUATION_AMBIGUOUS if isinstance(result, ResumeClassification) else INTERACTION_EFFECT_AMBIGUOUS),
-        )
-    return _resolution(
-        action=InteractionAction.CLARIFY,
-        boundary=boundary,
-        directive=None,
-        profile=None,
-        provenance=InteractionProvenance.DETERMINISTIC,
-        ambiguity=InteractionAmbiguity.NONE,
-        reason_code=INTERACTION_TASK_INTENT_REQUIRED if task_respond else INTERACTION_INTENT_AMBIGUOUS,
-    )
+    return _project(result, boundary=boundary, task_respond=task_respond)
 
 
 def _require_evidence(subject: str, decision: InteractionModelDecision) -> None:
@@ -300,6 +267,8 @@ def _admit_continue(context: AdmissionContext) -> InteractionResolution:
 
 
 def _admit_model_candidate(context: AdmissionContext, decision: InteractionModelDecision) -> InteractionResolution:
+    if isinstance(decision.intent_claim, IntentClaimV1):
+        return _admit_semantic_candidate(context, decision, decision.intent_claim)
     _require_evidence(context.subject, decision)
     if decision.action is InteractionAction.CLARIFY:
         mapping = {
@@ -355,6 +324,7 @@ def admit_interaction(
     subject: str,
     parsed_task: ParsedTaskRequest | None = None,
     model_decision: InteractionModelDecision | None = None,
+    authority_envelope: AuthorityEnvelope | None = None,
 ) -> InteractionResolution:
     context = AdmissionContext(
         boundary=InteractionBoundary(boundary),
@@ -362,6 +332,7 @@ def admit_interaction(
         subject=subject,
         parsed_task=parsed_task,
         model_decision=model_decision,
+        authority_envelope=authority_envelope,
     )
     if parsed_task is not None and parsed_task.action is TaskRequestAction.CONTINUE:
         return _resolution(

@@ -18,6 +18,7 @@ GOVERNANCE_EXCEPTIONS = frozenset(
         "scripts/check_wave5_architecture.py",
         "scripts/check_wave12_architecture.py",
         "scripts/check_wave13_architecture.py",
+        "scripts/check_wave14_architecture.py",
     }
 )
 SELF_PATH = "scripts/check_production_naming_hygiene.py"

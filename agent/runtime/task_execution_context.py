@@ -35,6 +35,33 @@ def ensure_runtime_correlation(owner: Any) -> RunCorrelation:
     return correlation
 
 
+def _authority_metadata(owner: Any) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "ownership_root": True,
+        "workspace_manager": owner.workspace,
+    }
+    workspace_root = getattr(owner, "workspace_root", None)
+    if workspace_root is not None:
+        metadata["workspace_root"] = str(workspace_root)
+    state = getattr(owner, "agent_state", None)
+    if getattr(state, "w14_semantic_task", False) is True:
+        metadata["w14_semantic_task"] = True
+        continuation = getattr(state, "w14_intent_continuation", None)
+        if continuation is not None:
+            metadata["w14_intent_continuation"] = continuation
+    # These are trusted-derived W14 projections produced before planning.  Do
+    # not carry the raw model claim into tool contexts.
+    for key, attribute in (
+        ("authority_envelope", "_authority_envelope"),
+        ("admitted_intent", "_admitted_intent"),
+        ("grounded_target_set", "_grounded_targets"),
+    ):
+        value = getattr(owner, attribute, None)
+        if value is not None:
+            metadata[key] = value
+    return metadata
+
+
 def build_task_execution_context(owner: Any) -> TaskExecutionContext:
     config = owner.session.config or {}
     correlation = owner._ensure_run_correlation()
@@ -50,7 +77,7 @@ def build_task_execution_context(owner: Any) -> TaskExecutionContext:
         correlation=correlation,
         event_sink=getattr(owner, "event_dispatcher", None),
         permissions=frozenset(item.value for item in ALL_CAPABILITIES),
-        metadata={"ownership_root": True, "workspace_manager": owner.workspace},
+        metadata=_authority_metadata(owner),
     )
 
 

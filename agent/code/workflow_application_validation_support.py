@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from agent.code.discovery import ProjectDiscovery
+from agent.code.outcome_verifier import CodeOutcomeVerdict, CodeProposalKind
 from agent.code.validation import ValidationStatus
 from agent.runtime.context import TaskResult, TaskStatus
 from agent.runtime.correlation import new_runtime_id
@@ -126,6 +128,79 @@ def _failed_validation_result(
         else f"validation:{report.status.value}",
         metadata={"approval": approval.metadata, "validation": validation_metadata},
         code=_validation_code(effective_status),
+    )
+
+
+def _pre_apply_verification(
+    service: Any,
+    change_set: Any,
+    preview: Any,
+    assessment: Any,
+    requested_targets: Sequence[str],
+    evidence_manifest: Any,
+    repair_attempt: bool,
+    *,
+    outcome_verifier_factory: Any,
+    prepared_change_evidence_factory: Any,
+    requires_selective_verification: Any,
+) -> TaskResult | None:
+    verification_targets = tuple(requested_targets) or tuple(
+        getattr(preview, "affected_files", ()) or ()
+    )
+    if not requires_selective_verification(
+        change_set,
+        preview,
+        verification_targets,
+        assessment,
+        repair_attempt,
+    ):
+        return None
+    if evidence_manifest is None:
+        return _failure_result(
+            status=TaskStatus.BLOCKED,
+            code="CODE_VERIFICATION_INSUFFICIENT",
+            summary="A verificaÃ§Ã£o seletiva exige manifesto de evidÃªncia runtime.",
+            artifacts=(_artifact(preview, assessment, applied=False),),
+            error="CODE_VERIFICATION_INSUFFICIENT",
+        )
+    cancellation = getattr(getattr(service, "context", None), "cancellation", None)
+    if getattr(cancellation, "cancelled", False):
+        return _failure_result(
+            status=TaskStatus.CANCELLED,
+            code="CANCELLED",
+            summary="A operação foi cancelada antes da verificação.",
+            artifacts=(_artifact(preview, assessment, applied=False),),
+            error="cancelled",
+        )
+    verification = outcome_verifier_factory(service.context, service.root).verify(
+        change_set.objective,
+        CodeProposalKind.CHANGE,
+        evidence_manifest,
+        target_paths=requested_targets,
+        prepared_records=prepared_change_evidence_factory(
+            change_set.changes,
+            preview,
+        ),
+    )
+    if verification.verdict is CodeOutcomeVerdict.SUPPORTED:
+        return None
+    code = (
+        "CODE_OUTCOME_CONTRADICTED"
+        if verification.verdict is CodeOutcomeVerdict.CONTRADICTED
+        else verification.failure_code or "CODE_VERIFICATION_INSUFFICIENT"
+    )
+    status = (
+        TaskStatus.FAILED
+        if code in {"CODE_OUTCOME_CONTRADICTED", "CODE_EVIDENCE_STALE"}
+        else TaskStatus.BLOCKED
+    )
+    return _failure_result(
+        status=status,
+        code=code,
+        summary=verification.reason,
+        artifacts=(_artifact(preview, assessment, applied=False),),
+        error=code,
+        metadata={"cited_evidence_ids": list(verification.evidence_ids)},
     )
 
 

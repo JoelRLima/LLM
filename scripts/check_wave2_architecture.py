@@ -667,6 +667,8 @@ def _numeric_recovery_constant(node: ast.Assign | ast.AnnAssign) -> bool:
     for target in targets:
         if not isinstance(target, ast.Name):
             continue
+        if target.id == "W14_CONTINUATION_SCHEMA_VERSION":
+            continue
         name = target.id.casefold()
         if (
             name.startswith("max_retry")

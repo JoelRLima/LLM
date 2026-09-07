@@ -98,6 +98,8 @@ class PlanAdmissionService:
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
         allow_conditional_preview: bool = False,
+        admitted_intent: Any = None,
+        grounded_targets: Any = None,
     ) -> ValidationReport:
         """Admit one candidate with the mode's exact validator policy."""
 
@@ -114,6 +116,8 @@ class PlanAdmissionService:
             planning_view=planning_view,
             available_observations=observations,
             plan_identity=plan_identity,
+            admitted_intent=admitted_intent,
+            grounded_targets=grounded_targets,
         )
         return validator.validate(plan)
 
@@ -140,6 +144,8 @@ class PlanAdmissionService:
             planning_view=planning_view,
             available_observations=observations,
             plan_identity=plan_identity,
+            admitted_intent=getattr(self.orchestrator, "_admitted_intent", None),
+            grounded_targets=getattr(self.orchestrator, "_grounded_targets", None),
         )
         return validator._validate_step_schema(step)
 
@@ -200,6 +206,8 @@ class PlanAdmissionService:
         planning_view: PlanningPresentationSnapshot | None,
         available_observations: Sequence[Mapping[str, Any]],
         plan_identity: str | None,
+        admitted_intent: Any = None,
+        grounded_targets: Any = None,
     ) -> PlanValidator:
         presented_names = (
             planning_view.presented_names
@@ -223,6 +231,8 @@ class PlanAdmissionService:
             available_observations=available_observations,
             plan_identity=plan_identity,
             allow_conditional_preview=policy.allow_conditional_preview,
+            admitted_intent=admitted_intent,
+            grounded_targets=grounded_targets,
         )
 
     @staticmethod

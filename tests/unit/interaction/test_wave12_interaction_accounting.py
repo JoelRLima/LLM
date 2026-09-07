@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from agent.interaction.service import InteractionService
 
-from ._helpers import application, decision
+from ._helpers import application, semantic_decision
 
 
 def test_natural_respond_has_two_local_model_calls_and_no_tools() -> None:
-    app = application([decision(), "answer"])
+    app = application([semantic_decision(), "answer"])
     original = app.session.budget_ledger.snapshot()
     result = InteractionService(app).interact("hello")
     usage = result.interaction_usage

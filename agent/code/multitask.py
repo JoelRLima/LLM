@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
 
-from agent.capabilities import Capability, capability_values
+from agent.capabilities import Capability, canonical_capabilities, capability_values
 from agent.code.policy import ChangeApprovalPolicy, ChangeApprover
 from agent.code.workflows import CodingWorkflowService
 from agent.planning.task_graph import TaskGraph, TaskNode
@@ -52,14 +52,34 @@ class CodingTaskNodeExecutor:
             return TaskResult(TaskStatus.FAILED, error="invalid code action")
         semantic_args = dict(node.metadata)
         semantic_args["action"] = action
-        required = resolve_invocation_semantics(
+        invocation_semantics = resolve_invocation_semantics(
             _CodeTaskDescriptor(), semantic_args
-        ).required_capabilities
+        )
+        required = invocation_semantics.required_capabilities
+        try:
+            declared = capability_values(canonical_capabilities(node.capabilities))
+        except (TypeError, ValueError):
+            return TaskResult(TaskStatus.BLOCKED, error="capacidades declaradas inválidas")
+        strict_w14 = (
+            isinstance(getattr(context, "metadata", None), dict)
+            and context.metadata.get("w14_semantic_task") is True
+        )
+        undeclared = required - declared
+        if undeclared and not strict_w14:
+            return TaskResult(
+                TaskStatus.BLOCKED,
+                error="Capacidades não declaradas para " + action + ": " + ", ".join(sorted(undeclared)),
+            )
         missing = required - context.permissions
         if missing:
             return TaskResult(
                 TaskStatus.BLOCKED,
                 error="Capacidades ausentes para " + action + ": " + ", ".join(sorted(missing)),
+            )
+        if isinstance(getattr(context, "metadata", None), dict):
+            context.metadata["invocation_required_capabilities"] = sorted(required)
+            context.metadata["invocation_durable_effects"] = list(
+                invocation_semantics.durable_effects
             )
         raw_targets = node.metadata.get("targets", [])
         targets = [str(item) for item in raw_targets] if isinstance(raw_targets, list) else []

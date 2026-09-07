@@ -6,6 +6,7 @@ from typing import Any
 
 from agent.capabilities import ALL_CAPABILITIES
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from agent.runtime.task_execution_context import _authority_metadata
 from agent.runtime.task_policy import TaskRuntimePolicy
 
 
@@ -36,7 +37,7 @@ def refresh_orchestrator_task_policy(orchestrator: Any) -> None:
             correlation=orchestrator.run_correlation,
             event_sink=getattr(orchestrator, "event_dispatcher", None),
             permissions=frozenset(item.value for item in ALL_CAPABILITIES),
-            metadata={"ownership_root": True, "workspace_manager": orchestrator.workspace},
+            metadata=_authority_metadata(orchestrator),
         )
 
 

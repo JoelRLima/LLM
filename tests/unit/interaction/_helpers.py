@@ -65,6 +65,14 @@ def decision(**overrides: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def semantic_decision(**overrides: Any) -> str:
+    """Build the W14 outer object for natural-interaction fixtures."""
+
+    value = json.loads(decision(**overrides))
+    value["intent_claim"] = None
+    return json.dumps(value, ensure_ascii=False)
+
+
 def session(
     responses: list[str] | None = None,
     *,

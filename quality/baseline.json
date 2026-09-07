@@ -27,7 +27,7 @@
     "max_lines": 300,
     "allowed": {
       "agent/application.py": 327,
-      "agent/interaction/admission.py": 412,
+      "agent/interaction/admission.py": 383,
       "agent/interaction/guards.py": 763,
       "agent/interaction/service.py": 509,
       "agent/interfaces/cli/app.py": 368,

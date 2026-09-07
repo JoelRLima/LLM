@@ -170,11 +170,19 @@ class CodeTaskSkill(BaseSkill):
                 cancellation_token,
                 cancellation_event,
             )
+            semantic_proposal_only = bool(
+                getattr(
+                    getattr(parent_context, "metadata", {}).get("admitted_intent"),
+                    "proposal_only",
+                    False,
+                )
+            )
             # The concrete code operation, rather than the tool-wide
             # descriptor ceiling, determines the child context's minimum
             # permissions.  This keeps read-only analyze/review paths from
             # inheriting write authority.
-            child_permissions = resolve_invocation_semantics(self, args).required_capabilities
+            invocation_semantics = resolve_invocation_semantics(self, args)
+            child_permissions = invocation_semantics.required_capabilities
             if self.orchestrator is not None:
                 child_permissions &= frozenset(
                     getattr(self.orchestrator, "allowed_capabilities", child_permissions)
@@ -195,6 +203,13 @@ class CodeTaskSkill(BaseSkill):
                         cancellation_event,
                     ),
                 )
+            if isinstance(getattr(context, "metadata", None), dict):
+                context.metadata["invocation_required_capabilities"] = sorted(
+                    invocation_semantics.required_capabilities
+                )
+                context.metadata["invocation_durable_effects"] = list(
+                    invocation_semantics.durable_effects
+                )
             graph = args.get("graph")
             result = CodingApplicationService(
                 self.base_dir,
@@ -211,7 +226,7 @@ class CodeTaskSkill(BaseSkill):
                 ),
                 approver=(
                     ProposalOnlyApprover()
-                    if is_proposal_only_objective(objective)
+                    if semantic_proposal_only or is_proposal_only_objective(objective)
                     else PolicyApprover(self.approval_policy)
                 ),
             )

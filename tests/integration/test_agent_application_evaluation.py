@@ -93,7 +93,10 @@ class JourneyGateway:
                 )
             )
         request_contract = getattr(request.request_contract, "value", request.request_contract)
-        if request_contract == ModelRequestContract.INTERACTION_RESOLUTION.value:
+        if request_contract in {
+            ModelRequestContract.INTERACTION_RESOLUTION.value,
+            ModelRequestContract.SEMANTIC_INTENT.value,
+        }:
             return ModelResponse(content=self._interaction_response())
         if request_contract == ModelRequestContract.TOOL_DISCOVERY.value:
             return ModelResponse(content=self._tool_discovery_response(request.messages[-1].content))
@@ -154,20 +157,63 @@ class JourneyGateway:
                         "proposal_only": False,
                         "resume_requested": False,
                         "evidence": "",
+                        "intent_claim": None,
                     }
                 )
+        operation = "do" if self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"} else "read"
         return json.dumps(
             {
                 "action": "run",
-                "directive": "do" if self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"} else "read",
+                "directive": operation,
                 "ambiguity": "none",
                 "grounding": "current_turn",
-                "operation_requested": self.scenario_id in {"CAP_MODIFY", "CAP_RECOVERY"},
+                "operation_requested": operation == "do",
                 "proposal_only": False,
                 "resume_requested": False,
                 "evidence": self.objective,
+                "intent_claim": self._semantic_claim(operation),
             }
         )
+
+    def _semantic_claim(self, operation: str) -> dict[str, Any]:
+        target_match = re.search(r"[A-Za-z0-9_./-]+\.[A-Za-z0-9_]+", self.objective)
+        target = target_match.group(0) if target_match is not None else self.objective
+        start = self.objective.index(target)
+        effect = (
+            {
+                "effect": "write",
+                "polarity": "requested",
+                "selector_ids": ["s1"],
+                "evidence_span_ids": ["e1"],
+            }
+            if operation == "do"
+            else None
+        )
+        return {
+            "schema_version": "intent-claim-v1",
+            "operation": operation,
+            "ambiguity": "none",
+            "effects": [] if effect is None else [effect],
+            "selectors": (
+                [
+                    {
+                        "selector_id": "s1",
+                        "kind": "symbol",
+                        "value": target,
+                        "role": "mutation_target",
+                        "evidence_span_ids": ["e1"],
+                    }
+                ]
+                if operation == "do"
+                else []
+            ),
+            "constraints": [],
+            "evidence_spans": (
+                [{"span_id": "e1", "start": start, "end": start + len(target), "text": target}]
+                if operation == "do"
+                else []
+            ),
+        }
 
     def _response(self, system: str, prompt: str, request_contract: str | None = None) -> str:
         if request_contract is None:
@@ -450,11 +496,10 @@ def test_interactive_denial_is_bounded_and_survives_a_later_run(tmp_path: Path) 
     assert denied.run_result.receipt["tools"] == []
     assert denied.run_result.receipt["executed"] is None
     assert report["steps"] == []
-    assert report["planner_outcome"] == "blocked"
-    assert any(
-        event.get("type") == "hard_block" and event.get("reason_code") == "PLAN_BLOCKED"
-        for event in report["event_summary"]
-    )
+    assert report["planner_outcome"] is None
+    assert report["status"] == "blocked"
+    assert report["error"] == "INTENT_CAPABILITY_DENIED"
+    assert report["operational_outcome"]["blocked_reason"] == "INTENT_CAPABILITY_DENIED"
     assert report["metrics"]["run_calls"] == 1
 
 

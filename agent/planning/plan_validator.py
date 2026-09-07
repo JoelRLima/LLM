@@ -40,6 +40,8 @@ class PlanValidator(PlanValidatorSchemaMixin):
         available_observations: Sequence[Mapping[str, Any]] | None = None,
         plan_identity: str | None = None,
         allow_conditional_preview: bool = False,
+        admitted_intent: Any = None,
+        grounded_targets: Any = None,
     ) -> None:
         self.skills = skills
         self.active_skills = active_skills or []
@@ -51,6 +53,8 @@ class PlanValidator(PlanValidatorSchemaMixin):
         self.canonical_deferred_references = canonical_deferred_references
         self.plan_identity = plan_identity
         self.allow_conditional_preview = allow_conditional_preview
+        self.admitted_intent = admitted_intent
+        self.grounded_targets = grounded_targets
         observations = tuple(available_observations or ())
         if plan_identity is not None:
             observations = tuple(

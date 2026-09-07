@@ -40,6 +40,8 @@ class ExecutionGateway(ExecutionGatewaySupportMixin):
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
         allow_conditional_preview: bool = False,
+        admitted_intent: Any = None,
+        grounded_targets: Any = None,
     ) -> ExecutionResult:
         self._active_planning_view = planning_view
         validated = self.validate_and_optimize_plan(
@@ -48,6 +50,16 @@ class ExecutionGateway(ExecutionGatewaySupportMixin):
             planning_context=planning_context,
             planning_view=planning_view,
             allow_conditional_preview=allow_conditional_preview,
+            admitted_intent=(
+                admitted_intent
+                if admitted_intent is not None
+                else getattr(self.orchestrator, "_admitted_intent", None)
+            ),
+            grounded_targets=(
+                grounded_targets
+                if grounded_targets is not None
+                else getattr(self.orchestrator, "_grounded_targets", None)
+            ),
         )
         if validated is None:
             return ExecutionResult(
@@ -83,6 +95,8 @@ class ExecutionGateway(ExecutionGatewaySupportMixin):
         planning_context: PlanningContextSnapshot | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
         allow_conditional_preview: bool = False,
+        admitted_intent: Any = None,
+        grounded_targets: Any = None,
     ) -> Optional[Plan]:
         if planning_view is not None:
             self._active_planning_view = planning_view
@@ -93,6 +107,16 @@ class ExecutionGateway(ExecutionGatewaySupportMixin):
             planning_context=planning_context,
             planning_view=planning_view,
             allow_conditional_preview=allow_conditional_preview,
+            admitted_intent=(
+                admitted_intent
+                if admitted_intent is not None
+                else getattr(self.orchestrator, "_admitted_intent", None)
+            ),
+            grounded_targets=(
+                grounded_targets
+                if grounded_targets is not None
+                else getattr(self.orchestrator, "_grounded_targets", None)
+            ),
         )
     @staticmethod
     def _bind_deferred_references(

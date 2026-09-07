@@ -121,6 +121,31 @@ def resources_overlap(left: str, right: str) -> bool:
     )
 
 
+def resource_is_within(admitted_scope: str, required_resource: str) -> bool:
+    """Return whether a required resource is contained by an admitted scope.
+
+    ``resources_overlap`` is intentionally symmetric because it is used for
+    conflict detection.  Authorization is directional: a parent directory or
+    the workspace sentinel may admit a child, while a child may never admit
+    its parent or a sibling.
+    """
+
+    admitted = normalize_resource_id(admitted_scope)
+    required = normalize_resource_id(required_resource)
+    if admitted == WORKSPACE_RESOURCE:
+        return True
+    if required == WORKSPACE_RESOURCE:
+        return False
+    if admitted == required:
+        return True
+    admitted_parts = tuple(part for part in admitted.split("/") if part)
+    required_parts = tuple(part for part in required.split("/") if part)
+    return (
+        len(admitted_parts) < len(required_parts)
+        and required_parts[: len(admitted_parts)] == admitted_parts
+    )
+
+
 def resources_conflict(left: ResourceAccess, right: ResourceAccess) -> bool:
     return resources_overlap(left.name, right.name) and (
         left.mode is ResourceMode.WRITE or right.mode is ResourceMode.WRITE
@@ -133,6 +158,7 @@ __all__ = [
     "ResourceProvenance",
     "WORKSPACE_RESOURCE",
     "normalize_resource_id",
+    "resource_is_within",
     "resources_conflict",
     "resources_overlap",
 ]

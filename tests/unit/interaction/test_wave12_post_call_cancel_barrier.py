@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from agent.interaction.service import InteractionService
 
-from ._helpers import application, decision
+from ._helpers import application, semantic_decision
 
 
 def test_cancel_after_resolver_return_prevents_response_or_commit() -> None:
-    app = application([decision(), "answer"])
+    app = application([semantic_decision(), "answer"])
     service = InteractionService(app)
     original_complete = app.gateway.complete
 

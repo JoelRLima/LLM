@@ -58,6 +58,11 @@ class TaskRunDirective:
     directive: TaskDirective
     deliberation_profile: DeliberationProfile
     subject: str
+    # W14 carries the untrusted semantic claim only across the fresh-run
+    # boundary.  It is deliberately omitted from checkpoint serialization;
+    # authority-sensitive consumers receive the admitted/grounded projection
+    # produced after the runtime authority envelope is available.
+    intent_claim: Any | None = None
 
     _CHECKPOINT_FIELDS: ClassVar[frozenset[str]] = frozenset(
         {"schema_version", "directive", "deliberation_profile", "subject"}
@@ -78,6 +83,11 @@ class TaskRunDirective:
             raise ValueError("TASK_DIRECTIVE_OBJECTIVE_TOO_LONG")
         if len(self.canonical_objective()) > MAX_STRING_LENGTH:
             raise ValueError("TASK_DIRECTIVE_OBJECTIVE_TOO_LONG")
+        if self.intent_claim is not None:
+            from agent.interaction.intent_claim import IntentClaimV1
+
+            if not isinstance(self.intent_claim, IntentClaimV1):
+                raise ValueError("intent_claim must be an IntentClaimV1")
 
     def canonical_objective(self) -> str:
         """Return the one canonical objective sent through task-definition gates."""

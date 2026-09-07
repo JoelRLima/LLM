@@ -1,6 +1,16 @@
 """Unified interaction admission boundary."""
 
 from .errors import public_explanation
+from .intent_claim import (
+    ConstraintClaim,
+    EffectClaim,
+    EvidenceSpan,
+    IntentClaimError,
+    IntentClaimV1,
+    TargetSelectorClaim,
+    bind_current_subject_evidence,
+    parse_intent_claim,
+)
 from .service import InteractionService
 from .types import (
     ActionGrounding,
@@ -23,5 +33,13 @@ __all__ = [
     "InteractionProvenance",
     "InteractionResolution",
     "InteractionService",
+    "ConstraintClaim",
+    "EffectClaim",
+    "EvidenceSpan",
+    "IntentClaimError",
+    "IntentClaimV1",
+    "TargetSelectorClaim",
+    "bind_current_subject_evidence",
+    "parse_intent_claim",
     "public_explanation",
 ]

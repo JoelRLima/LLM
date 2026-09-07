@@ -19,6 +19,8 @@ def validate_and_optimize_plan(
     planning_context: PlanningContextSnapshot | None = None,
     planning_view: PlanningPresentationSnapshot | None = None,
     allow_conditional_preview: bool = False,
+    admitted_intent: Any = None,
+    grounded_targets: Any = None,
 ) -> Optional[Plan]:
     explicit_context = planning_context is not None
     context = (
@@ -38,6 +40,8 @@ def validate_and_optimize_plan(
         planning_context=context,
         planning_view=presentation,
         allow_conditional_preview=allow_conditional_preview,
+        admitted_intent=admitted_intent,
+        grounded_targets=grounded_targets,
     )
     gateway._log_validation(report)
     if not report.is_valid and not _repairable_report(report):
@@ -56,6 +60,8 @@ def validate_and_optimize_plan(
             planning_context=context,
             planning_view=presentation,
             allow_conditional_preview=allow_conditional_preview,
+            admitted_intent=admitted_intent,
+            grounded_targets=grounded_targets,
         )
         gateway._log_validation(bound_report, "binding canônico")
         if not bound_report.is_valid and not _repairable_report(bound_report):
@@ -88,6 +94,8 @@ def validate_and_optimize_plan(
         planning_context=context,
         planning_view=presentation,
         allow_conditional_preview=allow_conditional_preview,
+        admitted_intent=admitted_intent,
+        grounded_targets=grounded_targets,
     )
     gateway._log_validation(post_report, "pós-otimização")
     if not post_report.is_valid and not _repairable_report(post_report):

@@ -78,6 +78,11 @@ class AgentState(
         self._continuity_resume_pending = False
         self._continuity_bound_run_id: str | None = None
         self._task_semantics = TaskSemantics.empty()
+        # W14 semantic continuity is an explicit task marker.  The
+        # continuation projection contains intent facts only; current
+        # authority is always rebuilt from the live orchestrator.
+        self.w14_semantic_task: bool = False
+        self.w14_intent_continuation: Any = None
         # One task-owned recovery owner.  The compatibility counter
         # properties below are projections and cannot create an independent
         # ledger.
@@ -119,6 +124,8 @@ class AgentState(
         self.continuity = None
         self._continuity_resume_pending = False
         self._continuity_bound_run_id = None
+        self.w14_semantic_task = False
+        self.w14_intent_continuation = None
 
     def configure_recovery_policy(self, config: Mapping[str, Any] | None = None) -> None:
         self.recovery_budget.reconfigure(RecoveryPolicy.from_config(config))

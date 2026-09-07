@@ -8,7 +8,7 @@ from agent.interaction.admission import admit_interaction
 from agent.interaction.service import InteractionService
 from agent.interaction.types import ActionGrounding, InteractionAction, InteractionBoundary, InteractionModelDecision
 from agent.runtime.task_directives import TaskDirective
-from tests.unit.interaction._helpers import application, decision
+from tests.unit.interaction._helpers import application, semantic_decision
 
 
 def _candidate(**overrides: object) -> InteractionModelDecision:
@@ -27,7 +27,7 @@ def _candidate(**overrides: object) -> InteractionModelDecision:
 
 
 def test_flow_conversation_is_not_a_task_and_commits_one_pair() -> None:
-    app = application([decision(), "AST answer"])
+    app = application([semantic_decision(), "AST answer"])
     result = InteractionService(app).interact("What is an AST?")
     assert result.success is True
     assert result.resolution is not None

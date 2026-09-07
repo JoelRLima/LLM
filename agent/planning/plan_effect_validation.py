@@ -122,6 +122,8 @@ class PlanEffectValidationMixin:
             args,
             contract,
             available_observations=self.available_observations,
+            admitted_intent=getattr(self, "admitted_intent", None),
+            grounded_targets=getattr(self, "grounded_targets", None),
         )
         if deferred_branch and problem and problem.startswith(
             "UNRESOLVED_CONDITIONAL_EFFECT:"

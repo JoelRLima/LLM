@@ -238,3 +238,25 @@ __all__ = [
     "authority_for_objective",
     "admit_effect_authority",
 ]
+
+# W14's semantic admission owner is deliberately kept separate from the
+# legacy objective-grammar owner above.  These exports make the deterministic
+# owner discoverable to existing planning callers without routing new claims
+# through the lexical proof engine.
+from agent.planning.intent_admission import (  # noqa: E402  (late compatibility projection)
+    AdmittedEffect,
+    AdmittedIntent,
+    AdmittedSelector,
+    AuthorityEnvelope,
+    IntentAdmissionError,
+    admit_intent_claim,
+)
+
+__all__ += [
+    "AdmittedEffect",
+    "AdmittedIntent",
+    "AdmittedSelector",
+    "AuthorityEnvelope",
+    "IntentAdmissionError",
+    "admit_intent_claim",
+]

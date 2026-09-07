@@ -63,6 +63,12 @@ def _decision(**overrides):
     return json.dumps(value)
 
 
+def _semantic_decision(**overrides):
+    value = json.loads(_decision(**overrides))
+    value["intent_claim"] = None
+    return json.dumps(value)
+
+
 def _app(gateway: FakeGateway):
     session = ChatSession("test system", {"hardware_profile": "low_vram_8gb", "ENABLE_GBNF": False}, gateway=gateway)
     return SimpleNamespace(session=session, gateway=gateway)
@@ -99,7 +105,7 @@ def test_mixed_and_resume_guards_do_not_upgrade_ambiguous_text() -> None:
 
 
 def test_natural_respond_uses_two_calls_and_commits_one_pair() -> None:
-    gateway = FakeGateway([_decision(), "stable answer"])
+    gateway = FakeGateway([_semantic_decision(), "stable answer"])
     application = _app(gateway)
     result = InteractionService(application).interact("hello")
     assert result.status == "succeeded"

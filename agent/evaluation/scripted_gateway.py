@@ -8,7 +8,11 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from agent.evaluation.scripted_gateway_logic import scripted_plan_response, scripted_response
+from agent.evaluation.scripted_gateway_logic import (
+    scripted_plan_response,
+    scripted_response,
+)
+from agent.evaluation.scripted_semantic_logic import scripted_semantic_response
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
 from agent.llm.decision_contract import ModelRequestContract
@@ -118,10 +122,12 @@ class ScriptedEvaluationGateway:
     provider_model_id = "scripted-evaluation"
     capabilities = ProviderCapabilities(streaming=False)
     supports_task_definition = True
+    supports_semantic_intent = False
 
     def __init__(self, objective: str, *, fixture_marker: str | None = None) -> None:
         self.objective = objective
         self.fixture_marker = str(fixture_marker or "").strip()
+        self.supports_semantic_intent = self.fixture_marker.startswith("PV1-")
         self.dispatch_objective = (
             f"{self.fixture_marker}: {objective}" if self.fixture_marker else objective
         )
@@ -137,6 +143,8 @@ class ScriptedEvaluationGateway:
             content = self._task_contract_response(prompt)
         elif request_contract == ModelRequestContract.TASK_SPEC.value:
             content = self._task_spec_response()
+        elif request_contract == ModelRequestContract.SEMANTIC_INTENT.value:
+            content = scripted_semantic_response(self.fixture_marker, self.objective)
         elif "Decision to verify:" in prompt or "Decisão a verificar:" in prompt:
             content = self._verifier_response(request)
         else:

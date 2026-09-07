@@ -1,5 +1,3 @@
-"""The sole W12 orchestration owner above task and response boundaries."""
-
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -21,6 +19,7 @@ from agent.llm.errors import (
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 
+from . import semantic_observability
 from .admission import admit_interaction
 from .errors import (
     INTERACTION_CANCELLED,
@@ -63,28 +62,24 @@ from .types import (
 )
 
 MAX_STRING_LENGTH = 8192
-
 class InteractionService:
-    """Serialize W12 work through the application's existing lock boundary."""
+    def _semantic_audit(self, event_type: str, data: dict[str, Any]) -> None:
+        semantic_observability.emit_semantic_audit(self.application, event_type, data)
     def __init__(self, application: Any) -> None:
         self.application = application
         self.session = application.session
         self._active_model_cancellation: CancellationToken | None = None
-
     def _publish_active(self, token: CancellationToken) -> None:
         self._active_model_cancellation = token
-
     def _clear_active(self, token: CancellationToken) -> None:
         if self._active_model_cancellation is token:
             self._active_model_cancellation = None
-
     def cancel_active_model_call(self) -> bool:
         token = self._active_model_cancellation
         if token is None:
             return False
         token.cancel()
         return True
-
     def interact(
         self,
         text: str,
@@ -101,7 +96,6 @@ class InteractionService:
             task_payload=task_payload,
             stream_callback=stream_callback,
         )
-
     def _usage(self, context: Any) -> dict[str, Any]:
         if context is None:
             return {"model_calls": 0, "accounted_tokens": 0, "token_usage_complete": True}
@@ -114,7 +108,6 @@ class InteractionService:
             "accounted_tokens": snapshot.accounted_tokens,
             "token_usage_complete": snapshot.token_usage_complete,
         }
-
     def _failure(
         self,
         *,
@@ -133,7 +126,6 @@ class InteractionService:
             reason_code=reason_code,
             interaction_usage=self._usage(context),
         )
-
     @staticmethod
     def _input_resolution(
         boundary: InteractionBoundary,
@@ -149,7 +141,6 @@ class InteractionService:
             subject=None,
             reason_code=reason_code,
         )
-
     def _input_failure(
         self,
         boundary: InteractionBoundary,
@@ -163,7 +154,6 @@ class InteractionService:
             resolution=resolution,
             answer=public_explanation(reason_code),
         )
-
     @staticmethod
     def _natural_input_reason(text: object, visible_user_text: object | None) -> str | None:
         """Validate NATURAL identity and its semantic subject before dispatch."""
@@ -179,7 +169,6 @@ class InteractionService:
         if len(text) > MAX_STRING_LENGTH:
             return INTERACTION_INPUT_TOO_LARGE
         return None
-
     @staticmethod
     def _visible_input_reason(visible: object) -> str | None:
         if type(visible) is not str:
@@ -189,7 +178,6 @@ class InteractionService:
         if len(visible) > MAX_STRING_LENGTH:
             return INTERACTION_INPUT_TOO_LARGE
         return None
-
     def _commit_clarify(
         self,
         visible_text: str,
@@ -206,7 +194,6 @@ class InteractionService:
             reason_code=resolution.reason_code,
             interaction_usage=self._usage(context),
         )
-
     def _commit_unavailable(
         self,
         visible_text: str,
@@ -222,7 +209,6 @@ class InteractionService:
             answer=answer,
             context=context,
         )
-
     def _cancelled(self, context: Any = None) -> AgentInteractionResult:
         return self._failure(
             status="failed",
@@ -230,7 +216,6 @@ class InteractionService:
             error=public_explanation(INTERACTION_CANCELLED),
             context=context,
         )
-
     def _response_call(
         self,
         context: Any,
@@ -249,7 +234,6 @@ class InteractionService:
             return content
         finally:
             self._clear_active(token)
-
     def _dispatch_task(
         self,
         resolution: InteractionResolution,
@@ -271,6 +255,7 @@ class InteractionService:
                     directive=resolution.directive,
                     deliberation_profile=resolution.deliberation_profile,
                     subject=resolution.subject,
+                    intent_claim=resolution.intent_claim,
                 )
                 run_locked = getattr(self.application, "_run_locked", None)
                 if callable(run_locked):
@@ -298,7 +283,6 @@ class InteractionService:
             error=getattr(stable_result, "error", None),
             interaction_usage=self._usage(context),
         )
-
     def interact_locked(
         self,
         text: str,
@@ -332,6 +316,8 @@ class InteractionService:
             return self._input_failure(selected_boundary, visible_reason)
         subject = text if selected_boundary is InteractionBoundary.NATURAL else (task_payload if task_payload is not None else text)
         parsed_task: ParsedTaskRequest | None = None
+        semantic_claim: Any | None = None
+        semantic_parse_emitted = False
         if selected_boundary is InteractionBoundary.TASK:
             try:
                 parsed_task = parse_task_request(subject)
@@ -375,8 +361,12 @@ class InteractionService:
                     boundary=selected_boundary,
                     subject=parsed_task.subject if parsed_task is not None and parsed_task.subject is not None else subject,
                     snapshot=snapshot,
+                    semantic=True,
                 )
                 context = outcome.context
+                semantic_claim = getattr(outcome.decision, "intent_claim", None)
+                semantic_observability.emit_semantic_parse_event(self.application, semantic_claim)
+                semantic_parse_emitted = semantic_claim is not None
                 resolution = admit_interaction(
                     boundary=selected_boundary,
                     visible_user_text=visible,
@@ -389,8 +379,14 @@ class InteractionService:
                 return self._cancelled(context)
             return self._commit_unavailable(visible, INTERACTION_RESOLVER_UNAVAILABLE, context=context)
         except ResolverInvalid:
+            semantic_observability.emit_semantic_parse_event(self.application, failure_reason=INTERACTION_RESOLVER_INVALID)
             return self._commit_unavailable(visible, INTERACTION_RESOLVER_INVALID, context=context)
         except (InteractionAdmissionError, ValueError) as exc:
+            semantic_observability.emit_semantic_admission_denied_if_claim(
+                self.application,
+                semantic_claim,
+                str(getattr(exc, "reason_code", None) or INTERACTION_REQUEST_CONTRACT_MISMATCH),
+            )
             reason = getattr(exc, "reason_code", INTERACTION_REQUEST_CONTRACT_MISMATCH)
             if reason == INTERACTION_CANCELLED:
                 return self._cancelled(context)
@@ -421,6 +417,11 @@ class InteractionService:
                 error=public_explanation(INTERACTION_INTERNAL_FAILED),
                 context=context,
             )
+        semantic_observability.emit_semantic_parse_if_needed(
+            self.application,
+            getattr(resolution, "intent_claim", None),
+            semantic_parse_emitted,
+        )
         if resolution.action is InteractionAction.CLARIFY:
             return self._commit_clarify(visible, resolution, context=context)
         if resolution.action in {InteractionAction.RUN, InteractionAction.CONTINUE}:
@@ -505,5 +506,4 @@ class InteractionService:
             error=public_explanation(INTERACTION_INTERNAL_FAILED),
             context=context,
         )
-
 __all__ = ["InteractionService"]
