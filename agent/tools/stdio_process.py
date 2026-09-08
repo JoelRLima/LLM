@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
@@ -34,6 +35,7 @@ from agent.tools.stdio_streams import send_request as _send_request
 from agent.tools.stdio_streams import start_readers as _start_readers
 
 CLEANUP_TIMEOUT_SECONDS = 2.0
+_logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ProcessFailure:
@@ -91,45 +93,34 @@ def _monitor_process(context: _ProcessContext, timeout_seconds: int, stdout_limi
     return None
 
 def _join_readers(context: _ProcessContext) -> ProcessFailure | None:
-    if context.readers_stopped:
-        if context.reader_errors:
-            return _failure(
-                ToolStatus.UNAVAILABLE,
-                "READER_ERROR",
-                "; ".join(context.reader_errors),
-                "Falha ao ler a saida da extensao.",
-            )
-        return None
-    context.stop_readers.set()
-    deadline = time.monotonic() + CLEANUP_TIMEOUT_SECONDS
-    for reader in context.readers:
-        remaining = max(0.0, deadline - time.monotonic())
-        reader.join(timeout=remaining)
-    if any(reader.is_alive() for reader in context.readers):
-        _close_pipes(context.process)
+    if not context.readers_stopped:
+        # Reserve half the existing budget for emergency shutdown; first drain EOF.
+        deadline = time.monotonic() + CLEANUP_TIMEOUT_SECONDS
+        graceful_deadline = deadline - CLEANUP_TIMEOUT_SECONDS / 2
         for reader in context.readers:
-            remaining = max(0.0, deadline - time.monotonic())
+            remaining = max(0.0, graceful_deadline - time.monotonic())
             reader.join(timeout=remaining)
-    context.readers_stopped = True
+        if any(reader.is_alive() for reader in context.readers):
+            context.stop_readers.set()
+            _close_pipes(context.process)
+            for reader in context.readers:
+                remaining = max(0.0, deadline - time.monotonic())
+                reader.join(timeout=remaining)
+        context.readers_stopped = True
     alive = [reader.name for reader in context.readers if reader.is_alive()]
     if alive:
         return _failure(
-            ToolStatus.UNAVAILABLE,
-            "CLEANUP_ERROR",
+            ToolStatus.UNAVAILABLE, "CLEANUP_ERROR",
             f"Threads de drenagem nao terminaram: {', '.join(alive)}",
             "Nao foi possivel finalizar o cleanup da extensao.",
         )
     if context.reader_errors:
         return _failure(
-            ToolStatus.UNAVAILABLE,
-            "READER_ERROR",
-            "; ".join(context.reader_errors),
+            ToolStatus.UNAVAILABLE, "READER_ERROR", "; ".join(context.reader_errors),
             "Falha ao ler a saida da extensao.",
         )
     return None
-def _cleanup(
-    context: _ProcessContext | None, *, terminate_tree: bool = False
-) -> ProcessFailure | None:
+def _cleanup(context: _ProcessContext | None, *, terminate_tree: bool = False) -> ProcessFailure | None:
     if context is None or context.finished:
         return None
     termination_error: str | None = None
@@ -250,6 +241,12 @@ def _build_outcome(
         return ProcessOutcome(failure=_failure(ToolStatus.PROTOCOL_ERROR, "INVALID_RESPONSE", str(exc), "Resposta inválida da extensão."))
     return ProcessOutcome(completed=subprocess.CompletedProcess(context.process.args, context.process.returncode, stdout_text, stderr))
 
+def _dominant_failure(primary: ProcessFailure | None, cleanup_failure: ProcessFailure | None) -> ProcessFailure | None:
+    if cleanup_failure is not None and primary is not None:
+        _logger.warning("stdio cleanup failure dominates primary failure: cleanup=%s primary=%s", _stdio_cleanup.bounded_cleanup_detail(f"{cleanup_failure.status.value}/{cleanup_failure.code}: {cleanup_failure.detail}"), _stdio_cleanup.bounded_cleanup_detail(f"{primary.status.value}/{primary.code}: {primary.detail}"))
+    return cleanup_failure if cleanup_failure is not None else primary
+
+
 def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_seconds: int, payload: dict[str, Any], stdout_limit: int, stderr_limit: int, cancellation_token: Any | None = None, cancellation_event: Event | None = None) -> ProcessOutcome:
     context: _ProcessContext | None = None
     try:
@@ -263,7 +260,7 @@ def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_
         failure = _monitor_process(context, timeout_seconds, stdout_limit, stderr_limit, cancellation_token, cancellation_event)
         if failure is not None:
             cleanup_failure = _cleanup(context, terminate_tree=True)
-            return ProcessOutcome(failure=cleanup_failure or failure)
+            return ProcessOutcome(failure=_dominant_failure(failure, cleanup_failure))
         context.process.wait()
         launcher_status_failure = (
             launcher_status_failure_for_path(context.status_path) if os.name == "nt" else None
@@ -272,8 +269,9 @@ def run_stdio_process(*, entrypoint: Tuple[str, ...], cwd: Path | None, timeout_
         # descendants before waiting for EOF: inherited stdio handles otherwise
         # keep the reader threads blocked indefinitely.
         cleanup_failure = _cleanup(context, terminate_tree=True)
+        limit_failure = _limit_failure(context.stdout, context.stderr, stdout_limit, stderr_limit)
         if cleanup_failure is not None:
-            return ProcessOutcome(failure=cleanup_failure)
+            return ProcessOutcome(failure=_dominant_failure(limit_failure, cleanup_failure))
         outcome = _build_outcome(
             context,
             stdout_limit,

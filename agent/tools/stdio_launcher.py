@@ -216,13 +216,11 @@ def _run(envelope: dict[str, Any]) -> int:
         _write_status(status_path, {"state": "extension_started"})
         if process.stdin is None:
             raise OSError("stdin da extension nao foi criado")
-        process.stdin.write(envelope["request_line"].encode("utf-8") + b"\n")
-        try:
-            process.stdin.close()
-        except OSError:
-            if process.poll() is None:
-                raise
-        return process.wait()
+        # subprocess handles a child closing stdin during write/flush/close,
+        # including Windows EINVAL, without racing a separate poll(). The
+        # external owner bounds this wait by terminating the Job Object.
+        process.communicate(input=envelope["request_line"].encode("utf-8") + b"\n")
+        return process.returncode
     except Exception as exc:
         if process is not None and process.poll() is None:
             _terminate_child(process)

@@ -41,6 +41,11 @@ class _CompletedExtension:
     def poll(self) -> int:
         return 0
 
+    def communicate(self, input: bytes) -> tuple[None, None]:
+        self.stdin.write(input)
+        self.stdin.close()
+        return None, None
+
 
 @pytest.mark.parametrize(
     "mutation",
@@ -104,19 +109,12 @@ def test_launcher_forwards_streams_and_writes_status(tmp_path: Path) -> None:
     assert json.loads(status_path.read_text(encoding="utf-8")) == {"state": "extension_started"}
 
 
-def test_launcher_tolerates_stdin_close_after_extension_exit(
+def test_launcher_communicates_exact_request_after_extension_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class _Stdin:
-        def write(self, _: bytes) -> int:
-            return 1
-
-        def close(self) -> None:
-            raise OSError(22, "Invalid argument")
-
     class _ExitedProcess:
         def __init__(self) -> None:
-            self.stdin = _Stdin()
+            self.stdin = io.BytesIO()
             self.returncode = 0
 
         def poll(self) -> int:
@@ -124,6 +122,11 @@ def test_launcher_tolerates_stdin_close_after_extension_exit(
 
         def wait(self) -> int:
             return self.returncode
+
+        def communicate(self, input: bytes) -> tuple[None, None]:
+            assert input == b"{}\n"
+            assert json.loads(status_path.read_text(encoding="utf-8")) == {"state": "extension_started"}
+            return None, None
 
     process = _ExitedProcess()
     status_path = tmp_path / "status.json"
@@ -139,23 +142,19 @@ def test_launcher_tolerates_stdin_close_after_extension_exit(
     assert json.loads(status_path.read_text(encoding="utf-8")) == {"state": "extension_started"}
 
 
-def test_launcher_does_not_tolerate_stdin_write_error(
+def test_launcher_does_not_swallow_communication_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class _Stdin:
-        def write(self, _: bytes) -> int:
-            raise OSError(22, "Invalid argument")
-
-        def close(self) -> None:
-            raise AssertionError("close must not run after write failure")
-
     class _ExitedProcess:
         def __init__(self) -> None:
-            self.stdin = _Stdin()
+            self.stdin = io.BytesIO()
             self.returncode = 0
 
         def poll(self) -> int:
             return self.returncode
+
+        def communicate(self, input: bytes) -> tuple[None, None]:
+            raise OSError(5, "real I/O failure")
 
     process = _ExitedProcess()
     status_path = tmp_path / "status.json"
@@ -171,7 +170,7 @@ def test_launcher_does_not_tolerate_stdin_write_error(
     assert json.loads(status_path.read_text(encoding="utf-8")) == {
         "state": "launcher_error",
         "code": "EXTENSION_START_FAILED",
-        "message": "[Errno 22] Invalid argument",
+        "message": "[Errno 5] real I/O failure",
     }
 
 

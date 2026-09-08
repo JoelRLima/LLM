@@ -21,6 +21,12 @@ from agent.tools.contracts import ToolInvocation, ToolStatus
 from agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter, load_extension_manifest
 
 
+@pytest.fixture(autouse=True)
+def _no_surviving_stdio_readers() -> Any:
+    yield
+    assert not [thread.name for thread in threading.enumerate() if thread.name.startswith("stdio-")]
+
+
 def _wait_for_path(path: Path, timeout: float = 5.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline and not path.exists():
