@@ -38,6 +38,7 @@ from agent.planning.task_completion import (
 )
 from agent.planning.task_policy_support import policy_terminal_answer
 from agent.runtime.budget import BudgetExhausted
+from agent.runtime.convergence_runtime import enforce_convergence_terminal
 from agent.runtime.event_kinds import RuntimeEventKind
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import project_operational_outcome
@@ -125,6 +126,10 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             definition_answer = self._ensure_task_definition(inputs)
             if definition_answer is not None:
                 return definition_answer
+            plateau_answer = enforce_convergence_terminal(self.orchestrator)
+            if plateau_answer is not None:
+                self.orchestrator._preserve_checkpoint = True
+                return str(plateau_answer)
             return cast(str, self._execute(inputs, stream_callback))
         except KeyboardInterrupt:
             return cast(

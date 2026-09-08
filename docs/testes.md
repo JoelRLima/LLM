@@ -120,6 +120,20 @@ curados e **8** Regression Cases. O harness scripted prova efeitos e controle
 determinísticos sobre `AgentApplication`; não é evidência de qualidade de
 modelo real.
 
+## Gates Wave 15
+
+A Wave 15 adiciona o checker de ownership e sua campanha em copia temporaria:
+
+```powershell
+.venv\Scripts\python.exe scripts\check_wave15_architecture.py --mutation-campaign
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode long-horizon-dry-run --output .audit-local\out\long-horizon-v1.json
+```
+
+O primeiro comando deve reportar `W15 architecture checker: PASS` e
+`W15-M01..M24: 24/24`; o segundo deve reportar `LH15-01..LH15-16 = 16/16`,
+`unknown = 0` e `qwen_used = false`. A campanha nao publica, commita ou faz
+push do resultado.
+
 ## Runtime, skills e multitarefa
 
 | Teste | Cobertura |

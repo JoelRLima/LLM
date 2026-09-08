@@ -21,6 +21,12 @@ from agent.reporting.observation_evidence import (
     serialize_tool_observations,
 )
 from agent.runtime.budget import task_budget_for
+from agent.runtime.convergence import ConvergenceAccountingContext
+from agent.runtime.convergence_runtime import (
+    current_progress_receipt,
+    enforce_convergence_terminal,
+    observe_convergence_attempt,
+)
 from agent.runtime.operational_outcome import project_operational_outcome
 from agent.watchdog import Watchdog
 
@@ -56,11 +62,62 @@ class ReactiveLoop:
                     "Resposta de decisão reativa não admitida.",
                 )
                 continue
-            answer = self._handle_decision(decision, objective, tool_usage_count, reactive_step)
+            if isinstance(decision, ReactiveToolDecision):
+                # The reactive outer iteration owns the charged attempt.  Its
+                # one-step gateway/plan execution receives an explicit typed
+                # delegated context and cannot charge a second cycle.
+                before = current_progress_receipt(self.orchestrator)
+                root_id = str(
+                    getattr(self.orchestrator.agent_state, "root_task_id", None)
+                    or "root"
+                )
+                accounting = ConvergenceAccountingContext.root_attempt(
+                    root_id,
+                    "reactive_iteration",
+                )
+                sentinel = object()
+                previous_accounting = getattr(
+                    self.orchestrator,
+                    "_w15_convergence_accounting",
+                    sentinel,
+                )
+                self.orchestrator._w15_convergence_accounting = (
+                    ConvergenceAccountingContext.delegated_attempt(
+                        root_id,
+                        "reactive_inner_plan",
+                    )
+                )
+                try:
+                    answer = self._handle_decision(
+                        decision, objective, tool_usage_count, reactive_step
+                    )
+                finally:
+                    if previous_accounting is sentinel:
+                        delattr(self.orchestrator, "_w15_convergence_accounting")
+                    else:
+                        self.orchestrator._w15_convergence_accounting = previous_accounting
+                after = current_progress_receipt(self.orchestrator)
+                observe_convergence_attempt(
+                    self.orchestrator,
+                    before,
+                    after,
+                    accounting=accounting,
+                    replan_callback=lambda: self._request_convergence_replan(objective),
+                )
+                terminal = enforce_convergence_terminal(self.orchestrator)
+                if terminal is not None:
+                    return terminal
+            else:
+                answer = self._handle_decision(
+                    decision, objective, tool_usage_count, reactive_step
+                )
             if answer is not None:
                 return answer
 
     def _limit_answer(self, objective: str, step_number: int) -> str | None:
+        plateau_answer = enforce_convergence_terminal(self.orchestrator)
+        if plateau_answer is not None:
+            return plateau_answer
         history = self.orchestrator.agent_state.tool_history
         config = self.orchestrator.session.config
         policy = getattr(self.orchestrator, "task_policy", None)
@@ -230,3 +287,10 @@ class ReactiveLoop:
 
     def _set_plan_step(self, value: int) -> None:
         self.orchestrator.agent_state.set_plan_step(value)
+
+    def _request_convergence_replan(self, objective: str) -> bool:
+        executor = getattr(self.orchestrator, "plan_executor", None)
+        request = getattr(executor, "_request_convergence_replan", None)
+        if not callable(request):
+            return False
+        return bool(request(0, objective))

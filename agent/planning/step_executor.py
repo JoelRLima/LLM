@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 from agent.contracts import ToolArgs
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.observation_receipts import ObservationDispatchDecision
 from agent.planning.plan_model import ToolPlanStep
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.result_bindings import ResultBindingError, resolve_bound_args
@@ -51,7 +52,7 @@ class StepExecutor:
         if isinstance(prepared, StepExecutionOutcome):
             return prepared
         tool, args, file_path = prepared.tool, prepared.args, prepared.file_path
-        if self.policies.is_hard_blocked(tool, args, file_path, usage):
+        if self.policies.is_hard_blocked(tool, args, file_path, usage, observation_dispatch=prepared.observation_dispatch):
             return self.finish_skipped(index, "passo bloqueado por repetição")
         if self.policies.is_impossible_chunk(tool, args, file_path):
             return self.finish_skipped(index, "intervalo de leitura fora do arquivo")
@@ -60,7 +61,7 @@ class StepExecutor:
         )
         if isinstance(result_or_outcome, StepExecutionOutcome):
             return result_or_outcome
-        return self.finalize_result(index, tool, args, result_or_outcome, file_path, objective, usage)
+        return self.finalize_result(index, tool, args, result_or_outcome, file_path, objective, usage, observation_dispatch=prepared.observation_dispatch)
 
     def prepare_invocation(self, index: int) -> PreparedInvocation | StepExecutionOutcome:
         prepared = self._prepare(index)
@@ -77,6 +78,11 @@ class StepExecutor:
             args=dict(args),
             file_path=file_path,
             plan_id=getattr(self.context.agent_state, "plan_identity", None),
+            observation_dispatch=self.policies.prepare_observation_dispatch(
+                tool,
+                args,
+                file_path,
+            ),
         )
 
     def _prepare(self, index: int) -> tuple[str, ToolArgs, str] | StepExecutionOutcome:
@@ -150,7 +156,11 @@ class StepExecutor:
         *,
         prepared: PreparedInvocation | None = None,
     ) -> ToolResult | StepExecutionOutcome:
-        cache_hit, cached = self.try_cache(tool, args, file_path, self.context.agent_state.get_step_id(index))
+        cache_hit, cached = self.try_cache(
+            tool, args, file_path, self.context.agent_state.get_step_id(index),
+            current_hash=prepared.observation_dispatch.source_hash
+            if prepared is not None and prepared.observation_dispatch is not None else None,
+        )
         if tool == "file_writer" and args.get("content") and file_path:
             self.context.workspace.show_diff(file_path, str(args["content"]))
         if cache_hit and cached is not None:
@@ -185,6 +195,7 @@ class StepExecutor:
     def finalize_result(
         self, index: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
+        observation_dispatch: ObservationDispatchDecision | None = None,
     ) -> StepExecutionOutcome:
         result = ensure_canonical_result(result)
         status = result.status.value
@@ -208,7 +219,16 @@ class StepExecutor:
             return self.finish_permission_denied(index, result)
         if not result.ok:
             return _finish_tool_failure(self, index, tool, args, result)
-        if not self.policies.post_process(index + 1, tool, args, result, file_path, objective, usage):
+        if not self.policies.post_process(
+            index + 1,
+            tool,
+            args,
+            result,
+            file_path,
+            objective,
+            usage,
+            observation_dispatch=observation_dispatch,
+        ):
             return _finish_post_process_failure(self, index, tool, args, result)
         self.context.agent_state.mark_step_completed(index)
         self._emit_terminal("step_completed", index)
@@ -268,8 +288,15 @@ class StepExecutor:
 
     def try_cache(
         self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None,
-        *, record_result: bool = True,
+        *, record_result: bool = True, invocation_id: str | None = None,
+        current_hash: str | None = None,
     ) -> tuple[bool, Optional[ToolResult]]:
         return self.policies.try_cache(
-            tool, args, file_path, step_id, record_result=record_result
+            tool,
+            args,
+            file_path,
+            step_id,
+            record_result=record_result,
+            invocation_id=invocation_id,
+            current_hash=current_hash,
         )

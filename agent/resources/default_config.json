@@ -42,6 +42,7 @@
   "max_reasoning_turns": 3,
   "max_repeated_no_progress": 3,
   "max_consecutive_same_error": 3,
+  "max_no_progress_plateau": 6,
   "default_system_prompt": "You are a helpful assistant. Your final response must be in Portuguese (Brazil), natural and fluent.",
   "ENABLE_GBNF": true,
   "auto_confirm": false,

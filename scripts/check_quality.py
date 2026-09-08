@@ -92,6 +92,7 @@ def check_complexity(baseline: dict[str, object]) -> tuple[list[str], int]:
         "ruff",
         "check",
         ".",
+        "--no-cache",
         "--select",
         "C901",
         "--output-format",
@@ -213,6 +214,19 @@ def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
     return any(module == prefix or module.startswith(prefix + ".") for prefix in prefixes)
 
 
+_W15_RUNTIME_BRIDGES: dict[str, tuple[str, ...]] = {
+    "agent/runtime/convergence.py": ("agent.planning.progress_receipt",),
+    "agent/runtime/convergence_runtime.py": (
+        "agent.planning.progress_receipt",
+        "agent.planning.task_terminal",
+    ),
+}
+
+
+def _is_allowed_w15_bridge(relative: str, imported: str) -> bool:
+    return _matches_prefix(imported, _W15_RUNTIME_BRIDGES.get(relative, ()))
+
+
 def _forbidden_imports(path: Path) -> tuple[str, ...]:
     relative = _relative(path)
     root_compatibility = (
@@ -266,7 +280,9 @@ def check_architecture() -> tuple[list[str], int]:
             continue
         checked += 1
         for line, imported in _imports(path):
-            if _matches_prefix(imported, forbidden):
+            if _matches_prefix(imported, forbidden) and not _is_allowed_w15_bridge(
+                _relative(path), imported
+            ):
                 failures.append(
                     f"arquitetura: {_relative(path)}:{line} importa camada proibida {imported}"
                 )

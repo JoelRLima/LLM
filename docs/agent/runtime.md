@@ -92,6 +92,22 @@ resultado de sucesso.
 O processo recebe `cwd` do workspace, `shell=False` e ambiente operacional
 reduzido. Isso não confina efeitos transitivos nem constitui sandbox.
 
+## Wave 15: convergencia e resume
+
+`ConvergenceStateV1` e o unico owner root/task do plateau amplo. Ele preserva
+`plateau_epoch_id`, o ledger monotonicamente completo
+`credited_fact_ids_seen`, ciclos desde progresso e flags one-shot de refresh e
+replan. Os limiares derivados sao refresh, replan e terminal; o terminal e o
+erro canonico `WATCHDOG_NO_PROGRESS_PLATEAU`, hard, failed e nao retryable.
+O watchdog de repetencia/exact-repeat continua sendo avaliado pelo owner
+existente antes da execucao do passo.
+
+O checkpoint persiste apenas bookkeeping bounded de convergencia. No resume,
+`reconcile_convergence_after_restore` reconstrui receipt e frontier frescos e
+faz uniao de fatos externos sem chamar o reset normal de progresso; divergence
+sozinha nao autoriza uma nova tentativa. Children e workers compartilham o
+owner raiz e nao criam `ConvergenceStateV1` ou `RecoveryBudgetState` proprios.
+
 ## Ownership e cleanup
 
 O adapter possui processo, pipes, threads de drenagem e árvore da invocation.

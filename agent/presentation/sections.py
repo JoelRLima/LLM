@@ -277,6 +277,7 @@ def derive_sections(records: Iterable[ObservationEnvelope]) -> dict[str, Mapping
         "metrics": _available(buckets["metrics"])
         if buckets["metrics"]
         else unavailable_section("no persisted canonical metric facts"),
+        "convergence": unavailable_section("no persisted convergence facts"),
     }
 
 

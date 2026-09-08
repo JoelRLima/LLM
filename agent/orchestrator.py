@@ -92,9 +92,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             lambda: self.context_manager,
         )
         self.task_definition_resolver = self.task_context_resolver
-        self.analysis_notes_file = (
-            effective_paths.scratch_dir / "analysis_notes.md"
-        )
+        self.analysis_notes_file = effective_paths.scratch_dir / "analysis_notes.md"
         self.skills: Dict[str, Any] = {}
         self.tool_registry = tool_registry
         self.tool_invocation_gateway = tool_invocation_gateway
@@ -118,6 +116,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._run_id: str | None = None
         self._run_correlation: RunCorrelation | None = None
         self._run_metric_recorded = False
+        self._w15_context_continuity_active = True
         self.session.cancellation_token = self.cancellation_token = CancellationToken()
         self._task_execution_context: Any | None = None
         self.checkpoint_file = str(
@@ -139,6 +138,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self.metrics_recorder = MetricsRecorder(selected_metrics)
         self.session.set_model_call_callback(self._log_metric)
         self.agent_state = AgentState(memory=memory, budget_ledger=self.task_budget)
+        self.agent_state._w15_workspace_root = self.workspace_root
         self.agent_state.configure_recovery_policy(session.config)
 
         def observe_step_checkpoint(_event: Any) -> None:

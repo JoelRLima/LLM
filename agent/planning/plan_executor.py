@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from agent.planning.deferred_condition import is_deferred_condition
@@ -16,6 +18,13 @@ from agent.planning.semantic_projection import (
 )
 from agent.planning.step_executor import StepExecutor, StepOutcomeKind
 from agent.planning.task_policy_support import policy_terminal_answer
+from agent.runtime.convergence_runtime import (
+    accounting_context_for,
+    bootstrap_convergence,
+    current_progress_receipt,
+    enforce_convergence_terminal,
+    observe_convergence_attempt,
+)
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
 
@@ -39,11 +48,19 @@ class PlanExecutor(PlanExecutorSupportMixin):
     ) -> Optional[str]:
         state = self.orchestrator.agent_state
         self.last_projection = None
+        terminal = enforce_convergence_terminal(self.orchestrator)
+        if terminal is not None:
+            return terminal
         self.orchestrator.workspace.create_restore_point(state.plan)
         self._rebuild_dependency_map()
+        if state.plan:
+            bootstrap_convergence(self.orchestrator)
         return run_plan_loop(self, objective, tool_usage_count, continue_after_plan)
     def _execute_index(self, index: int, objective: str, usage: Dict[str, int]) -> StepLoopResult:
         state = self.orchestrator.agent_state
+        terminal = enforce_convergence_terminal(self.orchestrator)
+        if terminal is not None:
+            return StepLoopResult(index, answer=terminal, stop=True)
         policy = getattr(self.orchestrator, "task_policy", None)
         if policy is not None:
             step = state.plan[index]
@@ -91,7 +108,29 @@ class PlanExecutor(PlanExecutorSupportMixin):
         batch = self._collect_parallel_read_batch(index) if tool in ("file_reader", "directory_lister") else []
         if len(batch) > 1:
             return self._execute_parallel_read_batch(batch, objective, usage)
+        before = current_progress_receipt(self.orchestrator)
         outcome = self.step_executor.execute(index, objective, usage)
+        after = current_progress_receipt(self.orchestrator)
+        accounting = accounting_context_for(
+            self.orchestrator,
+            cycle_kind="linear_step",
+        )
+        if _is_exact_cache_reuse(getattr(outcome, "result", None)):
+            accounting = replace(
+                accounting,
+                cycle_kind="cache_reuse",
+                cache_reuse=True,
+            )
+        observe_convergence_attempt(
+            self.orchestrator,
+            before,
+            after,
+            accounting=accounting,
+            replan_callback=lambda: self._request_convergence_replan(index, objective),
+        )
+        terminal = enforce_convergence_terminal(self.orchestrator)
+        if terminal is not None:
+            return StepLoopResult(index, outcome.result, terminal, True)
         self.last_projection = projection_for_outcome(index, outcome)
         return self._resolve_step_outcome(index, objective, step, tool, outcome)
 
@@ -199,15 +238,61 @@ class PlanExecutor(PlanExecutorSupportMixin):
         objective: str, usage: Dict[str, int],
     ) -> StepLoopResult:
         finalized: list[tuple[int, Any, ToolResult]] = []
+        deferred_replans: list[int] = []
         for index in indices:
+            before = current_progress_receipt(self.orchestrator)
             outcome, result = finalize_parallel_index(
                 self, index, cached, results, correlations, objective, usage
             )
             finalized.append((index, outcome, result))
+            after = current_progress_receipt(self.orchestrator)
+            accounting = accounting_context_for(
+                self.orchestrator,
+                cycle_kind="parallel_slot",
+            )
+            if _is_exact_cache_reuse(result):
+                accounting = replace(
+                    accounting,
+                    cycle_kind="cache_reuse",
+                    cache_reuse=True,
+                )
+
+            def defer_replan(slot_index: int = index) -> bool:
+                deferred_replans.append(slot_index)
+                return True
+
+            observe_convergence_attempt(
+                self.orchestrator,
+                before,
+                after,
+                accounting=accounting,
+                # The logical batch must finish in canonical order before a
+                # convergence replan mutates its plan.  The callback reserves
+                # the typed decision; the existing replan owner runs below.
+                replan_callback=defer_replan,
+            )
+        if deferred_replans:
+            selected_index = deferred_replans[0]
+            if not self._request_convergence_replan(selected_index, objective):
+                self.orchestrator._emit(
+                    "convergence_replan_denied",
+                    {
+                        "reason_code": "CONVERGENCE_REPLAN",
+                        "reason": "recovery_denied_or_unavailable",
+                    },
+                )
         projection = project_outcomes(finalized)
         if projection is None:
             return StepLoopResult(indices[-1] + 1)
         self.last_projection = projection
+        terminal = enforce_convergence_terminal(self.orchestrator)
+        if terminal is not None:
+            return StepLoopResult(
+                indices[-1],
+                projection.result,
+                terminal,
+                True,
+            )
         projection_correlation = correlations[projection.logical_slot]
         projection_tool = projection_correlation.request.tool_name
         projection_args = dict(projection_correlation.request.arguments)
@@ -244,3 +329,42 @@ class PlanExecutor(PlanExecutorSupportMixin):
             projection.outcome.final_answer,
             projection.decisive,
         )
+
+    def _request_convergence_replan(self, index: int, objective: str) -> bool:
+        """Signal the existing replan owner after a bounded plateau stage."""
+
+        state = self.orchestrator.agent_state
+        if not 0 <= index < len(state.plan):
+            return False
+        step = state.plan[index]
+        if not isinstance(step, ToolPlanStep):
+            return False
+        failure = FailureFact.from_code(
+            "TOOL_ERROR",
+            message="atividade sem avanço canônico; solicitar estratégia alternativa",
+            tool_name=step.tool,
+            step_id=step.step_id,
+        )
+        replacements = self._attempt_replan(
+            step,
+            step.tool,
+            dict(step.args),
+            objective,
+            failure=failure,
+        )
+        if not replacements:
+            return False
+        return self._replace_current_step(index, replacements)
+
+
+def _is_exact_cache_reuse(result: ToolResult | None) -> bool:
+    if result is None:
+        return False
+    metadata = getattr(result, "metadata", None)
+    if not isinstance(metadata, Mapping):
+        return False
+    return (
+        metadata.get("observation_classification") == "CACHE_REUSE"
+        and result.executed is False
+        and metadata.get("reusable_exact_bytes") is True
+    )

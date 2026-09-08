@@ -184,6 +184,34 @@ Measurement é coletado pelo executor e projetado no export de eval; o dado
 continua pertencendo ao runtime/reporting, não a uma métrica inventada pelo
 grader. Veja [reporting.md](reporting.md).
 
+## LONG_HORIZON_V1 (Wave 15)
+
+`scripts/run_evaluation_campaign.py --mode long-horizon-dry-run` estende o
+harness scripted com os cenarios LH15-01--LH15-16. O conjunto e deterministico
+e usa os owners canonicos de frontier, receipt, observacao, pressao,
+convergencia e checkpoint, sem chamar Qwen ou outro modelo vivo. LH15-13--16
+exercitam as rotas reais de PlanExecutor, TaskGraphScheduler e ContextManager
+com gateways deterministas; os contadores vem de budgets e eventos do runtime. O
+relatorio bounded registra unidades logicas, model/tool calls, decisoes
+FULL/COMPACT, avancos, ciclos, cache reuse, rehydration, replans, terminal
+reason, arquivos alterados e integridade do candidate/workspace.
+
+O gate esperado e `LH15 = 16/16`, `unknown = 0` e `qwen_used = false`. Os
+cenarios incluem preservacao da frontier durante pressure, overflow obrigatorio,
+resume com plateau, paralelo/TaskGraph e a sequencia reversivel
+`{A} -> {A,B} -> {A,C} -> {A,B} -> {A,C}`. Isso comprova invariantes
+deterministicos do runtime, nao qualidade de modelo real.
+
+LH15-13 mede tres slots (cache, leitura fisica, rehydration), exatamente dois
+ciclos sem progresso e nenhum credito novo. LH15-14 recria filhos no scheduler
+real ate seis ciclos de plateau no root, sem credito ou cobranca delegada dupla.
+LH15-15 executa 32 unidades, verifica um milestone omitido da projecao externa
+e depois alterna B/C ate plateau sem permitir credito por restauracao.
+LH15-16 executa 24 leituras com requests canonicos repetidos, poison de summary
+ativo, respostas deterministas corretas e historico duravel preservado a cada
+ajuste de contexto. Cache reuse significa zero physical tool dispatch; hashing
+local continua sendo I/O de controle de freshness.
+
 ## Estado atual
 
 ```text

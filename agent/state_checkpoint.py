@@ -6,8 +6,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+from agent.planning.observation_receipts import revalidate_state_observation_freshness
+from agent.planning.progress_receipt import build_progress_receipt
 from agent.planning.task_completion_types import CompletionDisposition
 from agent.planning.task_semantics import TaskSemantics, TaskSemanticsError
+from agent.runtime.convergence import ConvergenceStateV1
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
 from agent.runtime.task_directives import (
     ABSENT,
@@ -71,8 +74,11 @@ def progression_checkpoint(state: Any) -> dict[str, Any]:
             if callable(getattr(getattr(state, "task_policy_state", None), "to_checkpoint_dict", None))
             else None
         ),
-        "hierarchical_lifecycle": dict(
-            getattr(state, "hierarchical_lifecycle", {"status": "inactive"})
+        "hierarchical_lifecycle": dict(getattr(state, "hierarchical_lifecycle", {"status": "inactive"})),
+        "convergence": (
+            state.convergence.to_checkpoint_dict()
+            if isinstance(getattr(state, "convergence", None), ConvergenceStateV1)
+            else None
         ),
     }
     task_run_directive = getattr(state, "task_run_directive", None)
@@ -93,7 +99,49 @@ def restore_progression(state: Any, data: dict[str, Any]) -> None:
     _restore_counters(state, data)
     _restore_task_policy(state, data)
     _restore_hierarchical_lifecycle(state, data)
+    _restore_convergence(state, data)
     _restore_terminal(state, data)
+
+
+def _restore_convergence(state: Any, data: Mapping[str, Any]) -> None:
+    """Stage W15 bookkeeping; fresh receipt reconciliation happens later."""
+
+    if "convergence" not in data:
+        state.convergence = ConvergenceStateV1()
+        state._w15_legacy_convergence = True
+        return
+    raw = data.get("convergence")
+    if not isinstance(raw, dict):
+        raise ValueError("Checkpoint W15 convergence object is invalid.")
+    try:
+        state.convergence = ConvergenceStateV1.from_checkpoint_dict(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Checkpoint W15 convergence object is invalid.") from exc
+    state._w15_legacy_convergence = False
+
+
+def reconcile_convergence_after_restore(state: Any) -> dict[str, Any] | None:
+    """Rebuild current facts and reconcile without granting resume progress."""
+
+    convergence = getattr(state, "convergence", None)
+    if not isinstance(convergence, ConvergenceStateV1):
+        return None
+    state._w15_source_freshness = revalidate_state_observation_freshness(
+        state, workspace_root=getattr(state, "_w15_workspace_root", None),
+    )
+    receipt = build_progress_receipt(state)
+    if bool(getattr(state, "_w15_legacy_convergence", False)):
+        convergence.bootstrap(receipt)
+        result = {
+            "classification": "LEGACY_W15_CONVERGENCE_INITIALIZED",
+            "external_credit_fact_ids": (),
+            "cycles_since_progress": convergence.cycles_since_progress,
+            "stage": convergence.stage,
+        }
+    else:
+        result = convergence.reconcile_resume(receipt)
+    state._w15_resume_reconciliation = dict(result)
+    return result
 
 
 def _restore_task_run_directive(state: Any, data: Mapping[str, Any]) -> None:
@@ -131,7 +179,6 @@ def continuity_checkpoint(state: Any) -> dict[str, Any] | None:
 def validate_continuity_metadata(raw: Any) -> dict[str, Any]:
     """Validate and project the bounded schema-1 continuity object."""
 
-
     if not isinstance(raw, Mapping):
         raise ValueError("Checkpoint continuity metadata is invalid.")
     keys = tuple(raw.keys())
@@ -161,9 +208,7 @@ def validate_continuity_metadata(raw: Any) -> dict[str, Any]:
     )
     interrupted_at = _bounded_timestamp(raw.get("interrupted_at"))
     if not interrupted and (interruption_reason is not None or interrupted_at is not None):
-        raise ValueError(
-            "Checkpoint continuity metadata contradicts interrupted=false."
-        )
+        raise ValueError("Checkpoint continuity metadata contradicts interrupted=false.")
     resumed_from_run_id = _bounded_continuity_text(
         raw.get("resumed_from_run_id"), "resumed_from_run_id"
     )

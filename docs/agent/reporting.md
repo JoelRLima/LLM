@@ -66,6 +66,21 @@ objetivo permanece distinta desses fatos.
   seu resumo não substitui os resultados originais usados para controle.
 - `MetricsRecorder`: apêndice JSONL e leitura a partir de watermark.
 
+## Wave 15: metricas e projecao
+
+O inspector consome somente a projecao bounded do frontier/receipt e expoe
+fase, unidades terminais, proxima unidade, identidade do receipt, ciclos,
+dimensoes de progresso, pressao de contexto, observacoes frescas e status de
+validacao. Ele nao chama modelo, tool ou mutation owner.
+
+Os campos minimos de metrica sao
+`context_pressure_events`, `context_compact_requests`,
+`context_full_requests`, `context_mandatory_overflows`,
+`progress_receipt_advances`, `no_progress_cycles`, `context_refreshes`,
+`plateau_replans`, `plateau_terminals`, `observation_reuses`,
+`observation_rehydrations` e `redundant_read_blocks`. Ausencia de uma
+observacao nao e convertida em zero implicito para owners que nao a mediram.
+
 ## Limites de dados
 
 Relatórios truncam previews e normalizam estruturas para serialização, mas não

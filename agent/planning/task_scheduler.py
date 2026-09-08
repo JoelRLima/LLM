@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import concurrent.futures
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Protocol
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, Optional, Protocol
 
 from agent.planning.task_graph import (
     FailurePolicy,
@@ -22,6 +22,13 @@ from agent.planning.task_resources import (
 from agent.resources.contracts import ResourceAccess
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from agent.runtime.convergence import ConvergenceAccountingContext
+from agent.runtime.convergence_runtime import (
+    bootstrap_convergence,
+    current_progress_receipt,
+    enforce_convergence_terminal,
+    observe_convergence_attempt,
+)
 
 from .graph_authority import (
     GraphAuthorityError,
@@ -113,6 +120,7 @@ class TaskGraphScheduler:
         current = state or TaskGraphState(graph)
         if current.graph != graph:
             raise ValueError("Estado pertence a outro TaskGraph.")
+        bootstrap_convergence(parent_context, graph_state=current)
         results: Dict[str, TaskResult] = {}
         order: list[str] = []
         fail_fast = False
@@ -120,13 +128,33 @@ class TaskGraphScheduler:
             if parent_context.cancellation.cancelled or fail_fast:
                 self._cancel_pending(current)
                 break
+            terminal = enforce_convergence_terminal(parent_context)
+            if terminal is not None:
+                self._cancel_pending(current)
+                current.errors.setdefault("__convergence__", terminal)
+                break
             self._block_failed_dependencies(current)
             ready = self._ready_nodes(graph, current)
             if not ready:
                 break
             batch = self._select_batch(ready)
-            batch_results = self._run_batch(batch, current, parent_context, requirements)
-            fail_fast = self._record_batch(batch, batch_results, current, results, order)
+            before_receipts: dict[str, Any] = {}
+            batch_results = self._run_batch(
+                batch,
+                current,
+                parent_context,
+                requirements,
+                before_receipts=before_receipts,
+            )
+            fail_fast = self._record_batch(
+                batch,
+                batch_results,
+                current,
+                results,
+                order,
+                parent_context=parent_context,
+                before_receipts=before_receipts,
+            )
         return GraphExecutionResult(dict(current.states), results, tuple(order), dict(current.errors))
 
     def _validate(
@@ -200,6 +228,8 @@ class TaskGraphScheduler:
         state: TaskGraphState,
         parent: TaskExecutionContext,
         requirements: GraphAuthorityRequirements | None = None,
+        *,
+        before_receipts: Optional[dict[str, Any]] = None,
     ) -> Dict[str, TaskResult]:
         requirements = requirements or self._validate(state.graph, parent)
         results: Dict[str, TaskResult] = {}
@@ -222,14 +252,31 @@ class TaskGraphScheduler:
                 )
         if not dispatch_batch:
             return results
+        if before_receipts is not None:
+            for node in dispatch_batch:
+                before_receipts[node.node_id] = current_progress_receipt(
+                    parent,
+                    graph_state=state,
+                )
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(dispatch_batch)) as pool:
             futures: Dict[concurrent.futures.Future[TaskResult], TaskNode] = {}
             for node in dispatch_batch:
                 state.states[node.node_id] = NodeState.RUNNING
                 node_requirement = requirements.for_node(node.node_id)
+                parent_accounting = getattr(parent, "convergence_accounting", None)
+                delegated_accounting = ConvergenceAccountingContext.delegated_attempt(
+                    parent.root_task_id,
+                    "task_graph_node",
+                )
+                if isinstance(parent_accounting, ConvergenceAccountingContext) and parent_accounting.delegated:
+                    delegated_accounting = replace(
+                        parent_accounting,
+                        cycle_kind="task_graph_node",
+                    )
                 child = parent.child(
                     node.node_id,
                     permissions=frozenset(node_requirement.required_capabilities),
+                    convergence_accounting=delegated_accounting,
                 )
                 child.emit("task_node_started", {"objective": node.objective})
                 futures[pool.submit(self.executor.execute, node, child)] = node
@@ -251,6 +298,9 @@ class TaskGraphScheduler:
     def _record_batch(
         batch: list[TaskNode], batch_results: Dict[str, TaskResult], state: TaskGraphState,
         results: Dict[str, TaskResult], order: list[str],
+        *,
+        parent_context: TaskExecutionContext | None = None,
+        before_receipts: Optional[dict[str, Any]] = None,
     ) -> bool:
         fail_fast = False
         status_map = {
@@ -269,4 +319,20 @@ class TaskGraphScheduler:
                 state.errors[node.node_id] = result.error or result.summary or result.status.value
             if result.status == TaskStatus.FAILED and node.failure_policy == FailurePolicy.FAIL_FAST:
                 fail_fast = True
+            before = (before_receipts or {}).get(node.node_id)
+            if before is not None and parent_context is not None:
+                after = current_progress_receipt(parent_context, graph_state=state)
+                observe_convergence_attempt(
+                    parent_context,
+                    before,
+                    after,
+                    accounting=getattr(
+                        parent_context,
+                        "convergence_accounting",
+                        ConvergenceAccountingContext.root_attempt(
+                            parent_context.root_task_id,
+                            "task_graph_node",
+                        ),
+                    ),
+                )
         return fail_fast

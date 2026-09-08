@@ -197,6 +197,10 @@ class InspectionService:
             query=selected_query,
             bookmarks=bookmark_records,
             issues=tuple(selected.read_result.issues),
+            convergence=sections.get(
+                "convergence",
+                unavailable_section("no persisted convergence facts"),
+            ),
         )
 
     @staticmethod

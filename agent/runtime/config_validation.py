@@ -73,6 +73,11 @@ def validate_root(validator: ConfigValidator, defaults: Mapping[str, Any]) -> No
 
 def validate_limits(validator: ConfigValidator, defaults: Mapping[str, Any]) -> None:
     for key, fallback in defaults.items():
+        if key == "max_no_progress_plateau":
+            value = validator.config.get(key, fallback)
+            if isinstance(value, bool) or not isinstance(value, int) or not 4 <= value <= 100:
+                raise ValueError("'max_no_progress_plateau' deve ser um inteiro entre 4 e 100")
+            continue
         validator.value(key, int, fallback=fallback, minimum=1)
 
 

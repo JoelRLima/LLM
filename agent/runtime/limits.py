@@ -24,6 +24,13 @@ def _positive(value: Any, fallback: int) -> int:
         return max(1, int(fallback))
 
 
+def _strict_plateau_limit(source: Mapping[str, Any], packaged: Mapping[str, Any]) -> int:
+    raw = source.get("max_no_progress_plateau", packaged.get("max_no_progress_plateau", 6))
+    if isinstance(raw, bool) or not isinstance(raw, int) or not 4 <= raw <= 100:
+        raise ValueError("max_no_progress_plateau must be an integer between 4 and 100")
+    return raw
+
+
 def runtime_limit_values(config: Mapping[str, Any] | None = None) -> dict[str, int]:
     """Materialize all limits without callers inventing fallback literals."""
 
@@ -68,6 +75,7 @@ def runtime_limit_values(config: Mapping[str, Any] | None = None) -> dict[str, i
         "max_consecutive_same_error": configured(
             "max_consecutive_same_error", int(packaged["max_consecutive_same_error"])
         ),
+        "max_no_progress_plateau": _strict_plateau_limit(source, packaged),
         "max_reasoning_turns": configured(
             "max_reasoning_turns", int(packaged["max_reasoning_turns"])
         ),

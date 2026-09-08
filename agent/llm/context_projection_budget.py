@@ -99,8 +99,12 @@ def fit_contextual_request(
     context_limit: int | None,
     gateway: Any,
     build_request: Callable[[str | None, str | None], Any],
+    safety_margin: int = 0,
 ) -> ContextRequestFit:
     """Choose a request-local projection using the existing measurement owner."""
+
+    if isinstance(safety_margin, bool) or not isinstance(safety_margin, int) or safety_margin < 0:
+        raise ValueError("safety_margin must be a non-negative integer")
 
     required_message = (
         render_untrusted_context_envelope(required_records, category=REQUIRED_EVIDENCE)
@@ -116,7 +120,7 @@ def fit_contextual_request(
     known_limit = context_limit if isinstance(context_limit, int) and context_limit > 0 else None
     mandatory_tokens = measurement.token_count if measurement.available else None
     if known_limit is not None and measurement.exact and mandatory_tokens is not None:
-        if mandatory_tokens + output_reserve > known_limit:
+        if mandatory_tokens + output_reserve + safety_margin > known_limit:
             excluded = _excluded_optional_records(optional_records, "mandatory_overflow")
             projection = ModelContextProjection(
                 required_message,
@@ -132,8 +136,11 @@ def fit_contextual_request(
                 measurement,
                 final_measurement=measurement,
                 mandatory_overflow=True,
+                decision="MANDATORY_OVERFLOW",
+                safety_margin=safety_margin,
+                dispatch_allowed=False,
             )
-        available_optional = max(0, known_limit - output_reserve - mandatory_tokens)
+        available_optional = max(0, known_limit - output_reserve - mandatory_tokens - safety_margin)
         optional_budget = max(
             0,
             min(MAX_OPTIONAL_TOKENS, known_limit // 4, available_optional),
@@ -159,7 +166,7 @@ def fit_contextual_request(
             known_limit is not None
             and final_measurement.exact
             and final_measurement.token_count is not None
-            and final_measurement.token_count + output_reserve > known_limit
+            and final_measurement.token_count + output_reserve + safety_margin > known_limit
         ):
             optional_message = None
             optional_truncated = True
@@ -182,12 +189,16 @@ def fit_contextual_request(
         optional_truncated,
         fit_proven,
     )
+    decision = "FULL" if fit_proven and not optional_truncated else "COMPACT"
     return ContextRequestFit(
         chosen_request,
         projection,
         measurement,
         final_measurement=final_measurement,
         mandatory_overflow=False,
+        decision=decision,
+        safety_margin=safety_margin,
+        dispatch_allowed=True,
     )
 
 

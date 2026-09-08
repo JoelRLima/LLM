@@ -13,7 +13,12 @@ from agent.planning.observation_invalidation import (
     clear_observation_state,
     mutation_footprint,
 )
+from agent.planning.observation_receipts import (
+    ObservationClassification,
+    ObservationDispatchDecision,
+)
 from agent.planning.step_contracts import ExecutionContext
+from agent.planning.step_observation_policy import ObservationPolicyMixin
 from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
 from agent.runtime.failures import FailureFact
 from agent.runtime.mutation_evidence import project_mutation_evidence
@@ -22,7 +27,7 @@ from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import EvidenceProvenance
 
 
-class StepPolicies:
+class StepPolicies(ObservationPolicyMixin):
     """Validation, deduplication, cache and post-processing policies for a step."""
 
     def __init__(
@@ -38,6 +43,7 @@ class StepPolicies:
         if self._path_resolver is None:
             return Path(file_path)
         return self._path_resolver(file_path)
+
     def validate(self, step_number: int, tool: str, args: ToolArgs) -> bool:
         valid, error = validate_tool_args(tool, args, self.context.skills)
         if not valid:
@@ -81,13 +87,26 @@ class StepPolicies:
             self.context.fail_task()
         return False
     def is_hard_blocked(
-        self, tool: str, args: ToolArgs, file_path: str, usage: Dict[str, int]
+        self, tool: str, args: ToolArgs, file_path: str, usage: Dict[str, int],
+        *, observation_dispatch: ObservationDispatchDecision | None = None,
     ) -> bool:
+        if observation_dispatch is not None and observation_dispatch.classification in {
+            ObservationClassification.CACHE_REUSE,
+            ObservationClassification.CONTEXT_REHYDRATION,
+            ObservationClassification.STALE_REREAD,
+        }:
+            return False
         reason = self._analyzer_repetition(tool, file_path, usage)
         reason = reason or self._reader_repetition(tool, args, file_path, usage)
+        if reason:
+            self._record_metric(
+                "redundant_read_blocks",
+                {"tool": tool, "file_path": self._source_identity(file_path), "reason": reason},
+            )
         if reason and self.context.verbose:
             print(f"[DEBUG] Hard block silencioso: {reason} em '{file_path}'")
         return bool(reason)
+
     @staticmethod
     def _analyzer_repetition(tool: str, file_path: str, usage: Dict[str, int]) -> str | None:
         if tool != "code_analyzer" or not file_path:
@@ -198,11 +217,12 @@ class StepPolicies:
 
     def try_cache(
         self, tool: str, args: ToolArgs, file_path: str, step_id: Optional[str] = None,
-        *, record_result: bool = True,
+        *, record_result: bool = True, invocation_id: str | None = None,
+        current_hash: str | None = None,
     ) -> tuple[bool, Optional[ToolResult]]:
         if tool not in ("code_analyzer", "file_reader") or not file_path or "start_line" in args or "end_line" in args:
             return False, None
-        current_hash = self._file_hash(file_path)
+        current_hash = current_hash or self._file_hash(file_path)
         memory = self.context.agent_state.memory.state
         if not current_hash or current_hash != memory.get("file_hashes", {}).get(file_path):
             return False, None
@@ -224,12 +244,18 @@ class StepPolicies:
         cache_metadata = {
             "complete": complete,
             "truncated": False,
-            "source_identity": file_path,
+            "source_identity": self._source_identity(file_path),
             "source_hash": current_hash,
             "source_extent": source_extent,
+            "observation_classification": (
+                ObservationClassification.CACHE_REUSE.value
+                if complete
+                else ObservationClassification.REDUNDANT.value
+            ),
+            "reusable_exact_bytes": complete,
         }
         result = ToolResult(
-            invocation_id=f"cache:{uuid4().hex}",
+            invocation_id=invocation_id or f"cache:{uuid4().hex}",
             status=ToolStatus.SUCCEEDED,
             data=summary,
             message=f"Usando cache de {file_path}.",
@@ -246,10 +272,27 @@ class StepPolicies:
             evidence_provenance=provenance.value,
             metadata=cache_metadata,
         )
-        self.context._emit("cache_hit", {"file": file_path, "hash": current_hash[:8]})
+        self.context._emit(
+            "cache_hit",
+            {"file": self._source_identity(file_path), "hash": current_hash[:8]},
+        )
         if record_result:
             self.context._emit("tool_end", {"tool": tool, "ok": True})
             self.context.agent_state.record_tool_result(tool, args, result, step_id=step_id)
+        if complete:
+            self.context._emit(
+                "observation_reuse",
+                {
+                    "tool": tool,
+                    "source_identity": self._source_identity(file_path),
+                    "classification": ObservationClassification.CACHE_REUSE.value,
+                    "physical_execution": False,
+                },
+            )
+            self._record_metric(
+                "observation_reuses",
+                {"tool": tool, "source_identity": self._source_identity(file_path)},
+            )
         return True, result
 
     def _file_hash(self, file_path: str) -> str | None:
@@ -265,9 +308,42 @@ class StepPolicies:
     def post_process(
         self, step_number: int, tool: str, args: ToolArgs, result: ToolResult,
         file_path: str, objective: str, usage: Dict[str, int],
+        observation_dispatch: ObservationDispatchDecision | None = None,
     ) -> bool:
         result = ensure_canonical_result(result)
         del objective
+        classification = self.classify_observation_result(
+            tool,
+            args,
+            result,
+            dispatch=observation_dispatch,
+        )
+        metadata = dict(result.metadata) if isinstance(result.metadata, Mapping) else {}
+        metadata["observation_classification"] = classification.value
+        metadata["observation_physical_execution"] = result.executed is True
+        if observation_dispatch is not None:
+            metadata["pending_need"] = observation_dispatch.pending_need
+            # Operational classification alone never proves semantic relevance.
+            metadata["satisfies_pending_need"] = (
+                self.newly_satisfies_observation_need(observation_dispatch, result)
+            )
+        annotate = getattr(self.context.agent_state, "annotate_last_tool_result", None)
+        if callable(annotate):
+            annotate(result, metadata=metadata)
+        if classification is ObservationClassification.CONTEXT_REHYDRATION:
+            self.context._emit(
+                "observation_rehydration",
+                {
+                    "tool": tool,
+                    "classification": classification.value,
+                    "physical_execution": True,
+                    "source_identity": self._source_identity(file_path),
+                },
+            )
+            self._record_metric(
+                "observation_rehydrations",
+                {"tool": tool, "source_identity": self._source_identity(file_path)},
+            )
         if result.ok:
             self.invalidate_observation_state(tool, usage, args=args, result=result)
         if tool == "file_writer" and result.ok and file_path.endswith(".py"):

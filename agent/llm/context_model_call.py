@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, Dict
@@ -12,9 +13,10 @@ from agent.llm.context_model_request_support import (
     _retry_fit_request,
     _supported_grammar,
 )
+from agent.llm.context_pressure import decide_context_pressure
 from agent.llm.context_projection import (
+    REQUIRED_EVIDENCE,
     ContextFitError,
-    fit_contextual_request,
     fixed_untrusted_data_policy,
 )
 from agent.llm.decision_contract import ModelRequestContract, resolve_request_contract
@@ -29,6 +31,10 @@ def _apply_projection(
     optional_message: str | None,
 ) -> None:
     messages = [message.copy() for message in base_messages]
+    if required_message and optional_message:
+        combined = _combine_projection_messages(required_message, optional_message)
+        if combined is not None:
+            required_message, optional_message = combined, None
     data_messages = [
         {"role": "user", "content": content}
         for content in (required_message, optional_message)
@@ -39,6 +45,38 @@ def _apply_projection(
         insertion -= 1
     messages[insertion:insertion] = data_messages
     manager.session.messages = messages
+
+
+def _combine_projection_messages(
+    required_message: str,
+    optional_message: str,
+) -> str | None:
+    """Keep one measured untrusted envelope when both tiers are present.
+
+    The record-level ``necessity`` values remain authoritative.  Combining the
+    envelopes avoids making the first required projection look like the whole
+    context to compatibility consumers, while preserving the exact measured
+    request shape and the current-user message position.
+    """
+
+    try:
+        required = json.loads(required_message)
+        optional = json.loads(optional_message)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(required, dict) or not isinstance(optional, dict):
+        return None
+    if required.get("schema") != optional.get("schema"):
+        return None
+    required_records = required.get("records")
+    optional_records = optional.get("records")
+    if not isinstance(required_records, list) or not isinstance(optional_records, list):
+        return None
+    merged = dict(required)
+    merged["records"] = [*required_records, *optional_records]
+    if optional.get("records_clipped_before_serialization"):
+        merged["records_clipped_before_serialization"] = True
+    return json.dumps(merged, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _build_attempt(
@@ -77,9 +115,21 @@ def _prepare_attempt(
     context_limit = getattr(mandatory_request, "context_limit", None)
     if not isinstance(context_limit, int) or context_limit <= 0:
         context_limit = getattr(manager.hardware_profile, "context_limit", None)
-    fit = fit_contextual_request(
+    internal_required = tuple(
+        record
+        for record in optional_records
+        if record.necessity == REQUIRED_EVIDENCE
+        and str(record.source_id).startswith(("runtime:", "required:", "evidence:"))
+    )
+    optional = tuple(
+        record
+        for record in optional_records
+        if record not in internal_required
+    )
+    fit = decide_context_pressure(
         mandatory_request=mandatory_request,
-        optional_records=optional_records,
+        required_records=internal_required,
+        optional_records=optional,
         context_limit=context_limit,
         gateway=getattr(manager.session, "gateway", None),
         build_request=lambda required, optional: _build_attempt(
@@ -101,6 +151,9 @@ def _prepare_attempt(
     recorder = getattr(manager, "record_context_projection", None)
     if callable(recorder):
         recorder(fit.projection)
+    pressure_recorder = getattr(manager, "record_context_pressure", None)
+    if callable(pressure_recorder):
+        pressure_recorder(fit)
     return fit
 
 

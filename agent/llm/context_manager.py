@@ -1,5 +1,5 @@
 import datetime as dt
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -7,6 +7,7 @@ from agent.error_handler import ErrorHandler
 from agent.llm.admitted_decisions import AdmittedModelDecision, ModelDecisionValue
 from agent.llm.context_manager_auxiliary import ContextAuxiliaryMixin
 from agent.llm.context_model_call import run_model_call
+from agent.llm.context_pressure import ContextPressureResult
 from agent.llm.context_projection import (
     UNTRUSTED_MEMORY,
     UNTRUSTED_SESSION,
@@ -17,7 +18,6 @@ from agent.llm.context_projection import (
 )
 from agent.llm.context_views import (
     build_compact_view,
-    compress_conversation,
     discover_project_context,
     get_file_hints,
 )
@@ -30,6 +30,8 @@ from agent.memory.prompt_context import (
     build_memory_prompt_context,
 )
 from agent.memory.semantic_memory import SemanticMemory
+from agent.runtime.event_dispatch import dispatch_runtime_event
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.hardware import resolve_hardware_profile
 from agent.runtime.logging import logger
 from agent.runtime.recovery import RecoveryScope
@@ -50,15 +52,18 @@ class ContextManager(ContextAuxiliaryMixin):
         verbose: bool = False,
         task_context_resolver: Any | None = None,
         workspace_root: str | Path = ".",
+        metric_callback: Callable[[Dict[str, Any]], None] | None = None,
     ):
         self.session = session
         self.agent_state = agent_state
         self.verbose = verbose
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.task_context_resolver = task_context_resolver
+        self._metric_callback = metric_callback
         self.hardware_profile = resolve_hardware_profile(self.session.config)
         self._cached_project_context: Optional[str] = None
         self._last_context_projection: ModelContextProjection | None = None
+        self._last_context_pressure: ContextPressureResult | None = None
         self._last_context_metrics: tuple[dict[str, Any], ...] = ()
         self.semantic: SemanticMemory | None = None
         if bool(self.session.config.get("semantic_memory_enabled", False)):
@@ -88,7 +93,15 @@ class ContextManager(ContextAuxiliaryMixin):
         )
         return total_chars // 4
     def maybe_compress_context(self) -> None:
-        compress_conversation(self.session, self.hardware_profile.context_limit, self.verbose)
+        """Mark the old compatibility seam without mutating task context.
+
+        W15 model-actionable calls are fitted request-locally by
+        ``run_model_call``.  The legacy summary implementation remains
+        available only to explicit compatibility callers of
+        ``compress_conversation``; this task seam never invokes it.
+        """
+
+        return None
     def build_compact_view(self) -> List[Dict[str, Any]]:
         return build_compact_view(
             self.session.messages,
@@ -127,6 +140,61 @@ class ContextManager(ContextAuxiliaryMixin):
     @property
     def last_context_metrics(self) -> tuple[dict[str, Any], ...]:
         return self._last_context_metrics
+
+    def record_context_pressure(self, result: ContextPressureResult) -> None:
+        """Retain only bounded pressure metadata for reporting/inspection."""
+
+        self._last_context_pressure = result
+        payload = result.to_dict()
+        self._emit_runtime_projection("context_pressure_decision", payload)
+        if result.decision.value == "COMPACT":
+            self._emit_runtime_projection("context_projection_compacted", payload)
+        callback = self._metric_callback
+        if callable(callback):
+            try:
+                callback({"metric_type": "context_pressure_events", **payload})
+                callback(
+                    {
+                        "metric_type": (
+                            "context_compact_requests"
+                            if result.decision.value == "COMPACT"
+                            else "context_full_requests"
+                            if result.decision.value == "FULL"
+                            else "context_mandatory_overflows"
+                        ),
+                        "reason_code": result.reason_code,
+                    }
+                )
+            except Exception:
+                pass
+
+    @property
+    def last_context_pressure(self) -> ContextPressureResult | None:
+        return self._last_context_pressure
+
+    def refresh_for_convergence(self) -> None:
+        """Invalidate only derived context views for one plateau refresh."""
+
+        self._cached_project_context = None
+        self._last_context_metrics = ()
+        self._emit_runtime_projection(
+            "context_refresh",
+            {"reason": "no_progress_plateau"},
+        )
+
+    def _emit_runtime_projection(self, event_type: str, data: Mapping[str, Any]) -> None:
+        correlation = getattr(self.agent_state, "runtime_correlation", None)
+        sink = getattr(self.session, "event_sink", None)
+        if correlation is None or sink is None:
+            return
+        try:
+            dispatch_runtime_event(
+                sink,
+                RuntimeEvent.from_fields(event_type, correlation, data),
+            )
+        except Exception:
+            # Context projections are observers and cannot change task truth.
+            return
 
     def build_trusted_task_context(self) -> str:
         reference = getattr(self.agent_state, 'task_definition_ref', None)

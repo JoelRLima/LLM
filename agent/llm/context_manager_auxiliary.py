@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.llm.context_projection import (
+    REQUIRED_EVIDENCE,
     UNTRUSTED_MEMORY,
     UNTRUSTED_SESSION,
     UNTRUSTED_WORKSPACE,
@@ -18,6 +19,7 @@ from agent.memory.prompt_context import (
     DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS,
     build_memory_prompt_context,
 )
+from agent.planning.execution_frontier import build_execution_frontier
 
 
 class ContextAuxiliaryMixin:
@@ -36,6 +38,52 @@ class ContextAuxiliaryMixin:
         """Build ordered untrusted sources without changing task authority."""
 
         records: list[ContextSourceRecord] = list(required_records)
+        # The frontier is a fresh, runtime-owned data projection.  Its
+        # provenance/necessity are assigned here, never copied from a model or
+        # tool payload.  It contains metadata only; exact source bytes remain
+        # governed by the request's deterministic evidence contract.
+        # Any caller-supplied look-alike is discarded at this internal
+        # boundary before the canonical record is created.
+        records = [
+            record
+            for record in records
+            if str(record.source_kind).casefold() != "execution_frontier"
+        ]
+        convergence = getattr(self.agent_state, "convergence", None)
+        snapshot = getattr(convergence, "snapshot", None)
+        convergence_facts = snapshot() if callable(snapshot) else None
+        frontier = build_execution_frontier(
+            self.agent_state,
+            convergence=convergence_facts,
+            workspace_root=self.workspace_root,
+        )
+        emit_projection = getattr(self, "_emit_runtime_projection", None)
+        if callable(emit_projection):
+            emit_projection(
+                "execution_frontier_projected",
+                {
+                    "receipt_id": frontier.progress_receipt_id,
+                    "current_state_id": frontier.current_state_id,
+                    "next_unit_count": frontier.next_units.total_count,
+                    "next_units_truncated": frontier.next_units.truncated,
+                    "running_unit_count": frontier.running_units.total_count,
+                    "observations_truncated": frontier.observations.truncated,
+                    "credit_fact_projection": list(frontier.credit_fact_projection),
+                },
+            )
+        records.insert(
+            0,
+            ContextSourceRecord(
+                source_id="runtime:execution-frontier",
+                source_kind="execution_frontier",
+                necessity=REQUIRED_EVIDENCE,
+                trust_class=UNTRUSTED_SESSION,
+                reason="fresh runtime projection for the current task decision",
+                data={"frontier": frontier.to_dict()},
+                identity=frontier.current_state_id,
+                freshness="CURRENT_RUNTIME_PROJECTION",
+            ),
+        )
         memory_budget = min(
             DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS,
             max(0, self.hardware_profile.context_limit // 8),

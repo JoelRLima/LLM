@@ -21,12 +21,17 @@ from agent.runtime.budget_estimation import (
 )
 from agent.runtime.context_results import Artifact, TaskResult, TaskStatus
 from agent.runtime.context_tools import CorrelatedToolRequestMixin
+from agent.runtime.convergence import ConvergenceAccountingContext, ConvergenceStateV1
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import dispatch_runtime_event
 from agent.runtime.events import RuntimeEvent
 from agent.runtime.limits import default_runtime_limit, runtime_limit_values
 from agent.runtime.recovery import RecoveryBudgetState
-from agent.runtime.task_policy import TaskPolicyState, TaskRuntimePolicy, bind_task_execution_context
+from agent.runtime.task_policy import (
+    TaskPolicyState,
+    TaskRuntimePolicy,
+    bind_task_execution_context,
+)
 
 __all__ = ["Artifact", "RuntimeLimits", "TaskExecutionContext", "TaskResult", "TaskStatus"]
 
@@ -85,6 +90,7 @@ class RuntimeLimits:
     max_task_wall_seconds: int = field(default_factory=lambda: default_runtime_limit("max_task_wall_seconds"))
     max_repeated_no_progress: int = field(default_factory=lambda: default_runtime_limit("max_repeated_no_progress"))
     max_consecutive_same_error: int = field(default_factory=lambda: default_runtime_limit("max_consecutive_same_error"))
+    max_no_progress_plateau: int = field(default_factory=lambda: default_runtime_limit("max_no_progress_plateau"))
     max_reasoning_turns: int = field(default_factory=lambda: default_runtime_limit("max_reasoning_turns"))
     max_output_tokens: int = field(default_factory=lambda: default_runtime_limit("max_output_tokens"))
     max_repair_attempts: int = field(default_factory=lambda: default_runtime_limit("max_repair_attempts"))
@@ -117,6 +123,8 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
     policy_state: TaskPolicyState | None = None
     recovery_budget: RecoveryBudgetState | None = None
     task_policy: TaskRuntimePolicy | None = None
+    convergence: ConvergenceStateV1 | None = None
+    convergence_accounting: ConvergenceAccountingContext | None = None
 
     def __post_init__(self) -> None:
         correlation = self.correlation
@@ -157,6 +165,16 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
         object.__setattr__(self, "budget_ledger", ledger)
         object.__setattr__(self, "model_call_budget", ledger)
         bind_task_execution_context(self, ledger=ledger, correlation=correlation)
+        if self.convergence is None:
+            object.__setattr__(self, "convergence", ConvergenceStateV1(self.limits.max_no_progress_plateau))
+        else:
+            self.convergence.reconfigure(self.limits.max_no_progress_plateau)
+        if self.convergence_accounting is None:
+            object.__setattr__(
+                self,
+                "convergence_accounting",
+                ConvergenceAccountingContext.root_attempt(correlation.root_task_id),
+            )
     @property
     def run_id(self) -> str:
         correlation = self.correlation
@@ -177,7 +195,13 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
             raise RuntimeError("task execution context has no runtime correlation")
         return correlation
 
-    def child(self, node_id: str, permissions: Optional[frozenset[str]] = None) -> "TaskExecutionContext":
+    def child(
+        self,
+        node_id: str,
+        permissions: Optional[frozenset[str]] = None,
+        *,
+        convergence_accounting: ConvergenceAccountingContext | None = None,
+    ) -> "TaskExecutionContext":
         requested = self.permissions if permissions is None else frozenset(permissions)
         if not requested.issubset(self.permissions):
             missing = ", ".join(sorted(requested - self.permissions))
@@ -193,6 +217,7 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
             node_id=child_correlation.node_id,
             permissions=requested,
             metadata=dict(self.metadata),
+            convergence_accounting=convergence_accounting or self.convergence_accounting,
         )
 
     def new_task(self) -> "TaskExecutionContext":
@@ -206,6 +231,8 @@ class TaskExecutionContext(CorrelatedToolRequestMixin):
             parent_task_id=task_correlation.parent_task_id,
             node_id=task_correlation.node_id,
             metadata=dict(self.metadata),
+            convergence=ConvergenceStateV1(self.limits.max_no_progress_plateau),
+            convergence_accounting=ConvergenceAccountingContext.root_attempt(task_correlation.root_task_id),
         )
 
     def emit(self, event_type: str, data: Optional[Dict[str, Any]] = None) -> None:

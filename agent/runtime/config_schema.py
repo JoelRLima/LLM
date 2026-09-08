@@ -58,6 +58,7 @@ ROOT_FIELDS: dict[str, Validator] = {
     "max_reasoning_turns": _is_int_at_least(1),
     "max_repeated_no_progress": _is_int_at_least(1),
     "max_consecutive_same_error": _is_int_at_least(1),
+    "max_no_progress_plateau": lambda value: isinstance(value, int) and not isinstance(value, bool) and 4 <= value <= 100,
     "default_system_prompt": _is_string,
     "ENABLE_GBNF": _is_bool,
     "auto_confirm": _is_bool,

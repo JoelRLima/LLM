@@ -34,6 +34,7 @@ DEFAULT_COST_WATCHDOG = {
         "max_task_steps", "max_task_tokens", "max_task_tool_calls",
         "max_task_wall_seconds", "max_repeated_no_progress",
         "max_consecutive_same_error", "max_reasoning_turns",
+        "max_no_progress_plateau",
     )
 }
 DEFAULT_CONFIG = deepcopy(_PACKAGED_DEFAULTS)

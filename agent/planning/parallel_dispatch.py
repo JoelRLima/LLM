@@ -67,7 +67,14 @@ def run_parallel_tools(
             correlations[index] = correlation
             state.mark_step_running(index)
             cache_hit, cache_result = plan_executor.step_executor.try_cache(
-                tool, args, file_path, correlation.step_id, record_result=False
+                tool,
+                args,
+                file_path,
+                correlation.step_id,
+                record_result=False,
+                invocation_id=correlation.invocation_id,
+                current_hash=prepared_for_dispatch.observation_dispatch.source_hash
+                if prepared_for_dispatch.observation_dispatch is not None else None,
             )
             if cache_hit and cache_result is not None:
                 cached[index] = correlate_parallel_result(cache_result, correlation)

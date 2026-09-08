@@ -227,6 +227,7 @@ class InspectorSnapshot:
     bookmarks: tuple[Mapping[str, Any], ...] = ()
     issues: tuple[str, ...] = ()
     plan_steps: Mapping[str, Any] = field(default_factory=unavailable_section)
+    convergence: Mapping[str, Any] = field(default_factory=unavailable_section)
 
     def __post_init__(self) -> None:
         for name in (
@@ -239,6 +240,7 @@ class InspectorSnapshot:
             "changes",
             "metrics",
             "heartbeat",
+            "convergence",
         ):
             object.__setattr__(self, name, freeze_observation_value(redact_observation_value(getattr(self, name))))
         if self.selected_detail is not None:
@@ -268,6 +270,7 @@ class InspectorSnapshot:
             "query": self.query.to_dict(),
             "bookmarks": [unfreeze_observation_value(item) for item in self.bookmarks],
             "issues": list(self.issues),
+            "convergence": unfreeze_observation_value(self.convergence),
         }
 
     def to_json(self) -> str:

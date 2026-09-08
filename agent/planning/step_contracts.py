@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol
 
 from agent.contracts import EventData, ToolArgs, ToolHistoryEntry
+from agent.planning.observation_receipts import ObservationDispatchDecision
 from agent.planning.plan_model import Plan
 from agent.runtime.failures import FailureFact
 from agent.tools.contracts import ToolResult
@@ -47,6 +48,9 @@ class PreparedInvocation:
     # A prepared value must not outlive the canonical plan that produced it.
     # This is boundary metadata, not a second causal dependency language.
     plan_id: Optional[str] = None
+    # Observation classification is decided before gateway dispatch and is
+    # carried unchanged into the single finalization owner.
+    observation_dispatch: Optional[ObservationDispatchDecision] = None
 
 
 class MemoryPort(Protocol):

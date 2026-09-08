@@ -94,6 +94,25 @@ O lifecycle hierárquico macro é explícito. Uma execução interrompida em
 `HIERARCHICAL_RESUME_UNSUPPORTED`. Limpar um microplano individual não libera
 novas admissões para a tarefa raiz.
 
+## Wave 15: frontier e receipt
+
+`ExecutionFrontierSnapshotV1` e a projecao imutavel e bounded da unidade
+corrente: next/running/terminal, observacoes, validacao, repository state,
+budgets, recovery e a geracao de continuidade. Cada colecao informa
+`complete`, `truncated`, `total_count` e `omitted_count` em ordem deterministica;
+o frontier nunca e fonte de autoridade.
+
+`ProgressReceiptV1` separa o conjunto completo de `credit_fact_ids` da pequena
+projecao para inspector/modelo. `ProgressDelta` e `aggregate_progress_id`
+usam somente o conjunto completo. Churn de current state, invocation ou
+resumo nao cria credito; evidencia de fonte so recebe credito com provenance
+exata/bounded e extent completo. Leitura fisica apos pressao e
+`CONTEXT_REHYDRATION`; reuse exato sem I/O e `CACHE_REUSE`.
+
+Linear, reativo, paralelo e TaskGraph capturam receipt antes/depois na fronteira
+logica. Execucoes internas usam `ConvergenceAccountingContext.delegated_attempt`
+sob o owner raiz, para que worker, finalizer ou child nao cobrem o mesmo ciclo.
+
 ## Limites
 
 O modelo pode escolher entre alternativas apresentadas e influenciar a persona
@@ -101,3 +120,15 @@ dentro das policies estáticas, mas não registrar tools, alterar descriptor,
 criar grants ou promover output em authority. Robustez comparativa de planners
 e modelos ainda não foi demonstrada; isso pertence a trabalho futuro separado
 do contrato de planning.
+
+## Observation freshness and pending evidence
+
+Observation dispatch derives the pending source extent from the active canonical
+plan request and pending read obligations from TaskSemantics. Tool arguments cannot
+assert `pending_need`. Rehydration must match the required extent. Finalization
+grants stale-reread evidence credit only when the semantic owner accepted this
+invocation as evidence for a previously pending obligation, with exact, current,
+complete source bytes. A changed hash alone earns no credit.
+
+Exact cache reuse means **zero physical tool dispatch**. Source-local hashing is
+freshness control-plane filesystem I/O and remains required before reuse.

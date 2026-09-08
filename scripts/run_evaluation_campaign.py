@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Sequence, cast
 
-from agent.evaluation.agent_executor import GatewayFactory
-from agent.evaluation.campaign_runner import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from agent.evaluation.agent_executor import GatewayFactory  # noqa: E402
+from agent.evaluation.campaign_runner import (  # noqa: E402
     DEFAULT_DRY_RUN_EPOCH,
     DEFAULT_PROFILE,
     DEFAULT_REAL_MODEL_EPOCH,
@@ -19,9 +24,8 @@ from agent.evaluation.campaign_runner import (
     run_real_model_campaign,
     run_scripted_campaign,
 )
-from agent.evaluation.practical import run_practical_scripted
-
-ROOT = Path(__file__).resolve().parents[1]
+from agent.evaluation.long_horizon import run_long_horizon_scripted  # noqa: E402
+from agent.evaluation.practical import run_practical_scripted  # noqa: E402
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -31,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=(
             "dry-run",
             "practical-dry-run",
+            "long-horizon-dry-run",
             "adversarial-audit",
             "live-model",
             "corrective-ready",
@@ -64,6 +69,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     output = arguments.output or (
         Path(".audit-local/out/evaluation-practical-v1.json")
         if arguments.mode == "practical-dry-run"
+        else Path(".audit-local/out/long-horizon-v1.json")
+        if arguments.mode == "long-horizon-dry-run"
         else Path(".audit-local/out/evaluation-dry-run.json")
     )
 
@@ -79,6 +86,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "total": summary["total"],
                     "passed": summary["passed"],
                     "failed": summary["failed"],
+                    "report": str(output),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0 if passed else 1
+
+    if arguments.mode == "long-horizon-dry-run":
+        report = run_long_horizon_scripted(ROOT, output_path=output)
+        summary = report["summary"]
+        passed = summary["failed"] == 0 and summary["unknown_failures"] == 0
+        print(
+            json.dumps(
+                {
+                    "status": "passed" if passed else "failed",
+                    "mode": "long-horizon-dry-run",
+                    "total": summary["total"],
+                    "passed": summary["passed"],
+                    "failed": summary["failed"],
+                    "unknown_failures": summary["unknown_failures"],
+                    "qwen_used": report["execution_policy"]["qwen_used"],
                     "report": str(output),
                 },
                 ensure_ascii=False,

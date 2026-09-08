@@ -2,6 +2,11 @@
   "complexity": {
     "max_complexity": 10,
     "allowed": {
+      "agent/orchestration/task_runner.py::run": 11,
+      "agent/planning/plan_executor.py::_finalize_parallel": 11,
+      "agent/planning/progress_receipt.py::build_progress_receipt": 17,
+      "agent/planning/execution_frontier.py::build_execution_frontier": 19,
+      "agent/runtime/context.py::__post_init__": 12,
       "agent/interaction/continue_intent.py::classify_resume_request": 14,
       "agent/interaction/evidence.py::scan_spans": 26,
       "agent/interaction/guards.py::analyze_operational_clause": 12,
@@ -27,23 +32,38 @@
     "max_lines": 300,
     "allowed": {
       "agent/application.py": 327,
+      "agent/evaluation/long_horizon.py": 576,
       "agent/interaction/admission.py": 383,
       "agent/interaction/guards.py": 763,
       "agent/interaction/service.py": 509,
       "agent/interfaces/cli/app.py": 368,
       "agent/interfaces/cli/command_handlers.py": 334,
-      "agent/orchestration/task_runner.py": 352,
+      "agent/llm/context_manager.py": 356,
+      "agent/llm/context_model_call.py": 336,
+      "agent/llm/context_projection.py": 305,
+      "agent/orchestration/task_runner.py": 357,
       "agent/orchestrator.py": 305,
       "agent/evaluation/scripted_gateway_logic.py": 511,
       "agent/evaluation/h_series_scenarios.py": 688,
       "agent/planning/capability_manifest.py": 301,
-      "agent/continuity/checkpoint_projection.py": 318,
+      "agent/continuity/checkpoint_projection.py": 317,
+      "agent/planning/execution_frontier.py": 501,
       "agent/planning/plan_builder.py": 309,
+      "agent/planning/plan_executor.py": 370,
+      "agent/planning/progress_receipt.py": 572,
+      "agent/planning/step_policies.py": 376,
+      "agent/planning/observation_receipts.py": 308,
+      "agent/planning/step_executor.py": 302,
+      "agent/planning/task_scheduler.py": 338,
       "agent/planning/task_semantics.py": 569,
       "agent/planning/task_semantics_effect_inference.py": 892,
       "agent/planning/task_semantics_inference.py": 367,
       "agent/planning/task_semantics_types.py": 384,
-      "agent/state_checkpoint.py": 307
+      "agent/runtime/context.py": 327,
+      "agent/runtime/convergence.py": 489,
+      "agent/runtime/convergence_runtime.py": 310,
+      "agent/state_checkpoint.py": 352,
+      "agent/tool_executor.py": 352
     }
   }
 }

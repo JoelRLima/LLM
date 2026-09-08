@@ -18,6 +18,9 @@ class ContextRequestFit:
     mandatory_measurement: Any
     final_measurement: Any = None
     mandatory_overflow: bool = False
+    decision: str = "COMPACT"
+    safety_margin: int = 0
+    dispatch_allowed: bool = True
 
 
 @dataclass(frozen=True, slots=True)

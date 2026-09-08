@@ -13,6 +13,12 @@ from agent.runtime.task_policy import TaskRuntimePolicy
 def refresh_orchestrator_task_policy(orchestrator: Any) -> None:
     """Bind one policy to the orchestrator's existing task-owned state."""
 
+    convergence = getattr(orchestrator.agent_state, "convergence", None)
+    if convergence is not None:
+        convergence.reconfigure(
+            RuntimeLimits.from_config(orchestrator.session.config).max_no_progress_plateau
+        )
+
     policy = TaskRuntimePolicy(
         RuntimeLimits.from_config(orchestrator.session.config),
         state=orchestrator.agent_state.task_policy_state,
@@ -34,6 +40,12 @@ def refresh_orchestrator_task_policy(orchestrator: Any) -> None:
             policy_state=orchestrator.agent_state.task_policy_state,
             recovery_budget=orchestrator.agent_state.recovery_budget,
             task_policy=policy,
+            convergence=getattr(orchestrator.agent_state, "convergence", None),
+            convergence_accounting=getattr(
+                orchestrator._task_execution_context,
+                "convergence_accounting",
+                None,
+            ),
             correlation=orchestrator.run_correlation,
             event_sink=getattr(orchestrator, "event_dispatcher", None),
             permissions=frozenset(item.value for item in ALL_CAPABILITIES),

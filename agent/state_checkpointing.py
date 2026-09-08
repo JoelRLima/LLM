@@ -8,7 +8,11 @@ from typing import Any, Dict, Mapping, cast
 from agent.contracts import CheckpointData
 from agent.execution_state import StepExecutionRecord
 from agent.planning.plan_model import Plan, deserialize_plan, serialize_plan
-from agent.state_checkpoint import progression_checkpoint, restore_progression
+from agent.state_checkpoint import (
+    progression_checkpoint,
+    reconcile_convergence_after_restore,
+    restore_progression,
+)
 from agent.state_checkpoint_auxiliary import restore_auxiliary_state
 from agent.state_checkpoint_history import restore_histories as _restore_histories
 from agent.state_checkpoint_restore import (
@@ -100,6 +104,7 @@ class StateCheckpointMixin:
             retry_failed=retry_failed,
             retry_skipped=retry_skipped,
         )
+        reconcile_convergence_after_restore(provisional)
         provisional._continuity_resume_pending = _resume_continuity_supported(provisional)
         _validate_restored_cross_fields(provisional)
         _publish_provisional_state(self, provisional)

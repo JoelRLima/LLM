@@ -121,10 +121,11 @@ def file_fact_freshness(
     path: str,
     *,
     workspace_root: str | Path | None = None,
+    expected_hash: str | None = None,
 ) -> str:
     """Classify a file-derived memory fact without a model call or mutation."""
 
-    stored_hash = _stored_source_hash(state, path)
+    stored_hash = expected_hash if expected_hash is not None else _stored_source_hash(state, path)
     if stored_hash is None:
         return "UNVERIFIED_LEGACY_FILE_FACT"
     if workspace_root is None:

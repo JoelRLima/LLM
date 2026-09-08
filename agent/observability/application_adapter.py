@@ -8,6 +8,8 @@ from typing import Any
 from agent.application_result import AgentRunResult
 from agent.observability.bookmarks import BookmarkStore
 from agent.observability.live import ObservationSession
+from agent.planning.execution_frontier import build_execution_frontier
+from agent.planning.progress_receipt import build_progress_receipt
 from agent.presentation import InspectionService
 
 
@@ -61,6 +63,61 @@ def finish_observation(application: Any, result: AgentRunResult | None = None) -
 def build_inspection_service(application: Any) -> InspectionService:
     """Build the shared read-only service from canonical application sources."""
 
+    def convergence_projection() -> Mapping[str, Any]:
+        state = getattr(application.orchestrator, "agent_state", None)
+        convergence = getattr(state, "convergence", None)
+        if convergence is None:
+            return {"status": "unavailable", "reason": "convergence owner unavailable"}
+        try:
+            convergence_facts = convergence.snapshot()
+            receipt = build_progress_receipt(state)
+            frontier = build_execution_frontier(
+                state,
+                convergence=convergence_facts,
+                progress_receipt=receipt,
+            )
+        except Exception:
+            return {"status": "unavailable", "reason": "convergence projection unavailable"}
+        terminal_units = frontier.terminal_units
+        successful_units = sum(
+            1
+            for item in terminal_units.items
+            if item.get("status") in {"completed", "succeeded"}
+        )
+        last_result = getattr(state, "last_result", None)
+        validation_status = getattr(last_result, "status", None)
+        if validation_status is None and isinstance(last_result, Mapping):
+            validation_status = last_result.get("status")
+        pressure = getattr(application.orchestrator, "context_manager", None)
+        pressure_result = getattr(pressure, "last_context_pressure", None)
+        pressure_to_dict = getattr(pressure_result, "to_dict", None)
+        pressure_facts = (
+            pressure_to_dict()
+            if callable(pressure_to_dict)
+            else {"status": "unavailable", "reason": "no context pressure decision"}
+        )
+        return {
+            "status": "available",
+            "current_phase": frontier.current_phase,
+            "successful_unit_count": successful_units,
+            "terminal_unit_count": terminal_units.total_count,
+            "next_executable_unit_ids": list(frontier.next_executable_unit_ids),
+            "progress_receipt_identity": receipt.receipt_id,
+            "cycles_since_progress": convergence_facts.get("cycles_since_progress", 0),
+            "convergence_stage": convergence_facts.get("stage", "normal"),
+            "last_progress_dimension_codes": list(
+                convergence_facts.get("last_progress_dimensions", ())
+            ),
+            "context_pressure": pressure_facts,
+            "last_pressure_decision": pressure_facts.get("decision"),
+            "fresh_observation_count": frontier.fresh_observation_count,
+            "last_validation_status": (
+                getattr(validation_status, "value", validation_status)
+                if validation_status is not None
+                else None
+            ),
+        }
+
     def canonical_reader() -> Mapping[str, Any]:
         snapshot = getattr(application.orchestrator, "_canonical_run_snapshot", None)
         if snapshot is not None and callable(getattr(snapshot, "to_dict", None)):
@@ -74,6 +131,7 @@ def build_inspection_service(application: Any) -> InspectionService:
                 "recovery": {"items": facts.get("replan_events", [])},
                 "changes": facts.get("executed", {}),
                 "metrics": projected.get("metrics", {}),
+                "convergence": convergence_projection(),
             }
         metrics_reader = getattr(application.orchestrator, "_get_metrics_for_task", None)
         metrics = metrics_reader() if callable(metrics_reader) else None
@@ -86,6 +144,7 @@ def build_inspection_service(application: Any) -> InspectionService:
             "recovery": {"status": "unknown"},
             "changes": {"status": "unknown"},
             "metrics": {"items": metrics[:64]} if isinstance(metrics, list) else None,
+            "convergence": convergence_projection(),
         }
 
     def silence_reader(metadata: Any) -> Any:

@@ -18,6 +18,7 @@ from agent.continuity.snapshot import (
     TaskDefinitionRefSummary,
 )
 from agent.planning.task_completion_types import CompletionDisposition
+from agent.runtime.convergence import validate_convergence_checkpoint
 from agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES, OperationalStatus
 from agent.runtime.task_directives import (
     ABSENT,
@@ -101,16 +102,14 @@ def _project_checkpoint(
     schema_version = _required_non_negative_int(checkpoint.get("schema_version"), "schema_version")
     if schema_version != CHECKPOINT_SCHEMA_VERSION:
         raise _ProjectionError("CHECKPOINT_INCOMPATIBLE_SCHEMA")
+    if "convergence" in checkpoint:
+        validate_convergence_checkpoint(checkpoint["convergence"])
     objective = checkpoint.get("objective")
     if not isinstance(objective, str) or not objective.strip():
         raise _ProjectionError(REASON_CHECKPOINT_INVALID)
     root_task_id = _optional_text(checkpoint.get("root_task_id"), "root_task_id")
     terminal = _terminal_disposition(checkpoint.get("terminal_disposition"))
-    raw_directive = (
-        checkpoint["task_run_directive"]
-        if "task_run_directive" in checkpoint
-        else ABSENT
-    )
+    raw_directive = checkpoint["task_run_directive"] if "task_run_directive" in checkpoint else ABSENT
     try:
         validate_checkpoint_task_run_directive(
             objective=objective,

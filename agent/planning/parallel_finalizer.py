@@ -47,6 +47,18 @@ def finalize_parallel_index(
         executor.orchestrator._emit(
             "warning", {"step": index + 1, "warning": f"Falha ao resumir resultado: {exc}"}
         )
+    prepared = correlations[index].prepared
     return executor.step_executor.finalize_result(
-        index, tool, args, result, file_path, objective, usage
+        index,
+        tool,
+        args,
+        result,
+        file_path,
+        objective,
+        usage,
+        observation_dispatch=(
+            prepared.observation_dispatch
+            if prepared is not None
+            else None
+        ),
     ), result

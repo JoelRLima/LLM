@@ -74,6 +74,7 @@ def build_task_execution_context(owner: Any) -> TaskExecutionContext:
         policy_state=getattr(owner.agent_state, "task_policy_state", None),
         recovery_budget=getattr(owner.agent_state, "recovery_budget", None),
         task_policy=getattr(owner, "task_policy", None),
+        convergence=getattr(owner.agent_state, "convergence", None),
         correlation=correlation,
         event_sink=getattr(owner, "event_dispatcher", None),
         permissions=frozenset(item.value for item in ALL_CAPABILITIES),
@@ -151,6 +152,13 @@ class TaskExecutionOwnershipMixin:
         self.agent_state.task_definition_ref = None
         self.agent_state.reset_execution()
         self.agent_state.reset_task_progression()
+        convergence = getattr(self.agent_state, "convergence", None)
+        if convergence is not None:
+            session = getattr(self, "session", None)
+            config = getattr(session, "config", {}) or {}
+            convergence.reconfigure(
+                RuntimeLimits.from_config(config).max_no_progress_plateau
+            )
         self.agent_state.reset_runtime_observation(clear_events=True)
         self.agent_state.hierarchical_lifecycle = {"status": "inactive"}
         policy_state = getattr(self.agent_state, "task_policy_state", None)

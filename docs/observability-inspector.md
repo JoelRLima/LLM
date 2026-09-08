@@ -78,6 +78,24 @@ resumos de modelo/tools/validation/change/metrics, warnings/gaps e detalhe
 redigido; Ctrl-C desanexa sem alterar o run. `/inspect` no chat reutiliza a
 mesma Presentation API.
 
+## Projecao de convergencia W15
+
+O painel `convergence` e uma leitura derivada do
+`ExecutionFrontierSnapshotV1` e do `ProgressReceiptV1`. Ele mostra
+`current_phase`, contagens terminal/success, `next_executable_unit_ids`,
+identidade do receipt, `cycles_since_progress`, stage, dimensoes do ultimo
+progresso, decisao de pressao, observacoes frescas e o ultimo status de
+validacao. Listas e metadata permanecem bounded e passam pela mesma redaction
+da Presentation API.
+
+Eventos estruturados incluem `execution_frontier_projected`,
+`context_pressure_decision`, `context_projection_compacted`,
+`progress_receipt_advanced`, `progress_plateau_cycle`,
+`convergence_replan_requested`, `convergence_replan_denied`,
+`observation_reuse`, `observation_rehydration` e
+`no_progress_plateau_terminal`. Replay e inspector nao alteram o estado da
+tarefa nem o owner de autoridade.
+
 ## Replay, filtros e bookmarks
 
 Na CLI, a superfÃ­cie correspondente Ã© `--after`, `--sequence`,

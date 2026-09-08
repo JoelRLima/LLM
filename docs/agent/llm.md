@@ -45,6 +45,22 @@ permite falha explícita quando nenhum backend está disponível. Evidência
 real-model exige profile, endpoint, modelo e condições registrados e permanece
 uma etapa separada da avaliação determinística.
 
+## Wave 15: pressao de contexto
+
+Durante uma decisao de tarefa, `ContextManager` usa `build_execution_frontier`
+para inserir uma projecao fresca e limitada do runtime. A projecao e dado nao
+confiavel: nao carrega capability, grant, approval ou resource scope.
+`decide_context_pressure` reutiliza a medicao canonica do request do provider,
+preserva evidencia obrigatoria antes de qualquer historico opcional e so prova
+`FULL`/overflow com measurement exato. Measurement inexato produz `COMPACT`
+minimo, sem retry de sizing.
+
+A modelagem e request-local. O shape temporario de `session.messages` e
+restaurado no `finally`; o caminho W15 de `maybe_compress_context` nao chama o
+modelo de resumo nem persiste uma conversa compactada. Reparos estruturados
+autorizados continuam sendo uma tentativa independente do owner de recovery e
+reentram no fitting canonico.
+
 ## Non-guarantees
 
 O repositório não promete portabilidade universal entre APIs que apenas se

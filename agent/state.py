@@ -11,6 +11,7 @@ from agent.memory.memory import AgentMemory
 from agent.planning.plan_model import Plan
 from agent.planning.task_semantics import TaskSemantics
 from agent.runtime.budget import TaskBudgetLedger
+from agent.runtime.convergence import ConvergenceStateV1
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.events import RuntimeEvent, serialize_runtime_event
 from agent.runtime.recovery import (
@@ -99,6 +100,7 @@ class AgentState(
         self._task_rollback_succeeded: bool | None = None
         self.reasoning_last_history_count: int = -1
         self.reasoning_last_progress_token: Optional[str] = None
+        self.convergence = ConvergenceStateV1()
         self.continue_after_plan: bool = False
         self._terminal_disposition: Optional[str] = None
         self.budget_ledger = budget_ledger
@@ -126,6 +128,7 @@ class AgentState(
         self._continuity_bound_run_id = None
         self.w14_semantic_task = False
         self.w14_intent_continuation = None
+        self.convergence = ConvergenceStateV1()
 
     def configure_recovery_policy(self, config: Mapping[str, Any] | None = None) -> None:
         self.recovery_budget.reconfigure(RecoveryPolicy.from_config(config))
@@ -255,6 +258,21 @@ class AgentState(
         self.last_tool = tool_name
         self.last_args = args
         self.last_result = canonical_result
+
+    def annotate_last_tool_result(
+        self, result: CanonicalToolResult, *, metadata: Mapping[str, Any]
+    ) -> None:
+        """Attach finalized observation facts without replaying semantic state."""
+        from dataclasses import replace
+        annotated = replace(result, metadata=dict(metadata))
+        self.last_result = annotated
+        for entry in reversed(self.tool_history):
+            if entry.get("result") is result or (
+                getattr(entry.get("result"), "invocation_id", None)
+                == getattr(result, "invocation_id", None)
+            ):
+                entry["result"] = annotated
+                break
 
     def reset_runtime_observation(self, *, clear_events: bool = False) -> None:
         """Clear the task's last-result/history projection at one boundary."""

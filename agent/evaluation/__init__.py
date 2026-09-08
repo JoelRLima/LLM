@@ -11,6 +11,10 @@ from agent.evaluation.contracts import (
 )
 from agent.evaluation.curated import CURATED_CAPABILITY_SET
 from agent.evaluation.loader import load_scenario, load_scenarios
+from agent.evaluation.long_horizon import (
+    LONG_HORIZON_V1,
+    run_long_horizon_scripted,
+)
 from agent.evaluation.practical import run_practical_scripted
 from agent.evaluation.practical_scenarios import (
     PRACTICAL_SET_VERSION,
@@ -74,4 +78,6 @@ __all__ = [
     "PRACTICAL_V1",
     "practical_fixture_identity",
     "run_practical_scripted",
+    "LONG_HORIZON_V1",
+    "run_long_horizon_scripted",
 ]

@@ -132,6 +132,14 @@ def block(
     )
 
 
+def _same_invocation_enrichment(previous: Any, current: Any) -> bool:
+    if not isinstance(previous, Mapping) or not isinstance(current, Mapping):
+        return False
+    previous_core, current_core = dict(previous), dict(current)
+    invocation_id = previous_core.get("invocation_id")
+    return bool(invocation_id and invocation_id == current_core.get("invocation_id") and all(current_core.get(key) == value for key, value in previous_core.items()))
+
+
 def register_observation(
     owner: Any,
     tool_name: str,
@@ -157,6 +165,7 @@ def register_observation(
         # fail-closed.
         previous_result = previous.get("result")
         current_result = observation.get("result")
+        same_invocation_enrichment = _same_invocation_enrichment(previous_result, current_result)
         compatible_missing_id = (
             isinstance(previous_result, Mapping)
             and isinstance(current_result, Mapping)
@@ -165,10 +174,10 @@ def register_observation(
                 or "invocation_id" not in current_result
             )
         )
-        if not compatible_missing_id:
+        if not compatible_missing_id and not same_invocation_enrichment:
             raise TaskSemanticsError("referencia de evidencia reutilizada para observacoes distintas")
         previous_without_id: dict[str, Any] = dict(
-            cast(Mapping[str, Any], previous_result)
+            cast(Mapping[str, Any], current_result if same_invocation_enrichment else previous_result)
         )
         current_without_id: dict[str, Any] = dict(
             cast(Mapping[str, Any], current_result)

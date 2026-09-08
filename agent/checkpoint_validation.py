@@ -11,6 +11,7 @@ from agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadErro
 from agent.checkpoint_validation_continuity import validate_continuity
 from agent.execution_incidents import normalize_execution_incidents
 from agent.execution_state import StepStatus
+from agent.runtime.convergence import validate_convergence_checkpoint
 from agent.task_definition.models import TaskDefinitionRef
 
 
@@ -93,7 +94,22 @@ def _validate_optional_fields(path: Path, data: dict[str, Any]) -> None:
     _validate_result_and_budget(path, data)
     _validate_task_policy(path, data)
     _validate_hierarchical_lifecycle(path, data)
+    _validate_convergence(path, data)
     validate_continuity(path, data)
+
+
+def _validate_convergence(path: Path, data: dict[str, Any]) -> None:
+    """Validate the closed W15 convergence object at the repository edge."""
+
+    if "convergence" not in data:
+        return
+    raw = data.get("convergence")
+    if not isinstance(raw, dict):
+        _invalid(path, "estado de convergencia W15 invalido")
+    try:
+        validate_convergence_checkpoint(raw)
+    except (TypeError, ValueError):
+        _invalid(path, "estado de convergencia W15 invalido")
 
 
 def _validate_task_definition_binding(path: Path, data: dict[str, Any]) -> None:

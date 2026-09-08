@@ -129,6 +129,12 @@ def build_error_registry(
             default_status=operational_status.FAILED.value,
         ),
         *definitions(
+            ("WATCHDOG_NO_PROGRESS_PLATEAU",),
+            hard=True,
+            default_status=operational_status.FAILED.value,
+            retryable=False,
+        ),
+        *definitions(
             ("WATCHDOG_TIMEOUT", "TIMEOUT"),
             hard=True,
             default_status=operational_status.TIMED_OUT.value,

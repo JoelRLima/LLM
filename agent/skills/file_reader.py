@@ -3,6 +3,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agent.planning.observation_receipts import canonical_source_identity
+
 from .base import BaseSkill
 from .file_reader_evidence import FileReaderEvidenceMixin
 from .safe_path import resolve_safe_path
@@ -74,6 +76,10 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
                 error or "Caminho inválido.",
                 error_code="PERMISSION_DENIED",
             )
+        source_identity = canonical_source_identity(
+            file_path,
+            workspace_root=self.base_dir,
+        )
         requested = self._workspace_version(requested)
         if not requested.exists():
             return self._error(
@@ -84,7 +90,12 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
         if not requested.is_file():
             return self._error("não é um arquivo", f"'{file_path}' não é um arquivo regular.")
         type_error = self._file_type_error(requested)
-        return type_error if type_error else self._read_requested(requested, file_path, args)
+        return type_error if type_error else self._read_requested(
+            requested,
+            file_path,
+            args,
+            source_identity=source_identity,
+        )
 
     def _workspace_version(self, requested: Path) -> Path:
         try:
@@ -111,7 +122,14 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
             f"Extensão não permitida: '{extension or name}' para '{requested.name}'.",
         )
 
-    def _read_requested(self, requested: Path, file_path: str, args: dict[str, Any]) -> dict[str, Any]:
+    def _read_requested(
+        self,
+        requested: Path,
+        file_path: str,
+        args: dict[str, Any],
+        *,
+        source_identity: str | None = None,
+    ) -> dict[str, Any]:
         try:
             full_content = requested.read_text(encoding="utf-8")
             total_chars = len(full_content)
@@ -127,7 +145,7 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
                     end_line,
                     total_lines,
                     total_chars,
-                    source_identity=file_path,
+                    source_identity=source_identity,
                     source_hash=source_hash,
                 )
             return self._read_with_chunking_and_summary(
@@ -135,7 +153,7 @@ class FileReaderSkill(FileReaderEvidenceMixin, BaseSkill):
                 lines,
                 total_lines,
                 total_chars,
-                source_identity=file_path,
+                source_identity=source_identity,
                 source_hash=source_hash,
             )
         except UnicodeDecodeError:

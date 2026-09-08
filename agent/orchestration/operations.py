@@ -255,6 +255,19 @@ class OrchestratorOperations:
         return str(self.tool_executor.summarize_text(text, context))
 
     def _maybe_summarize_and_store(self, tool_name: str, args: ToolArgs, result: CanonicalToolResult) -> None:
+        # W15 task execution keeps durable source/history owners intact and
+        # uses request-local frontier/evidence projection.  The legacy
+        # summarizer remains an explicit ToolExecutor compatibility API, but
+        # cannot be reached from the production task path.
+        if getattr(self, "_w15_context_continuity_active", True):
+            bounded_cache = getattr(
+                self.tool_executor,
+                "store_bounded_file_observation",
+                None,
+            )
+            if callable(bounded_cache):
+                bounded_cache(tool_name, args, result)
+            return
         self.tool_executor.maybe_summarize_and_store(tool_name, args, result)
 
     def _run_reactive(self, objective: str, usage: Dict[str, int], original_count: int) -> str:

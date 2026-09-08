@@ -68,6 +68,7 @@ def render_snapshot(snapshot: InspectorSnapshot, console: Console, *, limit: int
         ("Recovery", snapshot.recovery),
         ("Changes", snapshot.changes),
         ("Metrics", snapshot.metrics),
+        ("Convergence", snapshot.convergence),
     )
     for title, value in sections:
         console.print(f"{title}: {json.dumps(value, ensure_ascii=False, sort_keys=True)}", markup=False)

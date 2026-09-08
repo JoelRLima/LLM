@@ -8,6 +8,7 @@ from typing import Any, cast
 from agent.contracts import ToolArgs
 from agent.parsers import stringify
 from agent.planning.errors import ToolNotFoundError
+from agent.planning.observation_receipts import canonical_source_identity
 from agent.planning.plan_model import Plan
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.step_contracts import PreparedInvocation
@@ -15,9 +16,7 @@ from agent.runtime.logging import logger
 from agent.tools.contracts import ToolError, ToolInvocationRequest, ToolStatus
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 from agent.tools.result_adapter import ensure_canonical_result
-from agent.tools.result_completeness import (
-    EvidenceProvenance,
-)
+from agent.tools.result_completeness import EvidenceProvenance
 
 
 class ToolExecutor:
@@ -283,3 +282,71 @@ class ToolExecutor:
         except (OSError, ValueError):
             pass
         memory.store_file_observation(memory_key, summary, cache_entry)
+
+    def store_bounded_file_observation(
+        self, tool_name: str, args: ToolArgs, result: CanonicalToolResult
+    ) -> None:
+        """Retain bounded source observations without invoking a summarizer.
+
+        Only small, exact whole-file observations retain exact provenance;
+        larger observations remain lossy in the existing hash cache.
+        """
+
+        result = ensure_canonical_result(result)
+        if tool_name not in ("code_analyzer", "file_reader") or not result.ok:
+            return
+        file_path = args.get("target") or args.get("file_path")
+        if not file_path or result.data is None:
+            return
+        content = result.data
+        if isinstance(content, Mapping):
+            content = stringify(content)
+        text = str(content)
+        if not text:
+            return
+        max_chars = 2000
+        cache_text = text[:max_chars]
+        metadata = result.metadata if isinstance(result.metadata, Mapping) else {}
+        source_extent = metadata.get("source_extent")
+        exact_cache = (
+            result.evidence_provenance == EvidenceProvenance.EXACT_SOURCE.value
+            and metadata.get("complete") is True
+            and metadata.get("truncated") is not True
+            and isinstance(source_extent, Mapping)
+            and source_extent.get("kind") == "whole"
+            and len(text) <= max_chars
+        )
+        cache_entry: dict[str, Any] = {
+            "data": cache_text,
+            "evidence_provenance": (
+                EvidenceProvenance.EXACT_SOURCE.value
+                if exact_cache
+                else EvidenceProvenance.DERIVED_LOSSY.value
+            ),
+            "source_extent": {"kind": "whole"} if exact_cache else {"kind": "derived_summary", "bounded": True},
+        }
+        for key in ("source_identity", "source_hash"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value:
+                cache_entry[key] = (
+                    canonical_source_identity(
+                        value,
+                        workspace_root=getattr(self.orchestrator, "workspace_root", None),
+                    )
+                    if key == "source_identity"
+                    else value
+                )
+        if "source_identity" not in cache_entry:
+            cache_entry["source_identity"] = canonical_source_identity(
+                file_path,
+                workspace_root=getattr(self.orchestrator, "workspace_root", None),
+            )
+        if "source_hash" not in cache_entry:
+            try:
+                with self._resolve_user_path(file_path).open("r", encoding="utf-8") as handle:
+                    cache_entry["source_hash"] = hashlib.sha256(
+                        handle.read().encode("utf-8")
+                    ).hexdigest()
+            except (OSError, ValueError, UnicodeError):
+                return
+        self.orchestrator.agent_state.memory.store_file_observation(str(file_path), cache_text, cache_entry)
