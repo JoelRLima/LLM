@@ -3,6 +3,7 @@
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -118,7 +119,7 @@ def test_failure_precedence_matrix(
 def test_natural_completion_preserves_launcher_status_precedence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(stdio.os, "name", "nt")
+    monkeypatch.setattr(stdio, "os", SimpleNamespace(name="nt"))
     primary = stdio.ProcessFailure(
         ToolStatus.PROTOCOL_ERROR,
         "OUTPUT_LIMIT",

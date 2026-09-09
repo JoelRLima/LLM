@@ -2,6 +2,7 @@ import json
 import os
 import select
 import signal
+import socket
 import subprocess
 import sys
 import textwrap
@@ -934,11 +935,18 @@ def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_reade
 ) -> None:
     ready_path = tmp_path / "success-inherited-ready.txt"
     pid_path = tmp_path / "success-inherited.pid"
+    control_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    control_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    control_listener.bind(("127.0.0.1", 0))
+    control_listener.listen(1)
+    control_listener.settimeout(5)
+    control_port = control_listener.getsockname()[1]
     adapter = _adapter_for_script(
         tmp_path,
         f"""
         import json
         import pathlib
+        import socket
         import subprocess
         import sys
         import time
@@ -954,11 +962,17 @@ def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_reade
         deadline = time.monotonic() + 5
         while not pathlib.Path(r'{ready_path.as_posix()}').exists() and time.monotonic() < deadline:
             time.sleep(0.01)
+        with socket.create_connection(("127.0.0.1", {control_port})) as control:
+            control.sendall(b"R")
+            if control.recv(1) != b"r":
+                raise RuntimeError("test release handshake failed")
         print(json.dumps({{"invocation_id": payload["invocation_id"], "status": "succeeded"}}), flush=True)
         """,
     )
     result_box: list[Any] = []
     windows_handle: tuple[Any, Any] | None = None
+    control: socket.socket | None = None
+    released = False
 
     original_join = stdio_process_module._join_readers
 
@@ -978,13 +992,31 @@ def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_reade
     try:
         assert _wait_for_path(ready_path)
         assert _wait_for_path(pid_path)
+        control, _ = control_listener.accept()
+        assert control.recv(1) == b"R"
         windows_handle = _open_windows_process_handle(_read_test_pid(pid_path))
+        control.sendall(b"r")
+        released = True
         worker.join(timeout=8)
         assert not worker.is_alive()
         assert result_box
         assert result_box[0].status == ToolStatus.SUCCEEDED
         assert _wait_for_windows_handle(*windows_handle, 1000) == _WAIT_OBJECT_0
     finally:
+        if control is None:
+            try:
+                control, _ = control_listener.accept()
+                control.recv(1)
+            except OSError:
+                control = None
+        if control is not None:
+            if not released:
+                try:
+                    control.sendall(b"r")
+                except OSError:
+                    pass
+            control.close()
+        control_listener.close()
         if windows_handle is not None:
             _cleanup_windows_process_handle(*windows_handle)
         if worker.is_alive():
