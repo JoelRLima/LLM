@@ -83,6 +83,12 @@ e não transforma validação ausente em sucesso.
 paths são resolvidos nos diretórios de usuário do sistema. O pacote instalado
 não é usado como diretório gravável.
 
+Rotas headless que criam ou retomam tarefas exigem `--workspace` explícito e
+falham antes do bootstrap quando ele não é informado; o chat interativo mantém
+seu chooser de workspace. Perfis OpenAI-compatible podem guardar somente a
+metadata de uma `credential_ref` de ambiente/bearer; o valor é resolvido tarde,
+apenas no transporte HTTP, e não aparece em trace ou estado comum.
+
 `llm-agent inspect` é uma superfície somente leitura para traces de runs ativos
 ou históricos. A trace é redigida, possui completude explícita e não é
 checkpoint, outcome, memória ou autoridade da tarefa. Veja o
@@ -124,7 +130,9 @@ não são a autoridade para classificar ou executar a continuidade.
 A avaliação determinística atual está **GREEN LOCAL** para os contratos e
 cenários cobertos. Ela não deve ser interpretada como benchmark de modelo real
 nem como gate final de release; a execução com modelo real permanece separada,
-explicitamente autorizada e não é iniciada por estes comandos.
+explicitamente autorizada e não é iniciada por estes comandos. Os critérios
+determinísticos PRE-V1 estão **GREEN LOCAL**; aceitação final com modelo real é
+gated/not run e Standalone V1 ainda não foi declarada.
 
 ## Documentação e contribuição
 

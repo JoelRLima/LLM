@@ -91,6 +91,7 @@ def run_locked(
             "_run_metric_recorded": False,
             "_metrics_start_line": None,
             "_canonical_run_snapshot": None,
+            "_audit_receipt_emitted_run_id": None,
         }
     )
     invocation = _invoke(

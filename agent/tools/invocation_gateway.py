@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any, Callable, Dict, Optional
 
 from agent.approval import ApprovalPort, RequireExplicitApproval
+from agent.observability.audit_projection import project_tool_descriptor
 from agent.runtime.budget import TaskBudgetLedger
 from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
@@ -257,12 +258,15 @@ class ToolInvocationGateway(InvocationExecutionMixin, InvocationActivityMixin, I
             descriptor = self.registry.descriptor(invocation.tool_name)
         except KeyError:
             return None, denial(invocation, ToolStatus.UNAVAILABLE, "TOOL_NOT_FOUND", "Ferramenta nao registrada.")
+        update_audit = self._update_invocation_audit
+        update_audit(invocation.invocation_id, descriptor=project_tool_descriptor(descriptor))
         binding_error = validate_binding(self.registry, self.application_authority, descriptor, invocation)
         if binding_error is not None:
             return None, binding_error
         if active_skills is not None and invocation.tool_name not in active_skills:
             return None, denial(invocation, ToolStatus.PERMISSION_DENIED, "PERMISSION_DENIED", "Tool bloqueada pela visibilidade de planning.")
         required = required_capabilities_for_invocation(descriptor, invocation.args)
+        update_audit(invocation.invocation_id, required_capabilities=tuple(sorted(required)))
         authority_error = check_authority(descriptor, self.application_authority, self.task_authority, invocation, required)
         if authority_error is not None:
             return None, authority_error

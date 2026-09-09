@@ -10,9 +10,8 @@ from typing import Any, Sequence, cast
 
 from rich.console import Console
 
-from agent.interfaces.cli import first_run
+from agent.interfaces.cli import first_run, workspace_entry
 from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.cli.workspace_entry import argument_workspace, remember_workspace, render_active_workspace
 from agent.interfaces.task_directives import (
     ParsedTaskRequest,
     TaskDirectiveParseError,
@@ -124,6 +123,7 @@ def _run_application_task(
 def _run_chat(args: argparse.Namespace) -> int:
     first_run.prepare_chat_workspace(args, console=console, app_paths=_app_paths(args))
     interactive = first_run.is_interactive_terminal()
+    interactive = first_run.is_interactive_terminal() and (getattr(args, "workspace", None) is None or workspace_entry.require_task_workspace(args) is not None)
     try:
         application = _create_application(args, configure_logging=True)
     except ConfigNotFound:
@@ -136,8 +136,8 @@ def _run_chat(args: argparse.Namespace) -> int:
             config_path=_value(args, "config"),
         )
         if interactive:
-            remember_workspace(application.paths, context.workspace.root)
-            render_active_workspace(console, context.workspace, show_mode_hint=True)
+            workspace_entry.remember_workspace(application.paths, context.workspace.root)
+            workspace_entry.render_active_workspace(console, context.workspace, show_mode_hint=True)
         _chat_loop(context)
     finally:
         application.close()
@@ -154,7 +154,7 @@ def _print_operational_receipt(result: Any) -> None:
 
 def _run_once(args: argparse.Namespace) -> int:
     json_output = bool(_value(args, "json_output", False))
-    objective = " ".join(args.objective)
+    objective = " ".join(args.objective) if workspace_entry.require_task_workspace(args) else ""
     try:
         request = parse_task_request(objective)
     except TaskDirectiveParseError as exc:
@@ -203,7 +203,7 @@ def _run_doctor(args: argparse.Namespace) -> int:
         int,
         run_doctor(
             app_paths=_app_paths(args),
-            workspace=argument_workspace(args),
+            workspace=workspace_entry.argument_workspace(args),
             config_path=_value(args, "config"),
             profile=_value(args, "profile"),
             json_output=json_output,
@@ -241,7 +241,7 @@ def _run_state(args: argparse.Namespace) -> int:
         run_state(
             args,
             app_paths=_app_paths(args),
-            workspace=argument_workspace(args),
+            workspace=workspace_entry.argument_workspace(args),
         ),
     )
 
@@ -254,7 +254,7 @@ def _run_tools(args: argparse.Namespace) -> int:
         run_tools(
             args,
             app_paths=_app_paths(args),
-            workspace=argument_workspace(args),
+            workspace=workspace_entry.argument_workspace(args),
         ),
     )
 
@@ -267,7 +267,7 @@ def _run_extensions(args: argparse.Namespace) -> int:
         run_extensions(
             args,
             app_paths=_app_paths(args),
-            workspace=argument_workspace(args),
+            workspace=workspace_entry.argument_workspace(args),
         ),
     )
 
@@ -280,7 +280,7 @@ def _run_task_context(args: argparse.Namespace) -> int:
         run_task_context(
             args,
             app_paths=_app_paths(args),
-            workspace=argument_workspace(args),
+            workspace=workspace_entry.argument_workspace(args),
             print_json=_print_json,
         ),
     )
@@ -355,7 +355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit_error(str(exc), json_output=json_output)
             return 2
         if isinstance(exc, (FileNotFoundError, NotADirectoryError, PermissionError, ValueError)):
-            _emit_error(str(exc), json_output=json_output)
+            _emit_error(str(exc), json_output=json_output, reason_code=getattr(exc, "reason_code", None))
             return 2
         if isinstance(exc, (ConfigError, StateMigrationError)):
             _emit_error(str(exc), json_output=json_output)

@@ -25,6 +25,22 @@ RuntimeEvent ──> RuntimeEventDispatcher ──> ObservationSession ──> T
 O trace é uma leitura operacional. Ele não é checkpoint, memória, autoridade,
 outcome, mecanismo de resume ou fonte de decisão do Agent.
 
+## Receipt de auditoria PRE-V1
+
+Ao final de um run, a aplicação constrói exatamente um `run_audit_receipt`
+depois do `CanonicalRunSnapshot` e antes do fechamento da observação. O receipt
+entra no dispatcher e segue o mesmo TraceStore, Presentation API, replay e
+export já existentes; não há um bus, arquivo ou owner paralelo. Se a projeção
+falhar, o resultado canônico da tarefa permanece inalterado.
+
+A projeção bounded reúne schema/IDs do run, identidade declarada e observada do
+modelo, IDs de authority e modo, descriptors e versões de tools, capabilities
+exigidas, approval, efeito canônico, validação, referências de artifact somente
+com metadata permitida, estado terminal e contadores de limite. Identidade
+observada não é inferida da declarada. Args/results brutos, prompts,
+completions, conteúdo de artifacts, credenciais e hidden reasoning ficam fora
+do receipt. A coleta é read-only e não chama modelo, tool ou approval.
+
 ## Níveis e redaction
 
 Existem exatamente quatro níveis de observabilidade: `NORMAL`, `VERBOSE`,
@@ -111,7 +127,8 @@ anotação limitada em sidecar atômico; não modifica ordenação ou completude
 
 ## Export e retenção
 
-Export cria um bundle determinístico com manifest, hashes, metadata, trace,
+Export cria um bundle determinístico com manifest, hashes, metadata, trace (que
+inclui o receipt bounded),
 snapshot e environment/version seguro; bookmarks são opcionais. O destino não é
 substituído sem `--force`. O bundle não inclui logs arbitrários, source,
 checkpoint, memória, environment bruto, Task Definition não redigida, prompts,

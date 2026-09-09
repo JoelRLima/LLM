@@ -36,6 +36,10 @@ from agent.llm.providers.openai_input_tokens import (
 )
 from agent.runtime.budget_estimation import RequestInputMeasurement
 from agent.runtime.logging import logger
+from agent.runtime.secret_reference import (
+    SecretReferenceResolutionError,
+    resolve_secret_reference,
+)
 
 
 def _token_value(data: Dict[str, Any], primary: str, legacy: str) -> int | None:
@@ -67,6 +71,7 @@ class OpenAICompatibleGateway:
         self.api_url = self.resolved_profile.api_url
         self.endpoint_identity = self.resolved_profile.endpoint_identity
         self._capabilities = self.resolved_profile.capabilities
+        self.credential_ref = self.resolved_profile.credential_ref
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -112,16 +117,32 @@ class OpenAICompatibleGateway:
         payload.update({"stream_options": {**dict(payload.get("stream_options") or {}), "include_usage": True}} if request.stream else {})
         return payload
 
+    def _request_headers(self) -> dict[str, str] | None:
+        """Resolve the optional provider credential for one HTTP request only."""
+
+        if self.credential_ref is None:
+            return None
+        try:
+            credential = resolve_secret_reference(self.credential_ref)
+        except SecretReferenceResolutionError as exc:
+            raise ModelConnectionError(
+                "Configured model credential reference is unavailable."
+            ) from exc
+        return {"Authorization": f"Bearer {credential}"}
+
     def _send_payload(self, payload: Dict[str, Any], stream: bool) -> Response:
         payload_with_stream = {**payload, "stream": stream}
         logger.debug(f"Enviando requisição POST para {self.api_url}")
         try:
-            response = requests.post(
-                self.api_url,
-                json=payload_with_stream,
-                timeout=self.timeout,
-                stream=stream,
-            )
+            request_kwargs: dict[str, Any] = {
+                "json": payload_with_stream,
+                "timeout": self.timeout,
+                "stream": stream,
+            }
+            headers = self._request_headers()
+            if headers is not None:
+                request_kwargs["headers"] = headers
+            response = requests.post(self.api_url, **request_kwargs)
             response.raise_for_status()
             return response
         except Timeout as exc:
@@ -239,11 +260,18 @@ class OpenAICompatibleGateway:
         tokenize_path = str(self.provider_options.get("tokenize_path", "/tokenize"))
         tokenize_url = extension_url(self.api_url, tokenize_path)
         try:
-            response = requests.post(tokenize_url, json={"content": text}, timeout=min(self.timeout, 10))
+            request_kwargs: dict[str, Any] = {
+                "json": {"content": text},
+                "timeout": min(self.timeout, 10),
+            }
+            headers = self._request_headers()
+            if headers is not None:
+                request_kwargs["headers"] = headers
+            response = requests.post(tokenize_url, **request_kwargs)
             if response.status_code != 200:
                 return None
             data = response.json()
             tokens = data.get("tokens", []) if isinstance(data, dict) else []
             return len(tokens) if isinstance(tokens, list) else None
-        except (RequestException, TypeError, ValueError):
+        except (ModelConnectionError, RequestException, TypeError, ValueError):
             return None

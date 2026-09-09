@@ -14,9 +14,19 @@ OpenAI-compatible, payloads, `choices`, SSE, tokenização opcional e capabiliti
 de structured output. `factory.py` resolve um profile de configuração e cria o
 gateway. Não há adapter nativo adicional documentado como suportado.
 
+`ResolvedModelProfile` carrega somente a referência opcional de credencial. O
+shape V1 aceita `source=env`, `kind=bearer` e um nome de variável; o valor não
+entra no profile persistido, em requests, métricas ou eventos. A resolução é
+late e exclusiva do `OpenAICompatibleGateway`, imediatamente antes do envio
+HTTP. Referência ausente ou vazia falha fechado sem expor o nome ou o valor.
+
 `structured_output.py` negocia JSON Schema, GBNF ou JSON em prompt conforme as
 capabilities declaradas e valida a resposta. Gramática reduz erro sintático,
 mas não substitui `PlanValidator`, authority ou schema de tools.
+
+Identidade declarada do profile e identidade observada pelo provider permanecem
+campos distintos. A observação só é registrada quando o response fornece um
+identificador; sucesso textual nunca é usado para inferir o modelo observado.
 
 ## Sessão, contexto e roteamento
 

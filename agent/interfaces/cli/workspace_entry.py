@@ -15,9 +15,29 @@ class NativePickerUnavailable(RuntimeError):
     """The optional platform-native directory picker cannot be opened."""
 
 
+class TaskWorkspaceRequiredError(ValueError):
+    """Raised before task-producing CLI bootstrap when selection is absent."""
+
+    reason_code = "TASK_WORKSPACE_REQUIRED"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "A workspace explícito é obrigatório para executar ou retomar uma tarefa."
+        )
+
+
 def argument_workspace(args: Any) -> Path:
     value = getattr(args, "workspace", None)
     return Path.cwd() if value is None else Path(str(value)).expanduser()
+
+
+def require_task_workspace(args: Any) -> Path:
+    """Return only an explicitly supplied task workspace path."""
+
+    value = getattr(args, "workspace", None)
+    if value is None or not str(value).strip():
+        raise TaskWorkspaceRequiredError()
+    return Path(str(value)).expanduser()
 
 
 def canonical_workspace(path: str | Path) -> Path:
@@ -229,12 +249,14 @@ def choose_workspace(
 
 __all__ = [
     "NativePickerUnavailable",
+    "TaskWorkspaceRequiredError",
     "argument_workspace",
     "canonical_workspace",
     "choose_directory_native",
     "choose_workspace",
     "load_last_workspace",
     "native_picker_available",
+    "require_task_workspace",
     "remember_workspace",
     "render_active_workspace",
 ]

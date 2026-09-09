@@ -9,7 +9,11 @@ def _common_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False, argument_default=argparse.SUPPRESS)
     parser.add_argument("--home", metavar="DIR", help="diretório-base dos dados da aplicação")
     parser.add_argument("--config", metavar="ARQUIVO", help="arquivo de configuração explícito")
-    parser.add_argument("--workspace", metavar="DIR", help="workspace da tarefa (padrão: diretório atual)")
+    parser.add_argument(
+        "--workspace",
+        metavar="DIR",
+        help="workspace da tarefa (obrigatório em execução/resume; chat interativo pergunta quando ausente)",
+    )
     parser.add_argument("--profile", metavar="NOME", help="perfil de modelo configurado")
     parser.add_argument(
         "--observability-mode",

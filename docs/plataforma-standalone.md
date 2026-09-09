@@ -34,6 +34,10 @@ persona ou extension não pode criar caminho alternativo model-actionable.
 - **continuidade/retomada**: há um slot de checkpoint v2 por workspace; `task
   status` é model-free/read-only, e `task resume` revalida o checkpoint sem
   restaurar authority, preservando o root e criando uma nova tentativa;
+- **fronteira de tarefa**: rotas task-producing headless exigem workspace
+  explícito antes de application/model/tools; o chat interativo mantém chooser;
+- **auditoria PRE-V1**: o fechamento emite um receipt bounded pelo dispatcher e
+  trace existentes, sem authority ou conteúdo sensível;
 - **troca de modelo**: provider fica atrás de `ModelGateway`.
 
 `run --yes` satisfaz approval local da execução, não concede authority. A

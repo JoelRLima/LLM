@@ -85,6 +85,11 @@ precede approval e execução. Se dois guards rejeitariam a mesma invocação, a
 ordem pode mudar o reason code observado; essa precedência é diagnóstica e não
 é estável salvo garantia explícita.
 
+`credential_ref` é metadata de configuração e não uma capability: não concede
+network, tool, grant, task authority ou approval. O `run_audit_receipt` também é
+somente uma projeção read-only de fatos canônicos; ele é emitido depois do
+snapshot terminal e não participa de planning, authority, approval ou outcome.
+
 ## Enforcement model-actionable
 
 `ToolExecutor` exige `ToolInvocationGateway`; se o gateway não estiver montado,

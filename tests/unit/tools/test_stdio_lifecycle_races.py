@@ -18,6 +18,18 @@ def no_surviving_readers() -> Any:
     assert not [t.name for t in threading.enumerate() if t.name.startswith("stdio-")]
 
 
+def test_stdio_environment_does_not_inherit_model_credential_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = "OPENAI_API_KEY"
+    monkeypatch.setenv(name, "PV155_SECRET_SENTINEL_8fd77e")
+
+    child_environment = stdio._safe_environment()
+
+    assert name not in child_environment
+    assert "PV155_SECRET_SENTINEL_8fd77e" not in repr(child_environment)
+
+
 @pytest.mark.parametrize("stream", ["stdout", "stderr", "both"])
 @pytest.mark.parametrize("size", [1024, 1025, 4096])
 def test_immediate_exit_drains_stream_boundaries(stream: str, size: int) -> None:

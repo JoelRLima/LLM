@@ -18,6 +18,16 @@ após configuração e workspace serem validados.
 e overrides, valida schema e materializa o perfil selecionado. Config inválida
 falha antes de diretórios, lock, modelo ou tools.
 
+## Fronteira de workspace da tarefa
+
+`WorkspaceContext` é o owner canônico da raiz sobre a qual uma tarefa pode
+atuar. As rotas task-producing headless usam o adapter `require_task_workspace`:
+sem um `--workspace` explícito, falham com `TASK_WORKSPACE_REQUIRED` antes de
+bootstrap da aplicação, modelo, tools ou mutação. Nessa fronteira não há
+fallback para CWD, objetivo, último workspace ou checkpoint. A seleção do chat
+interativo continua explícita pelo chooser; superfícies read-only/admin seguem
+seu contrato próprio.
+
 ## Política de runtime por tarefa
 
 `TaskRuntimePolicy` é a única seam canônica e estreita para decisões de runtime

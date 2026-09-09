@@ -82,6 +82,8 @@ def test_headless_run_passes_typed_directive_and_preserves_model_profile(
     assert cli.main(
         [
             "run",
+            "--workspace",
+            "workspace",
             "--json",
             "--profile",
             "configured_model",
@@ -111,7 +113,7 @@ def test_headless_default_keeps_objective_joining_and_auto_normal(
     application = _Application()
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
 
-    assert cli.main(["run", "Analyze", "the", "repo"]) == 0
+    assert cli.main(["run", "--workspace", "workspace", "Analyze", "the", "repo"]) == 0
 
     objective, directive = application.run_calls[0]
     assert objective == "Analyze the repo"
@@ -135,7 +137,7 @@ def test_headless_recognized_directive_never_downgrades_to_old_run_signature(
 
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: OldStyleFacade())
 
-    assert cli.main(["run", "--json", "/read", "inspect", "source"]) == 1
+    assert cli.main(["run", "--workspace", "workspace", "--json", "/read", "inspect", "source"]) == 1
 
     document = json.loads(capsys.readouterr().out)
     assert document["success"] is False
@@ -154,7 +156,7 @@ def test_headless_parser_error_happens_before_application_creation(
 
     monkeypatch.setattr(cli, "_create_application", forbidden)
 
-    assert cli.main(["run", "--json", "/read", "/do", "Analyze repo"]) == 2
+    assert cli.main(["run", "--workspace", "workspace", "--json", "/read", "/do", "Analyze repo"]) == 2
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "failed"
@@ -169,7 +171,7 @@ def test_headless_first_unknown_slash_token_preserves_baseline_subject(
     application = _Application()
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
 
-    assert cli.main(["run", "/custom", "/read", "Analyze", "repo"]) == 0
+    assert cli.main(["run", "--workspace", "workspace", "/custom", "/read", "Analyze", "repo"]) == 0
 
     objective, directive = application.run_calls[0]
     assert objective == "/custom /read Analyze repo"
@@ -188,7 +190,7 @@ def test_headless_do_keeps_existing_approval_flag_boundary(
 
     monkeypatch.setattr(cli, "_create_application", create)
 
-    assert cli.main(["run", "/do", "Apply the change"]) == 0
+    assert cli.main(["run", "--workspace", "workspace", "/do", "Apply the change"]) == 0
 
     assert seen["assume_yes"] is False
     assert application.run_calls[0][1] == TaskRunDirective(
@@ -216,7 +218,7 @@ def test_headless_continue_delegates_to_w10_without_creating_application(
     monkeypatch.setattr(cli, "_create_application", forbidden)
     monkeypatch.setattr(task_continuity, "run_task_resume", delegated)
 
-    assert cli.main(["run", "--json", "/continue"]) == 7
+    assert cli.main(["run", "--workspace", "workspace", "--json", "/continue"]) == 7
     assert captured["args"].objective == ["/continue"]
     assert captured["kwargs"]["create_application"] is forbidden
 

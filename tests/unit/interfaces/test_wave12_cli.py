@@ -33,7 +33,7 @@ class _InteractionApplication:
 def test_headless_normal_run_uses_task_interaction_boundary(monkeypatch) -> None:
     application = _InteractionApplication()
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
-    assert cli.main(["run", "--json", "/read", "Analyze", "parser.py"]) == 0
+    assert cli.main(["run", "--workspace", "workspace", "--json", "/read", "Analyze", "parser.py"]) == 0
     assert application.closed == 1
     assert application.calls == [
         {

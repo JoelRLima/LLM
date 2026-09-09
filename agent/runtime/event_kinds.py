@@ -39,6 +39,7 @@ class RuntimeEventKind(str, Enum):
     LEGACY_STARTED = "started"
     MODEL_CALL_COMPLETED = "model_call_completed"
     MODEL_CALL_STARTED = "model_call_started"
+    RUN_AUDIT_RECEIPT = "run_audit_receipt"
     PLAN_CREATED = "plan_created"
     PLAN_EXTENDED = "plan_extended"
     PLAN_PREVIEW_READY = "plan_preview_ready"

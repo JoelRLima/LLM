@@ -25,7 +25,7 @@ faz uma requisição ao backend.
 
 ```text
 llm-agent [chat]
-llm-agent run [--task-authority CAPABILITY]... [--json] [--yes] OBJETIVO
+llm-agent run --workspace DIR [--task-authority CAPABILITY]... [--json] [--yes] OBJETIVO
 llm-agent doctor [--json] [--write-report]
 llm-agent config init
 llm-agent config path
@@ -35,12 +35,17 @@ llm-agent state migrate --from DIRETÓRIO
 llm-agent extensions list|register|enable|disable|grant|revoke|inspect
 llm-agent task context --task-id ID [--phase PHASE_ID] [--json]
 llm-agent task status [--json]
-llm-agent task resume [--json] [--yes]
+llm-agent task resume --workspace DIR [--json] [--yes]
 ```
 
 As flags comuns `--home`, `--config`, `--workspace` e `--profile` são aceitas
-antes ou depois do subcomando. Sem `--workspace`, a interface usa o diretório
-atual; automações devem sempre informar a raiz explicitamente.
+antes ou depois do subcomando. Rotas task-producing headless — `run`, `task
+resume` e chat não interativo/default — exigem `--workspace` explícito. A
+ausência falha com `TASK_WORKSPACE_REQUIRED` antes de construir a aplicação,
+carregar modelo, iniciar tools ou executar mutação; o runtime não deriva a raiz
+do CWD, do objetivo ou de um checkpoint. O chat interativo mantém o chooser
+explícito de workspace, e comandos read-only/admin conservam seu contrato de
+seleção próprio.
 
 `--help`, `--version` e `config path` não constroem a aplicação nem escrevem no
 filesystem. `doctor` também não constrói modelo, skills ou orquestrador.

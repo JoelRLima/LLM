@@ -7,6 +7,7 @@ from time import monotonic
 from typing import Any, Dict
 
 from agent.llm.contracts import ModelRequest, ModelResponse, TokenUsage, response_text, response_usage
+from agent.llm.identity import declared_model_audit_identity
 from agent.runtime.budget import estimate_model_request_tokens
 from agent.runtime.budget_estimation import RequestInputMeasurement
 from agent.runtime.context import TaskExecutionContext
@@ -89,12 +90,17 @@ class ModelCallService:
 
     def _start_event(self, operation: str, call_number: int) -> None:
         try:
+            identity = declared_model_audit_identity(
+                self.gateway,
+                getattr(self.context, "model_profile", None),
+                getattr(self.context, "metadata", None),
+            )
             self.context.emit(
                 "model_call_started",
                 {
                     "operation": operation,
-                    "provider": getattr(self.gateway, "provider_name", None),
                     "call_number": call_number,
+                    **identity,
                 },
             )
         except Exception as exc:

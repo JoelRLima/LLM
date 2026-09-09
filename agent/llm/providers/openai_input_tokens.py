@@ -38,11 +38,14 @@ def _count_request_input_tokens(gateway: Any, request: ModelRequest) -> int | No
     try:
         # build_payload is the same owner used by complete() and stream().
         payload = gateway.build_payload(request)
-        response = requests.post(
-            extension_url(gateway.api_url, path),
-            json=payload,
-            timeout=min(gateway.timeout, 10),
-        )
+        request_kwargs: dict[str, Any] = {
+            "json": payload,
+            "timeout": min(gateway.timeout, 10),
+        }
+        headers = gateway._request_headers()
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        response = requests.post(extension_url(gateway.api_url, path), **request_kwargs)
         if response.status_code in (404, 405):
             gateway._request_input_tokens_supported = False
             return None

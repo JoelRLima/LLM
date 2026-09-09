@@ -6,7 +6,7 @@ import json
 import sys
 from typing import Any, Callable
 
-from agent.interfaces.cli.workspace_entry import argument_workspace
+from agent.interfaces.cli.workspace_entry import argument_workspace, require_task_workspace
 from agent.runtime.paths import AppPaths
 from agent.runtime.workspace_context import WorkspaceContext
 
@@ -103,6 +103,7 @@ def run_task_resume(
 ) -> int:
     """Preflight and route an explicit resume through AgentApplication."""
 
+    require_task_workspace(args)
     snapshot = _snapshot(args)
     document = _document(snapshot)
     if not bool(document.get("resumable", getattr(snapshot, "resumable", False))):

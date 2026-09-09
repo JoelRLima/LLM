@@ -31,6 +31,7 @@ _EVENT_CATEGORIES: dict[str, str] = {
     "step_unverified": "step",
     "model_call_started": "model",
     "model_call_completed": "model",
+    "run_audit_receipt": "audit",
     "tool_discovery": "tool",
     "tool_start": "tool",
     "tool_end": "tool",
@@ -76,6 +77,7 @@ _TERMINAL_KINDS = frozenset(
         "error",
         "canonical_review_rejected",
         "canonical_review_required_rejection",
+        "run_audit_receipt",
     }
 )
 _ACTIVE_KINDS = frozenset(

@@ -8,8 +8,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from agent.llm.audit_identity import project_declared_model_audit_identity
 from agent.llm.identity_safety import canonicalize_identity_value, redact_identity
 from agent.llm.model_profile_binding import cached_gateway_model_profile
+
+declared_model_audit_identity = project_declared_model_audit_identity
 
 GENERIC_MODEL_ALIASES = frozenset({"default"})
 _IDENTITY_FIELDS = (
@@ -91,18 +94,7 @@ def bounded_identity_text(value: Any) -> str | None:
 
 
 def call_identity(gateway: Any, request: Any, call_index: int) -> dict[str, Any]:
-    return {
-        "call_index": call_index,
-        "provider": bounded_identity_text(getattr(gateway, "provider_name", None)),
-        "endpoint_identity": bounded_identity_text(
-            normalize_endpoint_identity(getattr(gateway, "endpoint_identity", None))
-        ),
-        "declared_model": bounded_identity_text(
-            getattr(request, "model", None) or getattr(gateway, "model", None)
-        ),
-        "observed_provider_model_id": None,
-        "identity_source": "unavailable",
-    }
+    return {"call_index": call_index, "provider": bounded_identity_text(getattr(gateway, "provider_name", None)), "endpoint_identity": bounded_identity_text(normalize_endpoint_identity(getattr(gateway, "endpoint_identity", None))), "declared_model": bounded_identity_text(getattr(request, "model", None) or getattr(gateway, "model", None)), "observed_provider_model_id": None, "identity_source": "unavailable"}
 
 
 def observed_provider_model_id(metadata: Any) -> str | None:
@@ -288,6 +280,7 @@ __all__ = [
     "bounded_identity_text",
     "call_identity",
     "canonical_json",
+    "declared_model_audit_identity",
     "declared_provider_identity",
     "model_config_fingerprint",
     "normalize_endpoint_identity",

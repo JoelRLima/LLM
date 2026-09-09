@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from agent.llm.contracts import normalize_usage, request_contract_value, response_usage
+from agent.llm.model_metric_audit import project_model_call_audit_fields
 
 
 def _operation_field(operation: str | None) -> dict[str, str]:
@@ -89,6 +90,7 @@ def build_model_call_metric(
         ),
         **_operation_field(operation),
     }
+    entry.update(project_model_call_audit_fields(gateway, response, config))
     if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0:
         entry["context_limit"] = context_limit
         entry["request_utilization_ratio"] = (

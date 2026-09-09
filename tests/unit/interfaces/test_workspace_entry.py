@@ -347,14 +347,10 @@ def test_chat_explicit_workspace_bypasses_chooser(
     assert "\n".join(output.output).count(str(selected)) == 1
 
 
-def test_chat_non_tty_keeps_current_directory_without_prompt(
+def test_chat_non_tty_requires_explicit_workspace_before_application(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    application = SimpleNamespace(
-        session=SimpleNamespace(config={}), orchestrator=SimpleNamespace(), config={},
-        paths=SimpleNamespace(), workspace=SimpleNamespace(root=Path.cwd()),
-        workspace_paths=SimpleNamespace(), close=lambda: None,
-    )
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: False)
     output = _Console()
     monkeypatch.setattr(cli, "console", output)
@@ -363,21 +359,16 @@ def test_chat_non_tty_keeps_current_directory_without_prompt(
         "choose_directory_native",
         lambda: (_ for _ in ()).throw(AssertionError("picker")),
     )
-    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "_create_application",
+        lambda *_args, **_kwargs: pytest.fail("missing workspace must fail before application"),
+    )
 
-    def create(args: object, **_: object) -> object:
-        seen["args"] = args
-        return application
+    assert cli.main(["chat"]) == 2
 
-    monkeypatch.setattr(cli, "_create_application", create)
-    monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
-
-    assert cli.main(["chat"]) == 0
-
-    assert not hasattr(seen["args"], "workspace")
-    rendered = "\n".join(output.output)
-    assert "Workspace ativo" not in rendered
-    assert "[READ ONLY]" not in rendered
+    assert "TASK_WORKSPACE_REQUIRED" in capsys.readouterr().err
+    assert output.output == []
 
 
 @pytest.mark.parametrize("command", ["/workspace", "/diretorio", "/pwd"])

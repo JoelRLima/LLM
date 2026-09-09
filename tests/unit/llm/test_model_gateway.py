@@ -10,7 +10,7 @@ from agent.llm.contracts import (
     StructuredOutputMode,
     StructuredOutputRequest,
 )
-from agent.llm.errors import ModelResponseError, UnsupportedModelCapability
+from agent.llm.errors import ModelConnectionError, ModelResponseError, UnsupportedModelCapability
 from agent.llm.model_profile import resolve_model_profile
 from agent.llm.providers.factory import create_model_gateway
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
@@ -112,6 +112,71 @@ def test_provider_specific_fields_are_added_only_by_adapter():
         "enable_thinking": True,
         "thinking_budget": 128,
     }
+
+
+def test_credential_reference_resolves_at_http_boundary_and_sets_exact_bearer_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = "PV155_SECRET_SENTINEL_8fd77e"
+    monkeypatch.setenv("OPENAI_API_KEY", sentinel)
+    gateway = OpenAICompatibleGateway(
+        {
+            "api_url": "http://localhost/chat",
+            "model": "local",
+            "credential_ref": {
+                "source": "env",
+                "name": "OPENAI_API_KEY",
+                "kind": "bearer",
+            },
+        }
+    )
+    response = MagicMock()
+    response.json.return_value = {
+        "choices": [{"message": {"content": "ok"}}],
+    }
+
+    with patch("agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
+        gateway.complete(_request())
+
+    assert post.call_args.kwargs["headers"] == {"Authorization": f"Bearer {sentinel}"}
+    assert sentinel not in repr(gateway.profile)
+
+
+def test_missing_or_empty_credential_reference_makes_zero_http_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    gateway = OpenAICompatibleGateway(
+        {
+            "api_url": "http://localhost/chat",
+            "model": "local",
+            "credential_ref": {
+                "source": "env",
+                "name": "OPENAI_API_KEY",
+                "kind": "bearer",
+            },
+        }
+    )
+
+    with patch("agent.llm.providers.openai_compatible.requests.post") as post:
+        with pytest.raises(ModelConnectionError) as caught:
+            gateway.complete(_request())
+
+    post.assert_not_called()
+    assert "PV155_SECRET_SENTINEL_8fd77e" not in str(caught.value)
+
+
+def test_credential_free_profile_preserves_unauthenticated_request_shape() -> None:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {}}
+    )
+    response = MagicMock()
+    response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+
+    with patch("agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
+        gateway.complete(_request())
+
+    assert "headers" not in post.call_args.kwargs
 
 
 def test_complete_normalizes_openai_response():

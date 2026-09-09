@@ -38,8 +38,29 @@ class InvocationActivityMixin:
                 "node_id": node_id,
                 "mutating": bool(mutating),
                 "cancellation_event": cancellation_event,
+                # Ephemeral, observational C9 metadata.  It is never read by
+                # authorization or approval decisions.
+                "descriptor": None,
+                "required_capabilities": None,
+                "approval_disposition": "unknown",
             }
             return True
+
+    def _update_invocation_audit(self, invocation_id: str, **fields: Any) -> None:
+        """Store a narrow, ephemeral audit observation for one invocation."""
+
+        with self._invocation_lock:
+            metadata = self._active_invocation_meta.get(invocation_id)
+            if metadata is None:
+                return
+            for name, value in fields.items():
+                if name in {
+                    "descriptor",
+                    "required_capabilities",
+                    "approval_disposition",
+                    "requested_effects",
+                }:
+                    metadata[name] = value
 
     def _set_invocation_mutating(self, invocation_id: str, mutating: bool) -> None:
         with self._invocation_lock:

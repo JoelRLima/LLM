@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent.application import AgentApplication
+from agent.application_result import finalize_application_result
 from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
 from agent.llm.contracts import ModelRequest, ModelResponse
 from agent.llm.decision_contract import ModelRequestContract
@@ -436,6 +437,62 @@ def test_result_binding_executes_exact_observed_value_without_replanning(tmp_pat
     assert progression["continuations"] == 0
 
 
+def test_reusable_application_emits_one_audit_receipt_per_run(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "controle.txt").write_text("reusable", encoding="utf-8")
+    gateway = _QueuedChatGateway(
+        [
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"first run is sufficient"}',
+            "first run answer",
+            '{"persona":"coder"}',
+            '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"controle.txt"}}]}',
+            '{"action":"complete","reason":"second run is sufficient"}',
+            "second run answer",
+        ]
+    )
+
+    with AgentApplication.create(
+        paths=_initialized_paths(tmp_path),
+        workspace=workspace,
+        gateway=gateway,
+        approval_policy=AutoApprove(),
+        operational_mode=OperationalMode.EDITOR,
+        configure_logging=False,
+    ) as application:
+        first = application.run("read controle.txt")
+        first_events = list(application.orchestrator.agent_state.events)
+        repeated = finalize_application_result(
+            application,
+            first.status,
+            first.answer,
+            report_path="repeated-finalization",
+        )
+        repeated_events = list(application.orchestrator.agent_state.events)
+        second = application.run("read controle.txt again")
+        second_events = list(application.orchestrator.agent_state.events)
+
+    def receipts(events: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [event for event in events if event["type"] == "run_audit_receipt"]
+
+    first_receipts = receipts(first_events)
+    repeated_receipts = receipts(repeated_events)
+    second_receipts = receipts(second_events)
+    assert first.status == "succeeded"
+    assert repeated.status == "succeeded"
+    assert second.status == "succeeded"
+    assert first.snapshot is not None
+    assert second.snapshot is not None
+    assert first.snapshot.correlation.run_id != second.snapshot.correlation.run_id
+    assert len(first_receipts) == 1
+    assert len(repeated_receipts) == 1
+    assert len(second_receipts) == 1
+    assert first_receipts[0]["run_id"] == first.snapshot.correlation.run_id
+    assert second_receipts[0]["run_id"] == second.snapshot.correlation.run_id
+
+
 def test_phase3_real_correlation_chain_reaches_final_snapshot(tmp_path: Path) -> None:
     result, _gateway, _workspace, _history, progression = _run_queued_task(
         tmp_path,
@@ -453,6 +510,14 @@ def test_phase3_real_correlation_chain_reaches_final_snapshot(tmp_path: Path) ->
     assert snapshot is not None
     correlation = snapshot.correlation
     events = progression["events"]
+    audit_events = [event for event in events if event["type"] == "run_audit_receipt"]
+    assert len(audit_events) == 1
+    audit_data = audit_events[0]["data"]
+    assert audit_data["schema_version"] == 1
+    assert audit_data["model"]["provider"] == "offline-fixture"
+    assert audit_data["model"]["declared_model"] == "offline-chat"
+    assert audit_data["terminal"]["status"] == "succeeded"
+    assert audit_events[0]["run_id"] == correlation.run_id
     model_index = next(
         index for index, event in enumerate(events) if event["type"] == "model_call_started"
     )

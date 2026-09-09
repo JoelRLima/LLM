@@ -90,14 +90,20 @@ import shlex
 import subprocess
 import sys
 import time
+import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Mapping
 
 from agent.approval import ApprovalDecision, AutoApprove
 from agent.skills import load_skill_registry
 from agent.application import AgentApplication
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
+from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 from agent.llm.decision_contract import ModelRequestContract
+from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from agent.observability.export import DiagnosticExporter
+from agent.observability.trace_store import TraceStore
+from agent.presentation.service import InspectionService
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.instance_lock import InstanceLock
 from agent.runtime.paths import AppPaths
@@ -133,6 +139,9 @@ class DeterministicJourneyGateway:
         self.scenario_id = scenario_id
         self.calls = []
         self._last_task_contract = None
+        self._unknown_runner = None
+        self._unknown_called = False
+        self.unknown_result = None
 
     def _task_definition_response(self, request):
         raw_contract = getattr(request, "request_contract", None)
@@ -205,6 +214,8 @@ class DeterministicJourneyGateway:
         if "You are a Router Agent" in system:
             return '{"persona": "coder"}'
         if "TOOL DISCOVERY" in prompt:
+            if self.scenario_id == "audit_unknown":
+                return '{"tools":["missing_tool"]}'
             marker = "<untrusted_tool_catalog>"
             end_marker = "</untrusted_tool_catalog>"
             try:
@@ -227,6 +238,7 @@ class DeterministicJourneyGateway:
                 "d1_success": ("demo_tool",),
                 "d3_denied": ("demo_tool",),
                 "d4_failure": ("demo_tool",),
+                "audit_unknown": (),
                 "w12_natural_read": ("file_reader",),
                 "w12_task_respond": ("file_reader",),
                 "w12_explicit_read": ("file_reader",),
@@ -235,6 +247,8 @@ class DeterministicJourneyGateway:
             selected.extend(name for name in names if name not in selected)
             return json.dumps({"tools": selected[:8]})
         if "Escolha exatamente uma das duas respostas JSON" in prompt:
+            if self.scenario_id == "audit_unknown":
+                return '{"action":"direct_response","answer":"unknown tool denial was observed"}'
             if self.scenario_id == "a6_direct":
                 return '{"action":"direct_response","answer":"abacaxi azul"}'
             if self.scenario_id == "a1_read":
@@ -368,6 +382,9 @@ class DeterministicJourneyGateway:
         return '{"persona": "coder"}'
 
     def complete(self, request):
+        if self.scenario_id == "audit_unknown" and self._unknown_runner is not None and not self._unknown_called:
+            self._unknown_called = True
+            self.unknown_result = self._unknown_runner("missing_tool", {})
         task_definition_response = self._task_definition_response(request)
         if task_definition_response is not None:
             return ModelResponse(content=task_definition_response)
@@ -990,12 +1007,16 @@ def run_extension_journeys(base_dir):
         marker.unlink(missing_ok=True)
         started_at = time.monotonic()
         gateway = DeterministicJourneyGateway(objective, name)
+        run_id = None
+        workspace_paths = None
         with AgentApplication.create(paths=paths, workspace=scenario_workspace, gateway=gateway, task_authority=authority, approval_policy=AutoApprove(), configure_logging=False) as application:
             application.orchestrator._route_persona(objective)
             planning_view = application.orchestrator.get_planning_view("linear")
             if planning_view is None or "demo_tool" not in planning_view.presented_names:
                 raise AssertionError(f"extension nao ficou visivel pelo planner: names={application.tool_registry.names()!r}, diagnostics={application.bootstrap_diagnostics!r}, view={planning_view!r}")
             result = application.run(objective)
+            run_id = application.orchestrator.run_correlation.run_id
+            workspace_paths = application.workspace_paths
             measurement = project_measurement(name, objective, started_at, application, result, family="d")
             measurement.update({"answer": result.answer[:500], "model_calls": len(gateway.calls), "status": result.status, "spawned": marker.is_file()})
             measurements.append(measurement)
@@ -1005,6 +1026,52 @@ def run_extension_journeys(base_dir):
                 raise AssertionError(f"D3 nao negou antes do spawn: {measurement!r}")
             if name == "d4_failure" and (result.status == "succeeded" or not marker.is_file() or not result.answer):
                 raise AssertionError(f"D4 nao preservou failure externo: {measurement!r}")
+        if name in {"d1_success", "d3_denied"}:
+            if not isinstance(run_id, str) or workspace_paths is None:
+                raise AssertionError(f"{name} nao publicou identidade persistida")
+            read_result = TraceStore.open(workspace_paths, run_id).read_result()
+            payloads = [record.payload for record in read_result.records if isinstance(record.payload, Mapping)]
+            receipts = [item for item in payloads if item.get("type") == "run_audit_receipt"]
+            denied_events = [item for item in payloads if item.get("type") == "tool_denied"]
+            starts = [item for item in payloads if item.get("type") == "tool_start"]
+            ends = [item for item in payloads if item.get("type") == "tool_end"]
+            receipt_data = receipts[0].get("data") if len(receipts) == 1 and isinstance(receipts[0].get("data"), Mapping) else {}
+            descriptors = receipt_data.get("tools") if isinstance(receipt_data.get("tools"), (list, tuple)) else []
+            descriptor = next((item for item in descriptors if isinstance(item, Mapping) and item.get("name") == "demo_tool"), None)
+            if name == "d1_success":
+                if read_result.completeness.value != "complete" or len(receipts) != 1 or not isinstance(descriptor, Mapping):
+                    raise AssertionError(f"D1 nao persistiu receipt/descriptor: {payloads!r}")
+                if descriptor.get("origin_kind") != "extension" or descriptor.get("extension_id") != "installed.demo.extension":
+                    raise AssertionError(f"D1 descriptor de extension incompleto: {descriptor!r}")
+                if not descriptor.get("adapter_id") or not descriptor.get("source_version") or not descriptor.get("protocol_version"):
+                    raise AssertionError(f"D1 descriptor sem origem/versoes: {descriptor!r}")
+                authority_data = receipt_data.get("authority") if isinstance(receipt_data.get("authority"), Mapping) else {}
+                terminal = receipt_data.get("terminal") if isinstance(receipt_data.get("terminal"), Mapping) else {}
+                if not authority_data.get("application_snapshot_id") or not authority_data.get("task_snapshot_id"):
+                    raise AssertionError(f"D1 receipt sem authority persistida: {receipt_data!r}")
+                if terminal.get("status") != "succeeded":
+                    raise AssertionError(f"D1 receipt sem terminal persistido: {terminal!r}")
+                measurement["audit_trace"] = {
+                    "completeness": read_result.completeness.value,
+                    "receipt_count": len(receipts),
+                    "descriptor": dict(descriptor),
+                    "authority": dict(authority_data),
+                    "terminal": dict(terminal),
+                }
+            else:
+                if read_result.completeness.value != "complete" or len(receipts) != 1 or len(denied_events) != 1 or starts or ends:
+                    raise AssertionError(f"D3 denial persistida incompleta: {payloads!r}")
+                denied_data = denied_events[0].get("data") if isinstance(denied_events[0].get("data"), Mapping) else {}
+                if denied_data.get("executed") is not False or not denied_data.get("reason"):
+                    raise AssertionError(f"D3 denial sem reason/executed=false: {denied_data!r}")
+                measurement["audit_trace"] = {
+                    "completeness": read_result.completeness.value,
+                    "receipt_count": len(receipts),
+                    "denied_reason": denied_data.get("reason"),
+                    "executed": denied_data.get("executed"),
+                    "tool_start_count": len(starts),
+                    "tool_end_count": len(ends),
+                }
     return measurements
 
 def run_lock_recovery_journey(base_dir):
@@ -1137,7 +1204,276 @@ if modify_measurements[3].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B4 alterou alvo negado: {modify_measurements!r}")
 if modify_measurements[4].get("terminal_outcome") == "SUCCESS":
     raise SystemExit(f"installed Slice B B5 aplicou preview bloqueado: {modify_measurements!r}")
+
+
+def run_audit_journey(base_dir):
+    # Persist one builtin mutation receipt and inspect it only from disk.
+
+    audit_home = base_dir / "app-home"
+    audit_workspace = base_dir / "workspace"
+    audit_workspace.mkdir(parents=True, exist_ok=True)
+    sample = audit_workspace / "sample.py"
+    sample.write_text("value = 1  # PV155_PRIVATE_ARTIFACT_CONTENT\\n", encoding="utf-8")
+    objective = "altere sample.py e valide a modificacao."
+    paths = AppPaths.discover(audit_home, env={})
+    ConfigRepository(paths).initialize()
+    gateway = DeterministicJourneyGateway(objective, "b1_modify_validate")
+    with AgentApplication.create(
+        paths=paths,
+        workspace=audit_workspace,
+        gateway=gateway,
+        approval_policy=AutoApprove(),
+        configure_logging=False,
+    ) as application:
+        result = application.run(objective)
+        run_id = application.orchestrator.run_correlation.run_id
+        workspace_paths = application.workspace_paths
+    if result.status != "succeeded":
+        raise AssertionError(f"installed audit builtin run failed: {result.to_dict()!r}")
+
+    read_result = TraceStore.open(workspace_paths, run_id).read_result()
+    if read_result.completeness.value != "complete":
+        raise AssertionError(f"installed audit trace is not complete: {read_result.completeness.value!r}")
+    payloads = [record.payload for record in read_result.records if isinstance(record.payload, Mapping)]
+    receipts = [item for item in payloads if item.get("type") == "run_audit_receipt"]
+    starts = [item for item in payloads if item.get("type") == "tool_start"]
+    ends = [item for item in payloads if item.get("type") == "tool_end"]
+    if len(receipts) != 1 or not starts or not ends:
+        raise AssertionError("installed audit builtin trace lacks the required events")
+    receipt_data = receipts[0].get("data") if isinstance(receipts[0].get("data"), Mapping) else {}
+    start_data = starts[0].get("data") if isinstance(starts[0].get("data"), Mapping) else {}
+    end_data = ends[-1].get("data") if isinstance(ends[-1].get("data"), Mapping) else {}
+    model = receipt_data.get("model") if isinstance(receipt_data.get("model"), Mapping) else {}
+    tools = receipt_data.get("tools") if isinstance(receipt_data.get("tools"), (list, tuple)) else []
+    effect = end_data.get("effect") if isinstance(end_data.get("effect"), Mapping) else {}
+    if model.get("provider") != "installed-slice-a-fixture" or model.get("declared_model") != "installed-slice-a-fixture":
+        raise AssertionError(f"installed audit model identity missing: {receipt_data!r}")
+    code_descriptor = next((item for item in tools if item.get("name") == "code_task"), None)
+    if not isinstance(code_descriptor, Mapping):
+        raise AssertionError(f"installed audit builtin descriptor missing: {receipt_data!r}")
+    if not code_descriptor.get("source_version") or not code_descriptor.get("protocol_version"):
+        raise AssertionError(f"installed audit builtin version missing: {code_descriptor!r}")
+    if start_data.get("approval_disposition") != "approved":
+        raise AssertionError(f"installed audit approval was not approved: {start_data!r}")
+    required = start_data.get("required_capabilities")
+    if not isinstance(required, (list, tuple)) or "write" not in required:
+        raise AssertionError(f"installed audit required capabilities missing: {start_data!r}")
+    if effect.get("occurred") is not True or effect.get("persisted") is not True:
+        raise AssertionError(f"installed audit mutation evidence missing: {end_data!r}")
+    if effect.get("validation_status") not in {"passed", "validated", "succeeded"}:
+        raise AssertionError(f"installed audit validation evidence missing: {effect!r}")
+    terminal = receipt_data.get("terminal") if isinstance(receipt_data.get("terminal"), Mapping) else {}
+    if terminal.get("status") != "succeeded" or terminal.get("final_state") != "applied":
+        raise AssertionError(f"installed audit terminal evidence missing: {terminal!r}")
+    if not end_data.get("artifact_refs"):
+        raise AssertionError(f"installed audit artifact metadata missing: {end_data!r}")
+
+    service = InspectionService(workspace_paths)
+    export_path = base_dir / "audit-export.zip"
+    DiagnosticExporter(service).export(run_id, output=export_path)
+    with zipfile.ZipFile(export_path) as archive:
+        exported_trace = archive.read("trace.jsonl")
+        exported_snapshot = archive.read("snapshot.json")
+    if b"run_audit_receipt" not in exported_trace:
+        raise AssertionError("installed audit export omitted the final receipt")
+    private_content = b"PV155_PRIVATE_ARTIFACT_CONTENT"
+    if private_content in exported_trace or private_content in exported_snapshot:
+        raise AssertionError("installed audit export exposed artifact content")
+    return {
+        "trace_completeness": read_result.completeness.value,
+        "receipt_count": len(receipts),
+        "builtin_tool": code_descriptor,
+        "required_capabilities": required,
+        "approval_disposition": start_data.get("approval_disposition"),
+        "effect": effect,
+        "terminal": terminal,
+        "exported": True,
+    }
+
+
+def run_denial_audit_journey(base_dir):
+    denial_home = base_dir / "app-home"
+    denial_workspace = base_dir / "workspace"
+    denial_workspace.mkdir(parents=True, exist_ok=True)
+    objective = "use a ferramenta que nao existe."
+    paths = AppPaths.discover(denial_home, env={})
+    ConfigRepository(paths).initialize()
+    gateway = DeterministicJourneyGateway(objective, "audit_unknown")
+    with AgentApplication.create(
+        paths=paths,
+        workspace=denial_workspace,
+        gateway=gateway,
+        task_authority=TaskAuthoritySnapshot(frozenset({"read"})),
+        approval_policy=AutoApprove(),
+        configure_logging=False,
+    ) as application:
+        gateway._unknown_runner = application.tool_invocation_gateway.run
+        result = application.run(objective)
+        run_id = application.orchestrator.run_correlation.run_id
+        workspace_paths = application.workspace_paths
+    read_result = TraceStore.open(workspace_paths, run_id).read_result()
+    payloads = [record.payload for record in read_result.records if isinstance(record.payload, Mapping)]
+    denied = [item for item in payloads if item.get("type") == "tool_denied"]
+    starts = [item for item in payloads if item.get("type") == "tool_start"]
+    ends = [item for item in payloads if item.get("type") == "tool_end"]
+    receipts = [item for item in payloads if item.get("type") == "run_audit_receipt"]
+    if read_result.completeness.value != "complete" or len(denied) != 1 or starts or ends or len(receipts) != 1:
+        raise AssertionError(f"denial audit instalada incompleta: {payloads!r}")
+    denied_data = denied[0].get("data") if isinstance(denied[0].get("data"), Mapping) else {}
+    receipt_data = receipts[0].get("data") if isinstance(receipts[0].get("data"), Mapping) else {}
+    tools = receipt_data.get("tools") if isinstance(receipt_data.get("tools"), (list, tuple)) else []
+    unknown = next((item for item in tools if isinstance(item, Mapping) and item.get("name") == "missing_tool"), None)
+    terminal = receipt_data.get("terminal") if isinstance(receipt_data.get("terminal"), Mapping) else {}
+    if denied_data.get("executed") is not False or not denied_data.get("reason"):
+        raise AssertionError(f"unknown denial sem reason/executed=false: {denied_data!r}")
+    if not isinstance(unknown, Mapping) or unknown.get("source_version") is not None or unknown.get("protocol_version") is not None:
+        raise AssertionError(f"unknown denial fabricou versao: {receipt_data!r}")
+    if terminal.get("mutation_occurred") is True or terminal.get("final_state") == "applied":
+        raise AssertionError(f"unknown denial indicou mutacao: {terminal!r}")
+    return {
+        "trace_completeness": read_result.completeness.value,
+        "receipt_count": len(receipts),
+        "denied_reason": denied_data.get("reason"),
+        "executed": denied_data.get("executed"),
+        "unknown_descriptor": dict(unknown),
+        "tool_start_count": len(starts),
+        "tool_end_count": len(ends),
+        "mutation_occurred": terminal.get("mutation_occurred"),
+        "status": result.status,
+    }
+
+
+def run_credential_audit_journey(base_dir):
+    credential_home = base_dir / "app-home"
+    credential_workspace = base_dir / "workspace"
+    credential_workspace.mkdir(parents=True, exist_ok=True)
+    objective = "responda de forma deterministica sem executar ferramentas."
+    secret = "PV155_AUDIT_CREDENTIAL_8fd77e"
+    observed_authorizations = []
+
+    class CredentialHandler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - stdlib handler contract.
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            observed_authorizations.append(self.headers.get("Authorization"))
+            body = json.dumps(
+                {
+                    "model": "credential-audit-observed-model",
+                    "choices": [{"message": {"role": "assistant", "content": "{}"}, "finish_reason": "stop"}],
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CredentialHandler)
+    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    os.environ["PV155_AUDIT_CREDENTIAL"] = secret
+    try:
+        paths = AppPaths.discover(credential_home, env={})
+        ConfigRepository(paths).initialize()
+        provider = OpenAICompatibleGateway(
+            {
+                "api_url": f"http://127.0.0.1:{server.server_port}/v1/chat/completions",
+                "model": "credential-audit-declared-model",
+                "credential_ref": {"source": "env", "name": "PV155_AUDIT_CREDENTIAL", "kind": "bearer"},
+            }
+        )
+
+        class CredentialAuditGateway(DeterministicJourneyGateway):
+            def __init__(self):
+                super().__init__(objective, "a6_direct")
+                self._provider = provider
+                self.provider_name = provider.provider_name
+                self.model = provider.model
+                self.profile = provider.profile
+                self.resolved_profile = provider.resolved_profile
+                self.endpoint_identity = provider.endpoint_identity
+                self._capabilities = provider.capabilities
+                self._provider_probe_done = False
+
+            @property
+            def capabilities(self):
+                return self._capabilities
+
+            def complete(self, request):
+                if not self._provider_probe_done:
+                    self._provider_probe_done = True
+                    observed = self._provider.complete(
+                        ModelRequest(
+                            messages=(ModelMessage("user", "credential audit probe"),),
+                            model=self.model,
+                            temperature=0.0,
+                            max_output_tokens=16,
+                            stream=False,
+                        )
+                    )
+                else:
+                    observed = ModelResponse(
+                        content="",
+                        provider_metadata={"observed_provider_model_id": "credential-audit-observed-model"},
+                    )
+                deterministic = super().complete(request)
+                return ModelResponse(
+                    content=deterministic.content,
+                    reasoning=deterministic.reasoning,
+                    usage=observed.usage,
+                    finish_reason=observed.finish_reason,
+                    provider_metadata=observed.provider_metadata,
+                )
+
+        gateway = CredentialAuditGateway()
+        with AgentApplication.create(
+            paths=paths,
+            workspace=credential_workspace,
+            gateway=gateway,
+            approval_policy=AutoApprove(),
+            configure_logging=False,
+        ) as application:
+            result = application.run(objective)
+            run_id = application.orchestrator.run_correlation.run_id
+            workspace_paths = application.workspace_paths
+    finally:
+        os.environ.pop("PV155_AUDIT_CREDENTIAL", None)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    if result.status != "succeeded":
+        raise AssertionError(f"credential audit run failed: {result.to_dict()!r}")
+    if not observed_authorizations or any(item != f"Bearer {secret}" for item in observed_authorizations):
+        raise AssertionError(f"credential audit request missing Authorization: {observed_authorizations!r}")
+    read_result = TraceStore.open(workspace_paths, run_id).read_result()
+    payloads = [record.payload for record in read_result.records if isinstance(record.payload, Mapping)]
+    receipts = [item for item in payloads if item.get("type") == "run_audit_receipt"]
+    if read_result.completeness.value != "complete" or len(receipts) != 1:
+        raise AssertionError(f"credential audit trace incomplete: {payloads!r}")
+    service = InspectionService(workspace_paths)
+    export_path = base_dir / "credential-audit-export.zip"
+    DiagnosticExporter(service).export(run_id, output=export_path)
+    with zipfile.ZipFile(export_path) as archive:
+        exported = b"".join(archive.read(name) for name in archive.namelist())
+    trace_bytes = b"".join(record.to_json().encode("utf-8") for record in read_result.records)
+    if secret.encode("utf-8") in trace_bytes or secret.encode("utf-8") in exported:
+        raise AssertionError("credential audit persisted the raw credential")
+    return {
+        "trace_completeness": read_result.completeness.value,
+        "receipt_count": len(receipts),
+        "authorization_seen": True,
+        "raw_credential_persisted": False,
+        "exported": True,
+    }
+
+
+audit_journey = run_audit_journey(workspace.parent / "slice-c9")
 extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
+denial_audit = run_denial_audit_journey(workspace.parent / "slice-c9-denial")
+credential_audit = run_credential_audit_journey(workspace.parent / "slice-c9-credential")
 if len(extension_measurements) != 3:
     raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
 lock_recovery = run_lock_recovery_journey(workspace.parent / "lock-recovery")
@@ -1158,12 +1494,16 @@ print(
             "slice_c": shell_measurements,
             "slice_b": modify_measurements,
             "slice_d": extension_measurements,
+            "audit": audit_journey,
+            "denial_audit": denial_audit,
+            "credential_audit": credential_audit,
             "lock_recovery": lock_recovery,
             "interaction": interaction,
             "status": "ok",
         },
         ensure_ascii=False,
         sort_keys=True,
+        default=lambda value: dict(value) if isinstance(value, Mapping) else str(value),
     )
 )
 """
@@ -1888,6 +2228,7 @@ def _verify_installed_probe(
     _validate_slice_b_payload(payload)
     _validate_slice_d_payload(payload)
     _validate_interaction_payload(payload)
+    _validate_audit_payload(payload)
     lock_recovery = payload.get("lock_recovery")
     if lock_recovery != {
         "stale_owner_left_record": True,
@@ -1988,6 +2329,7 @@ def _validate_slice_b_invocations(item: Mapping[str, Any]) -> None:
 
 
 def _validate_slice_d_payload(payload: Mapping[str, Any]) -> None:
+    # Delegated outcome checks retain the terminal_outcome/spawned contract.
     extension = payload.get("slice_d")
     expected_ids = [
         "installed-slice-d:d1_success",
@@ -1997,16 +2339,51 @@ def _validate_slice_d_payload(payload: Mapping[str, Any]) -> None:
     if not isinstance(extension, list) or [item.get("task_id") for item in extension] != expected_ids:
         raise VerificationError("Probe instalado nao executou os cenarios Slice D.")
     success, denied, failure = extension
+    _validate_slice_d_outcomes(success, denied, failure)
+    _validate_slice_d_measurements(extension)
+    _validate_slice_d_success_audit(success)
+    _validate_slice_d_denial_audit(denied)
+
+
+def _validate_slice_d_outcomes(
+    success: Mapping[str, Any],
+    denied: Mapping[str, Any],
+    failure: Mapping[str, Any],
+) -> None:
     if success.get("terminal_outcome") != "SUCCESS" or not success.get("spawned") or "D1_EXTERNAL_EVIDENCE" not in str(success.get("answer", "")):
         raise VerificationError("Slice D D1 nao provou processo externo e consumo pelo modelo.")
     if denied.get("terminal_outcome") == "SUCCESS" or denied.get("spawned") or not denied.get("answer"):
         raise VerificationError("Slice D D3 nao negou antes do efeito externo.")
     if failure.get("terminal_outcome") == "SUCCESS" or not failure.get("spawned") or not failure.get("answer"):
         raise VerificationError("Slice D D4 publicou sucesso indevido.")
+
+
+def _validate_slice_d_measurements(extension: list[Mapping[str, Any]]) -> None:
     if not all(item.get("invocation_id") for item in extension):
         raise VerificationError("Slice D perdeu invocation_id externo.")
     if not all("duration_ms" in item and "output_chars" in item for item in extension):
         raise VerificationError("Slice D nao reutilizou measurement minimo.")
+
+
+def _validate_slice_d_success_audit(success: Mapping[str, Any]) -> None:
+    audit_trace = success.get("audit_trace")
+    if not isinstance(audit_trace, Mapping) or audit_trace.get("completeness") != "complete" or audit_trace.get("receipt_count") != 1:
+        raise VerificationError("Slice D D1 nao persistiu receipt completo.")
+    descriptor = audit_trace.get("descriptor")
+    if not isinstance(descriptor, Mapping) or descriptor.get("origin_kind") != "extension" or descriptor.get("extension_id") != "installed.demo.extension":
+        raise VerificationError("Slice D D1 perdeu identidade da extension no receipt.")
+    if not descriptor.get("source_version") or not descriptor.get("protocol_version"):
+        raise VerificationError("Slice D D1 perdeu versoes da extension.")
+
+
+def _validate_slice_d_denial_audit(denied: Mapping[str, Any]) -> None:
+    denied_audit = denied.get("audit_trace")
+    if not isinstance(denied_audit, Mapping) or denied_audit.get("completeness") != "complete" or denied_audit.get("receipt_count") != 1:
+        raise VerificationError("Slice D D3 nao persistiu receipt de denial.")
+    if denied_audit.get("executed") is not False or not denied_audit.get("denied_reason"):
+        raise VerificationError("Slice D D3 perdeu reason/executed=false persistidos.")
+    if denied_audit.get("tool_start_count") != 0 or denied_audit.get("tool_end_count") != 0:
+        raise VerificationError("Slice D D3 persistiu execucao apesar da denial.")
 
 
 def _validate_interaction_payload(payload: Mapping[str, Any]) -> None:
@@ -2024,6 +2401,59 @@ def _validate_interaction_payload(payload: Mapping[str, Any]) -> None:
         raise VerificationError(
             f"Probe instalado nao confirmou os fixtures W12: {payload.get('interaction')!r}"
         )
+
+
+def _validate_audit_payload(payload: Mapping[str, Any]) -> None:
+    audit = payload.get("audit")
+    if not isinstance(audit, Mapping):
+        raise VerificationError("Probe instalado nao produziu a jornada audit builtin.")
+    _validate_builtin_audit(audit)
+    denial = payload.get("denial_audit")
+    if not isinstance(denial, Mapping):
+        raise VerificationError(f"Audit denial nao produziu payload: {denial!r}")
+    _validate_denial_audit(denial)
+    _validate_credential_audit(payload.get("credential_audit"))
+
+
+def _validate_builtin_audit(audit: Mapping[str, Any]) -> None:
+    if audit.get("trace_completeness") != "complete" or audit.get("receipt_count") != 1:
+        raise VerificationError(f"Audit builtin nao persistiu exatamente um receipt: {audit!r}")
+    builtin = audit.get("builtin_tool")
+    if not isinstance(builtin, Mapping) or builtin.get("name") != "code_task":
+        raise VerificationError(f"Audit builtin perdeu identidade da ferramenta: {audit!r}")
+    if not builtin.get("source_version") or not builtin.get("protocol_version"):
+        raise VerificationError(f"Audit builtin perdeu versoes: {audit!r}")
+    if "write" not in (audit.get("required_capabilities") or ()) or audit.get("approval_disposition") != "approved":
+        raise VerificationError(f"Audit builtin perdeu capability/approval: {audit!r}")
+    effect = audit.get("effect")
+    terminal = audit.get("terminal")
+    if not isinstance(effect, Mapping) or effect.get("occurred") is not True or effect.get("persisted") is not True:
+        raise VerificationError(f"Audit builtin perdeu efeito: {audit!r}")
+    if not isinstance(terminal, Mapping) or terminal.get("status") != "succeeded" or terminal.get("final_state") != "applied":
+        raise VerificationError(f"Audit builtin perdeu terminal: {audit!r}")
+
+
+def _validate_denial_audit(denial: Mapping[str, Any]) -> None:
+    if denial.get("trace_completeness") != "complete" or denial.get("receipt_count") != 1:
+        raise VerificationError(f"Audit denial nao persistiu receipt: {denial!r}")
+    if denial.get("executed") is not False or not denial.get("denied_reason"):
+        raise VerificationError(f"Audit denial perdeu denial/executed=false: {denial!r}")
+    unknown = denial.get("unknown_descriptor")
+    if not isinstance(unknown, Mapping) or unknown.get("source_version") is not None or unknown.get("protocol_version") is not None:
+        raise VerificationError(f"Audit denial fabricou versao de unknown tool: {denial!r}")
+    if denial.get("tool_start_count") != 0 or denial.get("tool_end_count") != 0 or denial.get("mutation_occurred") is True:
+        raise VerificationError(f"Audit denial indicou execucao/mutacao: {denial!r}")
+
+
+def _validate_credential_audit(credential: Any) -> None:
+    if credential != {
+        "authorization_seen": True,
+        "exported": True,
+        "raw_credential_persisted": False,
+        "receipt_count": 1,
+        "trace_completeness": "complete",
+    }:
+        raise VerificationError(f"Audit credential nao confirmou header+segredo seguro: {credential!r}")
 
 
 def _verify_extension_aware_bootstrap(
@@ -2327,7 +2757,14 @@ def _verify_missing_config_recovery(
 ) -> None:
     result = _run_expected_failure(
         "installed-missing-config-recovery",
-        (str(entrypoint), "chat", "--home", str(app_home)),
+        (
+            str(entrypoint),
+            "chat",
+            "--home",
+            str(app_home),
+            "--workspace",
+            str(cwd),
+        ),
         cwd=cwd,
         environment=environment,
     )
@@ -2335,6 +2772,64 @@ def _verify_missing_config_recovery(
         raise VerificationError("Installed CLI did not expose missing-config recovery.")
     if (app_home / "config" / "config.json").exists():
         raise VerificationError("Installed CLI created config without non-interactive consent.")
+
+
+def _verify_missing_task_workspace(
+    entrypoint: Path,
+    app_home: Path,
+    workspace: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Prove the installed headless task guard runs outside the checkout."""
+
+    try:
+        cwd.resolve().relative_to(ROOT)
+    except ValueError:
+        pass
+    else:
+        raise VerificationError("Missing-workspace probe must run outside the checkout.")
+
+    cwd_before = snapshot_tree(cwd)
+    workspace_before = snapshot_tree(workspace)
+    app_home_before = snapshot_tree(app_home)
+    app_home_existed = app_home.exists()
+    result = _run_expected_failure(
+        "installed-run-missing-workspace",
+        (
+            str(entrypoint),
+            "run",
+            "--json",
+            "--home",
+            str(app_home),
+            "/read",
+            "notes.txt",
+        ),
+        cwd=cwd,
+        environment=environment,
+    )
+    try:
+        payload = parse_json_output(result)
+    except VerificationError as exc:
+        raise VerificationError(
+            f"{exc}; stdout={result.stdout!r}; stderr={result.stderr!r}"
+        ) from exc
+    if (
+        payload.get("success") is not False
+        or payload.get("status") != "failed"
+        or payload.get("reason_code") != "TASK_WORKSPACE_REQUIRED"
+    ):
+        raise VerificationError(
+            f"run instalado sem workspace nao falhou na fronteira esperada: {payload!r}"
+        )
+    if result.stderr.strip():
+        raise VerificationError("run instalado sem workspace violou o contrato JSON de stdout.")
+    if snapshot_tree(cwd) != cwd_before:
+        raise VerificationError("A falha sem workspace escreveu no diretório externo.")
+    if snapshot_tree(workspace) != workspace_before:
+        raise VerificationError("A falha sem workspace modificou o workspace do probe.")
+    if snapshot_tree(app_home) != app_home_before or app_home.exists() != app_home_existed:
+        raise VerificationError("A falha sem workspace iniciou o app/task bootstrap.")
 
 
 def _verify_w11_cli(
@@ -2447,6 +2942,13 @@ def verify_installed_package(
             mode,
         )
         runtime_environment = _runtime_environment(app_home)
+        _verify_missing_task_workspace(
+            entrypoint,
+            app_home,
+            workspace,
+            external_cwd,
+            runtime_environment,
+        )
         site_packages = _site_packages(
             venv_python,
             external_cwd,

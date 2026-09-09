@@ -58,6 +58,23 @@ def test_parser_exposes_explicit_continuity_commands() -> None:
     assert resume.task_authority_capabilities == ["write"]
 
 
+def test_task_resume_without_workspace_fails_before_continuity_or_application(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_create_application",
+        lambda *_args, **_kwargs: pytest.fail("missing workspace must fail before bootstrap"),
+    )
+
+    assert cli.main(["task", "resume", "--json"]) == 2
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["reason_code"] == "TASK_WORKSPACE_REQUIRED"
+    assert document["status"] == "failed"
+
+
 def test_task_status_is_model_free_bounded_and_read_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

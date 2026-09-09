@@ -12,6 +12,7 @@ from agent.execution_incidents import (
     EFFECT_PROVEN,
     EFFECT_UNKNOWN,
 )
+from agent.observability.audit_projection import audit_event_fields
 from agent.runtime.events import RuntimeEvent
 from agent.runtime.logging import logger
 from agent.runtime.mutation_evidence import project_mutation_evidence
@@ -30,10 +31,12 @@ class InvocationCommitMixin:
         self._emit(
             "tool_denied",
             {
+                "tool": tool_name,
                 "invocation_id": result.invocation_id,
                 "status": result.status.value,
                 "reason": result.error.code if result.error else "DENIED",
             },
+            result=result,
         )
         self._record(tool_name, args, result, record_result)
 
@@ -77,6 +80,7 @@ class InvocationCommitMixin:
                 "ok": committed_result.ok,
                 "lifecycle": attempt.lifecycle.value,
             },
+            result=committed_result,
         )
         if attempt.can_release():
             self._finish_invocation(attempt.invocation_id)
@@ -155,7 +159,13 @@ class InvocationCommitMixin:
                 type(exc).__name__,
             )
 
-    def _emit(self: Any, event_type: str, data: Dict[str, Any]) -> None:
+    def _emit(
+        self: Any,
+        event_type: str,
+        data: Dict[str, Any],
+        *,
+        result: ToolResult | None = None,
+    ) -> None:
         dispatcher = getattr(self, "event_dispatcher", None)
         correlation_provider = getattr(self, "correlation_provider", None)
         correlation = correlation_provider() if callable(correlation_provider) else None
@@ -168,6 +178,21 @@ class InvocationCommitMixin:
                     if invocation_id
                     else {}
                 )
+                if event_type in {
+                    "approval_requested",
+                    "approval_approved",
+                    "tool_start",
+                    "tool_denied",
+                    "tool_end",
+                }:
+                    event_data.update(
+                        audit_event_fields(
+                            event_type,
+                            metadata,
+                            result=result,
+                            workspace_root=getattr(self, "workspace_root", None),
+                        )
+                    )
                 task_id = metadata.get("task_id")
                 event_fields_provider = getattr(self, "event_fields_provider", None)
                 event_fields = event_fields_provider() if callable(event_fields_provider) else {}

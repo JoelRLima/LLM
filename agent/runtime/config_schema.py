@@ -7,6 +7,7 @@ from typing import Any
 
 from agent.runtime.config_errors import ConfigError, ConfigVersionError
 from agent.runtime.hardware import HARDWARE_PROFILES
+from agent.runtime.secret_reference import SecretReferenceError, SecretReferenceV1
 
 SCHEMA_VERSION = 1
 Validator = Callable[[Any], bool]
@@ -162,11 +163,17 @@ def _validate_capabilities(
 
 
 def _validate_profile_fields(profile: Mapping[str, Any], path: str) -> None:
-    allowed = set(PROFILE_FIELDS) | {"capabilities", "provider_options"}
+    allowed = set(PROFILE_FIELDS) | {"capabilities", "provider_options", "credential_ref"}
     unknown = sorted(set(profile) - allowed)
     if unknown:
         _fail(path, "campos desconhecidos: " + ", ".join(unknown))
     for key, value in profile.items():
+        if key == "credential_ref":
+            try:
+                SecretReferenceV1.from_mapping(value)
+            except SecretReferenceError:
+                _fail(f"{path}.{key}", "referência de credencial não aceita")
+            continue
         validator = PROFILE_FIELDS.get(key)
         if validator is not None and not validator(value):
             _fail(f"{path}.{key}", f"valor ou tipo não aceito ({value!r})")

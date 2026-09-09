@@ -9,5 +9,5 @@ def test_exact_headless_continue_is_preflighted_by_existing_w10_adapter(monkeypa
     seen = []
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("bootstrap")))
     monkeypatch.setattr(task_continuity, "run_task_resume", lambda args, **kwargs: seen.append(args) or 2)
-    assert cli.main(["run", "/continue"]) == 2
+    assert cli.main(["run", "--workspace", "workspace", "/continue"]) == 2
     assert seen

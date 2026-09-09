@@ -21,7 +21,14 @@ def check_effect_approval(gateway: Any, invocation: ToolInvocation, descriptor: 
         - {"memory_write"}
     )
     if not requested:
+        _set_audit(gateway, invocation.invocation_id, approval_disposition="not_required")
         return None
+    _set_audit(
+        gateway,
+        invocation.invocation_id,
+        requested_effects=tuple(sorted(requested)),
+        approval_disposition="unknown",
+    )
     gateway._emit("approval_requested", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
     try:
         operation, concrete_metadata = format_concrete_operation(
@@ -44,10 +51,23 @@ def check_effect_approval(gateway: Any, invocation: ToolInvocation, descriptor: 
         )
     except Exception as exc:
         logger.warning("[GATEWAY] Approval provider failed: %s", type(exc).__name__)
+        _set_audit(gateway, invocation.invocation_id, approval_disposition="failed")
         return denial(invocation, ToolStatus.FAILED, "APPROVAL_FAILED", "Approval provider failed.")
     if decision is ApprovalDecision.APPROVED:
+        _set_audit(gateway, invocation.invocation_id, approval_disposition="approved")
         gateway._emit("approval_approved", {"tool": invocation.tool_name, "invocation_id": invocation.invocation_id})
         return None
     status = ToolStatus.BLOCKED if decision is ApprovalDecision.REQUIRED else ToolStatus.PERMISSION_DENIED
     code = "APPROVAL_REQUIRED" if status is ToolStatus.BLOCKED else "APPROVAL_DENIED"
+    _set_audit(
+        gateway,
+        invocation.invocation_id,
+        approval_disposition="required" if status is ToolStatus.BLOCKED else "denied",
+    )
     return denial(invocation, status, code, "A aprovacao necessaria nao foi concedida.")
+
+
+def _set_audit(gateway: Any, invocation_id: str, **fields: Any) -> None:
+    update = getattr(gateway, "_update_invocation_audit", None)
+    if callable(update):
+        update(invocation_id, **fields)

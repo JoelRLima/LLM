@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent.llm.contracts import ProviderCapabilities
 from agent.llm.identity import (
@@ -18,10 +18,7 @@ from agent.llm.identity import (
     normalize_endpoint_identity,
     redact_identity,
 )
-from agent.llm.model_profile_binding import (
-    cached_gateway_model_profile,
-    remember_gateway_model_profile,
-)
+from agent.llm.model_profile_binding import cached_gateway_model_profile, remember_gateway_model_profile
 from agent.llm.model_profile_compat import (
     PROFILE_OVERRIDE_KEYS,
     capabilities_from_raw,
@@ -34,6 +31,9 @@ from agent.llm.model_profile_compat import (
     text_value,
     thaw_provider_options,
 )
+
+if TYPE_CHECKING:
+    from agent.runtime.secret_reference import SecretReferenceV1
 
 DEFAULT_API_URL = "http://127.0.0.1:8080/v1/chat/completions"
 DEFAULT_PROVIDER = "openai_compatible"
@@ -74,6 +74,7 @@ class ResolvedModelProfile(Mapping[str, Any]):
     provider_options: Mapping[str, Any] = field(default_factory=dict, repr=False)
     endpoint_identity: str | None = None
     fingerprint: str = ""
+    credential_ref: SecretReferenceV1 | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_options", freeze_provider_options(self.provider_options))
@@ -103,7 +104,7 @@ class ResolvedModelProfile(Mapping[str, Any]):
         return self.fingerprint
 
     def identity_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "profile": self.name,
             "provider": self.provider,
             "model": self.model,
@@ -117,6 +118,9 @@ class ResolvedModelProfile(Mapping[str, Any]):
             "capabilities": self.capabilities.to_dict(),
             "provider_options": redact_identity(thaw_provider_options(self.provider_options)),
         }
+        if self.credential_ref is not None:
+            payload["credential_ref"] = self.credential_ref.to_dict()
+        return payload
 
     def to_dict(self, *, include_secrets: bool = False) -> dict[str, Any]:
         result = {
@@ -135,6 +139,7 @@ class ResolvedModelProfile(Mapping[str, Any]):
             "provider_options": thaw_provider_options(self.provider_options),
             "model_config_fingerprint": self.fingerprint,
             "fingerprint": self.fingerprint,
+            "credential_ref": self.credential_ref.to_dict() if self.credential_ref is not None else None,
         }
         return result if include_secrets else redact_identity(result)
 
@@ -166,6 +171,7 @@ def resolve_model_profile(
         overrides=overrides,
     )
     from agent.runtime.hardware import resolve_hardware_profile
+    from agent.runtime.secret_reference import SecretReferenceV1
 
     hardware = resolve_hardware_profile(dict(values))
     provider = text_value(raw_profile.get("provider"), DEFAULT_PROVIDER)
@@ -221,6 +227,8 @@ def resolve_model_profile(
         raw_profile.get("provider_options"),
         legacy_flat=not named_profile,
     )
+    raw_credential_ref = raw_profile.get("credential_ref")
+    credential_ref = SecretReferenceV1.from_mapping(raw_credential_ref) if raw_credential_ref is not None else None
     endpoint_identity = normalize_endpoint_identity(api_url)
     return ResolvedModelProfile(
         name=selected_name,
@@ -234,6 +242,7 @@ def resolve_model_profile(
         capabilities=capabilities,
         provider_options=options,
         endpoint_identity=endpoint_identity,
+        credential_ref=credential_ref,
     )
 
 

@@ -175,7 +175,7 @@ def test_chat_missing_config_noninteractive_is_actionable_without_prompt_or_writ
 
     assert not (home / "config" / "config.json").exists()
     captured = capsys.readouterr()
-    assert "llm-agent config init" in captured.err
+    assert "TASK_WORKSPACE_REQUIRED" in captured.err
     assert captured.out == ""
 
 
@@ -185,13 +185,17 @@ def test_run_missing_config_json_is_actionable_without_prompt_or_write(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     home = tmp_path / "app"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     monkeypatch.setattr(
         cli.console,
         "input",
         lambda _prompt: (_ for _ in ()).throw(AssertionError("headless prompt")),
     )
 
-    assert cli.main(["run", "--json", "--home", str(home), "oi"]) == 2
+    assert cli.main(
+        ["run", "--json", "--home", str(home), "--workspace", str(workspace), "oi"]
+    ) == 2
 
     assert not (home / "config" / "config.json").exists()
     captured = capsys.readouterr()
@@ -201,12 +205,34 @@ def test_run_missing_config_json_is_actionable_without_prompt_or_write(
     assert captured.err == ""
 
 
+def test_run_without_workspace_fails_before_application_or_model_path(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_create_application",
+        lambda *_args, **_kwargs: pytest.fail("missing workspace must fail before application"),
+    )
+
+    assert cli.main(["run", "--json", "read x"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    document = json.loads(captured.out)
+    assert document["reason_code"] == "TASK_WORKSPACE_REQUIRED"
+    assert document["status"] == "failed"
+    assert document["success"] is False
+
+
 def test_explicit_missing_config_never_uses_first_run_prompt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     explicit = tmp_path / "explicit.json"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     monkeypatch.setattr(
         cli.console,
@@ -214,7 +240,9 @@ def test_explicit_missing_config_never_uses_first_run_prompt(
         lambda _prompt: (_ for _ in ()).throw(AssertionError("explicit config prompt")),
     )
 
-    assert cli.main(["chat", "--config", str(explicit)]) == 2
+    assert cli.main(
+        ["chat", "--config", str(explicit), "--workspace", str(workspace)]
+    ) == 2
 
     assert not explicit.exists()
     assert f"llm-agent config init --config {explicit}" in capsys.readouterr().err
@@ -301,7 +329,9 @@ def test_run_json_emits_one_document_and_disables_logging(
 
     monkeypatch.setattr(cli, "_create_application", create)
 
-    assert cli.main(["run", "analise", "o projeto", "--json"]) == 0
+    assert cli.main(
+        ["run", "--workspace", str(Path.cwd()), "analise", "o projeto", "--json"]
+    ) == 0
 
     output = capsys.readouterr()
     assert output.err == ""
@@ -326,7 +356,7 @@ def test_run_failure_returns_one_and_still_closes_application(
     application = _Application(_Result(False, error="falhou"))
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
 
-    assert cli.main(["run", "objetivo"]) == 1
+    assert cli.main(["run", "--workspace", str(Path.cwd()), "objetivo"]) == 1
 
     assert capsys.readouterr().err.strip() == "falhou"
     assert application.closed is True
@@ -352,7 +382,9 @@ def test_human_run_projects_operational_receipt_without_hiding_model_answer(
     application = _Application(result)
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
 
-    assert cli.main(["run", "modifique", "sample.py"]) == 0
+    assert cli.main(
+        ["run", "--workspace", str(Path.cwd()), "modifique", "sample.py"]
+    ) == 0
     output = capsys.readouterr()
     assert "Modifiquei e validei sample.py." in output.out
     assert "files_affected: sample.py" in output.out
@@ -380,7 +412,9 @@ def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
     application = _Application(result)
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
 
-    assert cli.main(["run", "leia", "sample.py"]) == 0
+    assert cli.main(
+        ["run", "--workspace", str(Path.cwd()), "leia", "sample.py"]
+    ) == 0
     output = capsys.readouterr().out
     assert "Modifiquei sample.py." in output
     assert "files_affected: []" in output
@@ -393,7 +427,7 @@ def test_default_command_is_chat_and_closes_application(monkeypatch: pytest.Monk
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
     monkeypatch.setattr(cli, "_chat_loop", lambda context: seen.setdefault("context", context))
 
-    assert cli.main([]) == 0
+    assert cli.main(["--workspace", str(Path.cwd())]) == 0
 
     assert seen["context"].application is application
     assert seen["context"].workspace is application.workspace
@@ -520,7 +554,9 @@ def test_json_bootstrap_error_is_a_single_document(
 
     monkeypatch.setattr(cli, "_create_application", fail)
 
-    assert cli.main(["run", "objetivo", "--json"]) == 2
+    assert cli.main(
+        ["run", "--workspace", str(Path.cwd()), "objetivo", "--json"]
+    ) == 2
 
     captured = capsys.readouterr()
     assert captured.err == ""

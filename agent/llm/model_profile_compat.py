@@ -234,7 +234,8 @@ def effective_profile_values(
     if isinstance(selected, Mapping):
         return text_value(selected_name, "legacy"), _apply_overrides(selected, overrides), True
     direct_profile = any(
-        key in config for key in ("provider", "base_url", "capabilities", "provider_options")
+        key in config
+        for key in ("provider", "base_url", "capabilities", "provider_options", "credential_ref")
     )
     if direct_profile:
         name = text_value(config.get("name") or config.get("profile"), "legacy")

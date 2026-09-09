@@ -105,6 +105,29 @@ arrays e propriedades adicionais usadas pelos contratos internos.
 }
 ```
 
+### Credencial referenciada (PRE-V1)
+
+Um perfil pode declarar apenas metadados de uma credencial bearer por meio de
+`credential_ref`:
+
+```json
+{
+  "credential_ref": {
+    "source": "env",
+    "name": "OPENAI_API_KEY",
+    "kind": "bearer"
+  }
+}
+```
+
+Esse é um shape fechado: a configuração persiste a referência, nunca o valor.
+O ambiente não é lido durante parsing, validação, `doctor`, projeção de
+identidade ou trace. `OpenAICompatibleGateway` resolve a referência somente na
+fronteira imediatamente anterior ao `POST` e materializa o valor apenas no
+header `Authorization`; valor ausente falha antes de qualquer request. A
+credencial referenciada não concede capability, authority, grant ou approval e
+não é propagada para `ModelRequest`, tools ou extensions.
+
 Se o servidor não oferecer GBNF, configure `structured_output` como
 `json_prompt`. Não anuncie uma capacidade que o endpoint não implementa.
 
@@ -150,6 +173,7 @@ Não importe o adapter em `agent/code`, `agent/planning`, skills ou workflows.
 ## Testes relacionados
 
 - `tests/unit/llm/test_model_gateway.py`;
+- `tests/unit/runtime/test_secret_reference.py`;
 - `tests/unit/llm/test_structured_output.py`;
 - `tests/unit/runtime/test_session.py`;
 - `tests/unit/llm/test_grammar.py` para a fachada GBNF legada.

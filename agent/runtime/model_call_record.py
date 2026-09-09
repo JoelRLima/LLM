@@ -72,9 +72,18 @@ def publish_record(service: Any, record: ModelCallRecord, operation: str) -> Non
             "model_call_completed",
             {
                 "operation": operation,
-                "provider": getattr(service.gateway, "provider_name", None),
                 "call_number": record.call_number,
                 "success": record.success,
+                "provider": record.fields.get("provider"),
+                "declared_model": record.fields.get("declared_model"),
+                "profile_name": record.fields.get("profile_name"),
+                "endpoint_identity": record.fields.get("endpoint_identity"),
+                "model_config_fingerprint": record.fields.get(
+                    "model_config_fingerprint"
+                ),
+                "observed_provider_model_id": record.fields.get(
+                    "observed_provider_model_id"
+                ),
             },
         )
     except Exception as exc:  # event observers are also non-authoritative

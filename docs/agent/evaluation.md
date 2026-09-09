@@ -212,6 +212,23 @@ ativo, respostas deterministas corretas e historico duravel preservado a cada
 ajuste de contexto. Cache reuse significa zero physical tool dispatch; hashing
 local continua sendo I/O de controle de freshness.
 
+## Fechamento PRE-V1 (Wave 15.5)
+
+O candidato determinístico fecha C2, C3 e C9 sem alterar os owners anteriores.
+O gate de wheel instalado prova a execução fora do checkout e reconstrói,
+diretamente do trace persistido, o `run_audit_receipt` de builtin, extension
+bem-sucedida, negação e credencial. A projeção mantém separadas identidade
+declarada/observada, authority/approval, efeitos canônicos, validação,
+terminalidade e referências de artifact bounded; ela não é autoridade nem
+transporta o valor de uma credencial.
+
+O workspace de toda rota task-producing headless é exigido antes da aplicação,
+modelo, tools e mutação. O chat interativo conserva o chooser explícito, e as
+rotas read-only/admin conservam seus owners. A aceitação determinística usa
+somente o gateway scripted ou fixture HTTP local. A campanha H1–H19 continua
+com 164 execuções válidas e veredicto `INCONCLUSIVE`/
+`REAL_MODEL_EPOCH_REQUIRED`; isso não é aceitação de modelo real.
+
 ## Estado atual
 
 ```text

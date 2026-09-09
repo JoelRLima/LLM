@@ -59,19 +59,24 @@ def recover_first_run_config(
     return 0
 
 
-def prepare_chat_workspace(args: argparse.Namespace, *, console: Any, app_paths: Any) -> None:
+def prepare_chat_workspace(args: argparse.Namespace, *, console: Any, app_paths: Any) -> bool:
     """Offer workspace entry only after an existing config is valid."""
 
-    if getattr(args, "workspace", None) is not None or not is_interactive_terminal():
-        return
+    if getattr(args, "workspace", None) is not None:
+        return False
+    if not is_interactive_terminal():
+        from agent.interfaces.cli.workspace_entry import require_task_workspace
+
+        require_task_workspace(args)
+        return False
     config_path = getattr(args, "config", None)
     config_file = Path(config_path).expanduser().resolve() if config_path is not None else app_paths.config_file
     if not config_file.is_file():
-        return
+        return False
     try:
         ConfigRepository(app_paths, config_path=config_path).load()
     except (ConfigError, ConfigNotFound, OSError, ValueError):
-        return
+        return False
     from agent.interfaces.cli.workspace_entry import choose_workspace, load_last_workspace
 
     args.workspace = str(
@@ -80,6 +85,7 @@ def prepare_chat_workspace(args: argparse.Namespace, *, console: Any, app_paths:
             last_workspace=load_last_workspace(app_paths),
         )
     )
+    return True
 
 
 __all__ = [

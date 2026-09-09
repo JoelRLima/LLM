@@ -34,6 +34,15 @@ resultado inconclusivo quando ela é pré-condição do veredicto. Contagens fí
 de invocations e `tool_calls` são lidas do owner canônico de budget/measurement;
 histórico, cache e resumos não podem inflá-las.
 
+O `RunAuditReceipt` é a projeção bounded de fechamento para a auditoria
+PRE-V1. Ele reutiliza o snapshot terminal, eventos, métricas e descriptors
+canônicos para expor identidade de modelo, authority, approval, effects,
+validation, artifacts por metadata e terminalidade com bounds explícitos. Não é
+fonte de verdade nem owner de outcome, e não inclui args/results brutos,
+prompts, completions, conteúdo de artifact ou credenciais. Falha de projeção é
+observada sem reescrever o resultado; apresentação, replay e export consomem o
+evento pelo caminho normal de trace.
+
 ## Progresso, cobertura e sucesso
 
 `TaskProgressProjection` é uma projeção congelada e read-only. Ela não possui

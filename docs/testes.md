@@ -134,6 +134,25 @@ O primeiro comando deve reportar `W15 architecture checker: PASS` e
 `unknown = 0` e `qwen_used = false`. A campanha nao publica, commita ou faz
 push do resultado.
 
+## Gates Wave 15.5
+
+O fechamento PRE-V1 preserva os owners anteriores e acrescenta os gates de
+credencial referenciada, workspace explícito, receipt bounded e jornadas
+instaladas de auditoria:
+
+```powershell
+.venv\Scripts\python.exe scripts\check_wave15_5_architecture.py --mutation-campaign
+.venv\Scripts\python.exe scripts\verify_installed_package.py --no-build-isolation
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode practical-dry-run --output .audit-local\out\evaluation-practical-v1.json
+```
+
+O checker deve reportar `W155 architecture checker: PASS` e
+`W155-M01..M16: 16/16`. A aceitação instalada cobre import fora do checkout,
+workspace explícito, builtin/extension, negação de tool desconhecida e a
+referência bearer em um fixture HTTP local; nenhum desses caminhos chama Qwen
+ou modelo vivo. O receipt de auditoria é validado a partir do trace persistido e
+do export, sem conteúdo bruto de artifact ou segredo.
+
 ## Runtime, skills e multitarefa
 
 | Teste | Cobertura |

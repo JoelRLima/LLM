@@ -6,8 +6,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from agent.observability.audit_projection import build_run_audit_receipt
 from agent.reporting.run_receipt import finalize_run_result
 from agent.reporting.run_snapshot import CanonicalRunSnapshot, build_canonical_run_snapshot
+from agent.runtime.logging import logger
 from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.task_execution_context import ensure_runtime_correlation
 
@@ -85,6 +87,26 @@ def finalize_application_result(
             record_metric=record_metric if callable(record_metric) else None,
         )
         orchestrator._canonical_run_snapshot = snapshot
+    current_run_id: str | None
+    try:
+        current_run_id = snapshot.correlation.run_id
+    except AttributeError:
+        current_run_id = getattr(correlation, "run_id", None)
+    if (
+        current_run_id is not None
+        and getattr(orchestrator, "_audit_receipt_emitted_run_id", None) != current_run_id
+    ):
+        try:
+            receipt_projection = build_run_audit_receipt(orchestrator, snapshot)
+            emitter = getattr(orchestrator, "_emit", None)
+            if not callable(emitter):
+                raise RuntimeError("orchestrator does not expose the canonical event emitter")
+            emitter("run_audit_receipt", receipt_projection.to_event_data())
+            orchestrator._audit_receipt_emitted_run_id = current_run_id
+        except Exception as exc:
+            # Audit is a read-only observer; it cannot rewrite the canonical
+            # task outcome or prevent the public result from being returned.
+            logger.warning("Run audit receipt projection failed: %s", type(exc).__name__)
     effective_metadata = dict(metadata or {})
     task_run_directive = getattr(getattr(orchestrator, "agent_state", None), "task_run_directive", None)
     if isinstance(task_run_directive, TaskRunDirective):

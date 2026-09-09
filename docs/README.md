@@ -97,7 +97,10 @@ transportes stdio.
 
 Os [ADRs 0001–0012](adr/) registram pacote, visão standalone, bootstrap/paths,
 stdio/Windows, catálogo/configuração/bootstrap de extensions e contexto/views
-de planning. O [ADR 0013](adr/0013-fronteira-canonica-authority-approval-invocacao.md)
+de planning. Os [ADRs 0013–0015](adr/) registram a fronteira canônica de
+authority/approval/invocação e a exigência de processo para stdio. O [ADR 0016](adr/0016-fechamento-deterministico-pre-v1.md)
+registra o fechamento determinístico PRE-V1 de credencial referenciada,
+workspace explícito e auditoria bounded. O [ADR 0013](adr/0013-fronteira-canonica-authority-approval-invocacao.md)
 permanece aceito salvo sua ordem total de guards, parcialmente substituída pelo
 [ADR 0014](adr/0014-ordem-parcial-eligibility-authority-approval-execucao.md).
 [ADR 0015](adr/0015-stdio-requer-process.md) registra a exigência de `process`
@@ -143,6 +146,7 @@ condições de retirada.
 ```text
 Execution and planning core = CLOSED
 Evaluation core = GREEN LOCAL
+PRE-V1 deterministic criteria = GREEN LOCAL
 Real-model acceptance = GATED / NOT RUN
 Additional evaluation work = NOT COMPLETED
 Standalone V1 = NOT YET DECLARED
