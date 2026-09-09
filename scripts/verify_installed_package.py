@@ -260,15 +260,83 @@ class DeterministicJourneyGateway:
             return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
         if "Uma fronteira sem" in prompt:
             return '{"action":"complete","reason":"as observacoes reais bastam"}'
-        if "Objetivo de engenharia:" in prompt and self.scenario_id.startswith("b"):
-            if self.scenario_id == "b1_modify_validate":
-                return '{"changes":[{"path":"sample.py","kind":"edit","edits":[{"operation":"replace","start_line":1,"end_line":1,"content":"value = 2"}]}]}'
-            if self.scenario_id == "b2_validation_failure":
-                return '{"changes":[{"path":"sample.py","kind":"modify","content":"def value(:"}]}'
-            if self.scenario_id == "b4_denied_modify":
-                return '{"changes":[{"path":"../outside.py","kind":"create","content":"unauthorized\\\\n"}]}'
-            if self.scenario_id == "b5_preview_blocked":
-                return '{"changes":[{"path":"sample.py","kind":"modify","content":"value = 2\\\\n"}]}'
+        structured = getattr(request, "structured_output", None)
+        schema = getattr(structured, "schema", None)
+        required_fields = (
+            set(schema.get("required", ())) if isinstance(schema, dict) else set()
+        )
+        evidence_text = "\\n".join(
+            str(message.content) for message in request.messages
+        )
+        if (
+            required_fields == {"verdict", "reason", "evidence_ids"}
+            and self.scenario_id in {
+                "b1_modify_validate",
+                "b2_validation_failure",
+                "b4_denied_modify",
+                "b5_preview_blocked",
+            }
+        ):
+            evidence_ids = []
+            for marker in ('"source_id":"', '"evidence_id":"'):
+                evidence_ids.extend(
+                    chunk.split('"', 1)[0] for chunk in evidence_text.split(marker)[1:]
+                )
+            return json.dumps(
+                {
+                    "verdict": "SUPPORTED",
+                    "reason": "A proposta e o estado observado sao coerentes.",
+                    "evidence_ids": evidence_ids[:1],
+                },
+                ensure_ascii=False,
+            )
+        decision_fields = {"decision", "rationale", "reason_code", "question", "changes"}
+        if (
+            isinstance(schema, dict)
+            and required_fields == decision_fields
+            and schema.get("additionalProperties") is False
+            and self.scenario_id in {
+                "b1_modify_validate",
+                "b2_validation_failure",
+                "b4_denied_modify",
+                "b5_preview_blocked",
+            }
+        ):
+            changes = {
+                "b1_modify_validate": [
+                    {
+                        "path": "sample.py",
+                        "kind": "edit",
+                        "edits": [
+                            {
+                                "operation": "replace",
+                                "start_line": 1,
+                                "end_line": 1,
+                                "content": "value = 2",
+                            }
+                        ],
+                    }
+                ],
+                "b2_validation_failure": [
+                    {"path": "sample.py", "kind": "modify", "content": "def value(:"}
+                ],
+                "b4_denied_modify": [
+                    {"path": "../outside.py", "kind": "create", "content": "unauthorized\\n"}
+                ],
+                "b5_preview_blocked": [
+                    {"path": "sample.py", "kind": "modify", "content": "value = 2\\n"}
+                ],
+            }[self.scenario_id]
+            return json.dumps(
+                {
+                    "decision": "CHANGE",
+                    "rationale": "Aplicar a alteração determinística do cenário.",
+                    "reason_code": "NONE",
+                    "question": "",
+                    "changes": changes,
+                },
+                ensure_ascii=False,
+            )
         if "Resultados das ferramentas executadas:" in prompt:
             if "SLICE_A1_EVIDENCE" in prompt:
                 return "A leitura encontrou SLICE_A1_EVIDENCE no arquivo permitido."
@@ -310,16 +378,16 @@ class DeterministicJourneyGateway:
 
 
 class InteractionJourneyGateway(DeterministicJourneyGateway):
-    # Strict-contract fixture for the installed W12 interaction boundary.
+    # Strict-contract fixture for the installed W12/W14 interaction boundary.
 
     def complete(self, request):
         raw_contract = getattr(request, "request_contract", None)
         request_contract = getattr(raw_contract, "value", raw_contract)
-        if request_contract == ModelRequestContract.INTERACTION_RESOLUTION.value:
+        if request_contract == ModelRequestContract.SEMANTIC_INTENT.value:
             self.calls.append({"request_contract": request_contract, "request": request})
             if self.scenario_id == "w12_invalid":
-                return ModelResponse(content="prose is not a W12 object")
-            if self.scenario_id == "w12_json_prompt":
+                return ModelResponse(content="prose is not a W14 semantic object")
+            if self.scenario_id in {"w12_task_respond", "w12_json_prompt"}:
                 return ModelResponse(
                     content=json.dumps(
                         {
@@ -331,28 +399,58 @@ class InteractionJourneyGateway(DeterministicJourneyGateway):
                             "proposal_only": False,
                             "resume_requested": False,
                             "evidence": "",
+                            "intent_claim": None,
                         }
                     )
                 )
-            if self.scenario_id == "w12_task_respond":
-                action = "respond"
-                directive = "none"
-                evidence = ""
-            else:
-                action = "run"
-                directive = "read"
-                evidence = self.objective
+            prompt = str(request.messages[-1].content) if request.messages else ""
+            marker = "CURRENT SUBJECT (ONLY SOURCE OF USER-INTENT EVIDENCE):"
+            subject = self.objective
+            if marker in prompt:
+                subject = prompt.split(marker, 1)[1].split(
+                    "\\nReturn the W12 routing fields and intent_claim.", 1
+                )[0].strip("\\n")
+            target = "parser.py"
+            start = subject.find(target)
+            if start < 0:
+                target = subject
+                start = 0
+            claim = {
+                "schema_version": "intent-claim-v1",
+                "operation": "read",
+                "ambiguity": "none",
+                "effects": [],
+                "selectors": [
+                    {
+                        "selector_id": "s1",
+                        "kind": "path_literal",
+                        "value": target,
+                        "role": "source",
+                        "evidence_span_ids": ["e1"],
+                    }
+                ],
+                "constraints": [],
+                "evidence_spans": [
+                    {
+                        "span_id": "e1",
+                        "start": start,
+                        "end": start + len(target),
+                        "text": target,
+                    }
+                ],
+            }
             return ModelResponse(
                 content=json.dumps(
                     {
-                        "action": action,
-                        "directive": directive,
+                        "action": "run",
+                        "directive": "read",
                         "ambiguity": "none",
-                        "grounding": "none" if action == "respond" else "current_turn",
+                        "grounding": "current_turn",
                         "operation_requested": False,
                         "proposal_only": False,
                         "resume_requested": False,
-                        "evidence": evidence,
+                        "evidence": subject,
+                        "intent_claim": claim,
                     }
                 )
             )
@@ -389,7 +487,7 @@ def run_interaction_journeys(app_home, workspace):
         result = application.interact("Read parser.py and report value.")
         if not result.success or result.resolution is None or result.resolution.directive.value != "read":
             raise AssertionError(f"installed W12 natural READ failed: {result.to_dict()!r}")
-        if sum(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls) != 1:
+        if sum(item.get("request_contract") == ModelRequestContract.SEMANTIC_INTENT.value for item in gateway.calls) != 1:
             raise AssertionError(f"installed W12 natural READ resolver count diverged: {gateway.calls!r}")
     finally:
         application.close()
@@ -417,7 +515,7 @@ def run_interaction_journeys(app_home, workspace):
         )
         if not result.success or result.resolution is None or result.resolution.directive.value != "read":
             raise AssertionError(f"installed W12 explicit READ failed: {result.to_dict()!r}")
-        if any(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls):
+        if any(item.get("request_contract") == ModelRequestContract.SEMANTIC_INTENT.value for item in gateway.calls):
             raise AssertionError("installed explicit /read called the W12 resolver")
     finally:
         application.close()
@@ -436,7 +534,7 @@ def run_interaction_journeys(app_home, workspace):
         resolver_requests = [
             item["request"]
             for item in gateway.calls
-            if item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value
+            if item.get("request_contract") == ModelRequestContract.SEMANTIC_INTENT.value
         ]
         if not result.success or result.answer != "installed JSON_PROMPT response" or len(resolver_requests) != 1:
             raise AssertionError(f"installed W12 JSON_PROMPT response failed: {result.to_dict()!r}")
@@ -477,7 +575,7 @@ def run_interaction_journeys(app_home, workspace):
         )
         if result.resolution is None or result.resolution.action.value != "continue":
             raise AssertionError("installed W12 resume alias did not admit CONTINUE")
-        if any(item.get("request_contract") == ModelRequestContract.INTERACTION_RESOLUTION.value for item in gateway.calls):
+        if any(item.get("request_contract") == ModelRequestContract.SEMANTIC_INTENT.value for item in gateway.calls):
             raise AssertionError("installed explicit resume alias called the resolver")
     finally:
         application.close()

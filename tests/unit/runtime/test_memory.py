@@ -255,22 +255,34 @@ def test_memory_persistence_flushes_before_atomic_replace(tmp_path, monkeypatch)
     calls: list[str] = []
     original_fsync = json_persistence.os.fsync
     original_replace = json_persistence.os.replace
+    original_parent_sync = json_persistence.sync_parent_directory
 
     def observed_fsync(file_descriptor):
-        calls.append("fsync")
+        calls.append("content-fsync")
         original_fsync(file_descriptor)
 
     def observed_replace(source, destination):
         calls.append("replace")
         original_replace(source, destination)
 
+    def observed_parent_sync(path):
+        calls.append("parent-sync")
+        # The real parent sync uses the same os module object. Temporarily
+        # restore its fsync so the two durability phases remain distinct.
+        monkeypatch.setattr(json_persistence.os, "fsync", original_fsync)
+        try:
+            original_parent_sync(path)
+        finally:
+            monkeypatch.setattr(json_persistence.os, "fsync", observed_fsync)
+
     monkeypatch.setattr(json_persistence.os, "fsync", observed_fsync)
     monkeypatch.setattr(json_persistence.os, "replace", observed_replace)
+    monkeypatch.setattr(json_persistence, "sync_parent_directory", observed_parent_sync)
 
     memory.state["notes"] = {"status": "persistido"}
     memory.persist_to_file()
 
-    assert calls == ["fsync", "replace"]
+    assert calls == ["content-fsync", "replace", "parent-sync"]
     assert json.loads(target.read_text(encoding="utf-8"))["notes"] == {
         "status": "persistido"
     }

@@ -237,7 +237,7 @@ def test_installed_probe_covers_external_stdio_slice_d() -> None:
 def test_installed_probe_covers_wave12_strict_interaction_journeys() -> None:
     for marker in (
         "InteractionJourneyGateway",
-        "ModelRequestContract.INTERACTION_RESOLUTION",
+        "ModelRequestContract.SEMANTIC_INTENT",
         "w12_natural_read",
         "w12_task_respond",
         "w12_explicit_read",
