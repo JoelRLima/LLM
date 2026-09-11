@@ -39,8 +39,8 @@ cross-root e a preparação determinística da campanha de avaliação:
 ```powershell
 .venv\Scripts\python.exe -m pytest -q tests\unit\test_cross_root_matrix.py
 .venv\Scripts\python.exe -m pytest -q tests\unit\evaluation\test_r8_release_alignment.py tests\unit\evaluation\test_campaign_corrective.py
-.venv\Scripts\python.exe scripts\verify_installed_package.py --summary-json .audit-local\installed-acceptance.json
-.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\verify_installed_package.py --summary-json .audit-local\out\installed-acceptance.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-corrective-dry-run.json --write-config
 .venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode adversarial-audit --output .audit-local\out\evaluation-adversarial-audit.json
 .venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode corrective-ready --output .audit-local\out\evaluation-corrective-ready.json
 ```

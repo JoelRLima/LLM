@@ -4,108 +4,30 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from agent.evaluation.agent_executor import GatewayFactory
 from agent.evaluation.analysis import analyze_campaign, prior_epoch_disposition, secret_safe_report
+from agent.evaluation.campaign_artifacts import (
+    _deterministic_readiness,
+    deterministic_summary_from_readiness,
+)
 from agent.evaluation.campaign_observed_identity import _observed_identity_summary
+from agent.evaluation.campaign_progress import (
+    build_progress_document,
+    write_progress_document,
+)
+from agent.evaluation.campaign_report_builder import _campaign_report
+from agent.evaluation.campaign_serialization import write_campaign_report
 from agent.evaluation.evaluation_identity import (
-    CAMPAIGN_SCHEMA_VERSION,
     DEFAULT_REAL_MODEL_EPOCH,
-    candidate_identity_string,
-    fixture_identity,
     model_config_identity,
-    semantic_candidate_manifest,
-    semantic_manifest_hash,
 )
-from agent.evaluation.execution import CampaignRun
-from agent.evaluation.scenario_contracts import (
-    H_SERIES_VERSION,
-    CausalFailureClass,
-    EvidenceLevel,
-    RepetitionPolicy,
-    sanitize_evidence,
+from agent.evaluation.release_prerequisites import (
+    project_release_prerequisite_snapshot,
+    validate_release_prerequisite_projection,
 )
-
-
-def _campaign_report(
-    root: Path,
-    *,
-    epoch: str,
-    evidence_level: EvidenceLevel,
-    candidate: Mapping[str, str],
-    model_identity: Mapping[str, Any],
-    records: list[CampaignRun],
-    scenario_results: list[dict[str, Any]],
-    invalid_probe: dict[str, Any] | None,
-    initial_candidate: Mapping[str, str],
-    existing_run_records: list[Mapping[str, Any]] | None = None,
-) -> dict[str, Any]:
-    manifest = semantic_candidate_manifest(root)
-    existing_records = list(existing_run_records or [])
-    bounded_runs = [dict(record) for record in existing_records] + [record.to_dict() for record in records]
-    valid_records = [
-        record for record in bounded_runs
-        if bool(record.get("valid_repetition", record.get("evidence", {}).get("valid_repetition", True)))
-    ]
-    report: dict[str, Any] = {
-        "schema_version": CAMPAIGN_SCHEMA_VERSION,
-        "scenario_set_version": H_SERIES_VERSION,
-        "fixture_identity": fixture_identity(),
-        "epoch": epoch,
-        "evidence_level": evidence_level.value,
-        "candidate": dict(candidate),
-        "candidate_identity": candidate_identity_string(candidate),
-        "semantic_candidate_manifest": manifest,
-        "semantic_manifest_hash": semantic_manifest_hash(manifest),
-        "model_identity": dict(model_identity),
-        "declared_model_identity": dict(model_identity),
-        "model_config_fingerprint": model_identity.get("model_config_fingerprint"),
-        "observed_model_identity": _observed_identity_summary(
-            bounded_runs,
-            declared_model_identity=model_identity,
-        ),
-        "repetition_policy": RepetitionPolicy().to_dict(),
-        "scenario_results": scenario_results,
-        "summary": {
-            "total": len(valid_records),
-            "passed": sum(bool(record.get("passed")) for record in valid_records),
-            "failed": sum(not bool(record.get("passed")) for record in valid_records),
-            "unknown_failures": sum(
-                bool(record.get("evidence", {}).get("deterministic_failures"))
-                and record.get("evidence", {}).get("causal_classification") == CausalFailureClass.UNKNOWN.value
-                for record in valid_records
-            ),
-            "valid_scenario_repetitions": sum(int(item["scenario_repetitions"]) for item in scenario_results),
-            "passed_scenario_repetitions": sum(int(item["passes"]) for item in scenario_results),
-            "environmental_attempts": sum(bool(record.get("environmental", False)) for record in bounded_runs),
-            "arm_executions": len(valid_records),
-            "h2_repetitions": RepetitionPolicy().h2_repetitions,
-        },
-        "runs": bounded_runs,
-        "observational_contract": {
-            "no_retries_added": True,
-            "request_and_response_identity_preserved": True,
-            "runtime_grader": "agent.evaluation.runner.CapabilityEvaluator",
-            "repetition_state_machine": "agent.evaluation.campaign._run_scenario",
-        },
-        "semantic_freeze": {
-            "candidate_at_start": dict(initial_candidate),
-            "candidate_at_end": dict(candidate),
-            "semantic_candidate_unchanged": initial_candidate.get("semantic_candidate_fingerprint") == candidate.get("semantic_candidate_fingerprint"),
-            "semantic_manifest_hash_unchanged": initial_candidate.get("semantic_manifest_hash") == candidate.get("semantic_manifest_hash"),
-        },
-        "deterministic_readiness": {
-            "recorded": evidence_level is EvidenceLevel.DETERMINISTIC,
-            "complete": evidence_level is EvidenceLevel.DETERMINISTIC,
-            "source": "current_scripted_campaign" if evidence_level is EvidenceLevel.DETERMINISTIC else "pending_input",
-        },
-    }
-    if invalid_probe is not None:
-        report["invalid_probe"] = invalid_probe
-    report["analysis"] = analyze_campaign(report, require_final_epoch=False)
-    report["secret_scan"] = secret_safe_report(report)
-    return report
+from agent.evaluation.scenario_contracts import EvidenceLevel
 
 
 def run_real_model_campaign(
@@ -117,13 +39,28 @@ def run_real_model_campaign(
     epoch: str = DEFAULT_REAL_MODEL_EPOCH,
     external_identity: str | None = None,
     installed_acceptance: Mapping[str, Any] | None = None,
+    deterministic_readiness: Mapping[str, Any] | None = None,
     resume_report: Mapping[str, Any] | None = None,
+    progress_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run the new real-model epoch only after the caller's explicit gate."""
 
     from agent.evaluation.campaign import run_scripted_campaign
+    from agent.evaluation.real_model_preflight import validate_real_model_preflight
 
     root = Path(repo_root).resolve()
+    preflight = validate_real_model_preflight(
+        root,
+        profile_name=profile_name,
+        epoch=epoch,
+        external_identity=external_identity,
+        installed_acceptance=installed_acceptance,
+        deterministic_readiness=deterministic_readiness,
+    )
+    if not preflight["ready"]:
+        raise RuntimeError(
+            "real-model preflight blocked: " + ",".join(preflight["reason_codes"])
+        )
     identity = model_config_identity(
         root,
         profile_name=profile_name,
@@ -139,15 +76,36 @@ def run_real_model_campaign(
         include_invalid_probe=False,
         model_identity=identity,
         resume_report=resume_report,
+        progress_path=progress_path,
     )
-    if installed_acceptance is None:
-        installed_acceptance = _load_installed_acceptance(root)
-    if isinstance(installed_acceptance, Mapping):
-        report["installed_acceptance"] = dict(installed_acceptance)
-    prior = prior_epoch_disposition(root / "reports" / "acceptance" / "h-series/real-model-epoch-1.json")
-    prior["path"] = "reports/acceptance/h-series/real-model-epoch-1.json"
+    snapshots = preflight.get("prerequisite_snapshots")
+    if isinstance(snapshots, Mapping):
+        raw_installed = snapshots.get("installed_acceptance")
+        raw_readiness = snapshots.get("deterministic_readiness")
+    else:
+        # Compatibility with older injected preflight results.  A real
+        # preflight always supplies the explicit snapshot envelope above.
+        raw_installed = preflight.get("installed_acceptance")
+        raw_readiness = deterministic_readiness
+    prerequisite_projection = project_release_prerequisite_snapshot(
+        raw_installed if isinstance(raw_installed, Mapping) else None,
+        raw_readiness if isinstance(raw_readiness, Mapping) else None,
+    )
+    frozen_installed = prerequisite_projection["installed_acceptance"]
+    frozen_readiness = prerequisite_projection["deterministic_readiness"]
+    if isinstance(frozen_installed, Mapping):
+        report["installed_acceptance"] = dict(frozen_installed)
+    report["prerequisite_snapshots"] = prerequisite_projection
+    from agent.evaluation.artifact_paths import canonical_artifact_paths
+
+    prior_path = canonical_artifact_paths(root).prior_real_model_epoch
+    prior = prior_epoch_disposition(prior_path)
+    prior["path"] = ".audit-local/out/real-model-epoch-1.json"
     report["prior_epoch"] = prior
-    report["deterministic_summary"] = _load_deterministic_summary(root)
+    report["deterministic_summary"] = deterministic_summary_from_readiness(
+        frozen_readiness if isinstance(frozen_readiness, Mapping) else None,
+        source=".audit-local/out/evaluation-corrective-ready.json",
+    )
     report["deterministic_readiness"] = _deterministic_readiness(report["deterministic_summary"])
     report["evidence_delivery"] = {
         "campaign_manifest": "semantic_candidate_manifest",
@@ -161,77 +119,133 @@ def run_real_model_campaign(
     }
     report["analysis"] = analyze_campaign(
         report,
-        installed_acceptance=installed_acceptance,
+        installed_acceptance=frozen_installed if isinstance(frozen_installed, Mapping) else None,
         require_final_epoch=True,
     )
     report["secret_scan"] = secret_safe_report(report)
     if output_path is not None:
-        _write_report(output_path, report)
-    return report
+        report = _write_report(
+            output_path,
+            report,
+            require_final_epoch=True,
+            installed_acceptance=frozen_installed if isinstance(frozen_installed, Mapping) else None,
+        deterministic_readiness=frozen_readiness,
+        )
+    if progress_path is not None:
+        final_analysis = report.get("analysis", {})
+        completion = build_progress_document(
+            candidate=report["candidate"],
+            candidate_identity=str(report["candidate_identity"]),
+            semantic_manifest_hash=str(report["semantic_manifest_hash"]),
+            fixture_identity=str(report["fixture_identity"]),
+            epoch=epoch,
+            model_identity=identity,
+            repetition_policy=report["repetition_policy"],
+            runs=report["runs"],
+            scenario_results=report["scenario_results"],
+            last_attempt={"finalized": True},
+            complete=True,
+            final_report={
+                "release_verdict": final_analysis.get("release_verdict"),
+                "reason_codes": list(final_analysis.get("reason_codes", ())),
+            },
+        )
+        write_progress_document(progress_path, completion)
+    return cast(dict[str, Any], report)
 
 
-def _load_installed_acceptance(root: Path) -> Mapping[str, Any] | None:
-    path = root / ".audit-local" / "out" / "evaluation-installed-acceptance.json"
-    if not path.exists():
-        return None
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return value if isinstance(value, Mapping) else None
+def _write_report(
+    output_path: str | Path,
+    report: Mapping[str, Any],
+    *,
+    require_final_epoch: bool = False,
+    installed_acceptance: Mapping[str, Any] | None = None,
+    deterministic_readiness: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Atomically persist, reload, validate, and mechanically reanalyze a report."""
 
-
-def _load_deterministic_summary(root: Path) -> dict[str, Any]:
-    path = root / ".audit-local" / "out" / "evaluation-corrective-dry-run.json"
-    if not path.exists():
-        return {"recorded": False, "source": ".audit-local/out/evaluation-corrective-dry-run.json"}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"recorded": False, "source": ".audit-local/out/evaluation-corrective-dry-run.json"}
-    if not isinstance(value, Mapping):
-        return {"recorded": False, "source": ".audit-local/out/evaluation-corrective-dry-run.json"}
-    return {
-        "recorded": True,
-        "summary": dict(value.get("summary", {})),
-        "analysis": dict(value.get("analysis", {})),
-        "path": ".audit-local/out/evaluation-corrective-dry-run.json",
-    }
-
-
-def _deterministic_readiness(summary: Mapping[str, Any]) -> dict[str, Any]:
-    analysis = summary.get("analysis") if isinstance(summary, Mapping) else None
-    if not isinstance(analysis, Mapping):
-        return {"recorded": False, "complete": False, "reason": "deterministic_summary_missing"}
-    repetition = analysis.get("repetition")
-    identity = analysis.get("identity")
-    incidents = analysis.get("incidents")
-    complete = bool(
-        isinstance(analysis.get("evidence_envelope"), Mapping)
-        and analysis["evidence_envelope"].get("valid") is True
-        and isinstance(repetition, Mapping)
-        and repetition.get("complete") is True
-        and isinstance(identity, Mapping)
-        and identity.get("consistent") is True
-        and isinstance(incidents, Mapping)
-        and not any(int(value or 0) for value in incidents.values())
-        and int(analysis.get("unknown_failed_run_count", 0) or 0) == 0
-    )
-    return {
-        "recorded": True,
-        "complete": complete,
-        "source": summary.get("path"),
-        "reason": "all_deterministic_gates_recorded" if complete else "deterministic_gates_incomplete",
-    }
-
-
-def _write_report(output_path: str | Path, report: Mapping[str, Any]) -> None:
     destination = Path(output_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(sanitize_evidence(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    write_campaign_report(destination, report)
+    persisted = _reload_report(destination)
+    _validate_persisted_report(persisted, require_final_epoch=require_final_epoch)
+    _validate_frozen_snapshots(
+        persisted,
+        installed_acceptance=installed_acceptance,
+        deterministic_readiness=deterministic_readiness,
     )
+    _validate_persisted_verdict(
+        persisted,
+        expected=report.get("analysis"),
+        require_final_epoch=require_final_epoch,
+    )
+    return dict(persisted)
 
 
-__all__ = ["_campaign_report", "run_real_model_campaign"]
+def _reload_report(destination: Path) -> Mapping[str, Any]:
+    try:
+        persisted = json.loads(destination.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError("canonical campaign report could not be reloaded") from exc
+    if not isinstance(persisted, Mapping):
+        raise ValueError("canonical campaign report must reload as an object")
+    return persisted
+
+
+def _validate_persisted_report(persisted: Mapping[str, Any], *, require_final_epoch: bool) -> None:
+    from agent.evaluation.analysis import validate_campaign_report
+
+    envelope = validate_campaign_report(persisted, require_final_epoch=require_final_epoch)
+    if not envelope["valid"]:
+        raise ValueError("canonical campaign report failed read-back validation")
+    if require_final_epoch:
+        projection_errors = validate_release_prerequisite_projection(
+            persisted.get("prerequisite_snapshots")
+            if isinstance(persisted.get("prerequisite_snapshots"), Mapping)
+            else None
+        )
+        if projection_errors:
+            raise ValueError(
+                "canonical campaign report has invalid prerequisite projection: "
+                + ", ".join(projection_errors)
+            )
+
+
+def _validate_frozen_snapshots(
+    persisted: Mapping[str, Any],
+    *,
+    installed_acceptance: Mapping[str, Any] | None,
+    deterministic_readiness: Mapping[str, Any] | None,
+) -> None:
+    expected_projection = project_release_prerequisite_snapshot(
+        installed_acceptance,
+        deterministic_readiness,
+    )
+    persisted_snapshots = persisted.get("prerequisite_snapshots")
+    if any(value is not None for value in (installed_acceptance, deterministic_readiness)):
+        if not isinstance(persisted_snapshots, Mapping) or dict(persisted_snapshots) != dict(expected_projection):
+            raise ValueError("canonical campaign report changed prerequisite snapshots on reload")
+    if installed_acceptance is not None:
+        persisted_installed = persisted.get("installed_acceptance")
+        expected_installed = expected_projection["installed_acceptance"]
+        if not isinstance(persisted_installed, Mapping) or dict(persisted_installed) != dict(expected_installed):
+            raise ValueError("canonical campaign report changed installed_acceptance on reload")
+
+
+def _validate_persisted_verdict(
+    persisted: Mapping[str, Any],
+    *,
+    expected: Any,
+    require_final_epoch: bool,
+) -> None:
+    reanalysis = analyze_campaign(
+        persisted,
+        require_final_epoch=require_final_epoch,
+    )
+    if isinstance(expected, Mapping) and (
+        reanalysis.get("release_verdict") != expected.get("release_verdict")
+        or reanalysis.get("reason_codes") != expected.get("reason_codes")
+    ):
+        raise ValueError("canonical campaign report changed its mechanical verdict on reload")
+
+
+__all__ = ["_campaign_report", "_observed_identity_summary", "run_real_model_campaign"]

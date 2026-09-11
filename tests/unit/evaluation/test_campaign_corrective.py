@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from types import SimpleNamespace
 from typing import Any, Mapping, cast
@@ -8,6 +9,7 @@ import pytest
 
 from agent.evaluation import campaign
 from agent.evaluation.analysis import analyze_campaign, secret_safe_report, validate_campaign_report
+from agent.evaluation.campaign_observed_identity import _observed_identity_summary
 from agent.evaluation.contracts import ScenarioExpectation
 from agent.evaluation.evaluation_identity import (
     candidate_identity_string,
@@ -24,6 +26,7 @@ from agent.evaluation.oracle import (
     deterministic_oracle_failures,
     validate_oracle_coverage,
 )
+from agent.evaluation.release_prerequisites import project_release_prerequisite_snapshot
 from agent.evaluation.scenario_contracts import (
     H_SERIES,
     H_SERIES_VERSION,
@@ -523,7 +526,7 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
         }
         for scenario in H_SERIES
     ]
-    return {
+    report = {
         "schema_version": "CAMPAIGN-V2.0",
         "scenario_set_version": H_SERIES_VERSION,
         "fixture_identity": fixture_identity(),
@@ -577,14 +580,124 @@ def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, 
         "repetition_policy": RepetitionPolicy().to_dict(),
         "scenario_results": scenario_results,
         "installed_acceptance": {
+            "schema_version": 2,
             "status": "passed",
             "mode": "clean-acceptance",
             "acceptance": True,
+            "clean": True,
+            "evidence_level": "installed_deterministic",
+            "candidate": dict(candidate),
+            "candidate_identity": candidate_id,
+            "semantic_manifest_hash": candidate["semantic_manifest_hash"],
+            "wheel_sha256": "a" * 64,
             "task_files_in_wheel": False,
         },
         "deterministic_readiness": {"recorded": True, "complete": True},
         "runs": runs,
     }
+    report["summary"] = {
+        "total": len(runs),
+        "passed": sum(bool(item.get("passed")) for item in runs),
+        "failed": sum(not bool(item.get("passed")) for item in runs),
+        "unknown_failures": 0,
+        "valid_scenario_repetitions": sum(
+            int(item["scenario_repetitions"]) for item in scenario_results
+        ),
+        "passed_scenario_repetitions": sum(
+            int(item["passes"]) for item in scenario_results
+        ),
+        "environmental_attempts": 0,
+        "arm_executions": len(runs),
+        "h2_repetitions": 5,
+    }
+    clean_prerequisite_report = copy.deepcopy(report)
+    for run in clean_prerequisite_report["runs"]:
+        run["passed"] = True
+        run["evidence"]["deterministic_failures"] = []
+        run["evidence"]["causal_classification"] = "UNKNOWN"
+        run["evidence"]["critical_incidents"] = []
+    clean_prerequisite_report["scenario_results"] = [
+        {
+            **item,
+            "passes": item["scenario_repetitions"],
+        }
+        for item in scenario_results
+    ]
+    if h3_mixed:
+        clean_prerequisite_report["runs"] = [
+            run
+            for run in clean_prerequisite_report["runs"]
+            if not (
+                str(run.get("h_id")) == "H3"
+                and int(run.get("repetition", 0) or 0) > 3
+            )
+        ]
+        clean_prerequisite_report["scenario_results"] = [
+            {
+                **item,
+                "scenario_repetitions": 3 if item.get("h_id") == "H3" else item["scenario_repetitions"],
+                "passes": 3 if item.get("h_id") == "H3" else item["passes"],
+            }
+            for item in clean_prerequisite_report["scenario_results"]
+        ]
+        clean_prerequisite_report["observed_model_identity"] = _observed_identity_summary(
+            clean_prerequisite_report["runs"],
+            declared_model_identity=_MODEL,
+        )
+    clean_analysis = analyze_campaign(
+        clean_prerequisite_report,
+        require_final_epoch=False,
+    )
+    clean_summary = {
+        **report["summary"],
+        "passed": len(runs),
+        "failed": 0,
+        "passed_scenario_repetitions": report["summary"]["valid_scenario_repetitions"],
+    }
+    readiness = {
+        "schema_version": "CORRECTIVE-READINESS-V1.0",
+        "ready": True,
+        "reason_codes": [],
+        "campaign_started": False,
+        "candidate": dict(candidate),
+        "candidate_identity": candidate_id,
+        "semantic_manifest_hash": candidate["semantic_manifest_hash"],
+        "fixture_identity": fixture_identity(),
+        "h_series_version": H_SERIES_VERSION,
+        "epoch": "REAL-MODEL-EPOCH-2",
+        "repetition_policy": RepetitionPolicy().to_dict(),
+        "model_identity_schema": dict(_MODEL),
+        "deterministic_readiness": {
+            "recorded": True,
+            "complete": True,
+            "source": "test",
+            "reason": "all_deterministic_gates_recorded",
+            "reason_codes": [],
+        },
+        "dry_run": {
+            "summary": clean_summary,
+            "analysis": clean_analysis,
+        },
+    }
+    report["prerequisite_snapshots"] = project_release_prerequisite_snapshot(
+        report["installed_acceptance"],
+        readiness,
+    )
+    report["installed_acceptance"] = report["prerequisite_snapshots"]["installed_acceptance"]
+    report["deterministic_readiness"] = {
+        "recorded": True,
+        "candidate": dict(candidate),
+        "candidate_identity": candidate_id,
+        "semantic_manifest_hash": candidate["semantic_manifest_hash"],
+        "fixture_identity": fixture_identity(),
+        "h_series_version": H_SERIES_VERSION,
+        "repetition_policy": RepetitionPolicy().to_dict(),
+        "complete": True,
+        "source": "test",
+        "reason": "all_deterministic_gates_recorded",
+        "reason_codes": [],
+    }
+    return report
 
 
 def test_analyzer_verdict_thresholds_and_blocker_precedence() -> None:
@@ -628,7 +741,8 @@ def test_machine_report_schema_and_secret_scan_are_deterministic() -> None:
     assert validate_campaign_report(report)["valid"]
     report["runs"][0]["evidence"]["answer"] = "authorization: bearer TOPSECRET"
     scan = secret_safe_report(report)
-    assert scan["pass"]
+    assert not scan["pass"]
+    assert scan["scanned_run_count"] == len(report["runs"])
 
 
 def test_fake_provider_identity_is_bound_to_each_run() -> None:

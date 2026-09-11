@@ -11,13 +11,13 @@ from typing import Any, Callable, Protocol
 from agent.application import AgentApplication
 from agent.approval import ApprovalPort
 from agent.evaluation.contracts import ExecutionObservation
+from agent.evaluation.evaluation_snapshot_projection import snapshot_evaluation_projection
 from agent.llm.identity import (
     declared_provider_identity as project_declared_provider_identity,
 )
 from agent.llm.identity import (
     unavailable_observed_identity,
 )
-from agent.reporting.run_projection_facts import thaw_projection
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.tools.authority import TaskAuthoritySnapshot
@@ -38,20 +38,6 @@ class WorkspacePreparation(Protocol):
         ...
 
 
-def snapshot_evaluation_projection(snapshot: Any) -> dict[str, Any]:
-    """Project deterministic evaluation evidence from the snapshot alone."""
-
-    facts = snapshot.projection_facts
-    return {
-        "history": [thaw_projection(item) for item in facts.invocation_evidence],
-        "canonical_plan": thaw_projection(facts.canonical_plan),
-        "route_events": [thaw_projection(item) for item in facts.route_events],
-        "validation_events": [thaw_projection(item) for item in facts.validation_events],
-        "code_outcome": thaw_projection(facts.code_outcome),
-        "validation_detail": thaw_projection(facts.validation_detail),
-        "output_chars": facts.output_chars,
-        "output_truncated": facts.output_truncated,
-    }
 
 
 class AgentApplicationScenarioExecutor:
@@ -117,7 +103,10 @@ class AgentApplicationScenarioExecutor:
                 snapshot = result.snapshot
                 if snapshot is None:
                     raise RuntimeError("canonical run snapshot is required for evaluation")
-                projection = snapshot_evaluation_projection(snapshot)
+                projection = snapshot_evaluation_projection(
+                    snapshot,
+                    state=getattr(application.orchestrator, "agent_state", None),
+                )
                 history = projection["history"]
                 canonical_plan = projection["canonical_plan"]
                 route_events = projection["route_events"]

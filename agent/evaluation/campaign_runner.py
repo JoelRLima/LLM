@@ -8,6 +8,7 @@ from agent.evaluation.analysis import (
     secret_safe_report,
     validate_campaign_report,
 )
+from agent.evaluation.artifact_paths import EvaluationArtifactPaths, canonical_artifact_paths
 from agent.evaluation.campaign import run_real_model_campaign, run_scripted_campaign
 from agent.evaluation.evaluation_identity import (
     CAMPAIGN_SCHEMA_VERSION,
@@ -30,12 +31,19 @@ from agent.evaluation.evaluation_identity import (
     source_fingerprint,
 )
 from agent.evaluation.execution import CampaignRun
+from agent.evaluation.real_model_preflight import (
+    REAL_MODEL_PREFLIGHT_SCHEMA_VERSION,
+    build_real_model_preflight,
+    validate_real_model_preflight,
+)
 from agent.evaluation.scenario_contracts import H_SERIES_VERSION
 from agent.evaluation.scripted_gateway import ScriptedEvaluationGateway
 from agent.llm.identity import normalize_external_identity
 
 __all__ = [
     "ADVERSARIAL_AUDIT_QUESTIONS",
+    "EvaluationArtifactPaths",
+    "REAL_MODEL_PREFLIGHT_SCHEMA_VERSION",
     "analyze_campaign",
     "CAMPAIGN_SCHEMA_VERSION",
     "CampaignRun",
@@ -45,6 +53,7 @@ __all__ = [
     "H_SERIES_VERSION",
     "ScriptedEvaluationGateway",
     "campaign_config",
+    "canonical_artifact_paths",
     "candidate_identity",
     "candidate_identity_string",
     "documentation_fingerprint",
@@ -64,6 +73,8 @@ __all__ = [
     "semantic_candidate_manifest",
     "semantic_manifest_hash",
     "build_corrective_readiness",
+    "build_real_model_preflight",
     "secret_safe_report",
+    "validate_real_model_preflight",
     "validate_campaign_report",
 ]

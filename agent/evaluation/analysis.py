@@ -12,6 +12,9 @@ from agent.evaluation.analysis_metrics import (
     per_scenario_summary,
     repetition_groups,
 )
+from agent.evaluation.analysis_prerequisites import (
+    validate_persisted_prerequisites as _validate_persisted_prerequisites,
+)
 from agent.evaluation.analysis_support import (
     CampaignAnalysisError,
     _evidence,
@@ -22,7 +25,9 @@ from agent.evaluation.analysis_support import (
     validate_campaign_report,
 )
 from agent.evaluation.analysis_verdict import VERDICTS, verdict
+from agent.evaluation.campaign_artifacts import deterministic_readiness as _deterministic_readiness
 from agent.evaluation.evaluation_identity import (
+    DEFAULT_PROFILE,
     DEFAULT_REAL_MODEL_EPOCH,
     campaign_config,
     candidate_identity,
@@ -33,6 +38,7 @@ from agent.evaluation.evaluation_identity import (
 )
 from agent.evaluation.oracle import validate_oracle_coverage
 from agent.evaluation.scenario_contracts import H_SERIES_VERSION, CausalFailureClass, RepetitionPolicy
+from agent.llm.identity import normalize_external_identity
 
 
 def analyze_campaign(
@@ -49,6 +55,8 @@ def analyze_campaign(
         raise CampaignAnalysisError(
             "campaign evidence is incomplete: " + ", ".join(str(item) for item in envelope["errors"])
         )
+    if require_final_epoch:
+        _validate_persisted_prerequisites(report)
     runs = [run for run in report.get("runs", ()) if isinstance(run, Mapping)]
     identity_consistent, identity_reasons, identity_details = identity_checks(report, runs)
     policy_value = report.get("repetition_policy")
@@ -73,7 +81,7 @@ def analyze_campaign(
     evidence_level = str(report.get("evidence_level", ""))
     if not require_final_epoch and evidence_level != "real_model":
         complete = True
-    accepted_installed = installed_acceptance
+    accepted_installed = None if require_final_epoch else installed_acceptance
     if accepted_installed is None and isinstance(report.get("installed_acceptance"), Mapping):
         accepted_installed = report["installed_acceptance"]
     deterministic_readiness = report.get("deterministic_readiness") if require_final_epoch else None
@@ -162,7 +170,11 @@ def prior_epoch_disposition(
 
 
 def build_corrective_readiness(
-    repo_root: str | Path, dry_run_report: Mapping[str, Any]
+    repo_root: str | Path,
+    dry_run_report: Mapping[str, Any],
+    *,
+    profile_name: str = DEFAULT_PROFILE,
+    external_identity: str | None = None,
 ) -> dict[str, Any]:
     """Build the pre-Qwen readiness artifact for the new, not-yet-started epoch."""
 
@@ -173,41 +185,49 @@ def build_corrective_readiness(
         root,
         output_dir=root / "reports" / "acceptance" / "h-series",
         epoch=DEFAULT_REAL_MODEL_EPOCH,
+        profile_name=profile_name,
+        external_identity=external_identity,
     )
-    try:
-        deterministic_analysis = analyze_campaign(dry_run_report, require_final_epoch=False)
-    except CampaignAnalysisError:
-        # Persisted campaign reports are sanitized for transport.  The
-        # evidence sanitizer intentionally bounds the top-level ``runs`` list
-        # (currently at 64 items), while ``_campaign_report`` has already
-        # computed and preserved a complete, mechanically validated analysis.
-        # Reuse that analysis only after checking its own envelope and the
-        # complete H-series projection; never accept an arbitrary partial
-        # report as readiness evidence.
-        preserved = dry_run_report.get("analysis")
-        envelope = preserved.get("evidence_envelope") if isinstance(preserved, Mapping) else None
-        repetition = preserved.get("repetition") if isinstance(preserved, Mapping) else None
-        per_scenario = repetition.get("per_scenario") if isinstance(repetition, Mapping) else None
-        expected_h_ids = {f"H{index}" for index in range(1, 20)}
-        if not (
-            isinstance(preserved, Mapping)
-            and isinstance(envelope, Mapping)
-            and envelope.get("valid") is True
-            and not envelope.get("errors")
-            and isinstance(repetition, Mapping)
-            and isinstance(per_scenario, Mapping)
-            and set(per_scenario) == expected_h_ids
-            and int(envelope.get("run_count", 0)) == int(dry_run_report.get("summary", {}).get("total", 0))
-        ):
-            raise
-        deterministic_analysis = dict(preserved)
-    prior = prior_epoch_disposition(root / "reports" / "acceptance" / "h-series" / "real-model-epoch-1.json")
-    prior["path"] = "reports/acceptance/h-series/real-model-epoch-1.json"
+    deterministic_analysis = analyze_campaign(dry_run_report, require_final_epoch=False)
+    if (
+        dry_run_report.get("candidate_identity") != candidate_identity_string(candidate)
+        or dry_run_report.get("semantic_manifest_hash")
+        != semantic_manifest_hash(manifest)
+    ):
+        raise CampaignAnalysisError("deterministic report is not bound to the current candidate")
+    deterministic_projection = {
+        "candidate": dict(candidate),
+        "candidate_identity": candidate_identity_string(candidate),
+        "semantic_manifest_hash": semantic_manifest_hash(manifest),
+        "fixture_identity": fixture_identity(),
+        "h_series_version": H_SERIES_VERSION,
+        "repetition_policy": RepetitionPolicy().to_dict(),
+        "summary": dict(dry_run_report.get("summary", {})),
+        "analysis": deterministic_analysis,
+        "path": ".audit-local/out/evaluation-corrective-dry-run.json",
+    }
+    clean_readiness = _deterministic_readiness(deterministic_projection)
+    from agent.evaluation.artifact_paths import canonical_artifact_paths
+
+    prior_path = canonical_artifact_paths(root).prior_real_model_epoch
+    prior = prior_epoch_disposition(prior_path)
+    prior["path"] = ".audit-local/out/real-model-epoch-1.json"
+    normalized_external_identity = normalize_external_identity(external_identity)
+    planned_command = (
+        ".venv\\Scripts\\python.exe scripts\\run_evaluation_campaign.py"
+        f" --mode live-model --qwen-loaded --profile {profile_name}"
+        f" --epoch {DEFAULT_REAL_MODEL_EPOCH}"
+        " --output .audit-local\\out\\real-model-epoch-2.json"
+    )
+    if normalized_external_identity is not None:
+        planned_command += f" --external-identity {normalized_external_identity}"
     return {
         "schema_version": "CORRECTIVE-READINESS-V1.0",
         "epoch": DEFAULT_REAL_MODEL_EPOCH,
         "campaign_started": False,
         "model_endpoint_accessed": False,
+        "ready": clean_readiness["complete"],
+        "reason_codes": list(clean_readiness["reason_codes"]),
         "candidate": candidate,
         "candidate_identity": candidate_identity_string(candidate),
         "semantic_candidate_manifest": manifest,
@@ -240,9 +260,10 @@ def build_corrective_readiness(
             "summary": dict(dry_run_report.get("summary", {})),
             "analysis": deterministic_analysis,
         },
+        "deterministic_readiness": clean_readiness,
         "oracle_coverage": validate_oracle_coverage(),
         "prior_epoch": prior,
-        "planned_live_model_command": ".venv\\Scripts\\python.exe scripts\\run_evaluation_campaign.py --mode live-model --qwen-loaded --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output reports\\acceptance\\h-series\\epoch-2.json",
+        "planned_live_model_command": planned_command,
     }
 
 

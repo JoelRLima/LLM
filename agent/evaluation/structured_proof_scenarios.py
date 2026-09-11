@@ -29,7 +29,7 @@ def h19_scenario() -> HSeriesScenario:
     return HSeriesScenario(
         "H19",
         "structured positive proof and full governing-scope consumption",
-        "sol-structured-positive-proof-full-consumption",
+        "structured-positive-proof-full-consumption",
         (
             HSeriesArm(
                 "positive-direct",

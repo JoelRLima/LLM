@@ -11,346 +11,10 @@ from agent.evaluation.practical_gateway_logic import (
     practical_plan_payload,
 )
 from agent.evaluation.scripted_gateway_fixture import bind_code_task_objective
-from agent.evaluation.structured_proof_fixtures import H19_FINAL_ANSWERS, H19_PLAN_PAYLOADS
+from agent.evaluation.scripted_gateway_plans import SCRIPTED_PLAN_PAYLOADS as _PLAN_PAYLOADS
+from agent.evaluation.structured_proof_fixtures import H19_FINAL_ANSWERS
 
 
-def _scalar_plan(file_name: str) -> dict[str, Any]:
-    return {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": file_name}}, {"tool": "grep", "args": {"path": "."}, "bindings": {"pattern": {"from_step": 1, "path": []}}}]}
-
-
-_PLAN_PAYLOADS: tuple[tuple[str, dict[str, Any]], ...] = (
-    (
-        "H4_DUPLICATE_REJECTED",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "fonte_h4.txt"}},
-                {
-                    "tool": "grep",
-                    "args": {"pattern": "H4_VALUE", "path": "."},
-                    "bindings": {"pattern": {"from_step": 1, "path": []}},
-                },
-            ],
-        },
-    ),
-    ("H1_DIRECT", {"action": "direct_response", "answer": "abacaxi azul"}),
-    (
-        "H1_WORKSPACE",
-        {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "h1_observation.txt"}}]},
-    ),
-    ("H2", _scalar_plan("fonte_h2.txt")),
-    (
-        "H3",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "grep", "args": {"pattern": "H3_SOURCE_MARKER", "path": "."}},
-                {
-                    "tool": "grep",
-                    "args": {"path": "."},
-                    "bindings": {"pattern": {"from_step": 1, "path": [0, "content"]}},
-                },
-            ],
-        },
-    ),
-    ("H4", _scalar_plan("fonte_h4.txt")),
-    (
-        "H5",
-        {
-            "action": "continue_after_plan",
-            "plan": [{"tool": "file_reader", "args": {"file_path": "h5_first.txt"}}],
-        },
-    ),
-    (
-        "H6",
-        {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": 123}}]},
-    ),
-    (
-        "H7",
-        {"action": "use_tools", "plan": [{"tool": "grep", "args": {"pattern": "H7_EMPTY_SENTINEL", "path": "."}}]},
-    ),
-    (
-        "H8",
-        {"action": "use_tools", "plan": [{"tool": "grep", "args": {"pattern": "[", "path": "."}}]},
-    ),
-    (
-        "H9",
-        {
-            "action": "use_tools",
-            "plan": [
-                {
-                    "tool": "grep",
-                    "args": {"pattern": "H9_TRUNCATED_SENTINEL", "path": ".", "max_results": 1},
-                }
-            ],
-        },
-    ),
-    (
-        "H10",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h10_condition.txt"}},
-                {
-                    "kind": "deferred_condition",
-                    "observation_ref": 1,
-                    "predicate": {"op": "equals", "value": "H10_TRUE"},
-                    "on_true": {
-                        "tool": "code_task",
-                        "args": {
-                            "action": "modify",
-                            "objective": "H10_EFFECT: altere h10_condition.txt para H10_EFFECT",
-                            "targets": ["h10_condition.txt"],
-                        },
-                    },
-                    "on_false": {"waive_effect": "write"},
-                },
-            ],
-        },
-    ),
-    (
-        "H11_MISSING",
-        {
-            "action": "use_tools",
-            "plan": [{"tool": "file_reader", "args": {"file_path": "../h11_missing.txt"}}],
-        },
-    ),
-    (
-        "H11_PRESENT",
-        {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "h11_present.txt"}}]},
-    ),
-    (
-        "H12",
-        {
-            "action": "use_tools",
-            "plan": [
-                {
-                    "tool": "code_task",
-                    "args": {
-                        "action": "modify",
-                        "objective": "H12: altere h12_module.py para retornar 2",
-                        "targets": ["h12_module.py"],
-                    },
-                }
-            ],
-        },
-    ),
-    ("H13_SOURCE", {"action": "direct_response", "answer": "Resumo gerado a partir de foo.py; nenhuma escrita foi solicitada."}),
-    (
-        "H13_DEST",
-        {
-            "action": "use_tools",
-            "plan": [{
-                "tool": "code_task",
-                "args": {
-                    "action": "generate",
-                    "objective": "H13_DEST",
-                    "targets": ["resumo.md"],
-                },
-            }],
-        },
-    ),
-    (
-        "H13_MIXED",
-        {
-            "action": "use_tools",
-            "plan": [{
-                "tool": "code_task",
-                "args": {
-                    "action": "generate",
-                    "objective": "H13_MIXED",
-                    "targets": ["resumo.md"],
-                },
-            }],
-        },
-    ),
-    (
-        "H14_PT",
-        {
-            "action": "use_tools",
-            "plan": [{
-                "tool": "code_task",
-                "args": {
-                    "action": "modify",
-                    "objective": "H14_PT",
-                    "targets": ["permitido.txt"],
-                },
-            }],
-        },
-    ),
-    (
-        "H14_EN",
-        {
-            "action": "use_tools",
-            "plan": [{
-                "tool": "code_task",
-                "args": {
-                    "action": "modify",
-                    "objective": "H14_EN",
-                    "targets": ["allowed.txt"],
-                },
-            }],
-        },
-    ),
-    (
-        "H14_MIXED",
-        {
-            "action": "use_tools",
-            "plan": [{
-                "tool": "code_task",
-                "args": {
-                    "action": "modify",
-                    "objective": "H14_MIXED",
-                    "targets": ["permitido.txt"],
-                },
-            }],
-        },
-    ),
-    ("H14_COPULA", {"action": "direct_response", "answer": "foo.py permaneceu intacto."}),
-    ("H14_FORBIDDEN", {"action": "direct_response", "answer": "foo.py permaneceu intacto."}),
-    (
-        "H14_SCOPE",
-        {"action": "use_tools", "plan": [{"tool": "code_task", "args": {"action": "modify", "objective": "H14_SCOPE", "targets": ["permitido.txt"]}}]},
-    ),
-    (
-        "H15_UNRESOLVED",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h15_condition.txt", "start_line": 1, "end_line": 1}},
-                {
-                    "kind": "deferred_condition",
-                    "observation_ref": 1,
-                    "predicate": {"op": "equals", "value": "H15_TRUE"},
-                    "on_true": {
-                        "tool": "code_task",
-                        "args": {
-                            "action": "generate",
-                            "objective": "H15_TRUE",
-                            "targets": ["h15_target.txt"],
-                        },
-                    },
-                    "on_false": {"waive_effect": "write"},
-                },
-            ],
-        },
-    ),
-    (
-        "H15_FALSE",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h15_condition.txt"}},
-                {
-                    "kind": "deferred_condition",
-                    "observation_ref": 1,
-                    "predicate": {"op": "equals", "value": "H15_TRUE"},
-                    "on_true": {
-                        "tool": "code_task",
-                        "args": {
-                            "action": "generate",
-                            "objective": "H15_FALSE",
-                            "targets": ["h15_target.txt"],
-                        },
-                    },
-                    "on_false": {"waive_effect": "write"},
-                },
-            ],
-        },
-    ),
-    (
-        "H15_NEGATIVE",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h15_condition.txt"}},
-                {"kind": "deferred_condition", "observation_ref": 1,
-                 "predicate": {"op": "equals", "value": "H15_FALSE"},
-                 "on_true": {"tool": "code_task", "args": {"action": "generate", "objective": "H15_NEGATIVE", "targets": ["h15_target.txt"]}},
-                 "on_false": {"waive_effect": "write"}},
-            ],
-        },
-    ),
-    (
-        "H15_NEGPROHIB",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h15_condition.txt"}},
-                {
-                    "kind": "deferred_condition",
-                    "observation_ref": 1,
-                    "predicate": {"op": "equals", "value": "H15_FALSE"},
-                    "on_true": {"tool": "file_reader", "args": {"file_path": "h15_condition.txt"}},
-                    "on_false": {"waive_effect": "write"},
-                },
-            ],
-        },
-    ),
-    (
-        "H15_TRUE",
-        {
-            "action": "use_tools",
-            "plan": [
-                {"tool": "file_reader", "args": {"file_path": "h15_condition.txt"}},
-                {
-                    "kind": "deferred_condition",
-                    "observation_ref": 1,
-                    "predicate": {"op": "equals", "value": "H15_TRUE"},
-                    "on_true": {
-                        "tool": "code_task",
-                        "args": {
-                            "action": "generate",
-                            "objective": "H15_TRUE",
-                            "targets": ["h15_target.txt"],
-                        },
-                    },
-                    "on_false": {"waive_effect": "write"},
-                },
-            ],
-        },
-    ),
-    (
-        "H16_LICENSE1",
-        {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "pyproject.toml"}}]},
-    ),
-    (
-        "H16_LICENSE2",
-        {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "pyproject.toml"}}]},
-    ),
-    ("H16_DEPENDENCIES", {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "pyproject.toml"}}]}),
-    ("H16_SUMMARY", {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "pyproject.toml"}}]}),
-    ("H16_ARBITRARY", {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "config.toml"}}]}),
-    ("H16_CONTENT", {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "pyproject.toml"}}]}),
-    ("H16_ENGLISH", {"action": "use_tools", "plan": [{"tool": "file_reader", "args": {"file_path": "package.json"}}]}),
-    ("H16_CONCEPT", {"action": "direct_response", "answer": "Arquivo de configuração de projetos Python."}),
-    (
-        "H17_AUTONOMOUS",
-        {
-            "action": "use_tools",
-            "plan": [{"tool": "code_task", "args": {"action": "modify", "objective": "H17_AUTO", "targets": ["notes.md"]}}],
-        },
-    ),
-    (
-        "H17_EXPLICIT",
-        {
-            "action": "use_tools",
-            "plan": [{"tool": "code_task", "args": {"action": "modify", "objective": "H17_EXPLICIT", "targets": ["settings.json"]}}],
-        },
-    ),
-    (
-        "H17_EXTENSION",
-        {
-            "action": "use_tools",
-            "plan": [{"tool": "code_task", "args": {"action": "modify", "objective": "H17_EXTENSION", "targets": ["extension.md"]}}],
-        },
-    ),
-    ("H17_NEGATIVE", {"action": "direct_response", "answer": "protected.py permaneceu intacto por falta de autorizaÃ§Ã£o positiva."}),
-    ("H17_AMBIGUOUS", {"action": "direct_response", "answer": "A alteraÃ§Ã£o de uncertain.py nÃ£o foi autorizada sem uma solicitaÃ§Ã£o inequÃ­voca."}),
-    ("H18_NETWORK", {"action": "direct_response", "answer": "H18_SENTINEL foi tratado sem alterar arquivos."}),
-)
-
-_PLAN_PAYLOADS += H19_PLAN_PAYLOADS
 def scripted_plan_response(objective: str, prompt: str) -> str:
     text = f"{objective}\n{prompt}"
     # Prefer the explicit fixture marker in the objective.  Several
@@ -431,6 +95,23 @@ def _h12_engineering_response() -> dict[str, Any]:
     }
 
 
+def _engineering_proposal(change: dict[str, Any] | None) -> str:
+    return json.dumps(
+        {
+            "decision": "CHANGE" if change is not None else "NO_CHANGE",
+            "rationale": (
+                "A menor mudança necessária foi identificada na evidência do workspace."
+                if change is not None
+                else "Nenhuma mudança scripted foi solicitada."
+            ),
+            "reason_code": "NONE",
+            "question": "",
+            "changes": [change] if change is not None else [],
+        },
+        ensure_ascii=False,
+    )
+
+
 def _engineering_response(objective: str, prompt: str) -> str:
     combined = f"{objective}\n{prompt}"
     fixture_marker = objective.split(":", 1)[0].strip()
@@ -439,10 +120,10 @@ def _engineering_response(objective: str, prompt: str) -> str:
         return practical
     known = _known_engineering_response(combined)
     if known is not None:
-        return json.dumps({"changes": [known]})
+        return _engineering_proposal(known)
     if "H12" not in combined:
-        return json.dumps({"changes": []})
-    return json.dumps({"changes": [_h12_engineering_response()]})
+        return _engineering_proposal(None)
+    return _engineering_proposal(_h12_engineering_response())
 
 
 _FINAL_ANSWERS = (

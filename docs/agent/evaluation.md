@@ -56,9 +56,13 @@ O caminho positivo de modificação é protegido separadamente pelos testes de
 
 ## Installed acceptance projection
 
+The clean-installed summary is candidate-bound and is written to
+`.audit-local/out/installed-acceptance.json`; offline diagnostics never satisfy
+the final release precondition.
+
 O gate canônico continua sendo `scripts/verify_installed_package.py`, que
 constrói e executa o wheel fora do checkout. Com `--summary-json`, ele também
-emite uma projeção limitada em `schema_version=1` para o relatório da campanha;
+emite uma projeção limitada em `schema_version=2` para o relatório da campanha;
 essa projeção mapeia import/entry point, leitura/busca, resposta direta, shell e
 Git, `code_task`, rollback, bypass do writer, stdio/authority, terminalidade,
 measurement e isolamento do checkout. Ela não cria uma segunda jornada nem
@@ -82,7 +86,7 @@ canônico do runtime, não de histórico ou cache projetado.
 O caminho sem modelo real é executado por:
 
 ```powershell
-.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-dry-run.json --write-config
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode dry-run --output .audit-local\out\evaluation-corrective-dry-run.json --write-config
 .venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode adversarial-audit --output .audit-local\out\evaluation-adversarial-audit.json
 .venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode corrective-ready --output .audit-local\out\evaluation-corrective-ready.json
 ```
@@ -121,7 +125,7 @@ continua sendo insuficiente por si só. Um rerun de modelo real permanece
 authorization-gated:
 
 ```powershell
-.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode live-model --qwen-loaded --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output reports\acceptance\h-series\epoch-2.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode live-model --qwen-loaded --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output .audit-local\out\real-model-epoch-2.json
 ```
 
 ## Corrective campaign contract

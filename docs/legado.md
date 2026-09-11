@@ -166,6 +166,7 @@ formato antigo, não a criação de uma nova API de fonte.
 - `W7-P44` | `agent/tools/result_completeness.py::legacy_result_successful` | owner: canonical result completeness | consumers: historical result readers | durable: result fixtures | condição: aposentar fixtures.
 - `W7-P45` | `agent/runtime/events.py::serialize_runtime_event` | owner: `RuntimeEvent` | consumers: event/checkpoint projection | durable: historical event records | condição: aposentar records antigos.
 - `W7-P46` | `agent/runtime/events.py::deserialize_runtime_event` | owner: `RuntimeEvent` | consumers: event/checkpoint readers | durable: historical event records | condição: aposentar records antigos.
+- `W7-P47` | `agent/evaluation/evaluation_snapshot_projection.py::_legacy_result` | owner: `ToolResult` canônico | consumers: evaluation history projection | durable: serialized evaluation evidence | condição: retirar quando evidence persistida não contiver mappings históricos de resultado.
 - `W7-W09` | `agent/planning/result_bindings.py::_resolve_ordinal` | owner: typed binding resolver | consumers: model/checkpoint binding readers | durable: historical binding data | condição: aposentar binding shapes.
 - `W7-W10` | `agent/runtime/failure_policy.py::failure_fact_for_result` | owner: canonical `FailureFact` | consumers: result/failure boundary | durable: historical result records | condição: aposentar records históricos.
 

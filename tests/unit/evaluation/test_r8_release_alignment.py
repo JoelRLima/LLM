@@ -213,7 +213,10 @@ def test_installed_acceptance_is_a_final_release_precondition(acceptance, expect
         report.pop("installed_acceptance", None)
     else:
         report["installed_acceptance"] = acceptance
-    analysis = analyze_campaign(report)
+    # This parameterized fixture exercises the installed-state verdict table.
+    # Self-consistency of a persisted final prerequisite projection is covered
+    # by the dedicated campaign-report round-trip tests.
+    analysis = analyze_campaign(report, require_final_epoch=False)
     assert analysis["release_verdict"] == expected_verdict
 
 

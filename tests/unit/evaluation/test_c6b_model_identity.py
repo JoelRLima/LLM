@@ -267,10 +267,18 @@ def test_c6b_live_model_cli_freezes_external_identity_without_provider_probe(tmp
         captured["external_identity"] = kwargs["external_identity"]
         gateway = kwargs["gateway_factory"]("objective", tmp_path)
         captured["gateway_external_identity"] = gateway.external_identity
-        return {}
+        return {
+            "candidate_identity": "candidate-for-test",
+            "analysis": {"release_verdict": "RELEASE_READY", "reason_codes": []},
+        }
 
     monkeypatch.setattr(openai_compatible, "OpenAICompatibleGateway", StubProvider)
     monkeypatch.setattr(run_evaluation_campaign, "run_real_model_campaign", fake_real_campaign)
+    monkeypatch.setattr(
+        run_evaluation_campaign,
+        "build_real_model_preflight",
+        lambda *args, **kwargs: {"ready": True, "candidate_identity": "candidate-for-test"},
+    )
 
     assert run_evaluation_campaign.main(
         [

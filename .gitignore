@@ -28,6 +28,8 @@ __pycache__/
 /%TEMP%/
 /.tmp/
 /tmp_pytest/
+/.agent-local/
+/.audit-local/
 
 # Coverage
 .coverage

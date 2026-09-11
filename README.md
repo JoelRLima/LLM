@@ -60,10 +60,10 @@ llm-agent inspect export --run-id RUN_ID --output trace.zip
 As diretivas e perfis deliberativos usam prefixos slash na entrada da tarefa:
 
 ```powershell
-llm-agent run "/read /smart Analyze the repository"
-llm-agent run "/plan /cautious Refactor parser.py"
-llm-agent run "/do Apply the change"
-llm-agent run "/continue"
+llm-agent run --workspace C:\\caminho\\projeto "/read /smart Analyze the repository"
+llm-agent run --workspace C:\\caminho\\projeto "/plan /cautious Refactor parser.py"
+llm-agent run --workspace C:\\caminho\\projeto "/do Apply the change"
+llm-agent run --workspace C:\\caminho\\projeto "/continue"
 ```
 
 `/read` é uma diretiva de tarefa diferente do comando interativo `/read <arquivo>`;

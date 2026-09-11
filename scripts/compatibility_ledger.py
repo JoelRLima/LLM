@@ -149,6 +149,7 @@ LEDGER = (
     _edge("W7-P44", "agent/tools/result_completeness.py", "legacy_result_successful", RETAIN_PERSISTENCE_CONTRACT, "canonical result completeness", "historical result readers", "historical result fixtures", "explicit legacy result status probe", "remove after historical result fixtures are retired"),
     _edge("W7-P45", "agent/runtime/events.py", "serialize_runtime_event", RETAIN_PERSISTENCE_CONTRACT, "RuntimeEvent", "event/checkpoint projection", "historical event records", "explicit serialized event projection at the persistence boundary", "remove after old event records are retired"),
     _edge("W7-P46", "agent/runtime/events.py", "deserialize_runtime_event", RETAIN_PERSISTENCE_CONTRACT, "RuntimeEvent", "event/checkpoint readers", "historical event records", "explicit deserialization boundary into the typed event", "remove after old event records are retired"),
+    _edge("W7-P47", "agent/evaluation/evaluation_snapshot_projection.py", "_legacy_result", RETAIN_PERSISTENCE_CONTRACT, "agent.tools.contracts.ToolResult", "evaluation history projection", "serialized evaluation evidence", "evaluation snapshots read the bounded serialized result projection without changing the live result owner", "remove after persisted evaluation evidence no longer contains historical result mappings"),
 
     # Canonical names whose historical wording is misleading but whose live
     # behavior is already the canonical owner.

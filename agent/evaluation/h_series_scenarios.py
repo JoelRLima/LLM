@@ -300,7 +300,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H13",
             "output-generation source vs durable destination",
-            "sol-source-destination-authority",
+            "source-destination-authority",
             (
                 HSeriesArm(
                     "source-only",
@@ -353,7 +353,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H14",
             "intervening-subject negation scope",
-            "sol-negation-scope",
+            "negation-scope",
             (
                 HSeriesArm(
                     "portuguese",
@@ -435,7 +435,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H15",
             "conditional predicate authority and reentry",
-            "sol-conditional-branches",
+            "conditional-branches",
             (
                 HSeriesArm(
                     "true",
@@ -512,7 +512,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H16",
             "implicit workspace grounding for natural fact questions",
-            "sol-implicit-grounding",
+            "implicit-grounding",
             (
                 HSeriesArm(
                     "license-question",
@@ -597,7 +597,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H17",
             "validation-unavailable authority and approval distinction",
-            "sol-validation-authority",
+            "validation-authority",
             (
                 HSeriesArm(
                     "autonomous-md",
@@ -664,7 +664,7 @@ def _build_h_series() -> tuple[HSeriesScenario, ...]:
         HSeriesScenario(
             "H18",
             "invocation semantics and resource domains",
-            "sol-invocation-resource-domains",
+            "invocation-resource-domains",
             (
                 HSeriesArm(
                     "external-network",

@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, cast
 
 from agent.evaluation.agent_executor import GatewayFactory
 from agent.evaluation.campaign_probe import invalid_probe_record
+from agent.evaluation.campaign_progress import ProgressWriter
 from agent.evaluation.campaign_report import (
     _campaign_report,
     _write_report,
     run_real_model_campaign,
+)
+from agent.evaluation.campaign_serialization import max_campaign_attempts, sanitize_campaign_report
+from agent.evaluation.campaign_state import (
+    _scenario_summary,
+    _stopping_reason,
+    _target_after_sample,
 )
 from agent.evaluation.evaluation_identity import (
     CAMPAIGN_SCHEMA_VERSION,
@@ -31,7 +38,6 @@ from agent.evaluation.scenario_contracts import (
     EvidenceLevel,
     HSeriesScenario,
     RepetitionPolicy,
-    sanitize_evidence,
     validate_h_series,
 )
 from agent.evaluation.scripted_gateway import _scripted_factory
@@ -41,6 +47,9 @@ _SCRIPTED_GATEWAY_FACTORY = cast(GatewayFactory, _scripted_factory)
 
 class CampaignExecutionError(RuntimeError):
     """Raised when the bounded campaign cannot obtain required valid samples."""
+
+
+ProgressCallback = Callable[[str, Sequence[CampaignRun], Mapping[str, Any]], None]
 
 
 def _run_scenario(
@@ -54,6 +63,7 @@ def _run_scenario(
     model_identity: Mapping[str, Any],
     existing_runs: list[Mapping[str, Any]] | None = None,
     existing_summary: Mapping[str, Any] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[list[CampaignRun], dict[str, Any]]:
     """Run one H scenario through the bounded adaptive state machine."""
 
@@ -84,7 +94,8 @@ def _run_scenario(
             prior_summary,
             _stopping_reason(scenario, policy, scenario_results),
         )
-    max_attempts = max(20, policy.maximum_repetitions * 4)
+    max_attempts = max_campaign_attempts(policy)
+    environmental_attempts = 0
     while target is None or valid_repetitions < target:
         attempt += 1
         if attempt > max_attempts:
@@ -108,7 +119,25 @@ def _run_scenario(
             for arm in scenario.arms
         ]
         if any(record.environmental for record in attempt_records):
-            records.extend(record.mark_invalid_attempt("environmental_attempt") for record in attempt_records)
+            marked_records = [
+                record.mark_invalid_attempt("environmental_attempt")
+                for record in attempt_records
+            ]
+            records.extend(marked_records)
+            environmental_attempts += 1
+            if progress_callback is not None:
+                progress_callback(
+                    scenario.h_id,
+                    marked_records,
+                    _scenario_summary(
+                        scenario,
+                        scenario_results,
+                        valid_repetitions,
+                        prior_summary,
+                        "environmental_attempt_pending",
+                        environmental_increment=environmental_attempts,
+                    ),
+                )
             continue
         valid_repetitions += 1
         records.extend(attempt_records)
@@ -120,64 +149,27 @@ def _run_scenario(
             "attempt": attempt,
         })
         target = _target_after_sample(scenario, policy, scenario_results, valid_repetitions, target)
+        if progress_callback is not None:
+            progress_callback(
+                scenario.h_id,
+                attempt_records,
+                _scenario_summary(
+                    scenario,
+                    scenario_results,
+                    valid_repetitions,
+                    prior_summary,
+                    _stopping_reason(scenario, policy, scenario_results),
+                    environmental_increment=environmental_attempts,
+                ),
+            )
     return records, _scenario_summary(
         scenario,
         scenario_results,
         valid_repetitions,
         prior_summary,
         _stopping_reason(scenario, policy, scenario_results),
-        environmental_increment=sum(1 for record in records if record.environmental),
+        environmental_increment=environmental_attempts,
     )
-
-
-def _target_after_sample(
-    scenario: HSeriesScenario,
-    policy: RepetitionPolicy,
-    results: Sequence[Mapping[str, Any]],
-    valid_repetitions: int,
-    target: int | None,
-) -> int | None:
-    if scenario.h_id == "H2":
-        return policy.h2_repetitions
-    if valid_repetitions == policy.initial_repetitions:
-        pass_count = sum(bool(item["passed"]) for item in results[:policy.initial_repetitions])
-        return policy.target_for_initial_result(scenario.h_id, pass_count, policy.initial_repetitions)
-    return target
-
-
-def _stopping_reason(
-    scenario: HSeriesScenario, policy: RepetitionPolicy, results: Sequence[Mapping[str, Any]]
-) -> str:
-    if scenario.h_id == "H2":
-        return "h2_exactly_five"
-    return policy.initial_decision(
-        sum(bool(item.get("passed")) for item in results[:policy.initial_repetitions]),
-        policy.initial_repetitions,
-    )
-
-
-def _scenario_summary(
-    scenario: HSeriesScenario,
-    results: Sequence[Mapping[str, Any]],
-    valid_repetitions: int,
-    prior_summary: Mapping[str, Any],
-    stopping_reason: str,
-    *,
-    environmental_increment: int = 0,
-) -> dict[str, Any]:
-    passed = sum(bool(item.get("passed")) for item in results)
-    return {
-        "h_id": scenario.h_id,
-        "fixture_id": scenario.fixture_id,
-        "scenario_repetitions": valid_repetitions,
-        "arm_executions": sum(int(item.get("arm_executions", len(scenario.arms))) for item in results),
-        "passes": passed,
-        "failures": sum(not bool(item.get("passed")) for item in results),
-        "pass_rate": passed / valid_repetitions if valid_repetitions else 0.0,
-        "environmental_attempts": int(prior_summary.get("environmental_attempts", 0)) + environmental_increment,
-        "scenario_results": results,
-        "stopping_reason": stopping_reason,
-    }
 
 
 def run_scripted_campaign(
@@ -190,6 +182,7 @@ def run_scripted_campaign(
     include_invalid_probe: bool = True,
     model_identity: Mapping[str, Any] | None = None,
     resume_report: Mapping[str, Any] | None = None,
+    progress_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run all H scenarios through the canonical adaptive runner."""
 
@@ -233,6 +226,21 @@ def run_scripted_campaign(
         )
     runs: list[CampaignRun] = []
     scenario_results: list[dict[str, Any]] = []
+    progress_writer: ProgressWriter | None = None
+    if progress_path is not None:
+        progress_writer = ProgressWriter(
+            progress_path,
+            candidate=initial_candidate,
+            candidate_identity=candidate_identity_string(initial_candidate),
+            semantic_manifest_hash=semantic_manifest_hash(semantic_candidate_manifest(root)),
+            fixture_identity=fixture_identity(),
+            epoch=epoch,
+            model_identity=identity,
+            repetition_policy=policy.to_dict(),
+            existing_runs=existing_runs,
+            existing_summaries=existing_summaries,
+        )
+
     for scenario in H_SERIES:
         scenario_runs, scenario_summary = _run_scenario(
             scenario,
@@ -244,6 +252,7 @@ def run_scripted_campaign(
             model_identity=identity,
             existing_runs=[run for run in existing_runs if str(run.get("h_id")) == scenario.h_id],
             existing_summary=existing_summaries.get(scenario.h_id),
+            progress_callback=progress_writer,
         )
         runs.extend(scenario_runs)
         scenario_results.append(scenario_summary)
@@ -270,6 +279,6 @@ def run_scripted_campaign(
         existing_run_records=existing_runs,
     )
     if output_path is not None:
-        _write_report(output_path, report)
-    return cast(dict[str, Any], sanitize_evidence(report))
+        report = _write_report(output_path, report, require_final_epoch=False)
+    return cast(dict[str, Any], sanitize_campaign_report(report))
 __all__ = ["CampaignExecutionError", "run_real_model_campaign", "run_scripted_campaign"]

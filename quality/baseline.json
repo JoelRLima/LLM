@@ -43,7 +43,6 @@
       "agent/llm/context_projection.py": 305,
       "agent/orchestration/task_runner.py": 357,
       "agent/orchestrator.py": 305,
-      "agent/evaluation/scripted_gateway_logic.py": 511,
       "agent/evaluation/h_series_scenarios.py": 688,
       "agent/planning/capability_manifest.py": 301,
       "agent/continuity/checkpoint_projection.py": 317,

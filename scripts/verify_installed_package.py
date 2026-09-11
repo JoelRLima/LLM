@@ -27,8 +27,18 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from agent.evaluation.artifact_paths import canonical_artifact_paths  # noqa: E402
+from agent.evaluation.evaluation_identity import (  # noqa: E402
+    candidate_identity,
+    candidate_identity_string,
+)
+from agent.runtime.filesystem_primitives import write_bytes_atomic  # noqa: E402
+
 DECLARED_RUNTIME_IMPORTS = ("ddgs", "requests", "rich")
-INSTALLED_ACCEPTANCE_SCHEMA_VERSION = 1
+INSTALLED_ACCEPTANCE_SCHEMA_VERSION = 2
 INSTALLED_ACCEPTANCE_PROPERTIES = (
     {"id": "installed-import-entrypoint", "proof": "wheel import origin and CLI entry point"},
     {"id": "read-search", "proof": "installed read/search journey with bounded measurement"},
@@ -51,8 +61,23 @@ def installed_acceptance_summary(
     status: str,
     mode: str,
     detail: str | None = None,
+    project_root: Path = ROOT,
+    wheel_sha256: str | None = None,
+    candidate: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return a bounded projection of the existing installed-gate contract."""
+    """Return a bounded, candidate-bound projection of installed acceptance."""
+
+    selected_candidate: Mapping[str, Any]
+    if candidate is not None:
+        selected_candidate = candidate
+    else:
+        try:
+            selected_candidate = candidate_identity(project_root)
+        except (OSError, RuntimeError, ValueError):
+            selected_candidate = {}
+    selected_identity = (
+        candidate_identity_string(selected_candidate) if selected_candidate else None
+    )
 
     result: dict[str, Any] = {
         "schema_version": INSTALLED_ACCEPTANCE_SCHEMA_VERSION,
@@ -60,6 +85,10 @@ def installed_acceptance_summary(
         "status": status,
         "acceptance": status == "passed",
         "mode": mode,
+        "candidate": dict(selected_candidate),
+        "candidate_identity": selected_identity,
+        "semantic_manifest_hash": selected_candidate.get("semantic_manifest_hash"),
+        "wheel_sha256": wheel_sha256,
         "properties": [dict(item) for item in INSTALLED_ACCEPTANCE_PROPERTIES],
         "ci_matrix": [
             {"os": "ubuntu-latest", "python": "3.10"},
@@ -76,10 +105,8 @@ def installed_acceptance_summary(
 
 def write_installed_acceptance_summary(path: Path, summary: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    payload = json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    write_bytes_atomic(path, payload.encode("utf-8"))
 
 INSTALLED_PROBE_SOURCE = """\
 from __future__ import annotations
@@ -363,13 +390,13 @@ class DeterministicJourneyGateway:
                 )
                 return f"O histórico real do repositório confirma: {history_line}"
             if self.scenario_id == "b1_modify_validate" and "validado" in prompt.casefold():
-                return "A modificaÃ§Ã£o foi aplicada e validada com sucesso pelo validator real."
+                return "A modificação foi aplicada e validada com sucesso pelo validator real."
             if self.scenario_id == "b2_validation_failure":
-                return "A modificaÃ§Ã£o nÃ£o foi validada: o validator real falhou e o arquivo foi revertido."
+                return "A modificação não foi validada: o validator real falhou e o arquivo foi revertido."
             if self.scenario_id == "b4_denied_modify":
-                return "A modificaÃ§Ã£o fora da autoridade foi recusada sem alterar o workspace."
+                return "A modificação fora da autoridade foi recusada sem alterar o workspace."
             if self.scenario_id == "b5_preview_blocked":
-                return "A proposta foi bloqueada antes da aplicaÃ§Ã£o; o arquivo permaneceu inalterado."
+                return "A proposta foi bloqueada antes da aplicação; o arquivo permaneceu inalterado."
             if "D1_EXTERNAL_EVIDENCE" in prompt:
                 return "A extensao externa confirmou D1_EXTERNAL_EVIDENCE pelo protocolo stdio real."
             if "RUNTIME_MISMATCH" in prompt or "TASK_AUTHORITY" in prompt or "autoridade" in prompt.casefold():
@@ -377,8 +404,8 @@ class DeterministicJourneyGateway:
             if "D4_EXTERNAL_FAILURE" in prompt or "TOOL_ERROR" in prompt:
                 return "A extensao externa falhou; a resposta nao foi considerada sucesso."
             if "acesso negado" in prompt.casefold() or "fora" in prompt.casefold():
-                return "NÃ£o foi possÃ­vel ler o caminho externo: acesso negado."
-            return "A tarefa foi concluÃ­da com a evidÃªncia retornada pela ferramenta."
+                return "Não foi possível ler o caminho externo: acesso negado."
+        return "A tarefa foi concluída com a evidência retornada pela ferramenta."
         return '{"persona": "coder"}'
 
     def complete(self, request):
@@ -715,7 +742,7 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
     paths = AppPaths.discover(app_home, env={})
     ConfigRepository(paths).initialize()
     scenarios = (
-        ("a1_read", "leia o arquivo permitido e informe a evidÃªncia.", True),
+        ("a1_read", "leia o arquivo permitido e informe a evidência.", True),
         ("a2_search", "busque SLICE_A2_EVIDENCE no workspace e informe o resultado.", True),
         ("a3_denied", "leia o caminho fora do workspace e informe o resultado.", True),
         ("a5_provider_failure", "leia notes.txt.", True),
@@ -753,14 +780,14 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
                 assert_canonical_model_measurement(result, gateway, application)
             if name == "a4_no_tool":
                 if measurement["model_calls"] != 0:
-                    raise AssertionError(f"cenÃ¡rio no-model invocou provider: {measurement!r}")
+                    raise AssertionError(f"cenário no-model invocou provider: {measurement!r}")
                 report = json.loads(Path(result.report_path).read_text(encoding="utf-8"))
                 if report.get("metrics", {}).get("model_calls") != 0:
                     raise AssertionError("report no-model nao preservou model_calls=0")
             if uses_model and name == "a4_no_tool":
-                raise AssertionError("cenÃ¡rio no-tool nÃ£o deveria usar modelo")
+                raise AssertionError("cenário no-tool não deveria usar modelo")
             if name == "a4_no_tool" and measurement["tools"]:
-                raise AssertionError("cenÃ¡rio no-tool invocou ferramenta")
+                raise AssertionError("cenário no-tool invocou ferramenta")
             if name == "a6_direct":
                 if result.answer != "abacaxi azul" or measurement["tools"]:
                     raise AssertionError(f"direct response instalada divergente: {measurement!r}")
@@ -770,7 +797,7 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
                 if event_types & {"tool_start", "tool_end"}:
                     raise AssertionError(f"direct response publicou evento de tool: {event_types!r}")
             if name == "a3_denied" and measurement["terminal_outcome"] != "DENIED":
-                raise AssertionError(f"denial instalada nÃ£o observÃ¡vel: {measurement!r}")
+                raise AssertionError(f"denial instalada não observável: {measurement!r}")
             if name == "a3_denied":
                 assert_public_receipt(result)
                 if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != []:
@@ -778,7 +805,7 @@ def run_slice_a_journeys(app_home, workspace, scratch_dir, outside):
             if name in {"a1_read", "a2_search"} and not any(
                 marker in result.answer for marker in ("SLICE_A1_EVIDENCE", "SLICE_A2_EVIDENCE")
             ):
-                raise AssertionError(f"resposta nÃ£o consumiu evidÃªncia: {result.answer!r}")
+                raise AssertionError(f"resposta não consumiu evidência: {result.answer!r}")
             measurements.append(measurement)
     return measurements
 
@@ -837,11 +864,11 @@ def run_shell_journeys(app_home, workspace, failure_workspace):
 
 def run_modify_journeys(app_home, workspace):
     scenarios = (
-        ("b1_modify_validate", "altere sample.py e valide a modificaÃ§Ã£o.", "success"),
+        ("b1_modify_validate", "altere sample.py e valide a modificação.", "success"),
         ("b2_validation_failure", "modifique sample.py e valide.", "failure"),
         ("b3_writer_bypass", "use file_writer diretamente para alterar sample.py.", "bypass"),
         ("b4_denied_modify", "modifique sample.py.", "denied"),
-        ("b5_preview_blocked", "proponha uma modificaÃ§Ã£o em sample.py sem aplicar.", "preview"),
+        ("b5_preview_blocked", "proponha uma modificação em sample.py sem aplicar.", "preview"),
     )
     measurements = []
     for name, objective, expected in scenarios:
@@ -882,9 +909,9 @@ def run_modify_journeys(app_home, workspace):
             invocations = measurement.get("invocations", [])
             if expected == "success":
                 if result.status != "succeeded" or measurement["before"] == measurement["after"]:
-                    raise AssertionError(f"B1 nÃ£o modificou com sucesso: {measurement!r}")
+                    raise AssertionError(f"B1 não modificou com sucesso: {measurement!r}")
                 if len(invocations) != 2 or invocations[1].get("outcome") != "PASSED":
-                    raise AssertionError(f"B1 nÃ£o observou validaÃ§Ã£o real: {measurement!r}")
+                    raise AssertionError(f"B1 não observou validação real: {measurement!r}")
                 if invocations[0]["invocation_id"] == invocations[1]["invocation_id"]:
                     raise AssertionError(f"B1 reutilizou invocation_id: {measurement!r}")
                 if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != ["sample.py"]:
@@ -899,7 +926,7 @@ def run_modify_journeys(app_home, workspace):
                 if result.status == "succeeded" or "validada" in result.answer.casefold():
                     raise AssertionError(f"B2 publicou sucesso validado após failure: {measurement!r}")
                 if measurement["before"] != measurement["after"] or len(invocations) != 2 or invocations[1].get("outcome") != "FAILED":
-                    raise AssertionError(f"B2 nÃ£o preservou failure/rollback: {measurement!r}")
+                    raise AssertionError(f"B2 não preservou failure/rollback: {measurement!r}")
                 if result.receipt.get("executed") is not True or result.receipt.get("files_affected") != ["sample.py"]:
                     raise AssertionError(f"B2 receipt nao refletiu execucao: {result.to_dict()!r}")
                 if result.receipt.get("validation") != {"ran": True, "outcome": "failed"}:
@@ -1168,7 +1195,7 @@ slice_measurements = run_slice_a_journeys(
     outside,
 )
 if len(slice_measurements) != 6:
-    raise SystemExit(f"installed Slice A produziu mediÃ§Ã£o incompleta: {slice_measurements!r}")
+    raise SystemExit(f"installed Slice A produziu medição incompleta: {slice_measurements!r}")
 if any(item.get("invocation_id") is None for item in slice_measurements[:3]):
     raise SystemExit(f"installed Slice A perdeu invocation_id: {slice_measurements!r}")
 if slice_measurements[4].get("tools") or slice_measurements[5].get("tools"):
@@ -1181,7 +1208,7 @@ shell_measurements = run_shell_journeys(
     failure_workspace,
 )
 if len(shell_measurements) != 3:
-    raise SystemExit(f"installed Slice C produziu mediÃ§Ã£o incompleta: {shell_measurements!r}")
+    raise SystemExit(f"installed Slice C produziu medição incompleta: {shell_measurements!r}")
 if not shell_measurements[0].get("invocation_id") or shell_measurements[0].get("terminal_outcome") != "SUCCESS":
     raise SystemExit(f"installed Slice C C1 falhou: {shell_measurements!r}")
 if shell_measurements[1].get("terminal_outcome") == "SUCCESS":
@@ -1193,7 +1220,7 @@ modify_measurements = run_modify_journeys(
     workspace,
 )
 if len(modify_measurements) != 5:
-    raise SystemExit(f"installed Slice B produziu mediÃ§Ã£o incompleta: {modify_measurements!r}")
+    raise SystemExit(f"installed Slice B produziu medição incompleta: {modify_measurements!r}")
 if modify_measurements[0].get("terminal_outcome") != "SUCCESS":
     raise SystemExit(f"installed Slice B B1 falhou: {modify_measurements!r}")
 if modify_measurements[1].get("terminal_outcome") == "SUCCESS":
@@ -1475,7 +1502,7 @@ extension_measurements = run_extension_journeys(workspace.parent / "slice-d")
 denial_audit = run_denial_audit_journey(workspace.parent / "slice-c9-denial")
 credential_audit = run_credential_audit_journey(workspace.parent / "slice-c9-credential")
 if len(extension_measurements) != 3:
-    raise SystemExit(f"installed Slice D produziu mediÃƒÂ§ÃƒÂ£o incompleta: {extension_measurements!r}")
+    raise SystemExit(f"installed Slice D produziu medição incompleta: {extension_measurements!r}")
 lock_recovery = run_lock_recovery_journey(workspace.parent / "lock-recovery")
 interaction_workspace = workspace.parent / "interaction-workspace"
 interaction_workspace.mkdir(parents=True, exist_ok=True)
@@ -2235,7 +2262,7 @@ def _verify_installed_probe(
         "recovered": True,
         "released": True,
     }:
-        raise VerificationError("Probe instalado nÃ£o confirmou recuperaÃ§Ã£o de lock stale.")
+        raise VerificationError("Probe instalado não confirmou recuperação de lock stale.")
 
 
 def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
@@ -2253,9 +2280,9 @@ def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
     if [item.get("task_id") for item in slice_a] != expected_ids:
         raise VerificationError("Probe instalado nao executou os seis cenarios Slice A.")
     if [item.get("terminal_outcome") for item in slice_a[:2]] != ["SUCCESS", "SUCCESS"]:
-        raise VerificationError("Slice A read/search instalada nÃ£o produziu sucesso.")
+        raise VerificationError("Slice A read/search instalada não produziu sucesso.")
     if slice_a[2].get("terminal_outcome") != "DENIED":
-        raise VerificationError("Slice A nÃ£o observou denial de path externo.")
+        raise VerificationError("Slice A não observou denial de path externo.")
     if slice_a[3].get("terminal_outcome") != "FAILED" or slice_a[3].get("error") != "Model provider request failed.":
         raise VerificationError("Slice A provider failure instalada nao preservou mensagem estavel.")
     if slice_a[4].get("answer") != "abacaxi azul" or bool(slice_a[4].get("tools")):
@@ -2265,7 +2292,7 @@ def _validate_slice_a_payload(payload: Mapping[str, Any]) -> None:
     if not all(item.get("invocation_id") for item in slice_a[:3]):
         raise VerificationError("Slice A perdeu invocation_id em ferramenta executada.")
     if not all("duration_ms" in item and "output_chars" in item for item in slice_a):
-        raise VerificationError("Slice A nÃ£o produziu measurement mÃ­nimo.")
+        raise VerificationError("Slice A não produziu measurement mínimo.")
 
 
 def _validate_slice_c_payload(payload: Mapping[str, Any]) -> None:
@@ -2276,19 +2303,19 @@ def _validate_slice_c_payload(payload: Mapping[str, Any]) -> None:
         "installed-slice-c:c3_failure",
     ]
     if not isinstance(shell, list) or len(shell) != 3:
-        raise VerificationError("Probe instalado nÃ£o executou os cenÃ¡rios Slice C.")
+        raise VerificationError("Probe instalado não executou os cenários Slice C.")
     if [item.get("task_id") for item in shell] != expected_ids:
-        raise VerificationError("Probe instalado nÃ£o preservou a identidade dos cenÃ¡rios Slice C.")
+        raise VerificationError("Probe instalado não preservou a identidade dos cenários Slice C.")
     if shell[0].get("terminal_outcome") != "SUCCESS" or "initial" not in str(shell[0].get("answer", "")):
-        raise VerificationError("Slice C C1 nÃ£o consumiu o histórico real.")
+        raise VerificationError("Slice C C1 não consumiu o histórico real.")
     if shell[1].get("terminal_outcome") == "SUCCESS":
         raise VerificationError("Slice C C2 executou capability removida.")
     if shell[2].get("terminal_outcome") == "SUCCESS":
-        raise VerificationError("Slice C C3 nÃ£o preservou failure.")
+        raise VerificationError("Slice C C3 não preservou failure.")
     if not shell[0].get("invocation_id") or not shell[2].get("invocation_id"):
         raise VerificationError(f"Slice C perdeu invocation_id: {shell!r}")
     if not all("duration_ms" in item and "output_chars" in item for item in shell):
-        raise VerificationError("Slice C nÃ£o reutilizou measurement mÃ­nimo.")
+        raise VerificationError("Slice C não reutilizou measurement mínimo.")
 
 
 def _validate_slice_b_payload(payload: Mapping[str, Any]) -> None:
@@ -2303,11 +2330,11 @@ def _validate_slice_b_payload(payload: Mapping[str, Any]) -> None:
     if not isinstance(modify, list) or len(modify) != 5:
         raise VerificationError("Probe instalado nao executou os cinco cenarios Slice B.")
     if [item.get("task_id") for item in modify] != expected_ids:
-        raise VerificationError("Probe instalado nÃ£o preservou a identidade dos cenÃ¡rios Slice B.")
+        raise VerificationError("Probe instalado não preservou a identidade dos cenários Slice B.")
     if modify[0].get("terminal_outcome") != "SUCCESS" or modify[0].get("before") == modify[0].get("after"):
-        raise VerificationError("Slice B B1 nÃ£o produziu modificaÃ§Ã£o validada.")
+        raise VerificationError("Slice B B1 não produziu modificação validada.")
     if modify[1].get("terminal_outcome") == "SUCCESS" or "validada" in str(modify[1].get("answer", "")).casefold():
-        raise VerificationError("Slice B B2 publicou sucesso validado apÃ³s failure.")
+        raise VerificationError("Slice B B2 publicou sucesso validado após failure.")
     if modify[2].get("terminal_outcome") == "SUCCESS" or modify[2].get("before") != modify[2].get("after"):
         raise VerificationError("Slice B B3 manteve writer direto model-actionable.")
     if modify[3].get("terminal_outcome") == "SUCCESS":
@@ -2317,15 +2344,15 @@ def _validate_slice_b_payload(payload: Mapping[str, Any]) -> None:
     _validate_slice_b_invocations(modify[0])
     _validate_slice_b_invocations(modify[1])
     if not all("duration_ms" in item and "output_chars" in item for item in modify):
-        raise VerificationError("Slice B nÃ£o reutilizou measurement mÃ­nimo.")
+        raise VerificationError("Slice B não reutilizou measurement mínimo.")
 
 
 def _validate_slice_b_invocations(item: Mapping[str, Any]) -> None:
     invocations = item.get("invocations")
     if not isinstance(invocations, list) or len(invocations) != 2:
-        raise VerificationError(f"Slice B nÃ£o projetou modification+validation: {item!r}")
+        raise VerificationError(f"Slice B não projetou modification+validation: {item!r}")
     if invocations[0].get("invocation_id") == invocations[1].get("invocation_id"):
-        raise VerificationError("Slice B reutilizou invocation_id entre modificaÃ§Ã£o e validaÃ§Ã£o.")
+        raise VerificationError("Slice B reutilizou invocation_id entre modificação e validação.")
 
 
 def _validate_slice_d_payload(payload: Mapping[str, Any]) -> None:
@@ -2480,7 +2507,7 @@ def _verify_extension_aware_bootstrap(
     )
     payload = parse_json_output(result)
     if payload.get("tool") != "wheel_tool":
-        raise VerificationError("Wheel nÃ£o publicou o descriptor da extension.")
+        raise VerificationError("Wheel não publicou o descriptor da extension.")
     if payload.get("cwd_ok") is not True:
         raise VerificationError("Adapter instalado recebeu cwd incorreto.")
     if payload.get("builtins") is not True:
@@ -2886,6 +2913,21 @@ def _verify_greeting(payload: Mapping[str, Any]) -> None:
         raise VerificationError("run headless não retornou a evidência instalada esperada.")
 
 
+def _assert_candidate_identity_unchanged(
+    project_root: Path,
+    captured_candidate: Mapping[str, Any],
+) -> None:
+    try:
+        final_candidate = candidate_identity(project_root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise VerificationError("candidate identity could not be revalidated after installed acceptance") from exc
+    if (
+        dict(final_candidate) != dict(captured_candidate)
+        or candidate_identity_string(final_candidate) != candidate_identity_string(captured_candidate)
+    ):
+        raise VerificationError("candidate identity changed during installed acceptance")
+
+
 def verify_installed_package(
     project_root: Path = ROOT,
     python: Path = Path(sys.executable),
@@ -2895,7 +2937,13 @@ def verify_installed_package(
     summary_path: Path | None = None,
 ) -> dict[str, Any]:
     project_root = project_root.resolve()
+    try:
+        captured_candidate = candidate_identity(project_root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise VerificationError("candidate identity could not be captured before installed acceptance") from exc
     mode = installation_mode(offline_diagnostic)
+    destination = summary_path or canonical_artifact_paths(project_root).installed_acceptance
+    wheel_sha256: str | None = None
     with tempfile.TemporaryDirectory(prefix="llm-agent-installed-") as raw_temp:
         temp = Path(raw_temp)
         wheel_dir = temp / "wheel"
@@ -2933,6 +2981,7 @@ def verify_installed_package(
             python.resolve(),
             no_build_isolation=no_build_isolation,
         )
+        wheel_sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
         cwd_before = snapshot_tree(external_cwd)
         workspace_before = snapshot_tree(workspace)
         venv_python, entrypoint = _install_wheel(
@@ -3072,12 +3121,15 @@ def verify_installed_package(
             raise VerificationError("O artefato instalado modificou o workspace no probe.")
         if snapshot_tree(site_packages) != site_before:
             raise VerificationError("A CLI escreveu no site-packages após a instalação.")
+    _assert_candidate_identity_unchanged(project_root, captured_candidate)
     summary = installed_acceptance_summary(
         status="passed",
         mode=mode.name,
+        project_root=project_root,
+        wheel_sha256=wheel_sha256,
+        candidate=captured_candidate,
     )
-    if summary_path is not None:
-        write_installed_acceptance_summary(summary_path, summary)
+    write_installed_acceptance_summary(destination, summary)
     return summary
 
 
@@ -3104,24 +3156,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="escreve uma projeção JSON limitada do gate instalado",
     )
     arguments = parser.parse_args(argv)
+    destination = arguments.summary_json or canonical_artifact_paths(arguments.project_root).installed_acceptance
     try:
         verify_installed_package(
             arguments.project_root,
             arguments.python,
             no_build_isolation=arguments.no_build_isolation,
             offline_diagnostic=arguments.offline_diagnostic,
-            summary_path=arguments.summary_json,
+            summary_path=destination,
         )
     except VerificationError as exc:
-        if arguments.summary_json is not None:
-            write_installed_acceptance_summary(
-                arguments.summary_json,
-                installed_acceptance_summary(
-                    status="failed",
-                    mode=installation_mode(arguments.offline_diagnostic).name,
-                    detail=str(exc),
-                ),
+        write_installed_acceptance_summary(
+            destination,
+            installed_acceptance_summary(
+                status="failed",
+                mode=installation_mode(arguments.offline_diagnostic).name,
+                detail=str(exc),
+                project_root=arguments.project_root,
             )
+        )
         print(f"Installed package verification failed: {exc}", file=sys.stderr)
         _emit_failure_annotation(str(exc))
         return 1

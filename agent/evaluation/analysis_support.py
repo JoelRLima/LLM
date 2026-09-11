@@ -6,7 +6,8 @@ import json
 import re
 from typing import Any, Mapping
 
-from agent.evaluation.scenario_contracts import H_SERIES, sanitize_evidence
+from agent.evaluation.evidence import EvidenceContractError, sanitize_evidence
+from agent.evaluation.scenario_contracts import H_SERIES
 
 
 class CampaignAnalysisError(ValueError):
@@ -50,16 +51,30 @@ def _scenario_definitions() -> dict[str, Any]:
 
 
 def secret_safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a bounded scan result over the same serializer used for export."""
+    """Scan the complete campaign and return only bounded scan metadata."""
 
-    rendered = json.dumps(sanitize_evidence(report), ensure_ascii=False, sort_keys=True)
+    from agent.evaluation.campaign_serialization import sanitize_campaign_report
+
+    rendered = json.dumps(report, ensure_ascii=False, sort_keys=True, default=str)
+    try:
+        bounded_report = sanitize_campaign_report(report)
+    except EvidenceContractError:
+        bounded_report = sanitize_evidence(report)
+    safe_rendered = json.dumps(bounded_report, ensure_ascii=False, sort_keys=True)
     forbidden = (
-        r"authorization\s*:\s*bearer\s+(?!\[REDACTED\])",
+        r"authorization[\"']?\s*:\s*[\"']?bearer\s+(?!\[REDACTED\])",
         r"bearer\s+(?!\[REDACTED\])\S+",
-        r"(?:api_key|password|token)\s*=\s*(?!\[REDACTED\])\S+",
+        r"(?:api_key|password|token)\s*[=:]\s*[\"']?(?!\[REDACTED\])\S+",
     )
     hits = [pattern for pattern in forbidden if re.search(pattern, rendered, flags=re.IGNORECASE)]
-    return {"pass": not hits, "hits": hits, "bounded_chars": len(rendered)}
+    runs = report.get("runs")
+    run_count = len(runs) if isinstance(runs, list) else 0
+    return {
+        "pass": not hits,
+        "hits": hits,
+        "scanned_run_count": run_count,
+        "bounded_chars": min(len(safe_rendered), 4_000),
+    }
 
 
 from agent.evaluation.analysis_identity import (  # noqa: E402
