@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +33,22 @@ def _owner(directive: TaskRunDirective | None) -> tuple[SimpleNamespace, list[tu
         _task_directive_capability_ceiling=None,
     )
     return owner, events
+
+
+def test_prepare_keeps_human_start_message_off_stdout_and_logs_it(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directive = TaskRunDirective(TaskDirective.READ, DeliberationProfile.SMART, "read source")
+    owner, _events = _owner(None)
+    monkeypatch.setattr(task_runner_module, "initialize_task_progression", lambda *_args, **_kwargs: None)
+    caplog.set_level(logging.INFO, logger=task_runner_module.logger.name)
+
+    TaskRunner(owner)._prepare(TaskInputs("read source", False, 0, task_run_directive=directive))
+
+    assert capsys.readouterr().out == ""
+    assert "Iniciando objetivo do agente: read source" in caplog.messages
 
 
 def test_fresh_read_smart_emits_one_bounded_selection_event(

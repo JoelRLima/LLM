@@ -262,7 +262,6 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
             policy.start_active_segment()
         self.orchestrator._run_metric_recorded = False
         self.orchestrator._metrics_start_line = self.orchestrator._count_metrics_lines()
-        print(chr(10) + 'Analisando: "' + inputs.objective + '"')
         logger.info("Iniciando objetivo do agente: %s", inputs.objective)
 
     def _emit_task_directive_selected(self, inputs: TaskInputs) -> None:
