@@ -250,9 +250,7 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     assert cli.main(["chat", "--home", str(app_home)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
-    rendered = "\n".join(output.output)
-    assert rendered.count("Workspace ativo") == 1
-    assert str(canonical_root.resolve()) in rendered
+    assert "Workspace ativo" not in "\n".join(output.output)
 
 
 def test_chat_continues_when_optional_workspace_persistence_fails(
@@ -344,7 +342,7 @@ def test_chat_explicit_workspace_bypasses_chooser(
     assert cli.main(["chat", "--workspace", str(selected)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
-    assert "\n".join(output.output).count(str(selected)) == 1
+    assert output.output == []
 
 
 def test_chat_non_tty_requires_explicit_workspace_before_application(

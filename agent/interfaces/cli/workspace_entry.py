@@ -103,10 +103,9 @@ def render_active_workspace(
 ) -> None:
     """Render the canonical workspace owned by the active application."""
 
-    console.print("[bold cyan]Workspace ativo:[/bold cyan]")
-    console.print(str(workspace.root), markup=False)
+    console.print(f"Workspace: {workspace.root}", markup=False)
     if show_mode_hint:
-        console.print("[dim][READ ONLY] — use /modo para consultar ou alterar o modo[/dim]")
+        console.print("[dim]READ ONLY · use /modo para consultar ou alterar o modo[/dim]")
 
 
 def native_picker_available() -> bool:

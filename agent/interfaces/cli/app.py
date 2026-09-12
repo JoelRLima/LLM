@@ -10,7 +10,7 @@ from typing import Any, Sequence, cast
 
 from rich.console import Console
 
-from agent.interfaces.cli import first_run, workspace_entry
+from agent.interfaces.cli import first_run, turn_rendering, workspace_entry
 from agent.interfaces.cli.parser import build_parser
 from agent.interfaces.task_directives import (
     ParsedTaskRequest,
@@ -31,12 +31,10 @@ def obter_status_think(session: Any) -> str:
 
 
 def _prompt(ctx: Any) -> str | None:
-    thinking = obter_status_think(ctx.session)
-    diagnostic = ("", " [yellow][DIAG NORMAL][/yellow]", " [yellow][DIAG VERBOSE][/yellow]")[ctx.modo_diagnostico]
-    agent = " [green][AGENTE][/green]" if ctx.modo_agente else ""
     mode = getattr(ctx.orchestrator, "operational_mode_label", "FULL")
+    diagnostic = turn_rendering.diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
     try:
-        return str(console.input(f"\n[cyan][Pensar: {thinking}][/cyan] [{mode}]{diagnostic}{agent} > "))
+        return str(console.input(f"\n[cyan]Você [{mode}]{diagnostic} > [/cyan]"))
     except (EOFError, KeyboardInterrupt):
         console.print("\n[bold yellow]Encerrando...[/bold yellow]")
         return None
@@ -69,10 +67,13 @@ def _context_from_application(application: Any, *, config_path: str | Path | Non
 
 
 def _chat_loop(ctx: Any) -> None:
-    from agent.interfaces.cli.commands import exibir_menu
-
-    console.rule("[bold cyan]=== CHAT INICIADO ===[/bold cyan]")
-    exibir_menu()
+    # Startup belongs to the interactive adapter.
+    # Workspace activation remains owned by _run_chat.
+    # /help remains explicit through command dispatch.
+    # Prompt mode is projected from canonical context.
+    # Ordinary text continues through run_agent_turn.
+    # EOF and interrupts remain handled by _prompt.
+    turn_rendering.render_startup_status(console, ctx)
     while True:
         text = _prompt(ctx)
         if text is None:
@@ -137,7 +138,6 @@ def _run_chat(args: argparse.Namespace) -> int:
         )
         if interactive:
             workspace_entry.remember_workspace(application.paths, context.workspace.root)
-            workspace_entry.render_active_workspace(console, context.workspace, show_mode_hint=True)
         _chat_loop(context)
     finally:
         application.close()

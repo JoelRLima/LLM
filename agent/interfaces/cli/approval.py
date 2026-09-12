@@ -10,7 +10,8 @@ from agent.interfaces.cli.ui import console
 class ConsoleApproval:
     def request(self, request: ApprovalRequest) -> ApprovalDecision:
         answer = console.input(
-            f"[bold cyan]{request.prompt} [s/sim/y/yes = sim; Enter/n/nao/não/no = não]:[/bold cyan] "
+            f"[bold cyan]{request.prompt}[/bold cyan]\n"
+            "[dim]s/sim/y/yes = aprovar · Enter/n/nao/não/no = negar:[/dim] "
         )
         return parse_console_approval(answer)
 

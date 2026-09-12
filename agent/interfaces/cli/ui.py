@@ -64,29 +64,50 @@ def exibir_menu() -> None:
     table = Table(title="Comandos Disponíveis", show_header=True, header_style="bold magenta")
     table.add_column("Comando", style="cyan", width=20)
     table.add_column("Descrição")
-    rows = (
-        ("/system, /sistema", "Altera as regras em tempo real"),
-        ("/prompt", "Mostra o System Prompt ativo"),
-        ("/think, /pensar", "Liga/desliga o pensamento"),
-        ("/clear, /limpar", "Limpa o histórico de conversas"),
-        ("/save, /salvar", "Salva o histórico em um arquivo"),
-        ("/load, /carregar", "Carrega o histórico de um arquivo"),
-        ("/agent, /agente", "Ativa/desativa ou executa o modo agente"),
-        ("/debug", "Alterna modo diagnóstico"),
-        ("/memory, /memoria", "Mostra a memória do agente"),
-        ("/events", "Mostra os eventos da última execução"),
-        ("/doctor, /diagnostico", "Executa o diagnóstico de saúde"),
-        ("/workspace, /diretorio", "Mostra o workspace ativo"),
-        ("/modo, /mode, /authority", "Consulta ou altera o modo operacional"),
-        ("/code help", "Mostra os workflows explícitos de código"),
-        ("/retry, /retomar", "Retoma a tarefa interrompida"),
-        ("/ls, /list", "Lista os arquivos do projeto"),
-        ("/read <arquivo>", "Lê um arquivo"),
-        ("/find <texto>", "Busca texto nos arquivos"),
-        ("/search <consulta>", "Pesquisa na web"),
-        ("/help, /ajuda", "Mostra esta ajuda"),
-        ("exit, sair", "Encerra o programa"),
+    sections = (
+        (
+            "Conversa",
+            (
+                ("/system, /sistema", "Altera as regras em tempo real"),
+                ("/prompt", "Mostra o System Prompt ativo"),
+                ("/think, /pensar", "Liga/desliga o pensamento"),
+                ("/clear, /limpar", "Limpa o histórico de conversas"),
+                ("/save, /salvar", "Salva o histórico em um arquivo"),
+                ("/load, /carregar", "Carrega o histórico de um arquivo"),
+            ),
+        ),
+        (
+            "Agente/autoridade",
+            (
+                ("/agent, /agente", "Ativa/desativa ou executa o modo agente"),
+                ("/modo, /mode, /authority", "Consulta ou altera o modo operacional"),
+                ("/retry, /retomar", "Retoma a tarefa interrompida"),
+                ("/code help", "Mostra os workflows explícitos de código"),
+            ),
+        ),
+        (
+            "Workspace/arquivos",
+            (
+                ("/workspace, /diretorio", "Mostra o workspace ativo"),
+                ("/ls, /list", "Lista os arquivos do projeto"),
+                ("/read <arquivo>", "Lê um arquivo"),
+                ("/find <texto>", "Busca texto nos arquivos"),
+                ("/search <consulta>", "Pesquisa na web"),
+            ),
+        ),
+        (
+            "Diagnóstico/memória",
+            (
+                ("/debug", "Alterna modo diagnóstico"),
+                ("/memory, /memoria", "Mostra a memória do agente"),
+                ("/events", "Mostra os eventos da última execução"),
+                ("/doctor, /diagnostico", "Executa o diagnóstico de saúde"),
+            ),
+        ),
+        ("Ajuda/saída", (("/help, /ajuda", "Mostra esta ajuda"), ("exit, sair", "Encerra o programa"))),
     )
-    for command, description in rows:
-        table.add_row(command, description)
+    for section, rows in sections:
+        table.add_row(f"[bold white]{section}[/bold white]", "")
+        for command, description in rows:
+            table.add_row(command, description)
     console.print(table)

@@ -4,10 +4,24 @@ from typing import Any, Mapping
 
 from rich.console import Console
 
+from agent.interfaces.cli import turn_rendering
 from agent.interfaces.cli.streaming import StreamingDisplay
 from agent.llm.errors import ModelConnectionError, ModelTimeoutError
 from agent.llm.session import ChatSession
 from agent.runtime.logging import logger
+
+
+def _write_literal(console: Console, content: str) -> None:
+    """Write model text directly to the Console-bound stream.
+
+    Rich rendering is intentionally bypassed here: answer content is payload,
+    not CLI markup, and must not be wrapped, normalized, or interpreted.
+    """
+
+    if not content:
+        return
+    console.file.write(content)
+    console.file.flush()
 
 
 def show_request_preview(console: Console, session: ChatSession) -> None:
@@ -77,14 +91,16 @@ def run_chat_turn(console: Console, session: ChatSession, text: str, diagnostic_
 
 
 def run_agent_turn(console: Console, ctx: Any, text: str) -> Any:
-    streamed = False
+    streamed_content = False
 
     def on_chunk(chunk: str) -> None:
-        nonlocal streamed
-        streamed = True
-        print(chunk, end="", flush=True)
+        nonlocal streamed_content
+        if isinstance(chunk, str) and chunk:
+            streamed_content = True
+            _write_literal(console, chunk)
 
-    console.print("[bold blue]Agente:[/bold blue]")
+    turn_rendering.render_turn_waiting(console)
+    turn_rendering.render_agent_label(console)
     interact = getattr(ctx.application, "interact", None)
     if callable(interact):
         result = interact(text, boundary="natural", stream_callback=on_chunk)
@@ -92,10 +108,19 @@ def run_agent_turn(console: Console, ctx: Any, text: str) -> Any:
         from agent.interfaces.cli.legacy_compat import dispatch_natural_facade
 
         result = dispatch_natural_facade(ctx, text)
-    answer = result.answer
-    print()
-    if answer and not streamed:
-        console.print(answer)
+    answer_value = getattr(result, "answer", "")
+    answer = answer_value if isinstance(answer_value, str) else ("" if answer_value is None else str(answer_value))
+    error_value = getattr(result, "error", None)
+    error = error_value if isinstance(error_value, str) else ("" if error_value is None else str(error_value))
+    if streamed_content:
+        _write_literal(console, "\n")
+    elif answer:
+        _write_literal(console, answer)
+        _write_literal(console, "\n")
+    elif error:
+        _write_literal(console, error)
+        _write_literal(console, "\n")
+    turn_rendering.render_turn_result(console, result, int(getattr(ctx, "modo_diagnostico", 0)))
     if not callable(interact):
         from agent.interfaces.cli.legacy_compat import append_legacy_turn
 

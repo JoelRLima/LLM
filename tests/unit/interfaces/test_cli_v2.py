@@ -289,7 +289,7 @@ def test_existing_config_keeps_normal_chat_startup(
 
     assert cli.main(["chat", "--home", str(home)]) == 0
     assert entered == [True]
-    assert capsys.readouterr().out.count("[READ ONLY]") == 1
+    assert "[READ ONLY]" not in capsys.readouterr().out
 
 
 def test_first_run_init_failure_preserves_error_without_false_success(
