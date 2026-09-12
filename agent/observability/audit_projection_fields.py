@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Any
 
 from agent.runtime.mutation_evidence import project_mutation_evidence
-from agent.runtime.path_safety import workspace_relative_path
+from agent.runtime.path_safety import normalize_relative_path, workspace_relative_path
 
 MAX_AUDIT_TEXT = 256
 MAX_AUDIT_CAPABILITIES = 32
@@ -99,7 +99,7 @@ def _safe_relative_path(
     if workspace_root is None:
         if _is_absolute_path(raw):
             return _external_scope()
-        normalized = os.path.normpath(raw).replace("\\", "/")
+        normalized = normalize_relative_path(raw)
         if normalized in {"", "."}:
             return None
         return _external_scope() if normalized == ".." or normalized.startswith("../") else normalized[:MAX_AUDIT_TEXT]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from agent.runtime.filesystem_primitives import (
@@ -13,6 +14,12 @@ from agent.runtime.filesystem_primitives import (
 
 class WorkspacePathError(ValueError):
     """Raised when a path crosses the workspace boundary."""
+
+
+def normalize_relative_path(value: str | Path) -> str:
+    """Normalize a path representation lexically, without filesystem access."""
+
+    return os.path.normpath(str(value).replace("\\", "/")).replace("\\", "/")
 
 
 def assert_no_link_ancestors(path: str | Path) -> None:
@@ -146,6 +153,7 @@ __all__ = [
     "assert_owned_path",
     "assert_path_safe",
     "is_link_like",
+    "normalize_relative_path",
     "resolve_path",
     "resolve_workspace_path",
     "workspace_command_argument",
