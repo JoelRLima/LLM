@@ -18,10 +18,12 @@ from agent.llm.identity import (
     normalize_endpoint_identity,
     redact_identity,
 )
+from agent.llm.model_compatibility import ModelCompatibility
 from agent.llm.model_profile_binding import cached_gateway_model_profile, remember_gateway_model_profile
 from agent.llm.model_profile_compat import (
     PROFILE_OVERRIDE_KEYS,
     capabilities_from_raw,
+    compatibility_from_raw,
     effective_profile_values,
     freeze_provider_options,
     gateway_profile_values,
@@ -75,21 +77,14 @@ class ResolvedModelProfile(Mapping[str, Any]):
     endpoint_identity: str | None = None
     fingerprint: str = ""
     credential_ref: SecretReferenceV1 | None = None
+    compatibility: ModelCompatibility = field(default_factory=ModelCompatibility)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_options", freeze_provider_options(self.provider_options))
         if self.endpoint_identity is None:
-            object.__setattr__(
-                self,
-                "endpoint_identity",
-                normalize_endpoint_identity(self.api_url),
-            )
+            object.__setattr__(self, "endpoint_identity", normalize_endpoint_identity(self.api_url))
         if not self.fingerprint:
-            object.__setattr__(
-                self,
-                "fingerprint",
-                model_config_fingerprint(self.identity_payload()),
-            )
+            object.__setattr__(self, "fingerprint", model_config_fingerprint(self.identity_payload()))
 
     @property
     def profile_name(self) -> str:
@@ -108,14 +103,13 @@ class ResolvedModelProfile(Mapping[str, Any]):
             "profile": self.name,
             "provider": self.provider,
             "model": self.model,
-            "api_url": thaw_provider_options(
-                redact_identity({"api_url": self.api_url})["api_url"]
-            ),
+            "api_url": thaw_provider_options(redact_identity({"api_url": self.api_url})["api_url"]),
             "endpoint_identity": self.endpoint_identity,
             "temperature": self.temperature,
             "max_tokens": self.max_output_tokens,
             "timeout": self.timeout,
             "capabilities": self.capabilities.to_dict(),
+            "compatibility": self.compatibility.to_dict(),
             "provider_options": redact_identity(thaw_provider_options(self.provider_options)),
         }
         if self.credential_ref is not None:
@@ -136,6 +130,7 @@ class ResolvedModelProfile(Mapping[str, Any]):
             "max_output_tokens": self.max_output_tokens,
             "timeout": self.timeout,
             "capabilities": self.capabilities.to_dict(),
+            "compatibility": self.compatibility.to_dict(),
             "provider_options": thaw_provider_options(self.provider_options),
             "model_config_fingerprint": self.fingerprint,
             "fingerprint": self.fingerprint,
@@ -223,6 +218,7 @@ def resolve_model_profile(
         raw_capabilities,
         legacy_flat=not named_profile,
     )
+    compatibility = compatibility_from_raw(raw_profile.get("compatibility"))
     options = provider_options_from_raw(
         raw_profile.get("provider_options"),
         legacy_flat=not named_profile,
@@ -240,6 +236,7 @@ def resolve_model_profile(
         max_output_tokens=max_output_tokens,
         timeout=timeout,
         capabilities=capabilities,
+        compatibility=compatibility,
         provider_options=options,
         endpoint_identity=endpoint_identity,
         credential_ref=credential_ref,

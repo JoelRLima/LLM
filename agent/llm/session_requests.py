@@ -16,6 +16,10 @@ from agent.llm.model_profile import (
     ResolvedModelProfile,
     resolve_gateway_model_profile,
 )
+from agent.llm.request_geometry import (
+    resolve_effective_request_geometry,
+    resolve_ordinary_reasoning_budget,
+)
 
 
 def _mapping_value(value: Any) -> Mapping[str, Any]:
@@ -50,17 +54,18 @@ def resolve_effective_reasoning_budget(
     max_output_tokens: int,
     reasoning_supported: bool,
 ) -> int:
-    """Clamp a desired reasoning budget to the output geometry (W12 P20)."""
+    """Backward-compatible W12 export for the ordinary clamp.
 
-    if not reasoning_supported:
-        return 0
-    requested = max(0, requested_reasoning_budget)
-    output = max_output_tokens
-    if output <= 1 or requested == 0:
-        return 0
-    final_output_reserve = min(256, max(1, output // 4))
-    max_safe_reasoning = max(0, output - final_output_reserve)
-    return min(requested, max_safe_reasoning)
+    The canonical owner retains the ``final_output_reserve`` and
+    ``max_safe_reasoning`` calculations in ``request_geometry``; this
+    compatibility seam deliberately delegates instead of duplicating them.
+    """
+
+    return resolve_ordinary_reasoning_budget(
+        requested_reasoning_budget,
+        max_output_tokens,
+        reasoning_supported,
+    )
 
 
 def build_effective_system_prompt_for_budget(
@@ -96,24 +101,27 @@ def build_model_request(
         getattr(session, "gateway", None), "capabilities", None
     )
     reasoning_supported = bool(getattr(capabilities, "reasoning", False))
-    effective_reasoning = resolve_effective_reasoning_budget(
-        _integer(getattr(session, "thinking_budget", 0), 0),
-        output_tokens,
-        reasoning_supported,
-    )
-    base_system_prompt = session.messages[0]["content"]
-    system_content = build_effective_system_prompt_for_budget(
-        base_system_prompt,
-        effective_reasoning,
-    )
-    if response_format:
-        system_content += "\n\n" + response_format
-    payload_messages = [{"role": "system", "content": system_content}] + session.messages[1:]
     structured = (
         None
         if grammar is None
         else StructuredOutputRequest(mode=StructuredOutputMode.GBNF, grammar=grammar)
     )
+    geometry = resolve_effective_request_geometry(
+        _integer(getattr(session, "thinking_budget", 0), 0),
+        output_tokens,
+        reasoning_supported,
+        structured.mode if structured is not None else None,
+        profile.compatibility,
+        capabilities=capabilities,
+    )
+    base_system_prompt = session.messages[0]["content"]
+    system_content = build_effective_system_prompt_for_budget(
+        base_system_prompt,
+        geometry.effective_reasoning_budget,
+    )
+    if response_format:
+        system_content += "\n\n" + response_format
+    payload_messages = [{"role": "system", "content": system_content}] + session.messages[1:]
     hardware_profile = getattr(session, "hardware_profile", None)
     return ModelRequest(
         messages=tuple(
@@ -126,7 +134,9 @@ def build_model_request(
             output_tokens
         ),
         stream=stream,
-        reasoning_budget=effective_reasoning,
+        reasoning_budget=geometry.effective_reasoning_budget,
+        requested_reasoning_budget=geometry.requested_reasoning_budget,
+        compatibility_reason_code=geometry.compatibility_reason_code,
         structured_output=structured,
         context_limit=getattr(hardware_profile, "context_limit", None),
         request_contract=coerce_request_contract(request_contract),

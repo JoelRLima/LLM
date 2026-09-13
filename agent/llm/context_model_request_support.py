@@ -104,6 +104,7 @@ def _retry_fit_request(
     hardware_profile: Any,
     default_max_tokens: int,
     request_contract: ModelRequestContract | str | None,
+    source_request: Any | None = None,
 ) -> Any:
     """Rebuild and refit a structured-response retry with its own reserve."""
 
@@ -127,7 +128,46 @@ def _retry_fit_request(
         raise ContextFitError(
             "O conteúdo obrigatório não cabe no retry com o reserve efetivo."
         )
-    return fit.request
+    retry_request = fit.request
+    source_reason = getattr(source_request, "compatibility_reason_code", None)
+    if not isinstance(source_reason, str) or not source_reason:
+        return retry_request
+
+    source_effective = getattr(source_request, "reasoning_budget", None)
+    if not isinstance(source_effective, int) or isinstance(source_effective, bool):
+        raise ContextFitError(
+            "A compatibility-adjusted source request has invalid geometry."
+        )
+    source_messages = tuple(getattr(source_request, "messages", ()))
+    retry_messages = tuple(getattr(retry_request, "messages", ()))
+    if not source_messages or not retry_messages:
+        raise ContextFitError(
+            "A compatibility-adjusted source request has no system prompt."
+        )
+    source_system = source_messages[0]
+    retry_system = retry_messages[0]
+    source_content = getattr(source_system, "content", None)
+    if (
+        getattr(source_system, "role", None) != "system"
+        or getattr(retry_system, "role", None) != "system"
+        or not isinstance(source_content, str)
+    ):
+        raise ContextFitError(
+            "A compatibility-adjusted source request has no canonical system prompt."
+        )
+    projected_messages = (
+        replace(retry_system, content=source_content),
+        *retry_messages[1:],
+    )
+    return replace(
+        retry_request,
+        messages=projected_messages,
+        reasoning_budget=source_effective,
+        requested_reasoning_budget=getattr(
+            source_request, "requested_reasoning_budget", None
+        ),
+        compatibility_reason_code=source_reason,
+    )
 
 __all__ = [
     "_build_request",

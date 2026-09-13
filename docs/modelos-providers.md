@@ -12,6 +12,11 @@ JSON.
 
 ## Componentes
 
+The typed compatibility policy is owned by `agent/llm/model_compatibility.py`
+and its single generic request-geometry owner is
+`agent/llm/request_geometry.py`. Neither owner infers behavior from model or
+provider identity.
+
 | Componente | Responsabilidade |
 | :--- | :--- |
 | `agent/llm/contracts.py` | mensagens, requests, responses, uso, eventos de stream, capacidades e erros normalizados |
@@ -89,6 +94,9 @@ arrays e propriedades adicionais usadas pelos contratos internos.
       "temperature": 0.2,
       "max_tokens": 2048,
       "timeout": 300,
+      "compatibility": {
+        "structured_reasoning": "disable_reasoning"
+      },
       "capabilities": {
         "streaming": true,
         "structured_output": "gbnf",
@@ -104,6 +112,10 @@ arrays e propriedades adicionais usadas pelos contratos internos.
   }
 }
 ```
+
+`compatibility.structured_reasoning` accepts `allow` or `disable_reasoning`.
+When disabled, the generic geometry reduces only effective reasoning to zero
+for GBNF/JSON Schema; `json_prompt` is not constrained for this axis.
 
 ### Credencial referenciada (PRE-V1)
 

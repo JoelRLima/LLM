@@ -176,7 +176,7 @@ def build_corrective_readiness(
     profile_name: str = DEFAULT_PROFILE,
     external_identity: str | None = None,
 ) -> dict[str, Any]:
-    """Build the pre-Qwen readiness artifact for the new, not-yet-started epoch."""
+    """Build the pre-live-model readiness artifact for the new epoch."""
 
     root = Path(repo_root).resolve()
     candidate = candidate_identity(root)
@@ -215,7 +215,7 @@ def build_corrective_readiness(
     normalized_external_identity = normalize_external_identity(external_identity)
     planned_command = (
         ".venv\\Scripts\\python.exe scripts\\run_evaluation_campaign.py"
-        f" --mode live-model --qwen-loaded --profile {profile_name}"
+        f" --mode live-model --live-model-authorized --profile {profile_name}"
         f" --epoch {DEFAULT_REAL_MODEL_EPOCH}"
         " --output .audit-local\\out\\real-model-epoch-2.json"
     )

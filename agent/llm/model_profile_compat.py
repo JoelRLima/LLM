@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Any
 
 from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from agent.llm.model_compatibility import ModelCompatibility, StructuredReasoningPolicy
 
 PROFILE_OVERRIDE_KEYS = ("api_url", "model", "temperature", "max_tokens", "timeout")
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on", "enabled"})
@@ -113,6 +114,32 @@ def structured_mode(value: Any) -> StructuredOutputMode | None:
         "none": StructuredOutputMode.NONE,
         "auto": StructuredOutputMode.AUTO,
     }.get(str(value or "").strip().casefold())
+
+
+def compatibility_from_raw(raw: Any) -> ModelCompatibility:
+    """Parse the optional typed compatibility subsection without coercion."""
+
+    if raw is None:
+        return ModelCompatibility()
+    if isinstance(raw, ModelCompatibility):
+        return raw
+    if not isinstance(raw, Mapping):
+        raise TypeError("compatibility must be an object")
+    unknown = sorted(set(raw) - {"structured_reasoning"})
+    if unknown:
+        raise ValueError(
+            "compatibility contains unknown fields: " + ", ".join(unknown)
+        )
+    value = raw.get("structured_reasoning", StructuredReasoningPolicy.ALLOW.value)
+    if not isinstance(value, str):
+        raise ValueError("compatibility.structured_reasoning must be a string")
+    try:
+        policy = StructuredReasoningPolicy(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"unknown structured reasoning policy: {value!r}"
+        ) from exc
+    return ModelCompatibility(structured_reasoning=policy)
 
 
 def capabilities_from_raw(raw: Any, *, legacy_flat: bool) -> ProviderCapabilities:
@@ -235,7 +262,14 @@ def effective_profile_values(
         return text_value(selected_name, "legacy"), _apply_overrides(selected, overrides), True
     direct_profile = any(
         key in config
-        for key in ("provider", "base_url", "capabilities", "provider_options", "credential_ref")
+        for key in (
+            "provider",
+            "base_url",
+            "capabilities",
+            "provider_options",
+            "credential_ref",
+            "compatibility",
+        )
     )
     if direct_profile:
         name = text_value(config.get("name") or config.get("profile"), "legacy")
@@ -248,6 +282,7 @@ __all__ = [
     "PROFILE_OVERRIDE_KEYS",
     "boolean_value",
     "capabilities_from_raw",
+    "compatibility_from_raw",
     "effective_profile_values",
     "freeze_provider_options",
     "gateway_profile_values",

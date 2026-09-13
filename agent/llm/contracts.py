@@ -70,6 +70,8 @@ class ModelRequest:
     context_compacted: bool = False
     context_limit: int | None = None
     request_contract: ModelRequestContract | None = None
+    requested_reasoning_budget: int | None = None
+    compatibility_reason_code: str | None = None
     @property
     def request_contract_id(self) -> str | None:
         """Return the stable serialized value of the request contract."""

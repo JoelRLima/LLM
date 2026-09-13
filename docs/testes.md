@@ -131,8 +131,23 @@ A Wave 15 adiciona o checker de ownership e sua campanha em copia temporaria:
 
 O primeiro comando deve reportar `W15 architecture checker: PASS` e
 `W15-M01..M24: 24/24`; o segundo deve reportar `LH15-01..LH15-16 = 16/16`,
-`unknown = 0` e `qwen_used = false`. A campanha nao publica, commita ou faz
+`unknown = 0` e `live_model_used = false`. A campanha nao publica, commita ou faz
 push do resultado.
+
+## Gates Wave 16
+
+Os gates determinísticos da compatibilidade tipada usam somente o profile e
+gateways scripted; o modo live não é executado nesta Wave:
+
+```powershell
+.venv\Scripts\python.exe scripts\check_wave16_architecture.py
+.venv\Scripts\python.exe scripts\run_model_compatibility_canaries.py --mode deterministic --profile local_8gb --output .audit-local\out\model-compatibility-canary-deterministic.json
+```
+
+O checker deve reportar `W16 architecture checker: PASS` e
+`W16-M01..W16-M16: 16/16`. O relatório do canário é diagnóstico, com
+`live_model_used = false`, sem veredicto de release; `failed = 0` e
+`blocked = 0` são obrigatórios.
 
 ## Gates Wave 15.5
 

@@ -22,6 +22,9 @@
       "temperature": 0.2,
       "max_tokens": 2048,
       "timeout": 300,
+      "compatibility": {
+        "structured_reasoning": "disable_reasoning"
+      },
       "capabilities": {
         "streaming": true,
         "structured_output": "gbnf",

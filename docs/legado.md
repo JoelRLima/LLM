@@ -212,6 +212,10 @@ uma facade de source/API.
 - `W7-C07` | `agent/code/changes.py::<module>` | owner: `ChangeSetTransaction` | consumers: change planning/application | durable: change receipts | motivo: aggregate API sobre transactions canônicas | condição: não retirar; owner canônico.
 - `W7-C08` | `agent/orchestration/operations.py::_emit_checkpoint_event` | owner: canonical runtime event owner | consumers: checkpoint operation | durable: checkpoint event history | motivo: helper delega somente ao emitter canônico, sem construção legacy | condição: não retirar; helper canônico.
 - `W7-C09` | `agent/skills/__init__.py::load_all_skills` | owner: `SkillRegistry` | consumers: health e regression skill collection callers | durable: none | motivo: projeção ordenada estável do registry canônico, não facade | condição: não retirar; helper de coleção canônico.
+- `W16-C01` | `agent/llm/model_compatibility.py::ModelCompatibility` | owner: typed model compatibility policy | consumers: model profile e request geometry | durable: none | motivo: policy tipada canônica, não facade de source compatibility | condição: não retirar; owner tipado canônico.
+- `W16-C02` | `agent/llm/model_profile_compat.py::compatibility_from_raw` | owner: typed model compatibility policy | consumers: profile ingress | durable: raw profile configuration | motivo: boundary canônica de configuração estrita | condição: não retirar; ingress canônica.
+- `W16-C03` | `agent/runtime/config_schema.py::_validate_compatibility` | owner: configuration schema validation | consumers: profile configuration boundary | durable: persisted profile mappings | motivo: validator canônico do vocabulário tipado fechado | condição: não retirar; boundary de schema canônica.
+- `W16-C04` | `agent/runtime/config_schema.py::COMPATIBILITY_FIELDS` | owner: configuration schema validation | consumers: profile configuration boundary | durable: persisted profile mappings | motivo: declaração canônica de campos da policy tipada | condição: não retirar; declaração de schema canônica.
 
 ## Retido como compatibilidade de import de pacote
 

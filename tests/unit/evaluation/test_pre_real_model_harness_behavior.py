@@ -892,7 +892,8 @@ def test_external_identity_readiness_round_trips_into_preflight(tmp_path: Path) 
     )
     assert readiness["ready"] is True
     assert readiness["model_identity_schema"]["external_identity"] == external_identity
-    assert "--qwen-loaded" in readiness["planned_live_model_command"]
+    assert "--live-model-authorized" in readiness["planned_live_model_command"]
+    assert "--qwen-loaded" not in readiness["planned_live_model_command"]
 
     installed = {
         "schema_version": 2,

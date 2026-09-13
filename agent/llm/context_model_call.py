@@ -220,7 +220,7 @@ def _resolve_fitted_request(
             effective_grammar,
             manager.hardware_profile,
             default_max_tokens,
-            exact_contract,
+            exact_contract, source_request=request,
         ),
         grammar=grammar_for_request,
         grammar_supported=getattr(

@@ -125,7 +125,7 @@ continua sendo insuficiente por si só. Um rerun de modelo real permanece
 authorization-gated:
 
 ```powershell
-.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode live-model --qwen-loaded --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output .audit-local\out\real-model-epoch-2.json
+.venv\Scripts\python.exe scripts\run_evaluation_campaign.py --mode live-model --live-model-authorized --profile local_8gb --epoch REAL-MODEL-EPOCH-2 --output .audit-local\out\real-model-epoch-2.json
 ```
 
 ## Corrective campaign contract
@@ -200,7 +200,7 @@ relatorio bounded registra unidades logicas, model/tool calls, decisoes
 FULL/COMPACT, avancos, ciclos, cache reuse, rehydration, replans, terminal
 reason, arquivos alterados e integridade do candidate/workspace.
 
-O gate esperado e `LH15 = 16/16`, `unknown = 0` e `qwen_used = false`. Os
+O gate esperado e `LH15 = 16/16`, `unknown = 0` e `live_model_used = false`. Os
 cenarios incluem preservacao da frontier durante pressure, overflow obrigatorio,
 resume com plateau, paralelo/TaskGraph e a sequencia reversivel
 `{A} -> {A,B} -> {A,C} -> {A,B} -> {A,C}`. Isso comprova invariantes

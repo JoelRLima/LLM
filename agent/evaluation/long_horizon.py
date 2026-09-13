@@ -542,7 +542,7 @@ def run_long_horizon_scripted(
         "execution_policy": {
             "one_execution_per_scenario": True,
             "live_model": False,
-            "qwen_used": False,
+            "live_model_used": False,
             "environmental_retry": False,
         },
         "scenarios": records,

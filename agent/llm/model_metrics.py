@@ -7,12 +7,49 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from agent.llm.contracts import normalize_usage, request_contract_value, response_usage
+from agent.llm.contracts import (
+    StructuredOutputMode,
+    normalize_usage,
+    request_contract_value,
+    response_usage,
+)
 from agent.llm.model_metric_audit import project_model_call_audit_fields
 
 
 def _operation_field(operation: str | None) -> dict[str, str]:
     return {"operation": operation} if operation else {}
+
+
+def _request_geometry_fields(request: Any, response: Any, streaming: bool) -> dict[str, Any]:
+    effective = getattr(request, "reasoning_budget", 0)
+    if not isinstance(effective, int) or isinstance(effective, bool) or effective < 0:
+        effective = 0
+    requested = getattr(request, "requested_reasoning_budget", None)
+    if not isinstance(requested, int) or isinstance(requested, bool) or requested < 0:
+        requested = effective
+    structured = getattr(request, "structured_output", None)
+    mode = getattr(structured, "mode", None)
+    if mode is None:
+        mode_value = StructuredOutputMode.NONE.value
+    elif isinstance(mode, StructuredOutputMode):
+        mode_value = mode.value
+    else:
+        mode_value = str(mode).strip().casefold()
+    raw_reason = getattr(request, "compatibility_reason_code", None)
+    reason = raw_reason if isinstance(raw_reason, str) and raw_reason else None
+    fields: dict[str, Any] = {
+        "requested_reasoning_budget": requested,
+        "effective_reasoning_budget": effective,
+        "structured_output_mode": mode_value,
+        "compatibility_adjusted": reason is not None,
+        "compatibility_reason_code": reason,
+    }
+    finish_reason = getattr(response, "finish_reason", None)
+    if finish_reason is None and isinstance(response, Mapping):
+        finish_reason = response.get("finish_reason")
+    if not streaming and finish_reason is not None:
+        fields["finish_reason"] = finish_reason
+    return fields
 
 
 def build_model_call_metric(
@@ -91,6 +128,7 @@ def build_model_call_metric(
         **_operation_field(operation),
     }
     entry.update(project_model_call_audit_fields(gateway, response, config))
+    entry.update(_request_geometry_fields(request, response, streaming))
     if isinstance(context_limit, int) and not isinstance(context_limit, bool) and context_limit > 0:
         entry["context_limit"] = context_limit
         entry["request_utilization_ratio"] = (

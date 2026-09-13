@@ -142,7 +142,7 @@ def run_practical_scripted(
         "execution_policy": {
             "one_execution_per_scenario": True,
             "environmental_retry": False,
-            "qwen_used": False,
+            "live_model_used": False,
         },
         "scenarios": records,
         "summary": {

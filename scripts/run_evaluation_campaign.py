@@ -41,6 +41,7 @@ from agent.evaluation.campaign_runner import (  # noqa: E402
 )
 from agent.evaluation.long_horizon import run_long_horizon_scripted  # noqa: E402
 from agent.evaluation.practical import run_practical_scripted  # noqa: E402
+from agent.llm.model_profile import resolve_model_profile  # noqa: E402
 from agent.runtime.filesystem_primitives import write_bytes_atomic  # noqa: E402
 
 
@@ -76,7 +77,7 @@ def _run_long_horizon(output: Path) -> int:
         "passed": summary["passed"],
         "failed": summary["failed"],
         "unknown_failures": summary["unknown_failures"],
-        "qwen_used": report["execution_policy"]["qwen_used"],
+        "live_model_used": report["execution_policy"]["live_model_used"],
         "report": str(output),
     }, ensure_ascii=False))
     return 0 if passed else 1
@@ -168,7 +169,7 @@ def _run_live(arguments: argparse.Namespace, paths: EvaluationArtifactPaths, out
             "candidate_identity": None,
         }))
         return 2
-    if not arguments.qwen_loaded:
+    if not arguments.live_model_authorized:
         print(json.dumps({
             "status": "blocked",
             "mode": "live-model",
@@ -189,6 +190,8 @@ def _run_live(arguments: argparse.Namespace, paths: EvaluationArtifactPaths, out
     if not preflight["ready"]:
         print(json.dumps({**preflight, "report": None}, ensure_ascii=False, separators=(",", ":")))
         return 2
+    from agent.llm.providers.factory import create_model_gateway
+
     snapshots = preflight.get("prerequisite_snapshots", {})
     frozen_installed = snapshots.get("installed_acceptance") if isinstance(snapshots, dict) else None
     frozen_readiness = snapshots.get("deterministic_readiness") if isinstance(snapshots, dict) else None
@@ -207,14 +210,12 @@ def _run_live(arguments: argparse.Namespace, paths: EvaluationArtifactPaths, out
         return 2
     config_path = ROOT / "agent" / "resources" / "default_config.json"
     raw = json.loads(config_path.read_text(encoding="utf-8"))
-    profiles = raw.get("model_profiles") if isinstance(raw, dict) else {}
-    profile = dict(profiles.get(arguments.profile, {})) if isinstance(profiles, dict) else {}
+    resolved_profile = resolve_model_profile(raw, profile_name=arguments.profile)
     from agent.evaluation.trace import RecordingGateway
-    from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 
     def live_factory(_objective: str, _workspace: Path) -> Any:
         return RecordingGateway(
-            OpenAICompatibleGateway(profile),
+            create_model_gateway(resolved_profile),
             external_identity=frozen_external_identity,
         )
 
@@ -325,9 +326,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="bounded local campaign report path",
     )
     parser.add_argument(
-        "--qwen-loaded",
+        "--live-model-authorized",
+        dest="live_model_authorized",
         action="store_true",
         help="explicit authorization gate for live-model mode; never needed by dry-run",
+    )
+    parser.add_argument(
+        "--qwen-loaded",
+        dest="live_model_authorized",
+        action="store_true",
+        help="deprecated compatibility alias for --live-model-authorized",
     )
     parser.add_argument(
         "--external-identity",

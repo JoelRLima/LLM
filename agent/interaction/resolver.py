@@ -8,9 +8,9 @@ from typing import Any
 from agent.cancellation import CancellationToken
 from agent.llm.contracts import ModelMessage, ModelRequest, StructuredOutputMode, StructuredOutputRequest
 from agent.llm.decision_contract import ModelRequestContract
+from agent.llm.request_geometry import resolve_effective_request_geometry
 from agent.llm.session_requests import (
     build_effective_system_prompt_for_budget,
-    resolve_effective_reasoning_budget,
 )
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.context import NullEventSink, RuntimeLimits, TaskExecutionContext
@@ -146,11 +146,17 @@ def build_resolver_request(
         raise ResolverUnavailable()
     output = _resolver_output_ceiling(session)
     capabilities = _capabilities(session)
-    reasoning_supported = bool(getattr(capabilities, "reasoning", False))
-    effective = resolve_effective_reasoning_budget(512, output, reasoning_supported)
-    reasoning = 512 if effective >= 512 else 0
     message_builder = build_semantic_resolver_messages if semantic else build_resolver_messages
     structured = select_interaction_structured_output(session, semantic=semantic)
+    reasoning_supported = bool(getattr(capabilities, "reasoning", False))
+    geometry = resolve_effective_request_geometry(
+        512,
+        output,
+        reasoning_supported,
+        structured.mode,
+        profile.compatibility,
+        capabilities=capabilities,
+    )
     raw_messages = messages or message_builder(
         InteractionBoundary(boundary).value,
         [
@@ -162,7 +168,10 @@ def build_resolver_request(
         json_prompt=structured.mode is StructuredOutputMode.JSON_PROMPT,
     )
     base_system = raw_messages[0]["content"]
-    system = build_effective_system_prompt_for_budget(base_system, reasoning)
+    system = build_effective_system_prompt_for_budget(
+        base_system,
+        geometry.effective_reasoning_budget,
+    )
     payload = [ModelMessage(role=item["role"], content=item["content"]) for item in (
         {"role": "system", "content": system}, raw_messages[1]
     )]
@@ -173,7 +182,9 @@ def build_resolver_request(
         temperature=0,
         max_output_tokens=output,
         stream=False,
-        reasoning_budget=reasoning,
+        reasoning_budget=geometry.effective_reasoning_budget,
+        requested_reasoning_budget=geometry.requested_reasoning_budget,
+        compatibility_reason_code=geometry.compatibility_reason_code,
         structured_output=structured,
         provider_options={},
         context_compacted=False,

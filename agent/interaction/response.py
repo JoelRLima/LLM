@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, cast
 
 from agent.llm.contracts import ModelMessage, ModelRequest, response_text
-from agent.llm.session_requests import build_effective_system_prompt_for_budget, resolve_effective_reasoning_budget
+from agent.llm.request_geometry import EffectiveRequestGeometry, resolve_effective_request_geometry
+from agent.llm.session_requests import build_effective_system_prompt_for_budget
 from agent.runtime.budget_estimation import measure_model_request_input_tokens
 from agent.runtime.context import TaskExecutionContext
 from agent.runtime.model_call import ModelCallService
@@ -58,7 +59,7 @@ def _request(
     messages: tuple[ModelMessage, ...],
     *,
     output: int,
-    reasoning: int,
+    geometry: EffectiveRequestGeometry,
     stream: bool,
     context_compacted: bool,
 ) -> ModelRequest:
@@ -71,7 +72,9 @@ def _request(
         temperature=profile.temperature,
         max_output_tokens=output,
         stream=stream and bool(getattr(capabilities, "streaming", False)),
-        reasoning_budget=reasoning,
+        reasoning_budget=geometry.effective_reasoning_budget,
+        requested_reasoning_budget=geometry.requested_reasoning_budget,
+        compatibility_reason_code=geometry.compatibility_reason_code,
         structured_output=None,
         provider_options={},
         context_compacted=context_compacted,
@@ -92,20 +95,26 @@ def build_response_request_plan(
     output = _response_output_ceiling(session)
     capabilities = getattr(session.model_profile, "capabilities", None)
     desired = response_reasoning_budget(profile, getattr(session, "thinking_budget", 0))
-    effective_reasoning = resolve_effective_reasoning_budget(
+    geometry = resolve_effective_request_geometry(
         desired,
         output,
         bool(getattr(capabilities, "reasoning", False)),
+        None,
+        session.model_profile.compatibility,
+        capabilities=capabilities,
     )
     base_system = snapshot[0]["content"]
     pairs = bounded_prior_pairs(snapshot)
-    system = build_effective_system_prompt_for_budget(base_system, effective_reasoning)
+    system = build_effective_system_prompt_for_budget(
+        base_system,
+        geometry.effective_reasoning_budget,
+    )
     candidate_a_messages = _build_messages(snapshot, current_user, include_prior=True, system=system)
     candidate_a = _request(
         session,
         candidate_a_messages,
         output=output,
-        reasoning=effective_reasoning,
+        geometry=geometry,
         stream=stream,
         context_compacted=False,
     )
@@ -120,7 +129,7 @@ def build_response_request_plan(
                 session,
                 candidate_b_messages,
                 output=output,
-                reasoning=effective_reasoning,
+                geometry=geometry,
                 stream=stream,
                 context_compacted=bool(pairs),
             )

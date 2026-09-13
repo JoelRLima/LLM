@@ -106,6 +106,11 @@ CAPABILITY_FIELDS: dict[str, Validator] = {
     "tool_calls": _is_bool,
 }
 
+COMPATIBILITY_FIELDS: dict[str, Validator] = {
+    "structured_reasoning": lambda value: isinstance(value, str)
+    and value in {"allow", "disable_reasoning"},
+}
+
 
 def _fail(path: str, message: str) -> None:
     raise ConfigError(f"Configuração inválida em '{path}': {message}.")
@@ -162,8 +167,27 @@ def _validate_capabilities(
     )
 
 
+def _validate_compatibility(
+    compatibility: Any,
+    profile_path: str,
+) -> None:
+    if not isinstance(compatibility, Mapping):
+        _fail(f"{profile_path}.compatibility", "deve ser um objeto")
+    _validate_fields(
+        compatibility,
+        COMPATIBILITY_FIELDS,
+        f"{profile_path}.compatibility",
+        require_all=False,
+    )
+
+
 def _validate_profile_fields(profile: Mapping[str, Any], path: str) -> None:
-    allowed = set(PROFILE_FIELDS) | {"capabilities", "provider_options", "credential_ref"}
+    allowed = set(PROFILE_FIELDS) | {
+        "capabilities",
+        "provider_options",
+        "credential_ref",
+        "compatibility",
+    }
     unknown = sorted(set(profile) - allowed)
     if unknown:
         _fail(path, "campos desconhecidos: " + ", ".join(unknown))
@@ -186,6 +210,8 @@ def _validate_profile_options(profile: Mapping[str, Any], path: str) -> None:
         profile["provider_options"], Mapping
     ):
         _fail(f"{path}.provider_options", "deve ser um objeto")
+    if "compatibility" in profile:
+        _validate_compatibility(profile["compatibility"], path)
 
 
 def _validate_profile(

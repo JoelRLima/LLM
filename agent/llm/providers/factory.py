@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent.llm.contracts import ModelGateway
-from agent.llm.model_profile import resolve_model_profile
+from agent.llm.model_profile import ResolvedModelProfile, resolve_model_profile
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
 
 SUPPORTED_MODEL_PROVIDERS = frozenset({"openai_compatible"})
 
 
 def create_model_gateway(config: Mapping[str, Any] | Any) -> ModelGateway:
-    profile = resolve_model_profile(config)
+    profile = config if isinstance(config, ResolvedModelProfile) else resolve_model_profile(config)
     provider = profile.provider
     if provider == "openai_compatible":
         return OpenAICompatibleGateway(profile)
