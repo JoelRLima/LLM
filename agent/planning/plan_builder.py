@@ -33,12 +33,10 @@ from agent.planning.plan_prompts import (
     build_plan_prompt,
     build_reasoning_boundary_prompt,
 )
-from agent.planning.planner_prompt_tools import (
-    build_planner_tools_description,
-    build_tool_guidance,
-)
+from agent.planning.planner_prompt_tools import build_planner_tools_description, build_tool_guidance
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.task_semantics import TaskSemanticsError
+from agent.runtime.worker_output import emit_worker_output
 
 __all__ = ["PlanBuilder", "PlanBuildResult", "PlanningDecisionKind", "build_planner_tools_description"]
 
@@ -103,10 +101,10 @@ class PlanBuilder:
             log_metric_callback=self.orchestrator._log_metric,
             request_contract=ModelRequestContract.INITIAL_PLAN,
         )
-        if self.orchestrator.verbose:
-            from agent.runtime.worker_output import emit_worker_output
 
+        if self.orchestrator.verbose:
             emit_worker_output(f"[DEBUG] plan_decision admitido: {decision!r}")
+
         if isinstance(decision, DirectResponseDecision):
             if require_executable_plan:
                 return PlanBuildResult(
@@ -139,8 +137,6 @@ class PlanBuilder:
                 )
             return PlanBuildResult()
         if self.orchestrator.verbose:
-            from agent.runtime.worker_output import emit_worker_output
-
             emit_worker_output(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
         return PlanBuildResult(
             plan=plan,

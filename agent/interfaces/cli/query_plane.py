@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any
 
+from agent.interfaces.cli.query_find import find_candidates, find_matches
 from agent.runtime.path_safety import WorkspacePathError, resolve_workspace_path
 from agent.runtime.workspace_context import WorkspaceContext
 
@@ -162,41 +163,12 @@ class ReadOnlyWorkspaceQueryService(GitQueryMixin):
             return _result(request, ok=False, error=f"query read: {exc}")
 
     def _find_candidates(self, selected: Path, cancel: Event) -> tuple[list[Path], bool] | None:
-        if selected.is_file():
-            return [selected], False
-        candidates: list[Path] = []
-        pending = [selected]
-        scanned_entries = 0
-        truncated = False
-        while pending and len(candidates) < MAX_FIND_FILES:
-            if cancel.is_set():
-                return None
-            root = pending.pop()
-            try:
-                entries = os.scandir(root)
-            except OSError:
-                continue
-            with entries:
-                for entry in entries:
-                    if cancel.is_set():
-                        return None
-                    scanned_entries += 1
-                    if scanned_entries > MAX_FIND_SCAN_ENTRIES:
-                        truncated = True
-                        return candidates, truncated
-                    if entry.name in {".git", ".venv", "__pycache__", "node_modules"} or entry.name.startswith("."):
-                        continue
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
-                            pending.append(Path(entry.path))
-                        elif entry.is_file(follow_symlinks=False):
-                            candidates.append(Path(entry.path))
-                    except OSError:
-                        continue
-                    if len(candidates) >= MAX_FIND_FILES:
-                        truncated = True
-                        return candidates, truncated
-        return candidates, truncated or bool(pending)
+        return find_candidates(
+            selected,
+            cancel,
+            max_files=MAX_FIND_FILES,
+            max_scan_entries=MAX_FIND_SCAN_ENTRIES,
+        )
 
     def _find_matches(
         self,
@@ -206,51 +178,18 @@ class ReadOnlyWorkspaceQueryService(GitQueryMixin):
         case_sensitive: bool,
         cancel: Event,
     ) -> tuple[list[dict[str, Any]], bool, bool]:
-        matches: list[dict[str, Any]] = []
-        truncated = False
-        allowed = {".txt", ".md", ".py", ".json", ".csv", ".log", ".yaml", ".yml", ".html", ".css", ".js", ".ts", ".tsx", ".toml"}
-        for candidate in candidates[:MAX_FIND_FILES]:
-            if cancel.is_set():
-                return matches, False, True
-            if candidate.suffix.lower() not in allowed:
-                continue
-            try:
-                relative = candidate.relative_to(self.workspace.root).as_posix()
-                safe = self._path(relative, require_file=True)
-                with safe.open("rb") as handle:
-                    payload = handle.read(MAX_FIND_FILE_BYTES + 1)
-                file_truncated = len(payload) > MAX_FIND_FILE_BYTES
-                text = payload[:MAX_FIND_FILE_BYTES].decode("utf-8")
-                target = needle if case_sensitive else needle.casefold()
-                for line_number, line in enumerate(text.splitlines(), 1):
-                    if cancel.is_set():
-                        return matches, file_truncated, True
-                    haystack = line if case_sensitive else line.casefold()
-                    matched: bool | None = False
-                    overlap = max(0, len(target) - 1)
-                    for offset in range(0, len(haystack) or 1, MAX_FIND_SCAN_CHARS):
-                        if cancel.is_set():
-                            return matches, file_truncated, True
-                        start = max(0, offset - overlap)
-                        end = min(len(haystack), offset + MAX_FIND_SCAN_CHARS)
-                        if target in haystack[start:end]:
-                            matched = True
-                            break
-                    if matched:
-                        matches.append(
-                            {
-                                "file": relative,
-                                "line": line_number,
-                                "content": line.strip()[:240],
-                            }
-                        )
-                        if len(matches) >= MAX_FIND_MATCHES:
-                            return matches, True, False
-                if file_truncated:
-                    truncated = True
-            except (OSError, UnicodeDecodeError):
-                continue
-        return matches, truncated, False
+        return find_matches(
+            candidates,
+            needle,
+            case_sensitive=case_sensitive,
+            cancel=cancel,
+            workspace_root=self.workspace.root,
+            resolve_path=lambda relative: self._path(relative, require_file=True),
+            max_files=MAX_FIND_FILES,
+            max_matches=MAX_FIND_MATCHES,
+            max_file_bytes=MAX_FIND_FILE_BYTES,
+            max_scan_chars=MAX_FIND_SCAN_CHARS,
+        )
 
     def find(self, request: QueryRequest, cancel: Event) -> QueryResult:
         pattern = str(request.arguments.get("pattern", ""))

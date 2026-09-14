@@ -101,7 +101,6 @@ class ContextManager(ContextAuxiliaryMixin):
         available only to explicit compatibility callers of
         ``compress_conversation``; this task seam never invokes it.
         """
-
         return None
     def build_compact_view(self) -> List[Dict[str, Any]]:
         return build_compact_view(

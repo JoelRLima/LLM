@@ -52,41 +52,65 @@ def _poll_outputs(ctx: Any) -> None:
             interactive_rendering.render_query_result(ctx, result)
 
 
+def _clear_draft_if_present(ctx: Any, shell: Any) -> bool:
+    if shell is None:
+        return False
+    current_draft = shell.current_draft() if callable(getattr(shell, "current_draft", None)) else ""
+    if not current_draft:
+        return False
+    if callable(getattr(shell, "clear_draft", None)):
+        shell.clear_draft()
+    ctx.draft_text = ""
+    shell.print_background("[interactive] rascunho limpo")
+    return True
+
+
+def _cancel_controller_if_busy(ctx: Any, shell: Any) -> bool:
+    controller = getattr(ctx, "controller", None)
+    if controller is None or not controller.is_busy():
+        return False
+    outcome = controller.request_cancel()
+    if shell is not None:
+        shell.print_background(f"[interactive] {outcome.disposition.lower()}; aguardando settlement")
+    return True
+
+
+def _cancel_attention_if_active(ctx: Any, shell: Any) -> bool:
+    broker = getattr(ctx, "approval_broker", None)
+    current = broker.current() if broker is not None and callable(getattr(broker, "current", None)) else None
+    if current is None:
+        return False
+    broker.invalidate(attention_id=current.identity.attention_id, generation=current.identity.run_generation)
+    if shell is not None:
+        shell.print_background("[interactive] atenção cancelada")
+    return True
+
+
+def _cancel_query_if_busy(ctx: Any, shell: Any) -> None:
+    query_executor = getattr(ctx, "query_executor", None)
+    if query_executor is None or not query_executor.is_busy():
+        return
+    request_cancel = getattr(query_executor, "request_cancel", None)
+    if callable(request_cancel):
+        request_cancel()
+    if shell is not None:
+        shell.print_background("[interactive] query cancelada; aguardando settlement")
+
+
 def _handle_ctrl_c(ctx: Any) -> None:
     """Context-sensitive composer escape/cancel without shutting down chat."""
 
     shell = getattr(ctx, "shell", None)
-    current_draft = shell.current_draft() if shell is not None and callable(getattr(shell, "current_draft", None)) else ""
-    if current_draft:
-        if callable(getattr(shell, "clear_draft", None)):
-            shell.clear_draft()
-        ctx.draft_text = ""
-        if shell is not None:
-            shell.print_background("[interactive] rascunho limpo")
+    if _clear_draft_if_present(ctx, shell):
         return
 
-    controller = getattr(ctx, "controller", None)
-    if controller is not None and controller.is_busy():
-        outcome = controller.request_cancel()
-        if shell is not None:
-            shell.print_background(f"[interactive] {outcome.disposition.lower()}; aguardando settlement")
+    if _cancel_controller_if_busy(ctx, shell):
         return
 
-    broker = getattr(ctx, "approval_broker", None)
-    current = broker.current() if broker is not None and callable(getattr(broker, "current", None)) else None
-    if current is not None:
-        broker.invalidate(attention_id=current.identity.attention_id, generation=current.identity.run_generation)
-        if shell is not None:
-            shell.print_background("[interactive] atenção cancelada")
+    if _cancel_attention_if_active(ctx, shell):
         return
 
-    query_executor = getattr(ctx, "query_executor", None)
-    if query_executor is not None and query_executor.is_busy():
-        request_cancel = getattr(query_executor, "request_cancel", None)
-        if callable(request_cancel):
-            request_cancel()
-        if shell is not None:
-            shell.print_background("[interactive] query cancelada; aguardando settlement")
+    _cancel_query_if_busy(ctx, shell)
 
 
 def _close_settled(ctx: Any) -> None:

@@ -234,11 +234,9 @@ def _check_c02_secret_context(root: Path) -> list[ArchitectureViolation]:
     return findings
 
 
-def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
-    rule = "W155-C03"
-    findings: list[ArchitectureViolation] = []
+def _check_c03_workspace_entry(root: Path, rule: str) -> list[ArchitectureViolation]:
     entry, missing = _required(root, rule, _WORKSPACE_ENTRY)
-    findings.extend(missing)
+    findings = list(missing)
     entry_source = _source(root, _WORKSPACE_ENTRY) or ""
     required_fn = _function(entry, "require_task_workspace") if entry is not None else None
     required_text = ast.unparse(required_fn) if required_fn is not None else ""
@@ -247,32 +245,53 @@ def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
             findings.append(_violation(rule, _WORKSPACE_ENTRY, f"explicit task workspace guard is missing: {token}"))
     if "def argument_workspace" not in entry_source:
         findings.append(_violation(rule, _WORKSPACE_ENTRY, "interactive compatibility workspace adapter is missing"))
-    for relative, function_name in ((_APP, "_run_once"), (_APP, "_run_chat"), (_CONTINUITY, "run_task_resume")):
-        tree, missing = _required(root, rule, relative)
-        findings.extend(missing)
-        owner = _function(tree, function_name) if tree is not None else None
-        text = ast.unparse(owner) if owner is not None else ""
-        if function_name == "_run_chat":
-            guard = _chat_tty_guard(owner)
-            delegated_calls = _named_calls(owner, "interactive_session.run_chat")
-            if guard is None or not delegated_calls or guard.lineno >= min(call.lineno for call in delegated_calls):
-                findings.append(
-                    _violation(
-                        rule,
-                        relative,
-                        "_run_chat does not fail closed before interactive session/application setup",
-                        owner,
-                    )
-                )
-            continue
-        if "require_task_workspace(args)" not in text:
-            findings.append(_violation(rule, relative, f"{function_name} does not fail closed before task application", owner))
-        for call in _calls(owner):
-            if _qualified_name(call.func) == "Path.cwd":
-                findings.append(_violation(rule, relative, f"{function_name} silently derives task workspace from CWD", call))
+    return findings
 
-    session_tree, session_missing = _required(root, rule, _INTERACTIVE_SESSION)
-    findings.extend(session_missing)
+
+def _check_c03_chat_owner(
+    root: Path,
+    rule: str,
+    relative: str,
+    owner: ast.AST | None,
+    findings: list[ArchitectureViolation],
+) -> list[ArchitectureViolation]:
+    guard = _chat_tty_guard(owner)
+    delegated_calls = _named_calls(owner, "interactive_session.run_chat")
+    if guard is None or not delegated_calls or guard.lineno >= min(call.lineno for call in delegated_calls):
+        findings.append(
+            _violation(
+                rule,
+                relative,
+                "_run_chat does not fail closed before interactive session/application setup",
+                owner,
+            )
+        )
+    return findings
+
+
+def _check_c03_task_owner(
+    root: Path,
+    rule: str,
+    relative: str,
+    function_name: str,
+) -> list[ArchitectureViolation]:
+    tree, missing = _required(root, rule, relative)
+    findings = list(missing)
+    owner = _function(tree, function_name) if tree is not None else None
+    text = ast.unparse(owner) if owner is not None else ""
+    if function_name == "_run_chat":
+        return _check_c03_chat_owner(root, rule, relative, owner, findings)
+    if "require_task_workspace(args)" not in text:
+        findings.append(_violation(rule, relative, f"{function_name} does not fail closed before task application", owner))
+    for call in _calls(owner):
+        if _qualified_name(call.func) == "Path.cwd":
+            findings.append(_violation(rule, relative, f"{function_name} silently derives task workspace from CWD", call))
+    return findings
+
+
+def _check_c03_session_order(root: Path, rule: str) -> list[ArchitectureViolation]:
+    session_tree, missing = _required(root, rule, _INTERACTIVE_SESSION)
+    findings = list(missing)
     session_owner = _function(session_tree, "run_chat") if session_tree is not None else None
     prepare_calls = _named_calls(session_owner, "first_run.prepare_chat_workspace")
     create_calls = _named_calls(session_owner, "create_application")
@@ -285,9 +304,12 @@ def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
                 session_owner,
             )
         )
+    return findings
 
-    first_run_tree, first_run_missing = _required(root, rule, _FIRST_RUN)
-    findings.extend(first_run_missing)
+
+def _check_c03_workspace_picker(root: Path, rule: str) -> list[ArchitectureViolation]:
+    first_run_tree, missing = _required(root, rule, _FIRST_RUN)
+    findings = list(missing)
     prepare_owner = _function(first_run_tree, "prepare_chat_workspace") if first_run_tree is not None else None
     if not _has_workspace_assignment_from_picker(prepare_owner):
         findings.append(
@@ -298,6 +320,16 @@ def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
                 prepare_owner,
             )
         )
+    return findings
+
+
+def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
+    rule = "W155-C03"
+    findings = _check_c03_workspace_entry(root, rule)
+    for relative, function_name in ((_APP, "_run_once"), (_APP, "_run_chat"), (_CONTINUITY, "run_task_resume")):
+        findings.extend(_check_c03_task_owner(root, rule, relative, function_name))
+    findings.extend(_check_c03_session_order(root, rule))
+    findings.extend(_check_c03_workspace_picker(root, rule))
     return findings
 
 

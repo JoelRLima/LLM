@@ -155,41 +155,55 @@ def configure(
     return context, resources
 
 
-def settle(
+def _settle_query(
     resources: _SessionResources,
     context: Any,
     active_shell: Any,
-    application: Any,
-    *,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float | None,
 ) -> ShutdownStatus:
-    if resources.approval_broker is not None:
-        resources.approval_broker.shutdown()
+    executor = resources.query_executor
+    if executor is None:
+        return ShutdownStatus()
+    if timeout_seconds is None:
+        result = executor.cancel_and_wait()
+    else:
+        result = executor.cancel_and_wait(timeout_seconds=timeout_seconds)
+    if result is None:
+        return ShutdownStatus()
+    if active_shell is not None and context is not None:
+        interactive_rendering.render_query_result(context, result)
+    if getattr(result, "error", None) == "QUERY_SHUTDOWN_TIMEOUT":
+        return ShutdownStatus.failed("QUERY_SHUTDOWN_TIMEOUT")
+    return ShutdownStatus()
 
-    status = ShutdownStatus()
-    if resources.query_executor is not None:
-        if timeout_seconds is None:
-            result = resources.query_executor.cancel_and_wait()
-        else:
-            result = resources.query_executor.cancel_and_wait(timeout_seconds=timeout_seconds)
-        if result is not None and active_shell is not None and context is not None:
-            interactive_rendering.render_query_result(context, result)
-        if result is not None and getattr(result, "error", None) == "QUERY_SHUTDOWN_TIMEOUT":
-            status = ShutdownStatus.failed("QUERY_SHUTDOWN_TIMEOUT")
-    if resources.controller is not None:
-        if timeout_seconds is None:
-            message = resources.controller.shutdown()
-        else:
-            message = resources.controller.shutdown(timeout_seconds=timeout_seconds)
-        if message is not None and active_shell is not None and context is not None:
-            interactive_rendering.render_worker_message(context, message)
-        if message is not None and isinstance(getattr(message, "error", None), WorkerSettlementTimeout):
-            status = ShutdownStatus.failed("WORKER_SHUTDOWN_TIMEOUT")
-    if not status.settled:
-        if active_shell is not None:
-            active_shell.print_background("[interactive] shutdown não concluído; operação ativa permanece em settlement")
-        return status
 
+def _settle_controller(
+    resources: _SessionResources,
+    context: Any,
+    active_shell: Any,
+    timeout_seconds: float | None,
+) -> ShutdownStatus:
+    controller = resources.controller
+    if controller is None:
+        return ShutdownStatus()
+    if timeout_seconds is None:
+        message = controller.shutdown()
+    else:
+        message = controller.shutdown(timeout_seconds=timeout_seconds)
+    if message is None:
+        return ShutdownStatus()
+    if active_shell is not None and context is not None:
+        interactive_rendering.render_worker_message(context, message)
+    if isinstance(getattr(message, "error", None), WorkerSettlementTimeout):
+        return ShutdownStatus.failed("WORKER_SHUTDOWN_TIMEOUT")
+    return ShutdownStatus()
+
+
+def _close_settled_resources(
+    resources: _SessionResources,
+    active_shell: Any,
+    application: Any,
+) -> None:
     # cancel_and_wait()/poll() have completed the bounded query settlement and
     # discarded any result from a stale workspace generation.  Keep the UI
     # sink attached until that barrier so late canonical events remain
@@ -202,6 +216,29 @@ def settle(
     application.close()
     if active_shell is not None:
         active_shell.close()
+
+
+def settle(
+    resources: _SessionResources,
+    context: Any,
+    active_shell: Any,
+    application: Any,
+    *,
+    timeout_seconds: float | None = None,
+) -> ShutdownStatus:
+    if resources.approval_broker is not None:
+        resources.approval_broker.shutdown()
+
+    status = _settle_query(resources, context, active_shell, timeout_seconds)
+    controller_status = _settle_controller(resources, context, active_shell, timeout_seconds)
+    if not controller_status.settled:
+        status = controller_status
+    if not status.settled:
+        if active_shell is not None:
+            active_shell.print_background("[interactive] shutdown não concluído; operação ativa permanece em settlement")
+        return status
+
+    _close_settled_resources(resources, active_shell, application)
     return status
 
 

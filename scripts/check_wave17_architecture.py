@@ -281,12 +281,7 @@ def _check_manifest(root: Path) -> list[ArchitectureViolation]:
     return findings
 
 
-def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
-    relative = f"{CLI_ROOT}/interactive_worker.py"
-    source = _source(root, relative)
-    controller = _source(root, f"{CLI_ROOT}/controller.py")
-    rendering = _source(root, f"{CLI_ROOT}/interactive_rendering.py")
-    stream = _source(root, f"{CLI_ROOT}/worker_stream.py")
+def _check_worker_thread_output(relative: str, source: str) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     if any(token in source for token in ("print(", "console.print", "sys.stdout", "sys.stderr")):
         findings.append(_violation("W17-ARCH-14", relative, "worker thread writes directly into the composer terminal"))
@@ -294,6 +289,17 @@ def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
         findings.append(_violation("W17-ARCH-14", relative, "worker output is not captured through the canonical UI seam"))
     if "redirect_stdout" in source or "redirect_stderr" in source:
         findings.append(_violation("W17-ARCH-14", relative, "worker output uses process-global stream redirection"))
+    return findings
+
+
+def _check_worker_stream(
+    relative: str,
+    source: str,
+    controller: str,
+    rendering: str,
+    stream: str,
+) -> list[ArchitectureViolation]:
+    findings: list[ArchitectureViolation] = []
     if (
         "BoundedWorkerStream" not in controller
         or "stream_channel.publish(envelope.run_generation" not in source
@@ -312,6 +318,11 @@ def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
         findings.append(_violation("W17-ARCH-18", f"{CLI_ROOT}/worker_stream.py", "worker stream bounds are not explicit"))
     if "StringIO" in source:
         findings.append(_violation("W17-ARCH-18", relative, "worker stream must not accumulate an unbounded terminal buffer"))
+    return findings
+
+
+def _check_worker_stdin(root: Path, relative: str) -> list[ArchitectureViolation]:
+    findings: list[ArchitectureViolation] = []
     for relative_file in (f"{CLI_ROOT}/{name}" for name in PRIMARY_FILES):
         if relative_file == relative:
             continue
@@ -321,6 +332,18 @@ def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
         for call in _calls(tree):
             if _call_name(call) in {"input", "console.input", "sys.stdin.readline", "sys.stdin.read"}:
                 findings.append(_violation("W17-ARCH-16", relative_file, "interactive handler retains a direct stdin reader"))
+    return findings
+
+
+def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
+    relative = f"{CLI_ROOT}/interactive_worker.py"
+    source = _source(root, relative)
+    controller = _source(root, f"{CLI_ROOT}/controller.py")
+    rendering = _source(root, f"{CLI_ROOT}/interactive_rendering.py")
+    stream = _source(root, f"{CLI_ROOT}/worker_stream.py")
+    findings = _check_worker_thread_output(relative, source)
+    findings.extend(_check_worker_stream(relative, source, controller, rendering, stream))
+    findings.extend(_check_worker_stdin(root, relative))
     return findings
 
 

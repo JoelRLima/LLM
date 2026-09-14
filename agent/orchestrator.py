@@ -144,7 +144,6 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
 
         def observe_step_checkpoint(_event: Any) -> None:
             self._save_checkpoint()
-
         self.event_dispatcher = RuntimeEventDispatcher(
             state=self.agent_state,
             checkpoint_observer=observe_step_checkpoint,

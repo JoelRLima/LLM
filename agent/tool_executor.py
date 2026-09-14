@@ -149,7 +149,6 @@ class ToolExecutor:
         that boundary while the gateway remains responsible for the final
         schema, authority, mode, grant, approval, and confinement checks.
         """
-
         invocation_id = prepared.invocation_id or str(uuid.uuid4())
         state = getattr(self.orchestrator, "agent_state", None)
         current_plan_id = getattr(state, "plan_identity", None)

@@ -13,15 +13,13 @@ from agent.planning.observation_invalidation import (
     clear_observation_state,
     mutation_footprint,
 )
-from agent.planning.observation_receipts import (
-    ObservationClassification,
-    ObservationDispatchDecision,
-)
+from agent.planning.observation_receipts import ObservationClassification, ObservationDispatchDecision
 from agent.planning.step_contracts import ExecutionContext
 from agent.planning.step_observation_policy import ObservationPolicyMixin
 from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
 from agent.runtime.failures import FailureFact
 from agent.runtime.mutation_evidence import project_mutation_evidence
+from agent.runtime.worker_output import emit_worker_output
 from agent.tools.contracts import ToolResult, ToolStatus
 from agent.tools.result_adapter import ensure_canonical_result
 from agent.tools.result_completeness import EvidenceProvenance
@@ -103,10 +101,10 @@ class StepPolicies(ObservationPolicyMixin):
                 "redundant_read_blocks",
                 {"tool": tool, "file_path": self._source_identity(file_path), "reason": reason},
             )
-        if reason and self.context.verbose:
-            from agent.runtime.worker_output import emit_worker_output
 
+        if reason and self.context.verbose:
             emit_worker_output(f"[DEBUG] Hard block silencioso: {reason} em '{file_path}'")
+
         return bool(reason)
 
     @staticmethod
