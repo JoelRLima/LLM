@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from agent.memory.json_persistence import AtomicJsonWriteError, write_json_atomic
 from agent.runtime.workspace_context import WorkspaceContext
@@ -13,17 +13,13 @@ from agent.runtime.workspace_context import WorkspaceContext
 
 class NativePickerUnavailable(RuntimeError):
     """The optional platform-native directory picker cannot be opened."""
-
-
 class TaskWorkspaceRequiredError(ValueError):
     """Raised before task-producing CLI bootstrap when selection is absent."""
 
     reason_code = "TASK_WORKSPACE_REQUIRED"
 
     def __init__(self) -> None:
-        super().__init__(
-            "A workspace explícito é obrigatório para executar ou retomar uma tarefa."
-        )
+        super().__init__("A workspace explícito é obrigatório para executar ou retomar uma tarefa.")
 
 
 def argument_workspace(args: Any) -> Path:
@@ -163,8 +159,14 @@ def _choose_native_workspace(console: Any) -> Path | None:
         return None
 
 
-def _choose_manual_workspace(console: Any) -> Path | None:
-    entered = console.input("Pasta do workspace: ").strip()
+def _choose_manual_workspace(console: Any, prompt: Callable[[str], str | None] | None = None) -> Path | None:
+    if prompt is None:
+        from agent.interfaces.cli.interactive_shell import prompt_from
+
+        raw = prompt_from(console, "Pasta do workspace: ")
+    else:
+        raw = prompt("Pasta do workspace: ")
+    entered = (raw or "").strip()
     if not entered:
         console.print("[yellow]Informe uma pasta existente.[/yellow]")
         return None
@@ -207,11 +209,48 @@ def _invalid_workspace_choice(console: Any, picker_available: bool) -> None:
     console.print(f"[yellow]{message}[/yellow]")
 
 
+def _read_workspace_choice(console: Any, prompt: Callable[[str], str | None] | None) -> str:
+    if prompt is None:
+        from agent.interfaces.cli.interactive_shell import prompt_from
+
+        raw_choice = prompt_from(console, "> ")
+    else:
+        raw_choice = prompt("> ")
+    return (raw_choice or "").strip()
+
+
+def _resolve_workspace_choice(
+    console: Any,
+    choice: str,
+    *,
+    last_choice: str | None,
+    current_choice: str,
+    native_choice: str | None,
+    manual_choice: str,
+    last_path: Path | None,
+    current_path: Path,
+    picker_available: bool,
+    prompt: Callable[[str], str | None] | None,
+) -> tuple[Path | None, bool]:
+    if last_choice is not None and choice == last_choice:
+        assert last_path is not None
+        return last_path, False
+    if choice in {"", current_choice}:
+        return current_path, False
+    if native_choice is not None and choice == native_choice:
+        return _choose_native_workspace(console), True
+    if choice != manual_choice:
+        _invalid_workspace_choice(console, picker_available)
+        return None, True
+    return _choose_manual_workspace(console, prompt), True
+
+
 def choose_workspace(
     *,
     console: Any,
     current: str | Path | None = None,
     last_workspace: str | Path | None = None,
+    prompt: Callable[[str], str | None] | None = None,
 ) -> Path:
     """Choose a workspace without creating directories or changing cwd."""
 
@@ -227,23 +266,23 @@ def choose_workspace(
         last_choice, current_choice, native_choice, manual_choice = _render_workspace_menu(
             console, current_path, last_path, picker_available
         )
-        choice = console.input("> ").strip()
-        if last_choice is not None and choice == last_choice:
-            assert last_path is not None
-            return last_path
-        if choice in {"", current_choice}:
-            return current_path
-        if native_choice is not None and choice == native_choice:
-            selected = _choose_native_workspace(console)
-            if selected is not None:
-                return selected
-            continue
-        if choice != manual_choice:
-            _invalid_workspace_choice(console, picker_available)
-            continue
-        selected = _choose_manual_workspace(console)
+        choice = _read_workspace_choice(console, prompt)
+        selected, retry = _resolve_workspace_choice(
+            console,
+            choice,
+            last_choice=last_choice,
+            current_choice=current_choice,
+            native_choice=native_choice,
+            manual_choice=manual_choice,
+            last_path=last_path,
+            current_path=current_path,
+            picker_available=picker_available,
+            prompt=prompt,
+        )
         if selected is not None:
             return selected
+        if retry:
+            continue
 
 
 __all__ = [

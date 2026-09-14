@@ -8,10 +8,9 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence, cast
 
-from rich.console import Console
-
-from agent.interfaces.cli import first_run, turn_rendering, workspace_entry
+from agent.interfaces.cli import first_run, interactive_admission, interactive_rendering, interactive_resources, interactive_session, workspace_entry  # isort: skip
 from agent.interfaces.cli.parser import build_parser
+from agent.interfaces.cli.ui import console
 from agent.interfaces.task_directives import (
     ParsedTaskRequest,
     TaskDirectiveParseError,
@@ -21,8 +20,14 @@ from agent.interfaces.task_directives import (
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 from agent.runtime.task_directives import TaskRunDirective
 
-console = Console()
 NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
+
+
+def _sync_console() -> None:
+    for module in (interactive_admission, interactive_rendering, interactive_resources, interactive_session):
+        module.console = console  # type: ignore[attr-defined]
+
+
 def obter_status_think(session: Any) -> str:
     if session.thinking_budget > 0:
         level = NIVEIS_THINKING.get(session.thinking_budget, "?")
@@ -31,29 +36,28 @@ def obter_status_think(session: Any) -> str:
 
 
 def _prompt(ctx: Any) -> str | None:
-    mode = getattr(ctx.orchestrator, "operational_mode_label", "FULL")
-    diagnostic = turn_rendering.diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
-    try:
-        return str(console.input(f"\n[cyan]Você [{mode}]{diagnostic} > [/cyan]"))
-    except (EOFError, KeyboardInterrupt):
-        console.print("\n[bold yellow]Encerrando...[/bold yellow]")
-        return None
+    _sync_console()
+    return interactive_rendering.prompt(ctx)
 
 
 def _handle_input(text: str, ctx: Any) -> bool:
-    from agent.interfaces.cli.chat import run_agent_turn
-    from agent.interfaces.cli.commands import handle_command
-
-    handled, should_exit = handle_command(text, ctx)
-    if handled:
-        return bool(should_exit)
-    run_agent_turn(console, ctx, text)
-    return False
+    _sync_console()
+    return interactive_admission.handle_input(text, ctx)
 
 
-def _context_from_application(application: Any, *, config_path: str | Path | None = None) -> Any:
+def _context_from_application(
+    application: Any,
+    *,
+    config_path: str | Path | None = None,
+    shell: Any | None = None,
+    controller: Any | None = None,
+    approval_broker: Any | None = None,
+    event_mailbox: Any | None = None,
+    view_model: Any | None = None,
+    query_service: Any | None = None,
+    query_executor: Any | None = None,
+) -> Any:
     from agent.interfaces.cli.commands import CommandContext
-
     return CommandContext(
         application.session,
         application.orchestrator,
@@ -63,23 +67,19 @@ def _context_from_application(application: Any, *, config_path: str | Path | Non
         workspace=application.workspace,
         workspace_paths=application.workspace_paths,
         config_path=config_path,
+        shell=shell,
+        controller=controller,
+        approval_broker=approval_broker,
+        event_mailbox=event_mailbox,
+        view_model=view_model,
+        query_service=query_service,
+        query_executor=query_executor,
     )
 
 
 def _chat_loop(ctx: Any) -> None:
-    # Startup belongs to the interactive adapter.
-    # Workspace activation remains owned by _run_chat.
-    # /help remains explicit through command dispatch.
-    # Prompt mode is projected from canonical context.
-    # Ordinary text continues through run_agent_turn.
-    # EOF and interrupts remain handled by _prompt.
-    turn_rendering.render_startup_status(console, ctx)
-    while True:
-        text = _prompt(ctx)
-        if text is None:
-            return
-        if text.strip() and _handle_input(text, ctx):
-            return
+    _sync_console()
+    interactive_session.chat_loop(ctx, prompt_fn=_prompt, handle_input_fn=_handle_input)
 
 
 def _value(args: argparse.Namespace, name: str, default: Any = None) -> Any:
@@ -122,26 +122,19 @@ def _run_application_task(
 
 
 def _run_chat(args: argparse.Namespace) -> int:
-    first_run.prepare_chat_workspace(args, console=console, app_paths=_app_paths(args))
-    interactive = first_run.is_interactive_terminal()
-    interactive = first_run.is_interactive_terminal() and (getattr(args, "workspace", None) is None or workspace_entry.require_task_workspace(args) is not None)
-    try:
-        application = _create_application(args, configure_logging=True)
-    except ConfigNotFound:
-        if _value(args, "config") is None and interactive:
-            return cast(int, first_run.recover_first_run_config(args, console=console, app_paths=_app_paths(args)))
-        raise
-    try:
-        context = _context_from_application(
-            application,
-            config_path=_value(args, "config"),
-        )
-        if interactive:
-            workspace_entry.remember_workspace(application.paths, context.workspace.root)
-        _chat_loop(context)
-    finally:
-        application.close()
-    return 0
+    _sync_console()
+    if not first_run.is_interactive_terminal():
+        raise first_run.InteractiveTTYRequiredError()
+    return interactive_session.run_chat(
+        args,
+        value=_value,
+        app_paths=_app_paths,
+        create_application=_create_application,
+        context_from_application=_context_from_application,
+        chat_loop_fn=_chat_loop,
+    )
+
+
 def _print_json(document: Any) -> None:
     print(json.dumps(document, ensure_ascii=False, sort_keys=True))
 

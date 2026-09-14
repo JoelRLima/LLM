@@ -50,6 +50,7 @@ PROCESS_OWNERS = frozenset(
         "agent/tools/process_tree.py",
         "agent/tools/stdio_launcher.py",
         "agent/tools/stdio_process.py",
+        "agent/interfaces/cli/query_git.py",
     }
 )
 PATH_OWNERS = frozenset(

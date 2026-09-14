@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -37,7 +38,7 @@ from agent.evaluation.evaluation_identity import (  # noqa: E402
 )
 from agent.runtime.filesystem_primitives import write_bytes_atomic  # noqa: E402
 
-DECLARED_RUNTIME_IMPORTS = ("ddgs", "requests", "rich")
+DECLARED_RUNTIME_IMPORTS = ("ddgs", "prompt_toolkit", "requests", "rich")
 INSTALLED_ACCEPTANCE_SCHEMA_VERSION = 2
 INSTALLED_ACCEPTANCE_PROPERTIES = (
     {"id": "installed-import-entrypoint", "proof": "wheel import origin and CLI entry point"},
@@ -1897,6 +1898,7 @@ def installed_cli_commands(
     workspace: Path,
 ) -> tuple[tuple[str, tuple[str, ...]], ...]:
     return (
+        ("help", (str(executable), "--help")),
         ("version", (str(executable), "--version")),
         ("config-init", (str(executable), "config", "init")),
         ("doctor", (str(executable), "doctor", "--json")),
@@ -1927,18 +1929,56 @@ def installed_cli_commands(
     )
 
 
+def _is_junction_compatible(path: Path) -> bool:
+    """Return whether *path* is a junction on all supported Python versions."""
+
+    is_junction = getattr(path, "is_junction", None)
+    if callable(is_junction):
+        try:
+            return bool(is_junction())
+        except OSError:
+            return True
+    try:
+        metadata = os.lstat(path)
+    except OSError:
+        return True
+    reparse_point = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
+    return bool(getattr(metadata, "st_file_attributes", 0) & reparse_point)
+
+
 def snapshot_tree(root: Path) -> dict[str, tuple[int, int, str]]:
     """Capture content and write-sensitive metadata for every regular file."""
 
     if not root.exists():
         return {}
     snapshot: dict[str, tuple[int, int, str]] = {}
-    for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
-        stat = path.stat()
+    candidates: list[Path] = []
+    visited_directories: set[tuple[int, int]] = set()
+    for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        try:
+            directory_stat = current_path.stat()
+        except OSError:
+            directories[:] = []
+            continue
+        directory_identity = (directory_stat.st_dev, directory_stat.st_ino)
+        if directory_identity in visited_directories:
+            directories[:] = []
+            continue
+        visited_directories.add(directory_identity)
+        directories[:] = sorted(
+            name
+            for name in directories
+            if not (current_path / name).is_symlink()
+            and not _is_junction_compatible(current_path / name)
+        )
+        candidates.extend(current_path / name for name in filenames)
+    for path in sorted(candidate for candidate in candidates if candidate.is_file()):
+        file_stat = path.stat()
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         snapshot[path.relative_to(root).as_posix()] = (
-            stat.st_size,
-            stat.st_mtime_ns,
+            file_stat.st_size,
+            file_stat.st_mtime_ns,
             digest,
         )
     return snapshot
@@ -2166,6 +2206,26 @@ def _verify_import_origin(
         raise VerificationError(
             f"'agent' foi importado fora do site-packages isolado: {imported}"
         ) from exc
+
+
+def _verify_interactive_dependency(
+    venv_python: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    code = (
+        "import prompt_toolkit; "
+        "from agent.interfaces.cli.interactive_shell import InteractiveShell; "
+        "print(prompt_toolkit.__version__)"
+    )
+    result = _run(
+        "installed-interactive-import",
+        (str(venv_python), "-c", code),
+        cwd=cwd,
+        environment=environment,
+    )
+    if not result.stdout.strip():
+        raise VerificationError("prompt_toolkit instalado não reportou versão.")
 
 
 def _verify_declared_dependencies(
@@ -2764,6 +2824,11 @@ def _verify_version(result: CommandResult) -> None:
         raise VerificationError(f"--version não informou versão semântica: {result.stdout!r}")
 
 
+def _verify_clean_help(result: CommandResult) -> None:
+    if "usage:" not in result.stdout.casefold() or "\x1b" in result.stdout:
+        raise VerificationError("--help instalado não produziu saída CLI limpa.")
+
+
 def _verify_config(app_home: Path) -> None:
     config_file = app_home / "config" / "config.json"
     if not config_file.is_file():
@@ -2795,10 +2860,12 @@ def _verify_missing_config_recovery(
         cwd=cwd,
         environment=environment,
     )
-    if "llm-agent config init" not in result.stderr:
-        raise VerificationError("Installed CLI did not expose missing-config recovery.")
+    if "INTERACTIVE_TTY_REQUIRED" not in result.stderr:
+        raise VerificationError("Installed CLI did not fail fast for non-TTY chat.")
+    if result.stdout.strip():
+        raise VerificationError("Non-TTY chat produced unexpected stdout.")
     if (app_home / "config" / "config.json").exists():
-        raise VerificationError("Installed CLI created config without non-interactive consent.")
+        raise VerificationError("Non-TTY chat created config before an interactive session.")
 
 
 def _verify_missing_task_workspace(
@@ -3046,6 +3113,11 @@ def verify_installed_package(
             external_cwd,
             runtime_environment,
         )
+        _verify_interactive_dependency(
+            venv_python,
+            external_cwd,
+            runtime_environment,
+        )
         _verify_missing_config_recovery(
             entrypoint,
             temp / "missing-config-home",
@@ -3078,6 +3150,7 @@ def verify_installed_package(
                 )
 
             _verify_version(results["version"])
+            _verify_clean_help(results["help"])
             _verify_config(app_home)
             parse_json_output(results["doctor"])
             online_payload = parse_json_output(results["doctor-online"])

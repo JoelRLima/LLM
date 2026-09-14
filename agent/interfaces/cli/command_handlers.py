@@ -5,8 +5,10 @@ from typing import Any, Callable
 from rich.panel import Panel
 from rich.table import Table
 
+from agent.interfaces.cli import interactive_commands as _interactive_commands
+from agent.interfaces.cli.interactive_input import prompt_value as _prompt_value
 from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_result
-from agent.interfaces.cli.workspace_entry import render_active_workspace, workspace_storage_path
+from agent.interfaces.cli.workspace_entry import workspace_storage_path
 from agent.interfaces.task_directives import (
     TaskDirectiveParseError,
     parse_task_request,
@@ -17,10 +19,6 @@ from agent.tools.invocation_semantics import CODE_TASK_ACTIONS
 from agent.tools.mode_enforcement import requests_test_execution
 
 Handler = Callable[[str, Any], None]
-
-
-def show_workspace(_: str, ctx: Any) -> None:
-    render_active_workspace(console, ctx.workspace)
 
 
 def mode_command(text: str, ctx: Any) -> None:
@@ -53,7 +51,7 @@ def mode_command(text: str, ctx: Any) -> None:
 
 
 def system_prompt(_: str, ctx: Any) -> None:
-    value = console.input("[bold cyan]Digite o novo System Prompt:[/bold cyan] ")
+    value = _prompt_value(ctx, "[bold cyan]Digite o novo System Prompt:[/bold cyan] ")
     if value.strip():
         ctx.session.set_system_prompt(value)
         console.print("[bold green]System Prompt atualizado![/bold green]")
@@ -68,7 +66,7 @@ def toggle_thinking(_: str, ctx: Any) -> None:
         ctx.session.thinking_budget = 0
         console.print("[bold yellow]Thinking OFF[/bold yellow]")
         return
-    choice = console.input("[bold cyan]Tokens (B=baixo, M=médio, A=alto, ou número):[/bold cyan] ").strip().upper()
+    choice = _prompt_value(ctx, "[bold cyan]Tokens (B=baixo, M=médio, A=alto, ou número):[/bold cyan] ").upper()
     budgets = {"B": 512, "M": 1024, "A": 2048}
     if choice in budgets:
         ctx.session.thinking_budget = budgets[choice]
@@ -87,7 +85,7 @@ def clear_history(_: str, ctx: Any) -> None:
 
 def _history_path(prompt: str, ctx: Any) -> str:
     default = workspace_storage_path(ctx, "chat_history_file", "chat_history.json")
-    entered = console.input(f"[bold cyan]{prompt} (Enter para '{default}'):[/bold cyan] ").strip()
+    entered = _prompt_value(ctx, f"[bold cyan]{prompt} (Enter para '{default}'):[/bold cyan] ", default=str(default))
     return str(entered or default)
 
 
@@ -108,8 +106,11 @@ def toggle_debug(_: str, ctx: Any) -> None:
     set_debug_level(0 if ctx.modo_diagnostico == 0 else 1)
     labels = ("DESLIGADO", "LIGADO", "VERBOSE")
     console.print(f"[bold yellow]Diagnóstico {labels[ctx.modo_diagnostico]}.[/bold yellow]")
-    ctx.orchestrator.verbose = ctx.modo_diagnostico >= 1
-    ctx.orchestrator.context_manager.verbose = ctx.orchestrator.verbose
+    if getattr(ctx, "controller", None) is None:
+        ctx.orchestrator.verbose = ctx.modo_diagnostico >= 1
+        ctx.orchestrator.context_manager.verbose = ctx.orchestrator.verbose
+    else:
+        ctx.diagnostic_level = labels[ctx.modo_diagnostico]
 
 
 def agent_command(text: str, ctx: Any) -> None:
@@ -211,16 +212,8 @@ def show_memory(_: str, ctx: Any) -> None:
     console.print(table)
 
 
-def show_events(_: str, ctx: Any) -> None:
-    events = ctx.orchestrator.agent_state.events
-    if not events:
-        console.print("[yellow]Nenhum evento registrado.[/yellow]")
-    for event in events:
-        console.print(f"[dim]Passo {event['step']}:[/dim] {event['type']} {event['data']}")
-
-
 def forget(_: str, ctx: Any) -> None:
-    key = console.input("[bold cyan]Chave a esquecer:[/bold cyan] ").strip()
+    key = _prompt_value(ctx, "[bold cyan]Chave a esquecer:[/bold cyan] ")
     ctx.orchestrator.forget(key)
     console.print(f"[bold green]Chave '{key}' removida (se existia).[/bold green]")
 
@@ -232,7 +225,7 @@ def clear_memory(_: str, ctx: Any) -> None:
 
 def _memory_path(ctx: Any) -> str:
     default = workspace_storage_path(ctx, "memory_file", "agent_memory.json")
-    entered = console.input(f"[bold cyan]Caminho (Enter para '{default}'):[/bold cyan] ").strip()
+    entered = _prompt_value(ctx, f"[bold cyan]Caminho (Enter para '{default}'):[/bold cyan] ", default=str(default))
     return str(entered or default)
 
 
@@ -332,3 +325,7 @@ def retry(text: str, ctx: Any) -> None:
         from agent.interfaces.cli.legacy_compat import append_legacy_answer
 
         append_legacy_answer(ctx, answer)
+
+
+def __getattr__(name: str) -> Any:
+    return getattr(_interactive_commands, name)

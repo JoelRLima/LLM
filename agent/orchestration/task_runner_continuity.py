@@ -29,6 +29,7 @@ from agent.runtime.task_directives import (
     TaskDirective,
     TaskRunDirective,
 )
+from agent.runtime.worker_output import emit_worker_output
 
 REASON_TASK_RESUME_INTERRUPTED_BEFORE_COMMIT = "TASK_RESUME_INTERRUPTED_BEFORE_COMMIT"
 
@@ -187,7 +188,7 @@ def _restore_checkpoint(
     if not restored:
         orchestrator._delete_checkpoint()
         return None
-    print(chr(10) + 'Checkpoint encontrado. Retomando tarefa: "' + str(restored) + '"')
+    emit_worker_output(chr(10) + 'Checkpoint encontrado. Retomando tarefa: "' + str(restored) + '"')
     logger.info("Retomando tarefa a partir de checkpoint: %s", restored)
     raw_continuity = checkpoint.get("continuity")
     resume_reason = REASON_CHECKPOINT_RESUMABLE

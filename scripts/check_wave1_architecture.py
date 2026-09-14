@@ -29,6 +29,8 @@ PROFILE_INPUT_FILES = {
 PROFILE_SELECTION_BOUNDARY_FILES = PROFILE_INPUT_FILES | {
     "agent/application.py",
     "agent/interfaces/cli/command_handlers.py",
+    "agent/interfaces/cli/first_run.py",
+    "agent/interfaces/cli/interactive_commands.py",
 }
 CAPABILITY_INPUT_FILES = PROFILE_INPUT_FILES | {
     "agent/runtime/request_measurement.py",

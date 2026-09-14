@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.approval import ApprovalDecision, ApprovalRequest, format_concrete_operation
+from agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled, format_concrete_operation
 from agent.runtime.logging import logger
 from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
 from agent.tools.invocation_semantics import resolve_invocation_semantics
@@ -49,6 +49,9 @@ def check_effect_approval(gateway: Any, invocation: ToolInvocation, descriptor: 
                 },
             )
         )
+    except ApprovalWaitCancelled:
+        _set_audit(gateway, invocation.invocation_id, approval_disposition="cancelled")
+        return denial(invocation, ToolStatus.CANCELLED, "CANCELLED", "A aprovação foi cancelada.")
     except Exception as exc:
         logger.warning("[GATEWAY] Approval provider failed: %s", type(exc).__name__)
         _set_audit(gateway, invocation.invocation_id, approval_disposition="failed")

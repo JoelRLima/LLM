@@ -3,32 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from agent.interfaces.cli.command_handlers import (
-    agent_command,
-    clear_history,
-    clear_memory,
-    code_command,
-    doctor,
-    find_text,
-    forget,
-    list_files,
-    load_history,
-    load_memory,
-    mode_command,
-    read_file,
-    remember,
-    retry,
-    save_history,
-    save_memory,
-    show_events,
-    show_memory,
-    show_prompt,
-    show_workspace,
-    system_prompt,
-    toggle_debug,
-    toggle_thinking,
-    web_search,
-)
+from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
 from agent.interfaces.cli.ui import ConsoleChangeApprover, exibir_menu
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
@@ -63,6 +38,13 @@ class CommandContext:
         workspace: WorkspaceContext | None = None,
         workspace_paths: WorkspacePaths | None = None,
         config_path: str | Path | None = None,
+        shell: Any | None = None,
+        controller: Any | None = None,
+        approval_broker: Any | None = None,
+        event_mailbox: Any | None = None,
+        view_model: Any | None = None,
+        query_service: Any | None = None,
+        query_executor: Any | None = None,
     ) -> None:
         self.session = session
         self.orchestrator = orchestrator
@@ -72,51 +54,38 @@ class CommandContext:
         self.workspace = workspace
         self.workspace_paths = workspace_paths
         self.config_path = config_path
+        self.shell = shell
+        self.controller = controller
+        self.approval_broker = approval_broker
+        self.event_mailbox = event_mailbox
+        self.view_model = view_model
+        self.query_service = query_service
+        self.query_executor = query_executor
+        self.prompt_line = getattr(shell, "prompt_line", None)
         self.modo_diagnostico = 0
+        self.diagnostic_level = "OFF"
         self.modo_agente = True
 
 
-EXACT_HANDLERS = {
-    "/system": system_prompt, "/sistema": system_prompt, "/prompt": show_prompt,
-    "/think": toggle_thinking, "/pensar": toggle_thinking,
-    "/clear": clear_history, "/limpar": clear_history,
-    "/save": save_history, "/salvar": save_history,
-    "/load": load_history, "/carregar": load_history,
-    "debug": toggle_debug, "/debug": toggle_debug,
-    "diagnostico": toggle_debug, "/diagnostico": toggle_debug,
-    "/memory": show_memory, "/memoria": show_memory, "/events": show_events,
-    "/forget": forget, "/esquecer": forget,
-    "/clearmemory": clear_memory, "/limpamemoria": clear_memory,
-    "/save_memory": save_memory, "/salvarmemoria": save_memory,
-    "/load_memory": load_memory, "/carregarmemoria": load_memory,
-    "/doctor": doctor, "/ls": list_files, "/list": list_files,
-    "/workspace": show_workspace, "/diretorio": show_workspace, "/pwd": show_workspace,
-    "/modo": mode_command, "/mode": mode_command, "/authority": mode_command,
-    "/retry": retry, "/retomar": retry,
-    "/inspect": inspect_command,
-}
-PREFIX_HANDLERS = (
-    ("/modo", mode_command), ("/mode", mode_command), ("/authority", mode_command),
-    ("/agent", agent_command), ("/agente", agent_command), ("/code", code_command),
-    ("/remember", remember), ("/read", read_file), ("/find", find_text),
-    ("/search", web_search),
-)
+# Compatibility views for older callers/tests.  Policy, aliases and ownership
+# come from DEFAULT_COMMAND_REGISTRY; these views are not a second authority.
+EXACT_HANDLERS = DEFAULT_COMMAND_REGISTRY.exact_handler_map()
+PREFIX_HANDLERS = DEFAULT_COMMAND_REGISTRY.prefix_handler_items()
 
 
 def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
     """Processa comandos da CLI e informa `(tratado, deve_sair)`."""
-    command = texto.strip().lower()
-    if command in {"sair", "exit"}:
-        return True, True
-    if command in {"/help", "/ajuda"}:
-        exibir_menu()
-        return True, False
-    handler = EXACT_HANDLERS.get(command)
-    if handler is not None:
-        handler(texto, ctx)
-        return True, False
-    for prefix, prefix_handler in PREFIX_HANDLERS:
-        if command == prefix or command.startswith(prefix + " "):
-            prefix_handler(texto, ctx)
+    entry, _match_kind = DEFAULT_COMMAND_REGISTRY.lookup(texto)
+    if entry is not None:
+        if entry.canonical_command_id == "exit":
+            return True, True
+        if entry.canonical_command_id == "help":
+            # Keep the historical zero-argument UI renderer compatible
+            # with isolated callers while the registry owns its routing.
+            exibir_menu()
+            return True, False
+        handler = DEFAULT_COMMAND_REGISTRY.resolve_handler(entry)
+        if handler is not None:
+            handler(texto, ctx)
             return True, False
     return False, False

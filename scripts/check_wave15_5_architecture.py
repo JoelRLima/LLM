@@ -31,6 +31,8 @@ _SESSION_REQUESTS = "agent/llm/session_requests.py"
 _APP = "agent/interfaces/cli/app.py"
 _CONTINUITY = "agent/interfaces/cli/task_continuity.py"
 _WORKSPACE_ENTRY = "agent/interfaces/cli/workspace_entry.py"
+_FIRST_RUN = "agent/interfaces/cli/first_run.py"
+_INTERACTIVE_SESSION = "agent/interfaces/cli/interactive_session.py"
 _AUDIT = "agent/observability/audit_projection.py"
 _APPLICATION_RESULT = "agent/application_result.py"
 _INVOCATION_COMMIT = "agent/tools/invocation_commit.py"
@@ -126,6 +128,52 @@ def _calls(tree: ast.AST | None) -> Iterator[ast.Call]:
             yield node
 
 
+def _named_calls(tree: ast.AST | None, qualified_name: str) -> tuple[ast.Call, ...]:
+    return tuple(call for call in _calls(tree) if _qualified_name(call.func) == qualified_name)
+
+
+def _has_workspace_assignment_from_picker(tree: ast.AST | None) -> bool:
+    for node in _nodes(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+        if not any(
+            isinstance(target, ast.Attribute)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "args"
+            and target.attr == "workspace"
+            for target in targets
+        ):
+            continue
+        if any(_qualified_name(call.func) == "choose_workspace" for call in _calls(node.value)):
+            return True
+    return False
+
+
+def _chat_tty_guard(owner: ast.AST | None) -> ast.If | None:
+    if not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+    for node in owner.body:
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if not (
+            isinstance(test, ast.UnaryOp)
+            and isinstance(test.op, ast.Not)
+            and isinstance(test.operand, ast.Call)
+            and _qualified_name(test.operand.func) == "first_run.is_interactive_terminal"
+        ):
+            continue
+        if any(
+            isinstance(candidate, ast.Raise)
+            and isinstance(candidate.exc, ast.Call)
+            and _qualified_name(candidate.exc.func) == "first_run.InteractiveTTYRequiredError"
+            for candidate in node.body
+        ):
+            return node
+    return None
+
+
 def _literal_key(node: ast.AST) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -204,11 +252,52 @@ def _check_c03_explicit_workspace(root: Path) -> list[ArchitectureViolation]:
         findings.extend(missing)
         owner = _function(tree, function_name) if tree is not None else None
         text = ast.unparse(owner) if owner is not None else ""
+        if function_name == "_run_chat":
+            guard = _chat_tty_guard(owner)
+            delegated_calls = _named_calls(owner, "interactive_session.run_chat")
+            if guard is None or not delegated_calls or guard.lineno >= min(call.lineno for call in delegated_calls):
+                findings.append(
+                    _violation(
+                        rule,
+                        relative,
+                        "_run_chat does not fail closed before interactive session/application setup",
+                        owner,
+                    )
+                )
+            continue
         if "require_task_workspace(args)" not in text:
             findings.append(_violation(rule, relative, f"{function_name} does not fail closed before task application", owner))
         for call in _calls(owner):
             if _qualified_name(call.func) == "Path.cwd":
                 findings.append(_violation(rule, relative, f"{function_name} silently derives task workspace from CWD", call))
+
+    session_tree, session_missing = _required(root, rule, _INTERACTIVE_SESSION)
+    findings.extend(session_missing)
+    session_owner = _function(session_tree, "run_chat") if session_tree is not None else None
+    prepare_calls = _named_calls(session_owner, "first_run.prepare_chat_workspace")
+    create_calls = _named_calls(session_owner, "create_application")
+    if not prepare_calls or not create_calls or min(call.lineno for call in prepare_calls) >= min(call.lineno for call in create_calls):
+        findings.append(
+            _violation(
+                rule,
+                _INTERACTIVE_SESSION,
+                "chat must establish/validate workspace before creating the application",
+                session_owner,
+            )
+        )
+
+    first_run_tree, first_run_missing = _required(root, rule, _FIRST_RUN)
+    findings.extend(first_run_missing)
+    prepare_owner = _function(first_run_tree, "prepare_chat_workspace") if first_run_tree is not None else None
+    if not _has_workspace_assignment_from_picker(prepare_owner):
+        findings.append(
+            _violation(
+                rule,
+                _FIRST_RUN,
+                "interactive workspace selection does not assign the selected path before application creation",
+                prepare_owner,
+            )
+        )
     return findings
 
 
@@ -595,7 +684,16 @@ def _mutation_arms() -> tuple[MutationArm, ...]:
         MutationArm("W155-M03", "inject secret into event payload", lambda root: _append(root / _MODEL_CALL, "\ndef _mutant_m03(profile):\n    return {'credential_ref': profile.credential_ref}\n")),
         MutationArm("W155-M04", "headless run falls back to Path.cwd", lambda root: _replace_in_function(root / _APP, "_run_once", "require_task_workspace(args)", "argument_workspace(args)")),
         MutationArm("W155-M05", "task resume falls back to Path.cwd", lambda root: _replace_in_function(root / _CONTINUITY, "run_task_resume", "require_task_workspace(args)", "argument_workspace(args)")),
-        MutationArm("W155-M06", "noninteractive chat falls back to CWD", lambda root: _replace_in_function(root / _APP, "_run_chat", "require_task_workspace(args)", "argument_workspace(args)")),
+        MutationArm(
+            "W155-M06",
+            "noninteractive chat bypasses the canonical TTY/workspace preflight",
+            lambda root: _replace_in_function(
+                root / _APP,
+                "_run_chat",
+                "if not first_run.is_interactive_terminal():",
+                "if first_run.is_interactive_terminal():",
+            ),
+        ),
         MutationArm("W155-M07", "audit projection calls model", lambda root: _append(root / _AUDIT, "\nfrom agent.llm.session import ChatSession\n_mutant_m07 = ChatSession.complete\n")),
         MutationArm("W155-M08", "audit projection calls tool gateway", lambda root: _append(root / _AUDIT, "\nfrom agent.tools.invocation_gateway import ToolInvocationGateway\n_mutant_m08 = ToolInvocationGateway.run\n")),
         MutationArm("W155-M09", "audit receipt is consumed by authority/planning", lambda root: _append(root / "agent/tools/authority.py", "\nfrom agent.observability.audit_projection import RunAuditReceipt\n_mutant_m09 = RunAuditReceipt\n")),

@@ -16,6 +16,7 @@ from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.events import RuntimeEvent
 from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
+from agent.runtime.worker_output import emit_worker_output
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 
 
@@ -164,7 +165,7 @@ class OrchestratorOperations:
             )
         emit_event(event)
         if self.verbose:
-            print(f"[{event_type}] {data}")
+            emit_worker_output(f"[{event_type}] {data}")
 
     def _log_metric(self, entry: Dict[str, Any]) -> None:
         enriched = dict(entry)
@@ -214,7 +215,7 @@ class OrchestratorOperations:
             path = builder.save_report(report, format=config.get("format", "json"))
             saved_path = str(path)
             if self.verbose:
-                print(f"Relatório da tarefa salvo em: {path}")
+                emit_worker_output(f"Relatório da tarefa salvo em: {path}")
             return saved_path
         except Exception as exc:
             logger.warning("Task report generation failed: %s", exc)

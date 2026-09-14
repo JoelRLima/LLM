@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Dict, Optional, cast
 
+from agent.application_interactive import reapply_interactive_cancellation
 from agent.checkpoint_manager import CheckpointLoadError
 from agent.llm.router import _is_clearly_trivial
 from agent.orchestration.route_coordinator import RouteCoordinatorMixin
@@ -49,8 +50,6 @@ from agent.watchdog import Watchdog
 
 
 class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
-    """Coordinates one task lifecycle around the public Orchestrator facade."""
-
     def __init__(self, orchestrator: Any) -> None:
         self.orchestrator = orchestrator
         self._resume_task_definition_admitted = False
@@ -58,7 +57,6 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self._resume_attempt_committed = False
         self._resume_commit_expectation: Any = None
         self._directive_runtime_restore: TaskDirectiveRuntimeRestore | None = None
-
     def _route_is_hierarchical(self, objective: str) -> bool:
         state = getattr(self.orchestrator, "agent_state", None)
         directive = getattr(state, "task_run_directive", None)
@@ -89,6 +87,7 @@ class TaskRunner(RouteCoordinatorMixin, TaskLifecycleMixin):
         self.orchestrator._cancelled = False
         self.orchestrator._preserve_checkpoint = False
         self.orchestrator.cancellation_token.reset()
+        reapply_interactive_cancellation(self.orchestrator)
         self._resume_task_definition_admitted = False
         self._resume_commit_failed = False
         self._resume_attempt_committed = False

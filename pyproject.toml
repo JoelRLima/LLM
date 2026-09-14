@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "ddgs>=9,<10",
+    "prompt_toolkit>=3,<4",
     "requests>=2.31,<3",
     "rich>=13,<16",
 ]

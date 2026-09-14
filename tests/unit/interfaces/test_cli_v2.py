@@ -175,7 +175,7 @@ def test_chat_missing_config_noninteractive_is_actionable_without_prompt_or_writ
 
     assert not (home / "config" / "config.json").exists()
     captured = capsys.readouterr()
-    assert "TASK_WORKSPACE_REQUIRED" in captured.err
+    assert "INTERACTIVE_TTY_REQUIRED" in captured.err
     assert captured.out == ""
 
 
@@ -421,19 +421,16 @@ def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
     assert "validation: not_run" in output
 
 
-def test_default_command_is_chat_and_closes_application(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_command_is_chat_non_tty_fails_fast(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     application = _Application()
     seen: dict[str, Any] = {}
     monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
     monkeypatch.setattr(cli, "_chat_loop", lambda context: seen.setdefault("context", context))
 
-    assert cli.main(["--workspace", str(Path.cwd())]) == 0
-
-    assert seen["context"].application is application
-    assert seen["context"].workspace is application.workspace
-    assert seen["context"].app_paths is application.paths
-    assert seen["context"].workspace_paths is application.workspace_paths
-    assert application.closed is True
+    assert cli.main(["--workspace", str(Path.cwd())]) == 2
+    assert seen == {}
+    assert application.closed is False
+    assert "INTERACTIVE_TTY_REQUIRED" in capsys.readouterr().err
 
 
 def test_doctor_json_is_one_document_and_maps_diagnostics_to_exit_one(

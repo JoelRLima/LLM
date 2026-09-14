@@ -15,6 +15,7 @@ from agent.code.changes import (
     FileChange,
     content_hash,
 )
+from agent.runtime.worker_output import emit_worker_output
 
 Result = dict[str, Any]
 AstPatcher = Callable[[Path, str, str, str | None], Result]
@@ -129,8 +130,8 @@ def _show_diff(original: str, proposed: str, file_path: str) -> None:
         original.splitlines(keepends=True), proposed.splitlines(keepends=True),
         fromfile=file_path, tofile=f"{file_path} (proposto)",
     ))
-    print(f"\n[DIFF] Mudanças propostas para '{file_path}':")
-    print(diff if diff.strip() else "Nenhuma mudança detectada.")
+    emit_worker_output(f"\n[DIFF] Mudanças propostas para '{file_path}':")
+    emit_worker_output(diff if diff.strip() else "Nenhuma mudança detectada.")
 
 
 def review_and_commit(

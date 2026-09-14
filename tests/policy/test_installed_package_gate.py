@@ -10,6 +10,7 @@ from scripts.verify_installed_package import (
     INSTALLED_PROBE_SOURCE,
     CommandResult,
     VerificationError,
+    _is_junction_compatible,
     _run,
     _validate_slice_a_payload,
     _validate_slice_b_payload,
@@ -25,6 +26,16 @@ from scripts.verify_installed_package import (
 )
 
 
+def test_snapshot_tree_has_python_310_safe_junction_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "payload.txt").write_text("ok", encoding="utf-8")
+    monkeypatch.delattr(Path, "is_junction", raising=False)
+
+    assert _is_junction_compatible(nested) is False
+    assert snapshot_tree(tmp_path)["nested/payload.txt"][2]
+
+
 def test_gate_declares_required_installed_cli_journeys(tmp_path: Path) -> None:
     executable = tmp_path / "llm-agent"
     workspace = tmp_path / "workspace"
@@ -32,6 +43,7 @@ def test_gate_declares_required_installed_cli_journeys(tmp_path: Path) -> None:
     commands = dict(installed_cli_commands(executable, workspace))
 
     assert commands == {
+        "help": (str(executable), "--help"),
         "version": (str(executable), "--version"),
         "config-init": (str(executable), "config", "init"),
         "doctor": (str(executable), "doctor", "--json"),

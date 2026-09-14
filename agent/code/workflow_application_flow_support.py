@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable
 
+from agent.approval import ApprovalWaitCancelled
 from agent.code.changes import ChangeConflictError, ChangeSet, ChangeSetError
 from agent.code.diagnostics import _failure_result
 from agent.runtime.context import TaskResult, TaskStatus
@@ -65,7 +66,16 @@ def _approval_and_commit(
     *,
     pre_commit_guard: Callable[[], None] | None = None,
 ) -> tuple[Any, TaskResult | None]:
-    approval = _approval_authority(preview, assessment, approver)
+    try:
+        approval = _approval_authority(preview, assessment, approver)
+    except ApprovalWaitCancelled:
+        return None, _failure_result(
+            status=TaskStatus.CANCELLED,
+            code="CANCELLED",
+            summary="A aprovação do ChangeSet foi cancelada.",
+            artifacts=(_artifact(preview, assessment, applied=False, final_state="cancelled"),),
+            error="cancelled",
+        )
     artifact = _artifact(preview, assessment, applied=False, approval=approval)
     approval_result = _approval_result(
         preview,

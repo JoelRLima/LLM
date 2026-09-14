@@ -104,7 +104,9 @@ class StepPolicies(ObservationPolicyMixin):
                 {"tool": tool, "file_path": self._source_identity(file_path), "reason": reason},
             )
         if reason and self.context.verbose:
-            print(f"[DEBUG] Hard block silencioso: {reason} em '{file_path}'")
+            from agent.runtime.worker_output import emit_worker_output
+
+            emit_worker_output(f"[DEBUG] Hard block silencioso: {reason} em '{file_path}'")
         return bool(reason)
 
     @staticmethod

@@ -9,6 +9,7 @@ from typing import Any, Dict
 from agent.reporting.run_snapshot import CanonicalRunSnapshot
 from agent.reporting.task_report import TaskReportBuilder
 from agent.runtime.logging import logger
+from agent.runtime.worker_output import emit_worker_output
 
 
 def record_canonical_run_metric(owner: Any, success: bool) -> None:
@@ -65,7 +66,7 @@ def generate_task_report(
         )
         path = builder.save_report(report, format=config.get("format", "json"))
         if owner.verbose:
-            print(f"RelatÃ³rio da tarefa salvo em: {path}")
+            emit_worker_output(f"RelatÃ³rio da tarefa salvo em: {path}")
         return str(path)
     except Exception as exc:
         logger.warning("Task report generation failed: %s", exc)

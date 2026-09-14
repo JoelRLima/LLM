@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "wave17_phase0_worker_output_inventory",
+  "scope": "direct terminal writers on worker-reachable runtime paths",
+  "allowed_dispositions": ["UNREACHABLE_INTERACTIVE_WORKER", "CAPTURED", "REROUTED", "MUST_CHANGE_UNDER_SECTION_19_SEAM_4"],
+  "entries": [
+    {"location":"agent/tool_executor.py:93,109,111","writer":"print","reachability":"worker-reachable through ToolInvocationGateway","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/orchestrator.py:205,219","writer":"print","reachability":"worker-reachable during persona routing","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/orchestration/operations.py:167,217","writer":"print","reachability":"worker-reachable verbose event/report paths","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/orchestration/operations_reporting.py:68","writer":"print","reachability":"worker-reachable report path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/orchestration/task_runner_continuity.py:190","writer":"print","reachability":"worker-reachable resume path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/planning/execution_gateway_support.py:121","writer":"print","reachability":"worker-reachable optimizer debug path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/planning/plan_builder.py:107,140","writer":"print","reachability":"worker-reachable planning debug paths","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/planning/step_policies.py:107","writer":"print","reachability":"worker-reachable policy debug path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/llm/context_manager.py:217,225","writer":"print","reachability":"worker-reachable context debug paths","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/llm/context_model_call.py:310","writer":"print","reachability":"worker-reachable model debug path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/llm/context_views.py:170","writer":"print","reachability":"worker-reachable compression debug path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/error_handler.py:114","writer":"print","reachability":"worker-reachable verbose error recovery path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/workspace.py:114,124,133,156,157,159","writer":"print","reachability":"worker-reachable workspace mutation/debug paths","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/skills/file_writer_runtime.py:132,133","writer":"print","reachability":"worker-reachable code/file writer preview path","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/health_check.py:62","writer":"print","reachability":"headless/top-level health command; interactive handler is idle-only","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/health/reporting.py:41,46-53","writer":"print","reachability":"headless/top-level health report","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/operational_receipt.py:12-42","writer":"print","reachability":"headless receipt renderer","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/task_continuity.py:44,72-147","writer":"print","reachability":"headless task continuity command","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/maintenance.py:37-158","writer":"print","reachability":"headless maintenance/config/extension commands","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/extensions.py:90-114","writer":"print","reachability":"headless extension command","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/inspector.py:92,136,164,196-197","writer":"print","reachability":"separate historical inspector CLI; no chat worker","disposition":"UNREACHABLE_INTERACTIVE_WORKER"},
+    {"location":"agent/interfaces/cli/streaming.py:29,36,44,74","writer":"print/console.print","reachability":"current synchronous chat stream; becomes worker-reachable after controller extraction","disposition":"MUST_CHANGE_UNDER_SECTION_19_SEAM_4"},
+    {"location":"agent/interfaces/cli/task_context.py:29","writer":"print","reachability":"headless/task context diagnostic helper","disposition":"UNREACHABLE_INTERACTIVE_WORKER"}
+  ],
+  "unknown_reachable_writers": false,
+  "method": "rg -n print|console.print over agent/**/*.py, then classified by chat entrypoint and canonical task reachability"
+}

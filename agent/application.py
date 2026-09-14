@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from agent.interaction.types import AgentInteractionResult
 
 from agent.application_cleanup import abort_startup
+from agent.application_interactive import InteractiveCancellationMixin
 from agent.application_lifecycle import close_application
 from agent.application_result import AgentRunResult, finalize_application_result
 from agent.approval import ApprovalPort, RequireExplicitApproval
@@ -40,7 +41,7 @@ from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 
 _RUN_LOCK = threading.RLock()
-class AgentApplication(ApplicationOperationalModeMixin):
+class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeMixin):
     """Owns one configured assistant runtime and its resources."""
     def __init__(
         self,
@@ -81,6 +82,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         self._closed = False
         self._task_attempted = False
         self._interaction_service: InteractionService | None = None
+        self._init_interactive_cancellation()
         self.orchestrator._on_observation_run_started = lambda correlation, resumed=False: start_observation_session(
             self, correlation, resumed=resumed
         )
@@ -213,15 +215,12 @@ class AgentApplication(ApplicationOperationalModeMixin):
     def inspection_service(self) -> Any:
         """Return the shared read API for the interactive inspector adapter."""
         return build_inspection_service(self)
-
     def interaction_service(self) -> InteractionService:
         """Return the unified W12 interaction owner."""
         if self._interaction_service is None:
             from agent.interaction.service import InteractionService
-
             self._interaction_service = InteractionService(self)
         return self._interaction_service
-
     def interact(
         self,
         text: str,
@@ -314,6 +313,7 @@ class AgentApplication(ApplicationOperationalModeMixin):
         )
         finish_observation(self, result)
         return result
+
     def cancel(self) -> None:
         if not self._closed:
             if self.interaction_service().cancel_active_model_call():

@@ -104,7 +104,9 @@ class PlanBuilder:
             request_contract=ModelRequestContract.INITIAL_PLAN,
         )
         if self.orchestrator.verbose:
-            print(f"[DEBUG] plan_decision admitido: {decision!r}")
+            from agent.runtime.worker_output import emit_worker_output
+
+            emit_worker_output(f"[DEBUG] plan_decision admitido: {decision!r}")
         if isinstance(decision, DirectResponseDecision):
             if require_executable_plan:
                 return PlanBuildResult(
@@ -137,7 +139,9 @@ class PlanBuilder:
                 )
             return PlanBuildResult()
         if self.orchestrator.verbose:
-            print(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
+            from agent.runtime.worker_output import emit_worker_output
+
+            emit_worker_output(f"[DEBUG] Plano proposto com {len(plan)} passos: {plan}")
         return PlanBuildResult(
             plan=plan,
             obligations=reviewed_obligations,

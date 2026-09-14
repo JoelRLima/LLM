@@ -4,6 +4,7 @@ from typing import Any
 
 from agent.runtime.failures import FailureFact
 from agent.runtime.logging import logger
+from agent.runtime.worker_output import emit_worker_output
 
 
 class ErrorHandler:
@@ -111,4 +112,4 @@ class ErrorHandler:
         session.messages = preserved
 
         if verbose:
-            print(f"🧹 [PURGE] Contexto limpo: {len(preserved)} mensagens mantidas.")
+            emit_worker_output(f"🧹 [PURGE] Contexto limpo: {len(preserved)} mensagens mantidas.")

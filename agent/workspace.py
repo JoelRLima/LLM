@@ -17,6 +17,7 @@ from agent.planning.plan_model import Plan, ToolPlanStep
 from agent.runtime.config import DEFAULT_VALIDATION
 from agent.runtime.logging import logger
 from agent.runtime.path_safety import resolve_workspace_path
+from agent.runtime.worker_output import emit_worker_output
 from agent.workspace_rollback import remove_created_files, restore_backups, rollback_transactions
 
 # Compatibility projection: the authored defaults live in the packaged
@@ -111,7 +112,7 @@ class WorkspaceManager:
                 if target_text not in self.created_files:
                     self.created_files.append(target_text)
                     if self.verbose:
-                        print(f"[DEBUG] '{target}' marcado como novo.")
+                        emit_worker_output(f"[DEBUG] '{target}' marcado como novo.")
 
     def _backup_file(self, target: Path, restore_dir: Path) -> None:
         relative = target.relative_to(self.workspace_root)
@@ -121,7 +122,7 @@ class WorkspaceManager:
             shutil.copy2(target, backup)
             self.restore_points.append({"original": str(target), "backup": str(backup)})
             if self.verbose:
-                print(f"[DEBUG] Checkpoint salvo para '{target}'")
+                emit_worker_output(f"[DEBUG] Checkpoint salvo para '{target}'")
         except OSError as exc:
             logger.warning("Falha ao criar checkpoint para '%s': %s", target, exc)
 
@@ -130,7 +131,7 @@ class WorkspaceManager:
             return True
         success = rollback_transactions(self._task_transactions, logger)
         if self.verbose:
-            print("⏪ [ROLLBACK] Restaurando arquivos ao estado original...")
+            emit_worker_output("⏪ [ROLLBACK] Restaurando arquivos ao estado original...")
         success = restore_backups(self.restore_points, self.resolve_path, logger) and success
         success = remove_created_files(self.created_files, self.resolve_path, logger) and success
 
@@ -153,10 +154,10 @@ class WorkspaceManager:
         )
         diff_text = "".join(diff)
         if diff_text.strip():
-            print(f"\n📝 [DIFF] Mudanças propostas para '{file_path}':")
-            print(diff_text)
+            emit_worker_output(f"\n📝 [DIFF] Mudanças propostas para '{file_path}':")
+            emit_worker_output(diff_text)
         else:
-            print(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
+            emit_worker_output(f"📝 [DIFF] Nenhuma mudança em '{file_path}'.")
 
     def lint_check(self, file_path: str) -> Optional[str]:
         """Validate one Python file through the canonical project service."""

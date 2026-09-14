@@ -1,16 +1,27 @@
 class CancellationToken:
     def __init__(self) -> None:
+        from threading import Lock
+
+        self._lock = Lock()
         self._cancelled = False
 
     def cancel(self) -> None:
-        self._cancelled = True
+        with self._lock:
+            self._cancelled = True
 
     def reset(self) -> None:
-        self._cancelled = False
+        with self._lock:
+            self._cancelled = False
 
     @property
     def cancelled(self) -> bool:
-        return bool(self._cancelled)
+        with self._lock:
+            return bool(self._cancelled)
+
+    def is_set(self) -> bool:
+        """Event-compatible read for narrow interactive cancellation seams."""
+
+        return self.cancelled
 
 
 def is_cancellation_requested(token: object | None, event: object | None = None) -> bool:

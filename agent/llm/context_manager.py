@@ -35,6 +35,7 @@ from agent.runtime.events import RuntimeEvent
 from agent.runtime.hardware import resolve_hardware_profile
 from agent.runtime.logging import logger
 from agent.runtime.recovery import RecoveryScope
+from agent.runtime.worker_output import emit_worker_output
 from agent.state import AgentState
 
 STEP_BUDGETS = {
@@ -214,7 +215,7 @@ class ContextManager(ContextAuxiliaryMixin):
         threshold = int(effective_limit * 0.8)
         pct = estimated_tokens / effective_limit * 100
         if self.verbose:
-            print(
+            emit_worker_output(
                 f"📏 [AUDITORIA] Prefixo estimado: ~{estimated_tokens} tokens ({pct:.1f}% do limite de {effective_limit})"
             )
         if estimated_tokens > threshold:
@@ -222,7 +223,7 @@ class ContextManager(ContextAuxiliaryMixin):
                 f"Prefixo grande: ~{estimated_tokens} tokens ({pct:.1f}%)"
             )
             if self.verbose:
-                print(
+                emit_worker_output(
                     "⚠️  Atenção: prefixo acima de 80%! Considere limpar memória ou reduzir histórico."
                 )
     def count_tokens_text_estimate(self, text: str) -> Optional[int]:

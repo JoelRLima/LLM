@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from agent.application_interactive import apply_interactive_cancellation
 from agent.cancellation import CancellationToken
 from agent.interfaces.task_directives import (
     ParsedTaskRequest,
@@ -61,13 +62,12 @@ from .types import (
     InteractionResolution,
 )
 
-MAX_STRING_LENGTH = 8192
+
 class InteractionService:
     def _semantic_audit(self, event_type: str, data: dict[str, Any]) -> None:
         semantic_observability.emit_semantic_audit(self.application, event_type, data)
     def __init__(self, application: Any) -> None:
-        self.application = application
-        self.session = application.session
+        self.application, self.session = application, application.session
         self._active_model_cancellation: CancellationToken | None = None
     def _publish_active(self, token: CancellationToken) -> None:
         self._active_model_cancellation = token
@@ -146,7 +146,6 @@ class InteractionService:
         boundary: InteractionBoundary,
         reason_code: str,
     ) -> AgentInteractionResult:
-        """Project bounded input failures before resolver or task dispatch."""
         resolution = self._input_resolution(boundary, reason_code)
         return self._failure(
             status="needs_input",
@@ -166,7 +165,7 @@ class InteractionService:
             return INTERACTION_INPUT_INVALID
         if not text.strip():
             return INTERACTION_INPUT_REQUIRED
-        if len(text) > MAX_STRING_LENGTH:
+        if len(text) > 8192:
             return INTERACTION_INPUT_TOO_LARGE
         return None
     @staticmethod
@@ -175,7 +174,7 @@ class InteractionService:
             return INTERACTION_INPUT_INVALID
         if not visible.strip():
             return INTERACTION_INPUT_REQUIRED
-        if len(visible) > MAX_STRING_LENGTH:
+        if len(visible) > 8192:
             return INTERACTION_INPUT_TOO_LARGE
         return None
     def _commit_clarify(
@@ -224,6 +223,7 @@ class InteractionService:
         callback: Callable[[str], None] | None,
     ) -> str:
         token = context.cancellation
+        apply_interactive_cancellation(self.application, token)
         if token.cancelled:
             raise ResolverUnavailable(INTERACTION_CANCELLED)
         self._publish_active(token)

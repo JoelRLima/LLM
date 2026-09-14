@@ -22,6 +22,7 @@ from agent.llm.context_projection import (
 from agent.llm.decision_contract import ModelRequestContract, resolve_request_contract
 from agent.llm.grammars import AutoGrammar
 from agent.llm.structured_output import resolve_model_decision
+from agent.runtime.worker_output import emit_worker_output
 
 
 def _apply_projection(
@@ -307,10 +308,9 @@ def run_model_call(
             }
         request = fit.request
         if manager.verbose:
-            print(
+            emit_worker_output(
                 f"â³ Consultando o modelo (step={step_type}, budget={budget})...",
                 end="",
-                flush=True,
             )
         return _resolve_fitted_request(
             manager,

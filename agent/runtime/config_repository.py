@@ -151,6 +151,25 @@ class ConfigRepository:
         self._write_atomic(self.path, self._defaults())
         return self.path
 
+    def update(self, changes: Mapping[str, Any]) -> ResolvedConfig:
+        """Apply one typed, validated, atomically persisted config update."""
+
+        if "schema_version" in changes:
+            raise ConfigVersionError("UI não pode sobrescrever 'schema_version'.")
+        if self.path.is_file():
+            current = self._read_document(self.path)
+            validate_config_document(current, require_version=True, require_complete=False)
+        else:
+            current = self._defaults()
+        candidate = self._merge(self._defaults(), current)
+        candidate = self._merge(candidate, changes)
+        candidate["schema_version"] = SCHEMA_VERSION
+        validate_config_document(candidate, require_version=True, require_complete=True)
+        self._write_atomic(self.path, candidate)
+        reloaded = self._read_document(self.path)
+        validate_config_document(reloaded, require_version=True, require_complete=True)
+        return ResolvedConfig(deepcopy(reloaded))
+
     def migrate(self, legacy_path: str | Path) -> Path:
         """Copy one explicit legacy file; the source is never changed or removed."""
 

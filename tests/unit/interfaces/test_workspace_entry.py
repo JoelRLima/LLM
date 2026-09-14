@@ -365,7 +365,7 @@ def test_chat_non_tty_requires_explicit_workspace_before_application(
 
     assert cli.main(["chat"]) == 2
 
-    assert "TASK_WORKSPACE_REQUIRED" in capsys.readouterr().err
+    assert "INTERACTIVE_TTY_REQUIRED" in capsys.readouterr().err
     assert output.output == []
 
 

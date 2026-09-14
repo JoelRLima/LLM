@@ -34,6 +34,7 @@ from agent.runtime.paths import WorkspacePaths
 from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
 from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
+from agent.runtime.worker_output import emit_worker_output
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills.policy import persona_allowed_capabilities, project_eligible_extension_descriptors
 from agent.skills.registry import SkillRegistry
@@ -202,7 +203,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
 
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
-            print("Consultando roteador de persona...", end="", flush=True)
+            emit_worker_output("Consultando roteador de persona...", end="")
         persona_prompt, _, persona = route_objective(objective, self.session)
         self.current_persona_prompt = persona_prompt
         self.current_persona = persona
@@ -216,7 +217,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             self._build_tools_description(compact=True, planner_kind="linear"),
         )
         if self.verbose:
-            print(f" concluído ({len(self.active_skills)} skills permitidas)")
+            emit_worker_output(f" concluído ({len(self.active_skills)} skills permitidas)")
     def _restore_persona_from_state(self) -> None:
         persona = getattr(self.agent_state, "persona", None)
         persona_prompt = getattr(self.agent_state, "persona_prompt", None)

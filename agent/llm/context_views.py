@@ -23,6 +23,7 @@ from agent.llm.context_view_support import (
 )
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.path_safety import resolve_workspace_path
+from agent.runtime.worker_output import emit_worker_output
 
 
 def build_compact_view(
@@ -167,7 +168,7 @@ def compress_conversation(session: Any, context_limit: int, verbose: bool) -> No
     if original_user_messages:
         session.messages.append(original_user_messages[-1])
     if verbose:
-        print(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary) // 4} tokens (heurística).")
+        emit_worker_output(f"✅ [COMPRESS] Contexto comprimido para ~{len(summary) // 4} tokens (heurística).")
 
 
 def _line_hint(

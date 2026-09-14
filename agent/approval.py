@@ -15,6 +15,10 @@ class ApprovalDecision(str, Enum):
     REQUIRED = "required"
 
 
+class ApprovalWaitCancelled(RuntimeError):
+    """The exact broker-owned approval wait was cancelled fail-closed."""
+
+
 @dataclass(frozen=True)
 class ApprovalRequest:
     action: str
@@ -73,6 +77,7 @@ class AutoApprove:
 
 __all__ = [
     "ApprovalDecision",
+    "ApprovalWaitCancelled",
     "ApprovalPort",
     "ApprovalRequest",
     "AutoApprove",

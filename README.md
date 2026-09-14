@@ -55,6 +55,36 @@ llm-agent inspect replay --json --run-id RUN_ID
 llm-agent inspect export --run-id RUN_ID --output trace.zip
 ```
 
+### Shell interativo
+
+`llm-agent chat` e o comando sem subcomando sao superficies humanas e exigem
+stdin e stdout TTY. Em pipe ou redirecionamento, use `run`, `task` ou as rotas
+JSON; o chat falha rapidamente sem consumir stdin nem inicializar a UI.
+
+O compositor usa uma sessao Prompt Toolkit unica: Enter envia, Ctrl-J insere
+uma nova linha, historico e completion de comandos slash ficam no compositor,
+e a saida de background aparece acima do draft. O shell preserva scrollback
+nativo e nao captura mouse. `/status`, `/where`, `/timeline` e `/details`
+mostram orientacao bounded sem fazer uma nova chamada de modelo.
+
+Enquanto uma tarefa executa, texto comum vira follow-up pendente bounded; ele
+nao e enviado automaticamente. Use `/pending`, `/pending edit ID`,
+`/pending discard ID` ou `/pending send ID` depois do settlement. `/cancel`
+somente solicita cancelamento; o worker continua dono do settlement e do
+checkpoint. `/attention approve` e `/attention deny` sao as acoes explicitas
+para a aprovacao atual; texto comum, inclusive `y`, nunca aprova uma operacao.
+
+`/model select PROFILE` e `/workspace switch PATH` exigem uma sessao ociosa e
+recriam a aplicacao atraves dos owners canonicos. A primeira execucao oferece
+configuracao guiada, profile/modelo/endpoint e escolha de workspace. Nenhuma
+rota de UX inicia ou supervisiona um backend persistente.
+
+Para uma visao tecnica bounded, use `/debug` para alternar OFF/DIAG/VERBOSE e
+`/help` para os comandos preferidos. O registro de comandos apenas roteia a
+entrada; autoridade, approval, workspace, task/checkpoint e perfil de modelo
+continuam pertencendo aos owners de runtime. Queries locais (`/ls`, `/read`,
+`/find`, `/git-status`, `/diff`) usam um executor read-only separado da tarefa.
+
 ### Diretivas por tarefa (W11)
 
 As diretivas e perfis deliberativos usam prefixos slash na entrada da tarefa:

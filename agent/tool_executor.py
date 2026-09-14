@@ -13,6 +13,7 @@ from agent.planning.plan_model import Plan
 from agent.planning.provenance_validation import validate_unresolved_symbolic_arguments
 from agent.planning.step_contracts import PreparedInvocation
 from agent.runtime.logging import logger
+from agent.runtime.worker_output import emit_worker_output
 from agent.tools.contracts import ToolError, ToolInvocationRequest, ToolStatus
 from agent.tools.contracts import ToolResult as CanonicalToolResult
 from agent.tools.result_adapter import ensure_canonical_result
@@ -90,7 +91,7 @@ class ToolExecutor:
 
         resource = self._primary_resource(args)
         resource_text = f" Recurso: {json.dumps(resource, ensure_ascii=True)}." if resource else ""
-        print(f"Usando {tool_name}...{resource_text}", end="", flush=True)
+        emit_worker_output(f"Usando {tool_name}...{resource_text}", end="")
         logger.info("Executando tool %s com args %s", tool_name, args)
         raw_res = gateway.invoke(
             request,
@@ -106,9 +107,9 @@ class ToolExecutor:
         # the historical projection before the result reaches AgentState.
         result = cast(CanonicalToolResult, raw_res)
         msg = result.message or ("Concluido" if result.ok else "Falha")
-        print(f" {msg}")
+        emit_worker_output(f" {msg}")
         if getattr(self.orchestrator, "verbose", False):
-            print(f"[DEBUG] Resultado completo: {stringify(result.to_legacy_dict(include_details=True))}")
+            emit_worker_output(f"[DEBUG] Resultado completo: {stringify(result.to_legacy_dict(include_details=True))}")
         return result
 
     def _cancellation_token(

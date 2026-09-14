@@ -118,7 +118,9 @@ class ExecutionGatewaySupportMixin:
             )
             if getattr(self.orchestrator, "verbose", False):
                 for transformation in report.transformations:
-                    print(f"[DEBUG][GATEWAY][OPTIMIZER] {transformation}")
+                    from agent.runtime.worker_output import emit_worker_output
+
+                    emit_worker_output(f"[DEBUG][GATEWAY][OPTIMIZER] {transformation}")
         return report.optimized_plan
 
     def _replan_blocked_steps(
