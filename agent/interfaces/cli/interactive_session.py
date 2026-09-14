@@ -77,7 +77,9 @@ def _cancel_controller_if_busy(ctx: Any, shell: Any) -> bool:
 
 def _cancel_attention_if_active(ctx: Any, shell: Any) -> bool:
     broker = getattr(ctx, "approval_broker", None)
-    current = broker.current() if broker is not None and callable(getattr(broker, "current", None)) else None
+    if broker is None or not callable(getattr(broker, "current", None)):
+        return False
+    current = broker.current()
     if current is None:
         return False
     broker.invalidate(attention_id=current.identity.attention_id, generation=current.identity.run_generation)
@@ -103,7 +105,6 @@ def _handle_ctrl_c(ctx: Any) -> None:
     shell = getattr(ctx, "shell", None)
     if _clear_draft_if_present(ctx, shell):
         return
-
     if _cancel_controller_if_busy(ctx, shell):
         return
 
@@ -142,7 +143,10 @@ def chat_loop(
     if shell is not None:
         set_pump = getattr(shell, "set_background_pump", None)
         if callable(set_pump):
-            set_pump(lambda: (_refresh_view(ctx), _poll_outputs(ctx)))
+            def background_pump() -> None:
+                _refresh_view(ctx)
+                _poll_outputs(ctx)
+            set_pump(background_pump)
         set_interrupt = getattr(shell, "set_interrupt_handler", None)
         if callable(set_interrupt):
             set_interrupt(lambda: _handle_ctrl_c(ctx))
