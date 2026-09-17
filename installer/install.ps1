@@ -10,6 +10,39 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
+if ($PSVersionTable.PSEdition -eq "Desktop") {
+    # A PowerShell Core parent can pass an incompatible PSModulePath to the
+    # Windows PowerShell 5.1 child used by the installed-product boundary.
+    # Keep this process-local and select only the native Windows PowerShell
+    # module tree before the first Utility cmdlet is resolved.
+    $nativeModuleRoot = [IO.Path]::Combine($PSHOME, "Modules")
+    $utilityModuleRoot = [IO.Path]::Combine($nativeModuleRoot, "Microsoft.PowerShell.Utility")
+    $utilityModuleManifest = [IO.Path]::Combine($utilityModuleRoot, "Microsoft.PowerShell.Utility.psd1")
+    if (-not [IO.Directory]::Exists($nativeModuleRoot) -or
+        -not [IO.Directory]::Exists($utilityModuleRoot) -or
+        -not [IO.File]::Exists($utilityModuleManifest)) {
+        throw "W18 Windows PowerShell native module path unavailable: $nativeModuleRoot"
+    }
+    $env:PSModulePath = $nativeModuleRoot
+    try {
+        Import-Module -Name $utilityModuleManifest -Force -ErrorAction Stop
+        $expectedUtilityManifest = [IO.Path]::GetFullPath($utilityModuleManifest)
+        $nativeUtilityLoaded = $false
+        foreach ($module in @(Get-Module -Name Microsoft.PowerShell.Utility)) {
+            if ([IO.Path]::GetFullPath([string]$module.Path) -ieq $expectedUtilityManifest) {
+                $nativeUtilityLoaded = $true
+                break
+            }
+        }
+        if (-not $nativeUtilityLoaded) {
+            throw "Microsoft.PowerShell.Utility carregado de uma origem não nativa"
+        }
+    }
+    catch {
+        throw "W18 não conseguiu carregar Microsoft.PowerShell.Utility nativo: $($_.Exception.Message)"
+    }
+}
+
 # W18 v003 is a production boundary, not a development bootstrapper.  Every
 # executable used below is either Windows PowerShell/cmd.exe or the CPython
 # binary already present in the validated payload.
