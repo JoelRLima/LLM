@@ -23,8 +23,40 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: --no-deps --requirement distribution/bootstrap-pip.lock
-          python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --only-binary=:all: --constraint requirements-ci.lock setuptools==81.0.0
-          python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
+          python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --only-binary=:all: --requirement requirements-ci.lock
+
+          $setuptoolsVersion = (python -c "import setuptools, setuptools.build_meta; print(setuptools.__version__)").Trim()
+          if ($LASTEXITCODE -ne 0 -or $setuptoolsVersion -ne "81.0.0") {
+            throw "W18 host bootstrap did not provide setuptools==81.0.0 with setuptools.build_meta: $setuptoolsVersion"
+          }
+          Write-Host "W18 host bootstrap: setuptools $setuptoolsVersion with setuptools.build_meta available"
+
+      - name: Assert clean W18 host before product lifecycle
+        shell: pwsh
+        run: |
+          $distributionProbe = @'
+          import importlib.metadata as metadata
+
+          try:
+              version = metadata.version('local-llm-agent')
+          except metadata.PackageNotFoundError:
+              print('W18 host distribution check: local-llm-agent absent')
+          else:
+              raise SystemExit(
+                  f'host contamination: local-llm-agent {version} is installed in the host interpreter'
+              )
+          '@
+          python -c $distributionProbe
+          if ($LASTEXITCODE -ne 0) {
+            throw "W18 host distribution cleanliness check failed"
+          }
+
+          $launchers = @(Get-Command -Name "llm-agent" -CommandType Application -ErrorAction SilentlyContinue)
+          if ($launchers.Count -ne 0) {
+            $locations = ($launchers | ForEach-Object { $_.Source }) -join "; "
+            throw "host contamination: llm-agent resolves in the host PATH: $locations"
+          }
+          Write-Host "W18 host PATH check: llm-agent absent"
 
       - name: Build isolated W18 release candidate and bundle
         shell: pwsh

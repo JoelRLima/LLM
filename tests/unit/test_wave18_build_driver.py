@@ -240,16 +240,38 @@ def test_verify_build_driver_checks_declared_backend(monkeypatch: pytest.MonkeyP
     ]
 
 
-def test_w18_workflow_bootstraps_pinned_setuptools_before_dev_install() -> None:
+def test_w18_workflow_uses_locked_host_requirements_without_product_self_contamination() -> None:
     workflow = Path(".github/workflows/wave18-installed-product.yml").read_text(encoding="utf-8")
-    setuptools_install = (
+    locked_install = (
         "python -m pip install --isolated --no-input --disable-pip-version-check "
-        "--no-cache-dir --only-binary=:all: --constraint requirements-ci.lock setuptools==81.0.0"
+        "--no-cache-dir --only-binary=:all: --requirement requirements-ci.lock"
     )
-    dev_install = "python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt"
+    pip_install_lines = [
+        line.strip() for line in workflow.splitlines() if "python -m pip install" in line
+    ]
 
-    assert setuptools_install in workflow
-    assert workflow.index(setuptools_install) < workflow.index(dev_install)
+    assert locked_install in workflow
+    assert "requirements-dev.txt" not in workflow
+    assert "--constraint requirements-ci.lock" not in workflow
+    assert all("--requirement" in line for line in pip_install_lines)
+    assert not any(".[dev]" in line or " -e " in line for line in pip_install_lines)
+    assert not any(line.rstrip().endswith(" .") for line in pip_install_lines)
+    assert not any(
+        "local-llm-agent" in line.casefold() or "local_llm_agent" in line.casefold()
+        for line in pip_install_lines
+    )
+    assert "setuptools==81.0.0" in Path("requirements-ci.lock").read_text(encoding="utf-8")
+    assert "import setuptools, setuptools.build_meta" in workflow
+    assert "setuptools.__version__" in workflow
+
+    guard_start = workflow.index("name: Assert clean W18 host before product lifecycle")
+    lifecycle_start = workflow.index("name: Verify W18 installed product lifecycle")
+    guard = workflow[guard_start:lifecycle_start]
+    assert "metadata.version('local-llm-agent')" in guard
+    assert "PackageNotFoundError" in guard
+    assert "host contamination" in guard
+    assert 'Get-Command -Name "llm-agent" -CommandType Application' in guard
+    assert workflow.index(locked_install) < guard_start < lifecycle_start
 
 
 def test_recorded_console_launchers_are_pruned_by_distribution_metadata(tmp_path: Path) -> None:
