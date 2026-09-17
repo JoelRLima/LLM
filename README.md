@@ -38,6 +38,49 @@ Edite o profile indicado por `config path` com endpoint e modelo. Em Linux ou
 macOS, ative o ambiente com `source .venv/bin/activate`. A instalação core não
 inclui a stack opcional de memória semântica; use `.[ml]` quando necessário.
 
+## Produto instalado (WAVE 18)
+
+O fluxo acima continua sendo o fluxo de desenvolvimento editável: o checkout e
+o `.venv` pertencem ao desenvolvedor. O produto instalado W18 é um fluxo
+separado, normativo para Windows x64 e para o usuário atual, sem administrador.
+
+Use um bundle W18 extraído localmente e execute o wrapper que está dentro dele:
+
+```powershell
+Expand-Archive .\local-llm-agent-0.2.0rc1-windows-x64.zip -DestinationPath .\w18-bundle
+Set-Location .\w18-bundle
+.\install.cmd
+```
+
+O instalador encontra o próprio bundle pela localização do script; não use pipe
+de script remoto. A instalação do usuário é offline: o ZIP já contém o CPython
+embutido, as dependências resolvidas e a aplicação. O installer apenas valida,
+extrai, testa, promove e atualiza o User PATH; não baixa artefatos, não invoca
+uv/pip e não cria venv. uv/pip/Python provisioning existem somente no release build.
+Depois da instalação, o uso diário é somente o comando estável `llm-agent`:
+
+```powershell
+Set-Location C:\Windows\System32
+llm-agent --version
+llm-agent --help
+llm-agent config init
+llm-agent doctor --json
+```
+
+Executar o instalador novamente é seguro para o mesmo candidato e faz upgrades
+por staging quando o bundle traz outro candidato. Falha de validação ou de
+aceitação preserva o candidato anterior. `uninstall.cmd` remove apenas o runtime
+W18, o launcher estável e o segmento próprio do User PATH; configuração, dados,
+estado, cache, logs e estado por workspace são preservados. A reinstalação pode
+reutilizar esse estado.
+
+Os nomes atuais (`LLM Agent`, `llm-agent` e `local-llm-agent`) são provisionais.
+O namespace de estado é separado da identidade de distribuição para permitir um
+alias futuro sem mover dados existentes. W18 não publica PyPI, MSIX ou WinGet;
+os scripts PowerShell não são um executável nativo first-party assinado. O
+produto instalado normativo desta wave é Windows x64; o fluxo Ubuntu continua
+sendo compatibilidade de pacote, não um instalador equivalente.
+
 ## Uso
 
 ```powershell

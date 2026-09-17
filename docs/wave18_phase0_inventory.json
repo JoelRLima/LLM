@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "wave": "WAVE 18",
+  "phase": 0,
+  "verdict": "GREEN",
+  "authority": {
+    "contract": {
+      "path": ".agent-local/TASK_CONTRACT.md",
+      "sha256": "f5d2c66c6d443efc31d707ba1d5fae443d862cf3de79efb8c5fa550b8ea25f3a",
+      "line_count": 132
+    },
+    "spec": {
+      "path": ".agent-local/TASK_SPEC.md",
+      "sha256": "0e3fc3c159463dde4db5eb98ab0ddeb08e01638b19216762ed5531fbc28d265c",
+      "line_count": 863
+    },
+    "qwen_required": false,
+    "live_model_authorized": false
+  },
+  "baseline_and_branch": {
+    "head": "b7f33854ea4af14c3aa7c93e59a42d520eaf5a74",
+    "tree_before_phase0_evidence": "ca8a100f7741ddae025af2358d7040dbde7b1a7d",
+    "origin_main": "b7f33854ea4af14c3aa7c93e59a42d520eaf5a74",
+    "branch": "feat/wave18-installed-product-experience",
+    "status_before_phase0_evidence": [],
+    "staging_before_phase0_evidence": [],
+    "diff_check_before_phase0_evidence": []
+  },
+  "branch_bootstrap": {
+    "previous_branch": "main",
+    "local_branch_existed_before_action": false,
+    "origin_branch_existed_before_action": false,
+    "action": "git switch -c feat/wave18-installed-product-experience",
+    "resulting_branch": "feat/wave18-installed-product-experience",
+    "resulting_head": "b7f33854ea4af14c3aa7c93e59a42d520eaf5a74",
+    "files_changed_by_branch_bootstrap": "none"
+  },
+  "repository_inventory": {
+    "packaging": {
+      "path": "pyproject.toml",
+      "build_backend": "setuptools.build_meta",
+      "distribution_name": "local-llm-agent",
+      "current_version": "0.1.0",
+      "requires_python": ">=3.10",
+      "runtime_dependencies": [
+        "ddgs>=9,<10",
+        "prompt_toolkit>=3,<4",
+        "requests>=2.31,<3",
+        "rich>=13,<16"
+      ],
+      "optional_dependencies": {
+        "ml": ["numpy>=1.26,<3", "sentence-transformers>=3,<6"],
+        "dev": ["mypy>=1.10,<3", "pytest>=8,<10", "ruff>=0.9,<1"]
+      },
+      "console_scripts": {
+        "llm-agent": "agent.interfaces.cli.app:main"
+      },
+      "package_data": {
+        "agent.resources": ["*.json"]
+      }
+    },
+    "version_authority": {
+      "path": "agent/__init__.py",
+      "metadata_lookup": "importlib.metadata.version('local-llm-agent')",
+      "source_fallback": "0.1.0",
+      "production_consumers": [
+        "agent/interfaces/cli/parser.py",
+        "agent/health/standalone_checks.py",
+        "agent/observability/export.py"
+      ],
+      "phase0_observed_installed_identity": "0.1.0"
+    },
+    "app_paths": {
+      "path": "agent/runtime/paths.py",
+      "durable_namespace": "local-llm-agent",
+      "explicit_home_variable": "LLM_AGENT_HOME",
+      "legacy_home_variable": "AGENT_RUNTIME_DIR",
+      "windows_config": "%APPDATA%\\local-llm-agent",
+      "windows_data": "%LOCALAPPDATA%\\local-llm-agent\\data",
+      "windows_state": "%LOCALAPPDATA%\\local-llm-agent\\state",
+      "windows_cache": "%LOCALAPPDATA%\\local-llm-agent\\cache",
+      "windows_logs": "%LOCALAPPDATA%\\local-llm-agent\\logs",
+      "installer_firewall": "W18 owns only the future install subtree and does not own AppPaths config/data/state/cache/logs."
+    },
+    "w17_owners": {
+      "cli_entry": "agent/interfaces/cli/app.py:main",
+      "parser": "agent/interfaces/cli/parser.py",
+      "first_run": "agent/interfaces/cli/first_run.py",
+      "interactive_session": "agent/interfaces/cli/interactive_session.py",
+      "workspace_selection": "agent/interfaces/cli/workspace_entry.py",
+      "interactive_shell": "agent/interfaces/cli/interactive_shell.py",
+      "application_composition": "agent/interfaces/cli/bootstrap.py",
+      "handoff_result": "Installer provisioning stops before config/workspace/interactive ownership; W17 remains canonical."
+    },
+    "installed_acceptance_owner": {
+      "path": "scripts/verify_installed_package.py",
+      "responsibilities": [
+        "build a wheel in a temporary directory",
+        "install into a clean venv",
+        "verify declared dependencies and import origin",
+        "exercise installed CLI and broad W17/application continuity"
+      ],
+      "w18_firewall": "W18 installer/product lifecycle acceptance must not duplicate or replace this existing application-behavior owner."
+    },
+    "ci_owner": {
+      "path": ".github/workflows/ci.yml",
+      "matrix": "Ubuntu and Windows x Python 3.10 and 3.12",
+      "ordering": "setup/build dependencies, smoke/quality/static checks, Mypy, POSIX checks, full pytest, then existing installed-wheel acceptance",
+      "phase0_action": "unchanged"
+    },
+    "current_install_docs": [
+      "README.md",
+      "docs/operacao-standalone.md"
+    ],
+    "gitignore_authority": {
+      "path": ".gitignore",
+      "local_only_entries": ["/.agent-local/", "/.audit-local/"],
+      "phase0_observation": "authority files remain local-only and were not edited"
+    },
+    "identity_inventory": {
+      "local-llm-agent": "current distribution name plus durable compatibility/storage namespace; provisional distribution identity",
+      "llm-agent": "current user-facing console name; provisional CLI identity",
+      "LLM_AGENT_*": "existing durable compatibility environment identities",
+      "agent": "internal Python package identity; not renamed",
+      "historical_docs_and_tests": "contain literals that must not be mechanically rewritten"
+    },
+    "current_code_name_surfaces": {
+      "distribution_and_version": [
+        "pyproject.toml:6",
+        "agent/__init__.py:6",
+        "agent/health/standalone_checks.py:43-44"
+      ],
+      "cli_user_facing": [
+        "pyproject.toml:30",
+        "agent/interfaces/cli/parser.py:35,49-51",
+        "agent/interfaces/cli/first_run.py:22,32,112-114"
+      ],
+      "durable_namespace_and_compatibility": [
+        "agent/runtime/paths.py:19,156",
+        "agent/runtime/config_environment.py:42-56",
+        "scripts/verify_installed_package.py:2173,2182,2631,2724,3014,3139"
+      ],
+      "internal_observability_ids": [
+        "agent/observability/live.py:128",
+        "agent/observability/trace_runtime.py:122",
+        "agent/observability/trace_writer_publication.py:138"
+      ],
+      "temporary_dev_or_harness_names": [
+        "agent/code/validation_python.py:25",
+        "scripts/check_pre_real_model_harness.py:247,416",
+        ".github/workflows/ci.yml:53"
+      ]
+    }
+  },
+  "external_pins": {
+    "uv": {
+      "version": "0.12.13",
+      "asset": "uv-x86_64-pc-windows-msvc.zip",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip",
+      "official_checksum_url": "https://releases.astral.sh/github/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip.sha256",
+      "official_sha256": "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2",
+      "local_sha256_both_scratch_roots": "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2",
+      "archive_bytes": 17612025,
+      "version_output": "uv 0.12.13 (0ebbd9274 2026-09-10 x86_64-pc-windows-msvc)",
+      "archive_members": {
+        "uv.exe": 41556784,
+        "uvw.exe": 348976,
+        "uvx.exe": 348976
+      },
+      "authenticode_observed": {
+        "status": "Valid",
+        "signer_subject": "CN=\"OpenAI OpCo, LLC\", O=\"OpenAI OpCo, LLC\", L=San Francisco, S=California, C=US",
+        "signer_thumbprint": "DF08A554062ECAD03193D010BCC9170BF5D75AE4",
+        "signer_not_after": "2026-09-12T12:30:27-03:00",
+        "timestamp_subject": "CN=Microsoft Public RSA Time Stamping Authority, OU=nShield TSS ESN:A500-05E0-D947, OU=Microsoft America Operations, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+        "timestamp_thumbprint": "FF73F729152A9059805E5E0832449D996EF60411",
+        "timestamp_not_before": "2025-10-23T17:46:51-03:00",
+        "timestamp_not_after": "2026-10-22T17:46:51-03:00",
+        "interpretation": "Observed local Authenticode facts are recorded verbatim; no Astral signer attribution or end-to-end installer authenticity claim is made."
+      },
+      "release_attestation": "The official release page advertises a GitHub Artifact Attestation asset; local gh attestation verification was not claimed because gh is unavailable in the environment.",
+      "license": "MIT OR Apache-2.0",
+      "installation_boundary": "private scratch bootstrap only; no persistent PATH exposure, no uv self-update, no uv tool install"
+    },
+    "managed_python": {
+      "selection_command": "uv --no-config python list --managed-python --all-versions 3.12",
+      "selected_uv_identity": "cpython-3.12.14-windows-x86_64-none",
+      "selected_version": "3.12.14",
+      "selection_rule": "highest stable CPython 3.12 patch exposed by pinned uv 0.12.13",
+      "official_artifact_url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-pc-windows-msvc-install_only.tar.gz",
+      "official_artifact_sha256": "e90c1b6419da3bd812dd73bb3de40287a21abf153438147639ec5e20375ea93f",
+      "build_metadata": "BUILD=20260901",
+      "runtime_identity": "CPython 3.12.14 (main, Sep 1 2026, 14:17:39) [MSC v.1944 64 bit (AMD64)]",
+      "platform_identity": "win32 / AMD64 / 64-bit Windows",
+      "private_install": true,
+      "python_bin_exposure_disabled": true,
+      "immutability_after_selection": true
+    },
+    "pip_bootstrap": {
+      "version": "26.2.1",
+      "wheel": "pip-26.2.1-py3-none-any.whl",
+      "sha256": "71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e",
+      "temporary_proof_lock_sha256": "935f604a73d76edee081bd01ccac0d948d78d88ef6dba095eee767a512ddbab6",
+      "install_mode": "uv pip --require-hashes --only-binary :all: --no-deps, then venv\\Scripts\\python.exe -m pip"
+    },
+    "runtime_dependency_proof_lock": {
+      "temporary": true,
+      "sha256": "316aa17f2a236c57ad2d799f7adc72de72809ded1859683a5b304c5e6ff4ca64",
+      "bytes": 34497,
+      "hash_lines": 403,
+      "binary_only": true,
+      "require_hashes_at_install": true,
+      "packages": [
+        "certifi==2026.7.22",
+        "charset-normalizer==3.5.1",
+        "click==8.5.0",
+        "ddgs==9.16.0",
+        "idna==3.19",
+        "lxml==6.1.3",
+        "markdown-it-py==4.2.0",
+        "mdurl==0.1.2",
+        "primp==2.0.1",
+        "prompt-toolkit==3.0.53",
+        "pygments==2.21.0",
+        "requests==2.34.2",
+        "rich==15.0.0",
+        "urllib3==2.7.0",
+        "wcwidth==0.8.3"
+      ]
+    }
+  },
+  "empirical_scratch_proofs": {
+    "application_wheel": {
+      "built_in": "normal development environment D:\\LLM Agent Harness\\.venv",
+      "filename": "local_llm_agent-0.1.0-py3-none-any.whl",
+      "sha256": "ce77455ee73190519f551c58a31596178f5305bc41c37ee96a85e6bef867b750",
+      "installed_last": true,
+      "wheel_members": 729,
+      "required_package_data_present": true,
+      "authority_files_in_wheel": false
+    },
+    "space_root": {
+      "root": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-space-20260914",
+      "outside_cwd": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-space-20260914\\outside-cwd",
+      "private_uv": true,
+      "private_cache": true,
+      "private_python": true,
+      "python_bin_empty": true,
+      "ordinary_venv_without_seed_packages": true,
+      "pip_version": "26.2.1",
+      "runtime_install": "15 packages from temporary hashed binary-only lock",
+      "pip_check": "No broken requirements found.",
+      "launcher": "venvs\\candidate\\Scripts\\llm-agent.exe",
+      "version_output": "llm-agent 0.1.0",
+      "help_exit_code": 0,
+      "launcher_sha256": "9bed31e1a39aaE6F13496F795AE3E69720DAED5CB9DFCA2260B7321EE26E67B4",
+      "import_origin": {
+        "agent_in_site_packages": true,
+        "checkout_in_agent_file": false,
+        "checkout_in_sys_path": false,
+        "sys_executable_in_venv": true
+      }
+    },
+    "unicode_space_root": {
+      "root": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914",
+      "outside_cwd": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914\\outside-cwd",
+      "private_uv": true,
+      "private_cache": true,
+      "private_python": true,
+      "python_bin_empty": true,
+      "ordinary_venv_without_seed_packages": true,
+      "unicode_codepoint_observed": "U+00E9",
+      "pip_version": "26.2.1",
+      "runtime_install": "15 packages from the same temporary hashed binary-only lock",
+      "pip_check": "No broken requirements found.",
+      "launcher": "venvs\\candidate\\Scripts\\llm-agent.exe",
+      "version_output": "llm-agent 0.1.0",
+      "help_exit_code": 0,
+      "import_origin": {
+        "agent_in_site_packages": true,
+        "checkout_in_agent_file": false,
+        "checkout_in_sys_path": false,
+        "sys_executable_in_venv": true
+      }
+    },
+    "cleanup": {
+      "required": true,
+      "scope": "the two exact roots above only",
+      "user_app_paths_touched": false
+    }
+  },
+  "powershell_5_1_and_lifecycle_substrate": {
+    "powershell_version": "5.1.26100.9444",
+    "available_apis": ["Invoke-WebRequest -UseBasicParsing", "Expand-Archive", "Get-FileHash"],
+    "tls_mode_probe": "Tls12 enabled explicitly",
+    "process_spawn_probe": "System.Diagnostics.ProcessStartInfo with UseShellExecute=false returned exit code 7",
+    "mutex_probe": "Local namespace, current-user SID-qualified name, acquired successfully",
+    "atomic_file_probe": "same-volume File.Replace with explicit backup preserved OLD and promoted PREPARED",
+    "implementation_constraint_discovered": "PowerShell 5.1 overload binding rejected a null backup argument for File.Replace; the production shape must use an explicit same-volume backup or another proven atomic operation.",
+    "path_registry_observation": {
+      "current_user": {
+        "key_present": true,
+        "path_present": true,
+        "kind": "ExpandString",
+        "length": 221,
+        "raw_value_sha256_utf16": "3a0d8d412749614296ca6b913142eaee01ed43a873098eec6fae80c3a55727f2",
+        "candidate_product_entry_present": false
+      },
+      "local_machine": {
+        "registry_key": "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+        "key_present": true,
+        "path_present": true,
+        "kind": "ExpandString",
+        "raw_length": 163,
+        "raw_value_sha256_utf16le": "cd811235886247b90cbe851409df20781f1f7f278e3d6e1eca9b7cca87ba1efc",
+        "environment_api_result": "nonempty",
+        "environment_api_length": 153,
+        "environment_result_sha256_utf16le": "274d547a462adaa04c65313da3f29496a0488d39be0b5fecd466c3bc265dbb81",
+        "api_returns_expanded_registry_value": true,
+        "api_registry_consistent": true,
+        "candidate_product_entry_present": false
+      },
+      "write_performed": false
+    },
+    "path_semantics_probe": {
+      "candidate_design_entry": "%LOCALAPPDATA%\\local-llm-agent\\install\\bin",
+      "percent_variable_equivalence": true,
+      "idempotent_owned_count": 1,
+      "unrelated_raw_segments_preserved": true,
+      "result": "PASS",
+      "scope": "in-memory only; no registry mutation"
+    }
+  },
+  "transaction_and_release_design_proof": {
+    "installer_ownership": [
+      "future installer/ subtree owns Windows install/uninstall wrappers and transaction implementation",
+      "future distribution/ subtree owns release manifest, immutable metadata, runtime lock material, and install constants",
+      "AppPaths and W17 modules remain outside installer ownership"
+    ],
+    "owned_filesystem_boundary": "%LOCALAPPDATA%\\local-llm-agent\\install subtree only",
+    "owned_persistent_path_boundary": "one exact stable product bin segment in current-user PATH; Machine PATH never modified",
+    "mutex_boundary": "per-user Local mutex qualified by current user SID",
+    "journal_states_to_implement_later": [
+      "PREPARED",
+      "STAGED",
+      "LAUNCHER_PROMOTED",
+      "PATH_MUTATED",
+      "FRESH_SHELL_VERIFIED",
+      "COMMITTED",
+      "ROLLING_BACK",
+      "ROLLED_BACK",
+      "FAILED_RECOVERY"
+    ],
+    "recovery_invariants": [
+      "candidate is staged and validated before promotion",
+      "failed pre-promotion install leaves stable launcher and raw User PATH unchanged",
+      "post-promotion failure restores prior launcher and exact prior raw User PATH",
+      "active and previous known-good candidates are retained from cleanup"
+    ],
+    "release_boundary": {
+      "application_artifact": "current application wheel",
+      "installer_bundle": "future distribution artifact assembled from manifest-bound inputs",
+      "runtime_lock": "dependency identity and hash evidence, not runtime authority",
+      "public_publication": "outside Phase 0 and outside LOCAL GREEN"
+    }
+  },
+  "phase0_scope_controls": {
+    "production_installer_implementation": false,
+    "persistent_path_or_registry_mutation": false,
+    "qwen_or_live_model": false,
+    "full_pytest": false,
+    "final_installed_acceptance": false,
+    "commit": false,
+    "push_or_publication": false,
+    "phase1_started": false
+  }
+}

@@ -1,0 +1,69 @@
+name: WAVE 18 Installed Product
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+
+jobs:
+  installed-product:
+    name: Windows x64 installed product
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+          cache: pip
+
+      - name: Install build and verification dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: --no-deps --requirement distribution/bootstrap-pip.lock
+          python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
+
+      - name: Build isolated W18 release candidate and bundle
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "w18-release"
+          $artifact = Join-Path $env:RUNNER_TEMP "cpython-3.12.14+20260901-x86_64-pc-windows-msvc-install_only.tar.gz"
+          $uv = Join-Path $env:RUNNER_TEMP "uv-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -Uri "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-pc-windows-msvc-install_only.tar.gz" -OutFile $artifact
+          if ((Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() -ne "e90c1b6419da3bd812dd73bb3de40287a21abf153438147639ec5e20375ea93f") { throw "CPython artifact SHA-256 mismatch" }
+          Invoke-WebRequest -Uri "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip" -OutFile $uv
+          if ((Get-FileHash -LiteralPath $uv -Algorithm SHA256).Hash.ToLowerInvariant() -ne "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2") { throw "uv artifact SHA-256 mismatch" }
+          python scripts/build_release_artifacts.py --output-dir $output --python (Get-Command python).Source --python-artifact $artifact --uv-artifact $uv
+
+      - name: Run W18 architecture checker
+        shell: pwsh
+        run: python scripts/check_wave18_architecture.py
+
+      - name: Verify W18 installed product lifecycle
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP "w18-release\bundle"
+          $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
+          $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
+          python scripts/verify_installed_product.py --bundle-dir $bundle --summary-json $summary --w17-summary-json $w17
+
+      - name: Run permanent W18 adversarial campaign with lifecycle evidence
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "w18-adversarial.json"
+          $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
+          python scripts/run_wave18_adversarial.py --installed-evidence $summary --json $output
+
+      - name: Upload W18 local evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave18-installed-product-evidence
+          path: |
+            ${{ runner.temp }}/w18-release
+            ${{ runner.temp }}/w18-adversarial.json
+            ${{ runner.temp }}/w18-installed-product.json
+            ${{ runner.temp }}/w18-w17-installed-interactive.json
+          if-no-files-found: warn

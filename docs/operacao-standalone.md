@@ -21,6 +21,53 @@ Edite o arquivo exibido por `config path`, principalmente
 `model_profiles.local_8gb.base_url` e `model`. O diagnóstico é offline e não
 faz uma requisição ao backend.
 
+## Produto instalado WAVE 18
+
+O fluxo acima é o fluxo de desenvolvimento editável, com checkout e `.venv`.
+Para uso instalado em Windows x64, extraia o bundle gerado localmente e rode o
+wrapper que acompanha o bundle:
+
+```powershell
+Expand-Archive .\local-llm-agent-0.2.0rc1-windows-x64.zip -DestinationPath .\w18-bundle
+Set-Location .\w18-bundle
+.\install.cmd
+```
+
+O escopo é por usuário atual e não requer administrador. A instalação do
+usuário é offline: o bundle já contém CPython, dependências resolvidas e a
+aplicação. O installer apenas valida, extrai, testa, promove e atualiza o User
+PATH; não baixa artefatos, não invoca uv/pip e não cria venv. Provisionamento de
+uv/pip/Python existe somente no release build. O instalador não deve ser
+invocado por pipe remoto e não depende do CWD para localizar seus arquivos.
+
+Depois, abra um shell novo e use normalmente `llm-agent`; a verificação humana
+também deve funcionar fora do checkout:
+
+```powershell
+Set-Location C:\Windows\System32
+Get-Command llm-agent
+llm-agent --version
+llm-agent --help
+llm-agent config init
+llm-agent doctor --json
+```
+
+Reexecutar o mesmo instalador é idempotente. Um bundle posterior é preparado em
+uma versão candidata antes de substituir o launcher anterior; falhas deixam ou
+restauram o candidato anterior. `uninstall.cmd` remove o runtime instalado, o
+launcher e somente o segmento W18 do User PATH. A configuração em `%APPDATA%`
+e os dados, estado, cache, logs e estado de workspace em `%LOCALAPPDATA%` são
+preservados por padrão, portanto uma reinstalação pode continuar usando o mesmo
+estado. A manutenção é explícita: não existe daemon de auto-update nem modo de
+purga nesta wave.
+
+Os nomes de display, CLI e distribuição são provisionais: `LLM Agent`,
+`llm-agent` e `local-llm-agent`. O namespace durável de estado não deve ser
+inferido do nome do repositório; um alias futuro não deve exigir mover dados.
+W18 não publica PyPI, MSIX ou WinGet, e os scripts PowerShell não são um
+executável nativo first-party assinado. Ubuntu permanece no escopo de
+compatibilidade de pacote/runtime, não de instalador instalado equivalente.
+
 ## Comandos
 
 ```text

@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from agent._version import VERSION as CANONICAL_VERSION  # noqa: E402
 from agent.evaluation.artifact_paths import canonical_artifact_paths  # noqa: E402
 from agent.evaluation.evaluation_identity import (  # noqa: E402
     candidate_identity,
@@ -2820,7 +2821,8 @@ def _verify_installed_continuity(
 
 
 def _verify_version(result: CommandResult) -> None:
-    if not re.search(r"\b\d+\.\d+\.\d+\b", result.stdout):
+    expected = f"llm-agent {CANONICAL_VERSION}"
+    if result.stdout.strip() != expected:
         raise VerificationError(f"--version não informou versão semântica: {result.stdout!r}")
 
 

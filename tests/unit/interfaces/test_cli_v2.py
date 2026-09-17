@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from agent import __version__
 from agent.interfaces.cli import app as cli
 
 
@@ -62,7 +63,7 @@ def test_version_and_help_do_not_construct_application(
     with pytest.raises(SystemExit) as version_exit:
         cli.main(["--version"])
     assert version_exit.value.code == 0
-    assert "llm-agent 0.1.0" in capsys.readouterr().out
+    assert f"llm-agent {__version__}" in capsys.readouterr().out
 
     with pytest.raises(SystemExit) as help_exit:
         cli.main(["--help"])
