@@ -23,6 +23,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: --no-deps --requirement distribution/bootstrap-pip.lock
+          python -m pip install --isolated --no-input --disable-pip-version-check --no-cache-dir --only-binary=:all: --constraint requirements-ci.lock setuptools==81.0.0
           python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
 
       - name: Build isolated W18 release candidate and bundle

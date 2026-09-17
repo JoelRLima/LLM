@@ -22,6 +22,8 @@ def _fixture_repository(
     repository = tmp_path / "candidate-repository"
     repository.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "core.autocrlf", "false"], cwd=repository, check=True)
+    subprocess.run(["git", "config", "core.eol", "lf"], cwd=repository, check=True)
     subprocess.run(
         ["git", "config", "user.name", "W18 provenance test"],
         cwd=repository,

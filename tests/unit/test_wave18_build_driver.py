@@ -240,6 +240,18 @@ def test_verify_build_driver_checks_declared_backend(monkeypatch: pytest.MonkeyP
     ]
 
 
+def test_w18_workflow_bootstraps_pinned_setuptools_before_dev_install() -> None:
+    workflow = Path(".github/workflows/wave18-installed-product.yml").read_text(encoding="utf-8")
+    setuptools_install = (
+        "python -m pip install --isolated --no-input --disable-pip-version-check "
+        "--no-cache-dir --only-binary=:all: --constraint requirements-ci.lock setuptools==81.0.0"
+    )
+    dev_install = "python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt"
+
+    assert setuptools_install in workflow
+    assert workflow.index(setuptools_install) < workflow.index(dev_install)
+
+
 def test_recorded_console_launchers_are_pruned_by_distribution_metadata(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     site_packages = runtime / "Lib" / "site-packages"
