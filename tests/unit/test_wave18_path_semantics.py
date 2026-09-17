@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -137,7 +139,8 @@ def test_future_distribution_alias_cannot_change_durable_app_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(runtime_paths.os, "name", "nt")
+    windows_os = SimpleNamespace(name="nt", environ=os.environ)
+    monkeypatch.setattr(runtime_paths, "os", windows_os)
     appdata = tmp_path / "roaming"
     localappdata = tmp_path / "local"
     environment = {

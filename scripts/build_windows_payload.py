@@ -155,6 +155,7 @@ class UvVerification:
 
 _PIP_VERSION_PATTERN = re.compile(r"^pip\s+(\S+)\s+from\s+", re.IGNORECASE | re.MULTILINE)
 _SUBPROCESS_OUTPUT_LIMIT = 4000
+_UV_AUTHENTICODE_DIAGNOSTIC_SCHEMA = "W18-UV-AUTHENTICODE-DIAGNOSTIC-V1"
 
 
 def _clean_build_environment(
@@ -249,6 +250,153 @@ def _run(command: Sequence[str], cwd: Path, *, environment: Mapping[str, str] | 
     return completed.stdout
 
 
+@dataclass(frozen=True)
+class _CapturedUvProbe:
+    """Bounded process evidence for the Windows-only Authenticode probe."""
+
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    start_error: str | None = None
+
+
+def _capture_uv_probe(
+    command: Sequence[str], cwd: Path, *, environment: Mapping[str, str]
+) -> _CapturedUvProbe:
+    """Run the Authenticode helper without losing failure streams or status."""
+
+    try:
+        completed = subprocess.run(
+            list(command),
+            cwd=cwd,
+            env=dict(environment),
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        return _CapturedUvProbe(
+            exit_code=None,
+            stdout="",
+            stderr="",
+            start_error=f"{type(exc).__name__}: {exc}",
+        )
+    return _CapturedUvProbe(
+        exit_code=completed.returncode,
+        stdout=completed.stdout or "",
+        stderr=completed.stderr or "",
+    )
+
+
+def _windows_powershell_environment(
+    environment: Mapping[str, str], powershell: Path
+) -> dict[str, str]:
+    """Keep a Windows PowerShell child away from a PowerShell 7 module path."""
+
+    isolated = {
+        key: value for key, value in environment.items() if key.casefold() != "psmodulepath"
+    }
+    # The child is Windows PowerShell 5.1.  Its own PSHOME module directory
+    # contains Microsoft.PowerShell.Security.  Inheriting PSModulePath from a
+    # pwsh parent can make 5.1 discover the PowerShell Core copy first and fail
+    # while loading its incompatible type data.
+    isolated["PSModulePath"] = str(powershell.parent / "Modules")
+    return isolated
+
+
+def _redact_uv_probe_text(value: str, executable: Path) -> str:
+    """Remove the temporary absolute probe path before emitting diagnostics."""
+
+    redacted = value.replace(str(executable), "<uv.exe>")
+    return redacted.replace(str(executable).replace("\\", "/"), "<uv.exe>")
+
+
+def _bound_uv_probe_text(value: str, executable: Path, limit: int = _SUBPROCESS_OUTPUT_LIMIT) -> str:
+    """Keep both the beginning and end of a diagnostic without dumping it."""
+
+    redacted = _redact_uv_probe_text(value, executable)
+    if len(redacted) <= limit:
+        return redacted
+    marker = "\n...[truncated]...\n"
+    available = max(2, limit - len(marker))
+    head = available // 2
+    return redacted[:head] + marker + redacted[-(available - head) :]
+
+
+def _json_value_text(value: object, executable: Path) -> str:
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        rendered = repr(value)
+    return _bound_uv_probe_text(rendered, executable)
+
+
+def _uv_string_field(value: object) -> str:
+    """Map JSON null to the empty evidence field used by the validator."""
+
+    return "" if value is None else str(value)
+
+
+def _uv_probe_failure(
+    executable: Path,
+    observation: _CapturedUvProbe,
+    *,
+    parsed: Mapping[str, object] | None = None,
+    json_error: json.JSONDecodeError | None = None,
+    reason: str | None = None,
+) -> BuildError:
+    """Build a bounded, secret-safe Authenticode failure report."""
+
+    details = [
+        f"{_UV_AUTHENTICODE_DIAGNOSTIC_SCHEMA} path={executable.name}",
+        f"exit_code={observation.exit_code if observation.exit_code is not None else 'unavailable'}",
+    ]
+    if reason:
+        details.append(f"reason={_bound_uv_probe_text(reason, executable, 1200)}")
+    if observation.start_error:
+        details.append(f"start_error={_bound_uv_probe_text(observation.start_error, executable, 1200)}")
+    if observation.stdout or observation.stderr:
+        details.append(_format_subprocess_output(
+            _bound_uv_probe_text(observation.stdout, executable),
+            _bound_uv_probe_text(observation.stderr, executable),
+        ))
+    if json_error is not None:
+        details.append(
+            "json_error="
+            f"{json_error.msg}; position={json_error.pos}; line={json_error.lineno}; column={json_error.colno}"
+        )
+    if parsed is not None:
+        raw_signature = parsed.get("raw_signature")
+        if raw_signature is not None:
+            details.append(f"raw_signature={_json_value_text(raw_signature, executable)}")
+        probe_error = parsed.get("error")
+        if probe_error:
+            details.append(f"probe_error={_json_value_text(probe_error, executable)}")
+        status = parsed.get("status", "<unavailable>")
+        status_message = parsed.get("status_message", "<unavailable>")
+        signature_available = parsed.get("signature_available")
+        if signature_available is False:
+            signer_presence = "unavailable (signature result unavailable)"
+            timestamp_presence = "unavailable (signature result unavailable)"
+        else:
+            signer_flag = parsed.get("signer_certificate_present")
+            timestamp_flag = parsed.get("timestamp_certificate_present")
+            signer_presence = "present" if signer_flag is True else "absent" if signer_flag is False else "unavailable"
+            timestamp_presence = (
+                "present" if timestamp_flag is True else "absent" if timestamp_flag is False else "unavailable"
+            )
+        details.extend(
+            (
+                f"Status={_json_value_text(status, executable)}",
+                f"StatusMessage={_json_value_text(status_message, executable)}",
+                f"SignerCertificate={signer_presence}",
+                f"TimeStamperCertificate={timestamp_presence}",
+            )
+        )
+    return BuildError("could not read uv Authenticode evidence: " + "; ".join(details))
+
+
 def _verify_build_driver(python_executable: Path) -> None:
     """Verify the selected interpreter owns the frozen release-build toolchain."""
 
@@ -270,6 +418,34 @@ def _verify_build_driver(python_executable: Path) -> None:
     )
 
 
+def _decode_uv_authenticode_probe(
+    executable: Path, observation: _CapturedUvProbe
+) -> dict[str, str]:
+    """Decode and fail closed on the bounded PowerShell probe envelope."""
+
+    output = observation.stdout.strip().lstrip("\ufeff")
+    if not output:
+        raise _uv_probe_failure(executable, observation, reason="PowerShell returned no JSON")
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise _uv_probe_failure(executable, observation, json_error=exc) from exc
+    if not isinstance(parsed, dict):
+        raise _uv_probe_failure(executable, observation, reason="PowerShell did not return a JSON object")
+    if observation.exit_code != 0:
+        raise _uv_probe_failure(executable, observation, parsed=parsed)
+    if parsed.get("error"):
+        raise _uv_probe_failure(executable, observation, parsed=parsed, reason="PowerShell reported a probe error")
+    if parsed.get("schema") != _UV_AUTHENTICODE_DIAGNOSTIC_SCHEMA:
+        raise _uv_probe_failure(executable, observation, parsed=parsed, reason="probe JSON schema is invalid")
+    required = ("status", "signer_subject", "signer_thumbprint", "timestamp_subject", "timestamp_thumbprint")
+    if any(key not in parsed for key in required):
+        raise _uv_probe_failure(executable, observation, parsed=parsed, reason="probe JSON is missing signature fields")
+    if parsed.get("signature_available") is not True:
+        raise _uv_probe_failure(executable, observation, parsed=parsed, reason="signature result was unavailable")
+    return {key: _uv_string_field(parsed.get(key, "")) for key in required}
+
+
 def _read_uv_authenticode(executable: Path) -> dict[str, str]:
     """Read the frozen local Authenticode evidence from the extracted uv.exe."""
 
@@ -279,30 +455,107 @@ def _read_uv_authenticode(executable: Path) -> dict[str, str]:
     powershell = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     if not powershell.is_file():
         raise BuildError(f"Windows PowerShell 5.1 is missing for uv verification: {powershell}")
-    script = (
-        "$ErrorActionPreference='Stop'; "
-        "$path=[Environment]::GetEnvironmentVariable('W18_UV_PROBE_PATH'); "
-        "$signature=Get-AuthenticodeSignature -LiteralPath $path; "
-        "[ordered]@{status=[string]$signature.Status; "
-        "signer_subject=[string]$signature.SignerCertificate.Subject; "
-        "signer_thumbprint=[string]$signature.SignerCertificate.Thumbprint; "
-        "timestamp_subject=[string]$signature.TimeStamperCertificate.Subject; "
-        "timestamp_thumbprint=[string]$signature.TimeStamperCertificate.Thumbprint} | ConvertTo-Json -Compress"
+    script = """
+$ErrorActionPreference = 'Stop'
+$path = [Environment]::GetEnvironmentVariable('W18_UV_PROBE_PATH')
+$probe = [ordered]@{
+    schema = 'W18-UV-AUTHENTICODE-DIAGNOSTIC-V1'
+    signature_available = $false
+    status = $null
+    status_message = $null
+    signer_certificate_present = $false
+    timestamp_certificate_present = $false
+    signer_subject = $null
+    signer_thumbprint = $null
+    timestamp_subject = $null
+    timestamp_thumbprint = $null
+    raw_signature = $null
+    error = $null
+}
+$exitCode = 0
+try {
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        throw 'W18_UV_PROBE_PATH is empty'
+    }
+    Import-Module -Name Microsoft.PowerShell.Security -ErrorAction Stop
+    $signature = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+    if ($null -eq $signature) {
+        throw 'Get-AuthenticodeSignature returned no result'
+    }
+    $probe.signature_available = $true
+    $probe.status = [string]$signature.Status
+    $probe.status_message = [string]$signature.StatusMessage
+    $rawPath = [string]$signature.Path
+    $rawSignature = [ordered]@{
+        Status = [string]$signature.Status
+        StatusMessage = [string]$signature.StatusMessage
+        Path = [IO.Path]::GetFileName($rawPath)
+        SignatureType = [string]$signature.SignatureType
+        IsOSBinary = [string]$signature.IsOSBinary
+        SignerCertificate = $null
+        TimeStamperCertificate = $null
+    }
+    $probe.raw_signature = $rawSignature
+    $signer = $signature.SignerCertificate
+    $timestamp = $signature.TimeStamperCertificate
+    $probe.signer_certificate_present = $null -ne $signer
+    $probe.timestamp_certificate_present = $null -ne $timestamp
+    if ($null -ne $signer) {
+        $probe.signer_subject = [string]$signer.Subject
+        $probe.signer_thumbprint = [string]$signer.Thumbprint
+    }
+    if ($null -ne $timestamp) {
+        $probe.timestamp_subject = [string]$timestamp.Subject
+        $probe.timestamp_thumbprint = [string]$timestamp.Thumbprint
+    }
+    $rawSigner = $null
+    if ($null -ne $signer) {
+        $rawSigner = [ordered]@{
+            Subject = [string]$signer.Subject
+            Issuer = [string]$signer.Issuer
+            Thumbprint = [string]$signer.Thumbprint
+            SerialNumber = [string]$signer.SerialNumber
+            NotBefore = [string]$signer.NotBefore
+            NotAfter = [string]$signer.NotAfter
+        }
+    }
+    $rawTimestamp = $null
+    if ($null -ne $timestamp) {
+        $rawTimestamp = [ordered]@{
+            Subject = [string]$timestamp.Subject
+            Issuer = [string]$timestamp.Issuer
+            Thumbprint = [string]$timestamp.Thumbprint
+            SerialNumber = [string]$timestamp.SerialNumber
+            NotBefore = [string]$timestamp.NotBefore
+            NotAfter = [string]$timestamp.NotAfter
+        }
+    }
+    $rawSignature.SignerCertificate = $rawSigner
+    $rawSignature.TimeStamperCertificate = $rawTimestamp
+} catch {
+    $exitCode = 1
+    $probe.error = [ordered]@{
+        type = [string]$_.Exception.GetType().FullName
+        message = [string]$_.Exception.Message
+        fully_qualified_error_id = [string]$_.FullyQualifiedErrorId
+    }
+}
+$probe | ConvertTo-Json -Compress -Depth 8
+exit $exitCode
+"""
+    environment = _windows_powershell_environment(_clean_build_environment(), powershell)
+    environment["W18_UV_PROBE_PATH"] = str(executable)
+    command = (
+        str(powershell),
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
     )
-    try:
-        environment = _clean_build_environment()
-        environment["W18_UV_PROBE_PATH"] = str(executable)
-        output = _run(
-            (str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script),
-            cwd=executable.parent,
-            environment=environment,
-        )
-        parsed = json.loads(output)
-    except (BuildError, json.JSONDecodeError) as exc:
-        raise BuildError(f"could not read uv Authenticode evidence: {executable}") from exc
-    if not isinstance(parsed, dict):
-        raise BuildError("uv Authenticode evidence is not an object")
-    return {key: str(parsed.get(key, "")) for key in ("status", "signer_subject", "signer_thumbprint", "timestamp_subject", "timestamp_thumbprint")}
+    observation = _capture_uv_probe(command, executable.parent, environment=environment)
+    return _decode_uv_authenticode_probe(executable, observation)
 
 
 _EXPECTED_UV_MEMBERS = ("uv.exe", "uvw.exe", "uvx.exe")

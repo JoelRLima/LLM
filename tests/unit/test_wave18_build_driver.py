@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import zipfile
 from pathlib import Path
@@ -53,6 +54,166 @@ def test_run_preserves_builder_failure_category_on_command_error(
 
     with pytest.raises(builder.BuildError, match="command failed: fake"):
         builder._run(["fake"], tmp_path, environment={})
+
+
+def test_windows_powershell_probe_does_not_inherit_powershell_core_module_path(tmp_path: Path) -> None:
+    powershell = tmp_path / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    expected_module_path = powershell.parent / "Modules"
+    inherited = {
+        "PATH": "safe",
+        "PSModulePath": r"C:\Program Files\PowerShell\Modules;C:\Windows\System32\WindowsPowerShell\v1.0\Modules",
+    }
+
+    isolated = builder._windows_powershell_environment(inherited, powershell)
+
+    assert isolated["PSModulePath"] == str(expected_module_path)
+    assert inherited["PSModulePath"].startswith(r"C:\Program Files\PowerShell")
+    assert isolated["PATH"] == "safe"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell probe is Windows-only")
+def test_uv_authenticode_failure_preserves_process_and_signature_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    system_root = tmp_path / "Windows"
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    powershell.parent.mkdir(parents=True)
+    powershell.write_bytes(b"test-double")
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"test-double")
+    monkeypatch.setenv("SystemRoot", str(system_root))
+    probe = {
+        "schema": "W18-UV-AUTHENTICODE-DIAGNOSTIC-V1",
+        "signature_available": False,
+        "status": None,
+        "status_message": None,
+        "signer_certificate_present": False,
+        "timestamp_certificate_present": False,
+        "signer_subject": None,
+        "signer_thumbprint": None,
+        "timestamp_subject": None,
+        "timestamp_thumbprint": None,
+        "raw_signature": {
+            "Status": "UnknownError",
+            "StatusMessage": "module load failed",
+            "SignerCertificate": None,
+            "TimeStamperCertificate": None,
+        },
+        "error": {"fully_qualified_error_id": "CouldNotAutoloadMatchingModule"},
+    }
+    completed = subprocess.CompletedProcess(
+        [str(powershell)],
+        17,
+        stdout=json.dumps(probe),
+        stderr="Microsoft.PowerShell.Security module could not be loaded",
+    )
+    calls: list[tuple[object, dict[str, object]]] = []
+
+    def capture_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((args[0], kwargs))
+        return completed
+
+    monkeypatch.setattr(builder.subprocess, "run", capture_run)
+
+    with pytest.raises(builder.BuildError) as error:
+        builder._read_uv_authenticode(executable)
+
+    message = str(error.value)
+    assert "exit_code=17" in message
+    assert "[stdout]" in message
+    assert "[stderr]" in message
+    assert "module could not be loaded" in message
+    assert "raw_signature=" in message
+    assert "Status=null" in message
+    assert "StatusMessage=null" in message
+    assert "SignerCertificate=unavailable" in message
+    assert "TimeStamperCertificate=unavailable" in message
+    assert "CouldNotAutoloadMatchingModule" in message
+    assert str(executable) not in message
+    assert len(calls) == 1
+    command, options = calls[0]
+    assert isinstance(command, list)
+    assert "Import-Module -Name Microsoft.PowerShell.Security" in str(command[-1])
+    assert options["check"] is False
+    child_environment = options["env"]
+    assert isinstance(child_environment, dict)
+    assert child_environment["PSModulePath"] == str(powershell.parent / "Modules")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell probe is Windows-only")
+def test_uv_authenticode_json_error_preserves_bounded_streams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    system_root = tmp_path / "Windows"
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    powershell.parent.mkdir(parents=True)
+    powershell.write_bytes(b"test-double")
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"test-double")
+    monkeypatch.setenv("SystemRoot", str(system_root))
+    completed = subprocess.CompletedProcess(
+        [str(powershell)],
+        9,
+        stdout='{"Status":',
+        stderr="probe stderr",
+    )
+    monkeypatch.setattr(builder.subprocess, "run", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(builder.BuildError) as error:
+        builder._read_uv_authenticode(executable)
+
+    message = str(error.value)
+    assert "exit_code=9" in message
+    assert "json_error=Expecting value" in message
+    assert "[stdout]" in message
+    assert "[stderr]" in message
+    assert "probe stderr" in message
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell probe is Windows-only")
+def test_uv_authenticode_keeps_null_certificate_observations_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    system_root = tmp_path / "Windows"
+    powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    powershell.parent.mkdir(parents=True)
+    powershell.write_bytes(b"test-double")
+    executable = tmp_path / "uv.exe"
+    executable.write_bytes(b"test-double")
+    monkeypatch.setenv("SystemRoot", str(system_root))
+    probe = {
+        "schema": "W18-UV-AUTHENTICODE-DIAGNOSTIC-V1",
+        "signature_available": True,
+        "status": "UnknownError",
+        "status_message": "signature status unavailable",
+        "signer_certificate_present": False,
+        "timestamp_certificate_present": False,
+        "signer_subject": None,
+        "signer_thumbprint": None,
+        "timestamp_subject": None,
+        "timestamp_thumbprint": None,
+        "raw_signature": {
+            "Status": "UnknownError",
+            "StatusMessage": "signature status unavailable",
+            "SignerCertificate": None,
+            "TimeStamperCertificate": None,
+        },
+        "error": None,
+    }
+    completed = subprocess.CompletedProcess([str(powershell)], 0, stdout=json.dumps(probe), stderr="")
+    monkeypatch.setattr(builder.subprocess, "run", lambda *_args, **_kwargs: completed)
+
+    observed = builder._read_uv_authenticode(executable)
+
+    assert observed == {
+        "status": "UnknownError",
+        "signer_subject": "",
+        "signer_thumbprint": "",
+        "timestamp_subject": "",
+        "timestamp_thumbprint": "",
+    }
+    with pytest.raises(builder.BuildError, match="Authenticode evidence mismatch"):
+        builder._validate_uv_signature(observed)
 
 
 def test_verify_build_driver_requires_frozen_pip(monkeypatch: pytest.MonkeyPatch) -> None:

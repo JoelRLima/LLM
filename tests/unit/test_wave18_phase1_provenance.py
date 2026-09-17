@@ -8,18 +8,17 @@ from pathlib import Path
 
 from distribution.provenance import isolated_candidate_tree, materialize_candidate_tree
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def _git(*arguments: str) -> str:
-    return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
-
 
 def _fixture_git(repository: Path, *arguments: str) -> str:
     return subprocess.check_output(["git", *arguments], cwd=repository, text=True).strip()
 
 
-def _fixture_repository(tmp_path: Path, relative: str) -> Path:
+def _fixture_repository(
+    tmp_path: Path,
+    relative: str,
+    *,
+    additional_files: tuple[str, ...] = (),
+) -> Path:
     repository = tmp_path / "candidate-repository"
     repository.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repository, check=True)
@@ -37,6 +36,10 @@ def _fixture_repository(tmp_path: Path, relative: str) -> Path:
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_bytes(b"before\n")
     (repository / "src.py").write_bytes(b"VALUE = 1\n")
+    for additional in additional_files:
+        path = repository / additional
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"fixture\n")
     subprocess.run(["git", "add", "--all"], cwd=repository, check=True)
     subprocess.run(
         ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"],
@@ -46,34 +49,42 @@ def _fixture_repository(tmp_path: Path, relative: str) -> Path:
     return repository
 
 
-def test_candidate_tree_materialization_is_complete_and_read_only() -> None:
+def test_candidate_tree_materialization_is_complete_and_read_only(tmp_path: Path) -> None:
+    repository = _fixture_repository(
+        tmp_path,
+        "distribution/provenance.py",
+        additional_files=("installer/install.ps1", "docs/wave18_phase0_inventory.json"),
+    )
+    (repository / "distribution" / "provenance.py").write_bytes(b"after\n")
     before = (
-        _git("rev-parse", "HEAD"),
-        _git("branch", "--show-current"),
-        _git("diff", "--cached", "--name-only"),
-        _git("status", "--short", "--untracked-files=all"),
+        _fixture_git(repository, "rev-parse", "HEAD"),
+        _fixture_git(repository, "branch", "--show-current"),
+        _fixture_git(repository, "diff", "--cached", "--name-only"),
+        _fixture_git(repository, "status", "--short", "--untracked-files=all"),
     )
 
-    with isolated_candidate_tree(ROOT) as snapshot:
+    with isolated_candidate_tree(repository) as snapshot:
         assert snapshot.base_commit == before[0]
         assert len(snapshot.tree) == 40
-        assert "distribution/provenance.py" in snapshot.changed_paths
+        assert snapshot.changed_paths == ("distribution/provenance.py",)
         with tempfile.TemporaryDirectory(prefix="wave18-test-materialized-") as directory:
             materialized = Path(directory)
             materialize_candidate_tree(snapshot, materialized)
             assert (materialized / "distribution" / "provenance.py").is_file()
             assert (materialized / "installer" / "install.ps1").is_file()
             assert (materialized / "docs" / "wave18_phase0_inventory.json").is_file()
+            assert (materialized / "src.py").is_file()
+            assert (materialized / "distribution" / "provenance.py").read_bytes() == b"after\n"
             hidden_directories = {
                 child.name for child in materialized.iterdir() if child.is_dir() and child.name.startswith(".")
             }
             assert hidden_directories <= {".github"}
 
     assert before == (
-        _git("rev-parse", "HEAD"),
-        _git("branch", "--show-current"),
-        _git("diff", "--cached", "--name-only"),
-        _git("status", "--short", "--untracked-files=all"),
+        _fixture_git(repository, "rev-parse", "HEAD"),
+        _fixture_git(repository, "branch", "--show-current"),
+        _fixture_git(repository, "diff", "--cached", "--name-only"),
+        _fixture_git(repository, "status", "--short", "--untracked-files=all"),
     )
 
 
