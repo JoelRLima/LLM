@@ -833,7 +833,6 @@ def _attach_installed_report(
     if identity is None or evidence_bytes is None:
         raise ScenarioFailure("installed-product evidence identity was not retained")
     report["installed_evidence"] = {
-        "path": str(path.resolve()),
         "sha256": hashlib.sha256(evidence_bytes).hexdigest(),
         **identity,
     }
@@ -851,12 +850,9 @@ def _attach_conpty_report(
     if authority_bytes is None:
         raise ScenarioFailure("ConPTY authority bytes were not retained")
     report["conpty_authority"] = {
-        "path": str(authority_path.resolve()),
         "sha256": hashlib.sha256(authority_bytes).hexdigest(),
-        "installed_interactive_path": str(installed_interactive_path.resolve())
-        if installed_interactive_path is not None
-        else None,
-        "layer_matrix_path": str(layer_matrix_path.resolve()) if layer_matrix_path is not None else None,
+        "installed_interactive_bound": installed_interactive_path is not None,
+        "layer_matrix_bound": layer_matrix_path is not None,
     }
 
 
@@ -871,7 +867,6 @@ def _attach_uv_report(
     if evidence_bytes is None or document is None:
         raise ScenarioFailure("uv build evidence bytes were not retained")
     report["uv_build_evidence"] = {
-        "path": str(path.resolve()),
         "sha256": hashlib.sha256(evidence_bytes).hexdigest(),
         "schema_version": document["schema_version"],
         "cases": list(UV_REQUIRED_CASES),

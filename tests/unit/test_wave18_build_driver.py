@@ -274,6 +274,46 @@ def test_w18_workflow_uses_locked_host_requirements_without_product_self_contami
     assert workflow.index(locked_install) < guard_start < lifecycle_start
 
 
+def test_w18_workflow_wires_complete_hash_bound_evidence_chain() -> None:
+    workflow = Path(".github/workflows/wave18-installed-product.yml").read_text(encoding="utf-8")
+
+    assert "timeout-minutes: 60" in workflow
+    assert "--conpty-layer-matrix-json $matrix" in workflow
+    assert "scripts/build_conpty_authority_evidence.py" in workflow
+    assert "--installed-product-summary $summary" in workflow
+    assert "--installed-interactive $w17" in workflow
+    assert "--layer-matrix $matrix" in workflow
+    assert "--output $authority" in workflow
+    assert "uv-build-evidence.json" in workflow
+    assert "scripts/run_wave18_adversarial.py" in workflow
+    for argument in (
+        "--installed-evidence $summary",
+        "--uv-build-evidence $uv",
+        "--conpty-authority-evidence $authority",
+        "--installed-interactive-evidence $w17",
+        "--conpty-layer-matrix $matrix",
+        "--json $output",
+    ):
+        assert argument in workflow
+    assert "scripts/check_w18_artifact_safety.py" in workflow
+    assert "w18-conpty-authority-evidence.json" in workflow
+    assert "w18-conpty-layer-matrix.json" in workflow
+    assert "id: verify_bounded_evidence" in workflow
+    assert "steps.verify_bounded_evidence.outcome == 'success'" in workflow
+    upload_start = workflow.index("name: Upload W18 local evidence")
+    upload_end = workflow.index("name: Remove runner-local RAW ConPTY capture")
+    upload = workflow[upload_start:upload_end]
+    assert "w18-release/uv-build-evidence.json" in upload
+    assert "${{ runner.temp }}/w18-release\n" not in upload
+    assert "w18-conpty-layer-matrix.raw.json" not in upload
+    assert "w18-conpty-layer-matrix.raw.json" in workflow
+    assert "Remove-Item -LiteralPath $raw" in workflow
+    assert "gh release create" not in workflow.casefold()
+    assert "twine upload" not in workflow.casefold()
+    assert "git push" not in workflow.casefold()
+    assert "git tag" not in workflow.casefold()
+
+
 def test_recorded_console_launchers_are_pruned_by_distribution_metadata(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     site_packages = runtime / "Lib" / "site-packages"

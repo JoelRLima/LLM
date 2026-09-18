@@ -1149,7 +1149,12 @@ def _v3_run_w17_interactive(
 ) -> dict[str, Any]:
     """Launch the installed stable .cmd through native ConPTY."""
 
-    from scripts.w18_conpty import ConPtyError, run_conpty
+    from scripts.w18_conpty import (
+        ConPtyError,
+        bounded_conpty_diagnostics,
+        normalize_terminal_text,
+        run_conpty,
+    )
 
     stable_text = facts.stable.read_text(encoding="utf-8-sig")
     candidate_launcher = context.install_root / "versions" / facts.candidate_id / "bin" / "llm-agent.cmd"
@@ -1180,10 +1185,12 @@ def _v3_run_w17_interactive(
         raise ProductVerificationError(f"installed W17 ConPTY acceptance unavailable: {exc}") from exc
     if result.returncode != 0:
         raise ProductVerificationError(
-            f"installed W17 interactive launcher exited {result.returncode}: {result.transcript[-3000:]}"
+            f"installed W17 interactive launcher exited {result.returncode}; "
+            f"diagnostics={bounded_conpty_diagnostics(result)}"
         )
     return {
         "transcript": result.transcript,
+        "normalized_transcript": normalize_terminal_text(result.transcript),
         "returncode": result.returncode,
         "inputs": list(result.inputs),
         "diagnostics": dict(result.diagnostics),
@@ -1240,11 +1247,11 @@ def _v3_verify_w17_interactive(context: ProductContext, facts: InstalledFacts) -
             ("Digite /help", "/exit\r"),
         ),
     )
-    first_transcript = str(first_run["transcript"])
+    first_visible_transcript = str(first_run["normalized_transcript"])
     first_config = first_home / "config" / "config.json"
     if not first_config.is_file():
         raise ProductVerificationError("A57 did not create the canonical W17 first-run config")
-    first_lower = first_transcript.casefold()
+    first_lower = first_visible_transcript.casefold()
     first_markers = {
         "first_run_notice": "parece ser o primeiro uso" in first_lower,
         "w17_configuration_prompt": "profiles dispon" in first_lower and "modelo [" in first_lower,
@@ -1273,8 +1280,8 @@ def _v3_verify_w17_interactive(context: ProductContext, facts: InstalledFacts) -
             ("Digite /help", "/exit\r"),
         ),
     )
-    existing_transcript = str(existing_run["transcript"])
-    existing_lower = existing_transcript.casefold()
+    existing_visible_transcript = str(existing_run["normalized_transcript"])
+    existing_lower = existing_visible_transcript.casefold()
     existing_markers = {
         "existing_config_consumed": "parece ser o primeiro uso" not in existing_lower,
         "w17_workspace_chooser": "workspace:" in existing_lower,
@@ -1319,7 +1326,7 @@ def _v3_verify_w17_interactive(context: ProductContext, facts: InstalledFacts) -
                 "harness_diagnostics": first_run["diagnostics"],
                 "provider_model_server_invocations": 0,
                 "network_used": False,
-                "transcript_tail": first_transcript[-3000:],
+                "normalized_transcript_sha256": hashlib.sha256(first_visible_transcript.encode("utf-8")).hexdigest(),
             },
             "A58": {
                 "status": "passed",
@@ -1336,7 +1343,7 @@ def _v3_verify_w17_interactive(context: ProductContext, facts: InstalledFacts) -
                 "harness_diagnostics": existing_run["diagnostics"],
                 "provider_model_server_invocations": 0,
                 "network_used": False,
-                "transcript_tail": existing_transcript[-3000:],
+                "normalized_transcript_sha256": hashlib.sha256(existing_visible_transcript.encode("utf-8")).hexdigest(),
             },
         },
         "model_free": True,
@@ -2231,7 +2238,62 @@ def _v3_verify_lifecycle(context: ProductContext, environment: Mapping[str, str]
     context.report["scenarios"]["final_cleanup"] = {"status": "passed"}
 
 
-def _v3_verify_installed_product(bundle_root: Path, *, keep: bool = False) -> dict[str, Any]:
+def _v3_verify_conpty_layer_matrix(
+    context: ProductContext,
+    facts: InstalledFacts,
+    output: Path,
+) -> dict[str, Any]:
+    """Probe all ConPTY layers before the installed lifecycle is cleaned up."""
+
+    if context.application_home is None:
+        raise ProductVerificationError("ConPTY layer matrix has no verifier application home")
+    from scripts.conpty_layer_matrix import (  # noqa: PLC0415
+        ConPtyLayerMatrixError,
+        build_conpty_layer_matrix,
+        write_conpty_layer_matrix,
+    )
+
+    candidate_root = context.install_root / "versions" / facts.candidate_id
+    probe_home = context.working / "conpty-layer-probe-home"
+    first_run_home = context.working / "conpty-layer5-first-run-home"
+    persistent_path = reconstructed_persistent_path(
+        context.before_machine,
+        _registry_path_snapshot().semantic(),
+        os.environ,
+    )
+    environment = _v3_clean_child_environment(persistent_path, probe_home)
+    _v3_assert_no_checkout(tuple(environment.values()), "ConPTY layer matrix environment")
+    try:
+        matrix = build_conpty_layer_matrix(
+            candidate_id=facts.candidate_id,
+            candidate_root=candidate_root,
+            stable_launcher=facts.stable,
+            cwd=context.outside,
+            environment=environment,
+            application_home=probe_home,
+            first_run_home=first_run_home,
+            evidence_identity=context.report["evidence_identity"],
+            raw_capture_path=output.with_suffix(".raw.json"),
+        )
+        write_conpty_layer_matrix(matrix, output)
+    except ConPtyLayerMatrixError as exc:
+        raise ProductVerificationError(f"ConPTY layer matrix production failed: {exc}") from exc
+    context.report["scenarios"]["conpty_layer_matrix"] = {
+        "status": "passed",
+        "evidence": "conpty-layer-matrix.json",
+        "schema_version": matrix["schema_version"],
+    }
+    return matrix
+
+
+def _v3_verify_installed_product(
+    bundle_root: Path,
+    *,
+    keep: bool = False,
+    conpty_layer_matrix_json: Path | None = None,
+) -> dict[str, Any]:
+    if conpty_layer_matrix_json is None:
+        raise ProductVerificationError("--conpty-layer-matrix-json is required for the complete W18 verifier")
     context = _v3_prepare_context(bundle_root)
     application_home = context.application_home
     if application_home is None:
@@ -2261,6 +2323,7 @@ def _v3_verify_installed_product(bundle_root: Path, *, keep: bool = False) -> di
         _v3_verify_corrective_lifecycle(context, hostile, facts, path_before)
         _v3_verify_receipt_fail_closed(context, hostile)
         _v3_verify_active_candidate_uninstall(context, hostile)
+        _v3_verify_conpty_layer_matrix(context, facts, conpty_layer_matrix_json)
         # Keep the independent native ConPTY authority check after the C2
         # lifecycle controls so a host-side ConPTY blocker cannot suppress
         # the installed lease/uninstall evidence in the same run.
@@ -2291,6 +2354,102 @@ def _v3_verify_installed_product(bundle_root: Path, *, keep: bool = False) -> di
         _assert_file_snapshot_unchanged(context.real_user_config, "real default Windows config")
 
 
+_V3_PRIVATE_EVIDENCE_KEYS = frozenset(
+    {
+        "bundle_root",
+        "install_root",
+        "application_home",
+        "application_paths",
+        "real_user_config",
+        "path",
+        "cwd",
+        "probe_home",
+        "candidate_python",
+        "stable_launcher",
+        "candidate_launcher",
+        "candidate_runtime",
+        "candidate_path",
+        "working",
+        "outside",
+        "sentinels",
+        "preserved",
+        "path_value",
+        "machine_path",
+        "user_path",
+        "receipt_path",
+        "transaction_root",
+        "environment",
+        "environment_dump",
+        "env",
+        "environment_variables",
+        "env_dump",
+        "config",
+        "config_json",
+        "config_content",
+        "configuration",
+        "user_config",
+        "payload_inventory",
+        "raw_transcript",
+        "transcript",
+        "normalized_transcript",
+        "decoded_transcript",
+        "transcript_tail",
+        "inputs",
+        "input_sequence",
+    }
+)
+_V3_REDACTED_TEXT_KEYS = frozenset({"error", "cleanup_error", "path_restore_error"})
+
+
+def _v3_bounded_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        bounded: dict[str, Any] = {}
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            lowered = key.casefold()
+            if lowered in _V3_PRIVATE_EVIDENCE_KEYS:
+                continue
+            if lowered in _V3_REDACTED_TEXT_KEYS:
+                bounded[key] = "failure detail redacted from upload evidence"
+                continue
+            bounded[key] = _v3_bounded_value(child)
+        return bounded
+    if isinstance(value, list):
+        return [_v3_bounded_value(child) for child in value]
+    return value
+
+
+def _v3_bounded_report(result: Mapping[str, Any]) -> dict[str, Any]:
+    bounded = _v3_bounded_value(result)
+    if not isinstance(bounded, dict):  # pragma: no cover - mapping input always yields a dict.
+        raise ProductVerificationError("bounded W18 report is not a JSON object")
+    return bounded
+
+
+def _v3_write_json(path: Path | None, payload: Mapping[str, Any]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _v3_write_failure_outputs(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    bounded = _v3_bounded_report(result)
+    for name in ("summary_json", "w17_summary_json", "conpty_layer_matrix_json"):
+        _v3_write_json(getattr(args, name), bounded)
+
+
+def _v3_write_success_outputs(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    bounded = _v3_bounded_report(result)
+    _v3_write_json(args.summary_json, bounded)
+    w17_path = args.w17_summary_json
+    if w17_path is not None:
+        w17_evidence = bounded.get("w17_installed_interactive")
+        if not isinstance(w17_evidence, dict):
+            raise ProductVerificationError("W17 interactive evidence was not produced")
+        _v3_write_json(w17_path, w17_evidence)
+
+
 def _v3_main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle-dir", type=Path, required=True, help="extracted v003 release bundle root")
@@ -2301,41 +2460,29 @@ def _v3_main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="write the bounded installed W17 interactive acceptance evidence",
     )
+    parser.add_argument(
+        "--conpty-layer-matrix-json",
+        type=Path,
+        help="write the separately-bindable native-ConPTY layer matrix while installed",
+    )
     args = parser.parse_args(argv)
     if os.name != "nt":
         result = {"schema_version": 3, "status": "skipped", "reason": "W18 installed-product acceptance is Windows-only"}
-        if args.summary_json:
-            args.summary_json.parent.mkdir(parents=True, exist_ok=True)
-            args.summary_json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        if args.w17_summary_json:
-            args.w17_summary_json.parent.mkdir(parents=True, exist_ok=True)
-            args.w17_summary_json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _v3_write_failure_outputs(args, result)
         print("W18_INSTALLED_PRODUCT=SKIP (Windows only)")
         return 0
     try:
-        result = _v3_verify_installed_product(args.bundle_dir, keep=args.keep)
+        result = _v3_verify_installed_product(
+            args.bundle_dir,
+            keep=args.keep,
+            conpty_layer_matrix_json=args.conpty_layer_matrix_json,
+        )
     except ProductVerificationError as exc:
         result = {"schema_version": 3, "status": "failed", "error": str(exc)}
-        if args.summary_json:
-            args.summary_json.parent.mkdir(parents=True, exist_ok=True)
-            args.summary_json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        if args.w17_summary_json:
-            args.w17_summary_json.parent.mkdir(parents=True, exist_ok=True)
-            args.w17_summary_json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _v3_write_failure_outputs(args, result)
         print(f"W18 v003 installed-product verification failed: {exc}", file=sys.stderr)
         return 1
-    if args.summary_json:
-        args.summary_json.parent.mkdir(parents=True, exist_ok=True)
-        args.summary_json.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if args.w17_summary_json:
-        args.w17_summary_json.parent.mkdir(parents=True, exist_ok=True)
-        w17_evidence = result.get("w17_installed_interactive")
-        if not isinstance(w17_evidence, dict):
-            raise ProductVerificationError("W17 interactive evidence was not produced")
-        args.w17_summary_json.write_text(
-            json.dumps(w17_evidence, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+    _v3_write_success_outputs(args, result)
     print("W18_INSTALLED_PRODUCT=PASS")
     return 0
 

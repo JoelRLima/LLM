@@ -9,7 +9,7 @@ jobs:
   installed-product:
     name: Windows x64 installed product
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -80,23 +80,72 @@ jobs:
           $bundle = Join-Path $env:RUNNER_TEMP "w18-release\bundle"
           $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
-          python scripts/verify_installed_product.py --bundle-dir $bundle --summary-json $summary --w17-summary-json $w17
+          $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
+          python scripts/verify_installed_product.py --bundle-dir $bundle --summary-json $summary --w17-summary-json $w17 --conpty-layer-matrix-json $matrix
+
+      - name: Build W18 ConPTY authority evidence
+        shell: pwsh
+        run: |
+          $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
+          $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
+          $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
+          $authority = Join-Path $env:RUNNER_TEMP "w18-conpty-authority-evidence.json"
+          python scripts/build_conpty_authority_evidence.py --installed-product-summary $summary --installed-interactive $w17 --layer-matrix $matrix --output $authority
 
       - name: Run permanent W18 adversarial campaign with lifecycle evidence
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP "w18-adversarial.json"
+          $release = Join-Path $env:RUNNER_TEMP "w18-release"
           $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
-          python scripts/run_wave18_adversarial.py --installed-evidence $summary --json $output
+          $uv = Join-Path $release "uv-build-evidence.json"
+          $authority = Join-Path $env:RUNNER_TEMP "w18-conpty-authority-evidence.json"
+          $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
+          $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
+          python scripts/run_wave18_adversarial.py --installed-evidence $summary --uv-build-evidence $uv --conpty-authority-evidence $authority --installed-interactive-evidence $w17 --conpty-layer-matrix $matrix --json $output
+
+      - name: Verify bounded W18 evidence before upload
+        id: verify_bounded_evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $release = Join-Path $env:RUNNER_TEMP "w18-release"
+          $files = @(
+            (Join-Path $release "uv-build-evidence.json")
+            (Join-Path $env:RUNNER_TEMP "w18-installed-product.json")
+            (Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json")
+            (Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json")
+            (Join-Path $env:RUNNER_TEMP "w18-conpty-authority-evidence.json")
+            (Join-Path $env:RUNNER_TEMP "w18-adversarial.json")
+          )
+          $safetyArgs = @()
+          foreach ($file in $files) {
+            if (Test-Path -LiteralPath $file -PathType Leaf) {
+              $safetyArgs += @("--file", $file)
+            }
+          }
+          if ($safetyArgs.Count -eq 0) {
+            throw "no bounded W18 evidence JSON was produced"
+          }
+          python scripts/check_w18_artifact_safety.py @safetyArgs
 
       - name: Upload W18 local evidence
-        if: always()
+        if: always() && steps.verify_bounded_evidence.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: wave18-installed-product-evidence
           path: |
-            ${{ runner.temp }}/w18-release
+            ${{ runner.temp }}/w18-release/uv-build-evidence.json
             ${{ runner.temp }}/w18-adversarial.json
             ${{ runner.temp }}/w18-installed-product.json
             ${{ runner.temp }}/w18-w17-installed-interactive.json
+            ${{ runner.temp }}/w18-conpty-layer-matrix.json
+            ${{ runner.temp }}/w18-conpty-authority-evidence.json
           if-no-files-found: warn
+
+      - name: Remove runner-local RAW ConPTY capture
+        if: always()
+        shell: pwsh
+        run: |
+          $raw = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.raw.json"
+          Remove-Item -LiteralPath $raw -Force -ErrorAction SilentlyContinue

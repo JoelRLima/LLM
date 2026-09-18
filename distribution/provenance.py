@@ -32,6 +32,8 @@ _W18_ALLOWED_EXACT = {
     "scripts/check_wave18_architecture.py",
     "scripts/build_conpty_authority_evidence.py",
     "scripts/conpty_authority.py",
+    "scripts/conpty_layer_matrix.py",
+    "scripts/check_w18_artifact_safety.py",
     "scripts/probe_wave18_child_process.py",
     "scripts/probe_wave18_install_root_cleanup.py",
     "scripts/run_wave18_adversarial.py",

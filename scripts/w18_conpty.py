@@ -29,6 +29,141 @@ class ConPtyResult:
     diagnostics: Mapping[str, object] = field(default_factory=dict)
     raw_transcript_sha256: str = ""
     output_bytes: int = 0
+    raw_transcript_bytes: bytes = b""
+
+
+def _skip_csi(value: str, start: int) -> int:
+    """Skip one CSI sequence, including its parameters and final byte."""
+
+    index = start + 1
+    length = len(value)
+    while index < length:
+        code = ord(value[index])
+        index += 1
+        if 0x40 <= code <= 0x7E:
+            break
+    return index
+
+
+def _skip_string_control(value: str, start: int) -> int:
+    """Skip an OSC/DCS-like string control through BEL or the ST terminator."""
+
+    index = start + 1
+    length = len(value)
+    while index < length:
+        character = value[index]
+        if character == "\x07":
+            return index + 1
+        if character == "\x9c":
+            return index + 1
+        if character == "\x1b" and index + 1 < length and value[index + 1] == "\\":
+            return index + 2
+        index += 1
+    return length
+
+
+def _terminal_control_end(value: str, start: int) -> int | None:
+    """Return the first character after a terminal control, if present."""
+
+    character = value[start]
+    if character == "\x1b":
+        if start + 1 >= len(value):
+            return start + 1
+        next_character = value[start + 1]
+        if next_character == "[":
+            return _skip_csi(value, start + 1)
+        if next_character == "]" or next_character in "P^_X":
+            return _skip_string_control(value, start + 1)
+        return start + 2
+    if character == "\x9b":
+        return _skip_csi(value, start)
+    if character in "\x9d\x90\x98\x9e\x9f":
+        return _skip_string_control(value, start)
+    return None
+
+
+def normalize_terminal_text(value: str) -> str:
+    """Project a decoded ConPTY stream onto its visible terminal text.
+
+    The input is never modified.  This is a linear, bounded scanner rather
+    than a collection of regular expressions so incomplete terminal controls
+    at the end of a currently-read chunk cannot create an unbounded match.
+    RAW transcript storage and hashing remain the responsibility of the
+    caller; this function is only for semantic marker matching.
+    """
+
+    visible: list[str] = []
+    index = 0
+    length = len(value)
+    while index < length:
+        character = value[index]
+        control_end = _terminal_control_end(value, index)
+        if control_end is not None:
+            index = control_end
+            continue
+
+        code = ord(character)
+        # C0 controls other than layout-preserving whitespace are not visible
+        # terminal text.  Keep CR/LF/TAB because prompts commonly use them as
+        # meaningful layout separators for substring matching.
+        if code < 0x20 and character not in "\r\n\t":
+            index += 1
+            continue
+        if 0x7F <= code <= 0x9F:
+            index += 1
+            continue
+
+        visible.append(character)
+        index += 1
+    return "".join(visible)
+
+
+def _transcript_digest_details(
+    raw_bytes: bytes,
+    rendered: str,
+    *,
+    expected_marker: str | None = None,
+) -> dict[str, object]:
+    normalized = normalize_terminal_text(rendered)
+    details: dict[str, object] = {
+        "raw_transcript_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        "output_bytes": len(raw_bytes),
+        "normalized_transcript_sha256": hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+    }
+    if expected_marker is not None:
+        details["expected_marker"] = expected_marker
+        details["marker_observed"] = expected_marker in normalized
+    return details
+
+
+def bounded_conpty_diagnostics(
+    result: ConPtyResult,
+    *,
+    expected_marker: str | None = None,
+) -> dict[str, object]:
+    """Return log-safe transcript evidence without exposing transcript text."""
+
+    details = _transcript_digest_details(
+        result.raw_transcript_bytes,
+        result.transcript,
+        expected_marker=expected_marker,
+    )
+    structural_keys = (
+        "read_calls",
+        "output_bytes_read",
+        "read_error",
+        "child_process_created",
+        "child_exit_code",
+        "transcript_encoding",
+    )
+    structural = {
+        key: result.diagnostics[key]
+        for key in structural_keys
+        if key in result.diagnostics
+    }
+    if structural:
+        details["structural_diagnostics"] = structural
+    return details
 
 
 class _SecurityAttributes(ctypes.Structure):
@@ -401,10 +536,15 @@ class _ConPtySession:
 
     def wait_for_marker(self, marker: str) -> None:
         deadline = time.monotonic() + self.timeout_seconds
-        while marker not in self.transcript():
+        while marker not in normalize_terminal_text(self.transcript()):
             if time.monotonic() >= deadline:
+                evidence = _transcript_digest_details(
+                    b"".join(self.chunks),
+                    self.transcript(),
+                    expected_marker=marker,
+                )
                 raise ConPtyError(
-                    f"timed out waiting for marker {marker!r}; transcript tail={self.transcript()[-2000:]!r}"
+                    f"timed out waiting for marker {marker!r}; bounded evidence={evidence}"
                 )
             time.sleep(0.02)
 
@@ -434,7 +574,8 @@ class _ConPtySession:
     def wait_for_exit(self) -> int:
         if self.api.wait_for_single_object(self.process_info.hProcess, int(self.timeout_seconds * 1000)) != 0:
             self.terminate()
-            raise ConPtyError(f"ConPTY process did not exit; transcript tail={self.transcript()[-2000:]!r}")
+            evidence = _transcript_digest_details(b"".join(self.chunks), self.transcript())
+            raise ConPtyError(f"ConPTY process did not exit; bounded evidence={evidence}")
         exit_code = ctypes.c_uint32()
         if not self.api.get_exit_code(self.process_info.hProcess, ctypes.byref(exit_code)):
             raise _error("GetExitCodeProcess failed")
@@ -473,6 +614,7 @@ class _ConPtySession:
             dict(self.details),
             hashlib.sha256(raw_transcript).hexdigest(),
             len(raw_transcript),
+            raw_transcript,
         )
 
     def terminate(self) -> None:
@@ -511,6 +653,7 @@ class _ConPtySession:
         cwd: Path,
         environment: Mapping[str, str],
         interactions: Sequence[tuple[str, str]],
+        terminate_after_marker: str | None = None,
     ) -> ConPtyResult:
         try:
             self.create_console()
@@ -518,6 +661,12 @@ class _ConPtySession:
             self.start_reader()
             self.create_child(command, cwd, environment)
             sent = self.send_interactions(interactions)
+            if terminate_after_marker is not None:
+                self.wait_for_marker(terminate_after_marker)
+                self.details["terminated_after_marker"] = terminate_after_marker
+                self.terminate()
+                self.close_output_path()
+                return self.build_result(-1, sent)
             exit_code = self.wait_for_exit()
             self.close_output_path()
             return self.build_result(exit_code, sent)
@@ -536,8 +685,15 @@ def run_conpty(
     environment: Mapping[str, str],
     interactions: Sequence[tuple[str, str]],
     timeout_seconds: float = 30.0,
+    terminate_after_marker: str | None = None,
 ) -> ConPtyResult:
-    """Run one command in ConPTY and perform marker-driven interactions."""
+    """Run one command in ConPTY and perform marker-driven interactions.
+
+    ``terminate_after_marker`` is reserved for bounded diagnostic probes that
+    must capture a prompt without allowing an interactive process to continue.
+    Its returned ``returncode`` is ``-1`` because the child was deliberately
+    terminated after the marker was observed.
+    """
 
     if os.name != "nt":
         raise ConPtyError("native Windows ConPTY is unavailable on this platform")
@@ -548,7 +704,14 @@ def run_conpty(
         cwd,
         environment,
         interactions,
+        terminate_after_marker,
     )
 
 
-__all__ = ["ConPtyError", "ConPtyResult", "run_conpty"]
+__all__ = [
+    "ConPtyError",
+    "ConPtyResult",
+    "bounded_conpty_diagnostics",
+    "normalize_terminal_text",
+    "run_conpty",
+]

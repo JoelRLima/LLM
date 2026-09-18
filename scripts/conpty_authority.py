@@ -8,11 +8,22 @@ old evidence hash.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
 from pathlib import Path
 from typing import Any, Mapping
+
+from scripts.conpty_layer_matrix import (
+    FIRST_RUN_MARKER,
+    LAYER_1_LABEL,
+    LAYER_2_LABEL,
+    LAYER_3_LABEL,
+    LAYER_4_LABEL,
+    LAYER_5_LABEL,
+)
+from scripts.w18_conpty import normalize_terminal_text
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 CANDIDATE_RE = re.compile(r"w18-[0-9a-f]{32}")
@@ -93,25 +104,215 @@ def _require_interactive_evidence(
             raise ConPtyAuthorityError(f"{case_id} invoked a provider, model, or server")
 
 
-def _require_layer_matrix(matrix: Mapping[str, Any], identity: Mapping[str, str]) -> dict[str, Any]:
+def _require_layer_markers(
+    layer: Mapping[str, Any],
+    *,
+    layer_name: str,
+    marker: str,
+) -> None:
+    _canonical_sha256(layer.get("raw_transcript_sha256"), f"{layer_name}.raw_transcript_sha256")
+    _canonical_sha256(
+        layer.get("normalized_transcript_sha256"),
+        f"{layer_name}.normalized_transcript_sha256",
+    )
+    markers = layer.get("normalized_transcript_markers")
+    if not isinstance(markers, list) or marker not in markers:
+        raise ConPtyAuthorityError(f"{layer_name} does not contain normalized marker {marker!r}")
+
+
+def _read_runner_local_raw_capture(sidecar: Path, identity: Mapping[str, str]) -> Mapping[str, Any]:
+    try:
+        capture = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ConPtyAuthorityError(f"runner-local raw ConPTY capture is unreadable: {sidecar}") from exc
+    if (
+        not isinstance(capture, Mapping)
+        or capture.get("schema_version") != "W18-CONPTY-RAW-CAPTURE-V1"
+        or capture.get("candidate_id") != identity["candidate_id"]
+    ):
+        raise ConPtyAuthorityError("runner-local raw ConPTY capture identity is invalid")
+    capture_identity = capture.get("evidence_identity")
+    if capture_identity is not None and capture_identity != dict(identity):
+        raise ConPtyAuthorityError("runner-local raw ConPTY capture identity does not match installed evidence")
+    return capture
+
+
+def _raw_capture_specs(matrix: Mapping[str, Any]) -> list[tuple[str, str, str, Mapping[str, Any]]]:
+    layer_3 = matrix.get("layer_3")
+    if not isinstance(layer_3, list):
+        raise ConPtyAuthorityError("layer_3 raw capture is missing")
+    by_invocation = {
+        str(layer.get("invocation")): layer
+        for layer in layer_3
+        if isinstance(layer, Mapping) and isinstance(layer.get("invocation"), str)
+    }
+    if set(by_invocation) != {"candidate_path", "via_cmd"}:
+        raise ConPtyAuthorityError("layer_3 raw capture invocations are incomplete")
+    specs: list[tuple[str, str, str, Mapping[str, Any]]] = []
+    for capture_name, layer_name, marker, matrix_name in (
+        ("layer_1", "layer_1", "W18_CONPTY_SMOKE", "layer_1"),
+        ("layer_2", "layer_2", "W18_CONPTY_PYTHON", "layer_2"),
+        ("layer_4", "layer_4", "llm-agent ", "layer_4"),
+        ("layer_5", "layer_5", FIRST_RUN_MARKER, "layer_5"),
+    ):
+        layer = matrix.get(matrix_name)
+        if not isinstance(layer, Mapping):
+            raise ConPtyAuthorityError(f"{layer_name} raw capture is missing")
+        specs.append((capture_name, layer_name, marker, layer))
+    for invocation, capture_name in (
+        ("candidate_path", "layer_3_candidate_path"),
+        ("via_cmd", "layer_3_via_cmd"),
+    ):
+        layer = by_invocation[invocation]
+        specs.append((capture_name, f"layer_3[{invocation}]", "llm-agent ", layer))
+    return specs
+
+
+def _decode_raw_capture(item: Mapping[str, Any], layer_name: str) -> tuple[bytes, str]:
+    encoded = item.get("raw_transcript_b64")
+    decoded = item.get("decoded_transcript")
+    if not isinstance(encoded, str) or not isinstance(decoded, str):
+        raise ConPtyAuthorityError(f"{layer_name} raw capture is incomplete")
+    try:
+        raw_bytes = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ConPtyAuthorityError(f"{layer_name} raw capture bytes are invalid") from exc
+    if not raw_bytes:
+        raise ConPtyAuthorityError(f"{layer_name} raw capture is empty")
+    try:
+        decoded_from_bytes = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        decoded_from_bytes = raw_bytes.decode("cp850")
+    if decoded != decoded_from_bytes:
+        raise ConPtyAuthorityError(f"{layer_name} decoded transcript does not match raw bytes")
+    declared_hash = item.get("raw_transcript_sha256")
+    if declared_hash is not None and _canonical_sha256(declared_hash, f"{layer_name}.raw_transcript_sha256") != hashlib.sha256(raw_bytes).hexdigest():
+        raise ConPtyAuthorityError(f"{layer_name} raw capture SHA-256 does not match raw bytes")
+    return raw_bytes, decoded
+
+
+def _validate_raw_capture_item(
+    item: Any,
+    layer: Mapping[str, Any],
+    *,
+    layer_name: str,
+    marker: str,
+) -> None:
+    if not isinstance(item, Mapping):
+        raise ConPtyAuthorityError(f"{layer_name} raw capture is missing")
+    raw_bytes, decoded = _decode_raw_capture(item, layer_name)
+    raw_hash = _canonical_sha256(layer.get("raw_transcript_sha256"), f"{layer_name}.raw_transcript_sha256")
+    if hashlib.sha256(raw_bytes).hexdigest() != raw_hash:
+        raise ConPtyAuthorityError(f"{layer_name} raw transcript SHA-256 does not match matrix")
+    normalized = normalize_terminal_text(decoded)
+    normalized_hash = _canonical_sha256(
+        layer.get("normalized_transcript_sha256"),
+        f"{layer_name}.normalized_transcript_sha256",
+    )
+    if hashlib.sha256(normalized.encode("utf-8")).hexdigest() != normalized_hash:
+        raise ConPtyAuthorityError(f"{layer_name} normalized transcript hash does not match matrix")
+    if marker not in normalized:
+        raise ConPtyAuthorityError(f"{layer_name} raw capture does not prove normalized marker {marker!r}")
+
+
+def _validate_runner_local_raw_capture(
+    layer_matrix_path: Path,
+    matrix: Mapping[str, Any],
+    identity: Mapping[str, str],
+    *,
+    required: bool,
+) -> None:
+    """Recompute the matrix projection from a runner-local, non-uploaded sidecar."""
+
+    sidecar = layer_matrix_path.with_suffix(".raw.json")
+    if not sidecar.is_file():
+        if required:
+            raise ConPtyAuthorityError(
+                "runner-local raw ConPTY capture is required during authority creation"
+            )
+        return
+    capture = _read_runner_local_raw_capture(sidecar, identity)
+    layers = capture.get("layers")
+    if not isinstance(layers, Mapping):
+        raise ConPtyAuthorityError("runner-local raw ConPTY capture has no layers")
+    for capture_name, layer_name, marker, layer in _raw_capture_specs(matrix):
+        _validate_raw_capture_item(layers.get(capture_name), layer, layer_name=layer_name, marker=marker)
+
+
+def _require_completed_layer(matrix: Mapping[str, Any], name: str, label: str, marker: str) -> None:
+    layer = matrix.get(name)
+    if (
+        not isinstance(layer, Mapping)
+        or layer.get("label") != label
+        or layer.get("status") != "completed"
+        or layer.get("returncode") != 0
+    ):
+        raise ConPtyAuthorityError(f"{name} does not prove a successful ConPTY layer")
+    _require_layer_markers(layer, layer_name=name, marker=marker)
+
+
+def _require_layer_3(matrix: Mapping[str, Any]) -> None:
+    layer_3 = matrix.get("layer_3")
+    if not isinstance(layer_3, list) or len(layer_3) != 2:
+        raise ConPtyAuthorityError("layer_3 does not prove both candidate launcher paths")
+    for index, layer in enumerate(layer_3):
+        if (
+            not isinstance(layer, Mapping)
+            or layer.get("label") != LAYER_3_LABEL
+            or layer.get("status") != "completed"
+            or layer.get("returncode") != 0
+            or layer.get("invocation") not in {"candidate_path", "via_cmd"}
+        ):
+            raise ConPtyAuthorityError("layer_3 does not prove both candidate launcher paths")
+        _require_layer_markers(layer, layer_name=f"layer_3[{index}]", marker="llm-agent ")
+    if {layer.get("invocation") for layer in layer_3 if isinstance(layer, Mapping)} != {"candidate_path", "via_cmd"}:
+        raise ConPtyAuthorityError("layer_3 does not prove both candidate launcher paths")
+
+
+def _require_layer_5(matrix: Mapping[str, Any]) -> None:
+    layer_5 = matrix.get("layer_5")
+    if (
+        not isinstance(layer_5, Mapping)
+        or layer_5.get("label") != LAYER_5_LABEL
+        or layer_5.get("status") not in {"error", "bounded_prompt_observed_and_terminated"}
+        or layer_5.get("outcome") != "bounded_prompt_observed_and_terminated"
+        or layer_5.get("termination") not in {"after_marker", "bounded_timeout"}
+        or layer_5.get("marker") != FIRST_RUN_MARKER
+    ):
+        raise ConPtyAuthorityError("layer_5 does not record the bounded first-run prompt probe")
+    _require_layer_markers(layer_5, layer_name="layer_5", marker=FIRST_RUN_MARKER)
+
+
+def _require_layer_matrix(
+    matrix: Mapping[str, Any],
+    identity: Mapping[str, str],
+    layer_matrix_path: Path | None = None,
+    *,
+    raw_capture_required: bool = False,
+) -> dict[str, Any]:
     if matrix.get("schema_version") != "W18-CONPTY-LAYER-MATRIX-V1":
         raise ConPtyAuthorityError("ConPTY layer matrix schema is invalid")
+    if matrix.get("status") != "diagnosed":
+        raise ConPtyAuthorityError("ConPTY layer matrix status is not diagnosed")
+    if matrix.get("harness") != "native-Windows-ConPTY":
+        raise ConPtyAuthorityError("ConPTY layer matrix harness is not native Windows ConPTY")
     if matrix.get("candidate_id") != identity["candidate_id"]:
         raise ConPtyAuthorityError("ConPTY layer matrix candidate_id does not match installed evidence")
-    for name in ("layer_1", "layer_2", "layer_4"):
-        layer = matrix.get(name)
-        if not isinstance(layer, Mapping) or layer.get("status") != "completed" or layer.get("returncode") != 0:
-            raise ConPtyAuthorityError(f"{name} does not prove a successful ConPTY layer")
-    layer_3 = matrix.get("layer_3")
-    if (
-        not isinstance(layer_3, list)
-        or len(layer_3) != 2
-        or any(not isinstance(layer, Mapping) or layer.get("status") != "completed" or layer.get("returncode") != 0 for layer in layer_3)
-    ):
-        raise ConPtyAuthorityError("layer_3 does not prove both candidate launcher paths")
-    layer_5 = matrix.get("layer_5")
-    if not isinstance(layer_5, Mapping) or layer_5.get("status") != "error":
-        raise ConPtyAuthorityError("layer_5 does not record the bounded first-run prompt probe")
+    matrix_identity = matrix.get("evidence_identity")
+    if matrix_identity is not None and matrix_identity != dict(identity):
+        raise ConPtyAuthorityError("ConPTY layer matrix evidence identity does not match installed evidence")
+    _require_completed_layer(matrix, "layer_1", LAYER_1_LABEL, "W18_CONPTY_SMOKE")
+    _require_completed_layer(matrix, "layer_2", LAYER_2_LABEL, "W18_CONPTY_PYTHON")
+    _require_completed_layer(matrix, "layer_4", LAYER_4_LABEL, "llm-agent ")
+    _require_layer_3(matrix)
+    _require_layer_5(matrix)
+    if layer_matrix_path is not None:
+        _validate_runner_local_raw_capture(
+            layer_matrix_path,
+            matrix,
+            identity,
+            required=raw_capture_required,
+        )
     return {
         "layer_1_cmd_echo": "passed",
         "layer_2_embedded_python": "passed",
@@ -134,7 +335,12 @@ def build_conpty_authority_evidence(
     matrix_raw, matrix = _read_json_bytes(layer_matrix, "ConPTY layer matrix")
     identity = _identity_from_installed_summary(summary)
     _require_interactive_evidence(summary, interactive, identity)
-    layer_status = _require_layer_matrix(matrix, identity)
+    layer_status = _require_layer_matrix(
+        matrix,
+        identity,
+        layer_matrix,
+        raw_capture_required=True,
+    )
 
     source_evidence = {
         "installed_product_json_sha256": _sha256_bytes(summary_raw),
@@ -197,7 +403,7 @@ def validate_conpty_authority_evidence(
     if authority.get("evidence_identity") != identity:
         raise ConPtyAuthorityError("ConPTY authority identity does not match installed summary")
     _require_interactive_evidence(summary, interactive, identity)
-    layer_status = _require_layer_matrix(matrix, identity)
+    layer_status = _require_layer_matrix(matrix, identity, layer_matrix)
     if authority.get("layer_matrix") != layer_status:
         raise ConPtyAuthorityError("ConPTY authority layer status does not match the exact layer matrix")
     source_evidence = authority.get("source_evidence")
