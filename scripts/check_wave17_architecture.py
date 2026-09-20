@@ -8,7 +8,6 @@ boundary; it does not replace the focused behavioural tests.
 from __future__ import annotations
 
 import ast
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,8 +27,6 @@ PRIMARY_FILES = (
     "interactive_session.py",
     "interactive_worker.py",
     "query_executor.py",
-    "query_git.py",
-    "query_plane.py",
     "ui_plane.py",
 )
 STDIN_COMPATIBILITY_FILES = {"interactive_shell.py"}
@@ -70,7 +67,9 @@ def _violation(rule_id: str, path: str, detail: str) -> ArchitectureViolation:
     return ArchitectureViolation(rule_id, path, detail)
 
 
-def _calls(tree: ast.AST) -> Iterable[ast.Call]:
+def _calls(tree: ast.AST | None) -> Iterable[ast.Call]:
+    if tree is None:
+        return ()
     return (node for node in ast.walk(tree) if isinstance(node, ast.Call))
 
 
@@ -102,6 +101,238 @@ def _function_source(root: Path, relative: str, name: str) -> str:
     source = _source(root, relative)
     lines = source.splitlines()
     return "\n".join(lines[function.lineno - 1 : function.end_lineno or function.lineno])
+
+
+@dataclass(frozen=True, slots=True)
+class _FunctionRef:
+    relative: str
+    function: ast.FunctionDef | ast.AsyncFunctionDef
+
+
+def _module_relative(root: Path, module_name: str) -> str | None:
+    if not module_name:
+        return None
+    module_path = root.joinpath(*module_name.split("."))
+    for candidate in (module_path.with_suffix(".py"), module_path / "__init__.py"):
+        if candidate.is_file():
+            return candidate.relative_to(root).as_posix()
+    return None
+
+
+def _qualified_import_name(relative: str, node: ast.ImportFrom) -> str:
+    if node.level == 0:
+        return node.module or ""
+    module_parts = relative.removesuffix(".py").replace("\\", "/").split("/")
+    package = module_parts[:-1]
+    if node.level > 1:
+        package = package[: -(node.level - 1)] if node.level - 1 <= len(package) else []
+    if node.module:
+        package.extend(node.module.split("."))
+    return ".".join(package)
+
+
+def _import_target(
+    root: Path,
+    relative: str,
+    node: ast.ImportFrom,
+    imported_name: str,
+) -> tuple[str, bool] | None:
+    module_name = _qualified_import_name(relative, node)
+    submodule = _module_relative(root, f"{module_name}.{imported_name}" if module_name else imported_name)
+    if submodule is not None:
+        return submodule, True
+    module = _module_relative(root, module_name)
+    if module is None:
+        return None
+    return module, False
+
+
+def _from_import_binding(tree: ast.Module, local_name: str) -> tuple[ast.ImportFrom, ast.alias] | None:
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            if alias.name != "*" and (alias.asname or alias.name) == local_name:
+                return node, alias
+    return None
+
+
+def _plain_import_binding(tree: ast.Module, local_name: str) -> ast.alias | None:
+    for node in tree.body:
+        if not isinstance(node, ast.Import):
+            continue
+        for alias in node.names:
+            if (alias.asname or alias.name.split(".")[0]) == local_name:
+                return alias
+    return None
+
+
+def _resolve_from_binding(
+    root: Path,
+    relative: str,
+    binding: tuple[ast.ImportFrom, ast.alias],
+    function_name: str,
+    seen: tuple[tuple[str, str], ...] = (),
+) -> _FunctionRef | None:
+    node, alias = binding
+    target = _import_target(root, relative, node, alias.name)
+    if target is None:
+        return None
+    target_relative, is_submodule = target
+    target_name = function_name if is_submodule else alias.name
+    return _resolve_exported_function(root, target_relative, target_name, seen)
+
+
+def _resolve_plain_binding(
+    root: Path,
+    alias: ast.alias | None,
+    function_name: str,
+    seen: tuple[tuple[str, str], ...] = (),
+) -> _FunctionRef | None:
+    if alias is None:
+        return None
+    imported_relative = _module_relative(root, alias.name)
+    if imported_relative is None:
+        return None
+    return _resolve_exported_function(root, imported_relative, function_name, seen)
+
+
+def _resolve_imported_function(
+    root: Path,
+    relative: str,
+    tree: ast.Module,
+    name: str,
+    seen: tuple[tuple[str, str], ...],
+) -> _FunctionRef | None:
+    from_binding = _from_import_binding(tree, name)
+    if from_binding is not None:
+        return _resolve_from_binding(root, relative, from_binding, name, seen)
+    return _resolve_plain_binding(root, _plain_import_binding(tree, name), name, seen)
+
+
+def _resolve_exported_function(
+    root: Path,
+    relative: str,
+    name: str,
+    seen: tuple[tuple[str, str], ...] = (),
+) -> _FunctionRef | None:
+    marker = (relative, name)
+    if marker in seen:
+        return None
+    tree = _tree(root, relative)
+    function = _function(tree, name)
+    if function is not None:
+        return _FunctionRef(relative, function)
+    if tree is None:
+        return None
+    return _resolve_imported_function(root, relative, tree, name, (*seen, marker))
+
+
+def _resolve_bare_submission_call(
+    root: Path,
+    relative: str,
+    tree: ast.Module,
+    local_name: str,
+) -> _FunctionRef | None:
+    local_function = _function(tree, local_name)
+    if local_function is not None:
+        return _FunctionRef(relative, local_function)
+    return _resolve_imported_function(root, relative, tree, local_name, ())
+
+
+def _resolve_module_alias(
+    root: Path,
+    relative: str,
+    tree: ast.Module,
+    module_alias: str,
+    function_name: str,
+) -> _FunctionRef | None:
+    from_binding = _from_import_binding(tree, module_alias)
+    if from_binding is not None:
+        node, alias = from_binding
+        target = _import_target(root, relative, node, alias.name)
+        if target is not None:
+            target_relative, _ = target
+            return _resolve_exported_function(root, target_relative, function_name)
+        return None
+    return _resolve_plain_binding(root, _plain_import_binding(tree, module_alias), function_name)
+
+
+def _resolve_module_submission_call(
+    root: Path,
+    relative: str,
+    tree: ast.Module,
+    module_alias: str,
+) -> _FunctionRef | None:
+    return _resolve_module_alias(root, relative, tree, module_alias, "submit_query")
+
+
+def _resolve_submission_call(root: Path, relative: str, call: ast.Call) -> _FunctionRef | None:
+    call_parts = _call_name(call).split(".")
+    if not call_parts or call_parts[-1] != "submit_query":
+        return None
+    tree = _tree(root, relative)
+    if tree is None:
+        return None
+    if len(call_parts) == 1:
+        return _resolve_bare_submission_call(root, relative, tree, call_parts[0])
+    return _resolve_module_submission_call(root, relative, tree, call_parts[-2])
+
+
+_QUERY_SERVICE_RECEIVERS = frozenset({"service", "query_service", "workspace_query_service"})
+_QUERY_SERVICE_METHODS = frozenset({"execute", "list_files", "read_file", "find", "git_status", "diff"})
+
+
+def _direct_query_calls(tree: ast.AST | None) -> list[ast.Call]:
+    if tree is None:
+        return []
+    findings: list[ast.Call] = []
+    for call in _calls(tree):
+        if not isinstance(call.func, ast.Attribute) or call.func.attr not in _QUERY_SERVICE_METHODS:
+            continue
+        call_name = _call_name(call)
+        if any(part in _QUERY_SERVICE_RECEIVERS for part in call_name.split(".")):
+            findings.append(call)
+    return findings
+
+
+def _reachable_functions(tree: ast.Module | None, entry_name: str) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    if tree is None:
+        return []
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    pending = [entry_name]
+    seen: set[str] = set()
+    reachable: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    while pending:
+        name = pending.pop()
+        if name in seen or name not in functions:
+            continue
+        seen.add(name)
+        function = functions[name]
+        reachable.append(function)
+        for call in _calls(function):
+            if isinstance(call.func, ast.Name) and call.func.id in functions:
+                pending.append(call.func.id)
+    return reachable
+
+
+def _bounded_submission_call(function: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.Call | None:
+    for call in _calls(function):
+        if not isinstance(call.func, ast.Attribute) or call.func.attr != "submit":
+            continue
+        if not isinstance(call.func.value, ast.Name) or call.func.value.id not in {"executor", "query_executor"}:
+            continue
+        for keyword in call.keywords:
+            if keyword.arg != "execute" or not isinstance(keyword.value, ast.Attribute):
+                continue
+            if keyword.value.attr == "execute" and isinstance(keyword.value.value, ast.Name):
+                if keyword.value.value.id in _QUERY_SERVICE_RECEIVERS:
+                    return call
+    return None
 
 
 def _combined_source(root: Path, *relatives: str) -> str:
@@ -151,12 +382,12 @@ def _check_ui_projection(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_query_plane(root: Path) -> list[ArchitectureViolation]:
-    relative = f"{CLI_ROOT}/query_plane.py"
+    relative = "agent/application_services/queries.py"
     source = _combined_source(
         root,
         relative,
+        "agent/application_services/query_git.py",
         f"{CLI_ROOT}/query_executor.py",
-        f"{CLI_ROOT}/query_git.py",
     )
     findings: list[ArchitectureViolation] = []
     if any(token in source for token in ("ToolInvocationGateway", "tool_invocation_gateway", "orchestrator")):
@@ -164,12 +395,80 @@ def _check_query_plane(root: Path) -> list[ArchitectureViolation]:
     for token in ("shell=False", "stdin=subprocess.DEVNULL", "GIT_TERMINAL_PROMPT", "GIT_EXTERNAL_DIFF", "core.fsmonitor=false"):
         if token not in source:
             findings.append(_violation("W17-ARCH-17", relative, f"bounded Git query contract is missing {token}"))
-    if not re.search(r"Queue\(maxsize=[12]\)", source) or "_result_pending" not in source:
+    executor_tree = _tree(root, f"{CLI_ROOT}/query_executor.py")
+    executor_class = next(
+        (
+            node
+            for node in ast.walk(executor_tree)
+            if isinstance(node, ast.ClassDef) and node.name == "BoundedQueryExecutor"
+        ),
+        None,
+    ) if executor_tree is not None else None
+    executor_init = _function(executor_class, "__init__")
+    has_bounded_lane = any(
+        _call_name(call) == "Queue"
+        and any(
+            keyword.arg == "maxsize"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value in {1, 2}
+            for keyword in call.keywords
+        )
+        for call in _calls(executor_init)
+    )
+    has_result_pending = any(
+        isinstance(target, ast.Attribute)
+        and target.attr == "_result_pending"
+        for node in ast.walk(executor_init)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
+    ) if executor_init is not None else False
+    if not has_bounded_lane or not has_result_pending:
         findings.append(_violation("W17-ARCH-17", relative, "query executor lacks one bounded unsettled-result lane"))
-    query_submit = _function_source(root, f"{CLI_ROOT}/interactive_rendering.py", "submit_query")
-    input_handler = _function_source(root, f"{CLI_ROOT}/interactive_admission.py", "handle_input")
-    if "executor.submit" not in query_submit or "service.execute" in input_handler:
-        findings.append(_violation("W17-ARCH-17", f"{CLI_ROOT}/interactive_rendering.py", "query work must leave the prompt thread through the bounded executor"))
+    admission_relative = f"{CLI_ROOT}/interactive_admission.py"
+    admission_tree = _tree(root, admission_relative)
+    prompt_functions = _reachable_functions(admission_tree, "handle_input")
+    submission_calls = [
+        call
+        for function in prompt_functions
+        for call in _calls(function)
+        if _call_name(call).split(".")[-1] == "submit_query"
+    ]
+    if not submission_calls:
+        findings.append(
+            _violation(
+                "W17-ARCH-17",
+                admission_relative,
+                "interactive input has no query submission boundary",
+            )
+        )
+        return findings
+    if any(_direct_query_calls(function) for function in prompt_functions):
+        findings.append(
+            _violation(
+                "W17-ARCH-17",
+                admission_relative,
+                "query work executes directly on the prompt thread",
+            )
+        )
+    for submission_call in submission_calls:
+        submission = _resolve_submission_call(root, admission_relative, submission_call)
+        if submission is None:
+            findings.append(
+                _violation(
+                    "W17-ARCH-17",
+                    admission_relative,
+                    "query submission owner cannot be resolved through the CLI boundary",
+                )
+            )
+            continue
+        if _direct_query_calls(submission.function) or _bounded_submission_call(submission.function) is None:
+            findings.append(
+                _violation(
+                    "W17-ARCH-17",
+                    submission.relative,
+                    "query work must leave the prompt thread through the bounded executor",
+                )
+            )
     return findings
 
 
@@ -240,18 +539,18 @@ def _check_headless_and_boundaries(root: Path) -> list[ArchitectureViolation]:
 
 def _check_agentic_boundary(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    manifest_relative = f"{CLI_ROOT}/manifest.py"
-    manifest = _source(root, manifest_relative)
-    if "SubmissionEnvelope" in manifest or "ToolInvocationGateway" in manifest or ".grant(" in manifest:
-        findings.append(_violation("W17-ARCH-09", manifest_relative, "command registry contains runtime authority instead of routing metadata"))
+    registry_relative = f"{CLI_ROOT}/action_registry.py"
+    registry = _source(root, registry_relative)
+    if "SubmissionEnvelope" in registry or "ToolInvocationGateway" in registry or ".grant(" in registry:
+        findings.append(_violation("W17-ARCH-09", registry_relative, "command registry contains runtime authority instead of routing metadata"))
     input_relative = f"{CLI_ROOT}/interactive_admission.py"
     input_handler = _function_source(root, input_relative, "handle_input")
     if "controller.submit" not in _source(root, input_relative) or "execute_submission" not in _source(root, input_relative):
         findings.append(_violation("W17-ARCH-11", input_relative, "agentic input does not pass through the single controller"))
     if "application.interact" in input_handler:
         findings.append(_violation("W17-ARCH-11", input_relative, "interactive handler directly invokes the application boundary"))
-    if "AGENTIC_SUBMIT" not in manifest or "PENDING_EXACT_TEXT" not in manifest or "PENDING_TYPED_PAYLOAD" not in manifest:
-        findings.append(_violation("W17-ARCH-11", manifest_relative, "agentic busy-submit metadata is incomplete"))
+    if "AGENTIC_SUBMIT" not in registry or "PENDING_EXACT_TEXT" not in registry or "PENDING_TYPED_PAYLOAD" not in registry:
+        findings.append(_violation("W17-ARCH-11", registry_relative, "agentic busy-submit metadata is incomplete"))
     return findings
 
 
@@ -259,25 +558,25 @@ def _check_manifest(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     try:
         sys.path.insert(0, str(root))
-        from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
+        from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
         seen: set[str] = set()
-        for entry in DEFAULT_COMMAND_REGISTRY.entries:
-            if entry.canonical_command_id in seen:
-                findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/manifest.py", "duplicate canonical command id"))
-            seen.add(entry.canonical_command_id)
-            for alias in entry.aliases:
-                resolved, _ = DEFAULT_COMMAND_REGISTRY.lookup(alias)
-                if resolved is None or resolved.canonical_command_id != entry.canonical_command_id:
-                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/manifest.py", f"alias is not accounted for: {alias}"))
-            if entry.handler_owner:
+        for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
+            if binding.action_id in seen:
+                findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", "duplicate canonical action id"))
+            seen.add(binding.action_id)
+            for alias in binding.aliases:
+                resolved = DEFAULT_CLI_ACTION_REGISTRY.match(" ".join(alias))
+                if resolved is None or resolved.action_id != binding.action_id:
+                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"alias is not accounted for: {' '.join(alias)}"))
+            if binding.handler_owner:
                 try:
-                    if DEFAULT_COMMAND_REGISTRY.resolve_handler(entry) is None:
-                        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/manifest.py", f"handler owner is unavailable: {entry.handler_owner}"))
+                    if DEFAULT_CLI_ACTION_REGISTRY.resolve_handler(binding) is None:
+                        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"handler owner is unavailable: {binding.handler_owner}"))
                 except (AttributeError, ImportError, ValueError, TypeError):
-                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/manifest.py", f"handler owner is not importable: {entry.handler_owner}"))
+                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"handler owner is not importable: {binding.handler_owner}"))
     except (ImportError, OSError, ValueError, TypeError) as exc:
-        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/manifest.py", f"registry cannot be validated: {exc}"))
+        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"registry cannot be validated: {exc}"))
     return findings
 
 

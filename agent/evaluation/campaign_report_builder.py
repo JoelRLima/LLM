@@ -16,6 +16,7 @@ from agent.evaluation.evaluation_identity import (
     semantic_manifest_hash,
 )
 from agent.evaluation.execution import CampaignRun
+from agent.evaluation.experiment import EvaluationExperimentContext
 from agent.evaluation.scenario_contracts import (
     H_SERIES_VERSION,
     CausalFailureClass,
@@ -36,6 +37,7 @@ def _campaign_report(
     invalid_probe: dict[str, Any] | None,
     initial_candidate: Mapping[str, str],
     existing_run_records: list[Mapping[str, Any]] | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> dict[str, Any]:
     manifest = semantic_candidate_manifest(root)
     existing_records = list(existing_run_records or [])
@@ -97,6 +99,8 @@ def _campaign_report(
             "source": "current_scripted_campaign" if evidence_level is EvidenceLevel.DETERMINISTIC else "pending_input",
         },
     }
+    if evaluation_experiment is not None:
+        report["evaluation_experiment"] = evaluation_experiment.to_dict()
     if invalid_probe is not None:
         report["invalid_probe"] = invalid_probe
     secret_scan = secret_safe_report(report)

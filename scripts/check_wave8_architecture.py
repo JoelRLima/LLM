@@ -32,8 +32,10 @@ ATOMIC_OWNERS = frozenset(
         "agent/health/runtime_checks.py",
         "agent/memory/json_persistence.py",
         "agent/runtime/filesystem_primitives.py",
+        "agent/runtime/home_lifecycle.py",
         "agent/runtime/instance_lock.py",
         "agent/runtime/state_migration.py",
+        "agent/runtime/storage_migration.py",
         "agent/task_definition/repository_support.py",
         "agent/tools/extension_catalog_storage.py",
         "agent/tools/stdio_launcher.py",
@@ -51,6 +53,7 @@ PROCESS_OWNERS = frozenset(
         "agent/tools/stdio_launcher.py",
         "agent/tools/stdio_process.py",
         "agent/interfaces/cli/query_git.py",
+        "agent/application_services/query_git.py",
     }
 )
 PATH_OWNERS = frozenset(

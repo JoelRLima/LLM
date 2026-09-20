@@ -23,6 +23,7 @@ from agent.evaluation.evaluation_identity import (
     DEFAULT_REAL_MODEL_EPOCH,
     model_config_identity,
 )
+from agent.evaluation.experiment import EvaluationExperimentContext
 from agent.evaluation.release_prerequisites import (
     project_release_prerequisite_snapshot,
     validate_release_prerequisite_projection,
@@ -42,6 +43,7 @@ def run_real_model_campaign(
     deterministic_readiness: Mapping[str, Any] | None = None,
     resume_report: Mapping[str, Any] | None = None,
     progress_path: str | Path | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> dict[str, Any]:
     """Run the new real-model epoch only after the caller's explicit gate."""
 
@@ -77,6 +79,7 @@ def run_real_model_campaign(
         model_identity=identity,
         resume_report=resume_report,
         progress_path=progress_path,
+        evaluation_experiment=evaluation_experiment,
     )
     snapshots = preflight.get("prerequisite_snapshots")
     if isinstance(snapshots, Mapping):

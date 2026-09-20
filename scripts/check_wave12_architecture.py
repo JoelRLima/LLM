@@ -7,7 +7,7 @@ import ast
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -536,12 +536,95 @@ def _check_s43(root: Path) -> list[ArchitectureViolation]:
     return [] if _has_text(root, "agent/application.py", "cancel_active_model_call") and _has_text(root, "agent/interaction/service.py", "_active_model_cancellation") else [_violation("W12-S43", "agent/application.py", "application cancellation lacks active interaction seam")]
 
 
+def _is_active_interaction_cancel(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "cancel_active_model_call"
+        and isinstance(node.func.value, ast.Call)
+        and isinstance(node.func.value.func, ast.Attribute)
+        and node.func.value.func.attr == "interaction_service"
+        and isinstance(node.func.value.func.value, ast.Name)
+        and node.func.value.func.value.id == "self"
+    )
+
+
+def _is_task_cancel(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "cancel_task"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "orchestrator"
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "self"
+    )
+
+
+def _contains_call(nodes: Iterable[ast.AST], predicate: Callable[[ast.AST], bool]) -> bool:
+    return any(predicate(candidate) for node in nodes for candidate in ast.walk(node))
+
+
+def _contains_direct_task_cancel(statements: Iterable[ast.stmt]) -> bool:
+    return any(
+        isinstance(statement, ast.Expr) and _is_task_cancel(statement.value)
+        for statement in statements
+    )
+
+
+def _has_negated_active_cancel(test: ast.AST) -> bool:
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        return _is_active_interaction_cancel(test.operand)
+    return isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And) and any(
+        _has_negated_active_cancel(value) for value in test.values
+    )
+
+
+def _has_explicit_return_guard(statements: list[ast.stmt]) -> bool:
+    for index, statement in enumerate(statements):
+        if isinstance(statement, ast.If):
+            if (
+                _is_active_interaction_cancel(statement.test)
+                and any(isinstance(item, ast.Return) for item in statement.body)
+                and _contains_direct_task_cancel(statements[index + 1 :])
+            ):
+                return True
+            if _has_explicit_return_guard(statement.body) or _has_explicit_return_guard(statement.orelse):
+                return True
+        elif isinstance(statement, (ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+            if _has_explicit_return_guard(statement.body):
+                return True
+            if isinstance(statement, (ast.While, ast.For, ast.AsyncFor)) and _has_explicit_return_guard(statement.orelse):
+                return True
+        elif isinstance(statement, ast.Try):
+            if (
+                _has_explicit_return_guard(statement.body)
+                or any(_has_explicit_return_guard(handler.body) for handler in statement.handlers)
+                or _has_explicit_return_guard(statement.orelse)
+                or _has_explicit_return_guard(statement.finalbody)
+            ):
+                return True
+    return False
+
+
 def _check_s44(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/application.py") or ""
-    cancel = source.find("cancel_active_model_call")
-    terminal = source.find("self.orchestrator.cancel_task", cancel if cancel >= 0 else 0)
-    between = source[cancel:terminal] if cancel >= 0 and terminal >= 0 else ""
-    return [] if "return" in between else [_violation("W12-S44", "agent/application.py", "active interaction cancel fans out to task cancellation")]
+    relative = "agent/application.py"
+    method = _function(_tree(root, relative), "cancel")
+    if method is None:
+        return [_violation("W12-S44", relative, "active interaction cancel fans out to task cancellation")]
+    task_cancel_count = sum(_is_task_cancel(node) for node in ast.walk(method))
+    short_circuit_guard = any(
+        isinstance(node, ast.If)
+        and _has_negated_active_cancel(node.test)
+        and _contains_direct_task_cancel(node.body)
+        and not _contains_call(node.orelse, _is_task_cancel)
+        and task_cancel_count == 1
+        for node in ast.walk(method)
+    )
+    explicit_return_guard = task_cancel_count == 1 and _has_explicit_return_guard(method.body)
+    return [] if short_circuit_guard or explicit_return_guard else [
+        _violation("W12-S44", relative, "active interaction cancel fans out to task cancellation", method)
+    ]
 
 
 def _check_s45(root: Path) -> list[ArchitectureViolation]:

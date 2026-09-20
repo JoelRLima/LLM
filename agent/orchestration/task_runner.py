@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional, cast
 
 from agent.application_interactive import reapply_interactive_cancellation
 from agent.checkpoint_manager import CheckpointLoadError
-from agent.llm.router import _is_clearly_trivial
 from agent.orchestration.route_coordinator import RouteCoordinatorMixin
 from agent.orchestration.task_definition_gate import (
     ensure_task_definition,
@@ -38,6 +37,7 @@ from agent.planning.task_completion import (
     mark_terminal_blocked,
 )
 from agent.planning.task_policy_support import policy_terminal_answer
+from agent.routing.persona.current import _is_clearly_trivial
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.convergence_runtime import enforce_convergence_terminal
 from agent.runtime.event_kinds import RuntimeEventKind

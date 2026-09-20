@@ -21,6 +21,7 @@ from agent.llm.identity import (
 from agent.runtime.config_repository import ConfigRepository
 from agent.runtime.paths import AppPaths
 from agent.tools.authority import TaskAuthoritySnapshot
+from agent.variants.models import VariantComposition
 
 
 class GatewayFactory(Protocol):
@@ -52,10 +53,12 @@ class AgentApplicationScenarioExecutor:
         prepare: ScenarioPreparation | None = None,
         prepare_workspace: WorkspacePreparation | None = None,
         prepare_application: ScenarioPreparation | None = None,
+        variant_composition: VariantComposition | None = None,
     ) -> None:
         self.gateway_factory = gateway_factory
         self.approval_policy = approval_policy
         self.task_authority = task_authority
+        self.variant_composition = variant_composition
         self._prepare_workspace = prepare_workspace
         # ``prepare`` is the pre-existing application-home seam. Keep it as
         # a compatibility alias while practical fixtures use the measured
@@ -80,6 +83,7 @@ class AgentApplicationScenarioExecutor:
                 gateway=gateway,
                 approval_policy=self.approval_policy,
                 task_authority=self.task_authority,
+                variant_composition=self.variant_composition,
                 configure_logging=False,
             ) as application:
                 if bool(getattr(gateway, "supports_semantic_intent", False)):
@@ -183,6 +187,8 @@ class AgentApplicationScenarioExecutor:
                     "total_tokens": canonical_metrics.get("total_tokens"),
                     "token_measurement": canonical_metrics.get("token_measurement", "unavailable"),
                     "canonical_metrics": dict(canonical_metrics),
+                    "variant_fingerprint": application.variant_fingerprint,
+                    "variant_composition": application.variant_composition.normalized_dict(),
                 }
                 measurement["provider_identity"] = project_declared_provider_identity(
                     gateway,

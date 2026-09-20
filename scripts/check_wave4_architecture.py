@@ -36,7 +36,9 @@ CORRELATION_ID_NAMES = frozenset(
 NON_CORRELATION_UUID_TARGETS = frozenset(
     {
         "change_set_id",
+        "feedback_id",
         "invocation_id",
+        "output_id",
         "snapshot_id",
         "step_id",
         "validation_invocation_id",

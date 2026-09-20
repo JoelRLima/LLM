@@ -129,6 +129,26 @@ class ChatSession:
             request_contract=request_contract,
         )
 
+    def build_ephemeral_request(
+        self,
+        messages: Any,
+        *,
+        stream: bool = False,
+        max_output_tokens: int | None = None,
+        request_contract: ModelRequestContract | str | None = None,
+        structured_output: Any = None,
+    ) -> ModelRequest:
+        from agent.llm.session_requests import build_ephemeral_model_request
+
+        return build_ephemeral_model_request(
+            self,
+            messages,
+            stream=stream,
+            max_output_tokens=max_output_tokens,
+            request_contract=request_contract,
+            structured_output=structured_output,
+        )
+
     def complete_request(self, request: ModelRequest) -> ModelResponse:
         """Complete one canonical request with task-budget accounting."""
         from agent.llm.session_requests import complete_model_request

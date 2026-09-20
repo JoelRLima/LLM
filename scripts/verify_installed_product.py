@@ -394,8 +394,8 @@ def _state_sentinels(app_paths: AppPaths) -> tuple[Path, list[Path]]:
 
     roots = (
         app_paths.config_dir,
-        app_paths.data_dir,
-        app_paths.state_dir,
+        app_paths.global_dir,
+        app_paths.workspaces_dir,
         app_paths.cache_dir,
         app_paths.log_dir,
     )
@@ -1013,16 +1013,18 @@ def _v3_assert_app_paths(application_home: Path, app_paths: AppPaths) -> None:
     """Fail closed if the canonical owner resolves any mutable path elsewhere."""
 
     expected = {
+        "home": application_home,
         "config": application_home / "config",
-        "data": application_home / "data",
-        "state": application_home / "state",
+        "global": application_home / "global",
+        "workspaces": application_home / "workspaces",
         "cache": application_home / "cache",
         "logs": application_home / "logs",
     }
     actual = {
+        "home": app_paths.home_dir,
         "config": app_paths.config_dir,
-        "data": app_paths.data_dir,
-        "state": app_paths.state_dir,
+        "global": app_paths.global_dir,
+        "workspaces": app_paths.workspaces_dir,
         "cache": app_paths.cache_dir,
         "logs": app_paths.log_dir,
     }
@@ -1072,9 +1074,10 @@ def _v3_prepare_context(bundle_root: Path) -> ProductContext:
         "application_home": str(application_home),
         "application_home_owner": "verifier-harness",
         "application_paths": {
+            "home": str(app_paths.home_dir),
             "config": str(app_paths.config_dir),
-            "data": str(app_paths.data_dir),
-            "state": str(app_paths.state_dir),
+            "global": str(app_paths.global_dir),
+            "workspaces": str(app_paths.workspaces_dir),
             "cache": str(app_paths.cache_dir),
             "logs": str(app_paths.log_dir),
         },

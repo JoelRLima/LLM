@@ -16,6 +16,7 @@ from agent.llm.tool_discovery_contract import valid_tool_discovery as _valid_too
 
 
 class ModelRequestContract(str, Enum):
+    PERSONA_ROUTE = "persona_route_v1"
     INTERACTION_RESOLUTION = "interaction_resolution"
     SEMANTIC_INTENT = "semantic_intent_v1"
     TASK_CONTRACT = 'task_contract'

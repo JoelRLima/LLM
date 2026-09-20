@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from agent.evaluation.agent_executor import GatewayFactory
 from agent.evaluation.execution import _run_one
+from agent.evaluation.experiment import EvaluationExperimentContext
 from agent.evaluation.scenario_contracts import EvidenceLevel, HSeriesArm, HSeriesScenario
 
 
@@ -30,6 +31,7 @@ def invalid_probe_record(
     epoch: str,
     evidence_level: EvidenceLevel,
     model_identity: Mapping[str, Any],
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> dict[str, Any] | None:
     if not include_invalid_probe:
         return None
@@ -49,6 +51,7 @@ def invalid_probe_record(
         model_identity=model_identity,
         scenario_repetition=1,
         attempt=1,
+        evaluation_experiment=evaluation_experiment,
     )
     return {
         "h_id": "H4",
@@ -57,6 +60,7 @@ def invalid_probe_record(
         "passed": probe.passed,
         "report": dict(probe.report),
         "evidence": dict(probe.evidence),
+        "evaluation_receipt": dict(probe.evaluation_receipt or {}),
         "probe": "invalid_duplicate_args_and_bindings",
     }
 

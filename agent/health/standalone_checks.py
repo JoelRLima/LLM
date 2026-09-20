@@ -61,9 +61,10 @@ def _path_is_in_site_packages(path: Path) -> bool:
 
 def check_paths(app_paths: AppPaths) -> CheckResult:
     resolved = {
+        "home_dir": app_paths.home_dir.resolve(),
         "config_dir": app_paths.config_dir.resolve(),
-        "data_dir": app_paths.data_dir.resolve(),
-        "state_dir": app_paths.state_dir.resolve(),
+        "global_dir": app_paths.global_dir.resolve(),
+        "workspaces_dir": app_paths.workspaces_dir.resolve(),
         "cache_dir": app_paths.cache_dir.resolve(),
         "log_dir": app_paths.log_dir.resolve(),
     }

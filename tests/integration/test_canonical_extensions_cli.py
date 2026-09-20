@@ -75,11 +75,11 @@ def test_canonical_extension_cli_uses_modern_catalog_and_workspace_services(
         ["extensions", "register", str(manifest), *common], capsys
     )
     assert registered["extension_id"] == "demo.extension"
-    catalog_path = home / "data" / "extensions" / "catalog.json"
+    catalog_path = home / "global" / "extensions" / "catalog.json"
     assert catalog_path.is_file()
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     assert catalog["extensions"]["demo.extension"]["manifest_path"] == manifest.as_posix()
-    assert not (home / "data" / "extensions" / "registry.json").exists()
+    assert not (home / "global" / "extensions" / "registry.json").exists()
 
     _run_cli(["extensions", "enable", "demo.extension", *common], capsys)
     granted = _run_cli(
@@ -133,7 +133,7 @@ def test_cli_rejects_relative_manifest_without_interpreting_cwd(
     )
 
     assert code != 0
-    assert not (home / "data" / "extensions" / "catalog.json").exists()
+    assert not (home / "global" / "extensions" / "catalog.json").exists()
 
 
 def test_cli_rejects_home_and_dotdot_without_silent_normalization(

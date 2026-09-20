@@ -6,24 +6,25 @@ from types import SimpleNamespace
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from agent.interfaces.cli.interactive_session import _handle_ctrl_c
 from agent.interfaces.cli.interactive_shell import InteractiveShell
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
 
 
 def test_registry_completion_uses_preferred_commands_and_preserves_alias_metadata() -> None:
-    assert DEFAULT_COMMAND_REGISTRY.completion_items("/c") == ("/cancel", "/clear", "/clearmemory", "/code")
-    entry, match = DEFAULT_COMMAND_REGISTRY.lookup("/agente objetivo")
-    assert entry is not None
-    assert match == "prefix"
-    assert entry.canonical_command_id == "agent"
-    assert entry.busy_submit == "PENDING_TYPED_PAYLOAD"
+    assert DEFAULT_CLI_ACTION_REGISTRY.completion_items("/c") == ("/cancel", "/code")
+    match = DEFAULT_CLI_ACTION_REGISTRY.match("/agente objetivo")
+    assert match is not None
+    assert match.used_compatibility_alias is True
+    assert match.action_id == "interaction.agent_submit"
+    assert match.raw_payload == "objetivo"
+    assert match.binding.busy_submit == "PENDING_TYPED_PAYLOAD"
 
 
 def test_prompt_session_accepts_multiline_without_mouse_capture_and_keeps_literal_background_text() -> None:
     with create_pipe_input() as pipe:
         shell = InteractiveShell(
-            registry=DEFAULT_COMMAND_REGISTRY,
+            registry=DEFAULT_CLI_ACTION_REGISTRY,
             input=pipe,
             output=DummyOutput(),
             toolbar=lambda: "RUNNING | model ready",
@@ -58,7 +59,7 @@ def test_background_pump_runs_while_composer_prompt_is_blocked() -> None:
     pumped = Event()
     with create_pipe_input() as pipe:
         shell = InteractiveShell(
-            registry=DEFAULT_COMMAND_REGISTRY,
+            registry=DEFAULT_CLI_ACTION_REGISTRY,
             input=pipe,
             output=DummyOutput(),
         )

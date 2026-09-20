@@ -17,6 +17,7 @@ from agent.interfaces.cli.parser import build_parser
 from agent.llm.contracts import ModelResponse, ProviderCapabilities
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
+from agent.routing.persona.current import CurrentPersonaRouter
 from agent.runtime.paths import WorkspacePaths
 from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
 from agent.tools.authority import OperationalMode, operational_mode_capabilities
@@ -162,6 +163,7 @@ def test_orchestrator_mode_switch_updates_the_canonical_gateway(
         tool_invocation_gateway=gateway,
         workspace_root=tmp_path,
         workspace_paths=_workspace_paths(tmp_path),
+        persona_router=CurrentPersonaRouter(ChatSession("system", {}, gateway=object())),
     )
 
     orchestrator.set_operational_mode(OperationalMode.READ_ONLY)

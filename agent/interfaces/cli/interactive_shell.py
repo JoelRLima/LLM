@@ -43,11 +43,11 @@ class InteractiveShell:
         class _RegistryCompleter(Completer):
             def get_completions(inner_self, document: Any, complete_event: Any) -> Any:
                 del complete_event
-                word = document.get_word_before_cursor(WORD=True)
-                if not word.startswith("/"):
+                text_before_cursor = document.text_before_cursor
+                if not text_before_cursor.startswith("/"):
                     return
-                for item in registry.completion_items(word) if registry is not None else ():
-                    yield Completion(item, start_position=-len(word), display=item)
+                for item in registry.completion_items(text_before_cursor) if registry is not None else ():
+                    yield Completion(item, start_position=-len(text_before_cursor), display=item)
 
         bindings = KeyBindings()
 

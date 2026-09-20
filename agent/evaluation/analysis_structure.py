@@ -10,7 +10,9 @@ from agent.evaluation.analysis_support import (
     _evidence,
     _is_environmental_attempt,
     _scenario_definitions,
+    evaluation_errors,
 )
+from agent.evaluation.evaluation_identity import CAMPAIGN_LEGACY_SCHEMA_VERSION
 from agent.evaluation.fixture_context import runtime_objective
 from agent.evaluation.scenario_contracts import H_SERIES, H_SERIES_VERSION, digest_fixture
 
@@ -239,9 +241,24 @@ def validate_campaign_report(
     for index, run in enumerate(raw_runs):
         errors.extend(_run_envelope_errors(run, index))
     errors.extend(_campaign_structure_errors(report, raw_runs))
+    errors.extend(
+        evaluation_errors(
+            report,
+            raw_runs,
+            require_final_epoch=require_final_epoch,
+        )
+    )
+    legacy = str(report.get("schema_version", "")) == CAMPAIGN_LEGACY_SCHEMA_VERSION
     if errors and require_final_epoch:
         raise CampaignAnalysisError("campaign evidence is incomplete: " + ", ".join(errors))
-    return {"valid": not errors, "errors": errors, "run_count": len(raw_runs)}
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "run_count": len(raw_runs),
+        "legacy": legacy,
+        "w19_receipt_complete": not legacy and not any("evaluation_receipt" in error for error in errors),
+        "variant_identity_complete": not legacy and not any("evaluation" in error.lower() for error in errors),
+    }
 
 
 __all__ = ["validate_campaign_report"]

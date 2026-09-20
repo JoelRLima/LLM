@@ -40,6 +40,7 @@ from distribution.payload import (  # noqa: E402
     validate_inventory,
 )
 from distribution.provenance import (  # noqa: E402
+    W19_CANDIDATE_PATH_SURFACE,
     CandidateTree,
     isolated_candidate_tree,
     materialize_candidate_tree,
@@ -1447,7 +1448,7 @@ def build_release(
     uv_verification = _verify_uv_artifact(Path(uv_artifact_value))
     python_executable = python_executable.resolve()
     _verify_build_driver(python_executable)
-    with isolated_candidate_tree(ROOT) as candidate:
+    with isolated_candidate_tree(ROOT, allowed_paths=W19_CANDIDATE_PATH_SURFACE) as candidate:
         release_epoch = derive_release_epoch(ROOT, candidate.base_commit)
         with tempfile.TemporaryDirectory(prefix="candidate-build-") as raw:
             scratch = Path(raw)

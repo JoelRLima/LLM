@@ -29,7 +29,8 @@ from agent.llm.identity import (
     unavailable_observed_identity,
 )
 
-CAMPAIGN_SCHEMA_VERSION = "CAMPAIGN-V2.0"
+CAMPAIGN_SCHEMA_VERSION = "CAMPAIGN-V3.0"
+CAMPAIGN_LEGACY_SCHEMA_VERSION = "CAMPAIGN-V2.0"
 DEFAULT_DRY_RUN_EPOCH = "DRY-RUN-V2"
 DEFAULT_REAL_MODEL_EPOCH = "REAL-MODEL-EPOCH-2"
 
@@ -221,6 +222,7 @@ def campaign_config(
     output_dir: str | Path,
     profile_name: str = DEFAULT_PROFILE, epoch: str = DEFAULT_REAL_MODEL_EPOCH,
     external_identity: str | None = None,
+    evaluation_experiment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     candidate = candidate_identity(root)
@@ -231,7 +233,7 @@ def campaign_config(
         output_label = output.resolve().relative_to(root).as_posix()
     except ValueError:
         output_label = output.name
-    return {
+    config = {
         "schema_version": CAMPAIGN_SCHEMA_VERSION,
         "scenario_set_version": H_SERIES_VERSION,
         "fixture_identity": fixture_identity(),
@@ -252,6 +254,9 @@ def campaign_config(
         },
         "resume_policy": "resume only with exact candidate, semantic manifest, epoch, model/config, H-series, and fixture fingerprints",
     }
+    if evaluation_experiment is not None:
+        config["evaluation_experiment"] = dict(evaluation_experiment)
+    return config
 
 
 def resume_compatible(existing: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
@@ -285,7 +290,7 @@ def resume_compatible(existing: Mapping[str, Any], current: Mapping[str, Any]) -
 
 
 __all__ = [
-    "CAMPAIGN_SCHEMA_VERSION", "DEFAULT_DRY_RUN_EPOCH", "DEFAULT_PROFILE", "DEFAULT_REAL_MODEL_EPOCH",
+    "CAMPAIGN_LEGACY_SCHEMA_VERSION", "CAMPAIGN_SCHEMA_VERSION", "DEFAULT_DRY_RUN_EPOCH", "DEFAULT_PROFILE", "DEFAULT_REAL_MODEL_EPOCH",
     "campaign_config", "candidate_identity", "candidate_identity_string", "documentation_fingerprint", "fake_model_identity",
     "fixture_identity", "model_config_identity", "normalize_endpoint_identity",
     "planned_model_profile", "resume_compatible", "semantic_candidate_fingerprint",

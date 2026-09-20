@@ -20,6 +20,48 @@ def test_real_repository_passes_wave12_checker() -> None:
     assert checker.check_architecture(root) == []
 
 
+def test_s44_accepts_short_circuit_task_cancel_guard(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "agent/application.py",
+        "class AgentApplication:\n"
+        "    def cancel(self):\n"
+        "        if not self._closed and not self.interaction_service().cancel_active_model_call():\n"
+        "            self.orchestrator.cancel_task()\n",
+    )
+
+    assert checker._check_s44(tmp_path) == []
+
+
+def test_s44_preserves_explicit_return_task_cancel_guard(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "agent/application.py",
+        "class AgentApplication:\n"
+        "    def cancel(self):\n"
+        "        if not self._closed:\n"
+        "            if self.interaction_service().cancel_active_model_call():\n"
+        "                return\n"
+        "            self.orchestrator.cancel_task()\n",
+    )
+
+    assert checker._check_s44(tmp_path) == []
+
+
+def test_s44_rejects_task_cancel_in_active_interaction_branch(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "agent/application.py",
+        "class AgentApplication:\n"
+        "    def cancel(self):\n"
+        "        if self.interaction_service().cancel_active_model_call():\n"
+        "            self.orchestrator.cancel_task()\n",
+    )
+
+    violations = checker._check_s44(tmp_path)
+    assert [item.rule_id for item in violations] == ["W12-S44"]
+
+
 def test_checker_catches_resolver_authority_and_strict_parser_bypasses(tmp_path: Path) -> None:
     _write(
         tmp_path,

@@ -5,37 +5,37 @@ from __future__ import annotations
 from typing import Any
 
 from agent.interfaces.cli import interactive_rendering
+from agent.interfaces.cli.action_parser import parse_action
+from agent.interfaces.cli.action_registry import CliActionMatch
 from agent.interfaces.cli.commands import handle_command
 from agent.interfaces.cli.interactive_worker import execute_submission
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
 from agent.interfaces.cli.ui import console
 
 
 def agentic_payload(text: str, command_id: str) -> str | None:
-    stripped = text.strip()
-    if command_id == "retry":
+    match = parse_action(text)
+    if command_id == "run.retry":
         return "/continue"
-    parts = stripped.split(maxsplit=1)
-    if len(parts) == 1:
+    if match is None or match.action_id != command_id:
         return None
-    payload = parts[1]
-    return None if command_id == "code" and payload.casefold() in {"help", "ajuda"} else payload
+    payload = match.raw_payload
+    return None if command_id == "interaction.code_submit" and payload.casefold() in {"help", "ajuda"} else payload or None
 
 
-def build_agentic_envelope(text: str, entry: Any) -> Any:
+def build_agentic_envelope(text: str, entry: CliActionMatch) -> Any:
     from agent.interfaces.cli.controller import SubmissionEnvelope
 
-    payload = agentic_payload(text, entry.canonical_command_id)
+    payload = agentic_payload(text, entry.action_id)
     return SubmissionEnvelope(
         run_generation=0,
         visible_text=text,
-        command_id=entry.canonical_command_id,
-        routing_kind=entry.routing_kind,
-        busy_policy=entry.busy_policy,
-        busy_submit=entry.busy_submit,
+        command_id=entry.action_id,
+        routing_kind=entry.binding.routing_kind,
+        busy_policy=entry.binding.busy_policy,
+        busy_submit=entry.binding.busy_submit,
         payload=payload or "",
-        boundary=entry.agentic_boundary or "natural",
-        owner=entry.agentic_owner or entry.handler_owner or "unknown",
+        boundary=entry.binding.agentic_boundary or "natural",
+        owner=entry.binding.agentic_owner or entry.binding.handler_owner or "unknown",
     )
 
 
@@ -109,15 +109,16 @@ def _handle_controller_input(text: str, ctx: Any, controller: Any) -> bool | Non
     message = controller.poll_result()
     if message is not None:
         interactive_rendering.render_worker_message(ctx, message)
-    entry, _match_kind = DEFAULT_COMMAND_REGISTRY.lookup(text)
-    parts = text.strip().split()
-    if entry is not None and entry.canonical_command_id == "pending" and [part.casefold() for part in parts[1:2]] == ["send"]:
+    entry = parse_action(text)
+    if entry is not None and entry.action_id == "run.pending_send":
         return _send_pending(ctx, controller, text)
-    if entry is not None and entry.routing_kind == "AGENTIC":
-        if agentic_payload(text, entry.canonical_command_id) is not None:
+    if entry is not None and entry.binding.routing_kind == "AGENTIC":
+        if agentic_payload(text, entry.action_id) is not None:
             return _submit_controller(ctx, controller, build_agentic_envelope(text, entry))
-    elif entry is not None and entry.canonical_command_id in {"list_files", "read", "find", "git_status", "diff"}:
-        if interactive_rendering.submit_query(text, ctx, entry.canonical_command_id):
+    elif entry is not None and entry.action_id in {
+        "query.list_files", "query.read", "query.find", "query.git_status", "query.git_diff",
+    }:
+        if interactive_rendering.submit_query(text, ctx, entry.action_id):
             return False
     elif entry is None and text.strip().startswith("/"):
         interactive_rendering.render_rejected_preserve(
@@ -128,7 +129,7 @@ def _handle_controller_input(text: str, ctx: Any, controller: Any) -> bool | Non
         return False
     elif entry is None:
         return _submit_controller(ctx, controller, build_natural_envelope(text))
-    if entry is not None and entry.busy_policy == "IDLE_ONLY" and controller.is_busy():
+    if entry is not None and entry.binding.busy_policy == "IDLE_ONLY" and controller.is_busy():
         interactive_rendering.render_rejected_preserve(
             ctx,
             type("Rejected", (), {"disposition": "REJECTED_PRESERVE", "reason": "REQUIRES_IDLE"})(),
@@ -149,7 +150,7 @@ def handle_input(text: str, ctx: Any) -> bool:
         result = _handle_controller_input(text, ctx, controller)
         if result is not None:
             return result
-    elif text.strip().startswith("/") and DEFAULT_COMMAND_REGISTRY.lookup(text)[0] is None:
+    elif text.strip().startswith("/") and parse_action(text) is None:
         interactive_rendering.render_rejected_preserve(
             ctx,
             type("Rejected", (), {"disposition": "REJECTED_PRESERVE", "reason": "UNKNOWN_COMMAND"})(),

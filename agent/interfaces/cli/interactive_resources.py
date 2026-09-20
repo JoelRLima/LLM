@@ -6,10 +6,11 @@ import argparse
 from dataclasses import dataclass
 from typing import Any, Callable, cast
 
+from agent.application_services.queries import ReadOnlyWorkspaceQueryService
 from agent.interfaces.cli import first_run, interactive_rendering, workspace_entry
 from agent.interfaces.cli.attention import ApprovalBroker
 from agent.interfaces.cli.controller import InteractiveExecutionController, WorkerSettlementTimeout
-from agent.interfaces.cli.query_plane import BoundedQueryExecutor, ReadOnlyWorkspaceQueryService
+from agent.interfaces.cli.query_executor import BoundedQueryExecutor
 from agent.interfaces.cli.ui import console
 from agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox
 from agent.runtime.config_errors import ConfigNotFound
@@ -50,8 +51,8 @@ def get_shell(
     controller_holder: dict[str, Any],
 ) -> Any:
     if shell_holder["shell"] is None:
+        from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
         from agent.interfaces.cli.interactive_shell import InteractiveShell
-        from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
 
         def toolbar() -> str:
             view = view_holder["view"]
@@ -63,7 +64,7 @@ def get_shell(
             controller = controller_holder["controller"]
             return f"state={controller.state.value}" if controller is not None else "state=STARTING"
 
-        shell_holder["shell"] = InteractiveShell(registry=DEFAULT_COMMAND_REGISTRY, toolbar=toolbar)
+        shell_holder["shell"] = InteractiveShell(registry=DEFAULT_CLI_ACTION_REGISTRY, toolbar=toolbar)
     return shell_holder["shell"]
 
 
@@ -131,8 +132,12 @@ def configure(
             gateway.approval_port = resources.approval_broker
         resources.event_mailbox = UIEventMailbox()
         resources.view_model = RunViewModel()
-        workspace_value = getattr(application.workspace, "root", application.workspace)
-        resources.query_service = ReadOnlyWorkspaceQueryService(workspace_value)
+        workspace_query_service = getattr(application, "workspace_query_service", None)
+        if callable(workspace_query_service):
+            resources.query_service = workspace_query_service()
+        else:
+            workspace_value = getattr(application.workspace, "root", application.workspace)
+            resources.query_service = ReadOnlyWorkspaceQueryService(workspace_value)
         resources.query_executor = BoundedQueryExecutor(workspace_id=str(getattr(application.workspace, "workspace_id", "workspace")))
         resources.event_sink = RuntimeEventUISink(resources.event_mailbox)
         resources.event_dispatcher = getattr(application.orchestrator, "event_dispatcher", None)
@@ -172,7 +177,7 @@ def _settle_query(
         return ShutdownStatus()
     if active_shell is not None and context is not None:
         interactive_rendering.render_query_result(context, result)
-    if getattr(result, "error", None) == "QUERY_SHUTDOWN_TIMEOUT":
+    if getattr(result, "adapter_reason_code", None) == "QUERY_SHUTDOWN_TIMEOUT":
         return ShutdownStatus.failed("QUERY_SHUTDOWN_TIMEOUT")
     return ShutdownStatus()
 

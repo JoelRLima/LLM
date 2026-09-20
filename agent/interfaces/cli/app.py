@@ -20,19 +20,10 @@ from agent.interfaces.task_directives import (
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 from agent.runtime.task_directives import TaskRunDirective
 
-NIVEIS_THINKING = {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
-
 
 def _sync_console() -> None:
     for module in (interactive_admission, interactive_rendering, interactive_resources, interactive_session):
         module.console = console  # type: ignore[attr-defined]
-
-
-def obter_status_think(session: Any) -> str:
-    if session.thinking_budget > 0:
-        level = NIVEIS_THINKING.get(session.thinking_budget, "?")
-        return f"[green]LIGADO ({level}, {session.thinking_budget})[/green]"
-    return "[yellow]OFF[/yellow]"
 
 
 def _prompt(ctx: Any) -> str | None:

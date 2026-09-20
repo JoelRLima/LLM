@@ -45,6 +45,7 @@ from agent.evaluation.evaluation_identity import (
 )
 from agent.evaluation.evaluation_snapshot_projection import snapshot_evaluation_projection
 from agent.evaluation.evidence import MAX_EVIDENCE_DEPTH, sanitize_evidence
+from agent.evaluation.experiment import evaluation_context
 from agent.evaluation.real_model_preflight import build_real_model_preflight
 from agent.evaluation.release_prerequisites import (
     project_release_prerequisite_snapshot,
@@ -844,6 +845,11 @@ def test_corrective_ready_cli_does_not_greenlight_blocked_readiness(
         tmp_path / "ready.json",
         profile_name="local_8gb",
         external_identity=None,
+        evaluation_experiment=evaluation_context(
+            "current",
+            experiment_id="test-corrective-ready",
+            trial_id="test-corrective-ready",
+        ),
     ) == 1
 
 

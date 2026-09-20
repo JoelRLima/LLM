@@ -24,6 +24,7 @@ if str(ROOT_DIR) not in sys.path:
 from agent.llm.contracts import ModelRequest, ModelResponse  # noqa: E402
 from agent.llm.session import ChatSession  # noqa: E402
 from agent.orchestrator import Orchestrator  # noqa: E402
+from agent.routing.persona.current import CurrentPersonaRouter  # noqa: E402
 from agent.runtime.paths import AppPaths  # noqa: E402
 from tests.support.task_definition import task_definition_response  # noqa: E402
 
@@ -187,9 +188,10 @@ def agent(monkeypatch, fake_model: ScriptedModelGateway, tmp_path: Path) -> Orch
     skills = load_all_skills(model_gateway=session.gateway, config=config)
 
     app_paths = AppPaths(
+        home_dir=tmp_path / "home",
         config_dir=tmp_path / "config",
-        data_dir=tmp_path / "data",
-        state_dir=tmp_path / "state",
+        global_dir=tmp_path / "global",
+        workspaces_dir=tmp_path / "workspaces",
         cache_dir=tmp_path / "cache",
         log_dir=tmp_path / "logs",
     )
@@ -211,6 +213,7 @@ def agent(monkeypatch, fake_model: ScriptedModelGateway, tmp_path: Path) -> Orch
         verbose=False,
         workspace_root=ROOT_DIR,
         workspace_paths=workspace_paths,
+        persona_router=CurrentPersonaRouter(session),
     )
     return orchestrator
 

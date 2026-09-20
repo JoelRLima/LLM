@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
+from agent.evaluation.analysis_identity import identity_checks
 from agent.evaluation.analysis_metrics import (
     incident_counts,
     metric_summary,
@@ -15,16 +15,17 @@ from agent.evaluation.analysis_metrics import (
 from agent.evaluation.analysis_prerequisites import (
     validate_persisted_prerequisites as _validate_persisted_prerequisites,
 )
+from agent.evaluation.analysis_structure import validate_campaign_report
 from agent.evaluation.analysis_support import (
     CampaignAnalysisError,
     _evidence,
     _is_environmental_attempt,
     _valid,
-    identity_checks,
+    prior_epoch_disposition,
     secret_safe_report,
-    validate_campaign_report,
 )
 from agent.evaluation.analysis_verdict import VERDICTS, verdict
+from agent.evaluation.artifact_paths import canonical_artifact_paths
 from agent.evaluation.campaign_artifacts import deterministic_readiness as _deterministic_readiness
 from agent.evaluation.evaluation_identity import (
     DEFAULT_PROFILE,
@@ -36,6 +37,7 @@ from agent.evaluation.evaluation_identity import (
     semantic_candidate_manifest,
     semantic_manifest_hash,
 )
+from agent.evaluation.experiment import EvaluationExperimentContext, evaluation_context
 from agent.evaluation.oracle import validate_oracle_coverage
 from agent.evaluation.scenario_contracts import H_SERIES_VERSION, CausalFailureClass, RepetitionPolicy
 from agent.llm.identity import normalize_external_identity
@@ -48,7 +50,6 @@ def analyze_campaign(
     require_final_epoch: bool = True,
 ) -> dict[str, Any]:
     """Mechanically analyze preserved runs; never invokes a model judge."""
-
     validate_oracle_coverage()
     envelope = validate_campaign_report(report, require_final_epoch=require_final_epoch)
     if not envelope["valid"]:
@@ -115,6 +116,10 @@ def analyze_campaign(
         observed_identity_available=observed_identity_available,
         observed_identity_reason=observed_identity_reason,
     )
+    # Historical V2 remains readable by the existing H-series analyzer.  Its
+    # envelope explicitly reports ``legacy``/``w19_receipt_complete=False``;
+    # W19 release consumers use those prerequisites and never treat that
+    # compatibility projection as a V3 campaign.
     return {
         "analysis_schema_version": "CAMPAIGN-ANALYSIS-V1.0",
         "identity": {
@@ -153,40 +158,39 @@ def analyze_campaign(
     }
 
 
-def prior_epoch_disposition(
-    path: str | Path, *, epoch: str = "REAL-MODEL-EPOCH-1"
-) -> dict[str, Any]:
-    """Describe an earlier campaign epoch without changing its evidence."""
-
-    file_path = Path(path)
-    digest = hashlib.sha256(file_path.read_bytes()).hexdigest() if file_path.exists() else None
-    return {
-        "epoch": epoch,
-        "disposition": "DIAGNOSTIC / SUPERSEDED_FOR_FINAL_SCORING",
-        "path": file_path.as_posix(),
-        "sha256": digest,
-        "runs_reused_for_final_scoring": False,
-    }
-
-
 def build_corrective_readiness(
     repo_root: str | Path,
     dry_run_report: Mapping[str, Any],
     *,
     profile_name: str = DEFAULT_PROFILE,
     external_identity: str | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> dict[str, Any]:
     """Build the pre-live-model readiness artifact for the new epoch."""
-
     root = Path(repo_root).resolve()
     candidate = candidate_identity(root)
     manifest = semantic_candidate_manifest(root)
+    if evaluation_experiment is not None:
+        selected_experiment = evaluation_experiment
+    else:
+        raw_experiment = dry_run_report.get("evaluation_experiment")
+        if isinstance(raw_experiment, Mapping):
+            selected_experiment = evaluation_context(
+                str(raw_experiment.get("profile_id", "")),
+                experiment_id=str(raw_experiment.get("experiment_id", "")),
+                trial_id=str(raw_experiment.get("trial_id", "")),
+            )
+        else:
+            selected_experiment = evaluation_context(
+                "current", experiment_id="w19-scripted", trial_id="default"
+            )
     config = campaign_config(
         root,
         output_dir=root / "reports" / "acceptance" / "h-series",
         epoch=DEFAULT_REAL_MODEL_EPOCH,
         profile_name=profile_name,
         external_identity=external_identity,
+        evaluation_experiment=selected_experiment.to_dict(),
     )
     deterministic_analysis = analyze_campaign(dry_run_report, require_final_epoch=False)
     if (
@@ -207,17 +211,41 @@ def build_corrective_readiness(
         "path": ".audit-local/out/evaluation-corrective-dry-run.json",
     }
     clean_readiness = _deterministic_readiness(deterministic_projection)
-    from agent.evaluation.artifact_paths import canonical_artifact_paths
-
     prior_path = canonical_artifact_paths(root).prior_real_model_epoch
     prior = prior_epoch_disposition(prior_path)
     prior["path"] = ".audit-local/out/real-model-epoch-1.json"
     normalized_external_identity = normalize_external_identity(external_identity)
+    profile_release_eligible = selected_experiment.profile.profile_id == "current"
+    if not profile_release_eligible and clean_readiness["complete"]:
+        clean_readiness = {
+            **clean_readiness,
+            "complete": False,
+            "reason_codes": [
+                *clean_readiness["reason_codes"],
+                "EVALUATION_PROFILE_NOT_RELEASE_READY",
+            ],
+        }
+    planned_output = (
+        canonical_artifact_paths(root).real_model_epoch_2
+        if profile_release_eligible
+        else canonical_artifact_paths(root).experiment_report(
+            selected_experiment.experiment_id,
+            selected_experiment.trial_id,
+            selected_experiment.profile.profile_id,
+        )
+    )
+    try:
+        planned_output_label = planned_output.relative_to(root).as_posix()
+    except ValueError:
+        planned_output_label = planned_output.name
     planned_command = (
         ".venv\\Scripts\\python.exe scripts\\run_evaluation_campaign.py"
         f" --mode live-model --live-model-authorized --profile {profile_name}"
+        f" --variant-profile {selected_experiment.profile.profile_id}"
+        f" --experiment-id {selected_experiment.experiment_id}"
+        f" --trial-id {selected_experiment.trial_id}"
         f" --epoch {DEFAULT_REAL_MODEL_EPOCH}"
-        " --output .audit-local\\out\\real-model-epoch-2.json"
+        f" --output {planned_output_label}"
     )
     if normalized_external_identity is not None:
         planned_command += f" --external-identity {normalized_external_identity}"
@@ -226,7 +254,7 @@ def build_corrective_readiness(
         "epoch": DEFAULT_REAL_MODEL_EPOCH,
         "campaign_started": False,
         "model_endpoint_accessed": False,
-        "ready": clean_readiness["complete"],
+        "ready": clean_readiness["complete"] and profile_release_eligible,
         "reason_codes": list(clean_readiness["reason_codes"]),
         "candidate": candidate,
         "candidate_identity": candidate_identity_string(candidate),
@@ -261,13 +289,11 @@ def build_corrective_readiness(
             "analysis": deterministic_analysis,
         },
         "deterministic_readiness": clean_readiness,
+        "evaluation_experiment": selected_experiment.to_dict(),
         "oracle_coverage": validate_oracle_coverage(),
         "prior_epoch": prior,
         "planned_live_model_command": planned_command,
     }
 
 
-__all__ = [
-    "CampaignAnalysisError", "VERDICTS", "analyze_campaign", "build_corrective_readiness",
-    "prior_epoch_disposition", "secret_safe_report", "validate_campaign_report",
-]
+__all__ = ["CampaignAnalysisError", "VERDICTS", "analyze_campaign", "build_corrective_readiness", "prior_epoch_disposition", "secret_safe_report", "validate_campaign_report"]

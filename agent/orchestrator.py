@@ -8,10 +8,9 @@ from agent.cancellation import CancellationToken
 from agent.checkpoint_manager import CheckpointManager
 from agent.final_response import FinalResponder
 from agent.llm.context_manager import ContextManager
-from agent.llm.router import is_security_objective, route_objective
 from agent.llm.session import ChatSession
 from agent.memory.memory import AgentMemory
-from agent.orchestration.builtin_composition import install_builtin_gateway
+from agent.orchestration.builtin_composition import _configure_gateway, install_builtin_gateway
 from agent.orchestration.hierarchical_service import HierarchicalExecutionService
 from agent.orchestration.operational_modes import OperationalModeMixin, refresh_capability_projection
 from agent.orchestration.operations import OrchestratorOperations
@@ -27,6 +26,9 @@ from agent.planning.planning_context import PlanningContextSnapshot, build_plann
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.reactive_loop import ReactiveLoop
 from agent.reporting.metrics_recorder import MetricsRecorder
+from agent.routing.persona.catalog import persona_prompt_for
+from agent.routing.persona.contracts import PersonaRouter, PersonaRouteRequest
+from agent.routing.persona.current import is_security_objective
 from agent.runtime.budget import TaskBudgetLedger
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
@@ -67,8 +69,10 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         tool_invocation_gateway: ToolInvocationGateway | None = None,
         application_authority: ApplicationAuthoritySnapshot | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
+        persona_router: PersonaRouter,
     ) -> None:
         self.session = session
+        self.persona_router = persona_router
         self.task_budget = getattr(session, "budget_ledger", None)
         if not isinstance(self.task_budget, TaskBudgetLedger):
             self.task_budget = TaskBudgetLedger.from_config(session.config)
@@ -149,7 +153,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
             checkpoint_observer=observe_step_checkpoint,
         )
         self._refresh_task_policy()
-        self.session.event_sink = self.event_dispatcher
+        self.session.event_sink = self.event_dispatcher  # type: ignore[attr-defined]
         self.subsystems = AgentSubsystems(self)
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:
@@ -161,13 +165,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
                 skill_registry=skill_registry,
             )
         if self.tool_invocation_gateway is not None:
-            self.tool_invocation_gateway.set_budget_ledger(self.task_budget)
-            set_dispatcher = getattr(self.tool_invocation_gateway, "set_event_dispatcher", None)
-            if callable(set_dispatcher):
-                set_dispatcher(self.event_dispatcher, lambda: self.run_correlation)
-            self.tool_invocation_gateway.set_incident_recorder(
-                self.agent_state.record_execution_incident
-            )
+            _configure_gateway(self)
     @property
     def workspace(self) -> WorkspaceManager:
         return self.subsystems.workspace
@@ -203,7 +201,9 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
     def _route_persona(self, objective: str) -> None:
         if self.verbose:
             emit_worker_output("Consultando roteador de persona...", end="")
-        persona_prompt, _, persona = route_objective(objective, self.session)
+        decision = self.persona_router.route(PersonaRouteRequest(objective))
+        persona = decision.persona.value
+        persona_prompt = persona_prompt_for(decision.persona)
         self.current_persona_prompt = persona_prompt
         self.current_persona = persona
         self.agent_state.persona = persona

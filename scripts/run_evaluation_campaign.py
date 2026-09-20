@@ -39,6 +39,11 @@ from agent.evaluation.campaign_runner import (  # noqa: E402
     run_real_model_campaign,
     run_scripted_campaign,
 )
+from agent.evaluation.experiment import (  # noqa: E402
+    EvaluationExperimentContext,
+    EvaluationExperimentError,
+    evaluation_context,
+)
 from agent.evaluation.long_horizon import run_long_horizon_scripted  # noqa: E402
 from agent.evaluation.practical import run_practical_scripted  # noqa: E402
 from agent.llm.model_profile import resolve_model_profile  # noqa: E402
@@ -89,13 +94,24 @@ def _run_corrective_ready(
     *,
     profile_name: str,
     external_identity: str | None,
+    evaluation_experiment: EvaluationExperimentContext,
 ) -> int:
-    dry_report = run_scripted_campaign(ROOT, output_path=paths.corrective_dry_run)
+    dry_output = (
+        paths.corrective_dry_run
+        if evaluation_experiment.profile.profile_id == "current"
+        else None
+    )
+    dry_report = run_scripted_campaign(
+        ROOT,
+        output_path=dry_output,
+        evaluation_experiment=evaluation_experiment,
+    )
     readiness = build_corrective_readiness(
         ROOT,
         dry_report,
         profile_name=profile_name,
         external_identity=external_identity,
+        evaluation_experiment=evaluation_experiment,
     )
     _write_json_artifact(output, readiness)
     passed = readiness.get("ready") is True
@@ -140,7 +156,12 @@ def _load_live_resume(
     return None, reason
 
 
-def _run_live(arguments: argparse.Namespace, paths: EvaluationArtifactPaths, output: Path) -> int:
+def _run_live(
+    arguments: argparse.Namespace,
+    paths: EvaluationArtifactPaths,
+    output: Path,
+    evaluation_experiment: EvaluationExperimentContext,
+) -> int:
     # Resolve the CLI boundary once.  Every downstream owner receives this
     # same absolute path; the original cwd-relative argument is never reused.
     selected_output = resolve_output_path(output, root=ROOT)
@@ -231,6 +252,7 @@ def _run_live(arguments: argparse.Namespace, paths: EvaluationArtifactPaths, out
             deterministic_readiness=frozen_readiness if isinstance(frozen_readiness, dict) else None,
             resume_report=resume_report,
             progress_path=progress_path,
+            evaluation_experiment=evaluation_experiment,
         )
     except Exception as exc:
         print(json.dumps({
@@ -275,8 +297,16 @@ def _run_adversarial(output: Path) -> int:
     return 0 if passed else 1
 
 
-def _run_dry(arguments: argparse.Namespace, output: Path) -> int:
-    report = run_scripted_campaign(ROOT, output_path=output)
+def _run_dry(
+    arguments: argparse.Namespace,
+    output: Path,
+    evaluation_experiment: EvaluationExperimentContext,
+) -> int:
+    report = run_scripted_campaign(
+        ROOT,
+        output_path=output,
+        evaluation_experiment=evaluation_experiment,
+    )
     if arguments.write_config:
         _write_json_artifact(
             output.with_name("evaluation-campaign-config.json"),
@@ -286,6 +316,7 @@ def _run_dry(arguments: argparse.Namespace, output: Path) -> int:
                 profile_name=arguments.profile,
                 epoch=DEFAULT_DRY_RUN_EPOCH,
                 external_identity=normalize_external_identity(arguments.external_identity),
+                evaluation_experiment=evaluation_experiment.to_dict(),
             ),
         )
     summary = report["summary"]
@@ -302,7 +333,7 @@ def _run_dry(arguments: argparse.Namespace, output: Path) -> int:
     return 0 if passed else 1
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluation campaign")
     parser.add_argument(
         "--mode",
@@ -318,6 +349,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="dry-run",
     )
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
+    parser.add_argument(
+        "--variant-profile",
+        choices=("current", "persona-reference-w18"),
+        default="current",
+        help="W19 evaluation-only variant profile",
+    )
+    parser.add_argument("--experiment-id", default="w19-cli")
+    parser.add_argument("--trial-id", default="default")
     parser.add_argument("--epoch", default=DEFAULT_REAL_MODEL_EPOCH)
     parser.add_argument(
         "--output",
@@ -352,22 +391,65 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="resume the canonical live campaign progress document",
     )
-    arguments = parser.parse_args(argv)
-    paths = canonical_artifact_paths(ROOT)
-    output = arguments.output or (
-        paths.real_model_preflight
-        if arguments.mode == "real-model-preflight"
-        else paths.real_model_epoch_2
-        if arguments.mode == "live-model"
-        else paths.corrective_ready
-        if arguments.mode == "corrective-ready"
-        else Path(".audit-local/out/evaluation-practical-v1.json")
-        if arguments.mode == "practical-dry-run"
-        else Path(".audit-local/out/long-horizon-v1.json")
-        if arguments.mode == "long-horizon-dry-run"
-        else paths.corrective_dry_run
-    )
+    return parser
 
+
+def _default_output(mode: str, paths: EvaluationArtifactPaths) -> Path:
+    if mode == "real-model-preflight":
+        return paths.real_model_preflight
+    if mode == "live-model":
+        return paths.real_model_epoch_2
+    if mode == "corrective-ready":
+        return paths.corrective_ready
+    if mode == "practical-dry-run":
+        return Path(".audit-local/out/evaluation-practical-v1.json")
+    if mode == "long-horizon-dry-run":
+        return Path(".audit-local/out/long-horizon-v1.json")
+    return paths.corrective_dry_run
+
+
+def _select_output(
+    arguments: argparse.Namespace,
+    paths: EvaluationArtifactPaths,
+    evaluation_experiment: EvaluationExperimentContext,
+) -> tuple[Path | None, int | None]:
+    experiment_output = paths.experiment_report(
+        evaluation_experiment.experiment_id,
+        evaluation_experiment.trial_id,
+        evaluation_experiment.profile.profile_id,
+    )
+    if evaluation_experiment.profile.profile_id != "current":
+        if arguments.mode in {
+            "practical-dry-run",
+            "long-horizon-dry-run",
+            "adversarial-audit",
+            "real-model-preflight",
+        }:
+            print(json.dumps({
+                "status": "blocked",
+                "mode": arguments.mode,
+                "reason_codes": ["EVALUATION_PROFILE_MODE_UNSUPPORTED"],
+                "report": None,
+            }, ensure_ascii=False))
+            return None, 2
+        if arguments.output is not None and resolve_output_path(arguments.output, root=ROOT) != experiment_output.resolve():
+            print(json.dumps({
+                "status": "blocked",
+                "mode": arguments.mode,
+                "reason_codes": ["EVALUATION_PROFILE_OUTPUT_PATH_FORBIDDEN"],
+                "report": None,
+            }, ensure_ascii=False))
+            return None, 2
+        return experiment_output, None
+    return arguments.output or _default_output(arguments.mode, paths), None
+
+
+def _dispatch_mode(
+    arguments: argparse.Namespace,
+    paths: EvaluationArtifactPaths,
+    output: Path,
+    evaluation_experiment: EvaluationExperimentContext,
+) -> int:
     if arguments.mode == "practical-dry-run":
         return _run_practical(output)
     if arguments.mode == "long-horizon-dry-run":
@@ -378,14 +460,39 @@ def main(argv: Sequence[str] | None = None) -> int:
             output,
             profile_name=arguments.profile,
             external_identity=normalize_external_identity(arguments.external_identity),
+            evaluation_experiment=evaluation_experiment,
         )
     if arguments.mode == "real-model-preflight":
         return _run_preflight(arguments, output)
     if arguments.mode == "live-model":
-        return _run_live(arguments, paths, output)
+        return _run_live(arguments, paths, output, evaluation_experiment)
     if arguments.mode == "adversarial-audit":
         return _run_adversarial(output)
-    return _run_dry(arguments, output)
+    return _run_dry(arguments, output, evaluation_experiment)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = _build_parser().parse_args(argv)
+    try:
+        evaluation_experiment = evaluation_context(
+            arguments.variant_profile,
+            experiment_id=arguments.experiment_id,
+            trial_id=arguments.trial_id,
+        )
+    except EvaluationExperimentError as exc:
+        print(json.dumps({
+            "status": "blocked",
+            "mode": arguments.mode,
+            "reason_codes": [exc.reason_code],
+            "report": None,
+        }, ensure_ascii=False))
+        return 2
+    paths = canonical_artifact_paths(ROOT)
+    output, blocked = _select_output(arguments, paths, evaluation_experiment)
+    if blocked is not None:
+        return blocked
+    assert output is not None
+    return _dispatch_mode(arguments, paths, output, evaluation_experiment)
 
 
 if __name__ == "__main__":

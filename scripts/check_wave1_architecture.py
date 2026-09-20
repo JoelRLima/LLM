@@ -28,6 +28,9 @@ PROFILE_INPUT_FILES = {
 }
 PROFILE_SELECTION_BOUNDARY_FILES = PROFILE_INPUT_FILES | {
     "agent/application.py",
+    # W19 extracts application bootstrap wiring without changing the input
+    # boundary that applies an explicitly selected model profile.
+    "agent/application_wiring.py",
     "agent/interfaces/cli/command_handlers.py",
     "agent/interfaces/cli/first_run.py",
     "agent/interfaces/cli/interactive_commands.py",

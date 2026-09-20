@@ -10,13 +10,29 @@ receive an ``AppPaths`` or ``WorkspacePaths`` instance explicitly.
 from __future__ import annotations
 
 import os
+import re
+import stat
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
+from agent.runtime.filesystem_primitives import inspect_final_path
 from agent.runtime.workspace_trace_paths import WorkspaceTracePaths
 
 APP_DIRECTORY_NAME = "local-llm-agent"
+
+
+class AppHomeOrigin(str, Enum):
+    ARGUMENT = "argument"
+    LLM_AGENT_HOME = "llm_agent_home"
+    AGENT_RUNTIME_DIR = "agent_runtime_dir"
+    WINDOWS_DEFAULT = "windows_default"
+    XDG_DEFAULT = "xdg_default"
+    INJECTED = "injected"
+
+
+_WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _absolute(path: str | Path) -> Path:
@@ -32,6 +48,30 @@ def _environment_path(
     return _absolute(value) if value else _absolute(fallback)
 
 
+def _ensure_safe_directory(path: Path) -> None:
+    """Reject link-like ancestors before creating an owned directory."""
+    lexical = Path(path)
+    current = lexical
+    chain: list[Path] = []
+    while True:
+        chain.append(current)
+        if current == current.parent:
+            break
+        current = current.parent
+    for candidate in reversed(chain):
+        try:
+            inspection = inspect_final_path(candidate)
+        except OSError as exc:
+            raise OSError(f"unsafe application directory: {candidate}") from exc
+        if not inspection.exists:
+            continue
+        metadata = inspection.metadata
+        if inspection.is_link_like or metadata is None:
+            raise OSError(f"unsafe application directory: {candidate}")
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise NotADirectoryError(candidate)
+
+
 @dataclass(frozen=True)
 class WorkspacePaths(WorkspaceTracePaths):
     """All durable and disposable paths owned by one workspace."""
@@ -44,83 +84,69 @@ class WorkspacePaths(WorkspaceTracePaths):
     @property
     def memory_file(self) -> Path:
         return self.data_dir / "agent_memory.json"
-
     @property
     def memory_db_file(self) -> Path:
         return self.data_dir / "agent_memory.db"
-
     @property
     def memory_backup_dir(self) -> Path:
         return self.data_dir / "memory_backups"
-
     @property
     def task_definitions_dir(self) -> Path:
         return self.data_dir / 'task_definitions'
-
     @property
     def checkpoint_file(self) -> Path:
         return self.state_dir / "agent_checkpoint.json"
-
     @property
     def lock_file(self) -> Path:
         return self.state_dir / "application.lock"
-
     @property
     def metrics_file(self) -> Path:
         return self.state_dir / "agent_metrics.jsonl"
-
     @property
     def reports_dir(self) -> Path:
         return self.state_dir / "reports"
-
     @property
     def artifacts_dir(self) -> Path:
         return self.state_dir / "artifacts"
-
+    @property
+    def output_artifacts_dir(self) -> Path:
+        return self.artifacts_dir / "outputs"
     @property
     def restore_points_dir(self) -> Path:
         return self.state_dir / "restore_points"
-
     @property
     def chat_history_file(self) -> Path:
         return self.data_dir / "chat_history.json"
-
     @property
     def task_tracker_json(self) -> Path:
         return self.state_dir / "task_tracker.json"
-
     @property
     def task_tracker_markdown(self) -> Path:
         return self.state_dir / "task_tracker.md"
-
     @property
     def scratch_dir(self) -> Path:
         return self.cache_dir / "scratch"
-
     @property
     def benchmark_results_file(self) -> Path:
         return self.state_dir / "benchmark_results.json"
-
     @property
     def extensions_file(self) -> Path:
-        """Durable enabled-extension registry for this workspace."""
         return self.data_dir / "extensions.json"
-
     @property
     def workspace_extensions_file(self) -> Path:
-        """Versioned extension intent and grants for this workspace."""
         return self.extensions_file
-
     @property
     def workspace_extensions_lock_file(self) -> Path:
-        """Cross-process lock adjacent to the workspace extension document."""
         return self.workspace_extensions_file.with_name(
             f"{self.workspace_extensions_file.name}.lock"
         )
-
+    @property
+    def feedback_file(self) -> Path:
+        return self.data_dir / "human_feedback.json"
+    @property
+    def feedback_lock_file(self) -> Path:
+        return self.data_dir / "human_feedback.json.lock"
     def ensure_directories(self) -> None:
-        """Create writable workspace storage after bootstrap validation."""
-
         for directory in (
             self.data_dir,
             self.state_dir,
@@ -133,18 +159,17 @@ class WorkspacePaths(WorkspaceTracePaths):
             self.scratch_dir,
             *self.trace_directories,
         ):
+            _ensure_safe_directory(directory)
             directory.mkdir(parents=True, exist_ok=True)
-
-
 @dataclass(frozen=True)
 class AppPaths:
-    """Resolved application locations, with no filesystem side effects."""
-
+    home_dir: Path
     config_dir: Path
-    data_dir: Path
-    state_dir: Path
+    global_dir: Path
+    workspaces_dir: Path
     cache_dir: Path
     log_dir: Path
+    home_origin: AppHomeOrigin = AppHomeOrigin.INJECTED
 
     @classmethod
     def discover(
@@ -153,125 +178,98 @@ class AppPaths:
         env: Mapping[str, str] | None = None,
     ) -> "AppPaths":
         environment = os.environ if env is None else env
-        explicit_home = app_home or environment.get("LLM_AGENT_HOME")
-        if explicit_home:
-            home = _absolute(explicit_home)
-            return cls(
-                config_dir=home / "config",
-                data_dir=home / "data",
-                state_dir=home / "state",
-                cache_dir=home / "cache",
-                log_dir=home / "logs",
-            )
-
-        legacy_runtime = environment.get("AGENT_RUNTIME_DIR")
-        if legacy_runtime:
-            runtime = _absolute(legacy_runtime)
-            return cls(
-                config_dir=runtime / "config",
-                data_dir=runtime / "data",
-                state_dir=runtime,
-                cache_dir=runtime / "cache",
-                log_dir=runtime / "logs",
-            )
-
-        user_home = Path.home()
-        if os.name == "nt":
-            roaming = _environment_path(
-                environment,
-                "APPDATA",
-                user_home / "AppData" / "Roaming",
-            )
+        if app_home is not None and str(app_home).strip():
+            home = _absolute(app_home)
+            origin = AppHomeOrigin.ARGUMENT
+        elif environment.get("LLM_AGENT_HOME"):
+            home = _absolute(environment["LLM_AGENT_HOME"])
+            origin = AppHomeOrigin.LLM_AGENT_HOME
+        elif environment.get("AGENT_RUNTIME_DIR"):
+            home = _absolute(environment["AGENT_RUNTIME_DIR"])
+            origin = AppHomeOrigin.AGENT_RUNTIME_DIR
+        elif os.name == "nt":
             local = _environment_path(
                 environment,
                 "LOCALAPPDATA",
-                user_home / "AppData" / "Local",
+                Path.home() / "AppData" / "Local",
             )
-            return cls(
-                config_dir=roaming / APP_DIRECTORY_NAME,
-                data_dir=local / APP_DIRECTORY_NAME / "data",
-                state_dir=local / APP_DIRECTORY_NAME / "state",
-                cache_dir=local / APP_DIRECTORY_NAME / "cache",
-                log_dir=local / APP_DIRECTORY_NAME / "logs",
+            home = local / APP_DIRECTORY_NAME / "home"
+            origin = AppHomeOrigin.WINDOWS_DEFAULT
+        else:
+            data_home = _environment_path(
+                environment,
+                "XDG_DATA_HOME",
+                Path.home() / ".local" / "share",
             )
+            home = data_home / APP_DIRECTORY_NAME / "home"
+            origin = AppHomeOrigin.XDG_DEFAULT
 
-        config_home = _environment_path(environment, "XDG_CONFIG_HOME", user_home / ".config")
-        data_home = _environment_path(
-            environment,
-            "XDG_DATA_HOME",
-            user_home / ".local" / "share",
-        )
-        state_home = _environment_path(
-            environment,
-            "XDG_STATE_HOME",
-            user_home / ".local" / "state",
-        )
-        cache_home = _environment_path(environment, "XDG_CACHE_HOME", user_home / ".cache")
+        home = _absolute(home)
         return cls(
-            config_dir=config_home / APP_DIRECTORY_NAME,
-            data_dir=data_home / APP_DIRECTORY_NAME,
-            state_dir=state_home / APP_DIRECTORY_NAME,
-            cache_dir=cache_home / APP_DIRECTORY_NAME,
-            log_dir=state_home / APP_DIRECTORY_NAME / "logs",
+            home_dir=home,
+            config_dir=home / "config",
+            global_dir=home / "global",
+            workspaces_dir=home / "workspaces",
+            cache_dir=home / "cache",
+            log_dir=home / "logs",
+            home_origin=origin,
         )
 
     @property
     def config_file(self) -> Path:
         return self.config_dir / "config.json"
-
+    @property
+    def storage_layout_file(self) -> Path:
+        return self.global_dir / "storage_layout.json"
+    @property
+    def migrations_dir(self) -> Path:
+        return self.global_dir / "migrations"
+    @property
+    def w18_to_w19_migration_receipt_file(self) -> Path:
+        return self.migrations_dir / "w18_to_w19_v1.json"
     @property
     def log_file(self) -> Path:
         return self.log_dir / "agent.log"
-
     @property
     def health_report_file(self) -> Path:
-        return self.state_dir / "health_report.json"
-
+        return self.global_dir / "health_report.json"
     @property
     def last_workspace_file(self) -> Path:
-        """Last successfully opened workspace for the interactive launcher."""
-        return self.state_dir / "last_workspace.json"
-
+        return self.global_dir / "last_workspace.json"
     @property
     def extensions_dir(self) -> Path:
-        return self.data_dir / "extensions"
-
+        return self.global_dir / "extensions"
     @property
     def extensions_registry_file(self) -> Path:
-        """Legacy CLI registry; modern bootstrap uses catalog/workspace state."""
         return self.extensions_dir / "registry.json"
-
     @property
     def extensions_catalog_file(self) -> Path:
-        """Versioned global catalog consumed by extension-aware bootstrap."""
         return self.extensions_dir / "catalog.json"
-
     @property
     def extensions_catalog_lock_file(self) -> Path:
-        """Cross-process writer lock adjacent to the versioned catalog."""
         return self.extensions_dir / "catalog.json.lock"
 
     def for_workspace(self, workspace_id: str) -> WorkspacePaths:
-        if not workspace_id or any(char in workspace_id for char in ("/", "\\", "..")):
-            raise ValueError("workspace_id inválido.")
+        if not isinstance(workspace_id, str) or not _WORKSPACE_ID_PATTERN.fullmatch(workspace_id):
+            raise ValueError("invalid workspace_id")
         return WorkspacePaths(
             workspace_id=workspace_id,
-            data_dir=(self.data_dir / "workspaces" / workspace_id).resolve(),
-            state_dir=(self.state_dir / "workspaces" / workspace_id).resolve(),
-            cache_dir=(self.cache_dir / "workspaces" / workspace_id).resolve(),
+            data_dir=(self.workspaces_dir / workspace_id / "data").resolve(),
+            state_dir=(self.workspaces_dir / workspace_id / "state").resolve(),
+            cache_dir=(self.workspaces_dir / workspace_id / "cache").resolve(),
         )
 
     def ensure_base_directories(self) -> None:
-        """Create application-owned directories only after explicit startup."""
-
         for directory in (
             self.config_dir,
-            self.data_dir,
-            self.state_dir,
+            self.global_dir,
+            self.workspaces_dir,
+            self.migrations_dir,
             self.cache_dir,
             self.log_dir,
             self.extensions_dir,
         ):
+            _ensure_safe_directory(directory)
             directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -297,3 +295,6 @@ def ensure_runtime_dir() -> None:
     """Create the legacy runtime directory for compatibility consumers."""
 
     Path(RUNTIME_DIR).mkdir(parents=True, exist_ok=True)
+
+
+__all__ = ["APP_DIRECTORY_NAME", "AppHomeOrigin", "AppPaths", "WorkspacePaths", "RUNTIME_DIR", "LOG_FILE", "CHECKPOINT_FILE", "METRICS_FILE", "MEMORY_FILE", "MEMORY_DB_FILE", "MEMORY_BACKUP_DIR", "RESTORE_POINTS_DIR", "CHAT_HISTORY_FILE", "REPORTS_DIR", "TASK_TRACKER_JSON", "TASK_TRACKER_MD", "BENCHMARK_RESULTS_FILE", "HEALTH_REPORT_FILE", "ensure_runtime_dir"]

@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent.runtime.home_lifecycle import HomeLifecycleLease
 from agent.runtime.paths import AppPaths
+from agent.runtime.storage_bootstrap import StorageBootstrap
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.tools.extension_catalog_service import ExtensionCatalogService
 from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
@@ -114,7 +116,7 @@ def _print_extension_payload(payload: Any, *, json_output: bool) -> None:
     print(payload.get("message", payload) if isinstance(payload, dict) else payload)
 
 
-def run_extensions(
+def _run_extensions(
     args: argparse.Namespace,
     *,
     app_paths: AppPaths,
@@ -216,6 +218,26 @@ def run_extensions(
         return 0
 
     raise ValueError(f"Comando de extensions desconhecido: {command}")
+
+
+def run_extensions(
+    args: argparse.Namespace,
+    *,
+    app_paths: AppPaths,
+    workspace: Path,
+) -> int:
+    """Run extension administration with a guarded canonical-home mutation."""
+
+    command = args.extensions_command
+    mutating = command in {"register", "enable", "disable", "grant", "revoke"}
+    if not mutating:
+        return _run_extensions(args, app_paths=app_paths, workspace=workspace)
+    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+    try:
+        StorageBootstrap().prepare(app_paths)
+        return _run_extensions(args, app_paths=app_paths, workspace=workspace)
+    finally:
+        lease.close()
 
 
 __all__ = ["run_extensions"]

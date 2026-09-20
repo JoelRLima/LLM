@@ -19,7 +19,7 @@ from agent.llm.decision_contract import (
     ModelRequestContract,
     resolve_request_contract,
 )
-from agent.runtime import config as _config
+from agent.runtime.config_repository import packaged_config_defaults
 
 # ----------------------------------------------------------------------
 # Sentinela para seleção automática de gramática
@@ -251,7 +251,7 @@ def get_grammar(
     Returns:
         A string da gramática GBNF, ou None.
     """
-    effective_config = _config.DEFAULT_CONFIG if config is None else config
+    effective_config = packaged_config_defaults() if config is None else config
     if not effective_config.get("ENABLE_GBNF", True):
         return None
     if request_contract is not None:

@@ -1618,7 +1618,7 @@ def test_application_runs_trivial_task_with_explicit_workspace(tmp_path: Path) -
         assert result.success is True
         assert "olá" in result.answer.casefold()
         assert application.workspace.root == workspace.resolve()
-        assert application.workspace_paths.state_dir.is_relative_to(paths.state_dir)
+        assert application.workspace_paths.state_dir.is_relative_to(paths.workspaces_dir)
         skill_roots = [
             Path(skill.base_dir).resolve()
             for skill in application.orchestrator.skills.values()
@@ -1901,9 +1901,8 @@ def test_application_requires_initialized_configuration(tmp_path: Path) -> None:
             configure_logging=False,
         )
 
-    assert not paths.data_dir.exists()
-    assert not paths.state_dir.exists()
-    assert not paths.log_dir.exists()
+    assert not any(paths.workspaces_dir.iterdir())
+    assert not paths.log_file.exists()
 
 
 def test_application_rejects_corrupt_memory_json_and_releases_bootstrap_lock(

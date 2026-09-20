@@ -89,17 +89,6 @@ def details(_: str, ctx: Any) -> None:
     )
 
 
-def show_events(_: str, ctx: Any) -> None:
-    if getattr(ctx, "controller", None) is not None:
-        timeline("/timeline", ctx)
-        return
-    events = ctx.orchestrator.agent_state.events
-    if not events:
-        _output_console().print("[yellow]Nenhum evento registrado.[/yellow]")
-    for event in events:
-        _output_console().print(f"[dim]Passo {event['step']}:[/dim] {event['type']} {event['data']}")
-
-
 def pending(text: str, ctx: Any) -> None:
     controller = getattr(ctx, "controller", None)
     if controller is None:
@@ -176,9 +165,38 @@ def attention(text: str, ctx: Any) -> None:
 def model(text: str, ctx: Any) -> None:
     profile = getattr(getattr(ctx, "session", None), "model_profile", None)
     parts = text.strip().split(maxsplit=2)
-    if len(parts) >= 3 and parts[1].casefold() in {"select", "usar", "use"}:
-        selected = parts[2].strip()
+    if len(parts) >= 2 and parts[1].casefold() in {"select", "usar", "use"}:
+        selected = parts[2].strip() if len(parts) >= 3 else ""
         profiles = getattr(ctx, "config", {}).get("model_profiles", {})
+        if not selected:
+            prompt_line = getattr(ctx, "prompt_line", None)
+            if not callable(prompt_line):
+                shell = getattr(ctx, "shell", None)
+                prompt_line = getattr(shell, "prompt_line", None)
+            if not callable(prompt_line):
+                _ui_print(ctx, "model: profile selection requires the interactive selector")
+                return
+            from agent.interfaces.cli.selector import SelectorItem, TerminalSelector
+
+            items = tuple(
+                SelectorItem(
+                    item_id=name,
+                    label=name,
+                    description=str(value.get("model", "")) if isinstance(value, dict) else "",
+                )
+                for name, value in sorted(profiles.items())
+            )
+            selected_result = TerminalSelector(
+                prompt_line=prompt_line,
+                emit=lambda value: _ui_print(ctx, value),
+            ).choose(
+                items,
+                title="Selecione o perfil de modelo",
+                default_id=getattr(ctx, "config", {}).get("default_model_profile"),
+            )
+            if selected_result.cancelled or selected_result.item_id is None:
+                return
+            selected = selected_result.item_id
         if selected not in profiles:
             _ui_print(ctx, f"model: profile desconhecido: {selected}")
             return
@@ -234,24 +252,13 @@ def show_workspace(text: str, ctx: Any) -> None:
     _ui_print(ctx, f"workspace: reopening quiescent session at {target}")
 
 
-def git_status(_: str, __: Any) -> None:
-    _output_console().print("/git-status requer o plano de query interativo.")
-
-
-def diff(_: str, __: Any) -> None:
-    _output_console().print("/diff requer o plano de query interativo.")
-
-
 __all__ = [
     "attention",
     "cancel",
     "details",
-    "diff",
-    "git_status",
     "model",
     "pending",
     "show_workspace",
-    "show_events",
     "status",
     "timeline",
     "where",

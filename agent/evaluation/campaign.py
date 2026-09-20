@@ -32,6 +32,7 @@ from agent.evaluation.evaluation_identity import (
     unavailable_observed_identity,
 )
 from agent.evaluation.execution import CampaignRun, _run_one
+from agent.evaluation.experiment import EvaluationExperimentContext, evaluation_context
 from agent.evaluation.scenario_contracts import (
     H_SERIES,
     H_SERIES_VERSION,
@@ -64,6 +65,7 @@ def _run_scenario(
     existing_runs: list[Mapping[str, Any]] | None = None,
     existing_summary: Mapping[str, Any] | None = None,
     progress_callback: ProgressCallback | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> tuple[list[CampaignRun], dict[str, Any]]:
     """Run one H scenario through the bounded adaptive state machine."""
 
@@ -115,6 +117,7 @@ def _run_scenario(
                 model_identity=model_identity,
                 scenario_repetition=next_repetition,
                 attempt=attempt,
+                evaluation_experiment=evaluation_experiment,
             )
             for arm in scenario.arms
         ]
@@ -183,6 +186,7 @@ def run_scripted_campaign(
     model_identity: Mapping[str, Any] | None = None,
     resume_report: Mapping[str, Any] | None = None,
     progress_path: str | Path | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> dict[str, Any]:
     """Run all H scenarios through the canonical adaptive runner."""
 
@@ -191,6 +195,9 @@ def run_scripted_campaign(
     initial_candidate = candidate_identity(root)
     policy = RepetitionPolicy()
     identity = dict(model_identity or (fake_model_identity() if evidence_level is EvidenceLevel.DETERMINISTIC else {}))
+    selected_experiment = evaluation_experiment or evaluation_context(
+        "current", experiment_id="w19-scripted", trial_id="default"
+    )
     raw_prior_observed_identity = (
         resume_report.get("observed_model_identity") if isinstance(resume_report, Mapping) else None
     )
@@ -253,6 +260,7 @@ def run_scripted_campaign(
             existing_runs=[run for run in existing_runs if str(run.get("h_id")) == scenario.h_id],
             existing_summary=existing_summaries.get(scenario.h_id),
             progress_callback=progress_writer,
+            evaluation_experiment=selected_experiment,
         )
         runs.extend(scenario_runs)
         scenario_results.append(scenario_summary)
@@ -264,6 +272,7 @@ def run_scripted_campaign(
         epoch=epoch,
         evidence_level=evidence_level,
         model_identity=identity,
+        evaluation_experiment=selected_experiment,
     )
     final_candidate = candidate_identity(root)
     report = _campaign_report(
@@ -277,6 +286,7 @@ def run_scripted_campaign(
         invalid_probe=probe_record,
         initial_candidate=initial_candidate,
         existing_run_records=existing_runs,
+        evaluation_experiment=selected_experiment,
     )
     if output_path is not None:
         report = _write_report(output_path, report, require_final_epoch=False)

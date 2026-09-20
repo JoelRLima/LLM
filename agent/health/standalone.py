@@ -25,7 +25,9 @@ from agent.health.standalone_checks import (
     check_workspace,
 )
 from agent.memory.json_persistence import write_text_atomic
+from agent.runtime.home_lifecycle import HomeLifecycleLease
 from agent.runtime.paths import AppPaths
+from agent.runtime.storage_bootstrap import StorageBootstrap
 from agent.runtime.workspace_context import WorkspaceContext
 
 OutputFormat = Literal["human", "json"]
@@ -79,9 +81,10 @@ def _report(
         "workspace": str(workspace.root) if workspace else None,
         "config_path": str(config_path),
         "app_paths": {
+            "home": str(app_paths.home_dir),
             "config": str(app_paths.config_dir),
-            "data": str(app_paths.data_dir),
-            "state": str(app_paths.state_dir),
+            "global": str(app_paths.global_dir),
+            "workspaces": str(app_paths.workspaces_dir),
             "cache": str(app_paths.cache_dir),
             "logs": str(app_paths.log_dir),
         },
@@ -136,10 +139,15 @@ def render_health_report(
 
 def write_health_report(report: dict[str, Any], app_paths: AppPaths) -> Path:
     path = Path(app_paths.health_report_file)
-    write_text_atomic(
-        path,
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-    )
+    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+    try:
+        StorageBootstrap().prepare(app_paths)
+        write_text_atomic(
+            path,
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        )
+    finally:
+        lease.close()
     return path
 
 

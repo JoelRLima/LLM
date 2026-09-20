@@ -3,7 +3,6 @@ from typing import Any, Callable, Optional, cast
 
 from agent.final_response_support import unread_file_warning
 from agent.llm.errors import ModelProviderError
-from agent.llm.router import is_security_objective
 from agent.reporting.observation_evidence import (
     MAX_OBSERVATION_EVIDENCE_CHARS,
     MAX_OBSERVATION_RECORD_CHARS,
@@ -18,6 +17,7 @@ from agent.reporting.partial_response import (
     history_observation_reason,
     render_operational_answer,
 )
+from agent.routing.persona.current import is_security_objective
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.runtime.operational_outcome import OperationalOutcome
@@ -263,6 +263,6 @@ class FinalResponder:
     def _is_security_objective(self, objective: str) -> bool:
         """Detecta se o objetivo é uma análise de segurança.
 
-        Delega para a fonte canônica única (router.is_security_objective),
+        Delega para a fonte canônica única (persona current),
         eliminando a lista de keywords duplicada/dessincronizada (achado 1.8)."""
         return cast(bool, is_security_objective(objective))

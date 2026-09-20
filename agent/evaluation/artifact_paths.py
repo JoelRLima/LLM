@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+_PROFILE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_EXPERIMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_TRIAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _validated_segment(value: str, pattern: re.Pattern[str], label: str) -> str:
+    if not isinstance(value, str) or pattern.fullmatch(value) is None:
+        raise ValueError(f"invalid {label}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -45,6 +56,19 @@ class EvaluationArtifactPaths:
     @property
     def real_model_epoch_2_partial(self) -> Path:
         return self.output_dir / "real-model-epoch-2.partial.json"
+
+    def experiment_report(
+        self,
+        experiment_id: str,
+        trial_id: str,
+        profile_id: str,
+    ) -> Path:
+        """Return the only canonical path for a profile experiment report."""
+
+        experiment = _validated_segment(experiment_id, _EXPERIMENT_ID, "experiment_id")
+        trial = _validated_segment(trial_id, _TRIAL_ID, "trial_id")
+        profile = _validated_segment(profile_id, _PROFILE_ID, "profile_id")
+        return self.output_dir / "experiments" / experiment / trial / f"{profile}.json"
 
 
 def canonical_artifact_paths(repo_root: str | Path) -> EvaluationArtifactPaths:

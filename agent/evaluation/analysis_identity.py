@@ -10,6 +10,7 @@ from agent.evaluation.analysis_identity_observed import (
 )
 from agent.evaluation.analysis_support import _evidence
 from agent.evaluation.evaluation_identity import (
+    CAMPAIGN_LEGACY_SCHEMA_VERSION,
     CAMPAIGN_SCHEMA_VERSION,
     candidate_identity_string,
     fixture_identity,
@@ -144,7 +145,13 @@ def identity_checks(
 
 def _envelope_header_errors(report: Mapping[str, Any], *, require_final_epoch: bool) -> list[str]:
     checks = (
-        (str(report.get("schema_version", "")) != CAMPAIGN_SCHEMA_VERSION, "campaign_schema_version"),
+        (
+            str(report.get("schema_version", "")) not in {
+                CAMPAIGN_SCHEMA_VERSION,
+                CAMPAIGN_LEGACY_SCHEMA_VERSION,
+            },
+            "campaign_schema_version",
+        ),
         (str(report.get("scenario_set_version", "")) != H_SERIES_VERSION, "scenario_set_version"),
         (not isinstance(report.get("runs"), list), "runs_missing"),
         (not isinstance(report.get("candidate"), Mapping), "candidate_missing"),

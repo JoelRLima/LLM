@@ -159,8 +159,21 @@ def test_future_distribution_alias_cannot_change_durable_app_paths(
     assert alias_metadata["distribution_name"] != APPLICATION_NAMESPACE
     assert alias_metadata["entry_point"] == "agent.interfaces.cli.app:main"
     assert alternate == canonical
-    assert canonical.config_dir == appdata / APPLICATION_NAMESPACE
-    assert canonical.data_dir == localappdata / APPLICATION_NAMESPACE / "data"
-    assert canonical.state_dir == localappdata / APPLICATION_NAMESPACE / "state"
-    assert canonical.cache_dir == localappdata / APPLICATION_NAMESPACE / "cache"
-    assert canonical.log_dir == localappdata / APPLICATION_NAMESPACE / "logs"
+    expected_home = (localappdata / APPLICATION_NAMESPACE / "home").resolve()
+    assert canonical.home_dir == expected_home
+    assert canonical.config_dir == expected_home / "config"
+    assert canonical.global_dir == expected_home / "global"
+    assert canonical.workspaces_dir == expected_home / "workspaces"
+    assert canonical.cache_dir == expected_home / "cache"
+    assert canonical.log_dir == expected_home / "logs"
+
+    durable_paths = (
+        canonical.home_dir,
+        canonical.config_dir,
+        canonical.global_dir,
+        canonical.workspaces_dir,
+        canonical.cache_dir,
+        canonical.log_dir,
+    )
+    assert all(path.is_relative_to(expected_home) for path in durable_paths)
+    assert all(not path.is_relative_to(appdata.resolve()) for path in durable_paths)

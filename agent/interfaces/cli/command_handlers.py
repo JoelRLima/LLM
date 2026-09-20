@@ -3,10 +3,18 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from rich.panel import Panel
-from rich.table import Table
 
 from agent.interfaces.cli import interactive_commands as _interactive_commands
 from agent.interfaces.cli.interactive_input import prompt_value as _prompt_value
+from agent.interfaces.cli.memory_commands import (
+    clear_memory,
+    forget,
+    load_memory,
+    remember,
+    save_memory,
+    show_memory,
+)
+from agent.interfaces.cli.thinking_presets import DEFAULT_THINKING_BUDGET, THINKING_PRESET_BY_KEY
 from agent.interfaces.cli.ui import ConsoleChangeApprover, console, render_code_result
 from agent.interfaces.cli.workspace_entry import workspace_storage_path
 from agent.interfaces.task_directives import (
@@ -35,10 +43,13 @@ def mode_command(text: str, ctx: Any) -> None:
             "FULL continua sujeito a grants, approvals e confinement."
         )
         return
-    if parts[1].strip().casefold() in {"help", "ajuda"}:
+    remainder = parts[1].strip()
+    if remainder.casefold().startswith("set "):
+        remainder = remainder[4:].strip()
+    if remainder.casefold() in {"help", "ajuda"}:
         mode_command("/modo", ctx)
         return
-    mode = OperationalMode.parse(parts[1])
+    mode = OperationalMode.parse(remainder)
     if mode is None:
         console.print("[yellow]Uso: /modo [read-only|editor|full][/yellow]")
         return
@@ -67,14 +78,14 @@ def toggle_thinking(_: str, ctx: Any) -> None:
         console.print("[bold yellow]Thinking OFF[/bold yellow]")
         return
     choice = _prompt_value(ctx, "[bold cyan]Tokens (B=baixo, M=médio, A=alto, ou número):[/bold cyan] ").upper()
-    budgets = {"B": 512, "M": 1024, "A": 2048}
-    if choice in budgets:
-        ctx.session.thinking_budget = budgets[choice]
+    budget = THINKING_PRESET_BY_KEY.get(choice)
+    if budget is not None:
+        ctx.session.thinking_budget = budget
     else:
         try:
             ctx.session.thinking_budget = int(choice)
         except ValueError:
-            ctx.session.thinking_budget = 1024
+            ctx.session.thinking_budget = DEFAULT_THINKING_BUDGET
     console.print(f"[bold green]Thinking ON (teto: {ctx.session.thinking_budget} tokens)[/bold green]")
 
 
@@ -193,50 +204,6 @@ def code_command(text: str, ctx: Any) -> None:
     render_code_result(result)
 
 
-def remember(text: str, ctx: Any) -> None:
-    parts = text.strip().split(maxsplit=2)
-    if len(parts) < 3:
-        console.print("[bold red]Uso: /remember chave valor[/bold red]")
-        return
-    ctx.orchestrator.remember(parts[1], parts[2])
-    console.print(f"[bold green]Lembrei:[/bold green] {parts[1]} = {parts[2]}")
-
-
-def show_memory(_: str, ctx: Any) -> None:
-    table = Table(title="Memória da Sessão")
-    table.add_column("Seção", style="cyan")
-    table.add_column("Conteúdo")
-    for section, content in ctx.orchestrator.agent_state.memory.state.items():
-        if content:
-            table.add_row(section, str(content))
-    console.print(table)
-
-
-def forget(_: str, ctx: Any) -> None:
-    key = _prompt_value(ctx, "[bold cyan]Chave a esquecer:[/bold cyan] ")
-    ctx.orchestrator.forget(key)
-    console.print(f"[bold green]Chave '{key}' removida (se existia).[/bold green]")
-
-
-def clear_memory(_: str, ctx: Any) -> None:
-    ctx.orchestrator.clear_memory()
-    console.print("[bold green]Memória da sessão limpa.[/bold green]")
-
-
-def _memory_path(ctx: Any) -> str:
-    default = workspace_storage_path(ctx, "memory_file", "agent_memory.json")
-    entered = _prompt_value(ctx, f"[bold cyan]Caminho (Enter para '{default}'):[/bold cyan] ", default=str(default))
-    return str(entered or default)
-
-
-def save_memory(_: str, ctx: Any) -> None:
-    console.print(f"[bold green]{ctx.orchestrator.save_memory_to_file(_memory_path(ctx))}[/bold green]")
-
-
-def load_memory(_: str, ctx: Any) -> None:
-    console.print(f"[bold green]{ctx.orchestrator.load_memory_from_file(_memory_path(ctx))}[/bold green]")
-
-
 def doctor(text: str, ctx: Any) -> None:
     from agent.health_check import run_health_check
 
@@ -329,3 +296,29 @@ def retry(text: str, ctx: Any) -> None:
 
 def __getattr__(name: str) -> Any:
     return getattr(_interactive_commands, name)
+
+
+__all__ = [
+    "agent_command",
+    "clear_history",
+    "clear_memory",
+    "code_command",
+    "doctor",
+    "find_text",
+    "forget",
+    "list_files",
+    "load_history",
+    "load_memory",
+    "mode_command",
+    "read_file",
+    "remember",
+    "retry",
+    "save_history",
+    "save_memory",
+    "show_memory",
+    "show_prompt",
+    "system_prompt",
+    "toggle_debug",
+    "toggle_thinking",
+    "web_search",
+]

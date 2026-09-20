@@ -50,8 +50,8 @@ def test_state_sentinels_use_all_paths_from_disposable_app_paths(tmp_path: Path)
     assert config == (application_home / "config" / "config.json").resolve()
     assert sentinels == [
         config,
-        (application_home / "data" / "w18-preservation-sentinel.txt").resolve(),
-        (application_home / "state" / "w18-preservation-sentinel.txt").resolve(),
+        (application_home / "global" / "w18-preservation-sentinel.txt").resolve(),
+        (application_home / "workspaces" / "w18-preservation-sentinel.txt").resolve(),
         (application_home / "cache" / "w18-preservation-sentinel.txt").resolve(),
         (application_home / "logs" / "w18-preservation-sentinel.txt").resolve(),
     ]

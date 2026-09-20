@@ -50,4 +50,15 @@ def install_builtin_gateway(
     return True
 
 
+def _configure_gateway(orchestrator: Any) -> None:
+    """Complete gateway wiring for a direct orchestrator composition."""
+
+    gateway = orchestrator.tool_invocation_gateway
+    gateway.set_budget_ledger(orchestrator.task_budget)
+    set_dispatcher = getattr(gateway, "set_event_dispatcher", None)
+    if callable(set_dispatcher):
+        set_dispatcher(orchestrator.event_dispatcher, lambda: orchestrator.run_correlation)
+    gateway.set_incident_recorder(orchestrator.agent_state.record_execution_incident)
+
+
 __all__ = ["install_builtin_gateway"]

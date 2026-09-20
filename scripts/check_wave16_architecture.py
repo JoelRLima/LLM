@@ -22,6 +22,8 @@ LOCAL_COPY_EXCLUDES = (
     "__pycache__",
     ".pytest_cache",
     ".pytest_temp",
+    ".pytest_tmp",
+    ".pytest-tmp*",
     ".tmp",
     ".mypy_cache",
     ".ruff_cache",

@@ -1,7 +1,7 @@
 """Canonical request and stream operations for ChatSession."""
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Dict, Optional, cast
 
 from agent.llm.contracts import (
@@ -44,7 +44,7 @@ def _integer(value: Any, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:
-        return int(value)
+        return cast(int, int(value))
     except (TypeError, ValueError):
         return default
 
@@ -61,10 +61,13 @@ def resolve_effective_reasoning_budget(
     compatibility seam deliberately delegates instead of duplicating them.
     """
 
-    return resolve_ordinary_reasoning_budget(
-        requested_reasoning_budget,
-        max_output_tokens,
-        reasoning_supported,
+    return cast(
+        int,
+        resolve_ordinary_reasoning_budget(
+            requested_reasoning_budget,
+            max_output_tokens,
+            reasoning_supported,
+        ),
     )
 
 
@@ -143,6 +146,60 @@ def build_model_request(
     )
 
 
+def build_ephemeral_model_request(
+    session: Any,
+    messages: Sequence[ModelMessage],
+    *,
+    stream: bool = False,
+    max_output_tokens: int | None = None,
+    request_contract: ModelRequestContract | str | None = None,
+    structured_output: StructuredOutputRequest | None = None,
+) -> ModelRequest:
+    """Build a request from explicit messages without touching session history."""
+
+    copied = tuple(messages)
+    if not all(isinstance(message, ModelMessage) for message in copied):
+        raise TypeError("messages must contain ModelMessage values")
+    if not copied or not any(message.role == "system" for message in copied) or not any(message.role == "user" for message in copied):
+        raise ValueError("ephemeral model request requires system and user messages")
+    profile = _session_profile(session)
+    configured_output_tokens = _integer(profile.max_output_tokens, 1024)
+    requested_output_tokens = configured_output_tokens if max_output_tokens is None else int(max_output_tokens)
+    output_tokens = max(1, requested_output_tokens)
+    capabilities = getattr(profile, "capabilities", None) or getattr(
+        getattr(session, "gateway", None), "capabilities", None
+    )
+    reasoning_supported = bool(getattr(capabilities, "reasoning", False))
+    geometry = resolve_effective_request_geometry(
+        _integer(getattr(session, "thinking_budget", 0), 0),
+        output_tokens,
+        reasoning_supported,
+        structured_output.mode if structured_output is not None else None,
+        profile.compatibility,
+        capabilities=capabilities,
+    )
+    base_system_prompt = copied[0].content
+    system_content = build_effective_system_prompt_for_budget(
+        base_system_prompt,
+        geometry.effective_reasoning_budget,
+    )
+    payload = (ModelMessage(role="system", content=system_content),) + copied[1:]
+    hardware_profile = getattr(session, "hardware_profile", None)
+    return ModelRequest(
+        messages=payload,
+        model=profile.model,
+        temperature=profile.temperature,
+        max_output_tokens=output_tokens,
+        stream=stream,
+        reasoning_budget=geometry.effective_reasoning_budget,
+        requested_reasoning_budget=geometry.requested_reasoning_budget,
+        compatibility_reason_code=geometry.compatibility_reason_code,
+        structured_output=structured_output,
+        context_limit=getattr(hardware_profile, "context_limit", None),
+        request_contract=coerce_request_contract(request_contract),
+    )
+
+
 def complete_model_request(session: Any, request: ModelRequest) -> ModelResponse:
     """Delegate canonical completion to the shared model-call lifecycle."""
 
@@ -168,6 +225,7 @@ def consume_model_stream(
 
 __all__ = [
     "build_effective_system_prompt_for_budget",
+    "build_ephemeral_model_request",
     "build_model_request",
     "complete_model_request",
     "consume_model_stream",

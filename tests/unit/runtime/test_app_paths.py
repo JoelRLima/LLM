@@ -31,7 +31,7 @@ def test_workspace_paths_are_isolated_by_stable_id(tmp_path: Path) -> None:
 
     assert first_paths.state_dir != second_paths.state_dir
     assert first_paths.memory_file != second_paths.memory_file
-    assert not app_paths.state_dir.exists()
+    assert not app_paths.global_dir.exists()
 
 
 def test_workspace_resolution_blocks_escape(tmp_path: Path) -> None:
@@ -86,8 +86,8 @@ def test_case_sensitive_workspaces_have_distinct_ids(tmp_path: Path) -> None:
 def test_legacy_runtime_override_is_absolute(tmp_path: Path) -> None:
     paths = AppPaths.discover(env={"AGENT_RUNTIME_DIR": str(tmp_path / "runtime")})
 
-    assert paths.state_dir.is_absolute()
-    assert paths.state_dir == (tmp_path / "runtime").resolve()
+    assert paths.home_dir.is_absolute()
+    assert paths.home_dir == (tmp_path / "runtime").resolve()
 
 
 def test_global_extension_catalog_paths_are_adjacent_to_legacy_registry(tmp_path: Path) -> None:

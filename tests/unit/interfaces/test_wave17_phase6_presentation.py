@@ -9,10 +9,10 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from agent.interfaces.cli import command_handlers, interactive_rendering
+from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
 from agent.interfaces.cli.interactive_shell import InteractiveShell
 from agent.interfaces.cli.interactive_worker import InteractiveWorkerResult, execute_submission
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
 from agent.interfaces.cli.ui_plane import RunViewModel
 from agent.interfaces.cli.worker_stream import BoundedWorkerStream
 from agent.runtime.correlation import RunCorrelation
@@ -144,7 +144,7 @@ def test_live_stream_survives_active_composer_cancel_without_terminal_duplicatio
 
     with create_pipe_input() as pipe:
         shell = InteractiveShell(
-            registry=DEFAULT_COMMAND_REGISTRY,
+            registry=DEFAULT_CLI_ACTION_REGISTRY,
             input=pipe,
             output=DummyOutput(),
         )

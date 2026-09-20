@@ -7,6 +7,7 @@ import pytest
 from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
+from agent.routing.persona.current import CurrentPersonaRouter
 from agent.runtime.correlation import RunCorrelation
 from agent.runtime.event_dispatch import RuntimeEventDispatcher
 from agent.runtime.events import RuntimeEvent
@@ -318,6 +319,7 @@ def test_direct_orchestrator_builtin_routing_uses_gateway(tmp_path: Path) -> Non
         [EchoSkill()],
         workspace_root=tmp_path,
         workspace_paths=_workspace_paths(tmp_path),
+        persona_router=CurrentPersonaRouter(session),
     )
 
     assert orchestrator.tool_invocation_gateway is not None
@@ -351,6 +353,7 @@ def test_late_register_skill_cannot_recreate_model_actionable_legacy_bypass(
         session,
         workspace_root=tmp_path,
         workspace_paths=_workspace_paths(tmp_path),
+        persona_router=CurrentPersonaRouter(session),
     )
     skill = CustomEcho()
     orchestrator.register_skill(skill)
@@ -393,6 +396,7 @@ def test_custom_skill_with_registry_metadata_uses_canonical_compatibility_gatewa
         skill_registry=metadata,
         workspace_root=tmp_path,
         workspace_paths=_workspace_paths(tmp_path),
+        persona_router=CurrentPersonaRouter(session),
     )
 
     assert orchestrator.tool_invocation_gateway is not None
@@ -408,10 +412,19 @@ def test_orchestrator_requires_explicit_workspace_authority(tmp_path: Path) -> N
     paths = _workspace_paths(tmp_path)
 
     with pytest.raises(ValueError, match="explicit WorkspacePaths"):
-        Orchestrator(session, workspace_root=tmp_path, workspace_paths=None)
+        Orchestrator(
+            session,
+            workspace_root=tmp_path,
+            workspace_paths=None,
+            persona_router=CurrentPersonaRouter(session),
+        )
 
     with pytest.raises(ValueError, match="explicit workspace_root"):
-        Orchestrator(session, workspace_paths=paths)
+        Orchestrator(
+            session,
+            workspace_paths=paths,
+            persona_router=CurrentPersonaRouter(session),
+        )
 
 
 def test_orchestrator_rejects_malformed_root_without_cwd_fallback(
@@ -425,6 +438,7 @@ def test_orchestrator_rejects_malformed_root_without_cwd_fallback(
             ChatSession("system", {}, gateway=object()),
             workspace_root=root_file,
             workspace_paths=_workspace_paths(tmp_path / "authority"),
+            persona_router=CurrentPersonaRouter(ChatSession("system", {}, gateway=object())),
         )
 
     with pytest.raises(FileNotFoundError):
@@ -432,6 +446,7 @@ def test_orchestrator_rejects_malformed_root_without_cwd_fallback(
             ChatSession("system", {}, gateway=object()),
             workspace_root=tmp_path / "missing-root",
             workspace_paths=_workspace_paths(tmp_path / "missing-authority"),
+            persona_router=CurrentPersonaRouter(ChatSession("system", {}, gateway=object())),
         )
 
 
@@ -442,6 +457,7 @@ def test_direct_orchestrator_does_not_invent_test_runtime_storage(
         ChatSession("system", {}, gateway=object()),
         workspace_root=tmp_path,
         workspace_paths=_workspace_paths(tmp_path),
+        persona_router=CurrentPersonaRouter(ChatSession("system", {}, gateway=object())),
     )
 
     assert not (tmp_path / ".test_runtime").exists()

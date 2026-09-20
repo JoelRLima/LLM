@@ -45,6 +45,17 @@ _W18_ALLOWED_EXACT = {
 }
 _W18_ALLOWED_PREFIXES = ("distribution/", "installer/", "tests/")
 
+# The W19 callers bind this surface explicitly.  It is deliberately not a
+# fallback: an omitted surface remains the historical W18 policy below.
+W19_CANDIDATE_PATH_SURFACE = (
+    "agent/",
+    "scripts/",
+    "tests/",
+    "docs/legado.md",
+    "quality/baseline.json",
+    "distribution/provenance.py",
+)
+
 
 class ProvenanceError(ValueError):
     """Raised when the candidate cannot be isolated and represented safely."""
@@ -164,6 +175,13 @@ def _normalise_path(value: str) -> str:
     return path
 
 
+def _normalise_allowed_path(value: str) -> str:
+    path = value.replace("\\", "/")
+    if path.endswith("/"):
+        return _normalise_path(path[:-1]) + "/"
+    return _normalise_path(path)
+
+
 def _changed_paths(root: Path) -> tuple[str, ...]:
     staged = _run_git_bytes(root, ["diff", "--cached", "--name-only", "-z", "--"])
     if staged:
@@ -184,16 +202,27 @@ def _is_allowed_w18_path(path: str) -> bool:
     return path in _W18_ALLOWED_EXACT or any(path.startswith(prefix) for prefix in _W18_ALLOWED_PREFIXES)
 
 
+def _is_allowed_explicit_path(path: str, allowed: set[str]) -> bool:
+    return path in allowed or any(
+        candidate.endswith("/") and path.startswith(candidate) for candidate in allowed
+    )
+
+
 def inventory_candidate_paths(root: Path, allowed_paths: Iterable[str] | None = None) -> tuple[str, ...]:
-    """Inventory non-ignored worktree changes and reject unexplained paths."""
+    """Inventory changes and reject paths outside the bound candidate surface.
+
+    Explicit surfaces may contain exact paths or directory prefixes ending in
+    ``/``.  Omitting the surface intentionally retains the historical W18
+    policy for callers that are validating a W18 candidate.
+    """
 
     root = root.resolve()
     changed = _changed_paths(root)
     if allowed_paths is None:
         unexplained = [path for path in changed if not _is_allowed_w18_path(path)]
     else:
-        allowed = {_normalise_path(path) for path in allowed_paths}
-        unexplained = [path for path in changed if path not in allowed]
+        allowed = {_normalise_allowed_path(path) for path in allowed_paths}
+        unexplained = [path for path in changed if not _is_allowed_explicit_path(path, allowed)]
     if unexplained:
         raise ProvenanceError(f"unexplained candidate path(s): {unexplained}")
     return changed
@@ -307,6 +336,7 @@ __all__ = [
     "assert_commit_tree_matches",
     "CandidateTree",
     "ProvenanceError",
+    "W19_CANDIDATE_PATH_SURFACE",
     "inventory_candidate_paths",
     "isolated_candidate_tree",
     "materialize_candidate_tree",

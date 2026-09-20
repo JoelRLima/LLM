@@ -202,8 +202,14 @@ def test_shutdown_settles_worker_and_query_before_detaching_ui_sink() -> None:
 
 
 def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(tmp_path) -> None:
+    from agent.application_services.queries import (
+        WorkspaceQueryKind,
+        WorkspaceQueryRequest,
+        WorkspaceQueryResult,
+        WorkspaceQueryStatus,
+    )
     from agent.interfaces.cli import interactive_resources
-    from agent.interfaces.cli.query_plane import BoundedQueryExecutor, QueryResult
+    from agent.interfaces.cli.query_executor import BoundedQueryExecutor
     from agent.runtime.workspace_context import WorkspaceContext
 
     controller = InteractiveExecutionController()
@@ -226,16 +232,13 @@ def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(
     def query(request, _cancel):
         query_started.set()
         query_release.wait(5)
-        return QueryResult(
-            request.query_generation,
-            request.workspace_id,
-            request.workspace_generation,
-            request.command_id,
-            True,
-            data="query-settled",
-        )
+        return WorkspaceQueryResult(request.kind, WorkspaceQueryStatus.SUCCEEDED, data="query-settled")
 
-    assert query_executor.submit("find", {}, task_active=False, execute=query)
+    assert query_executor.submit(
+        WorkspaceQueryRequest(WorkspaceQueryKind.FIND, {}),
+        task_active=False,
+        execute=query,
+    )
     assert query_started.wait(2)
     order: list[str] = []
     sink = object()

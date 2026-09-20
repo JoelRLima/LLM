@@ -10,6 +10,8 @@ from typing import Any
 from agent.interfaces.cli import maintenance
 from agent.runtime.config_errors import ConfigError, ConfigNotFound
 from agent.runtime.config_repository import ConfigRepository
+from agent.runtime.home_lifecycle import HomeLifecycleLease
+from agent.runtime.storage_bootstrap import StorageBootstrap
 
 
 class InteractiveTTYRequiredError(ValueError):
@@ -115,7 +117,12 @@ def recover_first_run_config(
         return 0
 
     try:
-        _complete_guided_setup(args, repository, console, prompt)
+        lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+        try:
+            StorageBootstrap().prepare(app_paths)
+            _complete_guided_setup(args, repository, console, prompt)
+        finally:
+            lease.close()
         console.print("Configuração guiada validada. Diagnóstico de conectividade é opcional; entrando no chat.")
     except (ConfigError, ConfigNotFound, OSError, ValueError) as exc:
         console.print(f"[red]Configuração guiada não concluída:[/red] {exc}")

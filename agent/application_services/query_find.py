@@ -1,12 +1,36 @@
-"""Bounded literal file discovery for the interactive query plane."""
+"""Bounded literal file discovery for the UI-neutral query capability."""
 
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
-from threading import Event
-from typing import Any
+from typing import Any, Protocol
+
+from agent.application_services.queries import (
+    MAX_FIND_FILE_BYTES,
+    MAX_FIND_FILES,
+    MAX_FIND_MATCHES,
+    MAX_FIND_PATTERN_CHARS,
+    MAX_FIND_SCAN_CHARS,
+    MAX_FIND_SCAN_ENTRIES,
+    QUERY_FIND_PATTERN_EMPTY,
+    QUERY_FIND_PATTERN_INVALID,
+    QUERY_IO_FAILED,
+    QUERY_PERMISSION_DENIED,
+    WorkspaceQueryKind,
+    WorkspaceQueryResult,
+    _cancel_requested,
+    _cancelled,
+    _error_text,
+    _failed,
+    _ResolvedPathError,
+    _succeeded,
+)
+
+
+class _Cancellation(Protocol):
+    def is_cancelled(self) -> bool: ...
+
 
 _FIND_SUFFIXES = frozenset(
     {
@@ -33,7 +57,7 @@ def _scan_directory(
     pending: list[Path],
     candidates: list[Path],
     scanned_entries: int,
-    cancel: Event,
+    cancellation: _Cancellation,
     *,
     max_files: int,
     max_scan_entries: int,
@@ -44,7 +68,7 @@ def _scan_directory(
         return scanned_entries, False, False
     with entries:
         for entry in entries:
-            if cancel.is_set():
+            if cancellation.is_cancelled():
                 return scanned_entries, False, True
             scanned_entries += 1
             if scanned_entries > max_scan_entries:
@@ -65,7 +89,7 @@ def _scan_directory(
 
 def find_candidates(
     selected: Path,
-    cancel: Event,
+    cancellation: _Cancellation,
     *,
     max_files: int,
     max_scan_entries: int,
@@ -77,7 +101,7 @@ def find_candidates(
     scanned_entries = 0
     truncated = False
     while pending and len(candidates) < max_files:
-        if cancel.is_set():
+        if cancellation.is_cancelled():
             return None
         root = pending.pop()
         scanned_entries, truncated, cancelled = _scan_directory(
@@ -85,7 +109,7 @@ def find_candidates(
             pending,
             candidates,
             scanned_entries,
-            cancel,
+            cancellation,
             max_files=max_files,
             max_scan_entries=max_scan_entries,
         )
@@ -99,13 +123,13 @@ def find_candidates(
 def _line_contains(
     haystack: str,
     target: str,
-    cancel: Event,
+    cancellation: _Cancellation,
     *,
     max_scan_chars: int,
 ) -> tuple[bool, bool]:
     overlap = max(0, len(target) - 1)
     for offset in range(0, len(haystack) or 1, max_scan_chars):
-        if cancel.is_set():
+        if cancellation.is_cancelled():
             return False, True
         start = max(0, offset - overlap)
         end = min(len(haystack), offset + max_scan_chars)
@@ -118,11 +142,11 @@ def _match_candidate(
     candidate: Path,
     needle: str,
     matches: list[dict[str, Any]],
-    cancel: Event,
+    cancellation: _Cancellation,
     *,
     case_sensitive: bool,
     workspace_root: Path,
-    resolve_path: Callable[[str], Path],
+    resolve_path: Any,
     max_file_bytes: int,
     max_matches: int,
     max_scan_chars: int,
@@ -134,18 +158,18 @@ def _match_candidate(
             payload = handle.read(max_file_bytes + 1)
         file_truncated = len(payload) > max_file_bytes
         text = payload[:max_file_bytes].decode("utf-8")
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError):
         return False, False, False
 
     target = needle if case_sensitive else needle.casefold()
     for line_number, line in enumerate(text.splitlines(), 1):
-        if cancel.is_set():
+        if cancellation.is_cancelled():
             return file_truncated, True, False
         haystack = line if case_sensitive else line.casefold()
         matched, cancelled = _line_contains(
             haystack,
             target,
-            cancel,
+            cancellation,
             max_scan_chars=max_scan_chars,
         )
         if cancelled:
@@ -168,9 +192,9 @@ def find_matches(
     needle: str,
     *,
     case_sensitive: bool,
-    cancel: Event,
+    cancellation: _Cancellation,
     workspace_root: Path,
-    resolve_path: Callable[[str], Path],
+    resolve_path: Any,
     max_files: int,
     max_matches: int,
     max_file_bytes: int,
@@ -179,7 +203,7 @@ def find_matches(
     matches: list[dict[str, Any]] = []
     truncated = False
     for candidate in candidates[:max_files]:
-        if cancel.is_set():
+        if cancellation.is_cancelled():
             return matches, False, True
         if candidate.suffix.lower() not in _FIND_SUFFIXES:
             continue
@@ -187,7 +211,7 @@ def find_matches(
             candidate,
             needle,
             matches,
-            cancel,
+            cancellation,
             case_sensitive=case_sensitive,
             workspace_root=workspace_root,
             resolve_path=resolve_path,
@@ -202,3 +226,67 @@ def find_matches(
         if file_truncated:
             truncated = True
     return matches, truncated, False
+
+
+_FIND_LITERAL_META = frozenset("\\.^$*+?{}[]()|")
+
+
+def execute_find(
+    service: Any,
+    request: Any,
+    cancellation: Any,
+) -> WorkspaceQueryResult:
+    arguments = service._arguments(request, WorkspaceQueryKind.FIND)
+    if isinstance(arguments, WorkspaceQueryResult):
+        return arguments
+    pattern = arguments["pattern"]
+    if not pattern:
+        return _failed(request, QUERY_FIND_PATTERN_EMPTY, "query find: pattern is empty")
+    if len(pattern) > MAX_FIND_PATTERN_CHARS or any(token in _FIND_LITERAL_META for token in pattern):
+        return _failed(request, QUERY_FIND_PATTERN_INVALID, "query find accepts literal text only")
+    if _cancel_requested(cancellation):
+        return _cancelled(request)
+    try:
+        selected = service._resolve(arguments["path"])
+        candidate_result = find_candidates(
+            selected, cancellation, max_files=MAX_FIND_FILES, max_scan_entries=MAX_FIND_SCAN_ENTRIES
+        )
+        if candidate_result is None:
+            return _cancelled(request)
+        candidates, candidate_truncated = candidate_result
+        matches, match_truncated, cancelled = find_matches(
+            candidates,
+            pattern,
+            case_sensitive=arguments["case_sensitive"],
+            cancellation=cancellation,
+            workspace_root=service.workspace.root,
+            resolve_path=lambda rel: service._resolve(rel, require_file=True),
+            max_files=MAX_FIND_FILES,
+            max_matches=MAX_FIND_MATCHES,
+            max_file_bytes=MAX_FIND_FILE_BYTES,
+            max_scan_chars=MAX_FIND_SCAN_CHARS,
+        )
+        if cancelled:
+            return _cancelled(request)
+        truncated = candidate_truncated or match_truncated
+        data = {"matches": matches, "truncated": truncated}
+        return _succeeded(request, data, truncated=truncated)
+    except _ResolvedPathError as exc:
+        return _failed(request, exc.reason_code, _error_text("query find", ValueError(exc.message)))
+    except PermissionError as exc:
+        return _failed(request, QUERY_PERMISSION_DENIED, _error_text("query find", exc))
+    except (OSError, ValueError) as exc:
+        return _failed(request, QUERY_IO_FAILED, _error_text("query find", exc))
+
+
+__all__ = [
+    "MAX_FIND_FILES",
+    "MAX_FIND_FILE_BYTES",
+    "MAX_FIND_MATCHES",
+    "MAX_FIND_PATTERN_CHARS",
+    "MAX_FIND_SCAN_CHARS",
+    "MAX_FIND_SCAN_ENTRIES",
+    "execute_find",
+    "find_candidates",
+    "find_matches",
+]

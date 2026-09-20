@@ -18,11 +18,12 @@ from agent.llm.contracts import (
 )
 from agent.llm.errors import ModelResponseError
 from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.llm.router import route_objective
 from agent.llm.session import ChatSession
 from agent.llm.structured_output import resolve_model_decision
 from agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
 from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
+from agent.routing.persona.contracts import PersonaRouteRequest
+from agent.routing.persona.current import CurrentPersonaRouter
 from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
 from agent.runtime.context import RuntimeLimits, TaskExecutionContext
 
@@ -427,7 +428,8 @@ def test_router_and_planner_share_canonical_session_ledger() -> None:
         gateway=gateway,
     )
 
-    _, _, persona = route_objective("Crie um módulo de autenticação", session)
+    decision = CurrentPersonaRouter(session).route(PersonaRouteRequest("Crie um módulo de autenticação"))
+    persona = decision.persona.value
 
     assert persona == "coder"
     with pytest.raises(BudgetExhausted):

@@ -98,6 +98,21 @@ durável e condição de retirada. `REMOVE` significa que não há shim substitu
 - `W7-R26` | `agent/orchestration/operations.py::dispatcher-less/legacy event emission fallback` | owner `RuntimeEventDispatcher` | consumers: doubles de checkpoint e rotas migrados para o dispatcher canônico | durable: none | emissão direta no estado bypassava o dispatcher e seu observer de checkpoint | condição: já ausente; dispatcher canônico obrigatório.
 - `W7-R27` | `agent/orchestration/operations.py::None checkpoint confirmation` | owner `CheckpointManager.save -> True` | consumers: doubles de checkpoint migrados para confirmação booleana explícita | durable: none | conclusão sem `True` não prova persistência durável | condição: já ausente; somente `True` literal confirma.
 
+### Ledger exato de remoções Wave 19 — Domain 07
+
+As nove linhas abaixo são o ledger fechado autorizado para as remoções S07;
+`REMOVE` não cria uma facade substituta.
+
+- `W19-S07-R01` | `agent/llm/router.py::<module>`
+- `W19-S07-R02` | `agent/interfaces/cli/manifest.py::<module>`
+- `W19-S07-R03` | `agent/interfaces/cli/query_plane.py::<module>`
+- `W19-S07-R04` | `agent/interfaces/cli/query_find.py::<module>`
+- `W19-S07-R05` | `agent/interfaces/cli/query_git.py::<module>`
+- `W19-S07-R06` | `agent/interfaces/cli/app.py::obter_status_think`
+- `W19-S07-R07` | `agent/interfaces/cli/interactive_commands.py::show_events`
+- `W19-S07-R08` | `agent/interfaces/cli/interactive_commands.py::git_status`
+- `W19-S07-R09` | `agent/interfaces/cli/interactive_commands.py::diff`
+
 ## Retido como contrato de persistência ou leitura limitada
 
 | Superfície | Dono atual | Limite |
@@ -216,6 +231,8 @@ uma facade de source/API.
 - `W16-C02` | `agent/llm/model_profile_compat.py::compatibility_from_raw` | owner: typed model compatibility policy | consumers: profile ingress | durable: raw profile configuration | motivo: boundary canônica de configuração estrita | condição: não retirar; ingress canônica.
 - `W16-C03` | `agent/runtime/config_schema.py::_validate_compatibility` | owner: configuration schema validation | consumers: profile configuration boundary | durable: persisted profile mappings | motivo: validator canônico do vocabulário tipado fechado | condição: não retirar; boundary de schema canônica.
 - `W16-C04` | `agent/runtime/config_schema.py::COMPATIBILITY_FIELDS` | owner: configuration schema validation | consumers: profile configuration boundary | durable: persisted profile mappings | motivo: declaração canônica de campos da policy tipada | condição: não retirar; declaração de schema canônica.
+- `W19-S02-C01` | `agent/evaluation/comparison.py::_validate_groups_compatibility` | owner: `agent.evaluation.comparison` | consumers: receipt group comparison callers | durable: W19 evaluation receipts | motivo: compatibility descreve comparabilidade semântica de identidades, não uma facade de source/API | condição: não retirar; guarda canônica de comparação.
+- `W19-S05-C01` | `agent/runtime/storage_migration.py::_compatible_previous_receipt` | owner: `agent.runtime.storage_migration` | consumers: `migrate_plan` / migration retry path | durable: W19 storage migration receipt | motivo: compatible descreve comparabilidade semântica de um receipt já validado contra migration id/source profile durante retry, não uma facade de compatibilidade | condição: não retirar; guarda canônica de retry-safety da migração.
 
 ## Retido como compatibilidade de import de pacote
 
@@ -231,6 +248,14 @@ uma facade de source/API.
 - `W12-CLI-02` | `agent/interfaces/cli/legacy_compat.py::append_legacy_turn`
   permanece como projeção estreita para facades de teste offline; o caminho
   produtivo entra por `InteractionService` e `AgentInteractionResult`.
+- `W19-S07-P02` | `agent/runtime/paths.py::legacy string constants` permanece
+  como projeção de fonte limitada para consumidores de compatibilidade; os
+  owners vivos de caminhos são `AppPaths` e `WorkspacePaths`.
+
+- `W19-S07-P01` | `agent/runtime/config.py::<module>` permanece como projeção
+  de fonte limitada para consumidores de compatibilidade e para a boundary de
+  health explicitamente suportada; `ConfigRepository` continua sendo o owner
+  da configuração viva.
 
 ## Adiado para W8 com evidência bloqueante (histórico; disposições encerradas)
 

@@ -310,6 +310,17 @@ OPEN_WORLD_GETATTR_NAMES = frozenset(
     }
 )
 
+# W19 closed vocabulary markers are canonical error/schema declarations, not
+# source-compatibility facades. Keep this allowlist explicit so the finite
+# compatibility ledger remains reserved for actual compatibility surfaces.
+CANONICAL_MARKER_NAMES = frozenset(
+    {
+        "EVALUATION_COMPARISON_INCOMPATIBLE",
+        "CAMPAIGN_LEGACY_SCHEMA_VERSION",
+        "VARIANT_CONTRACT_INCOMPATIBLE",
+    }
+)
+
 
 def _has_open_world_marker(value: str) -> bool:
     lowered = value.casefold()
@@ -389,6 +400,8 @@ def _compatibility_markers(tree: ast.AST) -> Iterator[tuple[str, int, str]]:
             seen.add(finding)
             yield finding
     for name, line in _module_assignment_names(tree):
+        if name in CANONICAL_MARKER_NAMES:
+            continue
         finding = (name, line, "marker in module-level assignment")
         if finding not in seen:
             seen.add(finding)

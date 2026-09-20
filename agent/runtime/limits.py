@@ -12,9 +12,9 @@ from agent.runtime.hardware import resolve_hardware_profile
 def _packaged_defaults() -> Mapping[str, Any]:
     # Import lazily so the typed runtime modules do not create a configuration
     # import cycle during package bootstrap.
-    from agent.runtime.config import DEFAULT_CONFIG
+    from agent.runtime.config_repository import packaged_config_defaults
 
-    return DEFAULT_CONFIG
+    return packaged_config_defaults()
 
 
 def _positive(value: Any, fallback: int) -> int:

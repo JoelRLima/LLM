@@ -48,7 +48,7 @@ def test_standalone_health_is_offline_ready_without_writing_report(tmp_path):
     assert report["errors"] == 0
     assert report["persistence"]["written"] is False
     assert not paths.health_report_file.exists()
-    assert not paths.state_dir.exists()
+    assert not paths.global_dir.exists()
 
 
 def test_health_report_is_written_only_when_requested(tmp_path):
@@ -98,9 +98,10 @@ def test_doctor_rejects_application_paths_inside_site_packages(tmp_path):
     workspace.mkdir()
     package_home = tmp_path / "site-packages" / "local-llm-agent"
     paths = AppPaths(
+        home_dir=package_home,
         config_dir=package_home / "config",
-        data_dir=package_home / "data",
-        state_dir=package_home / "state",
+        global_dir=package_home / "global",
+        workspaces_dir=package_home / "workspaces",
         cache_dir=package_home / "cache",
         log_dir=package_home / "logs",
     )

@@ -27,7 +27,11 @@ def close_application(application: Any, run_lock: Any) -> None:
             primary_error = exc
         finish_observation(application)
         if drained:
-            cleanup_error = release_resources(application._instance_lock, application._owns_logging)
+            cleanup_error = release_resources(
+                application._instance_lock,
+                application._owns_logging,
+                application._home_lease,
+            )
             application._closed = True
         if primary_error is not None:
             raise primary_error

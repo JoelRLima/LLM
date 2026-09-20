@@ -7,10 +7,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent.application_services.queries import (
+    ReadOnlyWorkspaceQueryService,
+    WorkspaceQueryKind,
+    WorkspaceQueryRequest,
+    WorkspaceQueryStatus,
+)
+from agent.application_services.query_git import GitObservation
 from agent.interfaces.cli import command_handlers, first_run, interactive_admission
+from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from agent.interfaces.cli.controller import InteractiveExecutionController, PendingStore, SubmissionEnvelope
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
-from agent.interfaces.cli.query_plane import QueryRequest, QueryResult, ReadOnlyWorkspaceQueryService
 from agent.runtime.config_errors import ConfigVersionError
 from agent.runtime.config_repository import ConfigError, ConfigRepository
 from agent.runtime.paths import AppPaths
@@ -151,14 +157,16 @@ def test_diff_defaults_to_bounded_file_first_review(tmp_path: Path, monkeypatch:
     service = ReadOnlyWorkspaceQueryService(workspace)
     captured: dict[str, object] = {}
 
-    def fake_git(request: QueryRequest, arguments: list[str], _cancel: Event) -> QueryResult:
+    def fake_git(_workspace: Path, arguments: list[str], _cancel: object, **_kwargs: object) -> GitObservation:
         captured["arguments"] = arguments
-        return QueryResult(request.query_generation, request.workspace_id, request.workspace_generation, "diff", True, "1\t2\ta.py\n-\t-\tb.bin\n")
+        return GitObservation(True, 0, "1\t2\ta.py\n-\t-\tb.bin\n", "")
 
-    monkeypatch.setattr(service, "_git", fake_git)
-    result = service.diff(_request := QueryRequest(1, workspace.workspace_id, 1, "diff", {"paths": ()}, False), Event())
+    monkeypatch.setattr("agent.application_services.queries.run_git", fake_git)
+    request = WorkspaceQueryRequest(WorkspaceQueryKind.DIFF, {"paths": ()})
+    cancellation = type("Cancellation", (), {"is_cancelled": lambda self: False})()
+    result = service.diff(request, cancellation)
 
-    assert result.ok
+    assert result.status is WorkspaceQueryStatus.SUCCEEDED
     assert "--numstat" in captured["arguments"]
     assert result.data["file_count"] == 2
     assert result.data["files"][0] == {"file": "a.py", "added": 1, "deleted": 2}
@@ -167,12 +175,12 @@ def test_diff_defaults_to_bounded_file_first_review(tmp_path: Path, monkeypatch:
 
 def test_command_registry_is_argument_aware_and_unknown_slash_fails_closed_with_draft_preserved() -> None:
     for text, command_id in (
-        ("/ls subdir", "list_files"),
-        ("/diff --full src/app.py", "diff"),
-        ("/workspace switch C:/workspace", "workspace"),
+        ("/ls subdir", "query.list_files"),
+        ("/diff --full src/app.py", "query.git_diff"),
+        ("/workspace switch C:/workspace", "workspace.switch"),
     ):
-        entry, match = DEFAULT_COMMAND_REGISTRY.lookup(text)
-        assert entry is not None and match == "prefix" and entry.canonical_command_id == command_id
+        match = DEFAULT_CLI_ACTION_REGISTRY.match(text)
+        assert match is not None and match.action_id == command_id
 
     preserved: list[str] = []
     output: list[str] = []

@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from agent.runtime.home_lifecycle import HomeLifecycleLease
 from agent.runtime.paths import AppPaths
+from agent.runtime.storage_bootstrap import StorageBootstrap
 from agent.tools.extension_registry import ExtensionRegistry
 from agent.tools.stdio_adapter import load_strict_extension_manifest
 
@@ -57,8 +59,22 @@ def initialize_config(
     config_path: str | Path | None,
 ) -> Path:
     """Initialize config through the same domain used by `config init`."""
-
-    return cast(Path, config_repository(app_paths, config_path).initialize())
+    repository = config_repository(app_paths, config_path)
+    target = repository.path.resolve()
+    home = app_paths.home_dir.resolve()
+    try:
+        target.relative_to(home)
+        canonical_write = True
+    except ValueError:
+        canonical_write = False
+    if not canonical_write:
+        return cast(Path, repository.initialize())
+    lease = HomeLifecycleLease.begin_transient(home)
+    try:
+        StorageBootstrap().prepare(app_paths)
+        return cast(Path, repository.initialize())
+    finally:
+        lease.close()
 
 
 def run_config(
@@ -83,7 +99,22 @@ def run_config(
         )
         print(f"Configuração válida: {repository.path}")
     elif args.config_command == "migrate":
-        print(repository.migrate(args.source))
+        target = repository.path.resolve()
+        try:
+            target.relative_to(app_paths.home_dir.resolve())
+            canonical_write = True
+        except ValueError:
+            canonical_write = False
+        if canonical_write:
+            lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+            try:
+                StorageBootstrap().prepare(app_paths)
+                migrated = repository.migrate(args.source)
+            finally:
+                lease.close()
+        else:
+            migrated = repository.migrate(args.source)
+        print(migrated)
     else:  # pragma: no cover - argparse enforces the command set.
         raise ValueError(f"Comando de configuração desconhecido: {args.config_command}")
     return 0
@@ -102,7 +133,12 @@ def run_state(
         raise ValueError(f"Comando de estado desconhecido: {args.state_command}")
     workspace_context = WorkspaceContext.create(workspace)
     destination = app_paths.for_workspace(workspace_context.workspace_id)
-    report = migrate_legacy_state(args.source, destination)
+    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+    try:
+        StorageBootstrap().prepare(app_paths)
+        report = migrate_legacy_state(args.source, destination)
+    finally:
+        lease.close()
     print(
         f"Migração concluída: {len(report.copied)} copiado(s), "
         f"{len(report.skipped)} preservado(s). Origem mantida em {report.source}."
@@ -117,7 +153,7 @@ def _registry_path(args: argparse.Namespace, app_paths: AppPaths) -> Path:
     return cast(Path, app_paths.extensions_dir / "registry.json")
 
 
-def run_tools(
+def _run_tools(
     args: argparse.Namespace,
     *,
     app_paths: AppPaths,
@@ -159,6 +195,32 @@ def run_tools(
         return 0
 
     raise ValueError(f"Comando de ferramentas desconhecido: {args.tools_command}")
+
+
+def run_tools(
+    args: argparse.Namespace,
+    *,
+    app_paths: AppPaths,
+    workspace: Path,
+) -> int:
+    """Run legacy extension administration with guarded canonical writes."""
+
+    command = args.tools_command
+    mutating = command in {"add", "enable", "disable"}
+    target = _registry_path(args, app_paths)
+    try:
+        target.relative_to(app_paths.home_dir.resolve())
+        canonical_write = True
+    except ValueError:
+        canonical_write = False
+    if not mutating or not canonical_write:
+        return _run_tools(args, app_paths=app_paths, workspace=workspace)
+    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
+    try:
+        StorageBootstrap().prepare(app_paths)
+        return _run_tools(args, app_paths=app_paths, workspace=workspace)
+    finally:
+        lease.close()
 
 
 __all__ = [

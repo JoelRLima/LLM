@@ -270,12 +270,13 @@ def _check_s5_interactive_read(root: Path) -> list[ArchitectureViolation]:
     handlers = _tree(root, "agent/interfaces/cli/command_handlers.py")
     if not any(_functions(handlers, "read_file")):
         findings.append(_violation("W11-S5", "agent/interfaces/cli/command_handlers.py", "existing /read file-reader handler is missing"))
-    registry = _tree(root, "agent/interfaces/cli/manifest.py")
+    registry_relative = "agent/interfaces/cli/action_registry.py"
+    registry = _tree(root, registry_relative)
     if registry is None or not any(
         isinstance(node, ast.Constant) and node.value == "/read"
         for node in ast.walk(registry)
     ):
-        findings.append(_violation("W11-S5", "agent/interfaces/cli/manifest.py", "registered /read command path is missing"))
+        findings.append(_violation("W11-S5", registry_relative, "registered /read command path is missing"))
     return findings
 
 

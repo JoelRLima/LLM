@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
+from agent.interfaces.cli.action_parser import parse_action
+from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from agent.interfaces.cli.ui import ConsoleChangeApprover, exibir_menu
 from agent.llm.session import ChatSession
 from agent.orchestrator import Orchestrator
@@ -19,6 +20,10 @@ __all__ = ["CommandContext", "ConsoleChangeApprover", "exibir_menu", "handle_com
 def inspect_command(_: str, ctx: CommandContext) -> None:
     """Render the same inspector API used by the installed CLI."""
 
+    from agent.interfaces.cli.output_viewer import render_output_viewer
+
+    if render_output_viewer(_, ctx):
+        return
     from agent.interfaces.cli.inspector import render_context_inspect
 
     if ctx.workspace_paths is None:
@@ -68,23 +73,41 @@ class CommandContext:
 
 
 # Compatibility views for older callers/tests.  Policy, aliases and ownership
-# come from DEFAULT_COMMAND_REGISTRY; these views are not a second authority.
-EXACT_HANDLERS = DEFAULT_COMMAND_REGISTRY.exact_handler_map()
-PREFIX_HANDLERS = DEFAULT_COMMAND_REGISTRY.prefix_handler_items()
+# come from the canonical action registry; these views are not a second authority.
+EXACT_HANDLERS = {
+    " ".join(path): DEFAULT_CLI_ACTION_REGISTRY.resolve_handler(binding)
+    for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings
+    for path in (binding.preferred_path, *binding.aliases)
+    if not binding.prefix_payload and binding.handler_owner
+}
+PREFIX_HANDLERS = tuple(
+    (
+        " ".join(path),
+        DEFAULT_CLI_ACTION_REGISTRY.resolve_handler(binding),
+    )
+    for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings
+    for path in (binding.preferred_path, *binding.aliases)
+    if binding.prefix_payload and binding.handler_owner
+)
 
 
 def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
     """Processa comandos da CLI e informa `(tratado, deve_sair)`."""
-    entry, _match_kind = DEFAULT_COMMAND_REGISTRY.lookup(texto)
-    if entry is not None:
-        if entry.canonical_command_id == "exit":
+    match = parse_action(texto)
+    if match is not None:
+        if match.action_id == "session.exit":
             return True, True
-        if entry.canonical_command_id == "help":
+        if match.action_id == "discovery.help":
             # Keep the historical zero-argument UI renderer compatible
             # with isolated callers while the registry owns its routing.
             exibir_menu()
             return True, False
-        handler = DEFAULT_COMMAND_REGISTRY.resolve_handler(entry)
+        if match.binding.routing_kind == "QUERY" and match.action_id.startswith("query."):
+            from agent.interfaces.cli import interactive_rendering
+
+            if interactive_rendering.submit_query(texto, ctx, match.action_id):
+                return True, False
+        handler = DEFAULT_CLI_ACTION_REGISTRY.resolve_handler(match.binding)
         if handler is not None:
             handler(texto, ctx)
             return True, False

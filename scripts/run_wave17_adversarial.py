@@ -18,20 +18,26 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from agent.application_services.queries import (  # noqa: E402
+    ReadOnlyWorkspaceQueryService,
+    WorkspaceQueryKind,
+    WorkspaceQueryRequest,
+    WorkspaceQueryResult,
+    WorkspaceQueryStatus,
+)
 from agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled  # noqa: E402
 from agent.interfaces.cli import app, command_handlers, first_run, interactive_admission, ui  # noqa: E402
+from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
 from agent.interfaces.cli.attention import ApprovalBroker  # noqa: E402
 from agent.interfaces.cli.controller import (  # noqa: E402
     InteractiveExecutionController,
     PendingStore,
     SubmissionEnvelope,
 )
-from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY  # noqa: E402
-from agent.interfaces.cli.query_plane import (  # noqa: E402
+from agent.interfaces.cli.query_executor import (  # noqa: E402
     BoundedQueryExecutor,
-    QueryRequest,
-    QueryResult,
-    ReadOnlyWorkspaceQueryService,
+    CliQueryCompletion,
+    CliQuerySubmission,
 )
 from agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox  # noqa: E402
 from agent.runtime.config_errors import ConfigNotFound  # noqa: E402
@@ -80,15 +86,30 @@ def _envelope(text: str, *, command_id: str = "natural_text") -> SubmissionEnvel
     )
 
 
-def _fake_query_result(request: QueryRequest, data: object = "ok") -> QueryResult:
-    return QueryResult(
-        request.query_generation,
-        request.workspace_id,
-        request.workspace_generation,
-        request.command_id,
-        True,
-        data=data,
-    )
+def _query_request(command_id: str, arguments: dict[str, object] | None = None) -> WorkspaceQueryRequest:
+    return WorkspaceQueryRequest(WorkspaceQueryKind(command_id), arguments or {})
+
+
+def _fake_query_result(request: WorkspaceQueryRequest, data: object = "ok") -> WorkspaceQueryResult:
+    return WorkspaceQueryResult(request.kind, WorkspaceQueryStatus.SUCCEEDED, data=data)
+
+
+_W17_BOUNDED_GIT_TOKENS = (
+    "shell=False",
+    "stdin=subprocess.DEVNULL",
+    "GIT_EXTERNAL_DIFF",
+    "core.fsmonitor=false",
+)
+_W17_HARDENED_GIT_TOKENS = ("--no-ext-diff", "--no-textconv", "GIT_OPTIONAL_LOCKS", "core.fsmonitor=false")
+
+
+def _canonical_query_git_source() -> str:
+    return (ROOT / "agent/application_services/query_git.py").read_text(encoding="utf-8")
+
+
+def _assert_required_git_tokens(source: str, tokens: tuple[str, ...]) -> None:
+    for token in tokens:
+        assert token in source
 
 
 def _approval_thread(broker: ApprovalBroker) -> tuple[Thread, list[object]]:
@@ -134,8 +155,8 @@ def _scenario_group_01(root: Path) -> tuple[Callable[[], None], ...]:
     def a03() -> None:
         workspace = WorkspaceContext.create(root)
         executor = BoundedQueryExecutor(workspace_id=workspace.workspace_id)
-        request = executor.submit("list_files", {"path": "."}, task_active=True, execute=ReadOnlyWorkspaceQueryService(workspace).execute)
-        assert isinstance(request, QueryRequest)
+        request = executor.submit(_query_request("list_files", {"path": "."}), task_active=True, execute=ReadOnlyWorkspaceQueryService(workspace).execute)
+        assert isinstance(request, CliQuerySubmission)
         assert executor.cancel_and_wait() is not None
 
 
@@ -303,10 +324,10 @@ def _scenario_group_04(root: Path) -> tuple[Callable[[], None], ...]:
 
     def a16() -> None:
         executor = BoundedQueryExecutor(workspace_id="w")
-        request = executor.submit("find", {}, task_active=False, execute=lambda *_: (_ for _ in ()).throw(RuntimeError("query")))
-        assert isinstance(request, QueryRequest)
+        request = executor.submit(_query_request("find"), task_active=False, execute=lambda *_: (_ for _ in ()).throw(RuntimeError("query")))
+        assert isinstance(request, CliQuerySubmission)
         result = executor.cancel_and_wait()
-        assert result is not None and not result.ok and "RuntimeError" in (result.error or "")
+        assert result is not None and result.result is not None and result.result.status is WorkspaceQueryStatus.FAILED and "RuntimeError" in (result.result.error or "")
 
 
 
@@ -315,12 +336,7 @@ def _scenario_group_04(root: Path) -> tuple[Callable[[], None], ...]:
 
 def _scenario_group_05(root: Path) -> tuple[Callable[[], None], ...]:
     def a17() -> None:
-        source = "\n".join(
-            (Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8")
-            for name in ("agent/interfaces/cli/query_plane.py", "agent/interfaces/cli/query_git.py")
-        )
-        for token in ("shell=False", "stdin=subprocess.DEVNULL", "GIT_EXTERNAL_DIFF", "core.fsmonitor=false"):
-            assert token in source
+        _assert_required_git_tokens(_canonical_query_git_source(), _W17_BOUNDED_GIT_TOKENS)
 
 
 
@@ -516,8 +532,9 @@ def _scenario_group_08(root: Path) -> tuple[Callable[[], None], ...]:
 def _scenario_group_09(root: Path) -> tuple[Callable[[], None], ...]:
     def a33() -> None:
         workspace = WorkspaceContext.create(root)
-        result = ReadOnlyWorkspaceQueryService(workspace).read_file(QueryRequest(1, workspace.workspace_id, 1, "read", {"file_path": "../escape"}, False), Event())
-        assert not result.ok
+        cancellation = type("Cancellation", (), {"is_cancelled": lambda self: False})()
+        result = ReadOnlyWorkspaceQueryService(workspace).read_file(_query_request("read", {"file_path": "../escape"}), cancellation)
+        assert result.status is WorkspaceQueryStatus.FAILED
 
 
 
@@ -526,8 +543,9 @@ def _scenario_group_09(root: Path) -> tuple[Callable[[], None], ...]:
         target = root / "huge.txt"
         target.write_text("x" * 300_000, encoding="utf-8")
         workspace = WorkspaceContext.create(root)
-        result = ReadOnlyWorkspaceQueryService(workspace).read_file(QueryRequest(1, workspace.workspace_id, 1, "read", {"file_path": target.name}, False), Event())
-        assert result.ok and result.truncated
+        cancellation = type("Cancellation", (), {"is_cancelled": lambda self: False})()
+        result = ReadOnlyWorkspaceQueryService(workspace).read_file(_query_request("read", {"file_path": target.name}), cancellation)
+        assert result.status is WorkspaceQueryStatus.SUCCEEDED and result.truncated
 
 
 
@@ -828,12 +846,12 @@ def _scenario_group_15(root: Path) -> tuple[Callable[[], None], ...]:
         executor = BoundedQueryExecutor(workspace_id="w")
         started, release = Event(), Event()
 
-        def slow(request: QueryRequest, cancel: Event) -> QueryResult:
+        def slow(request: WorkspaceQueryRequest, _cancel: object) -> WorkspaceQueryResult:
             started.set()
             release.wait(2)
             return _fake_query_result(request)
 
-        executor.submit("find", {}, task_active=True, execute=slow)
+        executor.submit(_query_request("find"), task_active=True, execute=slow)
         assert started.wait(2) and executor.is_busy()
         release.set()
         assert executor.cancel_and_wait() is not None
@@ -844,16 +862,16 @@ def _scenario_group_15(root: Path) -> tuple[Callable[[], None], ...]:
     def a58() -> None:
         executor = BoundedQueryExecutor(workspace_id="w")
         gate = Event()
-        def slow_query(request: QueryRequest, _cancel: Event) -> QueryResult:
+        def slow_query(request: WorkspaceQueryRequest, _cancel: object) -> WorkspaceQueryResult:
             gate.wait(2)
             return _fake_query_result(request)
 
-        def second_query(request: QueryRequest, _cancel: Event) -> QueryResult:
+        def second_query(request: WorkspaceQueryRequest, _cancel: object) -> WorkspaceQueryResult:
             return _fake_query_result(request)
 
-        executor.submit("find", {}, task_active=False, execute=slow_query)
-        busy = executor.submit("diff", {}, task_active=False, execute=second_query)
-        assert isinstance(busy, QueryResult) and busy.error == "QUERY_BUSY"
+        executor.submit(_query_request("find"), task_active=False, execute=slow_query)
+        busy = executor.submit(_query_request("diff"), task_active=False, execute=second_query)
+        assert isinstance(busy, CliQueryCompletion) and busy.adapter_reason_code == "QUERY_BUSY"
         gate.set()
         executor.cancel_and_wait()
 
@@ -861,11 +879,7 @@ def _scenario_group_15(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a59() -> None:
-        source = "\n".join(
-            (Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8")
-            for name in ("agent/interfaces/cli/query_plane.py", "agent/interfaces/cli/query_git.py")
-        )
-        assert all(token in source for token in ("--no-ext-diff", "--no-textconv", "GIT_OPTIONAL_LOCKS", "core.fsmonitor=false"))
+        _assert_required_git_tokens(_canonical_query_git_source(), _W17_HARDENED_GIT_TOKENS)
 
 
 
@@ -892,11 +906,11 @@ def _scenario_group_16(root: Path) -> tuple[Callable[[], None], ...]:
     def a61() -> None:
         executor = BoundedQueryExecutor(workspace_id="w")
         gate = Event()
-        def slow_query(request: QueryRequest, _cancel: Event) -> QueryResult:
+        def slow_query(request: WorkspaceQueryRequest, _cancel: object) -> WorkspaceQueryResult:
             gate.wait(2)
             return _fake_query_result(request)
 
-        executor.submit("find", {}, task_active=False, execute=slow_query)
+        executor.submit(_query_request("find"), task_active=False, execute=slow_query)
         gate.set()
         assert executor.cancel_and_wait() is not None
 
@@ -915,8 +929,8 @@ def _scenario_group_16(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a63() -> None:
-        for entry in DEFAULT_COMMAND_REGISTRY.entries:
-            assert entry.busy_submit in {"NOT_APPLICABLE", "PENDING_EXACT_TEXT", "PENDING_TYPED_PAYLOAD", "REQUIRE_IDLE_PRESERVE"}
+        for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
+            assert binding.busy_submit in {"NOT_APPLICABLE", "PENDING_EXACT_TEXT", "PENDING_TYPED_PAYLOAD", "REQUIRE_IDLE_PRESERVE"}
 
 
 

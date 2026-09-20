@@ -22,7 +22,6 @@ class ExtensionRegistry:
 
     def __init__(self, state_path: str | Path) -> None:
         self.state_path = Path(state_path).expanduser().resolve()
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self._data: Dict[str, Dict[str, Any]] = {}
         self._load()
 

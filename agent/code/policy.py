@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Protocol, Sequence
 
 from agent.approval import ApprovalDecision
 from agent.code.changes import ChangeKind, ChangePreview, ChangeSet, FileChange
-from agent.runtime.config import DEFAULT_CODE_POLICY
+from agent.runtime.config_repository import packaged_config_defaults
 from agent.runtime.path_safety import (
     resolve_workspace_path,
     workspace_relative_path,
 )
 
-DEFAULT_AUTO_APPLY_MIN_CONFIDENCE = float(
-    DEFAULT_CODE_POLICY["auto_apply_min_confidence"]
-)
-DEFAULT_MAX_AUTO_FILES = int(DEFAULT_CODE_POLICY["max_auto_files"])
-DEFAULT_REQUIRE_TARGET_ALIGNMENT = bool(
-    DEFAULT_CODE_POLICY["require_target_alignment"]
-)
+_PACKAGED_CODE_POLICY = deepcopy(packaged_config_defaults()["code_policy"])
+DEFAULT_AUTO_APPLY_MIN_CONFIDENCE = float(_PACKAGED_CODE_POLICY["auto_apply_min_confidence"])
+DEFAULT_MAX_AUTO_FILES = int(_PACKAGED_CODE_POLICY["max_auto_files"])
+DEFAULT_REQUIRE_TARGET_ALIGNMENT = bool(_PACKAGED_CODE_POLICY["require_target_alignment"])
 
 
 @dataclass(frozen=True)

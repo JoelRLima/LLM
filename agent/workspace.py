@@ -7,6 +7,7 @@ import difflib
 import inspect
 import shutil
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,15 +15,14 @@ from typing import Any, Dict, List, Optional
 from agent.code.discovery import ProjectDiscovery
 from agent.code.validation import ProjectValidator, ValidationStatus
 from agent.planning.plan_model import Plan, ToolPlanStep
-from agent.runtime.config import DEFAULT_VALIDATION
+from agent.runtime.config_repository import packaged_config_defaults
 from agent.runtime.logging import logger
 from agent.runtime.path_safety import resolve_workspace_path
 from agent.runtime.worker_output import emit_worker_output
 from agent.workspace_rollback import remove_created_files, restore_backups, rollback_transactions
 
-# Compatibility projection: the authored defaults live in the packaged
-# configuration resource consumed by ``agent.runtime.config``.
-DEFAULT_VALIDATION_CONFIG = DEFAULT_VALIDATION
+# The packaged configuration resource is the sole authored default source.
+DEFAULT_VALIDATION_CONFIG = deepcopy(packaged_config_defaults()["validation"])
 
 
 class ValidationFailedError(Exception):

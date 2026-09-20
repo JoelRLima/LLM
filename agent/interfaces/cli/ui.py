@@ -59,11 +59,18 @@ def render_code_result(result: TaskResult) -> None:
 
 
 def exibir_menu() -> None:
-    from agent.interfaces.cli.manifest import DEFAULT_COMMAND_REGISTRY
+    from agent.actions import DEFAULT_ACTION_CATALOG
+    from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
     table = Table(title="Comandos Disponíveis", show_header=True, header_style="bold magenta")
     table.add_column("Comando", style="cyan", width=20)
     table.add_column("Descrição")
-    for entry in DEFAULT_COMMAND_REGISTRY.advertised_entries():
-        table.add_row(", ".join(entry.aliases), entry.description)
+    definitions = {item.action_id: item for item in DEFAULT_ACTION_CATALOG}
+    for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
+        if binding.advertised:
+            definition = definitions[binding.action_id]
+            preferred = "/" + " ".join(binding.preferred_path).lstrip("/")
+            aliases = tuple(" ".join(alias) for alias in binding.aliases)
+            label = preferred if not aliases else f"{preferred} (aliases: {', '.join(aliases)})"
+            table.add_row(label, definition.description)
     console.print(table)

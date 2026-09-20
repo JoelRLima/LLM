@@ -24,7 +24,11 @@ if str(ROOT) not in sys.path:
 
 from agent.runtime import paths as runtime_paths  # noqa: E402
 from agent.runtime.paths import APP_DIRECTORY_NAME, AppPaths  # noqa: E402
-from distribution.provenance import ProvenanceError, isolated_candidate_tree  # noqa: E402
+from distribution.provenance import (  # noqa: E402
+    W19_CANDIDATE_PATH_SURFACE,
+    ProvenanceError,
+    isolated_candidate_tree,
+)
 from distribution.release_identity import APPLICATION_NAMESPACE  # noqa: E402
 from distribution.release_manifest import (  # noqa: E402
     ManifestValidationError,
@@ -587,8 +591,6 @@ def _v3_alias_state_namespace() -> str:
             "APPDATA": str(config_home),
             "LOCALAPPDATA": str(data_home),
         }
-        expected_config = config_home / APPLICATION_NAMESPACE
-        expected_data = data_home / APPLICATION_NAMESPACE / "data"
     else:
         config_home = ROOT / ".tmp" / "a59-config"
         data_home = ROOT / ".tmp" / "a59-data"
@@ -600,8 +602,7 @@ def _v3_alias_state_namespace() -> str:
             "XDG_STATE_HOME": str(state_home),
             "XDG_CACHE_HOME": str(cache_home),
         }
-        expected_config = config_home / APPLICATION_NAMESPACE
-        expected_data = data_home / APPLICATION_NAMESPACE
+    expected_home = data_home / APPLICATION_NAMESPACE / "home"
     alias_metadata = {
         "distribution_name": "future-llm-agent",
         "entry_point": "agent.interfaces.cli.app:main",
@@ -615,8 +616,28 @@ def _v3_alias_state_namespace() -> str:
     alternate = AppPaths.discover(env=environment)
     if canonical != alternate:
         raise ScenarioFailure("distribution alias changed durable AppPaths")
-    if canonical.config_dir != expected_config or canonical.data_dir != expected_data:
-        raise ScenarioFailure("AppPaths is not rooted at the durable application namespace")
+    expected = {
+        "home": expected_home,
+        "config": expected_home / "config",
+        "global": expected_home / "global",
+        "workspaces": expected_home / "workspaces",
+        "cache": expected_home / "cache",
+        "logs": expected_home / "logs",
+    }
+    actual = {
+        "home": canonical.home_dir,
+        "config": canonical.config_dir,
+        "global": canonical.global_dir,
+        "workspaces": canonical.workspaces_dir,
+        "cache": canonical.cache_dir,
+        "logs": canonical.log_dir,
+    }
+    if actual != expected:
+        raise ScenarioFailure("AppPaths is not rooted at the canonical W19 application home")
+    if any(path.resolve().is_relative_to(config_home.resolve()) for path in actual.values()):
+        raise ScenarioFailure("AppPaths leaked durable state into the alternate config root")
+    if not all(path.resolve().is_relative_to(expected_home.resolve()) for path in actual.values()):
+        raise ScenarioFailure("AppPaths escaped the canonical W19 application home")
     return "alias-independent-storage-pass"
 
 
@@ -733,10 +754,10 @@ def _current_canonical_source_tree() -> str:
     """Return the full candidate tree for this exact current worktree."""
 
     try:
-        with isolated_candidate_tree(ROOT) as candidate:
+        with isolated_candidate_tree(ROOT, allowed_paths=W19_CANDIDATE_PATH_SURFACE) as candidate:
             return str(candidate.tree)
     except ProvenanceError as exc:
-        raise ScenarioFailure(f"current W18 candidate provenance is unavailable: {exc}") from exc
+        raise ScenarioFailure(f"current candidate provenance is unavailable: {exc}") from exc
 
 
 def _prepare_installed_evidence(

@@ -6,7 +6,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from distribution.provenance import isolated_candidate_tree, materialize_candidate_tree
+import pytest
+
+from distribution.provenance import ProvenanceError, isolated_candidate_tree, materialize_candidate_tree
 
 
 def _fixture_git(repository: Path, *arguments: str) -> str:
@@ -141,3 +143,25 @@ def test_candidate_tree_isolated_operation_preserves_index_objects_and_worktree(
         if path.is_file()
     } == objects_before
     assert (repository / "README.md").read_bytes() == worktree_before
+
+
+def test_w18_default_surface_rejects_a_non_w18_path(tmp_path: Path) -> None:
+    repository = _fixture_repository(tmp_path, "agent/feature.py")
+    (repository / "agent" / "feature.py").write_bytes(b"after\n")
+
+    with pytest.raises(ProvenanceError, match="unexplained candidate path"):
+        with isolated_candidate_tree(repository):
+            pass
+
+
+def test_explicit_candidate_surface_allows_prefixes_but_stays_bounded(tmp_path: Path) -> None:
+    repository = _fixture_repository(tmp_path, "agent/feature.py")
+    (repository / "agent" / "feature.py").write_bytes(b"after\n")
+
+    with isolated_candidate_tree(repository, allowed_paths=("agent/",)) as snapshot:
+        assert snapshot.changed_paths == ("agent/feature.py",)
+
+    (repository / "src.py").write_bytes(b"after\n")
+    with pytest.raises(ProvenanceError, match="unexplained candidate path"):
+        with isolated_candidate_tree(repository, allowed_paths=("agent/",)):
+            pass

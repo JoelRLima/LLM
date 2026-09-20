@@ -9,13 +9,13 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from agent.interfaces.cli.thinking_presets import THINKING_LABEL_BY_BUDGET
+
 _DIAGNOSTIC_LABELS = ("OFF", "DIAG", "VERBOSE")
-_THINKING_LABELS = {0: "OFF", 512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
 _RESOLUTION_FIELDS = ("action", "boundary", "provenance", "ambiguity", "directive", "deliberation_profile", "reason_code")
 
 
 def _literal(value: Any) -> Text:
-    """Represent dynamic public values without Rich markup interpretation."""
     return Text(str(value))
 
 
@@ -33,7 +33,7 @@ def thinking_label(session: object) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         if value <= 0:
             return "OFF"
-        return _THINKING_LABELS.get(value, str(value))
+        return THINKING_LABEL_BY_BUDGET.get(value, str(value))
     configured = getattr(session, "thinking_level", getattr(session, "thinking", "OFF"))
     text = _display_text(configured).upper()
     return {"HIGH": "ALTO", "MEDIUM": "MÉDIO", "LOW": "BAIXO"}.get(text, text or "OFF")

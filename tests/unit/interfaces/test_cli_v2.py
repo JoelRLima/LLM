@@ -242,7 +242,15 @@ def test_explicit_missing_config_never_uses_first_run_prompt(
     )
 
     assert cli.main(
-        ["chat", "--config", str(explicit), "--workspace", str(workspace)]
+        [
+            "chat",
+            "--config",
+            str(explicit),
+            "--home",
+            str(tmp_path / "home"),
+            "--workspace",
+            str(workspace),
+        ]
     ) == 2
 
     assert not explicit.exists()
@@ -539,7 +547,7 @@ def test_state_migrate_copies_into_workspace_scope_and_preserves_source(
 
     assert result == 0
     assert legacy_memory.read_text(encoding="utf-8") == "{}"
-    assert list((home / "data" / "workspaces").glob("*/agent_memory.json"))
+    assert list((home / "workspaces").glob("*/data/agent_memory.json"))
     assert "Origem mantida" in capsys.readouterr().out
 
 

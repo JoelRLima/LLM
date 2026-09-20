@@ -1,8 +1,19 @@
 import json
 
-from agent.llm import router
 from agent.llm.contracts import ModelResponse
 from agent.llm.session import ChatSession
+from agent.routing.persona.contracts import PersonaRouteRequest
+from agent.routing.persona.current import (
+    CurrentPersonaRouter,
+    _is_clearly_trivial,
+    is_listing_objective,
+    persona_config_for_decision,
+)
+
+
+def _route(objective: str, session: ChatSession) -> tuple[str, list[str], str]:
+    decision = CurrentPersonaRouter(session).route(PersonaRouteRequest(objective))
+    return persona_config_for_decision(decision)
 
 
 class DummySession(ChatSession):
@@ -21,14 +32,14 @@ class DummySession(ChatSession):
 
 
 def test_is_clearly_trivial_matches_greetings():
-    assert router._is_clearly_trivial("Oi") is True
-    assert router._is_clearly_trivial("Como vai?") is True
-    assert router._is_clearly_trivial("qual o seu nome") is True
+    assert _is_clearly_trivial("Oi") is True
+    assert _is_clearly_trivial("Como vai?") is True
+    assert _is_clearly_trivial("qual o seu nome") is True
 
 
 def test_route_objective_trivial_uses_general():
     sess = DummySession()
-    persona_prompt, skills, persona = router.route_objective("Oi", sess)
+    persona_prompt, skills, persona = _route("Oi", sess)
     assert persona == "general"
     assert "general" in persona_prompt.lower() or "general" in skills
 
@@ -36,7 +47,7 @@ def test_route_objective_trivial_uses_general():
 def test_route_objective_fallbacks_to_llm_when_not_trivial(monkeypatch):
     sess = DummySession()
 
-    persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)
+    persona_prompt, skills, persona = _route("Crie um teste", sess)
     assert persona == "coder"
     assert isinstance(persona_prompt, str)
     assert isinstance(skills, list)
@@ -50,7 +61,7 @@ def test_route_objective_handles_invalid_llm_response(monkeypatch):
             return ModelResponse(content="não é json")
 
     sess = BrokenSession()
-    persona_prompt, skills, persona = router.route_objective("Crie um teste", sess)
+    persona_prompt, skills, persona = _route("Crie um teste", sess)
     assert persona == "general"
     assert "general" in persona_prompt.lower() or "general" in skills
 
@@ -58,6 +69,6 @@ def test_route_objective_handles_invalid_llm_response(monkeypatch):
 def test_listing_heuristic_uses_token_boundaries_and_security_precedence():
     sess = DummySession()
 
-    assert router.is_listing_objective("liste os arquivos") is True
-    assert router.is_listing_objective("diretorio de trabalho") is False
-    assert router.route_objective("liste vulnerabilidades em x.py", sess)[2] == "security_auditor"
+    assert is_listing_objective("liste os arquivos") is True
+    assert is_listing_objective("diretorio de trabalho") is False
+    assert _route("liste vulnerabilidades em x.py", sess)[2] == "security_auditor"

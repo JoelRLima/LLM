@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
-import shlex
 from typing import Any
 
 from agent.interfaces.cli import turn_rendering
 from agent.interfaces.cli.interactive_shell import prompt_from
+from agent.interfaces.cli.output_projection import render_publication
+from agent.interfaces.cli.query_rendering import query_arguments, render_query_result, submit_query
 from agent.interfaces.cli.ui import console
+from agent.outputs.models import (
+    OutputContentPolicy,
+    OutputError,
+    OutputKind,
+    OutputPublishRequest,
+    OutputSource,
+)
+
+__all__ = [
+    "drain_worker_stream",
+    "prompt",
+    "query_arguments",
+    "render_controller_outcome",
+    "render_query_result",
+    "render_rejected_preserve",
+    "render_worker_message",
+    "render_worker_stream",
+    "submit_query",
+]
 
 
 def prompt(ctx: Any) -> str | None:
@@ -24,7 +44,10 @@ def prompt(ctx: Any) -> str | None:
     if shell is not None:
         value = shell.prompt(message)
         return None if value is None else str(value)
-    return prompt_from(console, message, default=draft, suppress_interrupt=True)
+    value = prompt_from(console, message, default=draft, suppress_interrupt=True)
+    if value is None:
+        return None
+    return str(value)
 
 
 def render_controller_outcome(ctx: Any, outcome: Any, *, preserve_text: str | None = None) -> None:
@@ -128,35 +151,59 @@ def _worker_result_parts(message: Any) -> tuple[Any, str, str, bool, bool]:
     )
 
 
-def _render_worker_result(
+def _publish_worker_diagnostic(
     ctx: Any,
-    message: Any,
-    result: Any,
     stdout: str,
     stderr: str,
-    assistant_streamed: bool = False,
-    assistant_stream_truncated: bool = False,
-) -> None:
+    source_truncated: bool,
+    *,
+    source: OutputSource,
+) -> Any:
+    application = getattr(ctx, "application", None)
+    accessor = getattr(application, "output_service", None)
+    if not callable(accessor):
+        return None
+    diagnostic = stdout
+    if stderr:
+        diagnostic += ("\n" if diagnostic else "") + "[stderr]\n" + stderr
+    try:
+        return accessor().publish(
+            OutputPublishRequest(
+                kind=OutputKind.LOG,
+                source=source,
+                title="Worker diagnostic output",
+                text=diagnostic,
+                content_policy=OutputContentPolicy.PUBLIC_TEXT,
+                source_truncated=source_truncated,
+                metadata={"source_label": "worker settled"},
+            )
+        )
+    except OutputError:
+        return None
+
+
+def _render_worker_diagnostics(ctx: Any, stdout: str, stderr: str, publication: Any) -> None:
+    if publication is not None and publication.artifact is not None:
+        render_publication(publication, lambda value: _emit(ctx, value))
+        return
     if stdout:
         _emit(ctx, stdout)
     if stderr:
         _emit(ctx, stderr)
-    view_model = getattr(ctx, "view_model", None)
-    if view_model is not None:
-        view_model.apply_result(message.run_generation, result)
-    assistant_streamed = assistant_streamed or bool(getattr(message, "assistant_streamed", False))
-    assistant_stream_truncated = assistant_stream_truncated or bool(
-        getattr(message, "assistant_stream_truncated", False)
-    )
-    if assistant_streamed:
-        if assistant_stream_truncated:
-            _emit(ctx, "[interactive] resposta parcial; saída excedeu o limite de streaming")
-        status = str(getattr(result, "status", "")).casefold()
-        if status not in {"", "succeeded", "success"}:
-            summary = getattr(result, "error", None) or getattr(result, "summary", None)
-            if summary:
-                _emit(ctx, summary)
+
+
+def _render_streamed_worker_result(ctx: Any, result: Any, truncated: bool) -> None:
+    if truncated:
+        _emit(ctx, "[interactive] resposta parcial; saída excedeu o limite de streaming")
+    status = str(getattr(result, "status", "")).casefold()
+    if status in {"", "succeeded", "success"}:
         return
+    summary = getattr(result, "error", None) or getattr(result, "summary", None)
+    if summary:
+        _emit(ctx, summary)
+
+
+def _render_settled_worker_result(ctx: Any, result: Any) -> None:
     to_legacy_dict = getattr(result, "to_legacy_dict", None)
     if callable(to_legacy_dict):
         document = to_legacy_dict()
@@ -166,6 +213,38 @@ def _render_worker_result(
     summary = getattr(result, "summary", None) or getattr(result, "error", None)
     if answer or summary:
         _emit(ctx, answer or summary)
+
+
+def _render_worker_result(
+    ctx: Any,
+    message: Any,
+    result: Any,
+    stdout: str,
+    stderr: str,
+    assistant_streamed: bool = False,
+    assistant_stream_truncated: bool = False,
+) -> None:
+    view_model = getattr(ctx, "view_model", None)
+    if view_model is not None:
+        view_model.apply_result(message.run_generation, result)
+    assistant_streamed = assistant_streamed or bool(getattr(message, "assistant_streamed", False))
+    assistant_stream_truncated = assistant_stream_truncated or bool(
+        getattr(message, "assistant_stream_truncated", False)
+    )
+    publication = None
+    if not assistant_streamed and (stdout or stderr):
+        publication = _publish_worker_diagnostic(
+            ctx,
+            stdout,
+            stderr,
+            assistant_stream_truncated,
+            source=OutputSource.WORKER_DIAGNOSTIC,
+        )
+    _render_worker_diagnostics(ctx, stdout, stderr, publication)
+    if assistant_streamed:
+        _render_streamed_worker_result(ctx, result, assistant_stream_truncated)
+        return
+    _render_settled_worker_result(ctx, result)
 
 
 def render_worker_message(ctx: Any, message: Any) -> None:
@@ -184,79 +263,3 @@ def render_worker_message(ctx: Any, message: Any) -> None:
         assistant_streamed,
         assistant_stream_truncated,
     )
-
-
-def query_arguments(text: str, command_id: str) -> dict[str, Any] | None:
-    try:
-        tokens = shlex.split(text.strip())
-    except ValueError as exc:
-        return {"_error": str(exc)}
-    if command_id == "list_files":
-        return {"path": tokens[1] if len(tokens) > 1 else "."}
-    if command_id == "read":
-        return {"file_path": tokens[1]} if len(tokens) > 1 else None
-    if command_id == "find":
-        return {"pattern": " ".join(tokens[1:]), "path": "."} if len(tokens) > 1 else None
-    if command_id == "git_status":
-        return {}
-    if command_id == "diff":
-        detail = bool(tokens[1:] and tokens[1].casefold() in {"--full", "--detail", "full", "detail"})
-        return {"paths": tuple(tokens[2:] if detail else tokens[1:]), "detail": detail}
-    return None
-
-
-def render_query_result(ctx: Any, result: Any) -> None:
-    shell = getattr(ctx, "shell", None)
-
-    def emit(value: object) -> None:
-        if shell is not None:
-            shell.print_background(value)
-        else:
-            console.print(value, markup=False)
-
-    marker = getattr(result, "live_marker", None)
-    if marker:
-        emit(marker)
-    if not getattr(result, "ok", False):
-        emit(getattr(result, "error", None) or "query failed")
-        return
-    data = getattr(result, "data", None)
-    if isinstance(data, dict) and "items" in data:
-        rows = data.get("items", [])
-        text = "\n".join(f"{row.get('type', '?')} {row.get('relative', row.get('name', ''))}" for row in rows)
-        emit(text + ("\n[output truncated]" if data.get("truncated") else "") or "(empty workspace)")
-    elif isinstance(data, dict) and "content" in data:
-        text = str(data.get("content", ""))
-        emit(text + ("\n[output truncated]" if data.get("truncated") else ""))
-    elif isinstance(data, dict) and "matches" in data:
-        text = "\n".join(f"{row.get('file')}:{row.get('line')}: {row.get('content')}" for row in data.get("matches", []))
-        emit(text + ("\n[output truncated]" if data.get("truncated") else "") or "(no matches)")
-    elif isinstance(data, dict) and "files" in data:
-        rows = data.get("files", [])
-        text = "\n".join(f"{row.get('file')}: +{row.get('added', '?')} -{row.get('deleted', '?')}" for row in rows)
-        emit(f"files={data.get('file_count', len(rows))}" + ("\n" + text if text else ""))
-    else:
-        text = str(data or "(no output)")
-        emit(text + ("\n[output truncated]" if getattr(result, "truncated", False) else ""))
-
-
-def submit_query(text: str, ctx: Any, command_id: str) -> bool:
-    executor = getattr(ctx, "query_executor", None)
-    service = getattr(ctx, "query_service", None)
-    if executor is None or service is None:
-        return False
-    arguments = query_arguments(text, command_id)
-    if arguments is None or "_error" in arguments:
-        render_query_result(ctx, type("QueryError", (), {"ok": False, "error": arguments and arguments.get("_error") or f"Uso: {text.split()[0]} <argumento>"})())
-        return True
-    submitted = executor.submit(
-        command_id,
-        arguments,
-        task_active=bool(getattr(ctx, "controller", None) is not None and ctx.controller.is_busy()),
-        execute=service.execute,
-    )
-    if hasattr(submitted, "ok"):
-        render_query_result(ctx, submitted)
-    else:
-        render_controller_outcome(ctx, type("QueryAccepted", (), {"disposition": "ACCEPTED", "run_generation": submitted.query_generation})())
-    return True

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, cast
 
@@ -27,8 +26,11 @@ from agent.evaluation.execution_evidence import (
     h2_reporting,
     identity_drift,
 )
+from agent.evaluation.execution_models import CampaignRun
+from agent.evaluation.experiment import EvaluationExperimentContext, evaluation_context
 from agent.evaluation.fixture_context import fixture_marker
 from agent.evaluation.oracle import deterministic_oracle_evidence
+from agent.evaluation.receipt import build_evaluation_receipt
 from agent.evaluation.runner import CapabilityEvaluator
 from agent.evaluation.scenario_contracts import (
     CausalFailureClass,
@@ -37,53 +39,8 @@ from agent.evaluation.scenario_contracts import (
     HSeriesArm,
     HSeriesScenario,
     digest_fixture,
-    sanitize_evidence,
 )
 from agent.evaluation.scripted_gateway import bind_fixture_marker
-
-
-@dataclass(frozen=True)
-class CampaignRun:
-    h_id: str
-    arm_id: str
-    repetition: int
-    passed: bool
-    report: Mapping[str, Any]
-    evidence: Mapping[str, Any]
-    attempt: int = 1
-    scenario_repetition: int | None = None
-    valid_repetition: bool = True
-    environmental: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "h_id": self.h_id,
-            "arm_id": self.arm_id,
-            "repetition": self.repetition,
-            "attempt": self.attempt,
-            "scenario_repetition": self.scenario_repetition,
-            "valid_repetition": self.valid_repetition,
-            "environmental": self.environmental,
-            "passed": self.passed,
-            "report": sanitize_evidence(dict(self.report)),
-            "evidence": sanitize_evidence(dict(self.evidence)),
-        }
-
-    def mark_invalid_attempt(self, reason: str) -> "CampaignRun":
-        evidence = dict(self.evidence)
-        evidence.update({"valid_repetition": False, "scenario_repetition": None, "invalid_attempt_reason": reason})
-        return CampaignRun(
-            self.h_id,
-            self.arm_id,
-            self.repetition,
-            self.passed,
-            self.report,
-            evidence,
-            attempt=self.attempt,
-            scenario_repetition=None,
-            valid_repetition=False,
-            environmental=self.environmental,
-        )
 
 
 def _report_projection(report: Any) -> dict[str, Any]:
@@ -121,6 +78,7 @@ def _run_one(
     model_identity: Mapping[str, Any] | None = None,
     scenario_repetition: int | None = None,
     attempt: int | None = None,
+    evaluation_experiment: EvaluationExperimentContext | None = None,
 ) -> CampaignRun:
     capability_scenario = arm.to_capability_scenario(scenario.h_id)
     bound_gateway_factory = bind_fixture_marker(
@@ -132,9 +90,13 @@ def _run_one(
         if arm.approval_mode == "required"
         else AutoApprove()
     )
+    selected_experiment = evaluation_experiment or evaluation_context(
+        "current", experiment_id="w19-default", trial_id="default"
+    )
     executor = AgentApplicationScenarioExecutor(
         cast(GatewayFactory, bound_gateway_factory),
         approval_policy=approval_policy,
+        variant_composition=selected_experiment.profile.composition,
     )
     expected_model_identity = dict(
         model_identity or (fake_model_identity() if evidence_level is EvidenceLevel.DETERMINISTIC else {})
@@ -175,6 +137,15 @@ def _run_one(
                     "reason_codes": ["model_config_drift"],
                     "evidence_refs": ["model_identity", "provider_identity"],
                 }
+            evaluation_receipt = build_evaluation_receipt(
+                report,
+                experiment=selected_experiment,
+                scenario_arm_id=arm.arm_id,
+                repetition=(scenario_repetition if scenario_repetition is not None else attempt_number),
+                attempt=attempt_number,
+                evidence_level=evidence_level.value,
+                evaluator_failure_codes=failures,
+            )
             attribution = classify_failure(
                 report, failures, evidence_level, attribution_evidence=attribution_evidence
             )
@@ -222,6 +193,7 @@ def _run_one(
                 scenario_repetition=scenario_repetition,
                 valid_repetition=True,
                 environmental=False,
+                evaluation_receipt=evaluation_receipt.to_dict(),
             )
     except Exception as exc:
         environmental = is_environmental_exception(exc)
@@ -285,6 +257,7 @@ def _run_one(
             scenario_repetition=scenario_repetition,
             valid_repetition=not environmental,
             environmental=environmental,
+            evaluation_receipt=None,
         )
 
 

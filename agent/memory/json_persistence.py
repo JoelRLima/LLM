@@ -112,7 +112,12 @@ def write_json_atomic(
                 )
 
 
-def write_text_atomic(path: str | Path, content: str) -> bool:
+def write_text_atomic(
+    path: str | Path,
+    content: str,
+    *,
+    publication_prepared: Callable[[os.stat_result], None] | None = None,
+) -> bool:
     """Grava texto UTF-8 com a mesma garantia atômica do writer JSON."""
 
     destination = Path(path)
@@ -135,6 +140,8 @@ def write_text_atomic(path: str | Path, content: str) -> bool:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+        if publication_prepared is not None:
+            publication_prepared(os.stat(temporary_path, follow_symlinks=False))
         reject_link_like(destination)
         os.replace(temporary_path, destination)
         sync_parent_directory(destination)

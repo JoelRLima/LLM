@@ -11,7 +11,6 @@ from agent.llm.contracts import ModelResponse
 from agent.llm.grammars import AUTO_GRAMMAR, get_grammar
 from agent.llm.session import ChatSession
 from agent.llm.structured_output import normalize_model_decision
-from agent.runtime import config as config_module
 
 # ----------------------------------------------------------------------
 # Fixtures / helpers
@@ -79,12 +78,12 @@ def test_build_request_without_grammar_when_none():
 
 
 def test_get_grammar_returns_none_when_disabled(monkeypatch):
-    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", False)
+    monkeypatch.setattr(grammars, "packaged_config_defaults", lambda: {"ENABLE_GBNF": False})
     assert get_grammar("plan") is None
 
 
 def test_get_grammar_returns_mapped_grammar_when_enabled(monkeypatch):
-    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
+    monkeypatch.setattr(grammars, "packaged_config_defaults", lambda: {"ENABLE_GBNF": True})
     assert get_grammar("plan") == grammars.PLAN_GRAMMAR
     assert get_grammar("continuation_plan") == grammars.CONTINUATION_PLAN_GRAMMAR
     assert get_grammar("tool_decision") == grammars.TOOL_DECISION_GRAMMAR
@@ -92,7 +91,7 @@ def test_get_grammar_returns_mapped_grammar_when_enabled(monkeypatch):
 
 
 def test_get_grammar_uses_effective_config_without_global_mutation(monkeypatch):
-    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
+    monkeypatch.setattr(grammars, "packaged_config_defaults", lambda: {"ENABLE_GBNF": True})
 
     assert get_grammar("tool_decision", {"ENABLE_GBNF": False}) is None
     assert get_grammar("tool_decision", {"ENABLE_GBNF": True}) == grammars.TOOL_DECISION_GRAMMAR
@@ -131,7 +130,7 @@ def test_replan_grammar_uses_the_tool_only_canonical_root():
 
 
 def test_plan_grammar_exposes_only_closed_mechanical_deferred_shape(monkeypatch):
-    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", True)
+    monkeypatch.setattr(grammars, "packaged_config_defaults", lambda: {"ENABLE_GBNF": True})
     grammar = get_grammar("plan") or ""
 
     assert "plan-item ::= tool-step | deferred-condition" in grammar
@@ -160,7 +159,7 @@ def test_ask_model_auto_selects_grammar_by_step_type():
 
 
 def test_ask_model_uses_session_config_over_default_config(monkeypatch):
-    monkeypatch.setitem(config_module.DEFAULT_CONFIG, "ENABLE_GBNF", False)
+    monkeypatch.setattr(grammars, "packaged_config_defaults", lambda: {"ENABLE_GBNF": False})
     cm = make_context_manager()
     cm.session.complete_request = MagicMock(
         return_value=ModelResponse(
