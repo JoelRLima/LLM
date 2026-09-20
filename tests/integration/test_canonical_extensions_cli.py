@@ -165,7 +165,9 @@ def test_cli_rejects_home_and_dotdot_without_silent_normalization(
     assert _run_cli_failure(
         ["extensions", "register", str(lexical_dotdot), *common], capsys
     ) != 0
-    assert not (home / "data" / "extensions" / "catalog.json").exists()
+    assert not AppPaths.discover(
+        home, env={}
+    ).extensions_catalog_file.exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlink privilege varies on Windows")
@@ -197,9 +199,7 @@ def test_cli_preserves_absolute_symlink_manifest_identity(
         capsys,
     )
 
-    catalog = json.loads(
-        (home / "data" / "extensions" / "catalog.json").read_text(encoding="utf-8")
-    )
+    catalog = json.loads(AppPaths.discover(home, env={}).extensions_catalog_file.read_text(encoding="utf-8"))
     assert catalog["extensions"]["demo.extension"]["manifest_path"] == alias_manifest.as_posix()
 
 

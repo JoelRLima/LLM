@@ -151,7 +151,7 @@ def test_find_and_read_reject_symlink_escape_and_pathological_regex(tmp_path: Pa
     assert found_escape.status is WorkspaceQueryStatus.SUCCEEDED and found_escape.data["matches"] == []
     started = time.monotonic()
     pathological = service.find(_request(workspace, "find", {"pattern": "(a+)+$", "path": "."}), Event())
-    assert not pathological.ok
+    assert pathological.status is WorkspaceQueryStatus.FAILED
     assert time.monotonic() - started < 1.0
 
 
