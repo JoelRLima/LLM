@@ -12,6 +12,83 @@ from threading import RLock
 from typing import Any, Callable, Iterator
 
 
+def prompt_from(
+    console: Any,
+    prompt: str,
+    *,
+    default: str = "",
+    suppress_interrupt: bool = False,
+) -> str | None:
+    """Read through the single supplied console without creating a second shell."""
+    reader = getattr(console, "input", None)
+    if not callable(reader):
+        return None
+    try:
+        value = reader(prompt)
+    except (EOFError, KeyboardInterrupt):
+        if not suppress_interrupt:
+            raise
+        printer = getattr(console, "print", None)
+        if callable(printer):
+            printer("Encerrando...")
+        return None
+    return str(value) if value is not None else default
+
+
+def _registry_completer(registry: Any, completer_type: Any, completion_type: Any) -> Any:
+    class RegistryCompleter(completer_type):
+        def get_completions(self, document: Any, complete_event: Any) -> Any:
+            del self, complete_event
+            text = document.text_before_cursor
+            if not text.startswith("/"):
+                return
+            for item in registry.completion_items(text) if registry is not None else ():
+                yield completion_type(item, start_position=-len(text), display=item)
+
+    return RegistryCompleter()
+
+
+def _key_bindings(shell: Any, key_bindings_type: Any) -> Any:
+    bindings = key_bindings_type()
+
+    @bindings.add("enter")
+    def accept(event: Any) -> None:
+        event.current_buffer.validate_and_handle()
+
+    @bindings.add("c-j")
+    def newline(event: Any) -> None:
+        event.current_buffer.insert_text("\n")
+
+    @bindings.add("c-c")
+    def interrupt(event: Any) -> None:
+        handler = shell._interrupt_handler
+        if handler is not None:
+            try:
+                handler()
+            except Exception:
+                pass
+        else:
+            event.current_buffer.text = ""
+        event.app.invalidate()
+
+    @bindings.add("f2")
+    def command_palette(event: Any) -> None:
+        request = getattr(shell, "request_command_palette", None)
+        if callable(request):
+            request(event)
+            event.app.invalidate()
+            return
+        handler = shell._f2_handler
+        if handler is not None:
+            try:
+                handler()
+            except Exception:
+                pass
+        event.app.invalidate()
+
+    return bindings
+
+
 class InteractiveShell:
     """One prompt session with safe background output and bounded UI state."""
 
@@ -24,8 +101,8 @@ class InteractiveShell:
         history: Any | None = None,
         input: Any | None = None,
         output: Any | None = None,
+        f2_handler: Callable[[], None] | None = None,
     ) -> None:
-        # PTK remains a lazy dependency for headless CLI imports.
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.history import InMemoryHistory
@@ -38,42 +115,11 @@ class InteractiveShell:
         self._next_default = ""
         self._background_pump: Callable[[], None] | None = None
         self._interrupt_handler: Callable[[], None] | None = None
+        self._f2_handler = f2_handler
+        self._palette_return_draft: str | None = None
         self._background_hook_installed = False
-
-        class _RegistryCompleter(Completer):
-            def get_completions(inner_self, document: Any, complete_event: Any) -> Any:
-                del complete_event
-                text_before_cursor = document.text_before_cursor
-                if not text_before_cursor.startswith("/"):
-                    return
-                for item in registry.completion_items(text_before_cursor) if registry is not None else ():
-                    yield Completion(item, start_position=-len(text_before_cursor), display=item)
-
-        bindings = KeyBindings()
-
-        @bindings.add("enter")
-        def _accept(event: Any) -> None:
-            event.current_buffer.validate_and_handle()
-
-        @bindings.add("c-j")
-        def _newline(event: Any) -> None:
-            event.current_buffer.insert_text("\n")
-
-        @bindings.add("c-c")
-        def _interrupt(event: Any) -> None:
-            handler = self._interrupt_handler
-            if handler is not None:
-                try:
-                    handler()
-                except Exception:
-                    # A control action is advisory; it must not tear down the
-                    # prompt if a projection or cancellation seam fails.
-                    pass
-            else:
-                event.current_buffer.text = ""
-            event.app.invalidate()
-
         if session is None:
+            bindings = _key_bindings(self, KeyBindings)
             session = PromptSession(
                 multiline=True,
                 input=input,
@@ -81,7 +127,7 @@ class InteractiveShell:
                 enable_history_search=True,
                 mouse_support=False,
                 key_bindings=bindings,
-                completer=_RegistryCompleter(),
+                completer=_registry_completer(registry, Completer, Completion),
                 complete_while_typing=False,
                 refresh_interval=0.1,
                 bottom_toolbar=self._toolbar_text,
@@ -134,6 +180,25 @@ class InteractiveShell:
     def set_interrupt_handler(self, callback: Callable[[], None] | None) -> None:
         self._interrupt_handler = callback
 
+    def set_f2_handler(self, callback: Callable[[], None] | None) -> None:
+        self._f2_handler = callback
+
+    def request_command_palette(self, event: Any | None = None) -> None:
+        """Submit /commands through the active buffer without nested stdin."""
+
+        buffer = getattr(self.session, "default_buffer", None)
+        if buffer is None:
+            return
+        self._palette_return_draft = str(getattr(buffer, "text", "") or "")
+        buffer.text = "/commands"
+        if event is not None and callable(getattr(buffer, "validate_and_handle", None)):
+            buffer.validate_and_handle()
+
+    def take_palette_return_draft(self) -> str | None:
+        value = self._palette_return_draft
+        self._palette_return_draft = None
+        return value
+
     def set_background_pump(self, callback: Callable[[], None] | None) -> None:
         """Run the consumer on PTK's UI event loop while ``prompt`` blocks."""
 
@@ -172,14 +237,30 @@ class InteractiveShell:
 
     def set_draft(self, value: str) -> None:
         """Load one bounded pending value into the next composer prompt."""
-
         with self._lock:
             self._next_default = str(value)
 
     def prompt_line(self, message: str = "", *, default: str = "") -> str | None:
         """Read a selector value through the same composer-owned stdin."""
-
         return self._prompt_line_value(message, default)
+
+    def prompt_path(self, message: str = "", *, default: str = "") -> str | None:
+        """Read a directory path through this shell's sole PromptSession."""
+        from prompt_toolkit.completion import PathCompleter
+
+        with self._lock:
+            if self._closed:
+                return None
+        try:
+            value = self.session.prompt(
+                message,
+                default=default,
+                multiline=False,
+                completer=PathCompleter(only_directories=True, expanduser=True),
+            )
+        except (EOFError, KeyboardInterrupt):
+            return None
+        return str(value)
 
     def print_background(self, text: object = "", *, end: str = "\n") -> None:
         """Print literal worker output above the prompt without consuming stdin."""
@@ -197,20 +278,17 @@ class InteractiveShell:
 
     def print_stream(self, text: object = "") -> None:
         """Append one assistant chunk without inventing a line boundary."""
-
         self.print_background(text, end="")
 
     @contextmanager
     def temporary_prompt(self) -> Iterator["InteractiveShell"]:
         """Keep selector ownership explicit while preserving the current draft."""
 
-        # PromptSession restores the buffer after a nested prompt returns.  A
-        # context manager makes that invariant visible to selector callers.
+        # PromptSession restores the buffer after nested prompts; this context manager exposes that invariant.
         yield self
 
     def refresh(self) -> None:
         """Request a redraw after an externally updated toolbar projection."""
-
         app = getattr(self.session, "app", None)
         if app is not None and getattr(app, "is_running", False):
             app.invalidate()
@@ -218,35 +296,5 @@ class InteractiveShell:
     def close(self) -> None:
         with self._lock:
             self._closed = True
-
-
-def prompt_from(
-    console: Any,
-    prompt: str,
-    *,
-    default: str = "",
-    suppress_interrupt: bool = False,
-) -> str | None:
-    """Compatibility bridge for non-shell unit/legacy surfaces.
-
-    The chat path always injects ``InteractiveShell.prompt_line``.  This
-    bridge exists for the pre-existing standalone selector APIs and does not
-    become a second reader when the shell is active.
-    """
-
-    reader = getattr(console, "input", None)
-    if not callable(reader):
-        return None
-    try:
-        value = reader(prompt)
-    except (EOFError, KeyboardInterrupt):
-        if not suppress_interrupt:
-            raise
-        printer = getattr(console, "print", None)
-        if callable(printer):
-            printer("Encerrando...")
-        return None
-    return str(value) if value is not None else default
-
 
 __all__ = ["InteractiveShell", "prompt_from"]

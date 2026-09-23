@@ -53,8 +53,21 @@ INSTALLED_ACCEPTANCE_PROPERTIES = (
     {"id": "terminal-status", "proof": "canonical public terminal status"},
     {"id": "measurement", "proof": "canonical invocation/model/output measurement projection"},
     {"id": "task-continuity-cli", "proof": "installed paused checkpoint and fresh resume identity"},
-    {"id": "interaction-admission", "proof": "installed unified interaction admission with strict deterministic fixtures"},
+    {
+        "id": "interaction-admission",
+        "proof": "installed unified interaction admission with strict deterministic fixtures",
+    },
     {"id": "outside-checkout", "proof": "wheel is exercised from outside the source checkout"},
+    {"id": "engineering-import", "proof": "installed agent.engineering import"},
+    {"id": "discovery-import", "proof": "installed agent.discovery import"},
+    {"id": "build-parser", "proof": "installed canonical parser construction"},
+    {"id": "engineering-list", "proof": "installed W20-A Engineering registry query"},
+    {"id": "engineering-describe", "proof": "installed known-unavailable source operation"},
+    {"id": "commands-local", "proof": "installed local commands discovery without config/model"},
+    {"id": "commands-json", "proof": "installed commands JSON contract and stderr purity"},
+    {"id": "completion-powershell", "proof": "installed native PowerShell completion without setup"},
+    {"id": "mcp-command-discovery", "proof": "MCP command is discoverable without importing the optional SDK"},
+    {"id": "mcp-missing-extra", "proof": "MCP command degrades with stable exit/reason and empty stdout"},
 )
 
 
@@ -77,9 +90,7 @@ def installed_acceptance_summary(
             selected_candidate = candidate_identity(project_root)
         except (OSError, RuntimeError, ValueError):
             selected_candidate = {}
-    selected_identity = (
-        candidate_identity_string(selected_candidate) if selected_candidate else None
-    )
+    selected_identity = candidate_identity_string(selected_candidate) if selected_candidate else None
 
     result: dict[str, Any] = {
         "schema_version": INSTALLED_ACCEPTANCE_SCHEMA_VERSION,
@@ -99,6 +110,9 @@ def installed_acceptance_summary(
             {"os": "windows-latest", "python": "3.12"},
         ],
         "task_files_in_wheel": False,
+        "mcp_extra_installed": False,
+        "mcp_missing_extra_probe": "passed",
+        "mcp_missing_extra_reason": "ENGINEERING_MCP_EXTRA_REQUIRED",
     }
     if detail:
         result["detail"] = detail[:500]
@@ -109,6 +123,7 @@ def write_installed_acceptance_summary(path: Path, summary: Mapping[str, Any]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     write_bytes_atomic(path, payload.encode("utf-8"))
+
 
 INSTALLED_PROBE_SOURCE = """\
 from __future__ import annotations
@@ -1758,6 +1773,7 @@ class CommandResult:
     name: str
     stdout: str
     stderr: str
+    returncode: int = 0
 
 
 def _installed_tool_discovery_content(prompt: str) -> str:
@@ -1859,11 +1875,7 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
 
 def _emit_failure_annotation(message: str) -> None:
     compact = " ".join(message.split())[:1200]
-    escaped = (
-        compact.replace("%", "%25")
-        .replace("\r", "%0D")
-        .replace("\n", "%0A")
-    )
+    escaped = compact.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     print(
         f"::error title=Installed wheel acceptance::{escaped}",
         file=sys.stderr,
@@ -1970,8 +1982,7 @@ def snapshot_tree(root: Path) -> dict[str, tuple[int, int, str]]:
         directories[:] = sorted(
             name
             for name in directories
-            if not (current_path / name).is_symlink()
-            and not _is_junction_compatible(current_path / name)
+            if not (current_path / name).is_symlink() and not _is_junction_compatible(current_path / name)
         )
         candidates.extend(current_path / name for name in filenames)
     for path in sorted(candidate for candidate in candidates if candidate.is_file()):
@@ -1989,9 +2000,7 @@ def parse_json_output(result: CommandResult) -> dict[str, Any]:
     try:
         payload = json.loads(result.stdout.strip())
     except json.JSONDecodeError as exc:
-        raise VerificationError(
-            f"{result.name} não produziu JSON puro: {result.stdout!r}"
-        ) from exc
+        raise VerificationError(f"{result.name} não produziu JSON puro: {result.stdout!r}") from exc
     if not isinstance(payload, dict) or not payload:
         raise VerificationError(f"{result.name} deve produzir um objeto JSON não vazio.")
     return payload
@@ -2020,10 +2029,8 @@ def _run(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
-        raise VerificationError(
-            f"{name} excedeu o timeout de {timeout_seconds}s."
-        ) from exc
-    result = CommandResult(name, completed.stdout, completed.stderr)
+        raise VerificationError(f"{name} excedeu o timeout de {timeout_seconds}s.") from exc
+    result = CommandResult(name, completed.stdout, completed.stderr, completed.returncode)
     if completed.returncode != 0:
         raise VerificationError(
             f"{name} falhou com exit code {completed.returncode}.\n"
@@ -2054,7 +2061,7 @@ def _run_expected_failure(
     )
     if completed.returncode == 0:
         raise VerificationError(f"{name} deveria falhar, mas retornou sucesso.")
-    return CommandResult(name, completed.stdout, completed.stderr)
+    return CommandResult(name, completed.stdout, completed.stderr, completed.returncode)
 
 
 def _venv_executable(environment_dir: Path, name: str) -> Path:
@@ -2133,9 +2140,7 @@ def _build_wheel(
     )
     wheels = sorted(wheel_dir.glob("local_llm_agent-*.whl"))
     if len(wheels) != 1:
-        raise VerificationError(
-            f"Esperado exatamente um wheel da aplicação; encontrados: {wheels}"
-        )
+        raise VerificationError(f"Esperado exatamente um wheel da aplicação; encontrados: {wheels}")
     return wheels[0]
 
 
@@ -2204,9 +2209,7 @@ def _verify_import_origin(
     try:
         imported.relative_to(site_packages)
     except ValueError as exc:
-        raise VerificationError(
-            f"'agent' foi importado fora do site-packages isolado: {imported}"
-        ) from exc
+        raise VerificationError(f"'agent' foi importado fora do site-packages isolado: {imported}") from exc
 
 
 def _verify_interactive_dependency(
@@ -2260,9 +2263,7 @@ def _verify_declared_dependencies(
         try:
             origin.relative_to(site_packages)
         except ValueError as exc:
-            raise VerificationError(
-                f"Dependência '{name}' não foi instalada no venv limpo: {origin}"
-            ) from exc
+            raise VerificationError(f"Dependência '{name}' não foi instalada no venv limpo: {origin}") from exc
 
 
 def _verify_installed_probe(
@@ -2308,9 +2309,7 @@ def _verify_installed_probe(
         "shell_status",
         "shell_write",
     ]:
-        raise VerificationError(
-            "Probe instalado não confirmou confinamento de ShellSkill/GitSkill."
-        )
+        raise VerificationError("Probe instalado não confirmou confinamento de ShellSkill/GitSkill.")
     _validate_slice_a_payload(payload)
     _validate_slice_c_payload(payload)
     _validate_slice_b_payload(payload)
@@ -2438,7 +2437,11 @@ def _validate_slice_d_outcomes(
     denied: Mapping[str, Any],
     failure: Mapping[str, Any],
 ) -> None:
-    if success.get("terminal_outcome") != "SUCCESS" or not success.get("spawned") or "D1_EXTERNAL_EVIDENCE" not in str(success.get("answer", "")):
+    if (
+        success.get("terminal_outcome") != "SUCCESS"
+        or not success.get("spawned")
+        or "D1_EXTERNAL_EVIDENCE" not in str(success.get("answer", ""))
+    ):
         raise VerificationError("Slice D D1 nao provou processo externo e consumo pelo modelo.")
     if denied.get("terminal_outcome") == "SUCCESS" or denied.get("spawned") or not denied.get("answer"):
         raise VerificationError("Slice D D3 nao negou antes do efeito externo.")
@@ -2455,10 +2458,18 @@ def _validate_slice_d_measurements(extension: list[Mapping[str, Any]]) -> None:
 
 def _validate_slice_d_success_audit(success: Mapping[str, Any]) -> None:
     audit_trace = success.get("audit_trace")
-    if not isinstance(audit_trace, Mapping) or audit_trace.get("completeness") != "complete" or audit_trace.get("receipt_count") != 1:
+    if (
+        not isinstance(audit_trace, Mapping)
+        or audit_trace.get("completeness") != "complete"
+        or audit_trace.get("receipt_count") != 1
+    ):
         raise VerificationError("Slice D D1 nao persistiu receipt completo.")
     descriptor = audit_trace.get("descriptor")
-    if not isinstance(descriptor, Mapping) or descriptor.get("origin_kind") != "extension" or descriptor.get("extension_id") != "installed.demo.extension":
+    if (
+        not isinstance(descriptor, Mapping)
+        or descriptor.get("origin_kind") != "extension"
+        or descriptor.get("extension_id") != "installed.demo.extension"
+    ):
         raise VerificationError("Slice D D1 perdeu identidade da extension no receipt.")
     if not descriptor.get("source_version") or not descriptor.get("protocol_version"):
         raise VerificationError("Slice D D1 perdeu versoes da extension.")
@@ -2466,7 +2477,11 @@ def _validate_slice_d_success_audit(success: Mapping[str, Any]) -> None:
 
 def _validate_slice_d_denial_audit(denied: Mapping[str, Any]) -> None:
     denied_audit = denied.get("audit_trace")
-    if not isinstance(denied_audit, Mapping) or denied_audit.get("completeness") != "complete" or denied_audit.get("receipt_count") != 1:
+    if (
+        not isinstance(denied_audit, Mapping)
+        or denied_audit.get("completeness") != "complete"
+        or denied_audit.get("receipt_count") != 1
+    ):
         raise VerificationError("Slice D D3 nao persistiu receipt de denial.")
     if denied_audit.get("executed") is not False or not denied_audit.get("denied_reason"):
         raise VerificationError("Slice D D3 perdeu reason/executed=false persistidos.")
@@ -2486,9 +2501,7 @@ def _validate_interaction_payload(payload: Mapping[str, Any]) -> None:
         "geometry": True,
     }
     if payload.get("interaction") != expected:
-        raise VerificationError(
-            f"Probe instalado nao confirmou os fixtures W12: {payload.get('interaction')!r}"
-        )
+        raise VerificationError(f"Probe instalado nao confirmou os fixtures W12: {payload.get('interaction')!r}")
 
 
 def _validate_audit_payload(payload: Mapping[str, Any]) -> None:
@@ -2517,7 +2530,11 @@ def _validate_builtin_audit(audit: Mapping[str, Any]) -> None:
     terminal = audit.get("terminal")
     if not isinstance(effect, Mapping) or effect.get("occurred") is not True or effect.get("persisted") is not True:
         raise VerificationError(f"Audit builtin perdeu efeito: {audit!r}")
-    if not isinstance(terminal, Mapping) or terminal.get("status") != "succeeded" or terminal.get("final_state") != "applied":
+    if (
+        not isinstance(terminal, Mapping)
+        or terminal.get("status") != "succeeded"
+        or terminal.get("final_state") != "applied"
+    ):
         raise VerificationError(f"Audit builtin perdeu terminal: {audit!r}")
 
 
@@ -2527,9 +2544,17 @@ def _validate_denial_audit(denial: Mapping[str, Any]) -> None:
     if denial.get("executed") is not False or not denial.get("denied_reason"):
         raise VerificationError(f"Audit denial perdeu denial/executed=false: {denial!r}")
     unknown = denial.get("unknown_descriptor")
-    if not isinstance(unknown, Mapping) or unknown.get("source_version") is not None or unknown.get("protocol_version") is not None:
+    if (
+        not isinstance(unknown, Mapping)
+        or unknown.get("source_version") is not None
+        or unknown.get("protocol_version") is not None
+    ):
         raise VerificationError(f"Audit denial fabricou versao de unknown tool: {denial!r}")
-    if denial.get("tool_start_count") != 0 or denial.get("tool_end_count") != 0 or denial.get("mutation_occurred") is True:
+    if (
+        denial.get("tool_start_count") != 0
+        or denial.get("tool_end_count") != 0
+        or denial.get("mutation_occurred") is True
+    ):
         raise VerificationError(f"Audit denial indicou execucao/mutacao: {denial!r}")
 
 
@@ -2629,9 +2654,7 @@ def _verify_f1_installed(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     f1_environment = dict(environment)
-    f1_environment["LLM_AGENT_API_URL"] = (
-        f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
-    )
+    f1_environment["LLM_AGENT_API_URL"] = f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
     common = ("--home", str(f1_home), "--workspace", str(f1_workspace))
     try:
         registered = _run(
@@ -2722,9 +2745,7 @@ def _verify_installed_continuity(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     continuity_environment = dict(environment)
-    continuity_environment["LLM_AGENT_API_URL"] = (
-        f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
-    )
+    continuity_environment["LLM_AGENT_API_URL"] = f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
     common = (
         "--home",
         str(continuity_home),
@@ -2756,9 +2777,7 @@ def _verify_installed_continuity(
             or not root_task_id
             or prior_run_id != "installed-prior-attempt"
         ):
-            raise VerificationError(
-                f"fixture de continuidade instalada nao criou checkpoint valido: {seed_payload!r}"
-            )
+            raise VerificationError(f"fixture de continuidade instalada nao criou checkpoint valido: {seed_payload!r}")
 
         status_result = _run(
             "installed-continuity-status",
@@ -2780,9 +2799,7 @@ def _verify_installed_continuity(
             or not isinstance(status_binding, dict)
             or status_binding.get("task_id") != root_task_id
         ):
-            raise VerificationError(
-                f"status de continuidade instalada divergiu: {status_payload!r}"
-            )
+            raise VerificationError(f"status de continuidade instalada divergiu: {status_payload!r}")
 
         resumed = _run(
             "installed-continuity-resume",
@@ -2811,9 +2828,7 @@ def _verify_installed_continuity(
             or resume_metadata.get("task_directive") != "read"
             or resume_metadata.get("deliberation_profile") != "smart"
         ):
-            raise VerificationError(
-                f"resume positivo instalado nao preservou identidade: {resume_payload!r}"
-            )
+            raise VerificationError(f"resume positivo instalado nao preservou identidade: {resume_payload!r}")
     finally:
         server.shutdown()
         server.server_close()
@@ -2907,17 +2922,13 @@ def _verify_missing_task_workspace(
     try:
         payload = parse_json_output(result)
     except VerificationError as exc:
-        raise VerificationError(
-            f"{exc}; stdout={result.stdout!r}; stderr={result.stderr!r}"
-        ) from exc
+        raise VerificationError(f"{exc}; stdout={result.stdout!r}; stderr={result.stderr!r}") from exc
     if (
         payload.get("success") is not False
         or payload.get("status") != "failed"
         or payload.get("reason_code") != "TASK_WORKSPACE_REQUIRED"
     ):
-        raise VerificationError(
-            f"run instalado sem workspace nao falhou na fronteira esperada: {payload!r}"
-        )
+        raise VerificationError(f"run instalado sem workspace nao falhou na fronteira esperada: {payload!r}")
     if result.stderr.strip():
         raise VerificationError("run instalado sem workspace violou o contrato JSON de stdout.")
     if snapshot_tree(cwd) != cwd_before:
@@ -2969,9 +2980,7 @@ def _verify_w11_cli(
     )
     payload = parse_json_output(absent)
     if payload.get("success") is not False or payload.get("reason_code") != "CHECKPOINT_ABSENT":
-        raise VerificationError(
-            f"/continue instalada nao preservou a falha deterministica: {payload!r}"
-        )
+        raise VerificationError(f"/continue instalada nao preservou a falha deterministica: {payload!r}")
 
 
 def _verify_greeting(payload: Mapping[str, Any]) -> None:
@@ -2990,11 +2999,258 @@ def _assert_candidate_identity_unchanged(
         final_candidate = candidate_identity(project_root)
     except (OSError, RuntimeError, ValueError) as exc:
         raise VerificationError("candidate identity could not be revalidated after installed acceptance") from exc
-    if (
-        dict(final_candidate) != dict(captured_candidate)
-        or candidate_identity_string(final_candidate) != candidate_identity_string(captured_candidate)
-    ):
+    if dict(final_candidate) != dict(captured_candidate) or candidate_identity_string(
+        final_candidate
+    ) != candidate_identity_string(captured_candidate):
         raise VerificationError("candidate identity changed during installed acceptance")
+
+
+def _verify_w20a_engineering(
+    venv_python: Path,
+    entrypoint: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    _run(
+        "engineering-import",
+        (str(venv_python), "-c", "import agent.engineering"),
+        cwd=cwd,
+        environment=environment,
+    )
+    listed = parse_json_output(
+        _run(
+            "engineering-list",
+            (str(entrypoint), "test", "list", "--json"),
+            cwd=cwd,
+            environment=environment,
+        )
+    )
+    operations = listed.get("operations")
+    if not isinstance(operations, list) or not any(
+        isinstance(item, dict) and item.get("operation_id") == "acceptance.installed-package" for item in operations
+    ):
+        raise VerificationError("installed Engineering registry omitted acceptance.installed-package")
+    described = parse_json_output(
+        _run(
+            "engineering-describe",
+            (str(entrypoint), "test", "describe", "acceptance.installed-package", "--json"),
+            cwd=cwd,
+            environment=environment,
+        )
+    )
+    if (
+        described.get("operation_id") != "acceptance.installed-package"
+        or described.get("available") is not False
+        or described.get("unavailable_reason") != "ENGINEERING_SOURCE_REPOSITORY_REQUIRED"
+    ):
+        raise VerificationError(f"installed Engineering descriptor availability diverged: {described!r}")
+
+
+def _verify_w20c_local_commands(
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    local_first = _run(
+        "commands-local-first",
+        (str(entrypoint), "commands", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    local_second = _run(
+        "commands-local-second",
+        (str(entrypoint), "commands", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    if (
+        local_first.stdout != local_second.stdout
+        or local_first.stderr != local_second.stderr
+        or local_first.stderr
+        or local_second.stderr
+    ):
+        raise VerificationError("installed commands local output is not deterministic")
+    if not local_first.stdout.strip() or "traceback" in local_first.stdout.casefold() or "traceback" in local_first.stderr.casefold():
+        raise VerificationError("installed commands local output is not a clean local contract")
+    local_lines = [line for line in local_first.stdout.splitlines() if line.strip()]
+    if not local_lines or any(
+        re.fullmatch(r"\d+\.\s+.+\s+-\s+.+", line) is None
+        for line in local_lines
+    ):
+        raise VerificationError("installed commands local stdout diverged from the numbered projection contract")
+
+
+def _verify_w20c_json_commands(
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    json_first = _run(
+        "commands-json-first",
+        (str(entrypoint), "commands", "--json", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    json_second = _run(
+        "commands-json-second",
+        (str(entrypoint), "commands", "--json", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    if json_first.stdout != json_second.stdout or json_first.stderr or json_second.stderr:
+        raise VerificationError("installed commands --json is not stable JSON-only output")
+    json_payload = parse_json_output(json_first)
+    expected_json_keys = {"query", "candidates", "reasons", "semantic_requested", "semantic_used"}
+    if set(json_payload) != expected_json_keys:
+        raise VerificationError(f"installed commands --json schema diverged: {json_payload!r}")
+    if (
+        not isinstance(json_payload["query"], str)
+        or not isinstance(json_payload["candidates"], list)
+        or not isinstance(json_payload["reasons"], list)
+        or not isinstance(json_payload["semantic_requested"], bool)
+        or not isinstance(json_payload["semantic_used"], bool)
+    ):
+        raise VerificationError(f"installed commands --json value types diverged: {json_payload!r}")
+
+
+def _verify_w20c_mcp_discovery(
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    help_result = _run(
+        "mcp-command-help",
+        (str(entrypoint), "--help"),
+        cwd=cwd,
+        environment=environment,
+    )
+    if "mcp" not in help_result.stdout.casefold():
+        raise VerificationError("installed parser/help omitted the MCP command")
+    mcp_discovery = parse_json_output(
+        _run(
+            "mcp-command-discovery",
+            (str(entrypoint), "commands", "mcp engineering", "--json", "--home", str(app_home)),
+            cwd=cwd,
+            environment=environment,
+        )
+    )
+    candidates = mcp_discovery.get("candidates")
+    if not isinstance(candidates, list) or not any(
+        isinstance(item, dict)
+        and isinstance(item.get("entry"), dict)
+        and item["entry"].get("preferred_invocation") == "mcp engineering"
+        for item in candidates
+    ):
+        raise VerificationError("installed Discovery metadata omitted the MCP command")
+
+
+def _verify_w20c_completion(
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    completion_first = _run(
+        "completion-powershell-first",
+        (str(entrypoint), "completion", "powershell", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    completion_second = _run(
+        "completion-powershell-second",
+        (str(entrypoint), "completion", "powershell", "--home", str(app_home)),
+        cwd=cwd,
+        environment=environment,
+    )
+    completion = completion_first.stdout
+    if completion != completion_second.stdout or completion_first.stderr or completion_second.stderr:
+        raise VerificationError("installed PowerShell completion is not deterministic or pure")
+    if (
+        "Register-ArgumentCompleter -Native" not in completion
+        or "-CommandName 'llm-agent'" not in completion
+        or "$wordToComplete" not in completion
+        or "$commandAst" not in completion
+        or "$cursorPosition" not in completion
+        or "CommandElements" not in completion
+        or "Extent.StartOffset" not in completion
+        or "$prior" not in completion
+        or "$prefix" not in completion
+        or "CompletionResult" not in completion
+        or "Get-ChildItem" not in completion
+        or "Select-Object -SkipLast" in completion
+        or "traceback" in completion.casefold()
+        or "traceback" in completion_first.stderr.casefold()
+        or "traceback" in completion_second.stderr.casefold()
+    ):
+        raise VerificationError("installed PowerShell completion is not a native AST completer")
+
+
+def _verify_w20c_base_surfaces(
+    venv_python: Path,
+    entrypoint: Path,
+    app_home: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Author the cumulative base probes that do not require MCP or a model."""
+
+    before_cwd = snapshot_tree(cwd)
+    before_home = snapshot_tree(app_home)
+    home_existed = app_home.exists()
+    base_environment = dict(environment)
+    # These probes must remain meaningful even when the caller's shell has a
+    # provider endpoint configured.  The local/PowerShell surfaces are not
+    # authorized to consult one.
+    base_environment.pop("LLM_AGENT_API_URL", None)
+
+    _run(
+        "discovery-import",
+        (str(venv_python), "-c", "import agent.discovery"),
+        cwd=cwd,
+        environment=base_environment,
+    )
+    _run(
+        "build-parser",
+        (
+            str(venv_python),
+            "-c",
+            "from agent.interfaces.cli.parser import build_parser; build_parser()",
+        ),
+        cwd=cwd,
+        environment=base_environment,
+    )
+    _verify_w20c_local_commands(entrypoint, app_home, cwd, base_environment)
+    _verify_w20c_json_commands(entrypoint, app_home, cwd, base_environment)
+    _verify_w20c_mcp_discovery(entrypoint, app_home, cwd, base_environment)
+    _verify_w20c_completion(entrypoint, app_home, cwd, base_environment)
+
+    if snapshot_tree(cwd) != before_cwd:
+        raise VerificationError("base Discovery/completion probes wrote outside the app home")
+    if snapshot_tree(app_home) != before_home or app_home.exists() != home_existed:
+        raise VerificationError("base Discovery/completion probes mutated config/profile state")
+
+
+def _verify_w20c_missing_mcp_extra(
+    entrypoint: Path,
+    workspace: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> None:
+    result = _run_expected_failure(
+        "mcp-missing-extra",
+        (str(entrypoint), "mcp", "engineering", "--workspace", str(workspace)),
+        cwd=cwd,
+        environment=environment,
+    )
+    reason = "ENGINEERING_MCP_EXTRA_REQUIRED"
+    if result.returncode != 2 or result.stdout or not result.stderr.startswith(f"{reason}:"):
+        raise VerificationError(
+            "installed MCP missing-extra degradation diverged: "
+            f"exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
 
 
 def verify_installed_package(
@@ -3024,22 +3280,15 @@ def verify_installed_package(
         external_cwd.mkdir()
         workspace.mkdir()
         sentinel = external_cwd / "sentinel.txt"
-        (workspace / "notes.txt").write_text(
-            "SLICE_A1_EVIDENCE: nota permitida.\n", encoding="utf-8"
-        )
-        (workspace / "facts.md").write_text(
-            "SLICE_A2_EVIDENCE: dado encontrado.\n", encoding="utf-8"
-        )
-        (temp / "outside.txt").write_text(
-            "outside-secret-must-not-be-read\n", encoding="utf-8"
-        )
+        (workspace / "notes.txt").write_text("SLICE_A1_EVIDENCE: nota permitida.\n", encoding="utf-8")
+        (workspace / "facts.md").write_text("SLICE_A2_EVIDENCE: dado encontrado.\n", encoding="utf-8")
+        (temp / "outside.txt").write_text("outside-secret-must-not-be-read\n", encoding="utf-8")
         probe_script = external_cwd / "installed_probe.py"
         sample = workspace / "sample.py"
         sentinel.write_text("outside-workspace-sentinel\n", encoding="utf-8")
         probe_script.write_text(INSTALLED_PROBE_SOURCE, encoding="utf-8")
         sample.write_text(
-            "def evaluate(expression: str) -> object:\n"
-            "    return eval(expression)\n",
+            "def evaluate(expression: str) -> object:\n    return eval(expression)\n",
             encoding="utf-8",
         )
         _prepare_local_history_workspace(workspace, sample)
@@ -3115,6 +3364,25 @@ def verify_installed_package(
             external_cwd,
             runtime_environment,
         )
+        _verify_w20a_engineering(
+            venv_python,
+            entrypoint,
+            external_cwd,
+            runtime_environment,
+        )
+        _verify_w20c_base_surfaces(
+            venv_python,
+            entrypoint,
+            temp / "w20c-base-home",
+            external_cwd,
+            runtime_environment,
+        )
+        _verify_w20c_missing_mcp_extra(
+            entrypoint,
+            workspace,
+            external_cwd,
+            runtime_environment,
+        )
         _verify_interactive_dependency(
             venv_python,
             external_cwd,
@@ -3138,9 +3406,7 @@ def verify_installed_package(
         cli_thread = threading.Thread(target=cli_server.serve_forever, daemon=True)
         cli_thread.start()
         cli_environment = dict(runtime_environment)
-        cli_environment["LLM_AGENT_API_URL"] = (
-            f"http://127.0.0.1:{cli_server.server_port}/v1/chat/completions"
-        )
+        cli_environment["LLM_AGENT_API_URL"] = f"http://127.0.0.1:{cli_server.server_port}/v1/chat/completions"
         try:
             results: dict[str, CommandResult] = {}
             for name, command in installed_cli_commands(entrypoint, workspace):
@@ -3165,9 +3431,7 @@ def verify_installed_package(
             _verify_greeting(parse_json_output(results["run"]))
             status_payload = parse_json_output(results["task-status"])
             if status_payload.get("status") != "absent" or status_payload.get("resumable") is not False:
-                raise VerificationError(
-                    f"task status instalado nao classificou ausencia: {status_payload!r}"
-                )
+                raise VerificationError(f"task status instalado nao classificou ausencia: {status_payload!r}")
         finally:
             cli_server.shutdown()
             cli_server.server_close()
@@ -3187,9 +3451,7 @@ def verify_installed_package(
         )
         resume_payload = parse_json_output(resume_result)
         if resume_payload.get("success") is not False or resume_payload.get("reason_code") != "CHECKPOINT_ABSENT":
-            raise VerificationError(
-                f"task resume instalado nao recusou ausencia explicitamente: {resume_payload!r}"
-            )
+            raise VerificationError(f"task resume instalado nao recusou ausencia explicitamente: {resume_payload!r}")
         if snapshot_tree(external_cwd) != cwd_before:
             raise VerificationError("A CLI escreveu no diretório externo de execução.")
         if snapshot_tree(workspace) != workspace_before:
@@ -3248,7 +3510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 mode=installation_mode(arguments.offline_diagnostic).name,
                 detail=str(exc),
                 project_root=arguments.project_root,
-            )
+            ),
         )
         print(f"Installed package verification failed: {exc}", file=sys.stderr)
         _emit_failure_annotation(str(exc))

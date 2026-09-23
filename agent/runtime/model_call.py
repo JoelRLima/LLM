@@ -25,6 +25,12 @@ from agent.runtime.model_call_support import context_for_session
 from agent.runtime.task_policy import TaskPolicyError
 
 
+def _complete_gateway(gateway: Any, request: Any) -> Any:
+    """Delegate one admitted completion through the canonical transport owner."""
+
+    return gateway.complete(request)
+
+
 class ModelCallService:
     """Own the common model-call lifecycle while delegating transport details."""
 
@@ -119,7 +125,7 @@ class ModelCallService:
         )
 
     def _complete_provider(self, request: Any) -> Any:
-        return self.gateway.complete(request)
+        return _complete_gateway(self.gateway, request)
 
     def _outcome(
         self,

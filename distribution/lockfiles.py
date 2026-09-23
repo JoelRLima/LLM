@@ -58,9 +58,11 @@ def _consume_line(
     entries: list[_Entry],
     current: _Entry | None,
     saw_binary_option: bool,
+    *,
+    allow_duplicate_binary_option: bool = False,
 ) -> tuple[_Entry | None, bool]:
     if line == "--only-binary :all:":
-        if saw_binary_option:
+        if saw_binary_option and not allow_duplicate_binary_option:
             raise LockValidationError(f"duplicate binary-only option at line {line_number}")
         return current, True
 
@@ -87,7 +89,7 @@ def _finish_parse(entries: list[_Entry], current: _Entry | None, saw_binary_opti
     return tuple(entries)
 
 
-def _parse(path: Path) -> tuple[_Entry, ...]:
+def _parse(path: Path, *, allow_duplicate_binary_option: bool = False) -> tuple[_Entry, ...]:
     lines = _read_lines(path)
     entries: list[_Entry] = []
     current: _Entry | None = None
@@ -102,6 +104,7 @@ def _parse(path: Path) -> tuple[_Entry, ...]:
             entries,
             current,
             saw_binary_option,
+            allow_duplicate_binary_option=allow_duplicate_binary_option,
         )
     return _finish_parse(entries, current, saw_binary_option)
 

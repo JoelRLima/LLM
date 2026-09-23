@@ -1,30 +1,40 @@
 """Deterministic aggregate and comparison projections for W19 receipts."""
-
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from statistics import median
+from typing import cast
 
 from agent.evaluation.receipt import (
     EVALUATION_RECEIPT_INVALID,
     EvaluationReceiptError,
     EvaluationReceiptV1,
+    PracticalEvidenceV1,
     validate_evaluation_receipt,
 )
 
 EVALUATION_COMPARISON_INCOMPATIBLE = "EVALUATION_COMPARISON_INCOMPATIBLE"
-
-
+class PracticalComparisonStatus(str, Enum):
+    COMPARABLE = "comparable"
+    NOT_COMPARABLE = "not_comparable"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+@dataclass(frozen=True, slots=True)
+class PracticalComparison:
+    status: PracticalComparisonStatus
+    reason_code: str
+    left_receipt_id: str
+    right_receipt_id: str
+    provenance: tuple[str, ...]
+    def to_dict(self) -> dict[str, object]:
+        return {"status": self.status.value, "reason_code": self.reason_code, "left_receipt_id": self.left_receipt_id, "right_receipt_id": self.right_receipt_id, "provenance": list(self.provenance)}
 class EvaluationComparisonError(ValueError):
     """Raised when receipt groups are not semantically comparable."""
-
     def __init__(self, reason_code: str, message: str) -> None:
         self.reason_code = reason_code
         super().__init__(message)
-
-
 def _receipts(values: Iterable[EvaluationReceiptV1 | Mapping[str, object]]) -> tuple[EvaluationReceiptV1, ...]:
     result: list[EvaluationReceiptV1] = []
     for value in values:
@@ -35,15 +45,11 @@ def _receipts(values: Iterable[EvaluationReceiptV1 | Mapping[str, object]]) -> t
                 raise
             raise EvaluationComparisonError(EVALUATION_RECEIPT_INVALID, "invalid evaluation receipt") from exc
     return tuple(result)
-
-
 def _verdict_value(value: object) -> str:
     raw = getattr(value, "value", value)
     if raw not in {"correct", "partial", "incorrect", "not_rated"}:
         raise EvaluationComparisonError(EVALUATION_COMPARISON_INCOMPATIBLE, "invalid human verdict")
     return str(raw)
-
-
 @dataclass(frozen=True, slots=True)
 class EvaluationAggregate:
     profile_id: str
@@ -57,37 +63,15 @@ class EvaluationAggregate:
     median_accounted_tokens: float | None
     failure_code_counts: Mapping[str, int]
     human_verdict_counts: Mapping[str, int]
-
     def to_dict(self) -> dict[str, object]:
-        return {
-            "profile_id": self.profile_id,
-            "variant_fingerprint": self.variant_fingerprint,
-            "run_count": self.run_count,
-            "passed_count": self.passed_count,
-            "pass_rate": self.pass_rate,
-            "median_duration_ms": self.median_duration_ms,
-            "median_model_calls": self.median_model_calls,
-            "median_tool_calls": self.median_tool_calls,
-            "median_accounted_tokens": self.median_accounted_tokens,
-            "failure_code_counts": dict(self.failure_code_counts),
-            "human_verdict_counts": dict(self.human_verdict_counts),
-        }
-
-
+        return {"profile_id": self.profile_id, "variant_fingerprint": self.variant_fingerprint, "run_count": self.run_count, "passed_count": self.passed_count, "pass_rate": self.pass_rate, "median_duration_ms": self.median_duration_ms, "median_model_calls": self.median_model_calls, "median_tool_calls": self.median_tool_calls, "median_accounted_tokens": self.median_accounted_tokens, "failure_code_counts": dict(self.failure_code_counts), "human_verdict_counts": dict(self.human_verdict_counts)}
 @dataclass(frozen=True, slots=True)
 class EvaluationComparison:
     experiment_id: str
     scenario_set_identity: str
     aggregates: tuple[EvaluationAggregate, ...]
-
     def to_dict(self) -> dict[str, object]:
-        return {
-            "experiment_id": self.experiment_id,
-            "scenario_set_identity": self.scenario_set_identity,
-            "aggregates": [aggregate.to_dict() for aggregate in self.aggregates],
-        }
-
-
+        return {"experiment_id": self.experiment_id, "scenario_set_identity": self.scenario_set_identity, "aggregates": [aggregate.to_dict() for aggregate in self.aggregates]}
 def aggregate_receipts(
     receipts: Iterable[EvaluationReceiptV1 | Mapping[str, object]],
     *,
@@ -98,17 +82,11 @@ def aggregate_receipts(
         raise EvaluationComparisonError(EVALUATION_COMPARISON_INCOMPATIBLE, "cannot aggregate an empty receipt group")
     identity = {(item.variant.profile_id, item.variant.fingerprint) for item in values}
     if len(identity) != 1:
-        raise EvaluationComparisonError(
-            EVALUATION_COMPARISON_INCOMPATIBLE,
-            "one aggregate cannot combine profile or variant identities",
-        )
+        raise EvaluationComparisonError(EVALUATION_COMPARISON_INCOMPATIBLE, "one aggregate cannot combine profile or variant identities")
     experiment_ids = {item.experiment_id for item in values}
     trial_ids = {item.trial_id for item in values}
     if len(experiment_ids) != 1 or len(trial_ids) != 1:
-        raise EvaluationComparisonError(
-            EVALUATION_COMPARISON_INCOMPATIBLE,
-            "one aggregate cannot combine experiment or trial identities",
-        )
+        raise EvaluationComparisonError(EVALUATION_COMPARISON_INCOMPATIBLE, "one aggregate cannot combine experiment or trial identities")
     profile_id, fingerprint = next(iter(identity))
     human_counts: Counter[str] = Counter()
     if human_verdicts is not None:
@@ -120,11 +98,9 @@ def aggregate_receipts(
         for item in values
         for code in item.technical.evaluator_failure_codes
     )
-
     def _median(name: str) -> float | None:
         data = [getattr(item.measurements, name) for item in values]
         return float(median(data)) if data else None
-
     return EvaluationAggregate(
         profile_id=profile_id,
         variant_fingerprint=fingerprint,
@@ -138,27 +114,28 @@ def aggregate_receipts(
         failure_code_counts=dict(sorted(failures.items())),
         human_verdict_counts=dict(sorted(human_counts.items())),
     )
-
-
 def _scenario_set_identity(values: Sequence[EvaluationReceiptV1]) -> str:
+    practical_identities = {
+        str(item.practical.environment_identity.get("scenario_set_identity"))
+        for item in values
+        if isinstance(item.practical, PracticalEvidenceV1)
+        and isinstance(item.practical.environment_identity.get("scenario_set_identity"), str)
+    }
+    if len(practical_identities) == 1:
+        return next(iter(practical_identities))
     return "|".join(sorted({f"{item.scenario_id}:{item.scenario_arm_id}" for item in values}))
-
-
 def _collect_groups(
     receipts: "Iterable[EvaluationReceiptV1 | Mapping[str, object]] | Mapping[str, Iterable[EvaluationReceiptV1 | Mapping[str, object]]]",
     identity_values: list[tuple[object | None, object | None]],
 ) -> list[tuple[str | None, tuple["EvaluationReceiptV1", ...]]]:
     """Convert receipts (mapping or iterable) to validated groups with collected identity values."""
-
     def _validated(value: "EvaluationReceiptV1 | Mapping[str, object]") -> "EvaluationReceiptV1":
         identity_values.append(_identity_fields(value))
         return validate_evaluation_receipt(value)
-
     def _identity_fields(value: object) -> tuple[object | None, object | None]:
         if not isinstance(value, Mapping):
             return None, None
         return value.get("candidate_identity"), value.get("model_identity", value.get("model_config_identity"))
-
     groups: list[tuple[str | None, tuple["EvaluationReceiptV1", ...]]] = []
     if isinstance(receipts, Mapping):
         for profile_id, group in receipts.items():
@@ -171,8 +148,6 @@ def _collect_groups(
             by_identity.setdefault((item.variant.profile_id, item.variant.fingerprint), []).append(item)
         groups = [(key[0], tuple(value)) for key, value in sorted(by_identity.items())]
     return groups
-
-
 def _validate_groups_compatibility(
     groups: list[tuple[str | None, tuple["EvaluationReceiptV1", ...]]],
     identity_values: list[tuple[object | None, object | None]],
@@ -203,8 +178,6 @@ def _validate_groups_compatibility(
     if selected_experiment is None or observed_experiments != {selected_experiment}:
         raise EvaluationComparisonError(EVALUATION_COMPARISON_INCOMPATIBLE, "receipt groups have incompatible experiments")
     return selected_experiment, selected_scenario_identity
-
-
 def compare_receipt_groups(
     receipts: Iterable[EvaluationReceiptV1 | Mapping[str, object]] | Mapping[str, Iterable[EvaluationReceiptV1 | Mapping[str, object]]],
     *,
@@ -227,30 +200,101 @@ def compare_receipt_groups(
         candidate_identity=candidate_identity,
         model_identity=model_identity,
     )
-    aggregates = tuple(
-        aggregate_receipts(group, human_verdicts=human_verdicts)
-        for _, group in groups
-    )
+    aggregates = tuple(aggregate_receipts(group, human_verdicts=human_verdicts) for _, group in groups)
     return EvaluationComparison(
         experiment_id=selected_experiment,
         scenario_set_identity=selected_scenario_identity,
         aggregates=aggregates,
     )
-
-
 def _canonical_identity(value: object) -> str:
     if isinstance(value, Mapping):
         import json
-
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return str(value)
+def compare_practical_receipts(
+    left: EvaluationReceiptV1 | Mapping[str, object],
+    right: EvaluationReceiptV1 | Mapping[str, object],
+) -> PracticalComparison:
+    """Compare PRACTICAL evidence without converting incompatibility to a tie."""
+    first = validate_evaluation_receipt(left)
+    second = validate_evaluation_receipt(right)
+    first_evidence = first.practical
+    second_evidence = second.practical
+    provenance = (first.receipt_id, second.receipt_id)
+    if not isinstance(first_evidence, PracticalEvidenceV1) or not isinstance(second_evidence, PracticalEvidenceV1):
+        return PracticalComparison(PracticalComparisonStatus.INSUFFICIENT_EVIDENCE, "PRACTICAL_EVIDENCE_MISSING", *provenance, provenance)
+    identity_fields = (
+        ("candidate_identity", first_evidence.candidate_identity, second_evidence.candidate_identity),
+        ("operation_identity", first_evidence.operation_identity, second_evidence.operation_identity),
+        ("environment_identity", first_evidence.environment_identity, second_evidence.environment_identity),
+        ("inputs", first_evidence.inputs, second_evidence.inputs),
+    )
+    mismatched = tuple(name for name, left_value, right_value in identity_fields if left_value != right_value)
+    if mismatched:
+        return PracticalComparison(PracticalComparisonStatus.NOT_COMPARABLE, "PRACTICAL_IDENTITY_MISMATCH:" + ",".join(mismatched), *provenance, provenance)
+    return PracticalComparison(PracticalComparisonStatus.COMPARABLE, "PRACTICAL_IDENTITIES_COMPATIBLE", *provenance, provenance)
 
 
+def compare_practical_reports(
+    current: Mapping[str, object],
+    reference: Mapping[str, object],
+    *,
+    scenario_ids: tuple[str, ...],
+    scenario_set_identity: str,
+    experiment_id: str,
+    envelope_builder: Callable[[Mapping[str, object]], Iterable[Mapping[str, object]]],
+    receipt_comparer: Callable[..., EvaluationComparison],
+) -> dict[str, object]:
+    """Compare two already-measured PRACTICAL reports by canonical identity."""
+
+    def valid(report: Mapping[str, object]) -> bool:
+        scenarios = cast(Sequence[object], report.get("scenarios", ()))
+        return (
+            report.get("execution_complete") is True
+            and report.get("candidate_unchanged") is True
+            and report.get("candidate_start_identity") == report.get("candidate_end_identity")
+            and isinstance(report.get("candidate_start_identity"), str)
+            and isinstance(report.get("model_identity"), Mapping)
+            and len(scenarios) == len(scenario_ids)
+            and tuple(item.get("scenario_id") for item in scenarios if isinstance(item, Mapping)) == scenario_ids
+        )
+
+    candidate = current.get("candidate_start_identity")
+    model = current.get("model_identity")
+    result: dict[str, object] = {
+        "schema_version": 1,
+        "comparison_experiment_id": experiment_id,
+        "profiles": ("current", "persona-reference-w18"),
+        "scenario_set_identity": scenario_set_identity,
+        "candidate_identity": candidate,
+        "model_identity": model,
+        "comparison_complete": False,
+    }
+    if not valid(current) or not valid(reference) or candidate != reference.get("candidate_start_identity") or model != reference.get("model_identity") or current.get("practical_fixture_identity") != reference.get("practical_fixture_identity"):
+        result.update({"status": "not_comparable", "reason_code": EVALUATION_COMPARISON_INCOMPATIBLE})
+        return result
+    try:
+        comparison = receipt_comparer(
+            {"current": tuple(envelope_builder(current)), "persona-reference-w18": tuple(envelope_builder(reference))},
+            scenario_set_identity=scenario_set_identity,
+            experiment_id=experiment_id,
+            candidate_identity=candidate,
+            model_identity=model,
+        )
+    except (EvaluationComparisonError, ValueError) as exc:
+        result.update({"status": "not_comparable", "reason_code": getattr(exc, "reason_code", EVALUATION_COMPARISON_INCOMPATIBLE)})
+        return result
+    result.update({"status": "comparable", "comparison_complete": True, "comparison": comparison.to_dict()})
+    return result
 __all__ = [
     "EVALUATION_COMPARISON_INCOMPATIBLE",
     "EvaluationAggregate",
     "EvaluationComparison",
     "EvaluationComparisonError",
+    "PracticalComparison",
+    "PracticalComparisonStatus",
     "aggregate_receipts",
+    "compare_practical_receipts",
+    "compare_practical_reports",
     "compare_receipt_groups",
 ]

@@ -56,6 +56,16 @@ W19_CANDIDATE_PATH_SURFACE = (
     "distribution/provenance.py",
 )
 
+# W20 is an additive surface for callers materialising the current integrated
+# candidate.  W19 remains unchanged for historical provenance checks.
+W20_CANDIDATE_PATH_SURFACE = (
+    *W19_CANDIDATE_PATH_SURFACE,
+    "pyproject.toml",
+    "distribution/lockfiles.py",
+    "distribution/mcp-windows-py312.lock",
+    "distribution/mcp_lockfiles.py",
+)
+
 
 class ProvenanceError(ValueError):
     """Raised when the candidate cannot be isolated and represented safely."""
@@ -337,6 +347,7 @@ __all__ = [
     "CandidateTree",
     "ProvenanceError",
     "W19_CANDIDATE_PATH_SURFACE",
+    "W20_CANDIDATE_PATH_SURFACE",
     "inventory_candidate_paths",
     "isolated_candidate_tree",
     "materialize_candidate_tree",

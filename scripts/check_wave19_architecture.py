@@ -291,7 +291,11 @@ def _check_default_home_shape(root: Path) -> list[ArchitectureViolation]:
 
 def _check_guarded_writers(root: Path) -> list[ArchitectureViolation]:
     required = {
-        ("agent/application.py", "create"): ("HomeLifecycleLease.begin_startup", "StorageBootstrap().prepare", "home_lease.activate"),
+        ("agent/application.py", "create"): (
+            "HomeLifecycleLease.begin_startup",
+            "StorageBootstrap().prepare",
+            "home_lease.activate",
+        ),
         ("agent/interfaces/cli/maintenance.py", "initialize_config"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
         ("agent/interfaces/cli/maintenance.py", "run_state"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
         ("agent/interfaces/cli/maintenance.py", "run_config"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),

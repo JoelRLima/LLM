@@ -8,14 +8,13 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from agent.evaluation.scripted_gateway_logic import (
-    scripted_plan_response,
-    scripted_response,
-)
+from agent.evaluation.contracts import FaultController, FaultEffect
+from agent.evaluation.scripted_gateway_logic import scripted_plan_response, scripted_response
 from agent.evaluation.scripted_semantic_logic import scripted_semantic_response
 from agent.evaluation.trace import RecordingGateway
 from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent
 from agent.llm.decision_contract import ModelRequestContract
+from agent.runtime.model_call import _complete_gateway
 from agent.runtime.outcome_contracts import MAX_VERIFIER_EVIDENCE_IDS
 from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
 
@@ -244,6 +243,33 @@ class ScriptedEvaluationGateway:
         return json.dumps({"action": "define_spec", "spec": spec.to_dict()}, ensure_ascii=False)
 
 
+class FaultingEvaluationGateway:
+    """Exact W20 provider fault wrapper; all untriggered surfaces delegate."""
+
+    def __init__(self, gateway: object, controller: FaultController) -> None:
+        self.gateway = gateway
+        self.controller = controller
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.gateway, name)
+
+    def complete(self, request: object) -> object:
+        effect = self.controller.next()
+        if effect is FaultEffect.TIMEOUT:
+            from agent.llm.errors import ModelTimeoutError
+
+            raise ModelTimeoutError("Injected W20 model timeout.")
+        if effect is FaultEffect.PROVIDER_ERROR:
+            from agent.llm.errors import ModelProviderError
+
+            raise ModelProviderError("Injected W20 provider failure.", public_message="Injected W20 provider failure.")
+        if effect is FaultEffect.INVALID_STRUCTURED_RESPONSE:
+            from agent.llm.contracts import ModelResponse
+
+            return ModelResponse(content="{", provider_metadata={"observed_provider_model_id": "scripted-evaluation"})
+        return _complete_gateway(self.gateway, request)
+
+
 def _scripted_factory(
     objective: str,
     _workspace: Path,
@@ -266,4 +292,4 @@ def bind_fixture_marker(
     return partial(factory, fixture_marker=marker)
 
 
-__all__ = ["ScriptedEvaluationGateway", "bind_fixture_marker"]
+__all__ = ["FaultingEvaluationGateway", "ScriptedEvaluationGateway", "bind_fixture_marker"]

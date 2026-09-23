@@ -7,12 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-if TYPE_CHECKING:
-    from agent.evaluation.feedback import FeedbackService
-    from agent.interaction.service import InteractionService
-    from agent.interaction.types import AgentInteractionResult
-    from agent.outputs.service import OutputService
-
 from agent.actions import DEFAULT_ACTION_CATALOG, ActionCatalog
 from agent.application_cleanup import StartupCleanupError, abort_startup
 from agent.application_interactive import InteractiveCancellationMixin
@@ -22,6 +16,7 @@ from agent.application_run import run_locked
 from agent.application_services.queries import ReadOnlyWorkspaceQueryService
 from agent.application_wiring import (
     apply_workspace_paths,
+    build_application_extensions,
     prepare_application_environment,
     wire_runtime_orchestration,
 )
@@ -47,12 +42,16 @@ from agent.runtime.task_directives import TaskRunDirective
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills import load_skill_registry
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
 from agent.tools.invocation_gateway import ToolInvocationGateway
 from agent.tools.tool_registry import ToolRegistry
 from agent.variants.models import VariantComposition, VariantSeam
 from agent.variants.preflight import validate_variant_composition
+
+if TYPE_CHECKING:
+    from agent.evaluation.feedback import FeedbackService
+    from agent.interaction.service import InteractionService
+    from agent.interaction.types import AgentInteractionResult
+    from agent.outputs.service import OutputService
 
 _RUN_LOCK = threading.RLock()
 
@@ -79,6 +78,7 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
         task_authority: TaskAuthoritySnapshot | None = None,
         observation_session: ObservationSession | None = None,
         observability_mode: ObservabilityMode | str = ObservabilityMode.NORMAL,
+        model_safe_engineering: Any | None = None,
     ) -> None:
         self.paths = paths
         self.workspace = workspace
@@ -98,6 +98,7 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
         self.task_authority = task_authority
         self.observation_session = observation_session
         self.observability_mode = resolve_observability_mode(observability_mode)
+        self.model_safe_engineering = model_safe_engineering
         self._owns_logging = owns_logging
         self._closed = self._task_attempted = False
         self._interaction_service: InteractionService | None = None
@@ -136,13 +137,10 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
         try:
             StorageBootstrap().prepare(app_paths)
             home_lease.activate()
-            selected_composition = validate_variant_composition(
-                variant_composition or VariantComposition.production_current()
-            )
+            selected_composition = validate_variant_composition(variant_composition or VariantComposition.production_current())
             config, workspace_context, workspace_paths, instance_lock = prepare_application_environment(
                 app_paths, workspace, config_path, profile, overrides
             )
-            assert instance_lock is not None
             if configure_logging:
                 setup_logger(debug_mode, log_file=app_paths.log_file)
                 logging_acquired = True
@@ -150,8 +148,7 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
             selected_approval = approval_policy or RequireExplicitApproval()
             session = ChatSession(config["default_system_prompt"], config, gateway=gateway)
             persona_router = build_persona_router(
-                selected_composition.selection(VariantSeam.PERSONA_ROUTER),
-                session=session,
+                selected_composition.selection(VariantSeam.PERSONA_ROUTER), session=session,
             )
             skill_registry = load_skill_registry(
                 base_dir=workspace_context.root,
@@ -160,9 +157,11 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
                 config=config,
                 approval_policy=selected_approval,
             )
-            extension_bootstrap = ApplicationExtensionBootstrap(
-                app_paths, workspace_context.workspace_id, workspace_context.root
-            ).build(BuiltinToolAdapter(skill_registry))
+            model_safe_engineering, extension_bootstrap = build_application_extensions(
+                app_paths,
+                workspace_context,
+                skill_registry,
+            )
             runtime = wire_runtime_orchestration(
                 workspace_context=workspace_context,
                 workspace_paths=workspace_paths,
@@ -192,6 +191,7 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
                 application_authority=runtime.application_authority,
                 task_authority=runtime.task_authority,
                 observability_mode=resolve_observability_mode(observability_mode),
+                model_safe_engineering=model_safe_engineering,
             )
             if operational_mode is not None:
                 app.orchestrator.set_operational_mode(operational_mode)

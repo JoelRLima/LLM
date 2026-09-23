@@ -27,6 +27,7 @@ IGNORED_ROOT_PARTS = {
     ".agents",
     ".agent-local",
     ".audit-local",
+    ".tmp",
     ".pytest_temp",
     ".pytest_tmp",
     ".temp_analysis",

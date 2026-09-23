@@ -64,7 +64,9 @@ def get_shell(
             controller = controller_holder["controller"]
             return f"state={controller.state.value}" if controller is not None else "state=STARTING"
 
-        shell_holder["shell"] = InteractiveShell(registry=DEFAULT_CLI_ACTION_REGISTRY, toolbar=toolbar)
+        shell = InteractiveShell(registry=DEFAULT_CLI_ACTION_REGISTRY, toolbar=toolbar)
+        shell_holder["shell"] = shell
+        shell.set_f2_handler(None)
     return shell_holder["shell"]
 
 
@@ -77,6 +79,17 @@ def prompt_line(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., st
         return "" if value is None else str(value)
 
     return read_prompt
+
+
+def prompt_path(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., str] | None:
+    if not enabled:
+        return None
+
+    def read_path(message: str, default: str = "") -> str:
+        value = get_shell().prompt_path(message, default=default)
+        return "" if value is None else str(value)
+
+    return read_path
 
 
 def recover_missing_config(
@@ -253,6 +266,7 @@ __all__ = [
     "configure",
     "get_shell",
     "prompt_line",
+    "prompt_path",
     "recover_missing_config",
     "settle",
 ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from agent.evaluation.contracts import CapabilityScenario, FileExpectation, ScenarioExpectation
 from agent.evaluation.practical_fixture_preparation import (
@@ -10,6 +10,7 @@ from agent.evaluation.practical_fixture_preparation import (
     prepare_practical_scenario,
     prepare_practical_workspace,
 )
+from agent.evaluation.scripted_gateway import RecordingGateway, ScriptedEvaluationGateway
 from agent.llm.identity import canonical_json, sha256_digest
 
 PRACTICAL_SET_VERSION = "PRACTICAL-V1"
@@ -266,11 +267,32 @@ def practical_fixture_identity(
     return sha256_digest(canonical_json(payload))
 
 
+class _PracticalGatewayFactory:
+    """Build one fixture-bound scripted gateway for each measured scenario."""
+
+    def __init__(
+        self,
+        scenario: CapabilityScenario,
+        captured: dict[str, ScriptedEvaluationGateway],
+        gateway_decorator: Callable[[Any], Any] | None = None,
+    ) -> None:
+        self.scenario = scenario
+        self.captured = captured
+        self.gateway_decorator = gateway_decorator
+
+    def __call__(self, objective: str, _workspace: object) -> Any:
+        scripted = ScriptedEvaluationGateway(objective, fixture_marker=self.scenario.scenario_id)
+        self.captured["gateway"] = scripted
+        provider = self.gateway_decorator(scripted) if self.gateway_decorator is not None else scripted
+        return RecordingGateway(provider)
+
+
 
 
 __all__ = [
     "PRACTICAL_SET_VERSION",
     "PRACTICAL_V1",
+    "_PracticalGatewayFactory",
     "practical_fixture_identity",
     "prepare_practical_scenario",
     "prepare_practical_workspace",

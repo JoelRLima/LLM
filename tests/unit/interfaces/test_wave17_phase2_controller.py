@@ -280,7 +280,11 @@ def test_run_chat_propagates_failed_shutdown_status_as_nonzero_exit(monkeypatch)
     from agent.interfaces.cli import interactive_session
 
     monkeypatch.setattr(interactive_session.first_run, "is_interactive_terminal", lambda: True)
-    monkeypatch.setattr(interactive_session.first_run, "prepare_chat_workspace", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        interactive_session.first_run,
+        "prepare_chat_workspace",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(
         interactive_session,
         "_run_application_session",

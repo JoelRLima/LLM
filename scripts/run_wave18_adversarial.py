@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
 from agent.runtime import paths as runtime_paths  # noqa: E402
 from agent.runtime.paths import APP_DIRECTORY_NAME, AppPaths  # noqa: E402
 from distribution.provenance import (  # noqa: E402
-    W19_CANDIDATE_PATH_SURFACE,
+    W20_CANDIDATE_PATH_SURFACE,
     ProvenanceError,
     isolated_candidate_tree,
 )
@@ -754,7 +754,7 @@ def _current_canonical_source_tree() -> str:
     """Return the full candidate tree for this exact current worktree."""
 
     try:
-        with isolated_candidate_tree(ROOT, allowed_paths=W19_CANDIDATE_PATH_SURFACE) as candidate:
+        with isolated_candidate_tree(ROOT, allowed_paths=W20_CANDIDATE_PATH_SURFACE) as candidate:
             return str(candidate.tree)
     except ProvenanceError as exc:
         raise ScenarioFailure(f"current candidate provenance is unavailable: {exc}") from exc

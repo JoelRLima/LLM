@@ -256,7 +256,6 @@ uma facade de source/API.
   de fonte limitada para consumidores de compatibilidade e para a boundary de
   health explicitamente suportada; `ConfigRepository` continua sendo o owner
   da configuração viva.
-
 ## Adiado para W8 com evidência bloqueante (histórico; disposições encerradas)
 
 Nenhuma compatibilidade de código produtivo permanece adiada após a Wave 8. A

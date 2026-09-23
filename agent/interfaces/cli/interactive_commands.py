@@ -236,15 +236,27 @@ def show_workspace(text: str, ctx: Any) -> None:
     if query_executor is not None and query_executor.is_busy():
         _ui_print(ctx, "workspace: cancel or wait for the active query before switching")
         return
-    from agent.interfaces.cli.workspace_entry import canonical_workspace, choose_workspace, load_last_workspace
+    from agent.interfaces.cli.workspace_entry import (
+        WorkspaceSelectionCancelled,
+        canonical_workspace,
+        choose_workspace,
+        load_last_workspace,
+    )
+    from agent.interfaces.cli.workspace_recents import load_recent_workspaces
 
     requested = parts[2] if len(parts) == 3 else None
-    target = canonical_workspace(requested) if requested else choose_workspace(
-        console=_output_console(),
-        current=ctx.workspace.root,
-        last_workspace=load_last_workspace(ctx.app_paths),
-        prompt=getattr(ctx, "prompt_line", None),
-    )
+    try:
+        target = canonical_workspace(requested) if requested else choose_workspace(
+            console=_output_console(),
+            current=ctx.workspace.root,
+            last_workspace=load_last_workspace(ctx.app_paths),
+            recent_workspaces=load_recent_workspaces(ctx.app_paths),
+            prompt=getattr(ctx, "prompt_line", None),
+            path_prompt=getattr(ctx, "prompt_path", None),
+        )
+    except WorkspaceSelectionCancelled:
+        _ui_print(ctx, "workspace: seleção cancelada")
+        return
     if target == ctx.workspace.root:
         _ui_print(ctx, "workspace: already active")
         return

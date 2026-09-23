@@ -49,9 +49,15 @@ class WorkspaceToolRegistryComposer:
         materialization: ExtensionRuntimeMaterialization,
         *,
         runtime_identity: RuntimeSnapshotIdentity | None = None,
+        internal_adapters: tuple[ToolAdapter, ...] = (),
     ) -> ExtensionBootstrapResult:
         registry = ToolRegistry(runtime_identity=runtime_identity)
         registry.register_adapter(builtin_adapter)
+        # Reserved internal adapters are composed before extensions.  A
+        # collision here is a construction error; external extensions never
+        # get an opportunity to shadow a canonical internal surface.
+        for adapter in internal_adapters:
+            registry.register_adapter(adapter)
         builtin_names = set(registry.names())
         bindings = tuple(sorted(materialization.bindings, key=lambda item: item.extension_id))
         rejected, diagnostics = self._preflight(bindings, builtin_names, materialization.diagnostics)
@@ -139,10 +145,11 @@ class WorkspaceToolRegistryComposer:
 class ApplicationExtensionBootstrap:
     """Load, resolve, materialize and compose one workspace snapshot."""
 
-    def __init__(self, app_paths: AppPaths, workspace_id: str, workspace_root: str | Path) -> None:
+    def __init__(self, app_paths: AppPaths, workspace_id: str, workspace_root: str | Path, *, internal_adapters: tuple[ToolAdapter, ...] = ()) -> None:
         self.app_paths = app_paths
         self.workspace_id = workspace_id
         self.workspace_root = Path(workspace_root).absolute()
+        self.internal_adapters = internal_adapters
 
     def build(self, builtin_adapter: ToolAdapter) -> ExtensionBootstrapResult:
         empty = ExtensionRuntimeMaterialization()
@@ -169,7 +176,7 @@ class ApplicationExtensionBootstrap:
             self.workspace_root, host_flavor=catalog.host_flavor
         ).materialize(resolved)
         composition = WorkspaceToolRegistryComposer().compose(
-            builtin_adapter, materialization, runtime_identity=runtime_identity
+            builtin_adapter, materialization, runtime_identity=runtime_identity, internal_adapters=self.internal_adapters
         )
         resolution_diagnostics = tuple(
             ExtensionRuntimeDiagnostic(
@@ -208,7 +215,7 @@ class ApplicationExtensionBootstrap:
             safe_message="O subsistema de extensions não pôde ser carregado; builtins preservados.",
         )
         result = WorkspaceToolRegistryComposer().compose(
-            builtin_adapter, materialization, runtime_identity=runtime_identity
+            builtin_adapter, materialization, runtime_identity=runtime_identity, internal_adapters=self.internal_adapters
         )
         return ExtensionBootstrapResult(
             registry=result.registry,

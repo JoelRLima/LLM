@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp==2.2.0",
+]
 ml = [
     "numpy>=1.26,<3",
     "sentence-transformers>=3,<6",

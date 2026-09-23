@@ -172,6 +172,29 @@ def evaluation_context(
     )
 
 
+def ensure_receipt_measurement_identity(
+    scenario_id: str,
+    report: object,
+    *,
+    experiment: EvaluationExperimentContext,
+) -> None:
+    """Fill the measured run identity required by receipt projection."""
+
+    observation = getattr(report, "observation", None)
+    measurement = getattr(observation, "measurement", None)
+    if not isinstance(measurement, dict):
+        return
+    measurement.setdefault("variant_fingerprint", experiment.profile.composition.fingerprint)
+    measurement.setdefault("variant_composition", experiment.profile.composition.normalized_dict())
+    measurement.setdefault("run_id", f"{experiment.experiment_id}:{experiment.trial_id}:{scenario_id}:budget")
+    measurement.setdefault("root_task_id", f"{experiment.experiment_id}:{scenario_id}:root")
+    status = measurement.get("status")
+    if not isinstance(status, str) or not status:
+        status = "blocked"
+        measurement["status"] = status
+    measurement.setdefault("terminal_outcome", status)
+
+
 __all__ = [
     "EVALUATION_COMPOSITION_INVALID",
     "EVALUATION_EXPERIMENT_CONTRACT_VERSION",
@@ -184,4 +207,5 @@ __all__ = [
     "EvaluationVariantProfile",
     "built_in_evaluation_profile",
     "evaluation_context",
+    "ensure_receipt_measurement_identity",
 ]

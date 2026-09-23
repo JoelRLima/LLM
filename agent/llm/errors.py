@@ -13,9 +13,14 @@ class ModelProviderError(ModelGatewayError):
     code = "MODEL_PROVIDER_ERROR"
     layer = "provider"
 
-    def __init__(self, message: str, *, cause: BaseException | None = None) -> None:
-        del message
-        self.public_message = "Model provider request failed."
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause: BaseException | None = None,
+        public_message: str | None = None,
+    ) -> None:
+        self.public_message = public_message or "Model provider request failed."
         super().__init__(self.public_message)
         if cause is not None:
             self.__cause__ = cause

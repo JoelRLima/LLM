@@ -12,7 +12,7 @@ from agent.interfaces.cli.interactive_shell import InteractiveShell
 
 
 def test_registry_completion_uses_preferred_commands_and_preserves_alias_metadata() -> None:
-    assert DEFAULT_CLI_ACTION_REGISTRY.completion_items("/c") == ("/cancel", "/code")
+    assert DEFAULT_CLI_ACTION_REGISTRY.completion_items("/c") == ("/cancel", "/code", "/commands")
     match = DEFAULT_CLI_ACTION_REGISTRY.match("/agente objetivo")
     assert match is not None
     assert match.used_compatibility_alias is True

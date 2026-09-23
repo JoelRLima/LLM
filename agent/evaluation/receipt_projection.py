@@ -14,6 +14,7 @@ from agent.evaluation.receipt import (
     EvaluationRunIdentity,
     EvaluationTechnicalOutcome,
     EvaluationVariantIdentity,
+    PracticalEvidenceV1,
     _non_negative,
     _optional_non_negative,
 )
@@ -89,13 +90,15 @@ def _extract_output_truncated(measurement: Mapping[str, Any]) -> bool:
 def build_technical_outcome(
     report: ScenarioReport,
     evaluator_failure_codes: Iterable[str],
+    *,
+    evaluator_passed: bool | None = None,
 ) -> EvaluationTechnicalOutcome:
     """Assemble EvaluationTechnicalOutcome from a report and extra failure codes."""
     codes = {str(c) for c in evaluator_failure_codes if isinstance(c, str) and c.strip()}
     codes.update(f"evaluator:{failure.code}" for failure in report.failures)
     return EvaluationTechnicalOutcome(
         runtime_success=bool(report.observation.success),
-        evaluator_passed=bool(report.passed),
+        evaluator_passed=bool(report.passed) if evaluator_passed is None else evaluator_passed,
         evaluator_failure_codes=tuple(sorted(codes)),
     )
 
@@ -134,6 +137,7 @@ def assemble_receipt_fields(
     attempt: int,
     evidence_level: str,
     evaluator_failure_codes: Iterable[str] = (),
+    evaluator_passed: bool | None = None,
 ) -> dict[str, Any]:
     """Return the validated field dict needed to construct EvaluationReceiptV1."""
     if not isinstance(report, ScenarioReport):
@@ -162,7 +166,12 @@ def assemble_receipt_fields(
             composition=composition,
         ),
         "measurements": build_measurements(report, measurement, evidence),
-        "technical": build_technical_outcome(report, evaluator_failure_codes),
+        "technical": build_technical_outcome(
+            report,
+            evaluator_failure_codes,
+            evaluator_passed=evaluator_passed,
+        ),
+        "practical": None,
     }
 
 
@@ -218,6 +227,7 @@ def receipt_from_raw_dict(
                 evaluator_passed=raw["technical"]["evaluator_passed"],
                 evaluator_failure_codes=raw["technical"]["evaluator_failure_codes"],
             ),
+            practical=PracticalEvidenceV1.from_dict(raw["practical"]) if raw["practical"] is not None else None,
         )
     except EvaluationReceiptError:
         raise
@@ -234,6 +244,7 @@ def build_evaluation_receipt_impl(
     attempt: int,
     evidence_level: str,
     evaluator_failure_codes: Iterable[str] = (),
+    evaluator_passed: bool | None = None,
 ) -> "EvaluationReceiptV1":
     """Build an EvaluationReceiptV1 from a scenario report (implementation)."""
     from agent.evaluation.receipt import EvaluationReceiptV1, receipt_id_for_payload  # noqa: PLC0415
@@ -246,6 +257,7 @@ def build_evaluation_receipt_impl(
         attempt=attempt,
         evidence_level=evidence_level,
         evaluator_failure_codes=evaluator_failure_codes,
+        evaluator_passed=evaluator_passed,
     )
     from typing import cast  # noqa: PLC0415
 
@@ -267,6 +279,7 @@ def build_evaluation_receipt_impl(
         variant=provisional.variant,
         measurements=provisional.measurements,
         technical=provisional.technical,
+        practical=provisional.practical,
     )
 
 

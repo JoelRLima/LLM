@@ -99,6 +99,8 @@ class AgentApplicationScenarioExecutor:
                                 "model_calls": interaction.interaction_usage.get("model_calls", 0),
                                 "accounted_tokens": interaction.interaction_usage.get("accounted_tokens", 0),
                                 "token_usage_complete": interaction.interaction_usage.get("token_usage_complete", True),
+                                "variant_fingerprint": application.variant_fingerprint,
+                                "variant_composition": application.variant_composition.normalized_dict(),
                             },
                             evidence={"interaction_resolution": interaction.resolution.to_dict() if interaction.resolution else {}},
                         )

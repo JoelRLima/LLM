@@ -1949,7 +1949,7 @@ def test_startup_failure_releases_only_owned_resources(
         raise RuntimeError("falha de bootstrap")
 
     monkeypatch.setattr(
-        "agent.application.ApplicationExtensionBootstrap.build",
+        "agent.tools.extension_bootstrap.ApplicationExtensionBootstrap.build",
         fail_bootstrap,
     )
     with pytest.raises(RuntimeError, match="falha de bootstrap"):

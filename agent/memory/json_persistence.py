@@ -117,6 +117,7 @@ def write_text_atomic(
     content: str,
     *,
     publication_prepared: Callable[[os.stat_result], None] | None = None,
+    create_parent: bool = True,
 ) -> bool:
     """Grava texto UTF-8 com a mesma garantia atômica do writer JSON."""
 
@@ -126,7 +127,8 @@ def write_text_atomic(
         if not isinstance(content, str):
             raise TypeError("content deve ser str")
         reject_link_like(destination)
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        if create_parent:
+            destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",

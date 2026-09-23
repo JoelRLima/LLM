@@ -141,6 +141,8 @@ def test_evaluation_installed_summary_is_bounded_and_maps_existing_properties() 
     assert summary["evidence_level"] == "installed_deterministic"
     assert summary["acceptance"] is True
     assert summary["task_files_in_wheel"] is False
+    assert summary["mcp_missing_extra_probe"] == "passed"
+    assert summary["mcp_missing_extra_reason"] == "ENGINEERING_MCP_EXTRA_REQUIRED"
     assert {item["id"] for item in summary["properties"]} == {
         item["id"] for item in INSTALLED_ACCEPTANCE_PROPERTIES
     }

@@ -45,6 +45,7 @@ class InstanceLock:
     _guard_descriptor: int | None = None
     _record: LockRecord | None = None
     _owner_liveness: OwnerLiveness | None = None
+    create_parent: bool = True
 
     @classmethod
     def create(
@@ -52,6 +53,7 @@ class InstanceLock:
         path: str | Path,
         *,
         owner_liveness: OwnerLiveness | None = None,
+        create_parent: bool = True,
     ) -> "InstanceLock":
         lexical = Path(path).expanduser()
         if not lexical.is_absolute():
@@ -60,12 +62,14 @@ class InstanceLock:
             lexical.parent.resolve() / lexical.name,
             uuid4().hex,
             _owner_liveness=(owner_liveness if owner_liveness is not None else ProcessOwnerLiveness()),
+            create_parent=create_parent,
         )
 
     def acquire(self) -> None:
         if self._acquired:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.create_parent:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self._guard_descriptor = self._acquire_guard()
         try:
             for _ in range(_MAX_RECOVERY_ATTEMPTS):
@@ -289,9 +293,7 @@ class InstanceLock:
         return InstanceLockError(f"O estado do workspace já está em uso: {self.path}")
 
     def _indeterminate_error(self, reason: str) -> InstanceLockError:
-        return InstanceLockError(
-            f"O estado do workspace não pôde ser validado com segurança ({reason}): {self.path}"
-        )
+        return InstanceLockError(f"O estado do workspace não pôde ser validado com segurança ({reason}): {self.path}")
 
 
 __all__ = ["InstanceLock", "InstanceLockError"]

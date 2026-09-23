@@ -30,6 +30,7 @@ class ModelRequestContract(str, Enum):
     SUMMARIZATION = "summarization"
     REPLAN = "replan"
     TOOL_DISCOVERY = "tool_discovery"
+    COMMAND_DISCOVERY = "command_discovery_v1"
     INITIAL_PLANNING = "initial_plan"
     EFFECT_CONTINUATION = "effect_observation_continuation"
     REASONING_CONTINUATION = "reasoning_boundary_continuation"

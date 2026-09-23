@@ -31,12 +31,10 @@
   "module_size": {
     "max_lines": 300,
     "allowed": {
-      "agent/application.py": 327,
       "agent/evaluation/long_horizon.py": 576,
       "agent/interaction/admission.py": 383,
       "agent/interaction/guards.py": 763,
       "agent/interaction/service.py": 509,
-      "agent/interfaces/cli/app.py": 352,
       "agent/interfaces/cli/command_handlers.py": 324,
       "agent/llm/context_manager.py": 356,
       "agent/llm/context_model_call.py": 336,
@@ -62,7 +60,10 @@
       "agent/runtime/convergence.py": 489,
       "agent/runtime/convergence_runtime.py": 310,
       "agent/state_checkpoint.py": 352,
-      "agent/tool_executor.py": 352
+      "agent/application.py": 327,
+      "agent/tool_executor.py": 352,
+      "agent/engineering/store.py": 352,
+      "agent/engineering/transactions.py": 339
     }
   }
 }

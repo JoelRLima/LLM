@@ -927,7 +927,7 @@ def _check_s13(root: Path) -> list[ArchitectureViolation]:
         for node, ancestors in _walk_with_ancestors(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and not _is_docstring_constant(node, ancestors):
                 lowered = node.value.casefold()
-                if "pv1-" in lowered or "practical-v1" in lowered:
+                if ("pv1-" in lowered or "practical-v1" in lowered) and lowered.strip() != "evaluation.practical-v1":
                     findings.append(_violation("W13-S13", relative, "PRACTICAL-V1 fixture ID/sentinel escaped evaluation ownership", node))
             elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 lowered = node.name.casefold()

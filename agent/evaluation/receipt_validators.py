@@ -77,6 +77,7 @@ class _RawReceipt(TypedDict):
     variant: _RawVariant
     measurements: _RawMeasurements
     technical: _RawTechnical
+    practical: Mapping[str, object] | None
 
 
 def _raw_mapping(value: object, label: str) -> dict[str, object]:
@@ -88,6 +89,12 @@ def _raw_mapping(value: object, label: str) -> dict[str, object]:
             raise TypeError(f"{label} keys must be strings")
         normalized[key] = item
     return normalized
+
+
+def _raw_optional_mapping(value: object, label: str) -> Mapping[str, object] | None:
+    if value is None:
+        return None
+    return _raw_mapping(value, label)
 
 
 def _raw_text(value: object, label: str) -> str:
@@ -131,7 +138,7 @@ def _narrow_raw_receipt(value: object) -> _RawReceipt:
     variant = _raw_mapping(raw.get("variant"), "variant")
     measurements = _raw_mapping(raw.get("measurements"), "measurements")
     technical = _raw_mapping(raw.get("technical"), "technical")
-    return {
+    normalized: _RawReceipt = {
         "schema_version": _raw_int(raw.get("schema_version"), "schema_version"),
         "receipt_id": _raw_text(raw.get("receipt_id"), "receipt_id"),
         "experiment_id": _raw_text(raw.get("experiment_id"), "experiment_id"),
@@ -192,7 +199,9 @@ def _narrow_raw_receipt(value: object) -> _RawReceipt:
                 technical.get("evaluator_failure_codes"), "technical.evaluator_failure_codes"
             ),
         },
+        "practical": _raw_optional_mapping(raw.get("practical"), "practical"),
     }
+    return normalized
 
 
 def composition_from_dict(value: object, invalid: _ErrorFactory) -> VariantComposition:

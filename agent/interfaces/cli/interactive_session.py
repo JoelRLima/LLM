@@ -184,7 +184,6 @@ def _run_application_session(
 ) -> InteractiveSessionResult:
     context: Any = None
     resources = interactive_resources._SessionResources()
-    shutdown = interactive_resources.ShutdownStatus()
     try:
         context, resources = interactive_resources.configure(
             application,
@@ -234,7 +233,17 @@ def run_chat(
         return interactive_resources.get_shell(shell_holder, view_holder, application_holder, controller_holder)
 
     prompt_line = interactive_resources.prompt_line(get_shell, shell_enabled)
-    first_run.prepare_chat_workspace(args, console=console, app_paths=app_paths(args), prompt=prompt_line)
+    prompt_path = interactive_resources.prompt_path(get_shell, shell_enabled)
+    try:
+        first_run.prepare_chat_workspace(
+            args,
+            console=console,
+            app_paths=app_paths(args),
+            prompt=prompt_line,
+            prompt_path=prompt_path,
+        )
+    except workspace_entry.WorkspaceSelectionCancelled:
+        return 0
     try:
         application = create_application(args, configure_logging=True)
     except ConfigNotFound as error:
@@ -273,28 +282,19 @@ def run_chat(
     )
     if not session_result.shutdown.settled:
         return session_result.shutdown.exit_code
-    rebootstrap_workspace = session_result.rebootstrap_workspace
-    rebootstrap_profile = session_result.rebootstrap_profile
-    if rebootstrap_workspace is not None:
-        args.workspace = str(rebootstrap_workspace)
-        return run_chat(
-            args,
-            value=value,
-            app_paths=app_paths,
-            create_application=create_application,
-            context_from_application=context_from_application,
-            chat_loop_fn=chat_loop_fn,
-        )
-    if rebootstrap_profile is not None:
-        args.profile = rebootstrap_profile
-        return run_chat(
-            args,
-            value=value,
-            app_paths=app_paths,
-            create_application=create_application,
-            context_from_application=context_from_application,
-            chat_loop_fn=chat_loop_fn,
-        )
-    return 0
+    if session_result.rebootstrap_workspace is not None:
+        args.workspace = str(session_result.rebootstrap_workspace)
+    elif session_result.rebootstrap_profile is not None:
+        args.profile = session_result.rebootstrap_profile
+    else:
+        return 0
+    return run_chat(
+        args,
+        value=value,
+        app_paths=app_paths,
+        create_application=create_application,
+        context_from_application=context_from_application,
+        chat_loop_fn=chat_loop_fn,
+    )
 
 __all__ = ["InteractiveSessionResult", "chat_loop", "run_chat"]

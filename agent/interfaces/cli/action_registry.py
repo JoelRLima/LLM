@@ -1,5 +1,4 @@
 """CLI projection of the UI-neutral W19 action catalog."""
-
 from __future__ import annotations
 
 import importlib
@@ -21,8 +20,6 @@ BUSY_SUBMITS = {
 MODEL_POLICIES = {"NEVER", "AGENTIC_ONLY"}
 MUTATION_POLICIES = {"NONE", "UI_SESSION", "CANONICAL_LOCAL", "CANONICAL_AGENTIC"}
 _TOKEN = re.compile(r"\S+")
-
-
 @dataclass(frozen=True, slots=True)
 class CliActionBinding:
     action_id: str
@@ -38,7 +35,6 @@ class CliActionBinding:
     handler_owner: str | None
     agentic_owner: str | None = None
     agentic_boundary: str | None = None
-
     def __post_init__(self) -> None:
         if not self.preferred_path or not self._valid_path(self.preferred_path, preferred=True):
             raise ValueError(f"invalid preferred path for {self.action_id}")
@@ -58,7 +54,6 @@ class CliActionBinding:
             raise ValueError(f"agentic action has no owner: {self.action_id}")
         if not self.advertised and self.preferred_path:
             raise ValueError("every binding with a preferred path must be advertised")
-
     @staticmethod
     def _valid_path(path: tuple[str, ...], *, preferred: bool) -> bool:
         if not path or any(not isinstance(token, str) or not token for token in path):
@@ -70,8 +65,6 @@ class CliActionBinding:
         if any(token.startswith("/") for token in path[1:]):
             return False
         return all(token.casefold() == token for token in path)
-
-
 @dataclass(frozen=True, slots=True)
 class CliActionMatch:
     action_id: str
@@ -79,8 +72,6 @@ class CliActionMatch:
     matched_path: tuple[str, ...]
     used_compatibility_alias: bool
     raw_payload: str
-
-
 class CliActionRegistry:
     def __init__(self, catalog: ActionCatalog, bindings: Iterable[CliActionBinding]) -> None:
         self.catalog = catalog
@@ -114,11 +105,9 @@ class CliActionRegistry:
                 key=lambda item: (-len(item[0]), item[0]),
             )
         )
-
     @staticmethod
     def _tokens(text: str) -> tuple[re.Match[str], ...]:
         return tuple(_TOKEN.finditer(text))
-
     def match(self, text: str) -> CliActionMatch | None:
         if not isinstance(text, str):
             return None
@@ -137,7 +126,6 @@ class CliActionRegistry:
             binding = self._by_action[action_id]
             return CliActionMatch(action_id, binding, path, is_alias, raw_payload)
         return None
-
     def preferred_commands(self) -> tuple[str, ...]:
         return tuple(
             sorted(
@@ -146,19 +134,16 @@ class CliActionRegistry:
                 if binding.advertised
             )
         )
-
     def binding_for_action(self, action_id: str) -> CliActionBinding:
         try:
             return self._by_action[action_id]
         except KeyError as exc:
             raise KeyError(f"unknown action binding: {action_id}") from exc
-
     def resolve_handler(self, binding: CliActionBinding) -> Any:
         if binding.handler_owner is None:
             return None
         module_name, function_name = binding.handler_owner.rsplit(".", 1)
         return getattr(importlib.import_module(module_name), function_name)
-
     def completion_items(self, text_before_cursor: str) -> tuple[str, ...]:
         if not isinstance(text_before_cursor, str) or not text_before_cursor.startswith("/"):
             return ()
@@ -177,8 +162,6 @@ class CliActionRegistry:
             if item.casefold().startswith(needle)
             and (" " not in item or item.split(" ", 1)[0].casefold() == needle)
         )
-
-
 def _binding(
     action_id: str,
     preferred: str,
@@ -210,15 +193,12 @@ def _binding(
         agentic_owner=owner if routing == "AGENTIC" else None,
         agentic_boundary=boundary,
     )
-
-
 def _default_bindings() -> tuple[CliActionBinding, ...]:
     control = "ALWAYS_LOCAL", "NOT_APPLICABLE", "NEVER", "NONE"
     idle_local = "IDLE_ONLY", "REQUIRE_IDLE_PRESERVE", "NEVER", "UI_SESSION"
     idle_canonical = "IDLE_ONLY", "REQUIRE_IDLE_PRESERVE", "NEVER", "CANONICAL_LOCAL"
     query = "ALWAYS_LOCAL", "NOT_APPLICABLE", "NEVER", "NONE"
     agentic = "AGENTIC_SUBMIT", "PENDING_TYPED_PAYLOAD", "AGENTIC_ONLY", "CANONICAL_AGENTIC"
-
     def c(
         action: str,
         path: str,
@@ -227,15 +207,23 @@ def _default_bindings() -> tuple[CliActionBinding, ...]:
         policy: tuple[str, str, str, str] = control,
     ) -> CliActionBinding:
         return _binding(action, path, aliases, "CONTROL", *policy, owner)
-
     def q(action: str, path: str, aliases: tuple[str, ...], owner: str | None) -> CliActionBinding:
         return _binding(action, path, aliases, "QUERY", *query, owner)
-
     def a(action: str, path: str, aliases: tuple[str, ...], owner: str, boundary: str) -> CliActionBinding:
         return _binding(action, path, aliases, "AGENTIC", *agentic, owner, boundary=boundary)
-
     values = (
         c("discovery.help", "/help", ("/ajuda",), "agent.interfaces.cli.ui.exibir_menu"),
+        _binding(
+            "discovery.commands",
+            "/commands",
+            (),
+            "CONTROL",
+            "ALWAYS_LOCAL",
+            "NOT_APPLICABLE",
+            "NEVER",
+            "UI_SESSION",
+            "agent.interfaces.cli.discovery_ui.commands_action",
+        ),
         c("run.status", "/status", (), "agent.interfaces.cli.interactive_commands.status"),
         c("run.where", "/where", (), "agent.interfaces.cli.interactive_commands.where"),
         c("run.timeline", "/timeline", ("/events",), "agent.interfaces.cli.interactive_commands.timeline"),
@@ -282,11 +270,7 @@ def _default_bindings() -> tuple[CliActionBinding, ...]:
         c("session.exit", "/exit", ("exit", "sair"), None),
     )
     return values
-
-
 DEFAULT_CLI_ACTION_REGISTRY = CliActionRegistry(DEFAULT_ACTION_CATALOG, _default_bindings())
-
-
 __all__ = [
     "BUSY_POLICIES",
     "BUSY_SUBMITS",

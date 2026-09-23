@@ -67,6 +67,7 @@ class CommandContext:
         self.query_service = query_service
         self.query_executor = query_executor
         self.prompt_line = getattr(shell, "prompt_line", None)
+        self.prompt_path = getattr(shell, "prompt_path", None)
         self.modo_diagnostico = 0
         self.diagnostic_level = "OFF"
         self.modo_agente = True

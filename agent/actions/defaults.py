@@ -19,13 +19,16 @@ def _d(
     payload_kind: P,
     description: str,
     payload_hint: str | None = None,
+    keywords: tuple[str, ...] = (),
+    discovery_examples: tuple[str, ...] = (),
 ) -> D:
-    return D(action_id, title, description, category, scope, target, payload_kind, payload_hint)
+    return D(action_id, title, description, category, scope, target, payload_kind, payload_hint, keywords, discovery_examples)
 
 
 DEFAULT_ACTION_CATALOG = ActionCatalog(
     (
         _d("discovery.help", "Help", C.DISCOVERY, S.INTERFACE_SESSION, T.INTERFACE_SESSION, P.NONE, "Show available commands."),
+        _d("discovery.commands", "Commands", C.DISCOVERY, S.INTERFACE_SESSION, T.INTERFACE_SESSION, P.OPTIONAL_TEXT, "Search available commands and capabilities without executing them.", "query", ("commands", "discover", "search"), ("/commands", "/commands query")),
         _d("run.status", "Status", C.RUN, S.INTERFACE_SESSION, T.INTERFACE_SESSION, P.NONE, "Show the current run and session state."),
         _d("run.where", "Where", C.RUN, S.INTERFACE_SESSION, T.INTERFACE_SESSION, P.NONE, "Show the current run activity."),
         _d("run.timeline", "Timeline", C.RUN, S.INTERFACE_SESSION, T.INTERFACE_SESSION, P.NONE, "Show recent run milestones."),

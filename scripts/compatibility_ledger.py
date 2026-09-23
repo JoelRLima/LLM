@@ -205,6 +205,7 @@ LEDGER = (
     _edge("W19-S07-R09", "agent/interfaces/cli/interactive_commands.py", "diff", REMOVE, "agent.application_services.queries", "repository query admission uses the canonical diff query kind", "none", "the message stub was not a query owner and could mask canonical query execution", "already absent; /git diff and /diff submit through the canonical query path"),
     _edge("W19-S07-P01", "agent/runtime/config.py", "<module>", RETAIN_SUPPORTED_BOUNDARY, "agent.runtime.config_repository + packaged defaults", "compatibility-focused source callers and the explicit health boundary", "none", "the historical module remains a bounded source projection while ConfigRepository owns live product configuration", "remove only after the supported source-compatibility window and health boundary are retired"),
     _edge("W19-S07-P02", "agent/runtime/paths.py", "legacy string constants", RETAIN_SUPPORTED_BOUNDARY, "AppPaths/WorkspacePaths", "logging, task-report and historical health compatibility consumers", "none", "historical process-level path names remain a bounded source projection while typed path objects own live W19 storage", "remove only after all supported compatibility consumers retire and a reviewed path-contract change authorizes removal"),
+
 )
 
 

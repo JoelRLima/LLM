@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 def receipt_payload_without_id(receipt: "EvaluationReceiptV1") -> dict[str, object]:
     """Return the canonical receipt payload used to derive its identifier."""
-    return {
+    payload = {
         "schema_version": receipt.schema_version,
         "experiment_id": receipt.experiment_id,
         "trial_id": receipt.trial_id,
@@ -56,6 +56,9 @@ def receipt_payload_without_id(receipt: "EvaluationReceiptV1") -> dict[str, obje
             "evaluator_failure_codes": receipt.technical.evaluator_failure_codes,
         },
     }
+    if receipt.practical is not None:
+        payload["practical"] = receipt.practical.to_dict()
+    return payload
 
 
 __all__ = ["receipt_payload_without_id"]

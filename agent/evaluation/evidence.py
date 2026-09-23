@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from enum import Enum
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any, Mapping, cast
+
+from agent.evaluation.contracts import CapabilityScenario
+from agent.evaluation.experiment import EvaluationExperimentContext
+from agent.evaluation.practical_gateway_logic import practical_final_answer
+from agent.evaluation.practical_oracle_support import _oracle_failures
+from agent.evaluation.receipt import (
+    PracticalEvidenceV1,
+    build_evaluation_receipt,
+    with_practical_evidence,
+)
 
 EVIDENCE_SCHEMA_VERSION = 1
 MAX_EVIDENCE_DEPTH = 6
@@ -113,9 +125,97 @@ def digest_fixture(initial_files: Mapping[str, str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def write_evidence_report(output_path: str | Path | None, safe_report: dict[str, Any]) -> None:
+    if output_path is None:
+        return
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(safe_report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def practical_scenario_record(
+    scenario: CapabilityScenario,
+    report: Any,
+    prompt: Mapping[str, Any],
+    *,
+    experiment: EvaluationExperimentContext,
+    candidate_identity_value: str,
+    model_identity: Mapping[str, Any],
+    provider_call_count: int,
+    fixture_identity: str,
+    evidence_level: str = "deterministic",
+) -> dict[str, Any]:
+    failures, observed = _oracle_failures(scenario, report, prompt=prompt)
+    evaluator_failures = [f"evaluator:{item.code}" for item in report.failures]
+    all_failures = list(dict.fromkeys(evaluator_failures + failures))
+    final_passed = not all_failures
+    observed_safe = cast(dict[str, Any], sanitize_evidence(observed))
+    record: dict[str, Any] = {
+        "scenario_id": scenario.scenario_id,
+        "fixture_digest": digest_fixture(scenario.initial_files),
+        "passed": final_passed,
+        "evaluator_passed": report.passed,
+        "failures": all_failures,
+        "changed_files": list(report.changed_files),
+        "observed": observed_safe,
+        "final_answer": sanitize_evidence(report.observation.answer),
+        "model_calls": report.observation.measurement.get("model_calls", 0),
+        "tool_calls": report.observation.measurement.get("tool_calls", 0),
+        "provider_call_count": provider_call_count,
+        "expected_final_answer": practical_final_answer(scenario.scenario_id),
+        "execution_complete": True,
+    }
+    receipt = build_evaluation_receipt(
+        report,
+        experiment=experiment,
+        scenario_arm_id=scenario.scenario_id,
+        repetition=1,
+        attempt=1,
+        evidence_level=evidence_level,
+        evaluator_failure_codes=all_failures,
+        evaluator_passed=final_passed,
+    )
+    receipt = with_practical_evidence(
+        receipt,
+        PracticalEvidenceV1(
+            candidate_identity=candidate_identity_value,
+            operation_identity="evaluation.practical-v1",
+            environment_identity={
+                "scenario_set_identity": fixture_identity,
+                "profile_id": experiment.profile.profile_id,
+                "variant_fingerprint": receipt.variant.fingerprint,
+            },
+            inputs={"scenario_id": scenario.scenario_id, "fixture_digest": record["fixture_digest"]},
+            observed_evidence=observed_safe,
+            terminal_outcome={
+                "status": report.observation.measurement.get("status"),
+                "runtime_success": bool(report.observation.success),
+                "passed": final_passed,
+                "failure_codes": all_failures,
+            },
+            comparison_inputs={
+                "experiment_id": experiment.experiment_id,
+                "trial_id": experiment.trial_id,
+                "scenario_set_identity": fixture_identity,
+            },
+            comparison_result=None,
+            provenance={
+                "schema_version": 1,
+                "evidence_level": evidence_level,
+                "live_model_used": False,
+                "environmental_retry": False,
+                "measured_execution": True,
+                "model_identity": dict(model_identity),
+            },
+        ),
+    )
+    record["receipt"] = receipt.to_dict()
+    return record
+
+
 __all__ = [
     "EVIDENCE_SCHEMA_VERSION", "EvidenceContractError", "CausalFailureClass",
     "EvidenceLevel", "MAX_EVIDENCE_DEPTH", "MAX_EVIDENCE_ITEMS",
     "MAX_EVIDENCE_STRING_CHARS", "MAX_SEMANTIC_MANIFEST_ITEMS", "digest_fixture",
-    "sanitize_evidence", "sanitize_evidence_text",
+    "practical_scenario_record", "sanitize_evidence", "sanitize_evidence_text", "write_evidence_report",
 ]

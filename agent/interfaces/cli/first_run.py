@@ -137,6 +137,7 @@ def prepare_chat_workspace(
     console: Any,
     app_paths: Any,
     prompt: Any | None = None,
+    prompt_path: Any | None = None,
 ) -> bool:
     """Offer workspace entry only after an existing config is valid."""
 
@@ -156,12 +157,15 @@ def prepare_chat_workspace(
     except (ConfigError, ConfigNotFound, OSError, ValueError):
         return False
     from agent.interfaces.cli.workspace_entry import choose_workspace, load_last_workspace
+    from agent.interfaces.cli.workspace_recents import load_recent_workspaces
 
     args.workspace = str(
         choose_workspace(
             console=console,
             last_workspace=load_last_workspace(app_paths),
+            recent_workspaces=load_recent_workspaces(app_paths),
             prompt=prompt,
+            path_prompt=prompt_path,
         )
     )
     return True

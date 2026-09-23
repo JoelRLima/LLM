@@ -72,6 +72,20 @@ class PlanningPresentationSnapshot:
             PlanningPresentationBudget.for_context_limit(context_limit),
         )
 
+    def render_selection_index(self, *, context_limit: int = 8_192) -> str:
+        """Render the bounded selector index with task tools before control tools."""
+
+        task_tools = tuple(
+            tool for tool in self.tools if not tool.name.startswith("engineering_")
+        )
+        engineering_tools = tuple(
+            tool for tool in self.tools if tool.name.startswith("engineering_")
+        )
+        return render_index(
+            (*task_tools, *engineering_tools),
+            PlanningPresentationBudget.for_context_limit(context_limit),
+        )
+
     def render_detailed(self, *, context_limit: int = 8_192) -> str:
         """Render full cards for exactly the tools in this snapshot."""
 

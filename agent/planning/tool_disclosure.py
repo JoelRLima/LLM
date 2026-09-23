@@ -222,7 +222,7 @@ def _selection_prompt(
         f"Choose at most {MAX_DISCLOSED_TOOLS} exact tool names from the following current Level-0 index. "
         "Do not invent names, capabilities, schemas, examples, or permissions. "
         'Return exactly {"tools":["name", ...]} with no duplicates.\n'
-        + index_view.render_index(context_limit=context_limit)
+        + index_view.render_selection_index(context_limit=context_limit)
     )
 
 def _ask_selection(orchestrator: Any, prompt: str) -> Any:

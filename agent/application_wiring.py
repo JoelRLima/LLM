@@ -62,6 +62,34 @@ def prepare_application_environment(
     return config, workspace_context, workspace_paths, instance_lock
 
 
+def build_application_extensions(
+    app_paths: AppPaths,
+    workspace_context: WorkspaceContext,
+    skill_registry: Any,
+) -> tuple[Any, Any]:
+    """Build the trusted Engineering adapters and the workspace tool registry."""
+
+    from agent.engineering.model_safe import (
+        build_model_safe_engineering_service,
+        build_model_safe_internal_adapters,
+    )
+    from agent.tools.builtin_adapter import BuiltinToolAdapter
+    from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+
+    model_safe_engineering = build_model_safe_engineering_service(
+        app_paths=app_paths,
+        workspace=workspace_context,
+    )
+    internal_adapters = build_model_safe_internal_adapters(model_safe_engineering)
+    extension_bootstrap = ApplicationExtensionBootstrap(
+        app_paths,
+        workspace_context.workspace_id,
+        workspace_context.root,
+        internal_adapters=internal_adapters,
+    ).build(BuiltinToolAdapter(skill_registry))
+    return model_safe_engineering, extension_bootstrap
+
+
 def wire_runtime_orchestration(
     *,
     workspace_context: WorkspaceContext,
@@ -133,6 +161,7 @@ def wire_runtime_orchestration(
 __all__ = [
     "RuntimeOrchestrationComponents",
     "apply_workspace_paths",
+    "build_application_extensions",
     "prepare_application_environment",
     "wire_runtime_orchestration",
 ]
