@@ -244,7 +244,30 @@ def test_C22_base_installed_verifier_has_no_mcp_acceptance_probe() -> None:
 
 
 def test_C23_extra_verifier_requires_real_stdio_and_exact_tools() -> None:
-    from scripts.verify_wave20_mcp_extra import TOOLS, acceptance_summary
+    from scripts.verify_wave20_mcp_extra import (
+        TOOLS,
+        _inspection_lists_within_limit,
+        _mcp_requests,
+        acceptance_summary,
+    )
+
+    inspection_request = _mcp_requests("engr-" + "0" * 32, "inspection-run")[-1]
+    assert inspection_request["id"] == 7
+    assert inspection_request["params"]["arguments"]["limit"] == 1
+    bounded_document = {
+        "data": {
+            "tools": {"count": 3, "events": [{"sequence": 1}]},
+            "issues": 3,
+        }
+    }
+    unbounded_document = {
+        "data": {
+            "tools": {"count": 3, "events": [{"sequence": 1}, {"sequence": 2}]},
+            "issues": 3,
+        }
+    }
+    assert _inspection_lists_within_limit(bounded_document, 1)
+    assert not _inspection_lists_within_limit(unbounded_document, 1)
 
     wheel = ROOT / "pyproject.toml"
     probe = {
@@ -254,6 +277,7 @@ def test_C23_extra_verifier_requires_real_stdio_and_exact_tools() -> None:
         "resources_exposed": False,
         "prompts_exposed": False,
         "safe_calls": True,
+        "safe_inspection_projection": True,
         "safe_error_path": True,
         "workspace_isolation": True,
         "process_clean": True,
@@ -266,6 +290,7 @@ def test_C23_extra_verifier_requires_real_stdio_and_exact_tools() -> None:
     )
     assert summary["tools_list"] == list(TOOLS)
     assert summary["stdio_roundtrip"] is True
+    assert summary["safe_inspection_projection"] is True
 
 
 def test_C24_integrated_candidate_identity_is_explicit(tmp_path: Path) -> None:

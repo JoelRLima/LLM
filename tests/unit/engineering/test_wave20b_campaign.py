@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import agent.engineering.backends.inspection as inspection_backend
 from agent.discovery.contracts import (
     DISCOVERY_AVAILABILITY_UNKNOWN,
     DISCOVERY_NO_MATCH,
@@ -35,7 +36,7 @@ from agent.discovery.semantic import (
 from agent.discovery.service import DiscoveryService
 from agent.discovery.store import FrecencyStore
 from agent.engineering.backends.health import HealthBackend
-from agent.engineering.backends.inspection import InspectionBackend
+from agent.engineering.backends.inspection import InspectionBackend, project_inspection
 from agent.engineering.contracts import (
     EngineeringEnvironmentV1,
     EngineeringOperationViewV1,
@@ -366,6 +367,191 @@ def test_B12_inspection_has_the_closed_bounded_owner_shape() -> None:
     assert descriptor.parameter_schema["required"] == ("trace_run_id", "limit")
     assert descriptor.parameter_schema["additionalProperties"] is False
     assert InspectionBackend().inspect("trace", 1, SimpleNamespace(workspace=None)) is None
+
+
+def test_inspection_projection_omits_adversarial_paths_and_freeform_payloads() -> None:
+    sentinels = {
+        "absolute": r"C:\W20-SENTINEL\private\source.py",
+        "relative": "../W20-SENTINEL/relative/source.py",
+        "changed": r"..\W20-SENTINEL\changed.txt",
+        "cwd": r"C:\W20-SENTINEL\working-directory",
+        "argv": "--W20-SENTINEL-ARGV secret-argument",
+        "message": "W20_SENTINEL_FREEFORM_MESSAGE",
+        "summary": "W20_SENTINEL_FREEFORM_SUMMARY",
+        "exception": "W20_SENTINEL_EXCEPTION_ERROR_PROSE",
+        "error": "W20_SENTINEL_ERROR_PROSE",
+        "nested": "W20_SENTINEL_NESTED_DATA_MESSAGE",
+    }
+    activity = {
+        "sequence": 3,
+        "source": "runtime_event",
+        "category": "plan",
+        "kind": "plan_created",
+        "severity": "info",
+        "status": "completed",
+        "title": sentinels["message"],
+        "summary": sentinels["summary"],
+        "data": {
+            "absolute_path": sentinels["absolute"],
+            "relative_path": sentinels["relative"],
+            "changed_files": [sentinels["changed"]],
+            "cwd": sentinels["cwd"],
+            "argv": [sentinels["argv"]],
+            "message": sentinels["message"],
+            "summary": sentinels["summary"],
+            "exception": sentinels["exception"],
+            "error": sentinels["error"],
+            "data": {"message": sentinels["nested"]},
+        },
+    }
+    source = {
+        "schema_version": 1,
+        "run": {
+            "run_id": sentinels["absolute"],
+            "root_task_id": sentinels["relative"],
+            "start_time": sentinels["cwd"],
+            "active": False,
+            "status": "complete",
+            "completeness": "complete",
+            "mode": "normal",
+            "highest_sequence": 3,
+            "semantic_count": 1,
+            "final_outcome": {"message": sentinels["message"]},
+            "liveness": {"reason": sentinels["exception"]},
+        },
+        "current": activity,
+        "plan_steps": {
+            "status": "available",
+            "plan_count": 1,
+            "step_event_count": 1,
+            "plans": [{
+                "sequence": 1,
+                "kind": "plan_created",
+                "step_count": 1,
+                "plan": [{"path": sentinels["absolute"], "data": {"message": sentinels["nested"]}}],
+            }],
+            "steps": [{"sequence": 3, "kind": "step_completed", "summary": sentinels["summary"]}],
+        },
+        "timeline": [activity],
+        "tools": {"status": "available", "count": 1, "events": [{"sequence": 3, "kind": "tool_end", "tool": sentinels["absolute"], "message": sentinels["message"]}]},
+        "validation": {"status": "unavailable", "reason": sentinels["exception"]},
+        "recovery": {"status": "unavailable", "reason": sentinels["error"]},
+        "changes": {"status": "available", "count": 1, "events": [{"sequence": 3, "kind": "step_completed", "changed_files": [sentinels["changed"]]}]},
+        "metrics": {"status": "available", "count": 1, "events": [{"sequence": 3, "kind": "model_call_completed", "message": sentinels["message"]}]},
+        "warnings": [activity],
+        "heartbeat": {"silence": "normal", "cwd": sentinels["cwd"], "active_context": {"message": sentinels["message"]}},
+        "issues": [sentinels["exception"]],
+        "convergence": {"status": "unavailable", "reason": sentinels["summary"]},
+    }
+
+    projected = project_inspection(source)
+    serialized = json.dumps(projected, ensure_ascii=False, sort_keys=True)
+    decoded = json.loads(serialized)
+
+    def contains_sentinel(value: object, sentinel: str) -> bool:
+        if isinstance(value, str):
+            return sentinel in value
+        if isinstance(value, dict):
+            return any(
+                contains_sentinel(key, sentinel) or contains_sentinel(item, sentinel)
+                for key, item in value.items()
+            )
+        if isinstance(value, list):
+            return any(contains_sentinel(item, sentinel) for item in value)
+        return False
+
+    assert projected["schema_version"] == 1
+    assert projected["run"]["completeness"] == "complete"
+    assert projected["plan_steps"]["plan_count"] == 1
+    for sentinel in sentinels.values():
+        assert not contains_sentinel(decoded, sentinel)
+    for key in (
+        "absolute_path", "relative_path", "path", "relative", "changed_files", "cwd",
+        "argv", "message", "summary", "exception", "error", "data", "title", "reason",
+    ):
+        assert f'"{key}"' not in serialized
+
+
+@pytest.mark.parametrize(
+    "list_path",
+    (
+        ("timeline",),
+        ("warnings",),
+        ("plan_steps", "plans"),
+        ("plan_steps", "steps"),
+        ("tools", "events"),
+        ("validation", "events"),
+        ("recovery", "events"),
+        ("changes", "events"),
+        ("metrics", "events"),
+        ("convergence", "events"),
+    ),
+)
+def test_inspection_projection_honors_requested_list_limit(list_path: tuple[str, ...]) -> None:
+    activity_rows = [
+        {"sequence": index, "source": "runtime_event", "category": "tool", "kind": "tool_start"}
+        for index in range(1, 4)
+    ]
+    event_rows = [{"sequence": index, "kind": "tool_start"} for index in range(1, 4)]
+    plan_rows = [
+        {"sequence": index, "kind": "plan_created", "step_count": index}
+        for index in range(1, 4)
+    ]
+    step_rows = [{"sequence": index, "kind": "step_completed"} for index in range(1, 4)]
+    if list_path[0] in {"timeline", "warnings"}:
+        source = {list_path[0]: activity_rows}
+    elif list_path == ("plan_steps", "plans"):
+        source = {"plan_steps": {"status": "available", "plan_count": 3, "plans": plan_rows}}
+    elif list_path == ("plan_steps", "steps"):
+        source = {"plan_steps": {"status": "available", "step_event_count": 3, "steps": step_rows}}
+    else:
+        source = {list_path[0]: {"status": "available", "count": 3, "events": event_rows}}
+    source["issues"] = ["issue-one", "issue-two", "issue-three"]
+
+    for limit in (1, 2):
+        projection = project_inspection(source, limit=limit)
+        items = projection
+        for key in list_path:
+            items = items[key]
+        assert isinstance(items, list)
+        assert len(items) == limit
+        assert len(items) <= 64
+        assert projection["issues"] == 3
+
+
+def test_inspection_backend_honors_requested_tools_event_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = {
+        "tools": {
+            "status": "available",
+            "count": 3,
+            "events": [{"sequence": index, "kind": "tool_start"} for index in range(1, 4)],
+        }
+    }
+    observed_limits: list[int] = []
+
+    class SnapshotService:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        def snapshot(self, _trace_run_id: str, *, limit: int) -> SimpleNamespace:
+            observed_limits.append(limit)
+            return SimpleNamespace(to_dict=lambda: source)
+
+    class BookmarkReader:
+        def __init__(self, _workspace_paths: object) -> None:
+            self.reader = None
+
+    monkeypatch.setattr(inspection_backend, "InspectionService", SnapshotService)
+    monkeypatch.setattr(inspection_backend, "BookmarkStore", BookmarkReader)
+    context = SimpleNamespace(workspace=SimpleNamespace(workspace_id="workspace"))
+    outcome = InspectionBackend(object()).execute(
+        SimpleNamespace(parameters={"trace_run_id": "trace", "limit": 1}),
+        context,
+    )
+    assert observed_limits == [1]
+    tool_events = outcome.summary["tools"]["events"]
+    assert isinstance(tool_events, list)
+    assert len(tool_events) == 1
 
 
 def test_B13_model_safe_has_exact_five_internal_tools() -> None:

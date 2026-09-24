@@ -26,8 +26,33 @@ if str(ROOT) not in sys.path:
 from distribution.mcp_lockfiles import mcp_union_lock_sha256, validate_mcp_union_lock  # noqa: E402
 
 TOOLS = ("engineering_list", "engineering_describe", "engineering_result", "engineering_inspect_completed", "engineering_health_offline")
+INSPECTION_SENTINELS = {
+    "absolute_path": r"C:\W20-MCP-SENTINEL\private\source.py",
+    "relative_path": "../W20-MCP-SENTINEL/relative/source.py",
+    "changed_file": r"..\W20-MCP-SENTINEL\changed.txt",
+    "cwd": r"C:\W20-MCP-SENTINEL\working-directory",
+    "argv": "--W20-MCP-SENTINEL-ARGV secret-argument",
+    "message": "W20_MCP_SENTINEL_FREEFORM_MESSAGE",
+    "summary": "W20_MCP_SENTINEL_FREEFORM_SUMMARY",
+    "exception": "W20_MCP_SENTINEL_EXCEPTION_PROSE",
+    "error": "W20_MCP_SENTINEL_ERROR_PROSE",
+    "nested_data_message": "W20_MCP_SENTINEL_NESTED_DATA_MESSAGE",
+}
+_INSPECTION_LIST_PATHS = (
+    ("timeline",),
+    ("warnings",),
+    ("plan_steps", "plans"),
+    ("plan_steps", "steps"),
+    ("tools", "events"),
+    ("validation", "events"),
+    ("recovery", "events"),
+    ("changes", "events"),
+    ("metrics", "events"),
+    ("convergence", "events"),
+)
 FOREIGN_RUN_SEED = """\
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
 import time
@@ -36,13 +61,18 @@ from agent.engineering.contracts import EngineeringCaller, EngineeringExecutionC
 from agent.engineering.policy import EngineeringPreflight, preflight
 from agent.engineering.registry import EngineeringTerminalIntent, production_registry
 from agent.engineering.store import EngineeringRunStore
+from agent.observability.trace_store import TraceStore
 from agent.runtime.paths import AppPaths
+from agent.runtime.event_kinds import RuntimeEventKind
+from agent.runtime.events import RuntimeEvent
 from agent.runtime.storage_bootstrap import StorageBootstrap
 from agent.runtime.workspace_context import WorkspaceContext
 
 paths = AppPaths.discover(Path(sys.argv[1]))
 StorageBootstrap().prepare(paths)
 workspace = WorkspaceContext.create(Path(sys.argv[2]))
+inspection_workspace = WorkspaceContext.create(Path(sys.argv[3]))
+sentinels = json.loads(sys.argv[4])
 context = EngineeringExecutionContext(
     EngineeringCaller.AUTOMATION_HEADLESS,
     paths,
@@ -65,7 +95,71 @@ result = store.finish(
 )
 if result.run_id != active.run_id or result.workspace_id != workspace.workspace_id:
     raise RuntimeError("foreign run verification failed")
-print(result.run_id)
+trace_run_id = "w20c-inspection-adversarial"
+trace = TraceStore(
+    paths.for_workspace(inspection_workspace.workspace_id),
+    trace_run_id,
+    root_task_id="w20c-inspection-root",
+)
+trace.append(
+    RuntimeEvent(
+        RuntimeEventKind.PLAN_CREATED,
+        trace_run_id,
+        "w20c-inspection-root",
+        data={
+            "steps": 1,
+            "plan": [{
+                "path": sentinels["absolute_path"],
+                "relative": sentinels["relative_path"],
+                "arguments": {"data": {"message": sentinels["nested_data_message"]}},
+            }],
+            "changed_files": [sentinels["changed_file"]],
+            "cwd": sentinels["cwd"],
+            "argv": [sentinels["argv"]],
+            "message": sentinels["message"],
+            "summary": sentinels["summary"],
+            "exception": sentinels["exception"],
+            "error": sentinels["error"],
+            "data": {"message": sentinels["nested_data_message"]},
+        },
+    )
+)
+for event_step in range(1, 4):
+    trace.append(
+        RuntimeEvent(
+            RuntimeEventKind.TOOL_START,
+            trace_run_id,
+            "w20c-inspection-root",
+            step=event_step,
+        )
+    )
+trace.close()
+persisted_events = trace.read()
+persisted_document = json.dumps(
+    [event.to_dict() for event in persisted_events], ensure_ascii=False, sort_keys=True
+)
+encoded_sentinels = [
+    json.dumps(sentinel, ensure_ascii=False)[1:-1]
+    for sentinel in sentinels.values()
+]
+tool_events = [
+    event
+    for event in persisted_events
+    if event.payload.get("type") == RuntimeEventKind.TOOL_START.value
+]
+plan_events = [
+    event
+    for event in persisted_events
+    if event.payload.get("type") == RuntimeEventKind.PLAN_CREATED.value
+]
+if (
+    len(persisted_events) != 4
+    or len(tool_events) != 3
+    or len(plan_events) != 1
+    or any(sentinel not in persisted_document for sentinel in encoded_sentinels)
+):
+    raise RuntimeError("inspection adversarial trace seed was not persisted")
+print(json.dumps({"foreign_run_id": result.run_id, "inspection_run_id": trace_run_id}))
 """
 
 
@@ -93,11 +187,20 @@ def _hash_bound_install_input(union_lock: Path, wheel: Path, destination: Path) 
     return wheel_sha256
 
 
-def _seed_foreign_run(python: Path, app_home: Path, foreign_workspace: Path, script: Path) -> str:
+def _seed_foreign_run(
+    python: Path,
+    app_home: Path,
+    foreign_workspace: Path,
+    inspection_workspace: Path,
+    script: Path,
+) -> tuple[str, str]:
     script.write_text(FOREIGN_RUN_SEED, encoding="utf-8")
     environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONHOME", "PYTHONPATH"}}
     completed = subprocess.run(
-        (str(python), str(script), str(app_home), str(foreign_workspace)),
+        (
+            str(python), str(script), str(app_home), str(foreign_workspace),
+            str(inspection_workspace), json.dumps(INSPECTION_SENTINELS, separators=(",", ":")),
+        ),
         cwd=foreign_workspace,
         env=environment,
         stdin=subprocess.DEVNULL,
@@ -105,14 +208,61 @@ def _seed_foreign_run(python: Path, app_home: Path, foreign_workspace: Path, scr
         text=True,
         check=True,
     )
-    run_id = completed.stdout.strip()
-    if not re.fullmatch(r"engr-[0-9a-f]{32}", run_id):
+    seeded = json.loads(completed.stdout)
+    if not isinstance(seeded, dict):
+        raise RuntimeError("seed script returned an invalid document")
+    run_id = seeded.get("foreign_run_id")
+    inspection_run_id = seeded.get("inspection_run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"engr-[0-9a-f]{32}", run_id):
         raise RuntimeError("foreign run seed returned an invalid identity")
-    return run_id
+    if not isinstance(inspection_run_id, str) or inspection_run_id != "w20c-inspection-adversarial":
+        raise RuntimeError("inspection trace seed returned an invalid identity")
+    return run_id, inspection_run_id
 
 
 def _field(value: Mapping[str, Any], wire_name: str, python_name: str, default: Any = None) -> Any:
     return value[wire_name] if wire_name in value else value.get(python_name, default)
+
+
+def _contains_sentinel(value: Any, sentinel: str) -> bool:
+    if isinstance(value, str):
+        return sentinel in value
+    if isinstance(value, Mapping):
+        return any(
+            _contains_sentinel(key, sentinel) or _contains_sentinel(item, sentinel)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_sentinel(item, sentinel) for item in value)
+    return False
+
+
+def _contains_key(value: Any, forbidden: frozenset[str]) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            (isinstance(key, str) and key in forbidden)
+            or _contains_key(item, forbidden)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_key(item, forbidden) for item in value)
+    return False
+
+
+def _inspection_lists_within_limit(document: Mapping[str, Any], limit: int) -> bool:
+    data = document.get("data")
+    if not isinstance(data, Mapping):
+        return False
+    for path in _INSPECTION_LIST_PATHS:
+        selected: Any = data
+        for key in path:
+            if not isinstance(selected, Mapping):
+                selected = None
+                break
+            selected = selected.get(key)
+        if selected is not None and (not isinstance(selected, list) or len(selected) > limit):
+            return False
+    return not isinstance(data.get("issues"), list)
 
 
 def _safe_projection(item: Mapping[str, Any], *, expect_error: bool) -> tuple[bool, dict[str, Any] | None]:
@@ -132,7 +282,7 @@ def _safe_projection(item: Mapping[str, Any], *, expect_error: bool) -> tuple[bo
     return valid, text_document if isinstance(text_document, dict) else None
 
 
-def _mcp_requests(foreign_run_id: str) -> list[dict[str, Any]]:
+def _mcp_requests(foreign_run_id: str, inspection_run_id: str) -> list[dict[str, Any]]:
     return [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "w20c", "version": "1"}}},
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -141,6 +291,7 @@ def _mcp_requests(foreign_run_id: str) -> list[dict[str, Any]]:
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "engineering_describe", "arguments": {"operation_id": "health.offline"}}},
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "engineering_health_offline", "arguments": {}}},
         {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "engineering_result", "arguments": {"run_id": foreign_run_id}}},
+        {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "engineering_inspect_completed", "arguments": {"trace_run_id": inspection_run_id, "limit": 1}}},
     ]
 
 
@@ -206,13 +357,19 @@ def _roundtrip(
     workspace: Path,
     app_home: Path,
     foreign_run_id: str,
+    inspection_run_id: str,
     foreign_workspace: Path,
     *,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     process = _start_mcp_process(python, workspace, app_home)
+    requests = _mcp_requests(foreign_run_id, inspection_run_id)
+    inspection_request = next((item for item in requests if item.get("id") == 7), {})
+    request_params = inspection_request.get("params")
+    request_arguments = request_params.get("arguments") if isinstance(request_params, Mapping) else None
+    inspection_limit = request_arguments.get("limit") if isinstance(request_arguments, Mapping) else None
     payloads, returncode = _collect_mcp_payloads(
-        process, _mcp_requests(foreign_run_id), timeout=timeout
+        process, requests, timeout=timeout
     )
     by_id = {item.get("id"): item for item in payloads if isinstance(item, dict) and "id" in item}
     initialize_result = by_id.get(1, {}).get("result", {})
@@ -232,6 +389,46 @@ def _roundtrip(
         and "traceback" not in serialized_error.casefold()
         and "exception" not in serialized_error.casefold()
     )
+    inspection_ok, inspection_document = _safe_projection(by_id.get(7, {}), expect_error=False)
+    serialized_inspection = json.dumps(by_id.get(7, {}), ensure_ascii=False, sort_keys=True)
+    serialized_roundtrip = json.loads(serialized_inspection)
+    inspection_data = inspection_document.get("data") if inspection_document is not None else None
+    plan_steps = inspection_data.get("plan_steps") if isinstance(inspection_data, Mapping) else None
+    tools_section = inspection_data.get("tools") if isinstance(inspection_data, Mapping) else None
+    tool_events = tools_section.get("events") if isinstance(tools_section, Mapping) else None
+    safe_inspection = (
+        inspection_ok
+        and inspection_document is not None
+        and inspection_request.get("id") == 7
+        and isinstance(inspection_limit, int)
+        and not isinstance(inspection_limit, bool)
+        and inspection_limit == 1
+        and inspection_document.get("operation") == "engineering_inspect_completed"
+        and inspection_document.get("status") == "available"
+        and isinstance(inspection_data, Mapping)
+        and inspection_data.get("schema_version") == 1
+        and isinstance(plan_steps, Mapping)
+        and plan_steps.get("plan_count") == 1
+        and isinstance(tools_section, Mapping)
+        and tools_section.get("count") == 3
+        and isinstance(tool_events, list)
+        and len(tool_events) == 1
+        and _inspection_lists_within_limit(inspection_document, inspection_limit)
+        and all(
+            not _contains_sentinel(serialized_roundtrip, sentinel)
+            for sentinel in INSPECTION_SENTINELS.values()
+        )
+        and not _contains_key(
+            inspection_data,
+            frozenset(
+                {
+                    "absolute_path", "relative_path", "path", "relative", "changed_files",
+                    "cwd", "argv", "message", "summary", "exception", "error", "data",
+                    "title", "reason",
+                }
+            ),
+        )
+    )
     capabilities = initialize_result.get("capabilities", {})
     return {
         "tools": names,
@@ -239,6 +436,7 @@ def _roundtrip(
         "resources_exposed": "resources" in capabilities,
         "prompts_exposed": "prompts" in capabilities,
         "safe_calls": all(success_projections),
+        "safe_inspection_projection": safe_inspection,
         "safe_error_path": safe_error,
         "workspace_isolation": safe_error,
         "protocol_stdout_pure": all(isinstance(item, dict) for item in payloads),
@@ -255,10 +453,11 @@ def acceptance_summary(
     wheel_sha256: str | None = None,
 ) -> dict[str, Any]:
     names = tuple(roundtrip.get("tools", ()))
+    safe_inspection = bool(roundtrip.get("safe_inspection_projection"))
     return {
         "schema_version": 1,
-        "acceptance": names == TOOLS and bool(roundtrip.get("protocol_stdout_pure")),
-        "status": "passed" if names == TOOLS and bool(roundtrip.get("protocol_stdout_pure")) else "failed",
+        "acceptance": names == TOOLS and bool(roundtrip.get("protocol_stdout_pure")) and safe_inspection,
+        "status": "passed" if names == TOOLS and bool(roundtrip.get("protocol_stdout_pure")) and safe_inspection else "failed",
         "mcp_version": "2.2.0",
         "union_lock_sha256": mcp_union_lock_sha256(union_lock),
         "application_wheel_sha256": wheel_sha256 or _sha256(wheel),
@@ -270,6 +469,7 @@ def acceptance_summary(
         "workspace_isolation_probe": "passed" if roundtrip.get("workspace_isolation") else "failed",
         "protocol_stdout_pure": bool(roundtrip.get("protocol_stdout_pure")),
         "safe_tool_projection": bool(roundtrip.get("safe_calls")),
+        "safe_inspection_projection": safe_inspection,
         "safe_error_path": bool(roundtrip.get("safe_error_path")),
         "process_clean": bool(roundtrip.get("process_clean")),
         "source_repository_unchanged": bool(roundtrip.get("source_repository_unchanged", False)),
@@ -309,13 +509,21 @@ def main(argv: list[str] | None = None) -> int:
         ).strip()
         if installed_mcp != "2.2.0":
             raise RuntimeError(f"unexpected installed mcp version: {installed_mcp}")
-        foreign_run_id = _seed_foreign_run(
+        foreign_run_id, inspection_run_id = _seed_foreign_run(
             python,
             app_home,
             foreign_workspace,
+            args.workspace,
             temporary_dir / "foreign-run-seed.py",
         )
-        probe = _roundtrip(python, args.workspace, app_home, foreign_run_id, foreign_workspace)
+        probe = _roundtrip(
+            python,
+            args.workspace,
+            app_home,
+            foreign_run_id,
+            inspection_run_id,
+            foreign_workspace,
+        )
     probe["source_repository_unchanged"] = before_status == subprocess.check_output(
         ["git", "status", "--porcelain=v1"], cwd=ROOT, text=True
     )
@@ -335,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
             not summary["resources_exposed"],
             not summary["prompts_exposed"],
             summary["safe_tool_projection"],
+            summary["safe_inspection_projection"],
             summary["safe_error_path"],
             summary["workspace_isolation_probe"] == "passed",
             summary["process_clean"],

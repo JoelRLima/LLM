@@ -820,6 +820,7 @@ def _wave20_shape_findings(problems: list[str]) -> None:
             "agent/engineering/backends/evaluation.py",
             "agent/engineering/backends/health.py",
             "agent/engineering/backends/inspection.py",
+            "agent/engineering/backends/inspection_projection.py",
         },
         "agent/discovery": {
             "agent/discovery/__init__.py",
@@ -1147,6 +1148,8 @@ def _wave20b_findings(problems: list[str]) -> None:
     practical = _source("agent/evaluation/practical.py")
     health = _source("agent/engineering/backends/health.py")
     inspection = _source("agent/engineering/backends/inspection.py")
+    inspection_projection = _source("agent/engineering/backends/inspection_projection.py")
+    inspection_tree = _tree("agent/engineering/backends/inspection.py")
     policy = _source("agent/engineering/policy.py")
     safe = _source("agent/engineering/model_safe.py")
     campaign = _source("tests/unit/engineering/test_wave20b_campaign.py")
@@ -1156,7 +1159,17 @@ def _wave20b_findings(problems: list[str]) -> None:
     _append_missing(problems, all(token in practical for token in ("compare_receipt_groups", "candidate_identity", "model_identity", "envelopes", "Mapping")), "W20-B-COMPARISON-ENVELOPE", "comparison does not pass identity-bound Mapping envelopes")
     _append_missing(problems, _fault_closed_owner_is_canonical(), "W20-B-FAULT-CLOSED", "FaultPlanV1 does not own the closed practical fault vocabulary")
     _append_missing(problems, all(token in health for token in ("run_standalone_health_check", "write_report=False", "online=False")), "W20-B-HEALTH-OWNER", "health.offline does not reuse standalone offline owner")
-    _append_missing(problems, all(token in inspection for token in ("InspectionService", "trace_run_id", "limit", "_PROJECTION_KEYS")), "W20-B-INSPECTION-OWNER", "inspection.completed-run does not use the bounded InspectionService projection")
+    inspection_owner = (
+        all(token in inspection for token in ("InspectionService", "trace_run_id", "limit", "project_inspection"))
+        and "_PROJECTION_KEYS" in inspection_projection
+        and _imports_name_from(
+            inspection_tree,
+            "agent.engineering.backends.inspection_projection",
+            "project_inspection",
+        )
+        and "project_inspection" in _call_names(inspection_tree)
+    )
+    _append_missing(problems, inspection_owner, "W20-B-INSPECTION-OWNER", "inspection.completed-run does not delegate to the pure bounded InspectionService projection")
     schema_shape = all(token in policy for token in ("valid_schema_value", "_valid_object", "_valid_array", "additionalProperties"))
     _append_missing(problems, schema_shape, "W20-B-SCHEMA-RECURSIVE", "Engineering preflight lacks recursive closed-schema validation")
     _append_missing(problems, _model_safe_projection_is_canonical(), "W20-B-MODEL-SAFE-PROJECTION", "model-safe metadata/equality/redaction owner is incomplete")
