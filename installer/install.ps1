@@ -899,7 +899,10 @@ function Assert-PayloadFirewall {
         if ($lower.StartsWith("bin/") -and $lower -ne "bin/llm-agent.cmd") {
             throw "unauthorized bin member leaked into payload: $relative"
         }
-        foreach ($marker in @(".agent-local", ".audit-local", ".git", "task_contract", "task_spec", "transactions", "uv.exe", "pip.exe")) {
+        if ($parts -contains "transactions") {
+            throw "conteúdo de build/autoridade vazou no payload: $relative"
+        }
+        foreach ($marker in @(".agent-local", ".audit-local", ".git", "task_contract", "task_spec", "uv.exe", "pip.exe")) {
             if ($lower.Contains($marker)) { throw "conteúdo de build/autoridade vazou no payload: $relative" }
         }
         if ($lower.Contains("\\lib\\site-packages\\setuptools") -or

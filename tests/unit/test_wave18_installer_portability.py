@@ -200,3 +200,85 @@ def test_installer_bootstrap_escapes_inherited_core_module_path(tmp_path: Path) 
         assert result.returncode != 0
         assert "divergiu do receipt" in output
         assert "CONTAMINATED_UTILITY_GetFileHash" not in output
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1 boundary is Windows-only")
+def test_payload_firewall_treats_transactions_as_a_path_component(tmp_path: Path) -> None:
+    """Runtime transactions.py is allowed while transaction state remains blocked."""
+
+    powershell = _windows_powershell()
+    source = INSTALLER.read_text(encoding="utf-8")
+    start = source.index("function Test-ReparsePoint")
+    end = source.index("function Read-RegistryPathSnapshot")
+    harness = tmp_path / "payload-firewall-harness.ps1"
+    harness.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        + source[start:end]
+        + r'''
+function New-PayloadFile {
+    param([string]$Root, [string]$Relative)
+
+    $path = Join-Path $Root ($Relative -replace '/', '\')
+    $parent = Split-Path -Parent $path
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    [IO.File]::WriteAllText($path, "fixture")
+}
+
+function New-PayloadCandidate {
+    param([string]$Root, [string[]]$Extras)
+
+    foreach ($relative in @(
+        "runtime/python.exe",
+        "bin/llm-agent.cmd",
+        "app/launcher.py"
+    ) + @($Extras)) {
+        New-PayloadFile $Root $relative
+    }
+}
+
+function Assert-PayloadRejected {
+    param([string]$Root)
+
+    try {
+        Assert-PayloadFirewall $Root
+    }
+    catch {
+        if ($_.Exception.Message -notlike "*transactions*") { throw }
+        return
+    }
+    throw "expected payload firewall rejection for $Root"
+}
+
+$allowed = Join-Path $PSScriptRoot "allowed"
+New-PayloadCandidate $allowed @(
+    "runtime/Lib/site-packages/agent/engineering/transactions.py",
+    "foo/mytransactions.py",
+    "foo/transactions_helper.py"
+)
+Assert-PayloadFirewall $allowed
+
+$rejected = Join-Path $PSScriptRoot "rejected"
+New-PayloadCandidate $rejected @("runtime/transactions/state.json")
+Assert-PayloadRejected $rejected
+''',
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [
+            str(powershell),
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+        ],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    output = (result.stdout + "\n" + result.stderr).replace("\x00", "")
+    assert result.returncode == 0, output

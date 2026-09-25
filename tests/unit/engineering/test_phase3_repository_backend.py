@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+import agent
 from agent.engineering.backends import repository
 from agent.engineering.backends.repository import (
     MAX_ENGINEERING_ACCEPTANCE_SUMMARY_BYTES,
@@ -47,9 +49,13 @@ def valid_summary() -> dict[str, object]:
 def test_source_context_derives_from_running_package_not_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     context = discover_source_repository_context()
+    expected_root = Path(agent.__file__).resolve().parent.parent
     assert context is not None
     assert context.root != tmp_path
-    assert context.root.name == "LLM Agent Harness"
+    assert context.root == expected_root
+    assert (context.root / "pyproject.toml").is_file()
+    assert (context.root / "agent").is_dir()
+    assert (context.root / "scripts" / "verify_installed_package.py").is_file()
 
 
 def test_exact_safe_projector_strips_untrusted_detail() -> None:
@@ -174,6 +180,7 @@ def test_cleanup_uncertainty_propagates_as_typed_indeterminate(monkeypatch: pyte
         )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object semantics are Windows-only")
 def test_windows_job_association_failure_with_settled_cleanup_is_protocol_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -185,6 +192,7 @@ def test_windows_job_association_failure_with_settled_cleanup_is_protocol_error(
         backend.execute(EngineeringRequest("acceptance.installed-package", {}), backend_context(tmp_path))
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows Job Object semantics are Windows-only")
 def test_windows_job_close_uncertainty_overrides_apparent_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
