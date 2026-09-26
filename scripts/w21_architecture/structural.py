@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Protocol, cast
 
 
 class StructuralStatus(str, Enum):
@@ -20,6 +20,11 @@ class StructuralStatus(str, Enum):
     EXACT = "EXACT"
     AMBIGUOUS = "AMBIGUOUS"
     INVALID = "INVALID"
+
+
+class _TypeAliasNode(Protocol):
+    value: ast.expr
+    name: ast.Name
 
 
 @dataclass(frozen=True)
@@ -143,7 +148,7 @@ class StructuralBindingCollector:
         )
         for node_types, handler in candidates:
             if isinstance(node, node_types):
-                return handler
+                return cast(Callable[[ast.AST], None], handler)
         type_alias = getattr(ast, "TypeAlias", None)
         if type_alias is not None and isinstance(node, type_alias):
             return self._visit_type_alias
@@ -254,8 +259,9 @@ class StructuralBindingCollector:
             self._visit_statements(case.body)
 
     def _visit_type_alias(self, node: ast.AST) -> None:
-        self._visit_expr(node.value)
-        self._visit_target(node.name, "type_alias")
+        type_alias = cast(_TypeAliasNode, node)
+        self._visit_expr(type_alias.value)
+        self._visit_target(type_alias.name, "type_alias")
 
     def _visit_generic_statement(self, node: ast.stmt) -> None:
         for child in ast.iter_child_nodes(node):
@@ -364,7 +370,7 @@ class StructuralBindingCollector:
         )
         for node_type, handler in candidates:
             if isinstance(node, node_type):
-                return handler
+                return cast(Callable[[ast.AST], None], handler)
         return None
 
     def _record_match_capture(self, node: ast.AST, name: str | None) -> None:

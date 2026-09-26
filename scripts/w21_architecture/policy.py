@@ -6,7 +6,7 @@ import ast
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import AbstractSet, Any, Mapping
+from typing import AbstractSet, Any, Mapping, cast
 
 from .compatibility import CompatibilityRegistry, normalize_registry
 from .source import RepositorySource, qualified_name
@@ -46,7 +46,7 @@ def stable_violation_id(source_module: str, destination_module: str, edge_kind: 
 
 def _matches(selector: Mapping[str, Any], value: str) -> bool:
     if "module" in selector:
-        return value == selector["module"]
+        return value == cast(str, selector["module"])
     if "modules" in selector:
         return value in selector["modules"]
     if "package_prefix" in selector:

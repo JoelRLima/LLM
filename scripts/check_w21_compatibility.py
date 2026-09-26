@@ -10,7 +10,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -147,7 +147,7 @@ class BridgeAnalysis:
 
         if self.structural.status is StructuralStatus.EXACT:
             return "EXACT_SYMBOL"
-        return self.structural.status.value
+        return cast(str, self.structural.status.value)
 
     def is_exact_target(self, module: str, symbol: str) -> bool:
         return (
@@ -386,7 +386,7 @@ def _facade_findings(
             if destination == target_package or destination.startswith(target_package + "."):
                 findings.append(CompatibilityFinding("W21-COMP-UNKNOWN-BRIDGE", f"{bridge.bridge_id}: sibling/transitive bridge expansion {bridge.source_module} -> {destination}"))
                 continue
-            for kind in edge.get("edge_kinds", []):
+            for kind in cast(Iterable[object], edge.get("edge_kinds", [])):
                 decision = classify_edge(
                     bridge.source_module,
                     destination,

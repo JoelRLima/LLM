@@ -8,7 +8,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypedDict
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -52,6 +52,15 @@ MODULE_REGISTRY = {
         }
     ]
 }
+
+
+class CampaignReport(TypedDict):
+    total: int
+    families: dict[str, int]
+    accepts: int
+    rejects: int
+    mismatches: int
+    mismatch_labels: list[str]
 
 
 @dataclass(frozen=True)
@@ -216,7 +225,7 @@ def probes() -> tuple[Probe, ...]:
     return exact + wrong + indirect + competing + control_flow + edges + lifecycle
 
 
-def run() -> dict[str, object]:
+def run() -> CampaignReport:
     results = []
     for probe in probes():
         actual = bool(probe.evaluate())

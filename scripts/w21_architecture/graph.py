@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sized
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, TypedDict, cast
 
 from .imports import STATIC_KINDS, aggregate_edges, collect_import_edges
 from .source import RepositorySource
+
+
+class _PackageEdge(TypedDict):
+    source_package: str
+    destination_package: str
+    module_edge_count: int
+    import_statement_count: int
+    edge_kinds: set[str]
 
 
 def package_family(module: str) -> str:
@@ -18,7 +27,7 @@ def package_family(module: str) -> str:
 
 
 def _package_edges(edges: list[dict[str, object]]) -> list[dict[str, object]]:
-    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    grouped: dict[tuple[str, str], _PackageEdge] = {}
     for edge in edges:
         source = package_family(str(edge["source_module"]))
         destination = package_family(str(edge["destination_module"]))
@@ -35,12 +44,12 @@ def _package_edges(edges: list[dict[str, object]]) -> list[dict[str, object]]:
                 "edge_kinds": set(),
             },
         )
-        record["module_edge_count"] = int(record["module_edge_count"]) + 1
-        evidence = edge.get("evidence", ())
-        record["import_statement_count"] = int(record["import_statement_count"]) + len(evidence)  # type: ignore[arg-type]
+        record["module_edge_count"] += 1
+        evidence = cast(Sized, edge.get("evidence", ()))
+        record["import_statement_count"] += len(evidence)
         edge_kinds = record["edge_kinds"]
         assert isinstance(edge_kinds, set)
-        edge_kinds.update(edge.get("edge_kinds", ()))  # type: ignore[arg-type]
+        edge_kinds.update(cast(Iterable[str], edge.get("edge_kinds", ())))
 
     result: list[dict[str, object]] = []
     for key in sorted(grouped):
@@ -111,7 +120,7 @@ def _visit_scc(node: str, state: _SccState) -> None:
 
 
 def _scc_count(nodes: Iterable[str], edges: list[dict[str, object]]) -> int:
-    adjacency = {node: set() for node in nodes}
+    adjacency: dict[str, set[str]] = {node: set() for node in nodes}
     for edge in edges:
         source = str(edge["source_module"])
         destination = str(edge["destination_module"])
