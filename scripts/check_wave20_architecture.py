@@ -4,9 +4,15 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.w21_architecture import RepositorySource, imported_module_names  # noqa: E402
+
 ENGINEERING = ROOT / "agent" / "engineering"
 FORBIDDEN_CORE_PREFIXES = (
     "agent.application",
@@ -1289,6 +1295,22 @@ def _engineering_findings(problems: list[str]) -> None:
         _append_missing(problems, "validate_transition" in (store + transition + recovery), "W20-A-TRANSITION-VALIDATION", "managed marker validation is not canonical")
 
 
+def _engineering_boundary_findings(root: Path) -> list[str]:
+    """Run only the migrated Engineering import-boundary policy on a fixture."""
+
+    source = RepositorySource(root)
+    findings: list[str] = []
+    for path in source.python_files("agent/engineering"):
+        relative = source.relative(path)
+        tree = source.tree_for_path(path)
+        if tree is None:
+            continue
+        for imported in imported_module_names(tree):
+            if imported.startswith(FORBIDDEN_CORE_PREFIXES):
+                findings.append(f"W20-A-FORBIDDEN-IMPORT: {relative} -> {imported}")
+    return sorted(findings)
+
+
 def _literal_string_tuple(tree: ast.AST, name: str) -> tuple[str, ...]:
     value = next(
         (
@@ -1501,7 +1523,9 @@ def _campaign_findings(problems: list[str]) -> None:
         _append_missing(problems, found == expected, f"W20-{prefix}-CAMPAIGN", f"campaign identity set differs: missing={sorted(expected - found)} extra={sorted(found - expected)}")
 
 
-def findings() -> list[str]:
+def findings(root: Path = ROOT) -> list[str]:
+    if root.resolve() != ROOT.resolve():
+        return _engineering_boundary_findings(root.resolve())
     problems: list[str] = []
     _engineering_findings(problems)
     _wave20_shape_findings(problems)

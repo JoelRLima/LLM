@@ -1,0 +1,429 @@
+{
+  "edge_classes": [
+    "canonical",
+    "adapter",
+    "compatibility",
+    "forbidden"
+  ],
+  "classification_semantics": {
+    "rule_local_exception_precedence": "A matching exception embedded in a rule is evaluated before that rule's forbidden classification.",
+    "ordered_classification": [
+      "rule-local exact exception",
+      "exact registered compatibility bridge",
+      "exact explicit adapter rule/edge",
+      "matching forbidden rule",
+      "matching explicit canonical rule",
+      "baseline-preserved edge",
+      "new-edge policy"
+    ],
+    "baseline_preserved_edge": "An edge present in the frozen pre-W21 baseline and not governed by a more specific target rule is canonical-for-W21-scope only. This does not authorize new sibling edges. The baseline pair set is closed-world for W21: a new source/destination pair is not baseline-preserved.",
+    "new_edge_policy": {
+      "same_package": "canonical unless a specific rule forbids it",
+      "consumer_to_approved_neutral_owner": "canonical only for the allowed consumer families declared by that neutral owner",
+      "explicit_direction": "canonical/adapter only when declared below",
+      "all_other_new_cross_package_edges": "forbidden"
+    }
+  },
+  "preserved_canonical_owners": {
+    "capability_vocabulary": "agent.capabilities",
+    "logical_resource_semantics": "agent.resources.contracts",
+    "path_types": "agent.runtime.paths::AppPaths/WorkspacePaths"
+  },
+  "approved_neutral_owners": [
+    {
+      "package": "agent.operation",
+      "lane": "A",
+      "purpose": "Shared operation/builtin metadata value contracts and pure metadata normalization used by skills, tools and planning.",
+      "target_modules": [
+        "agent.operation.contracts",
+        "agent.operation.schema",
+        "agent.operation.provenance",
+        "agent.operation.usage_examples",
+        "agent.operation.spec",
+        "agent.operation.catalog",
+        "agent.operation.planning_metadata"
+      ],
+      "allowed_dependency_families": [
+        "stdlib",
+        "agent.capabilities",
+        "agent.resources.contracts",
+        "agent.runtime.schema_validation (narrow existing pure schema-validation dependency only)"
+      ],
+      "must_not_own": [
+        "tool invocation execution",
+        "skill implementation",
+        "planner policy",
+        "approval/authority policy"
+      ],
+      "allowed_consumer_families": [
+        "agent.skills",
+        "agent.tools",
+        "agent.planning",
+        "agent.application",
+        "agent.orchestration"
+      ],
+      "runtime_dependency_constraint": "No other agent.runtime dependency is authorized by this owner declaration; if Lane A can move pure schema-shape validation into agent.operation without behavior change, that is preferred."
+    },
+    {
+      "package": "agent.process",
+      "lane": "B",
+      "purpose": "Shared subprocess lifecycle mechanics only.",
+      "target_modules": [
+        "agent.process.tree",
+        "agent.process.streams",
+        "agent.process.lifecycle"
+      ],
+      "allowed_dependency_families": [
+        "stdlib",
+        "agent.cancellation"
+      ],
+      "must_not_own": [
+        "shell allowlist/policy",
+        "Python AST/code policy",
+        "Git authorization/query semantics",
+        "stdio protocol semantics",
+        "Engineering authorization",
+        "validation command policy"
+      ],
+      "allowed_consumer_families": [
+        "agent.skills",
+        "agent.tools",
+        "agent.code",
+        "agent.application_services",
+        "agent.engineering"
+      ]
+    },
+    {
+      "package": "agent.intent",
+      "lane": "D",
+      "purpose": "Shared, authority-neutral intent claim value contracts used by parsing and deterministic admission.",
+      "target_modules": [
+        "agent.intent.claim_types",
+        "agent.intent.claim_contracts"
+      ],
+      "allowed_dependency_families": [
+        "stdlib",
+        "agent.capabilities",
+        "agent.resources.contracts"
+      ],
+      "must_not_own": [
+        "lexical/semantic parsing",
+        "model calls",
+        "authority admission policy",
+        "target grounding policy",
+        "clarification routing"
+      ],
+      "allowed_consumer_families": [
+        "agent.interaction",
+        "agent.planning",
+        "agent.runtime"
+      ]
+    }
+  ],
+  "explicit_canonical_directions": [
+    {
+      "direction_id": "W21-DIR-SKILLS-TOOLS",
+      "source": "agent.skills",
+      "destination": "agent.tools",
+      "class": "canonical",
+      "constraint": "Execution/implementation skills may consume canonical tool runtime contracts; shared metadata exceptions are governed by W21-R-META-005/006."
+    },
+    {
+      "direction_id": "W21-DIR-PLANNING-TOOLS",
+      "source": "agent.planning",
+      "destination": "agent.tools",
+      "class": "canonical",
+      "constraint": "Planning may consume tool invocation/result contracts; planning metadata ownership must not live in tools."
+    },
+    {
+      "direction_id": "W21-DIR-INTERACTION-PLANNING",
+      "source": "agent.interaction",
+      "destination": "agent.planning",
+      "class": "canonical",
+      "constraint": "Interaction may call deterministic planning/admission services; reverse planning-to-interaction dependencies are forbidden."
+    },
+    {
+      "direction_id": "W21-DIR-TOOLS-SKILLS-ADAPTER",
+      "source": "agent.tools.builtin_adapter",
+      "destination": "agent.skills",
+      "class": "adapter",
+      "constraint": "Only the explicit builtin adapter may depend from tools into skills."
+    },
+    {
+      "direction_id": "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+      "source": "agent.skills.load_tool_registry",
+      "destination": "agent.tools",
+      "class": "adapter",
+      "constraint": "Existing bounded construction surface only; not a generic reverse dependency authorization."
+    }
+  ],
+  "selector_schema": {
+    "module": "exact Python module name",
+    "modules": "finite exact module-name set",
+    "package_prefix": "exact package/module prefix boundary; matches the prefix itself and dotted descendants",
+    "package_prefixes": "finite set of package_prefix selectors",
+    "any_of": "logical OR across child selectors",
+    "production_module_except": "all production agent modules except the named exact module",
+    "exception_semantics": "rule-local exceptions override the enclosing rule only for the exact exception selector"
+  },
+  "neutral_owner_invariants": [
+    "Neutral owners contain data/value contracts or shared mechanics, not application objects.",
+    "No neutral owner may accept/store Orchestrator, AgentApplication, generic services: Any, or caller-domain registries.",
+    "No neutral owner may add model calls, authority decisions, approval decisions, or caller-specific execution policy."
+  ],
+  "residual_baseline_dependency_policy": {
+    "repo_wide_acyclicity_claimed": false,
+    "principle": "W21 converges the explicitly governed critical cycles and modernization seams. Untouched baseline dependencies outside those rules are preserved for behavior/scope control, but do not authorize new sibling cross-package edges.",
+    "known_examples_not_assigned_for_elimination_in_w21": [
+      {
+        "pair": "agent.runtime <-> agent.tools",
+        "status": "known residual baseline mutual dependency",
+        "reason": "Removing ToolResult/runtime outcome coupling would materially broaden W21 beyond the frozen lane scope; no new runtime/tools edge is authorized."
+      },
+      {
+        "pair": "other members of the baseline package-level SCC",
+        "status": "not claimed resolved by W21",
+        "reason": "W21 is modernization/convergence, not a repo-wide rewrite."
+      }
+    ],
+    "backlog_rule": "Residual baseline cycles may be addressed by a later dedicated wave; W21 must not worsen them."
+  },
+  "rules": [
+    {
+      "rule_id": "W21-R-META-001",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.tools"
+      },
+      "destination": {
+        "package_prefix": "agent.planning"
+      },
+      "reason": "Tool runtime must not depend upward on planning metadata/schema ownership.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-META-002",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.tools"
+      },
+      "destination": {
+        "package_prefix": "agent.skills"
+      },
+      "exceptions": [
+        {
+          "source_module": "agent.tools.builtin_adapter",
+          "destination_package_prefix": "agent.skills",
+          "edge_class": "adapter",
+          "reason": "BuiltinToolAdapter is the explicit skill-to-tool adaptation boundary."
+        }
+      ],
+      "reason": "Canonical tool contracts cannot import skill-domain contracts; only the explicit builtin adapter may depend on skills.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-META-003",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.planning"
+      },
+      "destination": {
+        "package_prefix": "agent.skills"
+      },
+      "reason": "Planning consumes neutral operation metadata/projections rather than skill implementation/catalog ownership.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-META-004",
+      "edge_class": "forbidden",
+      "source": {
+        "module": "agent.skills.descriptor"
+      },
+      "destination": {
+        "module": "agent.planning.schema_safety"
+      },
+      "reason": "Shared descriptor schema safety moves to neutral operation metadata ownership.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-META-005",
+      "edge_class": "forbidden",
+      "source": {
+        "module": "agent.skills.catalog"
+      },
+      "destination": {
+        "modules": [
+          "agent.tools.contracts",
+          "agent.tools.provenance"
+        ]
+      },
+      "reason": "Builtin construction metadata must not be authored in terms of tool-runtime metadata contracts.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-META-006",
+      "edge_class": "forbidden",
+      "source": {
+        "module": "agent.skills.descriptor"
+      },
+      "destination": {
+        "modules": [
+          "agent.tools.contracts",
+          "agent.tools.provenance",
+          "agent.tools.usage_examples"
+        ]
+      },
+      "reason": "Metadata primitives shared by skills/tools/planning move to the neutral operation owner.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-PROC-001",
+      "edge_class": "forbidden",
+      "source": {
+        "production_module_except": "agent.tools.process_tree"
+      },
+      "destination": {
+        "module": "agent.tools.process_tree"
+      },
+      "reason": "Shared process-tree mechanics move to agent.process; old tools path may remain only as an explicit compatibility facade with no canonical production consumers.",
+      "remediation_lane": "B"
+    },
+    {
+      "rule_id": "W21-R-PROC-002",
+      "edge_class": "forbidden",
+      "source": {
+        "production_module_except": "agent.tools.stdio_streams"
+      },
+      "destination": {
+        "module": "agent.tools.stdio_streams"
+      },
+      "reason": "Shared bounded stream/reader mechanics move to agent.process; old tools path may remain only as a compatibility facade.",
+      "remediation_lane": "B"
+    },
+    {
+      "rule_id": "W21-R-INTENT-001",
+      "edge_class": "forbidden",
+      "source": {
+        "any_of": [
+          {
+            "package_prefix": "agent.planning"
+          },
+          {
+            "module": "agent.runtime.task_directives"
+          }
+        ]
+      },
+      "destination": {
+        "package_prefix": "agent.interaction.intent_claim"
+      },
+      "reason": "Untrusted intent claim value contracts move to neutral agent.intent; planning/runtime must not import interaction parsing ownership.",
+      "remediation_lane": "D"
+    },
+    {
+      "rule_id": "W21-R-NEUTRAL-OP-001",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.operation"
+      },
+      "destination": {
+        "package_prefixes": [
+          "agent.skills",
+          "agent.tools",
+          "agent.planning",
+          "agent.interaction",
+          "agent.application",
+          "agent.orchestration",
+          "agent.engineering",
+          "agent.code"
+        ]
+      },
+      "reason": "agent.operation is a neutral metadata/contract owner and cannot depend on consumer domains.",
+      "remediation_lane": "A"
+    },
+    {
+      "rule_id": "W21-R-NEUTRAL-PROC-001",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.process"
+      },
+      "destination": {
+        "package_prefixes": [
+          "agent.skills",
+          "agent.tools",
+          "agent.planning",
+          "agent.interaction",
+          "agent.application",
+          "agent.application_services",
+          "agent.engineering",
+          "agent.code",
+          "agent.reporting"
+        ]
+      },
+      "reason": "agent.process owns mechanism only and cannot import caller policy domains.",
+      "remediation_lane": "B"
+    },
+    {
+      "rule_id": "W21-R-NEUTRAL-INTENT-001",
+      "edge_class": "forbidden",
+      "source": {
+        "package_prefix": "agent.intent"
+      },
+      "destination": {
+        "package_prefixes": [
+          "agent.interaction",
+          "agent.planning",
+          "agent.runtime",
+          "agent.application",
+          "agent.orchestration",
+          "agent.llm"
+        ]
+      },
+      "reason": "agent.intent owns shared intent value contracts only and cannot depend on parser/planner/runtime owners.",
+      "remediation_lane": "D"
+    }
+  ],
+  "lane_acceptance_architecture": {
+    "A": {
+      "required_absent_rule_violations": [
+        "W21-R-META-001",
+        "W21-R-META-002",
+        "W21-R-META-003",
+        "W21-R-META-004",
+        "W21-R-META-005",
+        "W21-R-META-006"
+      ],
+      "required_owner": "agent.operation",
+      "builtin_adapter_exception_must_remain_bounded": true
+    },
+    "B": {
+      "required_absent_rule_violations": [
+        "W21-R-PROC-001",
+        "W21-R-PROC-002"
+      ],
+      "required_owner": "agent.process",
+      "old_process_facades_may_have_production_consumers": false
+    },
+    "D": {
+      "required_absent_rule_violations": [
+        "W21-R-INTENT-001"
+      ],
+      "required_owner": "agent.intent",
+      "planning_to_interaction_edges_after_lane": 0
+    },
+    "E": {
+      "new_legacy_path_global_consumers": 0,
+      "exact_dispositions_from": "CHAR-PATH-001"
+    },
+    "C": {
+      "opportunistic_orchestrator_skill_injection": 0,
+      "generic_service_bag": 0
+    }
+  },
+  "disguised_cycle_policy": {
+    "local_import": "does_not_resolve_cycle",
+    "TYPE_CHECKING": "does_not_resolve_cycle",
+    "literal_dynamic_import": "does_not_resolve_cycle",
+    "declarative_runtime_import": "does_not_resolve_cycle",
+    "unapproved_reexport": "does_not_resolve_cycle"
+  }
+}

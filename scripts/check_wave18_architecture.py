@@ -7,12 +7,17 @@ the focused tests and installed-product harness cover behaviour.
 
 from __future__ import annotations
 
-import ast
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.w21_architecture import RepositorySource, imported_module_names  # noqa: E402
+
 PS7_PATTERNS = (
     (re.compile(r"\?\?"), "null-coalescing operator"),
     (re.compile(r"ForEach-Object\s+-Parallel", re.IGNORECASE), "ForEach-Object -Parallel"),
@@ -39,8 +44,8 @@ class Violation:
         return f"{self.rule_id} {self.path}: {self.detail}"
 
 
-def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+def _relative(path: Path, root: Path = ROOT) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
 
 
 def _read(path: Path) -> str:
@@ -50,19 +55,20 @@ def _read(path: Path) -> str:
         return ""
 
 
-def _exists(*relative_paths: str) -> list[Violation]:
+def _exists(*relative_paths: str, root: Path = ROOT) -> list[Violation]:
     return [
         Violation("W18-ARCH-01", relative, "required W18 owner surface is missing")
         for relative in relative_paths
-        if not (ROOT / relative).is_file()
+        if not (root / relative).is_file()
     ]
 
 
-def _check_runtime_firewall() -> list[Violation]:
+def _check_runtime_firewall(root: Path = ROOT) -> list[Violation]:
     findings: list[Violation] = []
-    runtime_files = sorted((ROOT / "agent").rglob("*.py"))
+    source = RepositorySource(root)
+    runtime_files = source.python_files("agent")
     for path in runtime_files:
-        relative = _relative(path)
+        relative = source.relative(path)
         text = _read(path).casefold()
         if relative in {"agent/__init__.py", "agent/_version.py"}:
             continue
@@ -71,21 +77,12 @@ def _check_runtime_firewall() -> list[Violation]:
                 findings.append(
                     Violation("W18-ARCH-02", relative, f"installer/provisioning token escaped runtime: {token}")
                 )
-        try:
-            tree = ast.parse(_read(path), filename=relative)
-        except SyntaxError:
+        tree = source.tree_for_path(path)
+        if tree is None:
             findings.append(Violation("W18-ARCH-03", relative, "runtime module is not parseable"))
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                imported = node.module or "" if isinstance(node, ast.ImportFrom) else ""
-                imported_names = [alias.name for alias in node.names]
-                if imported.startswith(("installer", "distribution")) or any(
-                    name.startswith(("installer", "distribution")) for name in imported_names
-                ):
-                    findings.append(
-                        Violation("W18-ARCH-04", relative, "agent runtime imports the W18 installer boundary")
-                    )
+        if any(name.startswith(("installer", "distribution")) for name in imported_module_names(tree)):
+            findings.append(Violation("W18-ARCH-04", relative, "agent runtime imports the W18 installer boundary"))
     return findings
 
 
@@ -281,8 +278,8 @@ if False and __name__ == "__main__":
     raise SystemExit(main())
 
 
-def _v3_read(relative: str) -> str:
-    return _read(ROOT / relative)
+def _v3_read(root: Path, relative: str) -> str:
+    return _read(root / relative)
 
 
 _V3_REQUIRED_SURFACES = (
@@ -339,14 +336,14 @@ _V3_INSTALLER_FORBIDDEN = (
 )
 
 
-def _installed_product_workflow_path() -> Path | None:
-    candidates = tuple(sorted((ROOT / ".github" / "workflows").glob("*-installed-product.yml")))
+def _installed_product_workflow_path(root: Path) -> Path | None:
+    candidates = tuple(sorted((root / ".github" / "workflows").glob("*-installed-product.yml")))
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _v3_required_surface_findings() -> list[Violation]:
-    findings = _exists(*_V3_REQUIRED_SURFACES)
-    if _installed_product_workflow_path() is None:
+def _v3_required_surface_findings(root: Path) -> list[Violation]:
+    findings = _exists(*_V3_REQUIRED_SURFACES, root=root)
+    if _installed_product_workflow_path(root) is None:
         findings.append(
             Violation(
                 "W18-V3-01",
@@ -357,8 +354,8 @@ def _v3_required_surface_findings() -> list[Violation]:
     return findings
 
 
-def _v3_identity_findings() -> list[Violation]:
-    identity = _v3_read(IDENTITY_OWNER)
+def _v3_identity_findings(root: Path) -> list[Violation]:
+    identity = _v3_read(root, IDENTITY_OWNER)
     return [
         Violation("W18-V3-02", IDENTITY_OWNER, f"missing v003 identity control: {token}")
         for token in _V3_IDENTITY_CONTROLS
@@ -391,33 +388,33 @@ def _v3_installer_forbidden_findings(installer: str) -> list[Violation]:
     return findings
 
 
-def _v3_installer_shell_findings() -> list[Violation]:
+def _v3_installer_shell_findings(root: Path) -> list[Violation]:
     findings: list[Violation] = []
     for relative in ("installer/install.ps1", "installer/uninstall.ps1"):
-        text = _v3_read(relative)
+        text = _v3_read(root, relative)
         findings.extend(
             Violation("W18-V3-07", relative, f"PowerShell 5.1 path uses {label}")
             for pattern, label in PS7_PATTERNS
             if pattern.search(text)
         )
     for relative in ("installer/install.cmd", "installer/uninstall.cmd"):
-        text = _v3_read(relative).casefold()
+        text = _v3_read(root, relative).casefold()
         if "powershell.exe" not in text or "-noprofile" not in text or "-file" not in text:
             findings.append(Violation("W18-V3-08", relative, "wrapper must use no-profile PowerShell"))
     return findings
 
 
-def _v3_installer_findings() -> list[Violation]:
-    installer = _v3_read("installer/install.ps1")
+def _v3_installer_findings(root: Path) -> list[Violation]:
+    installer = _v3_read(root, "installer/install.ps1")
     findings = _v3_installer_control_findings(installer)
     findings.extend(_v3_installer_forbidden_findings(installer))
-    findings.extend(_v3_installer_shell_findings())
+    findings.extend(_v3_installer_shell_findings(root))
     return findings
 
 
-def _v3_release_findings() -> list[Violation]:
+def _v3_release_findings(root: Path) -> list[Violation]:
     findings: list[Violation] = []
-    builder = _v3_read("scripts/build_windows_payload.py") + _v3_read("scripts/build_release_artifacts.py")
+    builder = _v3_read(root, "scripts/build_windows_payload.py") + _v3_read(root, "scripts/build_release_artifacts.py")
     for token in (
         "isolated_candidate_tree",
         "materialize_candidate_tree",
@@ -433,23 +430,23 @@ def _v3_release_findings() -> list[Violation]:
     ):
         if token not in builder:
             findings.append(Violation("W18-V3-09", "scripts/build_release_artifacts.py", f"release builder missing {token}"))
-    payload = _v3_read("distribution/payload.py")
+    payload = _v3_read(root, "distribution/payload.py")
     for token in ("W18-PAYLOAD-FILES-V1", "sha256", "casefold", "reparse"):
         if token.casefold() not in payload.casefold():
             findings.append(Violation("W18-V3-10", "distribution/payload.py", f"payload inventory missing {token}"))
-    manifest = _v3_read("distribution/release_manifest.py")
+    manifest = _v3_read(root, "distribution/release_manifest.py")
     for token in ("payload_inventory_sha256", "source_artifact_sha256", "build_tools", "candidate_id"):
         if token not in manifest:
             findings.append(Violation("W18-V3-11", "distribution/release_manifest.py", f"v003 manifest missing {token}"))
     return findings
 
 
-def _v3_workflow_findings() -> list[Violation]:
-    workflow_path = _installed_product_workflow_path()
+def _v3_workflow_findings(root: Path) -> list[Violation]:
+    workflow_path = _installed_product_workflow_path(root)
     if workflow_path is None:
         return [Violation("W18-V3-12", ".github/workflows", "exactly one installed-product workflow is required")]
     workflow = _read(workflow_path)
-    relative = _relative(workflow_path)
+    relative = _relative(workflow_path, root)
     findings = [
         Violation("W18-V3-12", relative, f"dedicated workflow missing {token}")
         for token in ("windows-latest", "build_release_artifacts.py", "--python-artifact", "verify_installed_product.py", "run_wave18_adversarial.py")
@@ -457,7 +454,7 @@ def _v3_workflow_findings() -> list[Violation]:
     ]
     if any(token.casefold() in workflow.casefold() for token in ("twine upload", "gh release create", "git push", "git tag")):
         findings.append(Violation("W18-V3-13", relative, "workflow contains publication side effects"))
-    normal_ci = _v3_read(".github/workflows/ci.yml")
+    normal_ci = _v3_read(root, ".github/workflows/ci.yml")
     if "mypy --platform linux" not in normal_ci or "mypy --platform win32" not in normal_ci:
         findings.append(Violation("W18-V3-14", ".github/workflows/ci.yml", "existing Mypy matrix coverage was removed"))
     if normal_ci.find("Repository quality policy") > normal_ci.find("Pytest") >= 0:
@@ -465,10 +462,10 @@ def _v3_workflow_findings() -> list[Violation]:
     return findings
 
 
-def _v3_runtime_boundary_findings() -> list[Violation]:
-    findings: list[Violation] = []
-    for path in sorted((ROOT / "agent").rglob("*.py")):
-        relative = _relative(path)
+def _v3_runtime_boundary_findings(root: Path) -> list[Violation]:
+    findings = _check_runtime_firewall(root)
+    for path in RepositorySource(root).python_files("agent"):
+        relative = _relative(path, root)
         if relative in {"agent/__init__.py", "agent/_version.py"}:
             continue
         if re.search(r"(?:from|import)\s+(?:installer|distribution)(?:\.|\s|$)", _read(path)):
@@ -476,7 +473,7 @@ def _v3_runtime_boundary_findings() -> list[Violation]:
     return findings
 
 
-def _v3_w17_findings() -> list[Violation]:
+def _v3_w17_findings(root: Path) -> list[Violation]:
     findings: list[Violation] = []
     for relative in (
         "agent/application.py",
@@ -484,27 +481,26 @@ def _v3_w17_findings() -> list[Violation]:
         "agent/interfaces/cli/first_run.py",
         "agent/interfaces/cli/interactive_session.py",
     ):
-        text = _v3_read(relative).casefold()
+        text = _v3_read(root, relative).casefold()
         if "installer" in text or "set-userpath" in text:
             findings.append(Violation("W18-V3-17", relative, "installer logic entered a W17 owner"))
     return findings
 
 
-def _v3_architecture() -> list[Violation]:
+def _v3_architecture(root: Path = ROOT) -> list[Violation]:
     findings: list[Violation] = []
-    findings.extend(_v3_required_surface_findings())
-    findings.extend(_v3_identity_findings())
-    findings.extend(_v3_installer_findings())
-    findings.extend(_v3_release_findings())
-    findings.extend(_v3_workflow_findings())
-    findings.extend(_v3_runtime_boundary_findings())
-    findings.extend(_v3_w17_findings())
+    findings.extend(_v3_required_surface_findings(root))
+    findings.extend(_v3_identity_findings(root))
+    findings.extend(_v3_installer_findings(root))
+    findings.extend(_v3_release_findings(root))
+    findings.extend(_v3_workflow_findings(root))
+    findings.extend(_v3_runtime_boundary_findings(root))
+    findings.extend(_v3_w17_findings(root))
     return sorted(findings, key=lambda finding: (finding.path, finding.rule_id, finding.detail))
 
 
 def _v3_check_architecture(root: Path = ROOT) -> list[Violation]:
-    del root
-    return _v3_architecture()
+    return _v3_architecture(root)
 
 
 globals()["check_architecture"] = _v3_check_architecture

@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.compatibility_ledger import LEDGER, validate_ledger  # noqa: E402
+from scripts.w21_architecture import RepositorySource  # noqa: E402
 
 _LEGACY_NAMES = {
     "RUNTIME_DIR",
@@ -190,11 +191,13 @@ def _check_no_workspace_reconstruction(root: Path) -> list[ArchitectureViolation
 
 def _check_legacy_imports(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    for path in _python_files(root):
-        relative = _relative(path, root)
+    source = RepositorySource(root)
+    paths = (*source.python_files("agent"), *source.python_files("scripts"))
+    for path in paths:
+        relative = source.relative(path)
         if relative in _LEGACY_IMPORT_ALLOWLIST or relative == "agent/runtime/paths.py":
             continue
-        tree = _tree(root, relative)
+        tree = source.tree_for_path(path)
         if tree is None:
             continue
         for node in ast.walk(tree):

@@ -1,0 +1,5506 @@
+{
+  "artifact": "w21-architecture-baseline-projection",
+  "schema_version": 1,
+  "baseline": {
+    "branch": "feat/wave21-architecture-convergence-modernization",
+    "commit": "04f150a40ff2f7e7f562696e98b4fd2b0438e973",
+    "tree": "8fffff83faf29da197e04a64fd3e7b7fed746689"
+  },
+  "authority_sources": {
+    "current_dependency_graph_sha256": "3e04ec2f40a1a8bd7e4a176b2652dcdf60d80325cc1bcdee8a0465e1151b7b14",
+    "transition_violations_sha256": "d09e71ab2e75514351491e7ab8e2c16ab5e9983b06009ae91021e4d60fa9458d",
+    "char_path_001_sha256": "ad100adc710cfa3b58a55b8dca66d59c9d39aa4313a5f7b87ae263e27e3923e3"
+  },
+  "graph_signatures": {
+    "production_module_count": 806,
+    "module_identity_sha256": "39a9075b59d7e7f3b99ff1cad480874f22814f92d06d2493a511882507480614",
+    "static_module_edge_count": 2958,
+    "static_module_edge_semantic_sha256": "6a22c5d709491218ee42486840f802758d35d8bdfeb60ccb0baceee800da842d",
+    "architecture_union_edge_count": 2982,
+    "architecture_union_edge_semantic_sha256": "aa41b901bf900cff8b6b5610f27b787e37a490783672b74aab8896b4506a9b29",
+    "static_package_edge_count": 325,
+    "architecture_union_package_edge_count": 327,
+    "static_nontrivial_scc_count": 33,
+    "architecture_union_nontrivial_scc_count": 32
+  },
+  "baseline_cross_package_pair_count": 1297,
+  "baseline_cross_package_module_pairs": [
+    {
+      "source_module": "agent",
+      "destination_module": "agent._version"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.actions"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_cleanup"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_interactive"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_lifecycle"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_run"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_services.queries"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.application_wiring"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.evaluation.feedback"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.interaction.service"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.interaction.types"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.observability.application_adapter"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.observability.live"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.observability.modes"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.orchestration.operational_modes"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.orchestrator"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.outputs.service"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.routing.persona.factory"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.skills"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.tools.invocation_gateway"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.tools.tool_registry"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.application",
+      "destination_module": "agent.variants.preflight"
+    },
+    {
+      "source_module": "agent.application_cleanup",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.application_lifecycle",
+      "destination_module": "agent.application_cleanup"
+    },
+    {
+      "source_module": "agent.application_lifecycle",
+      "destination_module": "agent.application_shutdown"
+    },
+    {
+      "source_module": "agent.application_lifecycle",
+      "destination_module": "agent.observability.application_adapter"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.observability.audit_projection"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.reporting.run_receipt"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.reporting.run_snapshot"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.application_result",
+      "destination_module": "agent.runtime.task_execution_context"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.continuity"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.orchestration.task_lifecycle"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.planning.completion_observations"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.reporting.run_receipt"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.application_run",
+      "destination_module": "agent.tools.invocation_execution"
+    },
+    {
+      "source_module": "agent.application_services.queries",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.application_services.queries",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.application_shutdown",
+      "destination_module": "agent.tools.invocation_execution"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.engineering.model_safe"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.orchestrator"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.tools.builtin_adapter"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.tools.extension_bootstrap"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.tools.invocation_gateway"
+    },
+    {
+      "source_module": "agent.application_wiring",
+      "destination_module": "agent.tools.tool_registry"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.checkpoint_types"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.checkpoint_validation"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.runtime.lock_filesystem"
+    },
+    {
+      "source_module": "agent.checkpoint_manager",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.checkpoint_plan_consistency"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.checkpoint_types"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.checkpoint_validation_continuity"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.checkpoint_validation",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.checkpoint_validation_continuity",
+      "destination_module": "agent.checkpoint_types"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.planning.task_graph"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.runtime.hardware"
+    },
+    {
+      "source_module": "agent.code.application",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.code.change_transaction",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.commands",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.code.context_selection",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.diagnostics",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.diagnostics",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.code.discovery",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.graph_result_projection",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.graph_result_projection",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.code.intelligence",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.multitask",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.code.multitask",
+      "destination_module": "agent.planning.task_graph"
+    },
+    {
+      "source_module": "agent.code.multitask",
+      "destination_module": "agent.planning.task_scheduler"
+    },
+    {
+      "source_module": "agent.code.multitask",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.multitask",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.code.mutation_binding",
+      "destination_module": "agent.planning.intent_admission"
+    },
+    {
+      "source_module": "agent.code.mutation_binding",
+      "destination_module": "agent.planning.target_grounding"
+    },
+    {
+      "source_module": "agent.code.mutation_binding",
+      "destination_module": "agent.planning.target_grounding_revalidation"
+    },
+    {
+      "source_module": "agent.code.mutation_binding",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.code.mutation_binding",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.outcome_contracts",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence_binding",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence_binding",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence_binding",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.outcome_evidence_support",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.code.outcome_proposal",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier",
+      "destination_module": "agent.runtime.outcome_contracts"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier_support",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.code.outcome_verifier_support",
+      "destination_module": "agent.runtime.outcome_contracts"
+    },
+    {
+      "source_module": "agent.code.path_safety",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.policy",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.code.policy",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.code.policy",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.task_templates",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.code.task_templates",
+      "destination_module": "agent.planning.task_graph"
+    },
+    {
+      "source_module": "agent.code.validation",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.code.validation",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.validation",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_impact",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_impact_selection",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_preflight",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_process",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.code.validation_process",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.validation_process",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_python",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.validation_runner",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.workflow_application",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflow_application_flow_support",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.code.workflow_application_flow_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflow_application_support",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.code.workflow_application_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflow_application_validation_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflow_application_validation_support",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.code.workflow_outcome_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflow_proposal",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.code.workflow_proposal",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.code.workflow_proposal",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.code.workflow_proposal",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.code.workflows",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.code.workflows",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflows",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.code.workflows",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.code.workflows_change_support",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.code.workflows_change_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.code.workflows_change_support",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.continuity.checkpoint_projection",
+      "destination_module": "agent.checkpoint_types"
+    },
+    {
+      "source_module": "agent.continuity.checkpoint_projection",
+      "destination_module": "agent.planning.task_completion_types"
+    },
+    {
+      "source_module": "agent.continuity.checkpoint_projection",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.continuity.checkpoint_projection",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.continuity.checkpoint_projection",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.continuity.progress",
+      "destination_module": "agent.checkpoint_plan_consistency"
+    },
+    {
+      "source_module": "agent.continuity.service",
+      "destination_module": "agent.checkpoint_manager"
+    },
+    {
+      "source_module": "agent.continuity.snapshot",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.contracts",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.cost_guard",
+      "destination_module": "agent.parsers"
+    },
+    {
+      "source_module": "agent.cost_guard",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.cost_guard",
+      "destination_module": "agent.runtime.limits"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.llm.providers"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.discovery.semantic",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.discovery.store",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.discovery.store",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.engineering.backends.evaluation",
+      "destination_module": "agent.evaluation.practical"
+    },
+    {
+      "source_module": "agent.engineering.backends.health",
+      "destination_module": "agent.health.standalone"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection",
+      "destination_module": "agent.observability.bookmarks"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection",
+      "destination_module": "agent.presentation"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection_projection",
+      "destination_module": "agent.observability.envelope_types"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection_projection",
+      "destination_module": "agent.observability.modes"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection_projection",
+      "destination_module": "agent.observability.silence"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection_projection",
+      "destination_module": "agent.observability.trace_types"
+    },
+    {
+      "source_module": "agent.engineering.backends.inspection_projection",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.engineering.backends.repository",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.engineering.backends.repository",
+      "destination_module": "agent.tools.process_tree"
+    },
+    {
+      "source_module": "agent.engineering.backends.repository",
+      "destination_module": "agent.tools.stdio_streams"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.evaluation.evaluation_identity"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.evaluation.practical"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.interfaces.cli.approval_input"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.interfaces.cli.interactive_shell"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.interfaces.cli.ui"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.engineering.cli",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.engineering.contracts",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.engineering.model_safe",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.engineering.model_safe",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.engineering.policy",
+      "destination_module": "agent.evaluation.practical"
+    },
+    {
+      "source_module": "agent.engineering.policy",
+      "destination_module": "agent.runtime.process_identity"
+    },
+    {
+      "source_module": "agent.engineering.policy",
+      "destination_module": "agent.runtime.schema_validation_values"
+    },
+    {
+      "source_module": "agent.engineering.recovery",
+      "destination_module": "agent.runtime.process_identity"
+    },
+    {
+      "source_module": "agent.engineering.service",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.runtime.process_identity"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.engineering.store",
+      "destination_module": "agent.runtime.storage_contracts"
+    },
+    {
+      "source_module": "agent.engineering.summary",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.engineering.summary",
+      "destination_module": "agent.runtime.process_identity"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.runtime.lock_filesystem"
+    },
+    {
+      "source_module": "agent.engineering.transactions",
+      "destination_module": "agent.runtime.process_identity"
+    },
+    {
+      "source_module": "agent.error_handler",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.error_handler",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.error_handler",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.application"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.evaluation.agent_executor",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.evaluation.analysis",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.analysis_identity_support",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.attribution_decisions",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.evaluation.campaign_identity_records",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.campaign_runner",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.campaign_serialization",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.evaluation.evaluation_identity",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.evaluation_snapshot_projection",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.evaluation.evaluation_snapshot_projection",
+      "destination_module": "agent.reporting.evaluation_arg_projection"
+    },
+    {
+      "source_module": "agent.evaluation.evaluation_snapshot_projection",
+      "destination_module": "agent.reporting.run_projection_facts"
+    },
+    {
+      "source_module": "agent.evaluation.execution",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.evaluation.execution_attribution",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.evaluation.execution_evidence",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.execution_evidence",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.evaluation.experiment",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.evaluation.experiment",
+      "destination_module": "agent.variants.preflight"
+    },
+    {
+      "source_module": "agent.evaluation.feedback",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.evaluation.feedback",
+      "destination_module": "agent.observability.trace_types"
+    },
+    {
+      "source_module": "agent.evaluation.feedback",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.evaluation.feedback_store",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.evaluation.feedback_store",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.evaluation.feedback_store",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.evaluation.feedback_validators",
+      "destination_module": "agent.reporting.public_safety"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.llm.context_pressure"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.planning.execution_frontier"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.planning.observation_receipts"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon",
+      "destination_module": "agent.runtime.request_measurement"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.application"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.planning.plan_step_types"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.runtime.request_measurement"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.observation_receipts"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.plan_step_types"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.task_graph"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.planning.task_scheduler"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.evaluation.long_horizon_production_routes",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.evaluation.model_compatibility_canaries",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.model_compatibility_canaries",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.evaluation.model_compatibility_canaries",
+      "destination_module": "agent.llm.request_geometry"
+    },
+    {
+      "source_module": "agent.evaluation.model_compatibility_canaries",
+      "destination_module": "agent.llm.structured_output"
+    },
+    {
+      "source_module": "agent.evaluation.model_identity",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.model_identity",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.evaluation.practical",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.evaluation.practical_fixture_preparation",
+      "destination_module": "agent.memory.memory"
+    },
+    {
+      "source_module": "agent.evaluation.practical_fixture_preparation",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.evaluation.practical_fixture_preparation",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.evaluation.practical_projection_support",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.evaluation.practical_scenarios",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.real_model_preflight",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.evaluation.receipt",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.evaluation.receipt_validators",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.evaluation.receipt_validators",
+      "destination_module": "agent.variants.preflight"
+    },
+    {
+      "source_module": "agent.evaluation.runner",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.runtime.outcome_contracts"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_gateway",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.evaluation.scripted_tool_guidance",
+      "destination_module": "agent.llm.tool_discovery_contract"
+    },
+    {
+      "source_module": "agent.evaluation.trace",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.evaluation.trace",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.evaluation.trace",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.evaluation.trace",
+      "destination_module": "agent.runtime.budget_estimation"
+    },
+    {
+      "source_module": "agent.evaluation.trace_identity",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.execution_state",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.final_response_support"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.reporting.partial_response"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.routing.persona.current"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.final_response",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.health.core",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.health.online_model",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.health.online_model",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.health.online_model",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.health.online_model",
+      "destination_module": "agent.llm.providers.factory"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.health.online_model_support",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.health.runtime_checks",
+      "destination_module": "agent.skills"
+    },
+    {
+      "source_module": "agent.health.standalone",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.health.standalone",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.health.standalone",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.health.standalone",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.health.standalone",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.llm.providers"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.runtime.config_errors"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.health.standalone_checks",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.health.state_checks",
+      "destination_module": "agent.runtime.config"
+    },
+    {
+      "source_module": "agent.health.state_integrity",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.health.state_integrity",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.health.state_integrity",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.health.state_integrity",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.health.core"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.health.runtime_checks"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.health.standalone"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.health.state_checks"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.health_check",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interaction.admission",
+      "destination_module": "agent.interfaces.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.admission",
+      "destination_module": "agent.planning.intent_admission"
+    },
+    {
+      "source_module": "agent.interaction.admission",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.model_contract",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.interaction.model_contract",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.profile",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.prompt",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.llm.request_geometry"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.interaction.resolver",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.interaction.resolver_runtime",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.interaction.resolver_runtime",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.interaction.resolver_runtime",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.interaction.resolver_runtime",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.llm.request_geometry"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.runtime.budget_estimation"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.interaction.response",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.semantic_admission",
+      "destination_module": "agent.planning.intent_admission"
+    },
+    {
+      "source_module": "agent.interaction.semantic_admission",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.semantic_contract",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.interaction.semantic_observability",
+      "destination_module": "agent.planning.intent_continuation"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.application_interactive"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.interfaces.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.interaction.service",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interaction.transcript",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.interaction.types",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.interaction.types",
+      "destination_module": "agent.planning.intent_admission"
+    },
+    {
+      "source_module": "agent.interaction.types",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interfaces.cli.action_registry",
+      "destination_module": "agent.actions"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.discovery.contracts"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.engineering.cli"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.engineering.registry"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.observability.trace_store"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.runtime.config_errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.runtime.state_migration"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.app",
+      "destination_module": "agent.task_definition.errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.approval",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.interfaces.cli.approval_input",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.interfaces.cli.attention",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.interfaces.cli.bootstrap",
+      "destination_module": "agent.application"
+    },
+    {
+      "source_module": "agent.interfaces.cli.bootstrap",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.interfaces.cli.bootstrap",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.bootstrap",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.interfaces.cli.chat",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.chat",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.interfaces.cli.chat",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.code.application"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.code.commands"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.health_check"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.interfaces.cli.command_handlers",
+      "destination_module": "agent.tools.mode_enforcement"
+    },
+    {
+      "source_module": "agent.interfaces.cli.commands",
+      "destination_module": "agent.application"
+    },
+    {
+      "source_module": "agent.interfaces.cli.commands",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.interfaces.cli.commands",
+      "destination_module": "agent.orchestrator"
+    },
+    {
+      "source_module": "agent.interfaces.cli.commands",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.commands",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.actions.defaults"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.discovery.contracts"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.discovery.index"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.discovery.semantic"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.discovery.service"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.discovery.store"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_projection",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_ui",
+      "destination_module": "agent.discovery.contracts"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_ui",
+      "destination_module": "agent.engineering.cli"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_ui",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.discovery_ui",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.tools.extension_catalog_service"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.tools.extension_catalog_storage"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.tools.extension_state"
+    },
+    {
+      "source_module": "agent.interfaces.cli.extensions",
+      "destination_module": "agent.tools.workspace_extensions_service"
+    },
+    {
+      "source_module": "agent.interfaces.cli.first_run",
+      "destination_module": "agent.runtime.config_errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.first_run",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.interfaces.cli.first_run",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.interfaces.cli.first_run",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector",
+      "destination_module": "agent.observability.bookmarks"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector",
+      "destination_module": "agent.observability.export"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector",
+      "destination_module": "agent.presentation"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.inspector_rendering",
+      "destination_module": "agent.presentation"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_commands",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_commands",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_rendering",
+      "destination_module": "agent.outputs.models"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_resources",
+      "destination_module": "agent.application_services.queries"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_resources",
+      "destination_module": "agent.runtime.config_errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_session",
+      "destination_module": "agent.runtime.config_errors"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.code.application"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.code.commands"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.code.policy"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.interfaces.cli.interactive_worker",
+      "destination_module": "agent.tools.mode_enforcement"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.health_check"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.state_migration"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.tools.extension_registry"
+    },
+    {
+      "source_module": "agent.interfaces.cli.maintenance",
+      "destination_module": "agent.tools.stdio_adapter"
+    },
+    {
+      "source_module": "agent.interfaces.cli.output_projection",
+      "destination_module": "agent.application_services.queries"
+    },
+    {
+      "source_module": "agent.interfaces.cli.output_projection",
+      "destination_module": "agent.outputs.models"
+    },
+    {
+      "source_module": "agent.interfaces.cli.output_projection",
+      "destination_module": "agent.outputs.service"
+    },
+    {
+      "source_module": "agent.interfaces.cli.output_viewer",
+      "destination_module": "agent.outputs.models"
+    },
+    {
+      "source_module": "agent.interfaces.cli.parser",
+      "destination_module": "agent"
+    },
+    {
+      "source_module": "agent.interfaces.cli.query_executor",
+      "destination_module": "agent.application_services.queries"
+    },
+    {
+      "source_module": "agent.interfaces.cli.query_rendering",
+      "destination_module": "agent.application_services.queries"
+    },
+    {
+      "source_module": "agent.interfaces.cli.query_rendering",
+      "destination_module": "agent.outputs.models"
+    },
+    {
+      "source_module": "agent.interfaces.cli.streaming",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.interfaces.cli.streaming",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.interfaces.cli.streaming",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_context",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_context",
+      "destination_module": "agent.task_definition.repository"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_context",
+      "destination_module": "agent.task_definition.resolver"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_continuity",
+      "destination_module": "agent.continuity"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_continuity",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.cli.task_continuity",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui",
+      "destination_module": "agent.actions"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui",
+      "destination_module": "agent.code.changes"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui",
+      "destination_module": "agent.code.policy"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui_mailbox",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui_mailbox",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui_plane",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.interfaces.cli.ui_plane",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.interfaces.cli.workspace_entry",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.interfaces.cli.workspace_entry",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.cli.workspace_recents",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.interfaces.cli.workspace_recents",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.interfaces.cli.workspace_recents",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.engineering.contracts"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.engineering.model_safe"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.runtime.home_lifecycle"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.runtime.storage_bootstrap"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.engineering_server",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.interfaces.mcp.projection",
+      "destination_module": "agent.engineering.model_safe"
+    },
+    {
+      "source_module": "agent.interfaces.task_directives",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.llm.admitted_decision_projection",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.llm.admitted_decision_variants",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.error_handler"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.memory.prompt_context"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.memory.semantic_memory"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.event_dispatch"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.hardware"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.llm.context_manager",
+      "destination_module": "agent.state"
+    },
+    {
+      "source_module": "agent.llm.context_manager_auxiliary",
+      "destination_module": "agent.memory.prompt_context"
+    },
+    {
+      "source_module": "agent.llm.context_manager_auxiliary",
+      "destination_module": "agent.planning.execution_frontier"
+    },
+    {
+      "source_module": "agent.llm.context_model_call",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.llm.context_pressure",
+      "destination_module": "agent.runtime.request_measurement"
+    },
+    {
+      "source_module": "agent.llm.context_projection_budget",
+      "destination_module": "agent.runtime.request_measurement"
+    },
+    {
+      "source_module": "agent.llm.context_projection_guidance",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.llm.context_view_support",
+      "destination_module": "agent.memory.prompt_context"
+    },
+    {
+      "source_module": "agent.llm.context_view_support",
+      "destination_module": "agent.skills.repository_state"
+    },
+    {
+      "source_module": "agent.llm.context_view_support",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.llm.context_views",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.llm.context_views",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.llm.context_views",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.llm.grammars",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.llm.model_profile",
+      "destination_module": "agent.runtime.hardware"
+    },
+    {
+      "source_module": "agent.llm.model_profile",
+      "destination_module": "agent.runtime.secret_reference"
+    },
+    {
+      "source_module": "agent.llm.providers.openai_compatible",
+      "destination_module": "agent.runtime.budget_estimation"
+    },
+    {
+      "source_module": "agent.llm.providers.openai_compatible",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.llm.providers.openai_compatible",
+      "destination_module": "agent.runtime.secret_reference"
+    },
+    {
+      "source_module": "agent.llm.providers.openai_input_tokens",
+      "destination_module": "agent.runtime.budget_estimation"
+    },
+    {
+      "source_module": "agent.llm.session",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.llm.session",
+      "destination_module": "agent.interaction.transcript"
+    },
+    {
+      "source_module": "agent.llm.session",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.llm.session",
+      "destination_module": "agent.runtime.hardware"
+    },
+    {
+      "source_module": "agent.llm.session",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.llm.session_requests",
+      "destination_module": "agent.runtime.model_call"
+    },
+    {
+      "source_module": "agent.llm.structured_output",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.llm.task_definition_contract",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.llm.task_definition_contract",
+      "destination_module": "agent.task_definition.serialization"
+    },
+    {
+      "source_module": "agent.memory.json_persistence",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.memory.json_persistence",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.memory.memory",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.memory.memory",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.memory.path_safety",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.memory.prompt_context",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.memory.prompt_context_envelope",
+      "destination_module": "agent.llm.context_projection"
+    },
+    {
+      "source_module": "agent.memory.sqlite_cooperative",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.memory.sqlite_store",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.observability.application_adapter",
+      "destination_module": "agent.application_result"
+    },
+    {
+      "source_module": "agent.observability.application_adapter",
+      "destination_module": "agent.planning.execution_frontier"
+    },
+    {
+      "source_module": "agent.observability.application_adapter",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.observability.application_adapter",
+      "destination_module": "agent.presentation"
+    },
+    {
+      "source_module": "agent.observability.audit_projection",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.observability.audit_projection",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.observability.audit_projection_fields",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.observability.audit_projection_fields",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.observability.bookmarks",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.observability.bookmarks",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.observability.diagnostic_normalization",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.observability.diagnostics",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.observability.envelopes",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.observability.export",
+      "destination_module": "agent"
+    },
+    {
+      "source_module": "agent.observability.export",
+      "destination_module": "agent.presentation.service"
+    },
+    {
+      "source_module": "agent.observability.export",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.observability.export",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.observability.live",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.observability.trace_catalog",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.observability.trace_paths",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.observability.trace_paths",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.observability.trace_writer",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.skills.catalog"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.skills.registry"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.tools.builtin_adapter"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.tools.invocation_gateway"
+    },
+    {
+      "source_module": "agent.orchestration.builtin_composition",
+      "destination_module": "agent.tools.tool_registry"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.planning.capability_manifest"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.planning.hierarchical_executor"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.planning.hierarchical_planner"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.reporting.incremental_summarizer"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.reporting.task_tracker"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.orchestration.hierarchical_service",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.operational_modes",
+      "destination_module": "agent.skills.policy"
+    },
+    {
+      "source_module": "agent.orchestration.operational_modes",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.error_handler"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.reporting.run_snapshot"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.reporting.task_report"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.orchestration.operations",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.orchestration.operations_lifecycle",
+      "destination_module": "agent.error_handler"
+    },
+    {
+      "source_module": "agent.orchestration.operations_lifecycle",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.operations_lifecycle",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.orchestration.operations_lifecycle",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.orchestration.operations_reporting",
+      "destination_module": "agent.reporting.run_snapshot"
+    },
+    {
+      "source_module": "agent.orchestration.operations_reporting",
+      "destination_module": "agent.reporting.task_report"
+    },
+    {
+      "source_module": "agent.orchestration.operations_reporting",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.operations_reporting",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.orchestration.operations_tools",
+      "destination_module": "agent.planning.capability_manifest"
+    },
+    {
+      "source_module": "agent.orchestration.operations_tools",
+      "destination_module": "agent.planning.presentation"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.planning.completion_observations"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.planning.complexity"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.planning.task_completion_types"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.route_coordinator",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.planning.task_policy_support"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.security.security_scanner"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.orchestration.security_service",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.llm.context_manager"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.planning.execution_gateway"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.planning.plan_builder"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.planning.plan_executor"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.planning.reactive_loop"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.tool_executor"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.orchestration.subsystems",
+      "destination_module": "agent.workspace"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_components",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_components",
+      "destination_module": "agent.task_definition.compiler"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_components",
+      "destination_module": "agent.task_definition.repository"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_components",
+      "destination_module": "agent.task_definition.resolver"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_gate",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_definition_gate",
+      "destination_module": "agent.task_definition.errors"
+    },
+    {
+      "source_module": "agent.orchestration.task_directive_runtime",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.orchestration.task_directive_runtime",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.planning.plan_builder"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.planning.plan_preview"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.planning.planning_view_support"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.planning.intent_admission"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.planning.intent_continuation"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.planning.semantic_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.planning.target_grounding"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestration.task_execution_authority",
+      "destination_module": "agent.runtime.task_execution_context"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.application_shutdown"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.planning.completion_observations"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.orchestration.task_lifecycle",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.application_interactive"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.checkpoint_manager"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.planning.complexity"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.planning.task_policy_support"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.routing.persona.current"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.runtime.task_policy"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.task_definition.errors"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.checkpoint_manager"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.continuity"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_continuity",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_resume_commit",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_resume_commit",
+      "destination_module": "agent.state_checkpoint"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_support",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_support",
+      "destination_module": "agent.planning.task_completion"
+    },
+    {
+      "source_module": "agent.orchestration.task_runner_support",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.checkpoint_manager"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.llm.context_manager"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.memory.memory"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.builtin_composition"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.hierarchical_service"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.operational_modes"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.operations"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.route_result"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.security_service"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.subsystems"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.task_definition_components"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.task_runner"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.orchestration.trivial_response"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.execution_gateway"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.plan_builder"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.plan_executor"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.planning_context"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.presentation"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.planning.reactive_loop"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.reporting.metrics_recorder"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.routing.persona.catalog"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.routing.persona.contracts"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.routing.persona.current"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.event_dispatch"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.task_execution_context"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.task_policy_support"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.skills.policy"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.skills.registry"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.state"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.tool_executor"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.tools.invocation_gateway"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.tools.tool_registry"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.orchestrator",
+      "destination_module": "agent.workspace"
+    },
+    {
+      "source_module": "agent.outputs.service",
+      "destination_module": "agent.reporting.public_safety"
+    },
+    {
+      "source_module": "agent.outputs.service",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.outputs.store",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.outputs.store",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.outputs.store",
+      "destination_module": "agent.runtime.instance_lock"
+    },
+    {
+      "source_module": "agent.parsers",
+      "destination_module": "agent.runtime.argument_contract"
+    },
+    {
+      "source_module": "agent.parsers",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.parsers",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.parsers",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.capability_manifest",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.completion_observations",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.completion_observations",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.planning.completion_terminal_support",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.planning.completion_terminal_support",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.planning.completion_terminal_support",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.planning.completion_terminal_support",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.deferred_execution",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.planning.deferred_execution",
+      "destination_module": "agent.state_progression"
+    },
+    {
+      "source_module": "agent.planning.deferred_execution",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.deferred_execution",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.dependency_map",
+      "destination_module": "agent.state_progression"
+    },
+    {
+      "source_module": "agent.planning.effect_intent",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.effect_intent",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.effect_intent_constraints",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.errors",
+      "destination_module": "agent.runtime.errors"
+    },
+    {
+      "source_module": "agent.planning.execution_gateway",
+      "destination_module": "agent.state"
+    },
+    {
+      "source_module": "agent.planning.execution_gateway_support",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.execution_gateway_support",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.planning.execution_models",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.graph_authority",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.graph_authority",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_execution_support",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_execution_support",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_execution_support",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.reporting.incremental_summarizer"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.reporting.task_tracker"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_executor",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_planner",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_planner",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_planner",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.hierarchical_planner",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.intent_admission",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.intent_admission",
+      "destination_module": "agent.interaction.intent_claim"
+    },
+    {
+      "source_module": "agent.planning.intent_admission",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.intent_admission_logic",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.intent_admission_logic",
+      "destination_module": "agent.interaction.intent_claim"
+    },
+    {
+      "source_module": "agent.planning.intent_admission_logic",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.intent_admission_model",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.intent_admission_model",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.intent_continuation",
+      "destination_module": "agent.interaction.intent_claim"
+    },
+    {
+      "source_module": "agent.planning.memory_authority",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.memory_authority",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.memory_authority",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.observation_freshness",
+      "destination_module": "agent.memory.prompt_context"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.observation_invalidation",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.parallel_contracts",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.parallel_contracts",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.parallel_contracts",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.parallel_dispatch",
+      "destination_module": "agent.runtime.limits"
+    },
+    {
+      "source_module": "agent.planning.parallel_dispatch",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.parallel_finalizer",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.plan_builder",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.plan_builder",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.planning.plan_builder",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.planning.plan_builder_compat",
+      "destination_module": "agent.llm.admitted_decision_variants"
+    },
+    {
+      "source_module": "agent.planning.plan_effect_validation",
+      "destination_module": "agent.parsers"
+    },
+    {
+      "source_module": "agent.planning.plan_execution_loop",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.plan_executor",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.planning.plan_executor",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.plan_executor",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.cost_guard"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.plan_executor_support",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.planning.plan_model",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.plan_preview",
+      "destination_module": "agent.observability.redaction"
+    },
+    {
+      "source_module": "agent.planning.plan_preview",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.planning.plan_preview",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.plan_preview",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.planning.plan_validator_schema",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.planning.planning_context",
+      "destination_module": "agent.runtime.argument_contract"
+    },
+    {
+      "source_module": "agent.planning.planning_context",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.planning.planning_context",
+      "destination_module": "agent.tools.authority"
+    },
+    {
+      "source_module": "agent.planning.planning_context",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.planning_context",
+      "destination_module": "agent.tools.runtime_identity"
+    },
+    {
+      "source_module": "agent.planning.planning_schema",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.tools.extension_state"
+    },
+    {
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.tools.provenance"
+    },
+    {
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.tools.usage_examples"
+    },
+    {
+      "source_module": "agent.planning.presentation",
+      "destination_module": "agent.tools.runtime_identity"
+    },
+    {
+      "source_module": "agent.planning.presentation_rendering",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.planning.presentation_rendering",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.presentation_rendering",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.provenance_validation",
+      "destination_module": "agent.tools.provenance"
+    },
+    {
+      "source_module": "agent.planning.provenance_validation",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.cost_guard"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.planning.reactive_loop",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.planning.reasoning_boundary",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.reasoning_boundary",
+      "destination_module": "agent.runtime.limits"
+    },
+    {
+      "source_module": "agent.planning.reasoning_boundary",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.replan",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.replan",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.replan",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.replan_execution",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.replan_execution",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.replan_llm",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.replan_llm",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.planning.replan_llm",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.replan_llm",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.replan_llm",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.replan_models",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.replan_models",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.replan_validation",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.result_binding_values",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.result_bindings_resolution",
+      "destination_module": "agent.state_progression"
+    },
+    {
+      "source_module": "agent.planning.semantic_projection",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_contracts",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_contracts",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.step_contracts",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_executor",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_executor",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.step_executor",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_executor",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.step_failure_support",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_failure_support",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.step_failure_support",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_observation_policy",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_observation_policy",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.parsers"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.step_policies",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.target_grounding",
+      "destination_module": "agent.interaction.intent_claim"
+    },
+    {
+      "source_module": "agent.planning.target_grounding",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_discovery",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_discovery",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_enumeration",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_enumeration",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_revalidation",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_revalidation",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_revalidation",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_workflow",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.target_grounding_workflow",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.planning.task_completion",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.task_completion_constraints",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_completion_dispatch",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.planning.task_continuation",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.task_continuation",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.task_graph",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_policy_support",
+      "destination_module": "agent.runtime.task_policy"
+    },
+    {
+      "source_module": "agent.planning.task_policy_support",
+      "destination_module": "agent.watchdog"
+    },
+    {
+      "source_module": "agent.planning.task_progress_projection",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.planning.task_resources",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.planning.task_resources",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_resources",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.task_scheduler",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_scheduler",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.planning.task_scheduler",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.planning.task_scheduler",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.planning.task_scheduler",
+      "destination_module": "agent.runtime.convergence_runtime"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_admission",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_authority_helpers",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_authority_model",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.code.outcome_verifier"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_code_support",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effect_support",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effect_support",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effect_support",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effects",
+      "destination_module": "agent.reporting.observation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effects",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_effects",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_evidence",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_evidence",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_commands",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_condition",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_controls",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_engine",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_lexing",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_positive_proof_model",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_terminal",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_transitions",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.planning.task_semantics_types",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_terminal",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.planning.task_terminal",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.planning.task_terminal",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.planning.tool_disclosure",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.planning.tool_disclosure",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.planning.tool_disclosure",
+      "destination_module": "agent.llm.tool_discovery_contract"
+    },
+    {
+      "source_module": "agent.planning.tool_disclosure",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.tool_metadata",
+      "destination_module": "agent.skills.catalog"
+    },
+    {
+      "source_module": "agent.planning.tool_metadata",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.planning.validation_repair_plan",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.planning.validation_repair_plan",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.planning.validation_repair_plan",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.planning.validation_repair_support",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.presentation.models",
+      "destination_module": "agent.observability.liveness"
+    },
+    {
+      "source_module": "agent.presentation.models",
+      "destination_module": "agent.observability.redaction"
+    },
+    {
+      "source_module": "agent.presentation.projector",
+      "destination_module": "agent.observability.envelopes"
+    },
+    {
+      "source_module": "agent.presentation.projector",
+      "destination_module": "agent.runtime.event_kinds"
+    },
+    {
+      "source_module": "agent.presentation.query",
+      "destination_module": "agent.observability.envelopes"
+    },
+    {
+      "source_module": "agent.presentation.query",
+      "destination_module": "agent.observability.redaction"
+    },
+    {
+      "source_module": "agent.presentation.query",
+      "destination_module": "agent.observability.silence"
+    },
+    {
+      "source_module": "agent.presentation.sections",
+      "destination_module": "agent.observability.envelopes"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.bookmarks"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.envelopes"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.live"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.liveness"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.silence"
+    },
+    {
+      "source_module": "agent.presentation.service",
+      "destination_module": "agent.observability.trace_store"
+    },
+    {
+      "source_module": "agent.reporting.artifact_projection",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.reporting.incremental_summarizer",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.reporting.incremental_summarizer",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.reporting.metrics_recorder",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.reporting.observation_evidence",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.reporting.observation_evidence",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.reporting.observation_evidence",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.reporting.operational_outcome",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.operational_outcome",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.reporting.operational_outcome_evidence",
+      "destination_module": "agent.runtime.operational_outcome_evidence"
+    },
+    {
+      "source_module": "agent.reporting.partial_response",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.partial_response",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.reporting.public_projection",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.request_metrics",
+      "destination_module": "agent.runtime.budget_estimation"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_facts",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_facts",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_facts",
+      "destination_module": "agent.planning.task_progress_projection"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_facts",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_facts",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.reporting.run_projection_value_support",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt",
+      "destination_module": "agent.final_response"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt_builder",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt_builder",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt_builder",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt_support",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.reporting.run_receipt_support",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.runtime.failures"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.runtime.operational_outcome"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.reporting.run_snapshot",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.reporting.task_report",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.reporting.task_report",
+      "destination_module": "agent.planning.task_progress_projection"
+    },
+    {
+      "source_module": "agent.reporting.task_report",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.reporting.task_tracker",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.reporting.task_tracker",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.reporting.task_tracker",
+      "destination_module": "agent.planning.task_progress_projection"
+    },
+    {
+      "source_module": "agent.reporting.task_tracker",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.routing.persona.catalog",
+      "destination_module": "agent.llm.prompts"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.llm.structured_output_strategy"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.routing.persona.current",
+      "destination_module": "agent.skills.policy"
+    },
+    {
+      "source_module": "agent.routing.persona.factory",
+      "destination_module": "agent.variants.models"
+    },
+    {
+      "source_module": "agent.routing.persona.factory",
+      "destination_module": "agent.variants.preflight"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.session"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.session_requests"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.llm.structured_output_strategy"
+    },
+    {
+      "source_module": "agent.routing.persona.variants.reference_w18",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.runtime.budget",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.runtime.budget_estimation",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.runtime.config_repository",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.runtime.config_repository",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.runtime.context",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.runtime.context",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.runtime.context",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.runtime.context",
+      "destination_module": "agent.llm.model_profile_binding"
+    },
+    {
+      "source_module": "agent.runtime.context_tools",
+      "destination_module": "agent.tools.invocation_request"
+    },
+    {
+      "source_module": "agent.runtime.convergence",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.runtime.convergence_runtime",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.runtime.convergence_runtime",
+      "destination_module": "agent.planning.task_terminal"
+    },
+    {
+      "source_module": "agent.runtime.failure_policy",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.runtime.failure_policy",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.runtime.failures",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.runtime.failures",
+      "destination_module": "agent.tools.json_snapshot"
+    },
+    {
+      "source_module": "agent.runtime.limits",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.runtime.model_call",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.runtime.model_call",
+      "destination_module": "agent.llm.identity"
+    },
+    {
+      "source_module": "agent.runtime.model_call_record",
+      "destination_module": "agent.llm.model_metrics"
+    },
+    {
+      "source_module": "agent.runtime.model_call_record",
+      "destination_module": "agent.llm.model_profile"
+    },
+    {
+      "source_module": "agent.runtime.model_call_stream",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.runtime.model_call_stream",
+      "destination_module": "agent.llm.errors"
+    },
+    {
+      "source_module": "agent.runtime.model_call_support",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.runtime.operational_outcome",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.runtime.operational_outcome",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.runtime.operational_outcome_evidence",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.runtime.storage_contracts",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.runtime.storage_migration",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.runtime.storage_receipts",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.runtime.task_directives",
+      "destination_module": "agent.interaction.intent_claim"
+    },
+    {
+      "source_module": "agent.runtime.task_directives",
+      "destination_module": "agent.task_definition.model_validation"
+    },
+    {
+      "source_module": "agent.runtime.task_execution_context",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.runtime.task_policy_engine",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.runtime.task_policy_support",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.security.security_scanner",
+      "destination_module": "agent.skills.security_symbols"
+    },
+    {
+      "source_module": "agent.skills",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.skills",
+      "destination_module": "agent.tools.builtin_adapter"
+    },
+    {
+      "source_module": "agent.skills",
+      "destination_module": "agent.tools.extension_registry"
+    },
+    {
+      "source_module": "agent.skills",
+      "destination_module": "agent.tools.stdio_adapter"
+    },
+    {
+      "source_module": "agent.skills",
+      "destination_module": "agent.tools.tool_registry"
+    },
+    {
+      "source_module": "agent.skills.catalog",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.skills.catalog",
+      "destination_module": "agent.tools.provenance"
+    },
+    {
+      "source_module": "agent.skills.code_analyzer",
+      "destination_module": "agent.code.intelligence"
+    },
+    {
+      "source_module": "agent.skills.code_analyzer",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.code.application"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.llm.contracts"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.planning.task_semantics_proposal"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.runtime.context"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.skills.code_task",
+      "destination_module": "agent.tools.invocation_semantics"
+    },
+    {
+      "source_module": "agent.skills.code_task_support",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.skills.code_task_support",
+      "destination_module": "agent.code.changes"
+    },
+    {
+      "source_module": "agent.skills.code_task_support",
+      "destination_module": "agent.code.policy"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.planning.schema_safety"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.provenance"
+    },
+    {
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.usage_examples"
+    },
+    {
+      "source_module": "agent.skills.file_reader",
+      "destination_module": "agent.planning.observation_receipts"
+    },
+    {
+      "source_module": "agent.skills.file_reader_evidence",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.skills.file_writer",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.skills.file_writer",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.skills.file_writer",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.skills.file_writer_runtime",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.skills.file_writer_runtime",
+      "destination_module": "agent.code.changes"
+    },
+    {
+      "source_module": "agent.skills.file_writer_runtime",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.skills.git",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.skills.git",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.skills.invocation_cancellation",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.skills.policy",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.skills.process_environment",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.skills.process_paths",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.skills.python_executor",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.skills.python_process",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.skills.python_process",
+      "destination_module": "agent.tools.process_tree"
+    },
+    {
+      "source_module": "agent.skills.repository_state",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.skills.repository_state_filesystem_support",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.skills.repository_state_filesystem_support",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.skills.repository_state_parser_support",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.skills.safe_path",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.skills.session_memory",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.skills.session_memory",
+      "destination_module": "agent.memory.memory"
+    },
+    {
+      "source_module": "agent.skills.shell",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.skills.shell",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.skills.shell",
+      "destination_module": "agent.runtime.workspace_context"
+    },
+    {
+      "source_module": "agent.skills.shell_process",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.skills.shell_process",
+      "destination_module": "agent.tools.process_tree"
+    },
+    {
+      "source_module": "agent.skills.shell_process",
+      "destination_module": "agent.tools.stdio_streams"
+    },
+    {
+      "source_module": "agent.skills.summarize",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.skills.web_search",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.memory.memory"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.planning.task_semantics"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.correlation"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.recovery"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.runtime.task_policy"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_checkpointing"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_continuity"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_failure_recovery"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_incidents"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_plan_execution"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.state_semantics"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.state",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.planning.observation_receipts"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.planning.progress_receipt"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.planning.task_completion_types"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.planning.task_semantics"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.runtime.convergence"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.state_checkpoint_counters"
+    },
+    {
+      "source_module": "agent.state_checkpoint",
+      "destination_module": "agent.state_checkpoint_w14"
+    },
+    {
+      "source_module": "agent.state_checkpoint_auxiliary",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.effect_intent"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.task_semantics"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.task_semantics_effects"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.task_semantics_restore"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.planning.task_semantics_types"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.state_checkpoint_history",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.state_checkpoint_w14",
+      "destination_module": "agent.planning.intent_continuation"
+    },
+    {
+      "source_module": "agent.state_checkpoint_w14",
+      "destination_module": "agent.runtime.task_directives"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.state_checkpoint"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.state_checkpoint_auxiliary"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.state_checkpoint_history"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.state_checkpoint_restore"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.task_definition.models"
+    },
+    {
+      "source_module": "agent.state_checkpointing",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.state_continuity",
+      "destination_module": "agent.state_checkpoint"
+    },
+    {
+      "source_module": "agent.state_failure_recovery",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.state_failure_recovery",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.state_failure_recovery",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.state_failure_recovery",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.state_incidents",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.state_plan_execution",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.state_plan_execution",
+      "destination_module": "agent.execution_state"
+    },
+    {
+      "source_module": "agent.state_plan_execution",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.state_plan_execution",
+      "destination_module": "agent.state_plan_replacement"
+    },
+    {
+      "source_module": "agent.state_plan_execution",
+      "destination_module": "agent.state_progression"
+    },
+    {
+      "source_module": "agent.state_plan_replacement",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.state_progression",
+      "destination_module": "agent.planning.task_semantics"
+    },
+    {
+      "source_module": "agent.state_semantics",
+      "destination_module": "agent.planning.task_semantics"
+    },
+    {
+      "source_module": "agent.task_definition.compiler",
+      "destination_module": "agent.llm.admitted_decisions"
+    },
+    {
+      "source_module": "agent.task_definition.compiler",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.task_definition.compiler",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.task_definition.model_call",
+      "destination_module": "agent.llm.decision_contract"
+    },
+    {
+      "source_module": "agent.task_definition.model_call",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.task_definition.repository",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.task_definition.repository",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.task_definition.repository",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.task_definition.repository_support",
+      "destination_module": "agent.memory.path_safety"
+    },
+    {
+      "source_module": "agent.task_definition.repository_support",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.task_definition.repository_support",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.parsers"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.planning.errors"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.planning.observation_receipts"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.planning.provenance_validation"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.planning.step_contracts"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.tools.contracts"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.tools.result_adapter"
+    },
+    {
+      "source_module": "agent.tool_executor",
+      "destination_module": "agent.tools.result_completeness"
+    },
+    {
+      "source_module": "agent.tools.approval_execution",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.tools.approval_execution",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.tools.authority",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.tools.builtin_adapter",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.tools.builtin_adapter",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.tools.builtin_adapter",
+      "destination_module": "agent.skills.registry"
+    },
+    {
+      "source_module": "agent.tools.contracts",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.tools.contracts",
+      "destination_module": "agent.skills.descriptor"
+    },
+    {
+      "source_module": "agent.tools.extension_bootstrap",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.tools.extension_catalog_storage",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.tools.extension_registry",
+      "destination_module": "agent.memory.json_persistence"
+    },
+    {
+      "source_module": "agent.tools.invocation_commit",
+      "destination_module": "agent.execution_incidents"
+    },
+    {
+      "source_module": "agent.tools.invocation_commit",
+      "destination_module": "agent.observability.audit_projection"
+    },
+    {
+      "source_module": "agent.tools.invocation_commit",
+      "destination_module": "agent.runtime.events"
+    },
+    {
+      "source_module": "agent.tools.invocation_commit",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.tools.invocation_commit",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.tools.invocation_execution",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.tools.invocation_execution",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.tools.invocation_gateway",
+      "destination_module": "agent.approval"
+    },
+    {
+      "source_module": "agent.tools.invocation_gateway",
+      "destination_module": "agent.observability.audit_projection"
+    },
+    {
+      "source_module": "agent.tools.invocation_gateway",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.tools.invocation_observability",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.tools.invocation_quiescence",
+      "destination_module": "agent.runtime.budget"
+    },
+    {
+      "source_module": "agent.tools.invocation_quiescence",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.tools.invocation_quiescence",
+      "destination_module": "agent.runtime.mutation_evidence"
+    },
+    {
+      "source_module": "agent.tools.invocation_semantics",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.tools.invocation_semantics_support",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.tools.invocation_semantics_support",
+      "destination_module": "agent.resources.contracts"
+    },
+    {
+      "source_module": "agent.tools.invocation_support",
+      "destination_module": "agent.runtime.argument_contract"
+    },
+    {
+      "source_module": "agent.tools.invocation_support",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.tools.result_adapter",
+      "destination_module": "agent.contracts"
+    },
+    {
+      "source_module": "agent.tools.result_completeness",
+      "destination_module": "agent.runtime.outcome_taxonomy"
+    },
+    {
+      "source_module": "agent.tools.stdio_process",
+      "destination_module": "agent.cancellation"
+    },
+    {
+      "source_module": "agent.tools.tool_registry",
+      "destination_module": "agent.capabilities"
+    },
+    {
+      "source_module": "agent.tools.tool_registry",
+      "destination_module": "agent.planning.tool_metadata"
+    },
+    {
+      "source_module": "agent.tools.usage_examples",
+      "destination_module": "agent.planning.schema_safety"
+    },
+    {
+      "source_module": "agent.tools.usage_examples",
+      "destination_module": "agent.runtime.schema_validation"
+    },
+    {
+      "source_module": "agent.tools.workspace_extensions_service",
+      "destination_module": "agent.runtime.paths"
+    },
+    {
+      "source_module": "agent.tools.workspace_extensions_storage",
+      "destination_module": "agent.runtime.filesystem_primitives"
+    },
+    {
+      "source_module": "agent.watchdog",
+      "destination_module": "agent.parsers"
+    },
+    {
+      "source_module": "agent.watchdog",
+      "destination_module": "agent.runtime.failure_policy"
+    },
+    {
+      "source_module": "agent.watchdog",
+      "destination_module": "agent.runtime.limits"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.code.discovery"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.code.validation"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.planning.plan_model"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.runtime.config_repository"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.runtime.logging"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.runtime.path_safety"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.runtime.worker_output"
+    },
+    {
+      "source_module": "agent.workspace",
+      "destination_module": "agent.workspace_rollback"
+    }
+  ],
+  "frozen_transition_violation_count": 27,
+  "frozen_transition_violations": [
+    {
+      "violation_id": "W21-V-126d479877ecb5cc",
+      "source_module": "agent.skills.catalog",
+      "destination_module": "agent.tools.contracts",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-005",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-134ccc77324975fd",
+      "source_module": "agent.engineering.backends.repository",
+      "destination_module": "agent.tools.stdio_streams",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-002",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-135713212d95c166",
+      "source_module": "agent.tools.stdio_process",
+      "destination_module": "agent.tools.process_tree",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-001",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-1770b042282224d4",
+      "source_module": "agent.planning.plan_validator_schema",
+      "destination_module": "agent.skills.descriptor",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-003",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-1e37c192910e8179",
+      "source_module": "agent.planning.planning_tool_normalization",
+      "destination_module": "agent.skills.descriptor",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-003",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-235184b74cce5dfc",
+      "source_module": "agent.skills.python_process",
+      "destination_module": "agent.tools.process_tree",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-001",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-3788969f1693e54c",
+      "source_module": "agent.skills.shell_process",
+      "destination_module": "agent.tools.stdio_streams",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-002",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-38a6e86feba40e2d",
+      "source_module": "agent.skills.shell_process",
+      "destination_module": "agent.tools.process_tree",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-001",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-3edd5d685e7ef437",
+      "source_module": "agent.tools.tool_registry",
+      "destination_module": "agent.planning.tool_metadata",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-001",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-4e7555ea45512a35",
+      "source_module": "agent.planning.intent_admission_logic",
+      "destination_module": "agent.interaction.intent_claim",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-INTENT-001",
+      "assigned_lane": "D"
+    },
+    {
+      "violation_id": "W21-V-4e9e7d5af3016556",
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.provenance",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-006",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-53bb4f90ad6d5beb",
+      "source_module": "agent.tools.stdio_process",
+      "destination_module": "agent.tools.stdio_streams",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-002",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-5adaa53fc28da142",
+      "source_module": "agent.planning.intent_admission",
+      "destination_module": "agent.interaction.intent_claim",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-INTENT-001",
+      "assigned_lane": "D"
+    },
+    {
+      "violation_id": "W21-V-7e66ae9e68946d48",
+      "source_module": "agent.runtime.task_directives",
+      "destination_module": "agent.interaction.intent_claim",
+      "edge_kind": "local_import",
+      "target_rule_id": "W21-R-INTENT-001",
+      "assigned_lane": "D"
+    },
+    {
+      "violation_id": "W21-V-87466300aa79be0d",
+      "source_module": "agent.planning.tool_metadata",
+      "destination_module": "agent.skills.catalog",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-003",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-9b632117180d3187",
+      "source_module": "agent.planning.presentation_rendering",
+      "destination_module": "agent.skills.descriptor",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-003",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-b90cd50706e4adbe",
+      "source_module": "agent.engineering.backends.repository",
+      "destination_module": "agent.tools.process_tree",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-001",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-c338e5df5248c2cb",
+      "source_module": "agent.skills.catalog",
+      "destination_module": "agent.tools.provenance",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-005",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-c57ff5f3a36968cc",
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.usage_examples",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-006",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-c9197cf42e97e7ee",
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.planning.schema_safety",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-004",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-cf1aea2884d93816",
+      "source_module": "agent.tools.usage_examples",
+      "destination_module": "agent.planning.schema_safety",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-001",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-d4bf3e77f3555c72",
+      "source_module": "agent.skills.descriptor",
+      "destination_module": "agent.tools.contracts",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-006",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-d73e654fd881d19e",
+      "source_module": "agent.planning.tool_metadata",
+      "destination_module": "agent.skills.descriptor",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-META-003",
+      "assigned_lane": "A"
+    },
+    {
+      "violation_id": "W21-V-e8d85c7646d13b02",
+      "source_module": "agent.tools.stdio_cleanup",
+      "destination_module": "agent.tools.process_tree",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-PROC-001",
+      "assigned_lane": "B"
+    },
+    {
+      "violation_id": "W21-V-f24a0c63b9974173",
+      "source_module": "agent.planning.target_grounding",
+      "destination_module": "agent.interaction.intent_claim",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-INTENT-001",
+      "assigned_lane": "D"
+    },
+    {
+      "violation_id": "W21-V-f6147775372b94e3",
+      "source_module": "agent.planning.intent_continuation",
+      "destination_module": "agent.interaction.intent_claim",
+      "edge_kind": "normal_import",
+      "target_rule_id": "W21-R-INTENT-001",
+      "assigned_lane": "D"
+    },
+    {
+      "violation_id": "W21-V-f806e815540c0ffb",
+      "source_module": "agent.tools.contracts",
+      "destination_module": "agent.skills.descriptor",
+      "edge_kind": "local_import",
+      "target_rule_id": "W21-R-META-002",
+      "assigned_lane": "A"
+    }
+  ],
+  "legacy_path_surface": {
+    "symbols": [
+      "CHECKPOINT_FILE",
+      "LOG_FILE",
+      "MEMORY_DB_FILE",
+      "MEMORY_FILE",
+      "METRICS_FILE",
+      "REPORTS_DIR",
+      "RUNTIME_DIR",
+      "TASK_TRACKER_JSON"
+    ],
+    "baseline_active_consumer_count": 9,
+    "baseline_active_consumers": [
+      {
+        "consumer_module": "agent.health.core",
+        "consumer_path": "agent/health/core.py",
+        "symbol": "LOG_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.health.core",
+        "consumer_path": "agent/health/core.py",
+        "symbol": "MEMORY_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.health.core",
+        "consumer_path": "agent/health/core.py",
+        "symbol": "METRICS_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.memory.memory",
+        "consumer_path": "agent/memory/memory.py",
+        "symbol": "MEMORY_DB_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.memory.memory",
+        "consumer_path": "agent/memory/memory.py",
+        "symbol": "MEMORY_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.reporting.task_report",
+        "consumer_path": "agent/reporting/task_report.py",
+        "symbol": "REPORTS_DIR",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.runtime.config",
+        "consumer_path": "agent/runtime/config.py",
+        "symbol": "CHECKPOINT_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.runtime.config",
+        "consumer_path": "agent/runtime/config.py",
+        "symbol": "REPORTS_DIR",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      },
+      {
+        "consumer_module": "agent.runtime.logging",
+        "consumer_path": "agent/runtime/logging.py",
+        "symbol": "LOG_FILE",
+        "classification": "MUST_REMOVE_OR_ISOLATE_IN_W21"
+      }
+    ],
+    "new_consumers": "forbidden"
+  }
+}
