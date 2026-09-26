@@ -9,11 +9,11 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, cast
 
+from agent.operation.contracts import CancellationSafetyMode
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.tools.contracts import (
-    CancellationSafetyMode,
     ToolError,
     ToolInvocation,
     ToolResult,

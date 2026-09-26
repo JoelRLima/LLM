@@ -7,6 +7,7 @@ from typing import Dict, Optional, cast
 from uuid import uuid4
 
 from agent.contracts import ToolArgs
+from agent.operation.planning_metadata import ToolMetadata, get_tool_metadata
 from agent.parsers import validate_tool_args
 from agent.planning.errors import ToolNotFoundError
 from agent.planning.observation_invalidation import (
@@ -16,7 +17,6 @@ from agent.planning.observation_invalidation import (
 from agent.planning.observation_receipts import ObservationClassification, ObservationDispatchDecision
 from agent.planning.step_contracts import ExecutionContext
 from agent.planning.step_observation_policy import ObservationPolicyMixin
-from agent.planning.tool_metadata import ToolMetadata, get_tool_metadata
 from agent.runtime.failures import FailureFact
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.runtime.worker_output import emit_worker_output

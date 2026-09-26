@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 from agent.capabilities import Capability, capability_values
 from agent.contracts import ToolArgs
-from agent.planning.tool_metadata import ToolMetadata
+from agent.operation.planning_metadata import ToolMetadata
 from agent.runtime.mutation_evidence import project_mutation_evidence
 from agent.runtime.outcome_taxonomy import OperationalStatus, operational_status_for
 from agent.tools.contracts import ToolResult

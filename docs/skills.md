@@ -9,7 +9,8 @@ devem permanecer nos domínios correspondentes.
 
 ## Registro canônico
 
-`agent/skills/catalog.py` contém um `SkillSpec` por skill embutida, com:
+`agent/operation/catalog.py` contém o catálogo canônico de `SkillSpec` por
+skill embutida, com:
 
 - módulo, classe e nome externo;
 - argumentos de construção;
@@ -21,8 +22,9 @@ o nome da implementação e o descritor. `load_all_skills()` compõe o registro 
 permite injetar `Orchestrator`, `ModelGateway`, configuração, `ApprovalPort`,
 raiz do projeto e scratch externo ao workspace.
 
-`agent/planning/tool_metadata.py` deriva a visão exigida pelo planejador legado.
-Não cadastre custo ou efeito em um segundo mapa.
+`agent/operation/planning_metadata.py` deriva a visão exigida pelo planejador.
+`agent/skills/catalog.py` e `agent/planning/tool_metadata.py` permanecem como
+facades de compatibilidade; não cadastre custo ou efeito em um segundo mapa.
 
 ## Capacidades e personas
 

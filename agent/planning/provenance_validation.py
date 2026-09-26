@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from agent.tools.provenance import ArgumentOrigin
+from agent.operation.provenance import ArgumentOrigin
 from agent.tools.result_completeness import (
     canonical_completeness,
     canonical_result_successful,

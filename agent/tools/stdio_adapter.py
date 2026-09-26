@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+from agent.operation.contracts import CancellationSafetyMode
+from agent.operation.schema import FrozenJsonObject, freeze_json_like, thaw_json_like
 from agent.tools.contracts import (
-    CancellationSafetyMode,
-    FrozenJsonObject,
     ToolAdapter,
     ToolDescriptor,
     ToolError,
@@ -17,8 +17,6 @@ from agent.tools.contracts import (
     ToolOriginKind,
     ToolResult,
     ToolStatus,
-    freeze_json_like,
-    thaw_json_like,
 )
 from agent.tools.extension_manifest_parser import (
     SUPPORTED_PROTOCOL as _SUPPORTED_PROTOCOL,

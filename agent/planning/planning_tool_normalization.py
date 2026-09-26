@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.planning.schema_safety import (
+from agent.operation.contracts import CancellationSafetyMode
+from agent.operation.provenance import normalize_argument_provenance
+from agent.operation.schema import (
     PlanningSchemaError,
+    freeze_json_like,
+    freeze_result_data_schema,
     validate_planning_schema_shape,
     validate_schema_depth,
 )
-from agent.skills.descriptor import freeze_result_data_schema
-from agent.tools.contracts import CancellationSafetyMode, ToolOriginKind, freeze_json_like
+from agent.operation.usage_examples import normalize_usage_examples
+from agent.tools.contracts import ToolOriginKind
 from agent.tools.extension_state import validate_extension_id
-from agent.tools.provenance import normalize_argument_provenance
-from agent.tools.usage_examples import normalize_usage_examples
 
 
 def normalize_planning_tool(tool: Any, error_type: type[ValueError]) -> None:

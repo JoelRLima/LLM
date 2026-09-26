@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from agent.capabilities import Capability
-from agent.planning.tool_metadata import ToolMetadata
+from agent.operation.planning_metadata import ToolMetadata
 from agent.tools.contracts import (
     ToolAdapter,
     ToolDescriptor,

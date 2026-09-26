@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
-from agent.tools.contracts import ToolAdapter, ToolDescriptor, freeze_json_like, thaw_json_like
+from agent.operation.schema import freeze_json_like, thaw_json_like
+from agent.tools.contracts import ToolAdapter, ToolDescriptor
 from agent.tools.extension_manifest_parser import ExtensionManifest as ParsedExtensionManifest
 from agent.tools.extension_manifest_parser import (
     ManifestParseError,

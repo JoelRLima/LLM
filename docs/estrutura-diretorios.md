@@ -73,6 +73,11 @@ LLM/
 │   │   ├── task_graph_validation.py # invariantes e detecção de ciclos
 │   │   ├── task_scheduler.py        # concorrência limitada
 │   │   └── ...                      # fallback, replan, complexidade, metadata
+│   ├── operation/                 # metadata neutro compartilhado
+│   │   ├── catalog.py              # catálogo canônico de SkillSpec
+│   │   ├── planning_metadata.py   # derivação de ToolMetadata
+│   │   ├── spec.py                 # contrato de metadata de skill
+│   │   └── ...                     # contratos, schema, provenance e examples
 │   ├── reporting/                  # builders separados de renderização
 │   ├── health/
 │   │   ├── standalone.py           # composição/renderização do doctor
@@ -92,8 +97,8 @@ LLM/
 │   │   └── ...                     # contexto, logging e perfis
 │   ├── security/                   # scanner e padrões
 │   ├── skills/
-│   │   ├── catalog.py               # fonte canônica dos descritores
-│   │   ├── descriptor.py            # SkillSpec e capacidades
+│   │   ├── catalog.py               # facade de compatibilidade
+│   │   ├── descriptor.py            # SkillDescriptor e capacidades
 │   │   ├── registry.py              # construção e validação
 │   │   ├── policy.py                # capacidades por persona
 │   │   ├── code_task.py             # fachada dos workflows novos
@@ -176,7 +181,7 @@ legados só são importados com migração explícita.
 | consentimento local | `agent/approval.py` e adapters em `agent/interfaces/cli/` |
 | configuração versionada | `agent/runtime/config_repository.py`, `agent/runtime/config_schema.py`, `agent/runtime/config_effective.py` e `agent/resources/default_config.json` |
 | hardware e limites | `agent/runtime/hardware.py` e configuração validada |
-| skills | `agent/skills/catalog.py` |
+| metadados de skills | `agent/operation/catalog.py` e `agent/operation/planning_metadata.py` (facades em `agent/skills/catalog.py` e `agent/planning/tool_metadata.py`) |
 | capacidades por persona | `agent/skills/policy.py` |
 | contratos de código | `agent/code/contracts.py` |
 | tarefas e dependências | `agent/planning/task_graph.py` |

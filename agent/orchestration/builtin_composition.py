@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.approval import RequireExplicitApproval
-from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
+from agent.operation.catalog import BUILTIN_SPEC_BY_NAME
 from agent.skills.descriptor import SkillDescriptor
 from agent.skills.registry import SkillRegistry
 from agent.tools.builtin_adapter import BuiltinToolAdapter

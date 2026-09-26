@@ -6,12 +6,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, cast
 from uuid import uuid4
 
-from agent.planning.planning_tool_normalization import normalize_planning_tool
-from agent.planning.schema_safety import (
+from agent.operation.contracts import CancellationSafetyMode
+from agent.operation.schema import (
     MAX_SCHEMA_DEPTH,
     PlanningSchemaError,
+    thaw_json_like,
     validate_planning_schema_shape,
 )
+from agent.planning.planning_tool_normalization import normalize_planning_tool
 from agent.runtime.argument_contract import validate_operation_arguments
 from agent.runtime.schema_validation import normalize_argument_schema, validate_schema_arguments
 from agent.tools.authority import (
@@ -19,12 +21,7 @@ from agent.tools.authority import (
     TaskAuthoritySnapshot,
     derive_effective_task_authority,
 )
-from agent.tools.contracts import (
-    CancellationSafetyMode,
-    ToolDescriptor,
-    ToolOriginKind,
-    thaw_json_like,
-)
+from agent.tools.contracts import ToolDescriptor, ToolOriginKind
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 if TYPE_CHECKING:

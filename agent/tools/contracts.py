@@ -9,15 +9,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 
+from agent.operation.contracts import CancellationSafetyMode
+from agent.operation.provenance import normalize_argument_provenance
+from agent.operation.schema import (
+    FrozenJsonObject,  # noqa: F401
+    freeze_json_like,
+    freeze_result_data_schema,
+    thaw_json_like,
+)
+from agent.operation.usage_examples import normalize_usage_examples
 from agent.runtime.outcome_taxonomy import OperationalStatus
 from agent.tools.extension_state import validate_extension_id
 from agent.tools.invocation_request import ToolInvocationRequest as ToolInvocationRequest
-from agent.tools.json_snapshot import FrozenJsonObject as FrozenJsonObject
-from agent.tools.json_snapshot import freeze_json_like, thaw_json_like
-from agent.tools.provenance import normalize_argument_provenance
 from agent.tools.public_invocation import normalize_public_invocation_fields
 from agent.tools.runtime_identity import RuntimeSnapshotIdentity as _RuntimeSnapshotIdentity
-from agent.tools.usage_examples import normalize_usage_examples
 
 RuntimeSnapshotIdentity = _RuntimeSnapshotIdentity
 
@@ -34,14 +39,6 @@ class ToolOriginKind(str, Enum):
 
     BUILTIN = "builtin"
     EXTENSION = "extension"
-
-
-class CancellationSafetyMode(str, Enum):
-    """How an adapter closes its lifetime after timeout/cancellation."""
-
-    BOUNDED_COOPERATIVE = "bounded_cooperative"
-    PROCESS_KILLABLE = "process_killable"
-    UNSUPPORTED = "unsupported"
 
 
 def _normalized_capabilities(value: Any) -> frozenset[str]:
@@ -129,7 +126,6 @@ class ToolDescriptor:
         object.__setattr__(self, "argument_provenance", normalize_argument_provenance(self.argument_provenance))
         if self.argument_validator is not None and not callable(self.argument_validator):
             raise TypeError("argument_validator must be callable")
-        from agent.skills.descriptor import freeze_result_data_schema
         object.__setattr__(self, "result_data_schema", freeze_result_data_schema(self.result_data_schema))
         object.__setattr__(
             self,

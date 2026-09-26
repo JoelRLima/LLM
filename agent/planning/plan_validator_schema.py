@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Dict, List, cast
 
+from agent.operation.schema import (
+    result_data_schema_for_contract,
+    target_schema_for_contract,
+)
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.plan_effect_validation import PlanEffectValidationMixin
 from agent.planning.plan_model import (
@@ -21,10 +25,6 @@ from agent.planning.plan_validation_types import BlockedStep
 from agent.planning.planning_context import PlanningTool, validate_planning_tool_arguments
 from agent.planning.result_bindings import ResultBindingError, binding_targets
 from agent.planning.validation_repair import repairable_fields
-from agent.skills.descriptor import (
-    result_data_schema_for_contract,
-    target_schema_for_contract,
-)
 
 
 class PlanValidatorSchemaMixin(PlanEffectValidationMixin):

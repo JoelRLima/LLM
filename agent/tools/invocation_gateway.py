@@ -6,12 +6,12 @@ from typing import Any, Callable, Dict, Optional
 
 from agent.approval import ApprovalPort, RequireExplicitApproval
 from agent.observability.audit_projection import project_tool_descriptor
+from agent.operation.contracts import CancellationSafetyMode
 from agent.runtime.budget import TaskBudgetLedger
 from agent.tools.approval_execution import check_effect_approval
 from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
 from agent.tools.contracts import (
     AuthorizationContext,
-    CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
     ToolInvocationRequest,

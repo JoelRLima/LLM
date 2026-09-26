@@ -6,8 +6,9 @@ import importlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Optional, cast
 
-from agent.skills.catalog import BUILTIN_SKILL_SPECS
-from agent.skills.descriptor import SkillDescriptor, SkillLike, SkillSpec
+from agent.operation.catalog import BUILTIN_SKILL_SPECS
+from agent.operation.spec import SkillSpec
+from agent.skills.descriptor import SkillDescriptor, SkillLike
 
 
 class SkillRegistry:

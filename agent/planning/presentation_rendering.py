@@ -6,22 +6,25 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from agent.operation.planning_metadata import ToolMetadata
+from agent.operation.schema import (
+    MAX_SCHEMA_DEPTH,
+    PlanningSchemaError,
+    thaw_json_like,
+    validate_result_data_schema,
+    validate_schema_depth,
+)
 from agent.planning.planning_context import PlanningTool
 from agent.planning.presentation_models import (
     PlanningPresentationBudget,
     PlanningPresentationError,
     PlanningToolIndexEntry,
 )
-from agent.planning.schema_safety import MAX_SCHEMA_DEPTH, PlanningSchemaError, validate_schema_depth
-from agent.skills.descriptor import validate_result_data_schema
-from agent.tools.contracts import thaw_json_like
 from agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
 def tool_metadata(tool: PlanningTool) -> Any:
     """Project optimizer metadata through the canonical invocation resolver."""
-
-    from agent.planning.tool_metadata import ToolMetadata
 
     class _Descriptor:
         name = tool.name

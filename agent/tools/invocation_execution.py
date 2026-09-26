@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Dict, cast
 
+from agent.operation.contracts import CancellationSafetyMode
 from agent.runtime.budget import BudgetExhausted
 from agent.runtime.logging import logger
 from agent.tools.contracts import (
-    CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
     ToolResult,

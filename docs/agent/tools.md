@@ -7,7 +7,9 @@
 
 ## Camadas
 
-`SkillRegistry` constrói builtins a partir de `agent/skills/catalog.py`.
+`SkillRegistry` constrói builtins a partir do catálogo canônico em
+`agent/operation/catalog.py`; `agent/skills/catalog.py` é uma facade de
+compatibilidade.
 `BuiltinToolAdapter` converte seus descritores para `ToolDescriptor`.
 `ToolRegistry` agrega builtins e extensions. O planning recebe apenas uma
 projeção elegível; `ToolInvocationGateway` aplica enforcement na execução.

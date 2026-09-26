@@ -96,7 +96,7 @@ class ExecutionGatewaySupportMixin:
         presented_names: frozenset[str] | None = None,
         planning_view: PlanningPresentationSnapshot | None = None,
     ) -> Plan:
-        from agent.planning.tool_metadata import build_metadata_dict
+        from agent.operation.planning_metadata import build_metadata_dict
 
         context = planning_context or getattr(self, "_active_planning_context", None)
         if context is None:

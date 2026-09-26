@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.tools.json_snapshot import freeze_json_like, thaw_json_like
+from agent.operation.schema import freeze_json_like, thaw_json_like
 
 
 def _validate_lineage(request: "ToolInvocationRequest") -> None:

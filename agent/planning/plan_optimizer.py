@@ -4,12 +4,17 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from agent.operation.planning_metadata import (
+    TOOL_METADATA,
+    ToolMetadata,
+    estimate_step_cost,
+    get_tool_metadata,
+)
 from agent.planning.deferred_condition import is_deferred_condition
 from agent.planning.plan_model import Plan, PlanStep, ToolPlanStep
 from agent.planning.planning_context import PlanningContextSnapshot
 from agent.planning.presentation import PlanningPresentationSnapshot
 from agent.planning.result_bindings import has_result_bindings, referenced_step_ids
-from agent.planning.tool_metadata import TOOL_METADATA, ToolMetadata, estimate_step_cost, get_tool_metadata
 
 
 class PlanningOptimizationError(ValueError):

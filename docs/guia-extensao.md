@@ -34,7 +34,7 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | entrada CLI/skill | [`application.py`](../agent/code/application.py) | mantenha uma entrada única independente de UI e planner |
 | comando explícito | [`commands.py`](../agent/code/commands.py) | parser puro; não execute efeitos nem importe CLI |
 | template de grafo | [`task_templates.py`](../agent/code/task_templates.py) | IDs, dependências, capabilities e recursos determinísticos |
-| nova skill | [`catalog.py`](../agent/skills/catalog.py) e um módulo de skill | um `SkillSpec`; sem mapa paralelo |
+| nova skill | [`agent/operation/catalog.py`](../agent/operation/catalog.py) e um módulo de skill | um `SkillSpec`; sem mapa paralelo |
 | política de persona | [`policy.py`](../agent/skills/policy.py) | conceda capacidades, não nomes de tools |
 | schema de plano legado | [`agent/contracts.py`](../agent/contracts.py) | preserve formato JSON público |
 | execução unitária | [`step_executor.py`](../agent/planning/step_executor.py) | não devolva coordenação global ao passo |
@@ -143,7 +143,9 @@ O fallback textual continua obrigatório para extensões não suportadas.
    resultado.
 9. Atualize [`skills.md`](skills.md).
 
-Não há `SKILL_CONFIG`; `tool_metadata.py` é derivado do catálogo.
+Não há `SKILL_CONFIG`; `agent/operation/planning_metadata.py` é derivado do
+catálogo. `agent/planning/tool_metadata.py` permanece como facade de
+compatibilidade.
 
 ## Adicionar um workflow de código
 

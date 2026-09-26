@@ -214,10 +214,12 @@ concorrer quando seus recursos são compatíveis.
 
 ### `agent/skills/`
 
-`catalog.py` é a fonte canônica de construção, capacidades, custo, cache,
-timeout e categoria. `SkillRegistry` instancia e valida as implementações.
-`policy.py` concede capacidades a personas. `tool_metadata.py` é somente uma
-fachada derivada para consumidores legados.
+`agent/operation/catalog.py` é a fonte canônica de construção, capacidades,
+custo, cache, timeout e categoria. `SkillRegistry` instancia e valida as
+implementações. `policy.py` concede capacidades a personas.
+`agent/operation/planning_metadata.py` deriva a visão de metadata; os módulos
+antigos `skills/catalog.py` e `planning/tool_metadata.py` são facades de
+compatibilidade.
 
 Skills apoiadas em subprocessos compartilham `process_paths.py`,
 `process_safety.py` e `process_environment.py`: esses módulos separam parsing

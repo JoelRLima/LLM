@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
+from agent.operation.planning_metadata import TOOL_METADATA
 from agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
 from agent.planning.plan_model import Plan
 from agent.planning.plan_optimizer import PlanOptimizer
@@ -14,7 +15,6 @@ from agent.planning.presentation import (
     validate_planning_view_binding,
 )
 from agent.planning.replan_models import ErrorCategory, ReplanAction
-from agent.planning.tool_metadata import TOOL_METADATA
 from agent.runtime.logging import logger
 
 

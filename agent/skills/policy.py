@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable
 
-from agent.skills.catalog import BUILTIN_SKILL_SPECS
+from agent.operation.catalog import BUILTIN_SKILL_SPECS
 from agent.skills.descriptor import SkillCapability, SkillDescriptor
 from agent.tools.contracts import ToolOriginKind
 
