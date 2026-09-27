@@ -12,6 +12,7 @@ from agent.runtime.config_validation import (
     validate_root,
     validate_sections,
 )
+from agent.runtime.paths import WorkspacePaths
 
 
 def _load_packaged_defaults() -> Dict[str, Any]:
@@ -23,10 +24,9 @@ def _load_packaged_defaults() -> Dict[str, Any]:
 # Keep the legacy module-level names as projections for callers that still
 # import them; the packaged resource is the authored source.
 _PACKAGED_DEFAULTS = _load_packaged_defaults()
+AUTHORED_CONFIG_DEFAULTS = deepcopy(_PACKAGED_DEFAULTS)
 DEFAULT_PROMPT = str(_PACKAGED_DEFAULTS["default_system_prompt"])
 DEFAULT_VALIDATION = deepcopy(_PACKAGED_DEFAULTS["validation"])
-DEFAULT_TASK_REPORT = deepcopy(_PACKAGED_DEFAULTS["task_report"])
-DEFAULT_TASK_REPORT.setdefault("output_dir", paths.REPORTS_DIR)
 DEFAULT_CODE_POLICY = deepcopy(_PACKAGED_DEFAULTS["code_policy"])
 DEFAULT_COST_WATCHDOG = {
     key: _PACKAGED_DEFAULTS[key]
@@ -37,14 +37,43 @@ DEFAULT_COST_WATCHDOG = {
         "max_no_progress_plateau",
     )
 }
-DEFAULT_CONFIG = deepcopy(_PACKAGED_DEFAULTS)
-DEFAULT_CONFIG.setdefault("checkpoint_file", paths.CHECKPOINT_FILE)
-DEFAULT_CONFIG["task_report"] = deepcopy(DEFAULT_TASK_REPORT)
+def _runtime_path_defaults(
+    workspace_paths: WorkspacePaths | None = None,
+) -> tuple[str, str]:
+    if workspace_paths is not None:
+        return str(workspace_paths.checkpoint_file), str(workspace_paths.reports_dir)
+    return paths.legacy_config_path_defaults()
 
 
-def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
+def _runtime_defaults(
+    workspace_paths: WorkspacePaths | None = None,
+) -> Dict[str, Any]:
+    """Project authored defaults with paths resolved for one runtime boundary."""
+
+    checkpoint_file, reports_dir = _runtime_path_defaults(workspace_paths)
+    defaults = deepcopy(_PACKAGED_DEFAULTS)
+    defaults["checkpoint_file"] = checkpoint_file
+    task_report = deepcopy(defaults["task_report"])
+    task_report.setdefault("output_dir", reports_dir)
+    defaults["task_report"] = task_report
+    return defaults
+
+
+# Public legacy projections retain their historical no-argument behavior.  The
+# packaged authored defaults above remain free of machine-specific paths.
+DEFAULT_TASK_REPORT = deepcopy(_runtime_defaults()["task_report"])
+DEFAULT_CONFIG = _runtime_defaults()
+
+
+def carregar_config(
+    caminho: str = "config.json",
+    *,
+    workspace_paths: WorkspacePaths | None = None,
+) -> Dict[str, Any]:
     """Carrega e normaliza a configuração pública da aplicação."""
     from agent.runtime.logging import logger
+
+    defaults = _runtime_defaults(workspace_paths)
 
     if not os.path.exists(caminho):
         logger.error("O arquivo '%s' não foi encontrado!", caminho)
@@ -53,13 +82,13 @@ def carregar_config(caminho: str = "config.json") -> Dict[str, Any]:
         config: Dict[str, Any] = json.load(source)
 
     validator = ConfigValidator(config, logger)
-    validate_root(validator, DEFAULT_CONFIG)
+    validate_root(validator, defaults)
     validate_model_profiles(validator)
     validate_limits(validator, DEFAULT_COST_WATCHDOG)
     validate_sections(
         validator,
         DEFAULT_VALIDATION,
         DEFAULT_CODE_POLICY,
-        DEFAULT_TASK_REPORT,
+        defaults["task_report"],
     )
     return config

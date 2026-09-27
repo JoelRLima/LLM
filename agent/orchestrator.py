@@ -134,9 +134,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         )
         self.memory_file = str(effective_paths.memory_file)
         memory = AgentMemory(
-            db_path=effective_paths.memory_db_file,
-            default_file=self.memory_file,
-            backup_dir=effective_paths.memory_backup_dir,
+            workspace_paths=effective_paths,
         )
         memory.initialize()
         self.checkpoint_manager = CheckpointManager(self.checkpoint_file)

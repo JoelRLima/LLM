@@ -1,24 +1,35 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Callable, Dict, Sequence
 
 from agent.health.core import (
-    HEALTH_REPORT_PATH,
-    PROJECT_ROOT,
     STATUS_ERROR,
     STATUS_ICON,
     STATUS_OK,
     STATUS_WARNING,
     ensure_sys_path,
+    resolve_health_paths,
     safe_check,
 )
 
 
 def run_checks(
-    checks: Sequence[tuple[str, Callable[[], object]]], *, write_report: bool, verbose: bool
+    checks: Sequence[tuple[str, Callable[[], object]]],
+    *,
+    write_report: bool,
+    verbose: bool,
+    app_paths: Any | None = None,
+    workspace_paths: Any | None = None,
+    workspace_root: str | Path | None = None,
 ) -> Dict[str, Any]:
     ensure_sys_path()
+    selected = resolve_health_paths(
+        app_paths=app_paths,
+        workspace_paths=workspace_paths,
+        workspace_root=workspace_root,
+    )
     results = [safe_check(key, function) for key, function in checks]
     counts = {
         "ok": sum(item.status == STATUS_OK for item in results),
@@ -29,13 +40,13 @@ def run_checks(
     summary = "Sistema saudável." if not problems else f"Foram encontrados {problems} problema(s)."
     report: Dict[str, Any] = {
         "summary": summary, "total_checks": len(results), **counts,
-        "project_root": str(PROJECT_ROOT), "checks": [item.to_dict() for item in results],
+        "project_root": str(selected.project_root), "checks": [item.to_dict() for item in results],
     }
     if verbose:
         print_report(report)
     if write_report:
         try:
-            HEALTH_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            selected.health_report_file.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError as exc:
             if verbose:
                 print(f"Não foi possível salvar o relatório: {exc}")

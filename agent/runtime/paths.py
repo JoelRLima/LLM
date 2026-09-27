@@ -264,7 +264,57 @@ TASK_TRACKER_JSON = os.path.join(RUNTIME_DIR, 'task_tracker.json')
 TASK_TRACKER_MD = os.path.join(RUNTIME_DIR, 'task_tracker.md')
 BENCHMARK_RESULTS_FILE = os.path.join(RUNTIME_DIR, 'benchmark_results.json')
 HEALTH_REPORT_FILE = os.path.join(RUNTIME_DIR, 'health_report.json')
+
+
+# These narrowly scoped accessors keep the compatibility fallback owned by
+# this module.  Canonical application code must use AppPaths/WorkspacePaths;
+# callers of the historical no-argument APIs use these only as an explicit
+# compatibility boundary.  The values are read at call time so existing
+# callers that patch the compatibility names retain their behavior.
+def legacy_log_file() -> str:
+    return LOG_FILE
+
+
+def legacy_checkpoint_file() -> str:
+    return CHECKPOINT_FILE
+
+
+def legacy_metrics_file() -> str:
+    return METRICS_FILE
+
+
+def legacy_memory_paths() -> tuple[str, str, str]:
+    return MEMORY_DB_FILE, MEMORY_FILE, MEMORY_BACKUP_DIR
+
+
+def legacy_restore_points_dir() -> str:
+    return RESTORE_POINTS_DIR
+
+
+def legacy_reports_dir() -> str:
+    return REPORTS_DIR
+
+
+def legacy_health_report_file() -> str:
+    return HEALTH_REPORT_FILE
+
+
+def legacy_config_path_defaults() -> tuple[str, str]:
+    return CHECKPOINT_FILE, REPORTS_DIR
+
+
 def ensure_runtime_dir() -> None:
     """Create the legacy runtime directory for compatibility consumers."""
     Path(RUNTIME_DIR).mkdir(parents=True, exist_ok=True)
-__all__ = ['APP_DIRECTORY_NAME', 'AppHomeOrigin', 'AppPaths', 'WorkspacePaths', 'RUNTIME_DIR', 'LOG_FILE', 'CHECKPOINT_FILE', 'METRICS_FILE', 'MEMORY_FILE', 'MEMORY_DB_FILE', 'MEMORY_BACKUP_DIR', 'RESTORE_POINTS_DIR', 'CHAT_HISTORY_FILE', 'REPORTS_DIR', 'TASK_TRACKER_JSON', 'TASK_TRACKER_MD', 'BENCHMARK_RESULTS_FILE', 'HEALTH_REPORT_FILE', 'ensure_runtime_dir']
+__all__ = [
+    'APP_DIRECTORY_NAME', 'AppHomeOrigin', 'AppPaths', 'WorkspacePaths',
+    'RUNTIME_DIR', 'LOG_FILE', 'CHECKPOINT_FILE', 'METRICS_FILE',
+    'MEMORY_FILE', 'MEMORY_DB_FILE', 'MEMORY_BACKUP_DIR',
+    'RESTORE_POINTS_DIR', 'CHAT_HISTORY_FILE', 'REPORTS_DIR',
+    'TASK_TRACKER_JSON', 'TASK_TRACKER_MD', 'BENCHMARK_RESULTS_FILE',
+    'HEALTH_REPORT_FILE', 'legacy_log_file', 'legacy_checkpoint_file',
+    'legacy_metrics_file', 'legacy_memory_paths',
+    'legacy_restore_points_dir', 'legacy_reports_dir',
+    'legacy_health_report_file', 'legacy_config_path_defaults',
+    'ensure_runtime_dir',
+]

@@ -23,6 +23,7 @@ from agent.memory.sqlite_store import (
 )
 from agent.runtime import paths
 from agent.runtime.logging import logger
+from agent.runtime.paths import WorkspacePaths
 
 MAX_MEMORY_BACKUPS = 5
 
@@ -38,10 +39,17 @@ class AgentMemory(SqliteMemoryStoreMixin):
         db_path: str | Path | None = None,
         default_file: str | Path | None = None,
         backup_dir: str | Path | None = None,
+        workspace_paths: WorkspacePaths | None = None,
     ) -> None:
-        self.db_path = str(db_path or paths.MEMORY_DB_FILE)
-        self.default_file = str(default_file or paths.MEMORY_FILE)
-        self.backup_dir = str(backup_dir or paths.MEMORY_BACKUP_DIR)
+        if workspace_paths is None:
+            default_db_path, memory_default_file, default_backup_dir = paths.legacy_memory_paths()
+        else:
+            default_db_path = workspace_paths.memory_db_file
+            memory_default_file = workspace_paths.memory_file
+            default_backup_dir = workspace_paths.memory_backup_dir
+        self.db_path = str(db_path or default_db_path)
+        self.default_file = str(default_file or memory_default_file)
+        self.backup_dir = str(backup_dir or default_backup_dir)
         self._initialized = False
         self.state: Dict[str, Any] = self._empty_state()
 

@@ -10,25 +10,44 @@ from typing import Any, Dict, List, Optional
 
 from agent.health.core import (
     ESSENTIAL_SKILLS,
-    LOG_FILE,
     LOG_SIZE_WARNING_BYTES,
-    MEMORY_BACKUP_DIR,
-    MEMORY_RESTORE_DIR,
-    METRICS_FILE,
-    PROJECT_ROOT,
     STATUS_ERROR,
     STATUS_OK,
     STATUS_WARNING,
-    TEMP_ANALYSIS_DIR,
     CheckResult,
+    HealthPathContext,
     ensure_sys_path,
+    resolve_health_paths,
 )
 
 
-def check_orphan_dirs() -> CheckResult:
+def _selected_paths(
+    *,
+    app_paths: Any | None = None,
+    workspace_paths: Any | None = None,
+    workspace_root: str | Path | None = None,
+) -> HealthPathContext:
+    return resolve_health_paths(
+        app_paths=app_paths,
+        workspace_paths=workspace_paths,
+        workspace_root=workspace_root,
+    )
+
+
+def check_orphan_dirs(
+    *,
+    app_paths: Any | None = None,
+    workspace_paths: Any | None = None,
+    workspace_root: str | Path | None = None,
+) -> CheckResult:
+    selected = _selected_paths(
+        app_paths=app_paths,
+        workspace_paths=workspace_paths,
+        workspace_root=workspace_root,
+    )
     details: Dict[str, Any] = {}
     warnings = []
-    for key, directory in (("temp_analysis", TEMP_ANALYSIS_DIR), ("restore_dir", MEMORY_RESTORE_DIR)):
+    for key, directory in (("temp_analysis", selected.temp_analysis_dir), ("restore_dir", selected.restore_points_dir)):
         exists = directory.exists()
         details[f"{key}_exists"] = exists
         if exists:
@@ -44,11 +63,21 @@ def check_orphan_dirs() -> CheckResult:
     return CheckResult("Diretórios órfãos", status, "; ".join(warnings) or "Nenhum diretório órfão encontrado.", details)
 
 
-def check_permissions() -> CheckResult:
+def check_permissions(
+    *,
+    app_paths: Any | None = None,
+    workspace_paths: Any | None = None,
+    workspace_root: str | Path | None = None,
+) -> CheckResult:
+    selected = _selected_paths(
+        app_paths=app_paths,
+        workspace_paths=workspace_paths,
+        workspace_root=workspace_root,
+    )
     details: Dict[str, Any] = {}
     problems = []
-    for label, directory in (("project_root", PROJECT_ROOT), ("temp_analysis", TEMP_ANALYSIS_DIR), ("memory_backups", MEMORY_BACKUP_DIR)):
-        if directory != PROJECT_ROOT and not directory.exists():
+    for label, directory in (("project_root", selected.project_root), ("temp_analysis", selected.temp_analysis_dir), ("memory_backups", selected.memory_backup_dir)):
+        if directory != selected.project_root and not directory.exists():
             details[f"{label}_writable"] = None
             continue
         valid, error = test_write_read_delete(directory)
@@ -103,10 +132,20 @@ def check_skills() -> CheckResult:
     return CheckResult("Skills carregadas", status, " ".join(messages), details)
 
 
-def check_logs() -> CheckResult:
+def check_logs(
+    *,
+    app_paths: Any | None = None,
+    workspace_paths: Any | None = None,
+    workspace_root: str | Path | None = None,
+) -> CheckResult:
+    selected = _selected_paths(
+        app_paths=app_paths,
+        workspace_paths=workspace_paths,
+        workspace_root=workspace_root,
+    )
     details: Dict[str, Any] = {}
     warnings: List[str] = []
-    for label, path in (("agent.log", LOG_FILE), ("agent_metrics.jsonl", METRICS_FILE)):
+    for label, path in (("agent.log", selected.log_file), ("agent_metrics.jsonl", selected.metrics_file)):
         if not path.exists():
             details[label] = {"exists": False}
             continue

@@ -7,7 +7,7 @@ import sys
 import threading
 from pathlib import Path
 
-from agent.runtime.paths import LOG_FILE
+from agent.runtime import paths
 
 LOGGER_NAME = "LLM_Agent"
 _HANDLER_MARKER = "_llm_agent_owned"
@@ -69,7 +69,7 @@ def setup_logger(
     """Configure logging after application paths have been resolved."""
 
     global _active_console, _active_log_file, _console_handler, _lease_count
-    selected = Path(log_file or LOG_FILE).expanduser().resolve()
+    selected = Path(log_file or paths.legacy_log_file()).expanduser().resolve()
     with _lock:
         if _lease_count:
             if selected != _active_log_file or console != _active_console:

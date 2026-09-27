@@ -203,7 +203,10 @@ class OrchestratorOperations:
             if status is None:
                 logger.warning("Task report requires canonical execution status")
                 return None
-            builder = TaskReportBuilder(self.session.config)
+            builder = TaskReportBuilder(
+                self.session.config,
+                workspace_paths=self.workspace_paths,
+            )
             report = builder.build_report(
                 self.agent_state,
                 [] if snapshot is not None else self._get_metrics_for_task(),

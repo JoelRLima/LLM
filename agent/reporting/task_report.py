@@ -27,19 +27,30 @@ from agent.reporting.task_report_events import (
     project_planner_outcome,
 )
 from agent.reporting.task_report_rendering import render_markdown
-from agent.runtime.paths import REPORTS_DIR
+from agent.runtime import paths
+from agent.runtime.paths import WorkspacePaths
 
 TIMESTAMP_KEYS = ("timestamp", "time", "ts")
 MAX_SUMMARY_CHARS = 500
 MAX_PREVIEW_CHARS = 500
 
 class TaskReportBuilder:
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        workspace_paths: WorkspacePaths | None = None,
+    ) -> None:
         raw = (config or {}).get("task_report") or {}
         settings = raw if isinstance(raw, dict) else {}
         self.enabled = bool(settings.get("enabled", True))
         self.default_format = str(settings.get("format", "json"))
-        self.output_dir = str(settings.get("output_dir", REPORTS_DIR))
+        default_output_dir = (
+            workspace_paths.reports_dir
+            if workspace_paths is not None
+            else paths.legacy_reports_dir()
+        )
+        self.output_dir = str(settings.get("output_dir", default_output_dir))
 
     def build_report(
         self,

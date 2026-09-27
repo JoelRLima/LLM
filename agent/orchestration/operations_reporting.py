@@ -55,7 +55,10 @@ def generate_task_report(
         if status is None:
             logger.warning("Task report requires canonical execution status")
             return None
-        builder = TaskReportBuilder(owner.session.config)
+        builder = TaskReportBuilder(
+            owner.session.config,
+            workspace_paths=getattr(owner, "workspace_paths", None),
+        )
         report = builder.build_report(
             owner.agent_state,
             [] if snapshot is not None else get_metrics_for_task(owner),
