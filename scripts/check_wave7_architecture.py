@@ -198,7 +198,12 @@ INVENTORY_SECTIONS = {
     "## Adiado para W8 com evidência bloqueante": (
     ),
 }
-CONTROLLED_STDIO_FILES = frozenset({"agent/tools/stdio_streams.py"})
+CONTROLLED_STDIO_FILES = frozenset(
+    {
+        "agent/process/streams.py",
+        "agent/tools/stdio_streams.py",
+    }
+)
 CONTROLLED_STDIO_METHODS = frozenset({"send_request"})
 PRIOR_CHECKERS = (
     "scripts/check_production_naming_hygiene.py",
@@ -427,6 +432,17 @@ def _check_open_world_compatibility(root: Path) -> list[ArchitectureViolation]:
             continue
         for symbol, line, reason in _compatibility_markers(tree):
             edge = find_edge(relative, symbol)
+            if edge is None and relative == "agent/runtime/paths.py" and symbol in {
+                "legacy_log_file",
+                "legacy_checkpoint_file",
+                "legacy_metrics_file",
+                "legacy_memory_paths",
+                "legacy_restore_points_dir",
+                "legacy_reports_dir",
+                "legacy_health_report_file",
+                "legacy_config_path_defaults",
+            }:
+                edge = find_edge(relative, "legacy string constants")
             if edge is None:
                 violations.append(
                     _violation(

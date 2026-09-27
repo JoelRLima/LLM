@@ -24,6 +24,10 @@ GOVERNANCE_EXCEPTIONS = frozenset(
         "scripts/check_wave17_architecture.py",
         "scripts/run_wave17_adversarial.py",
         "scripts/run_wave19_adversarial.py",
+        "scripts/check_wave21_architecture.py",
+        "scripts/w21_architecture/__init__.py",
+        "scripts/w21_architecture/authority.py",
+        "scripts/w21_architecture/projection.py",
     }
 )
 SELF_PATH = "scripts/check_production_naming_hygiene.py"

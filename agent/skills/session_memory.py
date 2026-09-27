@@ -1,4 +1,4 @@
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from agent.cancellation import is_cancellation_requested
 from agent.memory.memory import MemoryDatabaseError, MemoryOperationCancelled
@@ -43,12 +43,18 @@ class SessionMemorySkill(BaseSkill):
     ) -> None:
         # Keep the historical constructor form working for direct callers,
         # while retaining only the narrow memory capability.
-        if memory is not None and getattr(memory, "agent_state", None) is not None:
-            memory = getattr(memory.agent_state, "memory", None)
+        legacy_owner = cast(Any, memory)
+        if memory is not None and getattr(legacy_owner, "agent_state", None) is not None:
+            memory = getattr(legacy_owner.agent_state, "memory", None)
         if memory is None and orchestrator is not None:
             state = getattr(orchestrator, "agent_state", None)
             memory = getattr(state, "memory", None)
         self.memory = memory
+
+    def _bound_memory(self) -> MemoryCapability:
+        if self.memory is None:
+            raise RuntimeError("Sem orquestrador vinculado.")
+        return self.memory
 
     def bind_memory(self, memory: MemoryCapability) -> None:
         """Bind the memory capability at the composition boundary."""
@@ -115,10 +121,11 @@ class SessionMemorySkill(BaseSkill):
         cancellation_event: Any | None = None,
     ) -> dict[str, Any]:
         try:
+            memory = self._bound_memory()
             if cancellation_token is None and cancellation_event is None:
-                self.memory.remember(key, value, section="key_findings")
+                memory.remember(key, value, section="key_findings")
             else:
-                self.memory.remember(
+                memory.remember(
                     key,
                     value,
                     section="key_findings",
@@ -151,10 +158,11 @@ class SessionMemorySkill(BaseSkill):
         cancellation_event: Any | None = None,
     ) -> dict[str, Any]:
         try:
+            memory = self._bound_memory()
             if cancellation_token is None and cancellation_event is None:
-                self.memory.forget(key)
+                memory.forget(key)
             else:
-                self.memory.forget(
+                memory.forget(
                     key,
                     cancellation_token=cancellation_token,
                     cancellation_event=cancellation_event,

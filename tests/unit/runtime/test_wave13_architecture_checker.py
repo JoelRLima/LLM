@@ -95,7 +95,7 @@ def test_s6_rejects_model_facing_full_validation_enum(tmp_path: Path) -> None:
 
 
 def test_s7_rejects_repository_state_model_argument(tmp_path: Path) -> None:
-    relatives = ("agent/skills/catalog.py", "agent/skills/repository_state.py")
+    relatives = ("agent/operation/catalog.py", "agent/skills/repository_state.py")
     _copy(ROOT, tmp_path, *relatives)
     relative = relatives[1]
     source = _read(tmp_path, relative).replace(

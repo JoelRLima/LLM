@@ -186,15 +186,15 @@ def test_new_wildcard_consumption_fails_even_when_baseline_edge_exists(tmp_path:
     assert any(item.code == "W21-COMP-LEGACY-PATH" for item in findings)
 
 
-def test_baseline_legacy_consumer_retained_is_allowed() -> None:
+def test_completed_migration_removed_all_baseline_legacy_consumers() -> None:
     actual = legacy_consumers(RepositorySource(ROOT))
+    baseline = json.loads((ROOT / "quality/architecture_baseline.json").read_text(encoding="utf-8"))
     expected = {
         (str(item["consumer_module"]), str(item["symbol"]))
-        for item in json.loads((ROOT / "quality/architecture_baseline.json").read_text(encoding="utf-8"))[
-            "legacy_path_surface"
-        ]["baseline_active_consumers"]
+        for item in baseline["legacy_path_surface"]["baseline_active_consumers"]
     }
-    assert actual == expected
+    assert actual == frozenset()
+    assert actual.isdisjoint(expected)
 
 
 def test_removed_baseline_consumer_is_not_an_introduction(tmp_path: Path) -> None:
@@ -414,27 +414,22 @@ def test_multiple_activated_lanes_form_an_explicit_union(tmp_path: Path) -> None
     ]
 
 
-def test_current_meta_bridges_are_pending_by_default_and_required_when_activated() -> None:
+def test_current_meta_bridges_are_exact_after_lane_migration() -> None:
     default_findings = check_compatibility(ROOT)
     assert default_findings == []
 
     activated_findings = check_compatibility(ROOT, mode="transition", activated_lanes=("A",))
-    assert [item.detail.split(":", 1)[0] for item in activated_findings] == [
-        "W21-CB-META-001",
-        "W21-CB-META-002",
-        "W21-CB-META-003",
-        "W21-CB-META-004",
-        "W21-CB-META-005",
+    assert activated_findings == []
+    assert [result.lifecycle for result in analyze_registered_bridges(ROOT)[:5]] == [
+        BridgeLifecycle.EXACT_TARGET,
+        BridgeLifecycle.EXACT_TARGET,
+        BridgeLifecycle.EXACT_TARGET,
+        BridgeLifecycle.EXACT_TARGET,
+        BridgeLifecycle.EXACT_TARGET,
     ]
 
     strict_findings = check_compatibility(ROOT, mode="strict")
-    assert [item.detail.split(":", 1)[0] for item in strict_findings] == [
-        "W21-CB-META-001",
-        "W21-CB-META-002",
-        "W21-CB-META-003",
-        "W21-CB-META-004",
-        "W21-CB-META-005",
-    ]
+    assert strict_findings == []
 
 
 # C005 runtime-interpreter probes removed under AMENDMENT-003.

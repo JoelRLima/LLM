@@ -289,6 +289,10 @@ class _MemoryOwner:
         self.agent_state = state
         self.fail = fail
 
+    @property
+    def state(self):
+        return self.agent_state.memory.state
+
     def remember(
         self,
         key: str,
@@ -315,7 +319,7 @@ def _memory_runtime(tmp_path: Path, objective: str, *, fail: bool = False):
     state = AgentState()
     owner = _MemoryOwner(state, fail=fail)
     skills = load_skill_registry(base_dir=tmp_path)
-    skills.skill("session_memory").orchestrator = owner
+    skills.skill("session_memory").bind_memory(owner)
     registry = ToolRegistry()
     registry.register_adapter(BuiltinToolAdapter(skills))
     registry.freeze()

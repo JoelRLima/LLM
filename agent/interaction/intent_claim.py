@@ -17,8 +17,6 @@ from agent.intent.claim_contracts import (
     INTENT_CLAIM_SCHEMA,
     INTENT_CLAIM_SCHEMA_VERSION,
     IntentClaimError,
-    _reject_constant,
-    _reject_duplicate_keys,
     bind_current_subject_evidence,
     evidence_is_current_subject,
     validate_intent_claim,
@@ -30,6 +28,19 @@ from agent.intent.claim_types import (
     IntentClaimV1,
     TargetSelectorClaim,
 )
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise IntentClaimError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_raw: str) -> Any:
+    raise IntentClaimError("non-standard JSON number")
 
 
 def parse_intent_claim(raw: str | Mapping[str, Any], *, subject: str | None = None) -> IntentClaimV1:

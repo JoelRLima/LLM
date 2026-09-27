@@ -2,6 +2,10 @@
 # ruff: noqa: F401
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, cast
+
+import agent.process.tree as _canonical
 from agent.process.tree import (
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -11,13 +15,10 @@ from agent.process.tree import (
     _WAIT_OBJECT_0,
     _WAIT_TIMEOUT,
     _WINDOWS_TASKKILL_TIMEOUT_SECONDS,
-    Any,
     Path,
     _configure_windows_api,
     _kill_process_group,
     _terminate_posix_process,
-    _terminate_windows_process,
-    _trusted_taskkill_path,
     _wait_for_windows_job,
     _windows_system_directory,
     assign_windows_job,
@@ -30,6 +31,46 @@ from agent.process.tree import (
     terminate_process,
     terminate_windows_job,
 )  # noqa: F401
+
+_ORIGINAL_TRUSTED_TASKKILL_PATH = _canonical._trusted_taskkill_path
+
+
+def _call_with_facade_globals(
+    function: Callable[..., Any],
+    *args: Any,
+    names: tuple[str, ...],
+    **kwargs: Any,
+) -> Any:
+    original = {name: getattr(_canonical, name) for name in names}
+    try:
+        for name in names:
+            setattr(_canonical, name, globals()[name])
+        return function(*args, **kwargs)
+    finally:
+        for name, value in original.items():
+            setattr(_canonical, name, value)
+
+
+def _trusted_taskkill_path() -> str | None:
+    return cast(
+        str | None,
+        _call_with_facade_globals(
+            _canonical._trusted_taskkill_path,
+            names=("os", "_windows_system_directory"),
+        ),
+    )
+
+
+def _terminate_windows_process(process: Any, windows_job: Any) -> str | None:
+    return cast(
+        str | None,
+        _call_with_facade_globals(
+            _canonical._terminate_windows_process,
+            process,
+            windows_job,
+            names=("os", "subprocess", "_trusted_taskkill_path", "terminate_windows_job"),
+        ),
+    )
 
 __all__ = [
     "process_group_id",

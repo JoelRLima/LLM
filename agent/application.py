@@ -324,5 +324,4 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
     def __enter__(self) -> "AgentApplication": return self
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None: self.close()
 
-
 __all__ = ["AgentApplication", "AgentRunResult"]

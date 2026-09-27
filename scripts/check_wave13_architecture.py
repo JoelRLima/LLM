@@ -606,7 +606,7 @@ def _check_s7_schema(
 
 def _check_s7(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    catalog_relative = "agent/skills/catalog.py"
+    catalog_relative = "agent/operation/catalog.py"
     skill_relative = "agent/skills/repository_state.py"
     catalog = _required_tree(root, "W13-S7", catalog_relative, findings)
     skill = _required_tree(root, "W13-S7", skill_relative, findings)

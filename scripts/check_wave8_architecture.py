@@ -49,6 +49,7 @@ PROCESS_OWNERS = frozenset(
         "agent/skills/python_executor.py",
         "agent/skills/python_process.py",
         "agent/skills/shell_process.py",
+        "agent/process/tree.py",
         "agent/tools/process_tree.py",
         "agent/tools/stdio_launcher.py",
         "agent/tools/stdio_process.py",

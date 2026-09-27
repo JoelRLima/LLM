@@ -38,6 +38,7 @@ class OrchestratorOperations:
     cancellation_token: Any
     context_manager: Any
     workspace: Any
+    workspace_paths: Any
     reactive_loop: Any
     tool_executor: Any
 

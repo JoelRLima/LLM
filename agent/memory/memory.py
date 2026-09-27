@@ -12,13 +12,9 @@ from agent.memory.json_persistence import (
     write_json_atomic,
 )
 from agent.memory.prompt_context import build_memory_prompt_context
-from agent.memory.sqlite_store import (
-    MemoryDatabaseError as MemoryDatabaseError,
-)
-from agent.memory.sqlite_store import (
-    MemoryOperationCancelled as MemoryOperationCancelled,
-)
-from agent.memory.sqlite_store import (
+from agent.memory.sqlite_store import (  # noqa: F401
+    MemoryDatabaseError,
+    MemoryOperationCancelled,
     SqliteMemoryStoreMixin,
 )
 from agent.runtime import paths
@@ -41,6 +37,9 @@ class AgentMemory(SqliteMemoryStoreMixin):
         backup_dir: str | Path | None = None,
         workspace_paths: WorkspacePaths | None = None,
     ) -> None:
+        default_db_path: str | Path
+        memory_default_file: str | Path
+        default_backup_dir: str | Path
         if workspace_paths is None:
             default_db_path, memory_default_file, default_backup_dir = paths.legacy_memory_paths()
         else:

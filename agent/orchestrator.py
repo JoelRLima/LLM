@@ -124,14 +124,9 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         self._w15_context_continuity_active = True
         self.session.cancellation_token = self.cancellation_token = CancellationToken()
         self._task_execution_context: Any | None = None
-        self.checkpoint_file = str(
-            checkpoint_file
-            or effective_paths.checkpoint_file
-        )
-        selected_metrics = str(
-            metrics_file
-            or effective_paths.metrics_file
-        )
+        checkpoint_path = checkpoint_file or effective_paths.checkpoint_file
+        self.checkpoint_file = str(checkpoint_path)
+        selected_metrics = str(metrics_file or effective_paths.metrics_file)
         self.memory_file = str(effective_paths.memory_file)
         memory = AgentMemory(
             workspace_paths=effective_paths,
@@ -161,11 +156,7 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
                 skill_registry,
                 session=self.session,
                 memory=self.agent_state.memory,
-                workspace_manager=(
-                    self.workspace
-                    if "file_writer" in skill_registry.names()
-                    else None
-                ),
+                workspace_manager=self.workspace,
             )
         if self.tool_registry is None and selected_skills:
             install_builtin_gateway(

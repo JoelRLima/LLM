@@ -297,13 +297,3 @@ class TaskReportBuilder:
             return timestamps[0], timestamps[-1]
         now = datetime.now(timezone.utc).isoformat()
         return now, now
-
-    @staticmethod
-    def _aggregate_metrics(entries: List[Dict[str, Any]], tools_called: int, *, snapshot: Any = None) -> Dict[str, Any]:
-        if snapshot is None:
-            return cast(Dict[str, Any], project_run_metrics(entries, tools_called).to_dict())
-        return cast(Dict[str, Any], snapshot.metrics.to_dict())
-
-    @staticmethod
-    def _render_markdown(report: Dict[str, Any]) -> str:
-        return cast(str, render_markdown(report))

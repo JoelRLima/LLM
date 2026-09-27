@@ -55,6 +55,99 @@ def _instantiate(spec: SkillSpec, overrides: Dict[str, Any]) -> SkillLike:
     return cast(SkillLike, skill)
 
 
+def _path_overrides(
+    spec: SkillSpec,
+    *,
+    base_dir: str | Path,
+    scratch_dir: str | Path | None,
+) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+    if "base_dir" in spec.kwargs:
+        overrides["base_dir"] = str(base_dir)
+    if "scratch_dir" in spec.kwargs:
+        overrides["scratch_dir"] = str(scratch_dir) if scratch_dir is not None else None
+    return overrides
+
+
+def _runtime_overrides(
+    spec: SkillSpec,
+    *,
+    session: Any,
+    memory: Any,
+    workspace_manager: Any,
+    orchestrator: Any,
+) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+    if "session" in spec.kwargs:
+        overrides["session"] = session if session is not None else getattr(orchestrator, "session", None)
+    if "memory" in spec.kwargs:
+        legacy_state = getattr(orchestrator, "agent_state", None)
+        overrides["memory"] = memory if memory is not None else getattr(legacy_state, "memory", None)
+    if "workspace_manager" in spec.kwargs:
+        overrides["workspace_manager"] = (
+            workspace_manager
+            if workspace_manager is not None
+            else getattr(orchestrator, "workspace", None)
+        )
+    return overrides
+
+
+def _service_overrides(
+    spec: SkillSpec,
+    *,
+    orchestrator: Any,
+    model_gateway: Any,
+    config: Optional[Dict[str, Any]],
+    approval_policy: Any,
+) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+    if "orchestrator" in spec.kwargs:
+        # Compatibility for an explicitly custom legacy SkillSpec only.
+        overrides["orchestrator"] = orchestrator
+    if "model_gateway" in spec.kwargs:
+        overrides["model_gateway"] = model_gateway
+    if "config" in spec.kwargs:
+        overrides["config"] = config or {}
+    if "approval_policy" in spec.kwargs:
+        overrides["approval_policy"] = approval_policy
+    return overrides
+
+
+def _overrides_for_spec(
+    spec: SkillSpec,
+    *,
+    base_dir: str | Path,
+    scratch_dir: str | Path | None,
+    session: Any,
+    memory: Any,
+    workspace_manager: Any,
+    orchestrator: Any,
+    model_gateway: Any,
+    config: Optional[Dict[str, Any]],
+    approval_policy: Any,
+) -> Dict[str, Any]:
+    overrides = _path_overrides(spec, base_dir=base_dir, scratch_dir=scratch_dir)
+    overrides.update(
+        _runtime_overrides(
+            spec,
+            session=session,
+            memory=memory,
+            workspace_manager=workspace_manager,
+            orchestrator=orchestrator,
+        )
+    )
+    overrides.update(
+        _service_overrides(
+            spec,
+            orchestrator=orchestrator,
+            model_gateway=model_gateway,
+            config=config,
+            approval_policy=approval_policy,
+        )
+    )
+    return overrides
+
+
 def build_builtin_registry(
     *,
     base_dir: str | Path = ".",
@@ -73,42 +166,18 @@ def build_builtin_registry(
 ) -> SkillRegistry:
     registry = SkillRegistry()
     for spec in specs:
-        overrides: Dict[str, Any] = {}
-        if "base_dir" in spec.kwargs:
-            overrides["base_dir"] = str(base_dir)
-        if "scratch_dir" in spec.kwargs:
-            overrides["scratch_dir"] = (
-                str(scratch_dir) if scratch_dir is not None else None
-            )
-        if "session" in spec.kwargs:
-            overrides["session"] = (
-                session
-                if session is not None
-                else getattr(orchestrator, "session", None)
-            )
-        if "memory" in spec.kwargs:
-            legacy_state = getattr(orchestrator, "agent_state", None)
-            overrides["memory"] = (
-                memory
-                if memory is not None
-                else getattr(legacy_state, "memory", None)
-            )
-        if "workspace_manager" in spec.kwargs:
-            overrides["workspace_manager"] = (
-                workspace_manager
-                if workspace_manager is not None
-                else getattr(orchestrator, "workspace", None)
-            )
-        if "orchestrator" in spec.kwargs:
-            # Compatibility for an explicitly custom legacy SkillSpec only.
-            # The canonical builtin catalog has no such declaration.
-            overrides["orchestrator"] = orchestrator
-        if "model_gateway" in spec.kwargs:
-            overrides["model_gateway"] = model_gateway
-        if "config" in spec.kwargs:
-            overrides["config"] = config or {}
-        if "approval_policy" in spec.kwargs:
-            overrides["approval_policy"] = approval_policy
+        overrides = _overrides_for_spec(
+            spec,
+            base_dir=base_dir,
+            scratch_dir=scratch_dir,
+            session=session,
+            memory=memory,
+            workspace_manager=workspace_manager,
+            orchestrator=orchestrator,
+            model_gateway=model_gateway,
+            config=config,
+            approval_policy=approval_policy,
+        )
         skill = _instantiate(spec, overrides)
         registry.register(SkillDescriptor(spec=spec, skill=skill))
     return registry

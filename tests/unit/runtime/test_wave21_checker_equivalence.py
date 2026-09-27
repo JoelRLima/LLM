@@ -13,7 +13,15 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _copy_repository(source: Path, destination: Path) -> None:
-    ignored = shutil.ignore_patterns(".git", ".tmp", "__pycache__", ".pytest_cache")
+    def ignored(_directory: str, names: list[str]) -> set[str]:
+        return {
+            name
+            for name in names
+            if (name.startswith(".") and name != ".github")
+            or name == "__pycache__"
+            or name in {"build", "out", "reports"}
+        }
+
     shutil.copytree(source, destination, ignore=ignored)
 
 

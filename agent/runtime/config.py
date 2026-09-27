@@ -1,7 +1,7 @@
 import json
 import os
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from agent.runtime import paths
 from agent.runtime.config_repository import packaged_config_defaults
@@ -42,7 +42,7 @@ def _runtime_path_defaults(
 ) -> tuple[str, str]:
     if workspace_paths is not None:
         return str(workspace_paths.checkpoint_file), str(workspace_paths.reports_dir)
-    return paths.legacy_config_path_defaults()
+    return cast(tuple[str, str], paths.legacy_config_path_defaults())
 
 
 def _runtime_defaults(

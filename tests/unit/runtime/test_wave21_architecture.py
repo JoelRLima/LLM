@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from scripts.check_wave21_architecture import FROZEN_GRAPH, FROZEN_TRANSITION_IDS, check_architecture
+from scripts.check_wave21_architecture import FROZEN_GRAPH, check_architecture
 from scripts.w21_architecture import RepositorySource, build_graph
 from scripts.w21_architecture.policy import stable_violation_id
 
@@ -56,22 +56,21 @@ def _authority(root: Path, *, artifact: str = "W21_EPOCH_AUTHORITY") -> tuple[Pa
     return path, hashlib.sha256(payload).hexdigest()
 
 
-def test_baseline_graph_signature_is_frozen_only_when_explicitly_requested() -> None:
-    assert build_graph(RepositorySource(ROOT)).signatures() == FROZEN_GRAPH
+def test_completed_graph_signature_is_distinct_from_the_pre_migration_baseline() -> None:
+    assert build_graph(RepositorySource(ROOT)).signatures() != FROZEN_GRAPH
 
 
-def test_transition_mode_accepts_the_exact_frozen_set() -> None:
-    result = check_architecture(ROOT, mode="transition", require_baseline_signature=True)
+def test_transition_mode_accepts_the_completed_migration() -> None:
+    result = check_architecture(ROOT, mode="transition")
     assert result.passed
-    assert {item.violation_id for item in result.violations} == FROZEN_TRANSITION_IDS
+    assert not result.violations
     assert not result.new_ids
 
 
-def test_strict_mode_is_red_until_later_lanes_close_the_baseline() -> None:
+def test_strict_mode_is_green_after_all_lanes_close_the_baseline() -> None:
     result = check_architecture(ROOT, mode="strict")
-    assert not result.passed
-    assert len(result.violations) == 27
-    assert {item.violation_id for item in result.violations} == FROZEN_TRANSITION_IDS
+    assert result.passed
+    assert not result.violations
 
 
 def test_stable_violation_id_uses_only_the_contract_payload() -> None:

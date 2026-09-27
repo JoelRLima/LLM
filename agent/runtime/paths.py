@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Mapping
 
 from agent.runtime.filesystem_primitives import inspect_final_path
+from agent.runtime.legacy_paths import make_scalar_accessor, make_tuple_accessor
 from agent.runtime.workspace_trace_paths import WorkspaceTracePaths
 
 APP_DIRECTORY_NAME = 'local-llm-agent'
@@ -271,36 +272,14 @@ HEALTH_REPORT_FILE = os.path.join(RUNTIME_DIR, 'health_report.json')
 # callers of the historical no-argument APIs use these only as an explicit
 # compatibility boundary.  The values are read at call time so existing
 # callers that patch the compatibility names retain their behavior.
-def legacy_log_file() -> str:
-    return LOG_FILE
-
-
-def legacy_checkpoint_file() -> str:
-    return CHECKPOINT_FILE
-
-
-def legacy_metrics_file() -> str:
-    return METRICS_FILE
-
-
-def legacy_memory_paths() -> tuple[str, str, str]:
-    return MEMORY_DB_FILE, MEMORY_FILE, MEMORY_BACKUP_DIR
-
-
-def legacy_restore_points_dir() -> str:
-    return RESTORE_POINTS_DIR
-
-
-def legacy_reports_dir() -> str:
-    return REPORTS_DIR
-
-
-def legacy_health_report_file() -> str:
-    return HEALTH_REPORT_FILE
-
-
-def legacy_config_path_defaults() -> tuple[str, str]:
-    return CHECKPOINT_FILE, REPORTS_DIR
+legacy_log_file = make_scalar_accessor(globals(), "LOG_FILE", "legacy_log_file")
+legacy_checkpoint_file = make_scalar_accessor(globals(), "CHECKPOINT_FILE", "legacy_checkpoint_file")
+legacy_metrics_file = make_scalar_accessor(globals(), "METRICS_FILE", "legacy_metrics_file")
+legacy_memory_paths = make_tuple_accessor(globals(), ("MEMORY_DB_FILE", "MEMORY_FILE", "MEMORY_BACKUP_DIR"), "legacy_memory_paths")
+legacy_restore_points_dir = make_scalar_accessor(globals(), "RESTORE_POINTS_DIR", "legacy_restore_points_dir")
+legacy_reports_dir = make_scalar_accessor(globals(), "REPORTS_DIR", "legacy_reports_dir")
+legacy_health_report_file = make_scalar_accessor(globals(), "HEALTH_REPORT_FILE", "legacy_health_report_file")
+legacy_config_path_defaults = make_tuple_accessor(globals(), ("CHECKPOINT_FILE", "REPORTS_DIR"), "legacy_config_path_defaults")
 
 
 def ensure_runtime_dir() -> None:

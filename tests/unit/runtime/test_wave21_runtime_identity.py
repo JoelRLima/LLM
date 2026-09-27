@@ -50,10 +50,15 @@ def test_active_fixture_checks_actual_object_identity(tmp_path: Path, monkeypatc
     monkeypatch.syspath_prepend(str(tmp_path))
     importlib.invalidate_caches()
     registry = _registry()
-    report = check_identity(registry, activated_lanes=("A",))
-    assert report == {
-        "checked": ["IDENTITY-001"],
-        "pending": [],
-        "failures": [],
-        "passed": True,
-    }
+    try:
+        report = check_identity(registry, activated_lanes=("A",))
+        assert report == {
+            "checked": ["IDENTITY-001"],
+            "pending": [],
+            "failures": [],
+            "passed": True,
+        }
+    finally:
+        for module_name in tuple(sys.modules):
+            if module_name == "agent" or module_name.startswith("agent."):
+                sys.modules.pop(module_name, None)
