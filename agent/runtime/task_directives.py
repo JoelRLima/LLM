@@ -84,7 +84,7 @@ class TaskRunDirective:
         if len(self.canonical_objective()) > MAX_STRING_LENGTH:
             raise ValueError("TASK_DIRECTIVE_OBJECTIVE_TOO_LONG")
         if self.intent_claim is not None:
-            from agent.interaction.intent_claim import IntentClaimV1
+            from agent.intent.claim_types import IntentClaimV1
 
             if not isinstance(self.intent_claim, IntentClaimV1):
                 raise ValueError("intent_claim must be an IntentClaimV1")

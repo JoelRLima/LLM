@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from agent.interaction.intent_claim import IntentClaimV1, bind_current_subject_evidence
+from agent.intent.claim_contracts import bind_current_subject_evidence
+from agent.intent.claim_types import IntentClaimV1
 from agent.runtime.path_safety import (
     WorkspacePathError,
     assert_path_safe,

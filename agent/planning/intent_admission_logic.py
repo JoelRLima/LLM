@@ -10,7 +10,7 @@ from agent.capabilities import (
     canonical_capabilities,
     capability_values,
 )
-from agent.interaction.intent_claim import (
+from agent.intent.claim_types import (
     ConstraintClaim,
     EffectClaim,
     EvidenceSpan,

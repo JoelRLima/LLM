@@ -16,11 +16,11 @@ from agent.capabilities import (
     canonical_capabilities,
     capability_values,
 )
-from agent.interaction.intent_claim import (
+from agent.intent.claim_contracts import (
     IntentClaimError,
-    IntentClaimV1,
     bind_current_subject_evidence,
 )
+from agent.intent.claim_types import IntentClaimV1
 from agent.planning.intent_admission_model import (
     _EFFECT_CAPABILITY,
     AdmittedEffect,

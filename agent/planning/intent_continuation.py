@@ -7,12 +7,12 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from agent.interaction.intent_claim import (
+from agent.intent.claim_contracts import (
     IntentClaimError,
-    IntentClaimV1,
     bind_current_subject_evidence,
-    parse_intent_claim,
+    validate_intent_claim,
 )
+from agent.intent.claim_types import IntentClaimV1
 
 W14_CONTINUATION_SCHEMA_VERSION = 1
 _CONTINUATION_FIELDS = frozenset(
@@ -124,7 +124,7 @@ class W14IntentContinuation:
         if not isinstance(claim_raw, (str, Mapping)):
             raise ValueError("W14 continuation claim is invalid")
         try:
-            claim = parse_intent_claim(claim_raw, subject=subject)
+            claim = validate_intent_claim(claim_raw, subject=subject)
         except (IntentClaimError, TypeError, ValueError) as exc:
             raise ValueError("W14 continuation claim is invalid") from exc
         fingerprint_value = raw.get("claim_fingerprint")
@@ -157,7 +157,7 @@ class W14IntentContinuation:
 
     def claim_object(self) -> IntentClaimV1:
         try:
-            return parse_intent_claim(self.claim, subject=self.subject)
+            return validate_intent_claim(self.claim, subject=self.subject)
         except (IntentClaimError, TypeError, ValueError) as exc:
             raise ValueError("W14 continuation claim is invalid") from exc
 
