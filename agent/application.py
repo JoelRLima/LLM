@@ -156,6 +156,7 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
                 model_gateway=session.gateway,
                 config=config,
                 approval_policy=selected_approval,
+                session=session,
             )
             model_safe_engineering, extension_bootstrap = build_application_extensions(
                 app_paths,

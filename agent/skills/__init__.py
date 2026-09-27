@@ -16,6 +16,10 @@ def load_skill_registry(
     model_gateway: Any = None,
     config: Any = None,
     approval_policy: Any = None,
+    *,
+    session: Any = None,
+    memory: Any = None,
+    workspace_manager: Any = None,
 ) -> SkillRegistry:
     """Constrói o registro embutido com dependências explícitas."""
 
@@ -23,6 +27,9 @@ def load_skill_registry(
         return build_builtin_registry(
             base_dir=base_dir,
             scratch_dir=scratch_dir,
+            session=session,
+            memory=memory,
+            workspace_manager=workspace_manager,
             orchestrator=orchestrator,
             model_gateway=model_gateway,
             config=config,
@@ -40,12 +47,19 @@ def load_all_skills(
     model_gateway: Any = None,
     config: Any = None,
     approval_policy: Any = None,
+    *,
+    session: Any = None,
+    memory: Any = None,
+    workspace_manager: Any = None,
 ) -> List[BaseSkill]:
     """Return the canonical registry contents as an ordered skill collection."""
 
     registry = load_skill_registry(
         base_dir=base_dir,
         scratch_dir=scratch_dir,
+        session=session,
+        memory=memory,
+        workspace_manager=workspace_manager,
         orchestrator=orchestrator,
         model_gateway=model_gateway,
         config=config,
@@ -63,6 +77,10 @@ def load_tool_registry(
     approval_policy: Any = None,
     extensions_state_path: str | Path | None = None,
     skill_registry: SkillRegistry | None = None,
+    *,
+    session: Any = None,
+    memory: Any = None,
+    workspace_manager: Any = None,
 ) -> Any:
     """Constrói o ToolRegistry populado com as ferramentas builtin e extensões habilitadas."""
     from agent.tools.builtin_adapter import BuiltinToolAdapter
@@ -73,6 +91,9 @@ def load_tool_registry(
     skill_reg = skill_registry or load_skill_registry(
         base_dir=base_dir,
         scratch_dir=scratch_dir,
+        session=session,
+        memory=memory,
+        workspace_manager=workspace_manager,
         orchestrator=orchestrator,
         model_gateway=model_gateway,
         config=config,

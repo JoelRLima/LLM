@@ -5,7 +5,7 @@ import hashlib
 import textwrap
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Protocol
 
 from agent.approval import ApprovalPort, AutoApprove, RequireExplicitApproval
 from agent.runtime.logging import logger
@@ -23,6 +23,11 @@ AGENT_CORE_DIR = "agent/"
 AGENT_EDIT_ALLOWLIST: set[str] = set()
 
 
+class WorkspaceCapability(Protocol):
+    def register_transaction(self, transaction: Any) -> None:
+        ...
+
+
 class FileWriterSkill(BaseSkill):
     name = "file_writer"
     description = (
@@ -38,7 +43,7 @@ class FileWriterSkill(BaseSkill):
         config: Mapping[str, Any] | None = None,
         auto_confirm: bool | None = None,
         approval_policy: ApprovalPort | None = None,
-        workspace_manager: Any | None = None,
+        workspace_manager: WorkspaceCapability | None = None,
         orchestrator: Any | None = None,
     ) -> None:
         self.base_dir = Path(base_dir).expanduser().resolve()
@@ -56,18 +61,20 @@ class FileWriterSkill(BaseSkill):
         self.approval_policy = approval_policy or (
             AutoApprove() if self.auto_confirm else RequireExplicitApproval()
         )
-        self.orchestrator = orchestrator
+        if workspace_manager is None and orchestrator is not None:
+            workspace_manager = getattr(orchestrator, "workspace", None)
+        self.workspace_manager = workspace_manager
+
+    def bind_workspace_manager(self, workspace_manager: WorkspaceCapability) -> None:
+        """Bind the workspace transaction capability at the composition boundary."""
+
         self.workspace_manager = workspace_manager
 
     def _is_auto_confirm(self) -> bool:
         return self.auto_confirm
 
     def _task_workspace_manager(self) -> Any | None:
-        if self.workspace_manager is not None:
-            return self.workspace_manager
-        if self.orchestrator is None:
-            return None
-        return getattr(self.orchestrator, "workspace", None)
+        return self.workspace_manager
 
     def _get_workspace_path(self, original_path: Path) -> str:
         relative = original_path.relative_to(self.base_dir)

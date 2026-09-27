@@ -59,6 +59,12 @@ def build_builtin_registry(
     *,
     base_dir: str | Path = ".",
     scratch_dir: str | Path | None = None,
+    session: Any = None,
+    memory: Any = None,
+    workspace_manager: Any = None,
+    # Kept as a source-compatible direct-composition input.  Builtin specs
+    # no longer declare this broad dependency; it is reduced to the exact
+    # capability requested by each named spec below.
     orchestrator: Any = None,
     model_gateway: Any = None,
     config: Optional[Dict[str, Any]] = None,
@@ -74,7 +80,28 @@ def build_builtin_registry(
             overrides["scratch_dir"] = (
                 str(scratch_dir) if scratch_dir is not None else None
             )
+        if "session" in spec.kwargs:
+            overrides["session"] = (
+                session
+                if session is not None
+                else getattr(orchestrator, "session", None)
+            )
+        if "memory" in spec.kwargs:
+            legacy_state = getattr(orchestrator, "agent_state", None)
+            overrides["memory"] = (
+                memory
+                if memory is not None
+                else getattr(legacy_state, "memory", None)
+            )
+        if "workspace_manager" in spec.kwargs:
+            overrides["workspace_manager"] = (
+                workspace_manager
+                if workspace_manager is not None
+                else getattr(orchestrator, "workspace", None)
+            )
         if "orchestrator" in spec.kwargs:
+            # Compatibility for an explicitly custom legacy SkillSpec only.
+            # The canonical builtin catalog has no such declaration.
             overrides["orchestrator"] = orchestrator
         if "model_gateway" in spec.kwargs:
             overrides["model_gateway"] = model_gateway
@@ -85,3 +112,29 @@ def build_builtin_registry(
         skill = _instantiate(spec, overrides)
         registry.register(SkillDescriptor(spec=spec, skill=skill))
     return registry
+
+
+def bind_runtime_skill_dependencies(
+    registry: SkillRegistry,
+    *,
+    session: Any,
+    memory: Any,
+    workspace_manager: Any | None,
+) -> None:
+    """Bind the three known runtime capabilities without scanning the registry."""
+
+    names = registry.names()
+    if "summarize" in names:
+        descriptor = registry.descriptor("summarize")
+        if "session" in descriptor.spec.kwargs:
+            cast(Any, descriptor.skill).bind_session(session)
+    if "session_memory" in names:
+        descriptor = registry.descriptor("session_memory")
+        if "memory" in descriptor.spec.kwargs:
+            cast(Any, descriptor.skill).bind_memory(memory)
+    if "file_writer" in names:
+        descriptor = registry.descriptor("file_writer")
+        if "workspace_manager" in descriptor.spec.kwargs:
+            if workspace_manager is None:
+                raise ValueError("file_writer requires an explicit workspace manager")
+            cast(Any, descriptor.skill).bind_workspace_manager(workspace_manager)

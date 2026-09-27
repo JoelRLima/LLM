@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Protocol
 
 from agent.cancellation import is_cancellation_requested
 from agent.memory.memory import MemoryDatabaseError, MemoryOperationCancelled
@@ -6,12 +6,54 @@ from agent.memory.memory import MemoryDatabaseError, MemoryOperationCancelled
 from .base import BaseSkill
 
 
+class MemoryCapability(Protocol):
+    state: dict[str, Any]
+
+    def remember(
+        self,
+        key: str,
+        value: Any,
+        section: str = "key_findings",
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        ...
+
+    def forget(
+        self,
+        key: str,
+        section: str = "key_findings",
+        *,
+        cancellation_token: Any | None = None,
+        cancellation_event: Any | None = None,
+    ) -> None:
+        ...
+
+
 class SessionMemorySkill(BaseSkill):
     name = "session_memory"
     description = "Gerencia a memória da sessão do agente. Use 'set' para guardar, 'get' para recuperar, 'keys' para listar, 'delete' para apagar."
 
-    def __init__(self, orchestrator: Any = None) -> None:
-        self.orchestrator = orchestrator
+    def __init__(
+        self,
+        memory: MemoryCapability | None = None,
+        *,
+        orchestrator: Any | None = None,
+    ) -> None:
+        # Keep the historical constructor form working for direct callers,
+        # while retaining only the narrow memory capability.
+        if memory is not None and getattr(memory, "agent_state", None) is not None:
+            memory = getattr(memory.agent_state, "memory", None)
+        if memory is None and orchestrator is not None:
+            state = getattr(orchestrator, "agent_state", None)
+            memory = getattr(state, "memory", None)
+        self.memory = memory
+
+    def bind_memory(self, memory: MemoryCapability) -> None:
+        """Bind the memory capability at the composition boundary."""
+
+        self.memory = memory
 
     def get_schema(self) -> dict[str, Any]:
         return {
@@ -74,9 +116,9 @@ class SessionMemorySkill(BaseSkill):
     ) -> dict[str, Any]:
         try:
             if cancellation_token is None and cancellation_event is None:
-                self.orchestrator.remember(key, value, section="key_findings")
+                self.memory.remember(key, value, section="key_findings")
             else:
-                self.orchestrator.remember(
+                self.memory.remember(
                     key,
                     value,
                     section="key_findings",
@@ -110,9 +152,9 @@ class SessionMemorySkill(BaseSkill):
     ) -> dict[str, Any]:
         try:
             if cancellation_token is None and cancellation_event is None:
-                self.orchestrator.forget(key)
+                self.memory.forget(key)
             else:
-                self.orchestrator.forget(
+                self.memory.forget(
                     key,
                     cancellation_token=cancellation_token,
                     cancellation_event=cancellation_event,
@@ -146,7 +188,7 @@ class SessionMemorySkill(BaseSkill):
         cancellation_token: Any | None = None,
         cancellation_event: Any | None = None,
     ) -> dict[str, Any]:
-        if not self.orchestrator:
+        if self.memory is None:
             return {"ok": False, "done": True, "error": "Sem orquestrador vinculado."}
 
         action = args.get("action", "")
@@ -154,7 +196,7 @@ class SessionMemorySkill(BaseSkill):
         value = args.get("value", "")
 
         # Todos os dados de "chave simples" ficam em key_findings
-        memory_store = self.orchestrator.agent_state.memory.state.get("key_findings", {})
+        memory_store = self.memory.state.get("key_findings", {})
 
         if action == "set":
             if not key:

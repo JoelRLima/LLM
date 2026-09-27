@@ -1,17 +1,55 @@
 import json
-from typing import Any
+from typing import Any, Protocol
 
 from agent.runtime.budget import BudgetExhausted
 
 from .base import BaseSkill
 
 
+class SummarySession(Protocol):
+    messages: list[dict[str, str]]
+
+    def add_user_message(self, content: str) -> None:
+        ...
+
+    def build_request(
+        self,
+        *,
+        stream: bool = True,
+        max_output_tokens: int | None = None,
+    ) -> Any:
+        ...
+
+    def complete_request(self, request: Any) -> Any:
+        ...
+
+    def remove_last_user_message(self) -> None:
+        ...
+
+
 class SummarizeSkill(BaseSkill):
     name = "summarize"
     description = "Resume um texto longo em poucas linhas, preservando informações essenciais (nomes de funções, classes, bugs, dependências)."
 
-    def __init__(self, orchestrator: Any = None) -> None:
-        self.orchestrator = orchestrator
+    def __init__(
+        self,
+        session: SummarySession | None = None,
+        *,
+        orchestrator: Any | None = None,
+    ) -> None:
+        # ``orchestrator`` remains a source-compatible constructor alias for
+        # direct callers from before Lane C.  The skill stores only the narrow
+        # session capability it actually consumes.
+        if session is not None:
+            wrapped_session = getattr(session, "session", None)
+            self.session = wrapped_session if wrapped_session is not None else session
+        else:
+            self.session = getattr(orchestrator, "session", None)
+
+    def bind_session(self, session: SummarySession) -> None:
+        """Bind the model/session capability at the composition boundary."""
+
+        self.session = session
 
     def get_schema(self) -> dict[str, Any]:
         return {
@@ -45,16 +83,16 @@ class SummarizeSkill(BaseSkill):
 
         # Usa o orquestrador para chamar o modelo (não‑streaming)
         try:
-            if self.orchestrator and hasattr(self.orchestrator, 'session'):
+            if self.session is not None:
                 # Salva o system prompt original
-                original = self.orchestrator.session.messages[0]["content"]
+                original = self.session.messages[0]["content"]
                 # Define um system prompt neutro para o resumo
-                self.orchestrator.session.messages[0]["content"] = (
+                self.session.messages[0]["content"] = (
                     "You are a helpful assistant. Summarize texts accurately in Portuguese. "
                     "Always think in English, but respond in Portuguese."
                 )
-                self.orchestrator.session.add_user_message(prompt)
-                session = self.orchestrator.session
+                self.session.add_user_message(prompt)
+                session = self.session
                 try:
                     request = session.build_request(
                         stream=False,

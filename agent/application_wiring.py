@@ -142,12 +142,8 @@ def wire_runtime_orchestration(
         ),
         incident_recorder=orchestrator.agent_state.record_execution_incident,
     )
-    orchestrator.tool_registry = tool_registry
     orchestrator.tool_invocation_gateway = tool_invocation_gateway
     orchestrator._restore_memory_from_file()
-    for skill in skill_registry.skills():
-        if hasattr(skill, "orchestrator"):
-            skill.orchestrator = orchestrator
     return RuntimeOrchestrationComponents(
         orchestrator=orchestrator,
         tool_registry=tool_registry,

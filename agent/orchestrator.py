@@ -39,7 +39,7 @@ from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
 from agent.runtime.worker_output import emit_worker_output
 from agent.runtime.workspace_context import WorkspaceContext
 from agent.skills.policy import persona_allowed_capabilities, project_eligible_extension_descriptors
-from agent.skills.registry import SkillRegistry
+from agent.skills.registry import SkillRegistry, bind_runtime_skill_dependencies
 from agent.state import AgentState
 from agent.tool_executor import ToolExecutor
 from agent.tools.authority import (
@@ -156,6 +156,17 @@ class Orchestrator(TaskExecutionOwnershipMixin, OperationalModeMixin, Orchestrat
         selected_skills = list(skill_registry.skills()) if skill_registry is not None else (skills or [])
         for skill in selected_skills:
             self.register_skill(skill)
+        if skill_registry is not None:
+            bind_runtime_skill_dependencies(
+                skill_registry,
+                session=self.session,
+                memory=self.agent_state.memory,
+                workspace_manager=(
+                    self.workspace
+                    if "file_writer" in skill_registry.names()
+                    else None
+                ),
+            )
         if self.tool_registry is None and selected_skills:
             install_builtin_gateway(
                 self,
