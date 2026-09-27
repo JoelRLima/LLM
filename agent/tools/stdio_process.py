@@ -12,15 +12,20 @@ from threading import Event, Thread
 from typing import Any, Optional, Tuple, cast
 
 from agent.cancellation import is_cancellation_requested
-from agent.tools import stdio_cleanup as _stdio_cleanup
-from agent.tools.contracts import ToolStatus
-from agent.tools.process_tree import (
+from agent.process.streams import StreamCapture as _StreamCapture
+from agent.process.streams import close_pipes as _close_pipes
+from agent.process.streams import drain_stream as _drain_stream  # noqa: F401
+from agent.process.streams import send_request as _send_request
+from agent.process.streams import start_readers as _start_readers
+from agent.process.tree import (
     assign_windows_job,
     close_windows_job,
     create_windows_job,
     process_group_id,
     terminate_process,
 )
+from agent.tools import stdio_cleanup as _stdio_cleanup
+from agent.tools.contracts import ToolStatus
 from agent.tools.stdio_launcher import (
     build_launcher_envelope,
     launcher_status_error,
@@ -28,11 +33,6 @@ from agent.tools.stdio_launcher import (
     remove_status_file,
 )
 from agent.tools.stdio_launcher import launcher_status_failure as launcher_status_failure_for_path
-from agent.tools.stdio_streams import StreamCapture as _StreamCapture
-from agent.tools.stdio_streams import close_pipes as _close_pipes
-from agent.tools.stdio_streams import drain_stream as _drain_stream  # noqa: F401
-from agent.tools.stdio_streams import send_request as _send_request
-from agent.tools.stdio_streams import start_readers as _start_readers
 
 CLEANUP_TIMEOUT_SECONDS = 2.0
 _logger = logging.getLogger(__name__)

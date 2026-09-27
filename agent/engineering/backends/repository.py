@@ -22,15 +22,15 @@ from agent.engineering.contracts import (
     EngineeringExecutionContext,
     EngineeringRequest,
 )
-from agent.runtime.filesystem_primitives import inspect_final_path
-from agent.tools.process_tree import (
+from agent.process.streams import close_pipes, start_readers
+from agent.process.tree import (
     assign_windows_job,
     close_windows_job,
     create_windows_job,
     process_group_id,
     terminate_process,
 )
-from agent.tools.stdio_streams import close_pipes, start_readers
+from agent.runtime.filesystem_primitives import inspect_final_path
 
 MAX_ENGINEERING_ACCEPTANCE_SUMMARY_BYTES = 65_536
 MAX_ENGINEERING_ACCEPTANCE_PROPERTY_IDS = 64

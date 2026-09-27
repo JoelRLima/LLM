@@ -13,14 +13,14 @@ from threading import Event
 from typing import Any
 
 from agent.cancellation import is_cancellation_requested
-from agent.tools.process_tree import (
+from agent.process.streams import StreamCapture, close_pipes, start_readers
+from agent.process.tree import (
     assign_windows_job,
     close_windows_job,
     create_windows_job,
     process_group_id,
     terminate_process,
 )
-from agent.tools.stdio_streams import StreamCapture, close_pipes, start_readers
 
 from .process_safety import resolve_trusted_executable
 

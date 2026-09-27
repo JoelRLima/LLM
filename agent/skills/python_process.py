@@ -9,7 +9,7 @@ from threading import Event
 from typing import Any, Callable
 
 from agent.cancellation import is_cancellation_requested
-from agent.tools.process_tree import process_group_id, terminate_process
+from agent.process.tree import process_group_id, terminate_process
 
 
 class PythonProcessCancelled(Exception):

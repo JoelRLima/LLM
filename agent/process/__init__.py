@@ -1,0 +1,1 @@
+"""Shared subprocess lifecycle mechanics."""

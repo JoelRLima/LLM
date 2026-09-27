@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from agent.process.tree import close_windows_job, process_group_id, terminate_process
 from agent.tools.contracts import ToolStatus
-from agent.tools.process_tree import close_windows_job, process_group_id, terminate_process
 from agent.tools.stdio_launcher import remove_status_file
 
 MAX_CLEANUP_DETAIL_CHARS = 1024
