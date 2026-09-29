@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.interfaces.cli.maintenance import initialize_config
-from agent.runtime.paths import AppPaths
+from llm_agent.interfaces.cli.maintenance import initialize_config
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_standalone_config_init_bootstraps_and_closes_transient_lease(tmp_path: Path) -> None:

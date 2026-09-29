@@ -1,7 +1,7 @@
 import pytest
 
-from agent.skills.registry import build_builtin_registry
-from agent.tools.contracts import (
+from llm_agent.agent.skills.registry import build_builtin_registry
+from llm_agent.agent.tools.contracts import (
     ToolDescriptor,
     ToolError,
     ToolOriginKind,
@@ -20,14 +20,14 @@ def test_tool_descriptor_preserves_historical_positional_fields() -> None:
 
 
 def test_legacy_tool_result_shape_is_not_a_live_tool_result_import() -> None:
-    import agent.contracts as contracts
-    from agent.contracts import LegacyToolResult
-    from agent.tools.contracts import ToolResult as CanonicalToolResult
+    import llm_agent.agent.contracts as contracts
+    from llm_agent.agent.contracts import LegacyToolResult
+    from llm_agent.agent.tools.contracts import ToolResult as CanonicalToolResult
 
     assert LegacyToolResult is contracts.LegacyToolResult
     assert not hasattr(contracts, "ToolResult")
     with pytest.raises(ImportError):
-        exec("from agent.contracts import ToolResult", {})
+        exec("from llm_agent.agent.contracts import ToolResult", {})
     assert LegacyToolResult is not CanonicalToolResult
 
 

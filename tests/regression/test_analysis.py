@@ -49,14 +49,14 @@ def test_analysis_cli_execution(agent, fake_model):
     # Verifica que o code_analyzer recebeu os argumentos corretos
     code_analyzer_call = agent.agent_state.tool_history[0]
     assert code_analyzer_call["tool"] == "code_analyzer"
-    assert code_analyzer_call["args"]["target"] == "agent/interfaces/cli/app.py"
+    assert code_analyzer_call["args"]["target"] == "src/llm_agent/interfaces/cli/app.py"
     assert code_analyzer_call["args"]["mode"] == "file"
     assert code_analyzer_call["args"]["compact"] is True
 
     # Verifica que o file_reader recebeu o caminho correto
     file_reader_call = agent.agent_state.tool_history[1]
     assert file_reader_call["tool"] == "file_reader"
-    assert file_reader_call["args"]["file_path"] == "agent/interfaces/cli/app.py"
+    assert file_reader_call["args"]["file_path"] == "src/llm_agent/interfaces/cli/app.py"
 
     # A resposta final deve mencionar funções reais da implementação canônica.
     assert "main" in result.lower()

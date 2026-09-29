@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from agent.code.change_models import TextEdit, TextEditKind
-from agent.code.change_parsing import apply_text_edits
-from agent.code.changes import (
+from llm_agent.agent.code.change_models import TextEdit, TextEditKind
+from llm_agent.agent.code.change_parsing import apply_text_edits
+from llm_agent.agent.code.changes import (
     ChangeConflictError,
     ChangeKind,
     ChangeSet,

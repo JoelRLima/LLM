@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.tools import process_tree
+from llm_agent.agent.tools import process_tree
 
 
 class _Process:

@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.orchestration.task_lifecycle import TaskLifecycleMixin
-from agent.runtime.correlation import RunCorrelation
-from agent.state import AgentState
+from llm_agent.agent.orchestration.task_lifecycle import TaskLifecycleMixin
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.state import AgentState
+from llm_agent.cancellation import CancellationToken
 
 
 class _InvocationGateway:

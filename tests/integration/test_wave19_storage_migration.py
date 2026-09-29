@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_integrated_explicit_home_migration_is_source_preserving(tmp_path: Path) -> None:

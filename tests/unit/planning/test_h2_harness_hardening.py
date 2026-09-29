@@ -2,34 +2,34 @@ import json
 from copy import deepcopy
 from types import SimpleNamespace
 
-from agent.llm.contracts import ModelResponse
-from agent.llm.structured_output import normalize_model_decision
-from agent.orchestration.operations import OrchestratorOperations
-from agent.planning.capability_manifest import render_active_harness_capabilities
-from agent.planning.dependency_map import build_dependency_map
-from agent.planning.execution_gateway import ExecutionGateway
-from agent.planning.plan_builder import PlanBuilder
-from agent.planning.plan_validator import BlockedStep, PlanValidator
-from agent.planning.planning_context import (
+from llm_agent.agent.llm.contracts import ModelResponse
+from llm_agent.agent.llm.structured_output import normalize_model_decision
+from llm_agent.agent.orchestration.operations import OrchestratorOperations
+from llm_agent.agent.planning.capability_manifest import render_active_harness_capabilities
+from llm_agent.agent.planning.dependency_map import build_dependency_map
+from llm_agent.agent.planning.execution_gateway import ExecutionGateway
+from llm_agent.agent.planning.plan_builder import PlanBuilder
+from llm_agent.agent.planning.plan_validator import BlockedStep, PlanValidator
+from llm_agent.agent.planning.planning_context import (
     PlanningContextSnapshot,
     PlanningTool,
     build_planning_context,
 )
-from agent.planning.replan import ReplanContext, ask_llm_for_alternative, replan
-from agent.planning.result_bindings import (
+from llm_agent.agent.planning.replan import ReplanContext, ask_llm_for_alternative, replan
+from llm_agent.agent.planning.result_bindings import (
     bind_result_references,
     resolve_bound_args,
     validate_result_bindings,
 )
-from agent.runtime.failures import FailureFact
-from agent.runtime.recovery import RecoveryScope
-from agent.skills import load_skill_registry
-from agent.state import AgentState
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolResult, ToolStatus
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.runtime.failures import FailureFact
+from llm_agent.agent.runtime.recovery import RecoveryScope
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 def _grep_validator(tmp_path, objective=""):
@@ -360,9 +360,9 @@ def test_binding_manual_is_not_advertised_when_gateway_lacks_binding_support():
 
 
 def test_rendered_repair_right_example_matches_binding_grammar():
-    from agent.llm.grammars import get_grammar
-    from agent.parsers import validate_decision
-    from agent.planning.capability_manifest import render_validation_repair_manual
+    from llm_agent.agent.llm.grammars import get_grammar
+    from llm_agent.agent.parsers import validate_decision
+    from llm_agent.agent.planning.capability_manifest import render_validation_repair_manual
 
     manual = render_validation_repair_manual(
         SimpleNamespace(
@@ -781,7 +781,7 @@ def test_invalid_downstream_candidate_is_not_silently_pruned(tmp_path):
             "bindings": {"pattern": {"from_step": 1, "path": []}},
         },
     )
-    from agent.planning.plan_model import Plan
+    from llm_agent.agent.planning.plan_model import Plan
 
     plan = Plan.from_raw(_h2_invalid_plan() + [{"tool": "grep", "args": {"path": "."}}])
     original = deepcopy(plan)

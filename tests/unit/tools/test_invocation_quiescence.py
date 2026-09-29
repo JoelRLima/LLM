@@ -8,21 +8,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.application_shutdown import drain_application_invocations
-from agent.approval import AutoApprove
-from agent.cancellation import CancellationToken
-from agent.memory import sqlite_store as sqlite_store_module
-from agent.memory.memory import AgentMemory
-from agent.orchestration.operations import OrchestratorOperations
-from agent.reporting.operational_outcome import project_operational_outcome
-from agent.reporting.run_receipt import build_run_receipt
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
-from agent.skills.registry import build_builtin_registry
-from agent.state import AgentState
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import (
+from llm_agent.agent.application_shutdown import drain_application_invocations
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.memory import sqlite_store as sqlite_store_module
+from llm_agent.agent.memory.memory import AgentMemory
+from llm_agent.agent.orchestration.operations import OrchestratorOperations
+from llm_agent.agent.reporting.operational_outcome import project_operational_outcome
+from llm_agent.agent.reporting.run_receipt import build_run_receipt
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.skills.catalog import BUILTIN_SPEC_BY_NAME
+from llm_agent.agent.skills.registry import build_builtin_registry
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import (
     CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
@@ -30,9 +29,10 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
-from agent.tools.invocation_execution import InvocationLivenessError
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.invocation_execution import InvocationLivenessError
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.cancellation import CancellationToken
 
 
 def _writer_registry(path, order, *, started: threading.Event, release: threading.Event) -> ToolRegistry:

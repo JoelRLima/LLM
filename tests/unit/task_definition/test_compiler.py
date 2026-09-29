@@ -4,14 +4,14 @@ from typing import Any
 
 import pytest
 
-from agent.llm.decision_contract import ModelRequestContract
-from agent.task_definition.compiler import TaskDefinitionCompiler
-from agent.task_definition.errors import (
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.task_definition.compiler import TaskDefinitionCompiler
+from llm_agent.agent.task_definition.errors import (
     TaskDefinitionCompilationError,
     TaskDefinitionMismatchError,
     TaskDefinitionNeedsInput,
 )
-from agent.task_definition.models import TaskDefinitionRef
+from llm_agent.agent.task_definition.models import TaskDefinitionRef
 from tests.support.task_definition import make_contract, make_spec
 
 

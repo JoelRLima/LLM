@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent.runtime.config_repository import packaged_config_defaults
-from agent.runtime.paths import AppHomeOrigin, AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.config_repository import packaged_config_defaults
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.workspace.paths import AppHomeOrigin, AppPaths
 
 
 def test_migrated_home_is_source_preserving_and_converges_to_one_layout(tmp_path: Path) -> None:

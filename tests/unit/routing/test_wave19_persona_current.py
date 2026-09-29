@@ -1,5 +1,5 @@
-from agent.routing.persona.contracts import PersonaId, PersonaRouteRequest, PersonaRouteSource
-from agent.routing.persona.current import CurrentPersonaRouter
+from llm_agent.agent.routing.persona.contracts import PersonaId, PersonaRouteRequest, PersonaRouteSource
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter
 from tests.unit.llm.test_router import DummySession
 
 

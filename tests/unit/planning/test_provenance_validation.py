@@ -1,6 +1,6 @@
 import pytest
 
-from agent.planning.provenance_validation import (
+from llm_agent.agent.planning.provenance_validation import (
     find_unresolved_symbolic_reference,
     validate_unresolved_symbolic_arguments,
 )

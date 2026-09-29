@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.code import multitask as multitask_module
-from agent.code.multitask import CodingTaskNodeExecutor
-from agent.code.validation_process import CommandSpec, ProcessRunner, ValidationStatus
-from agent.planning.task_graph import TaskGraph, TaskNode
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
-from agent.runtime.outcome_taxonomy import OperationalStatus
+from llm_agent.agent.code import multitask as multitask_module
+from llm_agent.agent.code.multitask import CodingTaskNodeExecutor
+from llm_agent.agent.code.validation_process import CommandSpec, ProcessRunner, ValidationStatus
+from llm_agent.agent.planning.task_graph import TaskGraph, TaskNode
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.runtime.outcome_taxonomy import OperationalStatus
+from llm_agent.cancellation import CancellationToken
 
 
 class _Gateway:

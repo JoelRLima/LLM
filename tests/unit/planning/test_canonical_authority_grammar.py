@@ -5,24 +5,27 @@ from pathlib import Path
 
 import pytest
 
-import agent.planning.task_semantics_inference as inference_module
-from agent.planning.task_semantics import (
+import llm_agent.agent.planning.task_semantics_inference as inference_module
+from llm_agent.agent.planning.task_semantics import (
     EffectIntent,
     EffectSemantics,
     TaskSemantics,
     TaskSemanticsError,
     admit_effect_authority,
 )
-from agent.planning.task_semantics_positive_proof import (
+from llm_agent.agent.planning.task_semantics_positive_proof import (
     AuthorityConstraint,
     ObjectiveAuthorityGrammarResult,
     PositiveAuthorityProof,
     parse_objective_authority,
 )
-from agent.planning.task_semantics_positive_proof_controls import (
+from llm_agent.agent.planning.task_semantics_positive_proof_controls import (
     _parse_neutral_fragment,
 )
-from agent.planning.task_semantics_positive_proof_lexing import _lexemes
+from llm_agent.agent.planning.task_semantics_positive_proof_lexing import _lexemes
+from scripts.w21_architecture.source import SourceLayout
+
+SOURCE_LAYOUT = SourceLayout.for_profile(Path(__file__).resolve().parents[3], "final-w22")
 
 
 @pytest.mark.parametrize(
@@ -94,7 +97,7 @@ def test_memory_negative_fragment_uses_the_same_canonical_ledger() -> None:
     ),
 )
 def test_global_memory_constraint_dominates_memory_proof(objective: str) -> None:
-    from agent.planning.task_semantics import admit_effect_authority
+    from llm_agent.agent.planning.task_semantics import admit_effect_authority
 
     authority = admit_effect_authority(objective)
 
@@ -169,8 +172,7 @@ def test_canonical_grammar_types_are_not_caller_constructible() -> None:
 def test_canonical_grammar_constructors_have_one_production_owner(
     constructor_name: str,
 ) -> None:
-    root = Path(__file__).resolve().parents[3]
-    planning = root / "agent" / "planning"
+    planning = SOURCE_LAYOUT.path_for_w21_relative("agent/planning")
     assert planning.is_dir()
     production_modules = sorted(planning.glob("*.py"))
     assert production_modules
@@ -194,8 +196,7 @@ def test_canonical_grammar_constructors_have_one_production_owner(
 
 
 def test_constraint_dominance_does_not_use_advisory_prohibited_polarity() -> None:
-    root = Path(__file__).resolve().parents[3]
-    helper = root / "agent" / "planning" / "task_semantics_authority_helpers.py"
+    helper = SOURCE_LAYOUT.path_for_w21_relative("agent/planning/task_semantics_authority_helpers.py")
     assert helper.is_file()
     source = helper.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(helper))
@@ -257,7 +258,7 @@ def test_advisory_omission_preserves_unrelated_exact_target_authority(
 
 
 def test_checkpoint_rederives_and_validates_canonical_constraints() -> None:
-    from agent.planning.task_semantics import TaskSemantics
+    from llm_agent.agent.planning.task_semantics import TaskSemantics
 
     semantics = TaskSemantics.from_objective("edit foo.py; do not write")
     checkpoint = semantics.to_checkpoint_dict()
@@ -273,7 +274,7 @@ def test_checkpoint_rederives_and_validates_canonical_constraints() -> None:
 
 
 def test_checkpoint_advisory_intent_cannot_remove_canonical_constraint() -> None:
-    from agent.planning.task_semantics import TaskSemantics
+    from llm_agent.agent.planning.task_semantics import TaskSemantics
 
     checkpoint = TaskSemantics.from_objective("edit foo.py; do not write").to_checkpoint_dict()
     checkpoint["effect_intents"] = []
@@ -284,7 +285,7 @@ def test_checkpoint_advisory_intent_cannot_remove_canonical_constraint() -> None
 
 
 def test_denied_durable_effect_does_not_become_a_requested_obligation() -> None:
-    from agent.planning.task_semantics import TaskSemantics
+    from llm_agent.agent.planning.task_semantics import TaskSemantics
 
     semantics = TaskSemantics.from_objective("edit foo.py; do not write")
 
@@ -474,11 +475,10 @@ def test_output_destination_precedes_source_clause() -> None:
 
 
 def test_neutral_owner_is_not_a_negative_space_fallback() -> None:
-    root = Path(__file__).resolve().parents[3]
-    controls = (root / "agent" / "planning" / "task_semantics_positive_proof_controls.py").read_text(
+    controls = SOURCE_LAYOUT.path_for_w21_relative("agent/planning/task_semantics_positive_proof_controls.py").read_text(
         encoding="utf-8"
     )
-    commands = (root / "agent" / "planning" / "task_semantics_positive_proof_commands.py").read_text(
+    commands = SOURCE_LAYOUT.path_for_w21_relative("agent/planning/task_semantics_positive_proof_commands.py").read_text(
         encoding="utf-8"
     )
 
@@ -489,8 +489,7 @@ def test_neutral_owner_is_not_a_negative_space_fallback() -> None:
 
 
 def test_neutral_owner_is_single_and_eval_independent() -> None:
-    root = Path(__file__).resolve().parents[3]
-    planning = root / "agent" / "planning"
+    planning = SOURCE_LAYOUT.path_for_w21_relative("agent/planning")
     controls = planning / "task_semantics_positive_proof_controls.py"
     commands = planning / "task_semantics_positive_proof_commands.py"
     condition = planning / "task_semantics_positive_proof_condition.py"

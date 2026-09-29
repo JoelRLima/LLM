@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from agent.observability import TraceStore
-from agent.observability.bookmarks import BookmarkStore
-from agent.observability.export import DiagnosticExporter
-from agent.presentation import InspectionService
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.observability import TraceStore
+from llm_agent.agent.observability.bookmarks import BookmarkStore
+from llm_agent.agent.observability.export import DiagnosticExporter
+from llm_agent.agent.presentation import InspectionService
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 def _fixture(tmp_path: Path) -> tuple[WorkspacePaths, RunCorrelation]:

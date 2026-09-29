@@ -16,6 +16,11 @@ import textwrap
 from pathlib import Path
 from typing import Callable, Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_ARCHITECTURE_RULES = tuple(f"PRM-A{index:02d}" for index in range(1, 87))
 REQUIRED_MUTATION_ARMS = tuple(f"PRM-M{index:02d}" for index in range(1, 21))
@@ -71,7 +76,7 @@ _CANONICAL_PATHS = (
 
 def _read(root: Path, relative: str) -> str:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return ""
 
@@ -175,7 +180,7 @@ def _check_cli_mode(cli: str) -> list[str]:
 def _check_cli_order(cli: str) -> list[str]:
     findings: list[str] = []
     preflight_index = cli.find("preflight = build_real_model_preflight")
-    provider_index = cli.find("from agent.llm.providers")
+    provider_index = cli.find("from llm_agent.agent.llm.providers")
     if preflight_index < 0 or provider_index < 0 or provider_index < preflight_index:
         findings.append("cli:preflight-before-provider")
     return findings
@@ -298,8 +303,9 @@ def _check(root: Path) -> list[str]:
 
 def _public_text(root: Path) -> str:
     chunks: list[str] = []
+    layout = w21_source_layout(root)
     for relative in _PUBLIC_ROOTS:
-        path = root / relative
+        path = layout.path_for_w21_relative(relative)
         if path.is_file():
             chunks.append(_read(root, relative))
         elif path.is_dir():
@@ -317,8 +323,9 @@ def check_repository(root: Path = ROOT) -> list[str]:
 
 
 def _copy_candidate(source: Path, destination: Path) -> None:
+    source_layout = w21_source_layout(source)
     for relative in ("agent", "scripts", "docs"):
-        origin_dir = source / relative
+        origin_dir = source_layout.path_for_w21_relative(relative)
         if origin_dir.exists():
             shutil.copytree(
                 origin_dir,
@@ -506,7 +513,7 @@ def _behavioral_probe_code(arm_id: str) -> str:
             raise AssertionError(f"{{ARM}}:{{message}}")
 
         if ARM in {{"PRM-M01", "PRM-M02"}}:
-            from agent.evaluation.campaign_serialization import (
+            from llm_agent.agent.evaluation.campaign_serialization import (
                 sanitize_campaign_report,
                 write_campaign_report,
             )
@@ -525,7 +532,7 @@ def _behavioral_probe_code(arm_id: str) -> str:
                 fail("campaign runs were truncated")
 
         elif ARM == "PRM-M03":
-            from agent.evaluation.analysis_support import secret_safe_report
+            from llm_agent.agent.evaluation.analysis_support import secret_safe_report
             report = {{
                 "runs": [{{"h_id": "H1", "evidence": {{}}}} for _ in range(164)],
                 "scenario_results": [],
@@ -536,14 +543,14 @@ def _behavioral_probe_code(arm_id: str) -> str:
                 fail("late secret was not detected")
 
         elif ARM in {{"PRM-M05", "PRM-M06"}}:
-            import agent.evaluation.real_model_preflight as preflight_module
-            from agent.evaluation.evaluation_identity import (
+            import llm_agent.agent.evaluation.real_model_preflight as preflight_module
+            from llm_agent.agent.evaluation.evaluation_identity import (
                 candidate_identity,
                 candidate_identity_string,
                 fixture_identity,
                 model_config_identity,
             )
-            from agent.evaluation.scenario_contracts import H_SERIES_VERSION, RepetitionPolicy
+            from llm_agent.agent.evaluation.scenario_contracts import H_SERIES_VERSION, RepetitionPolicy
             preflight_module.validate_release_prerequisite_projection = lambda value: ()
             preflight_module.deterministic_readiness_issues = lambda value: ()
             # The isolated mutation copy deliberately has no .git directory.
@@ -619,7 +626,7 @@ def _behavioral_probe_code(arm_id: str) -> str:
                 fail("ordering probe did not stop at preflight")
 
         elif ARM == "PRM-M08":
-            from agent.evaluation.artifact_paths import canonical_artifact_paths
+            from llm_agent.agent.evaluation.artifact_paths import canonical_artifact_paths
             if canonical_artifact_paths(".").installed_acceptance.name != "installed-acceptance.json":
                 fail("installed acceptance path diverged")
 
@@ -660,8 +667,8 @@ def _behavioral_probe_code(arm_id: str) -> str:
                 fail("live default is not the canonical live owner")
 
         elif ARM == "PRM-M12":
-            import agent.evaluation.campaign_progress as progress_module
-            import agent.evaluation.campaign_serialization as serialization
+            import llm_agent.agent.evaluation.campaign_progress as progress_module
+            import llm_agent.agent.evaluation.campaign_serialization as serialization
             serialization.sanitize_campaign_progress = lambda value: value
             serialization.write_bytes_atomic = lambda *args, **kwargs: (_ for _ in ()).throw(
                 AssertionError("atomic-owner")
@@ -679,7 +686,7 @@ def _behavioral_probe_code(arm_id: str) -> str:
                     fail("progress bypassed atomic owner")
 
         elif ARM == "PRM-M14":
-            from agent.evaluation import campaign
+            from llm_agent.agent.evaluation import campaign
 
             # The isolated mutation copy deliberately has no .git directory.
             # Keep this probe about resume compatibility, not repository lookup.
@@ -709,9 +716,9 @@ def _behavioral_probe_code(arm_id: str) -> str:
                 fail("identity mismatch was accepted")
 
         elif ARM == "PRM-M15":
-            from agent.evaluation import campaign
-            from agent.evaluation.evaluation_identity import fake_model_identity
-            from agent.evaluation.scenario_contracts import H_SERIES, EvidenceLevel, RepetitionPolicy
+            from llm_agent.agent.evaluation import campaign
+            from llm_agent.agent.evaluation.evaluation_identity import fake_model_identity
+            from llm_agent.agent.evaluation.scenario_contracts import H_SERIES, EvidenceLevel, RepetitionPolicy
 
             class Sentinel(Exception):
                 pass
@@ -742,9 +749,9 @@ def _behavioral_probe_code(arm_id: str) -> str:
         elif ARM == "PRM-M16":
             # Import through the public analyzer first so the split identity /
             # structure modules complete their intentional import cycle.
-            import agent.evaluation.analysis
-            from agent.evaluation.analysis_structure import _campaign_structure_errors
-            from agent.evaluation.scenario_contracts import H_SERIES
+            import llm_agent.agent.evaluation.analysis
+            from llm_agent.agent.evaluation.analysis_structure import _campaign_structure_errors
+            from llm_agent.agent.evaluation.scenario_contracts import H_SERIES
 
             scenario = next(item for item in H_SERIES if item.h_id == "H1")
             arm = scenario.arms[0]
@@ -777,7 +784,7 @@ def _behavioral_probe_code(arm_id: str) -> str:
 
         elif ARM == "PRM-M20":
             import mutation_gateway
-            import agent.evaluation.real_model_preflight as preflight_module
+            import llm_agent.agent.evaluation.real_model_preflight as preflight_module
             preflight_module.candidate_identity = lambda root: {{
                 "head": "head",
                 "semantic_candidate_fingerprint": "semantic",

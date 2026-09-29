@@ -1,5 +1,5 @@
-from agent.application import AgentApplication
-from agent.variants.models import VariantComposition
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.variants.models import VariantComposition
 
 
 def test_application_default_composition_is_current():

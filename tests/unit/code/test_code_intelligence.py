@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.code import CodeIntelligenceService, ProjectDiscovery
-from agent.code.contracts import AnalysisLevel, DiagnosticSeverity
+from llm_agent.agent.code import CodeIntelligenceService, ProjectDiscovery
+from llm_agent.agent.code.contracts import AnalysisLevel, DiagnosticSeverity
 
 
 def _symlink_or_skip(

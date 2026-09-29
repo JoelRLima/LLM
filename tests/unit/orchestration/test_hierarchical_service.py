@@ -3,12 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.orchestration import hierarchical_service as hierarchical_service_module
-from agent.orchestration.hierarchical_service import HierarchicalExecutionService
-from agent.orchestration.route_result import RouteDisposition, RouteResult
-from agent.planning.hierarchical_planner import MacroPlan, MacroStep
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.orchestration import hierarchical_service as hierarchical_service_module
+from llm_agent.agent.orchestration.hierarchical_service import HierarchicalExecutionService
+from llm_agent.agent.orchestration.route_result import RouteDisposition, RouteResult
+from llm_agent.agent.planning.hierarchical_planner import MacroPlan, MacroStep
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 class _Planner:

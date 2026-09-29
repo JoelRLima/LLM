@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agent.orchestration.task_runner import TaskInputs, TaskRunner
-from agent.state import AgentState
+from llm_agent.agent.orchestration.task_runner import TaskInputs, TaskRunner
+from llm_agent.agent.state import AgentState
 from tests.support.task_definition import make_contract, make_spec
 
 

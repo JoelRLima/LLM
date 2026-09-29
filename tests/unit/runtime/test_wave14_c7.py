@@ -8,25 +8,25 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.interaction.intent_claim import ConstraintClaim
-from agent.interaction.semantic_observability import (
+from llm_agent.agent.interaction.intent_claim import ConstraintClaim
+from llm_agent.agent.interaction.semantic_observability import (
     emit_semantic_admission_denied_event,
     emit_semantic_parse_event,
 )
-from agent.orchestration.task_execution import _resume_task
-from agent.planning.effect_intent import effect_intent_error
-from agent.planning.effect_intent_constraints import semantic_effect_error
-from agent.planning.graph_authority import GraphAuthorityError, preflight_graph_capabilities
-from agent.planning.intent_admission import AuthorityEnvelope, admit_intent_claim
-from agent.planning.target_grounding import GroundingError, ground_intent_claim, revalidate_grounded_targets
-from agent.planning.task_graph import TaskGraph, TaskNode
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
-from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
-from agent.runtime.task_directives import TaskDirective, TaskRunDirective
-from agent.state import AgentState
-from agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.agent.orchestration.task_execution import _resume_task
+from llm_agent.agent.planning.effect_intent import effect_intent_error
+from llm_agent.agent.planning.effect_intent_constraints import semantic_effect_error
+from llm_agent.agent.planning.graph_authority import GraphAuthorityError, preflight_graph_capabilities
+from llm_agent.agent.planning.intent_admission import AuthorityEnvelope, admit_intent_claim
+from llm_agent.agent.planning.target_grounding import GroundingError, ground_intent_claim, revalidate_grounded_targets
+from llm_agent.agent.planning.task_graph import TaskGraph, TaskNode
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
+from llm_agent.agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.runtime.task_directives import TaskDirective, TaskRunDirective
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.cancellation import CancellationToken
 from tests.unit.runtime.test_wave14_c6 import _checkpoint_state
 from tests.unit.runtime.test_wave14_c6 import _claim as make_claim
 
@@ -171,7 +171,7 @@ def test_c7_a04_resume_no_plan_narrower_authority_blocks_before_planning(
 ) -> None:
     runner, inputs, _ = _resume_fixture(tmp_path)
     runner.orchestrator.allowed_capabilities = {"read", "validate"}
-    import agent.orchestration.task_execution_authority as authority
+    import llm_agent.agent.orchestration.task_execution_authority as authority
 
     monkeypatch.setattr(authority, "mark_terminal_blocked", lambda _owner, **kwargs: kwargs["reason_code"])
     result = _resume_task(runner, inputs, None, runner.orchestrator.agent_state.task_run_directive, {})
@@ -183,7 +183,7 @@ def test_c7_a05_resume_no_plan_ambiguous_symbol_blocks_before_planning(
 ) -> None:
     runner, inputs, source = _resume_fixture(tmp_path)
     (source.parent / "other.py").write_text("TIMEOUT = 2\n", encoding="utf-8")
-    import agent.orchestration.task_execution_authority as authority
+    import llm_agent.agent.orchestration.task_execution_authority as authority
 
     monkeypatch.setattr(authority, "mark_terminal_blocked", lambda _owner, **kwargs: kwargs["reason_code"])
     result = _resume_task(runner, inputs, None, runner.orchestrator.agent_state.task_run_directive, {})
@@ -195,7 +195,7 @@ def test_c7_a06_w14_marker_missing_continuation_denies_immediately(
 ) -> None:
     runner, inputs, _ = _resume_fixture(tmp_path)
     runner.orchestrator.agent_state.w14_intent_continuation = None
-    import agent.orchestration.task_execution_authority as authority
+    import llm_agent.agent.orchestration.task_execution_authority as authority
 
     monkeypatch.setattr(authority, "mark_terminal_blocked", lambda _owner, **kwargs: kwargs["reason_code"])
     result = _resume_task(runner, inputs, None, runner.orchestrator.agent_state.task_run_directive, {})
@@ -400,7 +400,7 @@ def test_c7_a26_overlapping_authorized_roots_are_walked_once(tmp_path: Path, mon
     (tmp_path / "src" / "nested").mkdir(parents=True)
     (tmp_path / "src" / "nested" / "settings.py").write_text("TIMEOUT = 1\n", encoding="utf-8")
     envelope = _envelope(tmp_path, read=("src", "src/nested"), write=("src",))
-    import agent.planning.target_grounding_discovery as discovery
+    import llm_agent.agent.planning.target_grounding_discovery as discovery
 
     calls: list[str] = []
     original = discovery.os.scandir
@@ -559,7 +559,7 @@ def test_c7_a43_parse_success_precedes_admission_success(tmp_path: Path) -> None
     orchestrator, events = _runtime_orchestrator(tmp_path, {"read", "write", "validate"})
     claim = make_claim()
     emit_semantic_parse_event(orchestrator, claim)
-    from agent.orchestration.task_execution_authority import _admit_runtime_intent
+    from llm_agent.agent.orchestration.task_execution_authority import _admit_runtime_intent
 
     assert _admit_runtime_intent(
         orchestrator,
@@ -575,7 +575,7 @@ def test_c7_a44_parse_success_and_admission_denial_are_both_observable(
     orchestrator, events = _runtime_orchestrator(tmp_path, {"read"})
     claim = make_claim()
     emit_semantic_parse_event(orchestrator, claim)
-    import agent.orchestration.task_execution_authority as authority
+    import llm_agent.agent.orchestration.task_execution_authority as authority
 
     monkeypatch.setattr(authority, "mark_terminal_blocked", lambda _owner, **kwargs: kwargs["reason_code"])
     result = authority._admit_runtime_intent(

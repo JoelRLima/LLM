@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.transcript import provider_message_projection
+from llm_agent.agent.interaction.transcript import provider_message_projection
 
 
 def test_provider_projection_keeps_only_first_system_and_user_assistant_pairs() -> None:

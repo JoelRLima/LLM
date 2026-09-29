@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent.interaction.service import InteractionService
-from agent.interaction.types import InteractionAction
+from llm_agent.agent.interaction.service import InteractionService
+from llm_agent.agent.interaction.types import InteractionAction
 
 from ._helpers import application
 

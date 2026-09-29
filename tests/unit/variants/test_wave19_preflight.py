@@ -1,13 +1,13 @@
 import pytest
 
-from agent.variants.models import (
+from llm_agent.agent.variants.models import (
     CompositionPurpose,
     VariantComposition,
     VariantLifecycle,
     VariantSeam,
     VariantSelection,
 )
-from agent.variants.preflight import (
+from llm_agent.agent.variants.preflight import (
     VariantPreflightError,
     validate_variant_composition,
 )

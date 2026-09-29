@@ -1,7 +1,7 @@
 import pytest
 
-from agent.llm.session import ChatSession
-from agent.llm.session_requests import resolve_effective_reasoning_budget
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.session_requests import resolve_effective_reasoning_budget
 
 
 @pytest.fixture

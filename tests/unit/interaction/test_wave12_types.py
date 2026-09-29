@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interaction.types import (
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     AgentInteractionResult,
     InteractionAction,
@@ -14,7 +14,7 @@ from agent.interaction.types import (
     InteractionProvenance,
     InteractionResolution,
 )
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective
 
 
 def _decision(**kwargs: object) -> InteractionModelDecision:

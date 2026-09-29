@@ -5,9 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime import storage_contracts as contracts_module
-from agent.runtime.filesystem_primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
-from agent.runtime.storage_contracts import (
+from llm_agent.agent.runtime import storage_contracts as contracts_module
+from llm_agent.agent.runtime.storage_contracts import (
     LAYOUT_ID,
     LAYOUT_VERSION,
     StorageLayoutError,
@@ -20,6 +19,7 @@ from agent.runtime.storage_contracts import (
     write_layout_marker,
     write_migration_receipt,
 )
+from llm_agent.filesystem.primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
 
 
 def test_layout_marker_is_exact_and_round_trips(tmp_path: Path) -> None:

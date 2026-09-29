@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.planning.result_bindings import (
+from llm_agent.agent.planning.result_bindings import (
     ResultBindingError,
     bind_result_references,
     resolve_bound_args,
@@ -53,7 +53,7 @@ def test_binding_public_shape_is_one_closed_mapping(bindings) -> None:
 
 
 def test_unknown_binding_target_is_rejected_by_tool_schema() -> None:
-    from agent.planning.plan_validator import PlanValidator
+    from llm_agent.agent.planning.plan_validator import PlanValidator
 
     class _Skill:
         def get_schema(self):
@@ -176,7 +176,7 @@ def test_bound_control_like_text_remains_plain_data() -> None:
 
 
 def test_plan_executor_derives_binding_dependency_before_parallel_batch() -> None:
-    from agent.planning.plan_executor import PlanExecutor
+    from llm_agent.agent.planning.plan_executor import PlanExecutor
 
     executor = PlanExecutor.__new__(PlanExecutor)
     plan = [
@@ -194,7 +194,7 @@ def test_plan_executor_derives_binding_dependency_before_parallel_batch() -> Non
 
 
 def test_replan_dependency_closure_identifies_transitive_consumers() -> None:
-    from agent.planning.dependency_map import dependent_indices
+    from llm_agent.agent.planning.dependency_map import dependent_indices
 
     plan = [
         {"tool": "source", "_step_id": "a", "args": {}},
@@ -334,7 +334,7 @@ def test_binding_ignores_same_step_id_from_another_plan() -> None:
 
 
 def test_dependency_requires_the_same_complete_result_as_result_binding() -> None:
-    from agent.planning.dependency_map import dependency_succeeded
+    from llm_agent.agent.planning.dependency_map import dependency_succeeded
 
     history = [
         {

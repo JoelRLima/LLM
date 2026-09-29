@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     QUERY_FILE_NOT_UTF8,
     QUERY_FILE_TYPE_UNSUPPORTED,
     QUERY_FIND_PATTERN_EMPTY,
@@ -14,7 +14,7 @@ from agent.application_services.queries import (
     WorkspaceQueryRequest,
     WorkspaceQueryStatus,
 )
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.workspace.context import WorkspaceContext
 
 
 class _NeverCancelled:

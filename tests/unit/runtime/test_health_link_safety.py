@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.health import state_integrity
-from agent.health.standalone import run_standalone_health_check
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.agent.health import state_integrity
+from llm_agent.agent.health.standalone import run_standalone_health_check
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _symlink_or_skip(

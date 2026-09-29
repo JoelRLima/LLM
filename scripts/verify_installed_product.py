@@ -33,10 +33,10 @@ else:  # pragma: no cover - exercised by the cross-platform skip path.
     winreg = None
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from agent.runtime.paths import AppPaths  # noqa: E402
 from distribution.payload import (  # noqa: E402
     PayloadValidationError,
     make_inventory,
@@ -51,6 +51,7 @@ from installer.path_semantics import (  # noqa: E402
     reconstructed_persistent_path,
     remove_owned_segment,
 )
+from llm_agent.workspace.paths import AppPaths  # noqa: E402
 
 
 class ProductVerificationError(RuntimeError):
@@ -342,7 +343,7 @@ $doctorText = ((& $resolved doctor --json --home $ProbeHome --workspace $ProbeCw
 if ($LASTEXITCODE -ne 0) { throw "doctor failed: $doctorText" }
 $doctor = $doctorText | ConvertFrom-Json
 if ($doctor.readiness.offline_ready -ne $true) { throw "doctor was not offline-ready" }
-$originCode = "import agent,importlib.metadata,pathlib,sys; print(str(pathlib.Path(agent.__file__).resolve())); print(str(pathlib.Path(sys.executable).resolve())); print(agent.__version__); print(importlib.metadata.version('local-llm-agent')); print('\\n'.join(sys.path))"
+$originCode = "import llm_agent,importlib.metadata,pathlib,sys; print(str(pathlib.Path(llm_agent.__file__).resolve())); print(str(pathlib.Path(sys.executable).resolve())); print(llm_agent.__version__); print(importlib.metadata.version('local-llm-agent')); print('\\n'.join(sys.path))"
 $origin = ((& $CandidatePython -c $originCode 2>&1) | Out-String)
 $originLines = @($origin -split "`r?`n" | Where-Object { $_.Trim() })
 if ($LASTEXITCODE -ne 0 -or $originLines.Count -lt 4 -or
@@ -821,13 +822,13 @@ if ($LASTEXITCODE -ne 0) { throw "doctor failed: $doctorText" }
 $doctor = $doctorText | ConvertFrom-Json
 if ($doctor.readiness.offline_ready -ne $true) { throw "doctor was not offline-ready" }
 $candidatePython = [System.IO.Path]::GetFullPath((Join-Path $CandidateRoot "runtime\python.exe"))
-$originCode = "import agent,importlib.metadata,json,pathlib,platform,sys; print(json.dumps({'agent':str(pathlib.Path(agent.__file__).resolve()),'exe':str(pathlib.Path(sys.executable).resolve()),'agent_version':agent.__version__,'distribution_version':importlib.metadata.version('local-llm-agent'),'python':platform.python_version(),'path':list(sys.path)}))"
+$originCode = "import llm_agent,importlib.metadata,json,pathlib,platform,sys; print(json.dumps({'llm_agent':str(pathlib.Path(llm_agent.__file__).resolve()),'exe':str(pathlib.Path(sys.executable).resolve()),'llm_agent_version':llm_agent.__version__,'distribution_version':importlib.metadata.version('local-llm-agent'),'python':platform.python_version(),'path':list(sys.path)}))"
 $originText = ((& $candidatePython -c $originCode 2>&1) | Out-String)
 if ($LASTEXITCODE -ne 0) { throw "import origin failed: $originText" }
 $origin = $originText | ConvertFrom-Json
-if ($origin.agent_version -ne "0.2.0rc1" -or $origin.distribution_version -ne "0.2.0rc1" -or $origin.python -ne "3.12.14") { throw "runtime identity failed" }
+if ($origin.llm_agent_version -ne "0.2.0rc1" -or $origin.distribution_version -ne "0.2.0rc1" -or $origin.python -ne "3.12.14") { throw "runtime identity failed" }
 if (-not ([System.IO.Path]::GetFullPath($origin.exe)).Equals($candidatePython, [System.StringComparison]::OrdinalIgnoreCase)) { throw "host Python executable used" }
-if (-not ([System.IO.Path]::GetFullPath($origin.agent)).StartsWith([System.IO.Path]::GetFullPath((Join-Path $CandidateRoot "runtime")) + "\", [System.StringComparison]::OrdinalIgnoreCase)) { throw "agent import escaped payload" }
+if (-not ([System.IO.Path]::GetFullPath($origin.llm_agent)).StartsWith([System.IO.Path]::GetFullPath((Join-Path $CandidateRoot "runtime")) + "\", [System.StringComparison]::OrdinalIgnoreCase)) { throw "llm_agent import escaped payload" }
 if ($originText -match [regex]::Escape($ForbiddenPath) -or ($origin.path -join "`n") -match [regex]::Escape($ForbiddenPath)) { throw "checkout leaked into installed origin" }
 [Console]::Out.Write("W18_V003_FRESH_SHELL_PASS")
 ''',
@@ -1166,7 +1167,7 @@ def _v3_run_w17_interactive(
     expected_reference = f"..\\versions\\{facts.candidate_id}\\bin\\llm-agent.cmd"
     if expected_reference not in stable_text or not candidate_launcher.is_file() or not candidate_runtime.is_file():
         raise ProductVerificationError("stable launcher does not bind to the installed candidate")
-    if not candidate_shim.is_file() or "from agent.interfaces.cli.app import main" not in candidate_shim.read_text(encoding="utf-8"):
+    if not candidate_shim.is_file() or "from llm_agent.interfaces.cli.app import main" not in candidate_shim.read_text(encoding="utf-8"):
         raise ProductVerificationError("installed launcher shim does not reach the canonical W17 CLI entry point")
     persistent_path = reconstructed_persistent_path(
         context.before_machine,
@@ -1309,9 +1310,9 @@ def _v3_verify_w17_interactive(context: ProductContext, facts: InstalledFacts) -
             "candidate_launcher": str(candidate_launcher),
             "candidate_launcher_sha256": hashlib.sha256(candidate_launcher.read_bytes()).hexdigest(),
             "candidate_runtime": str(candidate_runtime),
-            "application_entry_point": "agent.interfaces.cli.app:main",
-            "first_run_owner": "agent.interfaces.cli.first_run.recover_first_run_config",
-            "workspace_owner": "agent.interfaces.cli.workspace_entry.choose_workspace",
+            "application_entry_point": "llm_agent.interfaces.cli.app:main",
+            "first_run_owner": "llm_agent.interfaces.cli.first_run.recover_first_run_config",
+            "workspace_owner": "llm_agent.interfaces.cli.workspace_entry.choose_workspace",
         },
         "cases": {
             "A57": {
@@ -1540,7 +1541,7 @@ def _v3_launch_lease_probe(context: ProductContext, facts: InstalledFacts) -> Ru
     """Start the installed embedded runtime and wait for its lease marker."""
 
     candidate = context.install_root / "versions" / facts.candidate_id
-    lease_source = candidate / "runtime" / "Lib" / "site-packages" / "agent" / "runtime" / "candidate_lease.py"
+    lease_source = candidate / "runtime" / "Lib" / "site-packages" / "llm_agent" / "agent" / "runtime" / "candidate_lease.py"
     code = (
         "import importlib.util,sys;from pathlib import Path;"
         f"p=Path({str(lease_source)!r});"

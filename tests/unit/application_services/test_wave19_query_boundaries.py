@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     MAX_LIST_ITEMS,
     MAX_QUERY_OUTPUT_CHARS,
     QUERY_INVALID_REQUEST,
@@ -74,7 +74,7 @@ def test_diff_rejects_option_like_pathspec_before_git(tmp_path: Path, monkeypatc
         called = True
         raise AssertionError("git must not run for invalid pathspec")
 
-    monkeypatch.setattr("agent.application_services.queries.run_git", fail_if_called)
+    monkeypatch.setattr("llm_agent.application.services.queries.run_git", fail_if_called)
     service = ReadOnlyWorkspaceQueryService(tmp_path)
     result = service.diff(WorkspaceQueryRequest(WorkspaceQueryKind.DIFF, {"paths": ("--output=x",)}), _NeverCancelled())
     assert result.status is WorkspaceQueryStatus.FAILED

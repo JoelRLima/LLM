@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
-from agent.llm.model_compatibility import (
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.model_compatibility import (
     ModelCompatibility,
     StructuredReasoningPolicy,
 )
-from agent.llm.model_profile import resolve_model_profile
-from agent.llm.model_profile_compat import compatibility_from_raw
-from agent.llm.providers.factory import create_model_gateway
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.llm.model_profile_compat import compatibility_from_raw
+from llm_agent.agent.llm.providers.factory import create_model_gateway
 
 
 def _config(policy: str | None = None) -> dict[str, object]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import DirectOperationalRequestGuard, OperationalClassification
+from llm_agent.agent.interaction.guards import DirectOperationalRequestGuard, OperationalClassification
 
 
 def test_conditional_effects_are_hypothetical() -> None:

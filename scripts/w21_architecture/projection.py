@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
 from .graph import _module_identity, _scc_count, _semantic_hash, package_family
+from .source import SourceLayout
 
 POLICY_FIELDS = (
     "edge_classes",
@@ -41,6 +44,80 @@ def project_policy(document: Mapping[str, Any]) -> dict[str, Any]:
 
 def project_compatibility(document: Mapping[str, Any]) -> dict[str, Any]:
     return _project(document, COMPATIBILITY_FIELDS)
+
+
+def project_frozen_baseline(
+    document: Mapping[str, Any],
+    layout: SourceLayout,
+) -> dict[str, Any]:
+    """Project frozen W21 module identities through a declared W22 namespace map.
+
+    This function consumes only the frozen baseline document.  Candidate graphs
+    are deliberately absent from its inputs and cannot become their own authority.
+    """
+
+    agent_module_root = layout.agent_module_root
+    if agent_module_root is None:
+        raise ValueError(f"layout {layout.profile!r} has no W21 Agent namespace")
+
+    def project(module: str) -> str:
+        if module == "agent":
+            return agent_module_root
+        if module.startswith("agent."):
+            return agent_module_root + module[len("agent") :]
+        return module
+
+    pairs = []
+    for item in document.get("baseline_cross_package_module_pairs", []):
+        source = str(item["source_module"])
+        destination = str(item["destination_module"])
+        pairs.append({
+            "source_module": project(source),
+            "destination_module": project(destination),
+            "origin_source_module": source,
+            "origin_destination_module": destination,
+        })
+    pairs.sort(key=lambda item: (item["source_module"], item["destination_module"]))
+
+    violations = []
+    for item in document.get("frozen_transition_violations", []):
+        if not isinstance(item, Mapping) or "source_module" not in item or "destination_module" not in item:
+            violations.append(dict(item))
+            continue
+        source = str(item["source_module"])
+        destination = str(item["destination_module"])
+        violations.append({
+            **dict(item),
+            "source_module": project(source),
+            "destination_module": project(destination),
+            "origin_source_module": source,
+            "origin_destination_module": destination,
+            "origin_violation_id": str(item["violation_id"]),
+        })
+    violations.sort(key=lambda item: str(item["violation_id"]))
+    baseline_identity = dict(document.get("baseline", {}))
+    source_identity = {
+        "artifact": document.get("artifact"),
+        "baseline": baseline_identity,
+        "graph_signatures": dict(document.get("graph_signatures", {})),
+        "frozen_transition_violation_count": document.get("frozen_transition_violation_count"),
+    }
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return {
+        "artifact": "w21-frozen-baseline-layout-projection",
+        "schema_version": 1,
+        "source_baseline": source_identity,
+        "source_baseline_canonical_sha256": hashlib.sha256(canonical).hexdigest(),
+        "layout": {
+            "profile": layout.profile,
+            "python_source_root": layout.python_source_root.relative_to(layout.repository_root).as_posix(),
+            "package_directory": layout.package_directory.relative_to(layout.repository_root).as_posix(),
+            "import_module_root": layout.import_module_root,
+            "agent_module_root": layout.agent_module_root,
+        },
+        "baseline_cross_package_module_pairs": pairs,
+        "frozen_transition_violations": violations,
+    }
 
 
 _BASELINE_SOURCE_HASHES = {

@@ -8,6 +8,11 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 OBSERVABILITY_ROOT = "agent/observability"
@@ -89,12 +94,12 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _sources(root: Path) -> Iterator[tuple[str, Path, ast.Module]]:
-    agent_root = root / "agent"
-    if not agent_root.exists():
+    agent_root = w21_source_layout(root).agent_source_directory
+    if agent_root is None or not agent_root.exists():
         return
     for path in sorted(agent_root.rglob("*.py")):
         relative = _relative(path, root)

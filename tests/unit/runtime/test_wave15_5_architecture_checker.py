@@ -11,6 +11,9 @@ from scripts.check_wave15_5_architecture import (
     run_corrective_mutation_campaign,
     run_mutation_campaign,
 )
+from scripts.w21_architecture.source import SourceLayout
+
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 
 
 def _digest(path: Path) -> str:
@@ -23,8 +26,8 @@ def test_wave15_5_architecture_clean_candidate_passes() -> None:
 
 def test_wave15_5_mutation_campaign_catches_every_required_arm_without_source_edits() -> None:
     watched = (
-        ROOT / "agent/observability/audit_projection.py",
-        ROOT / "agent/application_result.py",
+        SOURCE_LAYOUT.path_for_w21_relative("agent/observability/audit_projection.py"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/application_result.py"),
         ROOT / "scripts/check_wave15_5_architecture.py",
     )
     before = {path: _digest(path) for path in watched}
@@ -38,9 +41,9 @@ def test_wave15_5_mutation_campaign_catches_every_required_arm_without_source_ed
 
 def test_wave15_5_corrective_mutation_campaign_catches_run_scope_and_provider_http_bypasses() -> None:
     watched = (
-        ROOT / "agent/application_result.py",
-        ROOT / "agent/llm/providers/openai_compatible.py",
-        ROOT / "agent/llm/providers/openai_input_tokens.py",
+        SOURCE_LAYOUT.path_for_w21_relative("agent/application_result.py"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/llm/providers/openai_compatible.py"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/llm/providers/openai_input_tokens.py"),
         ROOT / "scripts/check_wave15_5_architecture.py",
     )
     before = {path: _digest(path) for path in watched}

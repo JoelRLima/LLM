@@ -1,0 +1,19 @@
+"""Platform-owned durable storage mechanics."""
+
+from .json_persistence import (
+    AtomicJsonWriteError,
+    AtomicWriteError,
+    JsonObjectReadError,
+    read_json_object,
+    write_json_atomic,
+    write_text_atomic,
+)
+
+__all__ = [
+    "AtomicJsonWriteError",
+    "AtomicWriteError",
+    "JsonObjectReadError",
+    "read_json_object",
+    "write_json_atomic",
+    "write_text_atomic",
+]

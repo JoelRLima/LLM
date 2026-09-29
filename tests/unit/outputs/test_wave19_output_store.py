@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.outputs.models import (
+from llm_agent.outputs.models import (
     OUTPUT_PAYLOAD_CORRUPT,
     OUTPUT_STORE_UNSAFE,
     OutputArtifact,
@@ -14,7 +14,7 @@ from agent.outputs.models import (
     OutputStoreError,
     payload_digest,
 )
-from agent.outputs.store import OutputStore
+from llm_agent.outputs.store import OutputStore
 
 
 def _artifact(text: str, output_id: str = "out-" + "a" * 32) -> OutputArtifact:

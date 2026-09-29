@@ -1,6 +1,6 @@
 import pytest
 
-from agent.evaluation.comparison import EvaluationComparisonError, compare_receipt_groups
+from llm_agent.agent.evaluation.comparison import EvaluationComparisonError, compare_receipt_groups
 
 
 def test_empty_receipt_comparison_fails_closed():

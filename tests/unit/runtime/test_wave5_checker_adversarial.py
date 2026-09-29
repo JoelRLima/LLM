@@ -104,7 +104,7 @@ class EffectExecutor:
 
 def test_canonical_transaction_boundary_is_accepted() -> None:
     source = """
-from agent.code.changes import ChangeSetTransaction
+from llm_agent.agent.code.changes import ChangeSetTransaction
 
 def review_and_commit(requested, proposed):
     transaction = ChangeSetTransaction(requested.parent, [])
@@ -115,7 +115,7 @@ def review_and_commit(requested, proposed):
 
 def test_delegated_code_workflow_transaction_boundary_is_accepted() -> None:
     source = """
-from agent.code.changes import ChangeSetTransaction
+from llm_agent.agent.code.changes import ChangeSetTransaction
 
 def apply_changes(service, change_set):
     return run_apply_changes(
@@ -135,7 +135,7 @@ def test_delegated_code_workflow_requires_the_canonical_transaction_factory(
     transaction_argument: str,
 ) -> None:
     source = f"""
-from agent.code.changes import ChangeSetTransaction
+from llm_agent.agent.code.changes import ChangeSetTransaction
 
 def apply_changes(service, change_set):
     return run_apply_changes(

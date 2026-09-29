@@ -5,19 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_errors import (
+from llm_agent.extensions.extension_catalog_errors import (
     CatalogCorruptError,
     LegacyMigrationError,
 )
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
-from agent.tools.extension_catalog_migration import migrate_legacy
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_migration import migrate_legacy
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from tests.support.process_environment import source_child_environment
 
 _MIGRATION_CHILD = """
 import sys
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
-from agent.tools.extension_catalog_migration import migrate_legacy
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_migration import migrate_legacy
 
 try:
     migrate_legacy(sys.argv[1], sys.argv[2])
@@ -155,7 +156,7 @@ def test_migration_storage_failure_preserves_legacy_and_destination(
     def fail_save(self: object, document: object) -> None:
         raise OSError("storage failure")
 
-    monkeypatch.setattr("agent.tools.extension_catalog_storage.ExtensionCatalogStorage.save", fail_save)
+    monkeypatch.setattr("llm_agent.extensions.extension_catalog_storage.ExtensionCatalogStorage.save", fail_save)
 
     with pytest.raises(OSError, match="storage failure"):
         migrate_legacy(legacy, destination)
@@ -273,6 +274,7 @@ def test_migration_does_not_overwrite_while_writer_holds_lock(tmp_path: Path) ->
         text=True,
         check=True,
         timeout=15,
+        env=source_child_environment(),
     )
     service.lock.release()
 

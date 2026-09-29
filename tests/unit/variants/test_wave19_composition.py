@@ -1,4 +1,4 @@
-from agent.variants.models import VariantComposition
+from llm_agent.agent.variants.models import VariantComposition
 
 
 def test_production_composition_has_frozen_fingerprint():

@@ -2,11 +2,11 @@ import hashlib
 
 import pytest
 
-from agent.code.change_models import ChangeConflictError, ChangeSetError
-from agent.code.change_parsing import changeset_from_dict
-from agent.code.change_transaction import ChangeSetTransaction
-from agent.code.context_selection import SelectedFile
-from agent.code.proposal_preconditions import bind_observed_preconditions
+from llm_agent.agent.code.change_models import ChangeConflictError, ChangeSetError
+from llm_agent.agent.code.change_parsing import changeset_from_dict
+from llm_agent.agent.code.change_transaction import ChangeSetTransaction
+from llm_agent.agent.code.context_selection import SelectedFile
+from llm_agent.agent.code.proposal_preconditions import bind_observed_preconditions
 
 
 def _snapshot(path: str, source: str, *, truncated: bool = False) -> SelectedFile:

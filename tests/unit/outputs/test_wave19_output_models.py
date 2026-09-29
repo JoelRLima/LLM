@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.outputs.models import (
+from llm_agent.outputs.models import (
     OUTPUT_CONTENT_POLICY_DENIED,
     OutputContentPolicy,
     OutputKind,

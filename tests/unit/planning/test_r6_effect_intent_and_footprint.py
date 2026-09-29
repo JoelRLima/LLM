@@ -4,27 +4,27 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.approval import AutoApprove
-from agent.code.application import CodingApplicationService
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
-from agent.memory.memory import MemoryDatabaseError
-from agent.planning.effect_intent import effect_intent_error
-from agent.planning.plan_validator import PlanValidator
-from agent.planning.task_completion import (
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.code.application import CodingApplicationService
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
+from llm_agent.agent.memory.memory import MemoryDatabaseError
+from llm_agent.agent.planning.effect_intent import effect_intent_error
+from llm_agent.agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     initialize_task_progression,
     refresh_executed_effects,
 )
-from agent.planning.task_graph import NodeState
-from agent.planning.task_scheduler import GraphExecutionResult
-from agent.planning.task_semantics_inference import infer_effect_semantics
-from agent.reporting.observation_evidence import project_artifact_evidence
-from agent.runtime.context import Artifact, TaskResult, TaskStatus
-from agent.skills import load_skill_registry
-from agent.skills.code_task import CodeTaskSkill
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.planning.task_graph import NodeState
+from llm_agent.agent.planning.task_scheduler import GraphExecutionResult
+from llm_agent.agent.planning.task_semantics_inference import infer_effect_semantics
+from llm_agent.agent.reporting.observation_evidence import project_artifact_evidence
+from llm_agent.agent.runtime.context import Artifact, TaskResult, TaskStatus
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.skills.code_task import CodeTaskSkill
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 class _ModelGateway:
@@ -314,7 +314,7 @@ class _MemoryOwner:
 
 
 def _memory_runtime(tmp_path: Path, objective: str, *, fail: bool = False):
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     state = AgentState()
     owner = _MemoryOwner(state, fail=fail)
@@ -404,7 +404,7 @@ def test_ordinary_task_cannot_model_plan_memory_set(tmp_path: Path) -> None:
 
 
 def test_unrequested_durable_write_blocks_completion_without_rollback() -> None:
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     class WriteRegistry:
         @staticmethod
@@ -458,7 +458,7 @@ def test_memory_effect_survives_checkpoint_reentry(tmp_path: Path) -> None:
     refresh_executed_effects(orchestrator)
     checkpoint = orchestrator.agent_state.to_checkpoint_dict()
 
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     restored = AgentState()
     restored_orchestrator = SimpleNamespace(

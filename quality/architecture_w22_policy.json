@@ -1,0 +1,73 @@
+{
+  "artifact": "w22-owner-boundary-policy",
+  "schema_version": 1,
+  "status": "PROVISIONAL_PRODUCT_NAMESPACE",
+  "checked_layout_profiles": [
+    "provisional-product",
+    "final-w22"
+  ],
+  "product_core_smoke_imports": [
+    "llm_agent"
+  ],
+  "owner_subpackages": {
+    "Agent": [
+      "agent"
+    ],
+    "Platform": [
+      "execution",
+      "process",
+      "filesystem",
+      "workspace",
+      "storage",
+      "extensions",
+      "terminal",
+      "cancellation"
+    ],
+    "Application": [
+      "application",
+      "actions",
+      "discovery",
+      "outputs",
+      "health"
+    ],
+    "Interfaces": [
+      "interfaces"
+    ],
+    "Product": [
+      "_version",
+      "resources"
+    ]
+  },
+  "forbidden_owner_edges": [
+    {
+      "rule_id": "W22-OWNER-PLATFORM-AGENT-001",
+      "source_owner": "Platform",
+      "destination_owner": "Agent"
+    },
+    {
+      "rule_id": "W22-OWNER-PLATFORM-INTERFACES-001",
+      "source_owner": "Platform",
+      "destination_owner": "Interfaces"
+    },
+    {
+      "rule_id": "W22-OWNER-AGENT-INTERFACES-001",
+      "source_owner": "Agent",
+      "destination_owner": "Interfaces"
+    },
+    {
+      "rule_id": "W22-OWNER-APPLICATION-INTERFACES-001",
+      "source_owner": "Application",
+      "destination_owner": "Interfaces"
+    },
+    {
+      "rule_id": "W22-OWNER-INTERFACES-AGENT-001",
+      "source_owner": "Interfaces",
+      "destination_owner": "Agent"
+    },
+    {
+      "rule_id": "W22-OWNER-INTERFACES-PLATFORM-001",
+      "source_owner": "Interfaces",
+      "destination_owner": "Platform"
+    }
+  ]
+}

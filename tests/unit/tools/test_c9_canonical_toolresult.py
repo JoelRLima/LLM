@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from agent.state import AgentState
-from agent.tools.contracts import ToolResult, ToolStatus
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
+from scripts.w21_architecture.source import w21_source_layout
 
 # These are the only production modules allowed to mention the historical
 # result shape.  ``contracts.py`` owns the compatibility type name,
@@ -23,12 +24,14 @@ FORBIDDEN_LEGACY_NAMES = ("LegacyToolResult", "to_legacy_result", "from_legacy_r
 
 
 def _legacy_boundary_violations(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    production = root / "agent"
+    source_layout = w21_source_layout(root)
+    production = source_layout.agent_source_directory
+    assert production is not None
     assert production.is_dir(), f"production root does not exist: {production}"
     scanned: list[str] = []
     violations: list[str] = []
     for path in sorted(production.rglob("*.py")):
-        relative = path.relative_to(root).as_posix()
+        relative = source_layout.w21_relative_path(path)
         scanned.append(relative)
         if relative in LEGACY_BOUNDARY_ALLOWLIST:
             continue

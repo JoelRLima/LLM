@@ -1,6 +1,6 @@
 import pytest
 
-from agent.planning.requested_effects import infer_requested_effects
+from llm_agent.agent.planning.requested_effects import infer_requested_effects
 
 
 @pytest.mark.parametrize(

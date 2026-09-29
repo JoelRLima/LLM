@@ -13,20 +13,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent.evaluation.agent_executor import GatewayFactory  # noqa: E402
-from agent.evaluation.artifact_paths import (  # noqa: E402
+from llm_agent.agent.evaluation.agent_executor import GatewayFactory  # noqa: E402
+from llm_agent.agent.evaluation.artifact_paths import (  # noqa: E402
     EvaluationArtifactPaths,
     live_owned_artifact_paths,
     progress_path_for,
     reserved_live_artifact_paths,
     resolve_output_path,
 )
-from agent.evaluation.campaign_progress import (  # noqa: E402
+from llm_agent.agent.evaluation.campaign_progress import (  # noqa: E402
     CampaignProgressError,
     load_campaign_progress,
     resume_report_from_progress,
 )
-from agent.evaluation.campaign_runner import (  # noqa: E402
+from llm_agent.agent.evaluation.campaign_runner import (  # noqa: E402
     DEFAULT_DRY_RUN_EPOCH,
     DEFAULT_PROFILE,
     DEFAULT_REAL_MODEL_EPOCH,
@@ -39,15 +39,16 @@ from agent.evaluation.campaign_runner import (  # noqa: E402
     run_real_model_campaign,
     run_scripted_campaign,
 )
-from agent.evaluation.experiment import (  # noqa: E402
+from llm_agent.agent.evaluation.experiment import (  # noqa: E402
     EvaluationExperimentContext,
     EvaluationExperimentError,
     evaluation_context,
 )
-from agent.evaluation.long_horizon import run_long_horizon_scripted  # noqa: E402
-from agent.evaluation.practical import run_practical_scripted  # noqa: E402
-from agent.llm.model_profile import resolve_model_profile  # noqa: E402
-from agent.runtime.filesystem_primitives import write_bytes_atomic  # noqa: E402
+from llm_agent.agent.evaluation.long_horizon import run_long_horizon_scripted  # noqa: E402
+from llm_agent.agent.evaluation.practical import run_practical_scripted  # noqa: E402
+from llm_agent.agent.llm.model_profile import resolve_model_profile  # noqa: E402
+from llm_agent.filesystem.primitives import write_bytes_atomic  # noqa: E402
+from scripts.w21_architecture.source import SourceLayout  # noqa: E402
 
 
 def _write_json_artifact(path: Path, value: Any) -> None:
@@ -211,7 +212,7 @@ def _run_live(
     if not preflight["ready"]:
         print(json.dumps({**preflight, "report": None}, ensure_ascii=False, separators=(",", ":")))
         return 2
-    from agent.llm.providers.factory import create_model_gateway
+    from llm_agent.agent.llm.providers.factory import create_model_gateway
 
     snapshots = preflight.get("prerequisite_snapshots", {})
     frozen_installed = snapshots.get("installed_acceptance") if isinstance(snapshots, dict) else None
@@ -229,10 +230,11 @@ def _run_live(
             "candidate_identity": preflight["candidate_identity"],
         }))
         return 2
-    config_path = ROOT / "agent" / "resources" / "default_config.json"
+    source_layout = SourceLayout.for_profile(ROOT, "final-w22")
+    config_path = source_layout.package_directory / "resources" / "default_config.json"
     raw = json.loads(config_path.read_text(encoding="utf-8"))
     resolved_profile = resolve_model_profile(raw, profile_name=arguments.profile)
-    from agent.evaluation.trace import RecordingGateway
+    from llm_agent.agent.evaluation.trace import RecordingGateway
 
     def live_factory(_objective: str, _workspace: Path) -> Any:
         return RecordingGateway(

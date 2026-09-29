@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,11 +29,11 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _tree(root: Path, relative: str) -> ast.Module | None:
-    path = root / relative
+    path = w21_source_layout(root).path_for_w21_relative(relative)
     try:
         return ast.parse(path.read_text(encoding="utf-8"), filename=relative)
     except (OSError, SyntaxError, UnicodeError):
@@ -223,7 +228,7 @@ def _check_task_runner_boundary(root: Path) -> list[ArchitectureViolation]:
     tree = _tree(root, relative)
     if tree is None:
         return [_violation("W10-S5", relative, "TaskRunner is missing or unparsable")]
-    source = (root / relative).read_text(encoding="utf-8")
+    source = w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     violations: list[ArchitectureViolation] = []
     if "explicit_resume" not in source or "_resolve_inputs" not in source:
         violations.append(
@@ -240,7 +245,7 @@ def _check_task_runner_boundary(root: Path) -> list[ArchitectureViolation]:
                 violations.append(
                     _violation("W10-S6", relative, "TaskRunner uses observability traces as resume authority", node)
                 )
-    continuity_root = root / "agent" / "continuity"
+    continuity_root = w21_source_layout(root).path_for_w21_relative("agent/continuity")
     if continuity_root.exists():
         for path in continuity_root.glob("*.py"):
             if path.stem.casefold() in {"catalog", "daemon", "scheduler", "service_runner"}:

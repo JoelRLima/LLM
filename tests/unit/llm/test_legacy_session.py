@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from agent.llm.contracts import ModelRequest, ModelResponse, StreamEvent, StreamEventType
-from agent.llm.session import ChatSession
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, StreamEvent, StreamEventType
+from llm_agent.agent.llm.session import ChatSession
 
 
 class _CanonicalTransportGateway:

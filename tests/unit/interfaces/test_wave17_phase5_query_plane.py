@@ -8,7 +8,9 @@ from threading import Event, Thread
 
 import pytest
 
-from agent.application_services.queries import (
+import llm_agent.execution.cleanup as cleanup_module
+import llm_agent.execution.command as command_module
+from llm_agent.application.services.queries import (
     MAX_LIST_ITEMS,
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
@@ -16,8 +18,8 @@ from agent.application_services.queries import (
     WorkspaceQueryResult,
     WorkspaceQueryStatus,
 )
-from agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion, CliQuerySubmission
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion, CliQuerySubmission
+from llm_agent.workspace.context import WorkspaceContext
 
 
 def _request(_workspace: WorkspaceContext, command_id: str, arguments: dict, *, active: bool = False) -> WorkspaceQueryRequest:
@@ -81,6 +83,9 @@ def test_git_contract_is_fixed_noninteractive_and_disables_helpers(tmp_path: Pat
     captured: dict[str, object] = {}
 
     class _Process:
+        pid = 1
+        stdin = None
+        returncode = 0
         stdout = BytesIO(b" M tracked.py\n")
         stderr = BytesIO(b"")
 
@@ -93,8 +98,18 @@ def test_git_contract_is_fixed_noninteractive_and_disables_helpers(tmp_path: Pat
         def kill(self):
             captured["killed"] = True
 
-    monkeypatch.setattr("agent.application_services.query_git.shutil.which", lambda _name: "git-safe")
-    monkeypatch.setattr("agent.application_services.query_git.subprocess.Popen", lambda *args, **kwargs: captured.update(kwargs) or _Process())
+    monkeypatch.setattr("llm_agent.application.services.query_git.shutil.which", lambda _name: "git-safe")
+    monkeypatch.setattr("llm_agent.execution.command.subprocess.Popen", lambda *args, **kwargs: captured.update(kwargs) or _Process())
+    # This test asserts Git request construction, not Win32 Job Object ABI
+    # behavior.  Isolate the canonical executor's containment dependency so
+    # the contract test does not attempt to associate the fake process with a
+    # real host Job Object.
+    fake_job = object()
+    monkeypatch.setattr(command_module, "create_windows_job", lambda: fake_job)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda _job, _process: True)
+    monkeypatch.setattr(cleanup_module, "close_windows_job", lambda _job: True)
+    monkeypatch.setattr(command_module, "process_group_id", lambda _process: None)
+    monkeypatch.setattr(cleanup_module, "terminate_process", lambda *_args, **_kwargs: None)
     result = service.git_status(_request(workspace, "git_status", {}), _cancel())
     assert result.status is WorkspaceQueryStatus.SUCCEEDED
     command = captured["args"] if "args" in captured else None

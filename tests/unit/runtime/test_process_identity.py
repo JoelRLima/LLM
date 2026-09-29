@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from agent.runtime import process_identity
-from agent.runtime.process_identity import OwnerStatus, ProcessOwnerLiveness
+from llm_agent.agent.runtime import process_identity
+from llm_agent.agent.runtime.process_identity import OwnerStatus, ProcessOwnerLiveness
 
 
 def _proc_stat(state: str) -> str:

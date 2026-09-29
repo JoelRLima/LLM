@@ -28,16 +28,17 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from agent._version import VERSION as CANONICAL_VERSION  # noqa: E402
-from agent.evaluation.artifact_paths import canonical_artifact_paths  # noqa: E402
-from agent.evaluation.evaluation_identity import (  # noqa: E402
+from llm_agent._version import VERSION as CANONICAL_VERSION  # noqa: E402
+from llm_agent.agent.evaluation.artifact_paths import canonical_artifact_paths  # noqa: E402
+from llm_agent.agent.evaluation.evaluation_identity import (  # noqa: E402
     candidate_identity,
     candidate_identity_string,
 )
-from agent.runtime.filesystem_primitives import write_bytes_atomic  # noqa: E402
+from llm_agent.filesystem.primitives import write_bytes_atomic  # noqa: E402
 
 DECLARED_RUNTIME_IMPORTS = ("ddgs", "prompt_toolkit", "requests", "rich")
 INSTALLED_ACCEPTANCE_SCHEMA_VERSION = 2
@@ -139,25 +140,24 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Mapping
 
-from agent.approval import ApprovalDecision, AutoApprove
-from agent.skills import load_skill_registry
-from agent.application import AgentApplication
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
-from agent.llm.decision_contract import ModelRequestContract
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.observability.export import DiagnosticExporter
-from agent.observability.trace_store import TraceStore
-from agent.presentation.service import InspectionService
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.instance_lock import InstanceLock
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
-from agent.tools.authority import TaskAuthoritySnapshot
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.agent.approval import ApprovalDecision, AutoApprove
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.observability.export import DiagnosticExporter
+from llm_agent.agent.observability.trace_store import TraceStore
+from llm_agent.agent.presentation.service import InspectionService
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.runtime.instance_lock import InstanceLock
+from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+from llm_agent.agent.tools.authority import TaskAuthoritySnapshot
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
 
 
 workspace = Path(sys.argv[1]).resolve()
@@ -525,8 +525,8 @@ class InteractionJourneyGateway(DeterministicJourneyGateway):
 
 
 def run_interaction_journeys(app_home, workspace):
-    from agent.llm.session import ChatSession
-    from agent.llm.session_requests import resolve_effective_reasoning_budget
+    from llm_agent.agent.llm.session import ChatSession
+    from llm_agent.agent.llm.session_requests import resolve_effective_reasoning_budget
 
     parser_file = workspace / "parser.py"
     parser_file.write_text("value = 12\\n", encoding="utf-8")
@@ -1123,7 +1123,7 @@ def run_lock_recovery_journey(base_dir):
     lock_path = base_dir / "application.lock"
     child_script = (
         "import os, sys; "
-        "from agent.runtime.instance_lock import InstanceLock; "
+        "from llm_agent.agent.runtime.instance_lock import InstanceLock; "
         "lock = InstanceLock.create(sys.argv[1]); lock.acquire(); os._exit(0)"
     )
     child = subprocess.Popen(
@@ -1559,13 +1559,13 @@ import json
 import sys
 from pathlib import Path
 
-from agent.application import AgentApplication
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
-from agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.workspace.paths import AppPaths
+from llm_agent.application.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
 
 
 app_home = Path(sys.argv[1]).resolve()
@@ -1684,15 +1684,15 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import agent
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.contracts import ToolAdapter, ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+import llm_agent
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.workspace.paths import AppPaths
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.agent.tools.contracts import ToolAdapter, ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
 
 
 app_home = Path(sys.argv[1]).resolve()
@@ -1757,7 +1757,7 @@ with patch.object(subprocess, "Popen", forbidden("Popen")), \
         "cwd_ok": adapter.cwd == workspace,
         "builtins": "echo" in result.registry.names(),
         "process_calls": process_calls,
-        "checkout_import": checkout in Path(agent.__file__).resolve().parents,
+        "checkout_import": checkout in Path(llm_agent.__file__).resolve().parents,
     }
 
 print(json.dumps(payload, sort_keys=True))
@@ -2080,6 +2080,7 @@ def wheel_install_command(
         "-m",
         "pip",
         "install",
+        "--isolated",
     ]
     if not mode.install_dependencies:
         command.extend(("--no-deps", "--force-reinstall"))
@@ -2171,10 +2172,14 @@ def _install_wheel(
         clear=True,
     ).create(environment_dir)
     venv_python = _venv_executable(environment_dir, "python")
+    install_environment = os.environ.copy()
+    for name in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV", "CONDA_PREFIX"):
+        install_environment.pop(name, None)
     _run(
         "install-wheel",
         wheel_install_command(venv_python, wheel, mode),
         cwd=external_cwd,
+        environment=install_environment,
     )
     entrypoint = _venv_executable(environment_dir, "llm-agent")
     if not entrypoint.is_file():
@@ -2198,7 +2203,7 @@ def _verify_import_origin(
     cwd: Path,
     environment: Mapping[str, str],
 ) -> None:
-    code = "from pathlib import Path; import agent; print(Path(agent.__file__).resolve())"
+    code = "from pathlib import Path; import llm_agent; print(Path(llm_agent.__file__).resolve())"
     result = _run(
         "installed-import",
         (str(venv_python), "-c", code),
@@ -2219,7 +2224,7 @@ def _verify_interactive_dependency(
 ) -> None:
     code = (
         "import prompt_toolkit; "
-        "from agent.interfaces.cli.interactive_shell import InteractiveShell; "
+        "from llm_agent.interfaces.cli.interactive_shell import InteractiveShell; "
         "print(prompt_toolkit.__version__)"
     )
     result = _run(
@@ -3013,7 +3018,7 @@ def _verify_w20a_engineering(
 ) -> None:
     _run(
         "engineering-import",
-        (str(venv_python), "-c", "import agent.engineering"),
+        (str(venv_python), "-c", "import llm_agent.agent.engineering"),
         cwd=cwd,
         environment=environment,
     )
@@ -3208,7 +3213,7 @@ def _verify_w20c_base_surfaces(
 
     _run(
         "discovery-import",
-        (str(venv_python), "-c", "import agent.discovery"),
+        (str(venv_python), "-c", "import llm_agent.discovery"),
         cwd=cwd,
         environment=base_environment,
     )
@@ -3217,7 +3222,7 @@ def _verify_w20c_base_surfaces(
         (
             str(venv_python),
             "-c",
-            "from agent.interfaces.cli.parser import build_parser; build_parser()",
+            "from llm_agent.interfaces.cli.parser import build_parser; build_parser()",
         ),
         cwd=cwd,
         environment=base_environment,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agent.engineering.contracts import (
+from llm_agent.agent.engineering.contracts import (
     EngineeringEffects,
     EngineeringEnvironmentV1,
     EngineeringOperationViewV1,
@@ -13,7 +13,7 @@ from agent.engineering.contracts import (
     EngineeringScope,
     EngineeringTerminalStatus,
 )
-from agent.engineering.model_safe import ModelSafeEngineering, ModelSafeStatus
+from llm_agent.agent.engineering.model_safe import ModelSafeEngineering, ModelSafeStatus
 
 
 def _result(workspace_id: str) -> EngineeringRunResultV1:

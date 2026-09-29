@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.planning.provenance_validation import _complete_successful_result
-from agent.planning.result_binding_values import result_is_bindable
-from agent.reporting.observation_evidence import result_is_successful
-from agent.runtime.outcome_taxonomy import OperationalStatus
-from agent.tools.result_completeness import (
+from llm_agent.agent.planning.provenance_validation import _complete_successful_result
+from llm_agent.agent.planning.result_binding_values import result_is_bindable
+from llm_agent.agent.reporting.observation_evidence import result_is_successful
+from llm_agent.agent.runtime.outcome_taxonomy import OperationalStatus
+from llm_agent.agent.tools.result_completeness import (
     canonical_result_successful,
     legacy_result_successful,
 )
@@ -58,7 +58,7 @@ def test_strict_causal_consumers_do_not_import_legacy_adapter() -> None:
     )
     visited = []
     for relative_path in relative_paths:
-        source_path = repo_root / relative_path
+        source_path = repo_root / "src" / "llm_agent" / relative_path
         assert source_path.is_file()
         source = source_path.read_text(encoding="utf-8")
         assert "canonical_result_successful" in source
@@ -77,7 +77,7 @@ def test_core_writer_modules_have_no_direct_compatibility_fallbacks() -> None:
     }
     scanned = 0
     for relative_path, violation in forbidden.items():
-        source_path = repo_root / relative_path
+        source_path = repo_root / "src" / "llm_agent" / relative_path
         assert source_path.is_file()
         source = source_path.read_text(encoding="utf-8")
         assert _contains_direct_writer(source, violation) is False

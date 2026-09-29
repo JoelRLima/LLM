@@ -1,10 +1,10 @@
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.hardware import LOW_VRAM_8GB, resolve_hardware_profile
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.runtime.hardware import LOW_VRAM_8GB, resolve_hardware_profile
+from llm_agent.cancellation import CancellationToken
 
 
 class FakeGateway:

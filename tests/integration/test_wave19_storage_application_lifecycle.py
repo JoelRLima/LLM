@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application import AgentApplication
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_application_owns_and_releases_home_lease(tmp_path: Path) -> None:

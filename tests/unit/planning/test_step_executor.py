@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.execution_state import StepStatus
-from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
-from agent.planning.plan_executor import PlanExecutor
-from agent.planning.step_executor import StepExecutor, StepOutcomeKind
-from agent.planning.step_policies import StepPolicies
-from agent.runtime.budget import task_budget_for
-from agent.state import AgentState
+from llm_agent.agent.execution_state import StepStatus
+from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.planning.plan_executor import PlanExecutor
+from llm_agent.agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from llm_agent.agent.planning.step_policies import StepPolicies
+from llm_agent.agent.runtime.budget import task_budget_for
+from llm_agent.agent.state import AgentState
+from llm_agent.cancellation import CancellationToken
 
 
 class _Memory:
@@ -120,7 +120,7 @@ def test_writer_post_process_does_not_run_implicit_model_correction(monkeypatch)
 
 
 def _state(monkeypatch):
-    monkeypatch.setattr("agent.state.AgentMemory", _Memory)
+    monkeypatch.setattr("llm_agent.agent.state.AgentMemory", _Memory)
     return AgentState()
 
 

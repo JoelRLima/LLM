@@ -8,8 +8,8 @@ from typing import Any
 
 from rich.console import Console
 
-from agent.interfaces.cli import app, chat, inspector_rendering, turn_rendering
-from agent.interfaces.cli.commands import handle_command
+from llm_agent.interfaces.cli import app, chat, inspector_rendering, turn_rendering
+from llm_agent.interfaces.cli.commands import handle_command
 
 
 def _console() -> Console:
@@ -79,7 +79,7 @@ def test_ux_t01_compact_startup() -> None:
 
 def test_ux_t02_help_is_explicit_and_t03_chat_does_not_auto_help(monkeypatch) -> None:
     calls: list[bool] = []
-    from agent.interfaces.cli import commands
+    from llm_agent.interfaces.cli import commands
 
     monkeypatch.setattr(commands, "exibir_menu", lambda: calls.append(True))
     handled, should_exit = handle_command("/help", SimpleNamespace())

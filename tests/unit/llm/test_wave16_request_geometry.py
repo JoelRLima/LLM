@@ -2,25 +2,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent.interaction.resolver import build_interaction_context, build_resolver_request
-from agent.interaction.response import build_response_request_plan
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import (
+from llm_agent.agent.interaction.resolver import build_interaction_context, build_resolver_request
+from llm_agent.agent.interaction.response import build_response_request_plan
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import (
     ModelResponse,
     ProviderCapabilities,
     StructuredOutputMode,
 )
-from agent.llm.model_compatibility import (
+from llm_agent.agent.llm.model_compatibility import (
     ModelCompatibility,
     StructuredReasoningPolicy,
 )
-from agent.llm.request_geometry import (
+from llm_agent.agent.llm.request_geometry import (
     STRUCTURED_REASONING_DISABLED_BY_PROFILE,
     resolve_effective_request_geometry,
 )
-from agent.llm.session import ChatSession
-from agent.runtime.task_directives import DeliberationProfile
-from agent.state import AgentState
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.runtime.task_directives import DeliberationProfile
+from llm_agent.agent.state import AgentState
 
 GRAMMAR = 'root ::= "ok"'
 REASON = "STRUCTURED_REASONING_DISABLED_BY_PROFILE"

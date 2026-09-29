@@ -3,15 +3,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.plan_builder import PlanBuilder
-from agent.planning.task_completion import (
+from llm_agent.agent.planning.plan_builder import PlanBuilder
+from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     continue_after_reasoning_boundary,
     initialize_task_progression,
 )
-from agent.planning.task_semantics import AdmissionSource, TaskSemantics, TaskSemanticsError
-from agent.planning.task_semantics_checkpoint import _admission_digest
-from agent.state import AgentState
+from llm_agent.agent.planning.task_semantics import AdmissionSource, TaskSemantics, TaskSemanticsError
+from llm_agent.agent.planning.task_semantics_checkpoint import _admission_digest
+from llm_agent.agent.state import AgentState
 
 
 def _complete(data: object) -> dict[str, object]:

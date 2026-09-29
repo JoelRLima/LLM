@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import DirectOperationalRequestGuard, DirectOperationalTargetGuard, TargetProof
+from llm_agent.agent.interaction.guards import DirectOperationalRequestGuard, DirectOperationalTargetGuard, TargetProof
 
 
 def test_effect_target_is_required_for_inferred_do() -> None:

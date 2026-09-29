@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from agent.evaluation.comparison import PracticalComparisonStatus
-from agent.evaluation.receipt import PracticalEvidenceV1
+from llm_agent.agent.evaluation.comparison import PracticalComparisonStatus
+from llm_agent.agent.evaluation.receipt import PracticalEvidenceV1
 
 
 def _evidence(candidate: str) -> PracticalEvidenceV1:
@@ -27,7 +27,7 @@ def test_support_practical_evidence_is_bounded_and_serializable() -> None:
 def test_support_practical_identity_mismatch_is_not_comparable() -> None:
     from dataclasses import replace
 
-    from agent.evaluation.receipt import EvaluationReceiptV1
+    from llm_agent.agent.evaluation.receipt import EvaluationReceiptV1
 
     # The canonical receipt remains the truth owner; this test only documents
     # the comparison status contract for receipts carrying PRACTICAL evidence.

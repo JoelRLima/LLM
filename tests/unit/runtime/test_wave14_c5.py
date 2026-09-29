@@ -5,36 +5,36 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.code.change_models import ChangeKind, ChangeSet, FileChange
-from agent.code.change_transaction import ChangeSetTransaction
-from agent.code.workflow_application_flow_support import run_apply_changes
-from agent.interaction.admission import AdmissionContext
-from agent.interaction.errors import InteractionAdmissionError
-from agent.interaction.intent_claim import (
+from llm_agent.agent.code.change_models import ChangeKind, ChangeSet, FileChange
+from llm_agent.agent.code.change_transaction import ChangeSetTransaction
+from llm_agent.agent.code.workflow_application_flow_support import run_apply_changes
+from llm_agent.agent.interaction.admission import AdmissionContext
+from llm_agent.agent.interaction.errors import InteractionAdmissionError
+from llm_agent.agent.interaction.intent_claim import (
     ConstraintClaim,
     EffectClaim,
     EvidenceSpan,
     IntentClaimV1,
     TargetSelectorClaim,
 )
-from agent.interaction.semantic_admission import admit_semantic_candidate
-from agent.interaction.types import (
+from llm_agent.agent.interaction.semantic_admission import admit_semantic_candidate
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     InteractionAction,
     InteractionAmbiguity,
     InteractionBoundary,
     InteractionModelDecision,
 )
-from agent.planning.intent_admission import (
+from llm_agent.agent.planning.intent_admission import (
     AuthorityEnvelope,
     IntentAdmissionError,
     admit_intent_claim,
 )
-from agent.planning.semantic_completion import task_semantics_from_admitted_intent
-from agent.planning.target_grounding import GroundingError, ground_intent_claim
-from agent.planning.task_completion import required_validation_satisfied, review_task_completion
-from agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
-from agent.runtime.context import TaskStatus
+from llm_agent.agent.planning.semantic_completion import task_semantics_from_admitted_intent
+from llm_agent.agent.planning.target_grounding import GroundingError, ground_intent_claim
+from llm_agent.agent.planning.task_completion import required_validation_satisfied, review_task_completion
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
+from llm_agent.agent.runtime.context import TaskStatus
 
 
 def _claim(
@@ -146,7 +146,7 @@ def test_require_validation_is_propagated_and_capability_is_independent() -> Non
 
 
 def test_require_validation_blocks_completion_when_validation_was_skipped(monkeypatch) -> None:
-    import agent.planning.task_completion as completion
+    import llm_agent.agent.planning.task_completion as completion
 
     state = SimpleNamespace(
         tool_history=[{"result": _mutation_result()}],

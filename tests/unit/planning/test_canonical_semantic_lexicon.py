@@ -4,14 +4,14 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from agent.evaluation.practical_scenarios import PRACTICAL_V1
-from agent.planning.task_semantics_inference import infer_effect_semantics
-from agent.planning.task_semantics_lexicon import (
+from llm_agent.agent.evaluation.practical_scenarios import PRACTICAL_V1
+from llm_agent.agent.planning.task_semantics_inference import infer_effect_semantics
+from llm_agent.agent.planning.task_semantics_lexicon import (
     CANONICAL_SEMANTIC_LEXICON,
     LexemeClass,
     LexiconRoute,
 )
-from agent.planning.task_semantics_positive_proof import parse_objective_authority
+from llm_agent.agent.planning.task_semantics_positive_proof import parse_objective_authority
 
 
 @pytest.mark.parametrize(

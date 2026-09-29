@@ -3,19 +3,19 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.llm.admitted_decisions import (
+from llm_agent.agent.llm.admitted_decisions import (
     ReactiveFinalDecision,
     ReactiveToolDecision,
     ask_typed_model_decision,
 )
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import ModelRequest, ModelResponse
-from agent.llm.decision_contract import ModelRequestContract
-from agent.llm.grammars import TOOL_DECISION_GRAMMAR
-from agent.llm.session import ChatSession
-from agent.parsers import validate_decision
-from agent.planning.reactive_loop import ReactiveLoop
-from agent.runtime.budget import task_budget_for
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.llm.grammars import TOOL_DECISION_GRAMMAR
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.parsers import validate_decision
+from llm_agent.agent.planning.reactive_loop import ReactiveLoop
+from llm_agent.agent.runtime.budget import task_budget_for
 
 
 class _ContextManager:
@@ -82,7 +82,7 @@ def _real_context_manager(orchestrator, response):
         },
         gateway=gateway,
     )
-    with patch("agent.llm.context_manager.SemanticMemory"):
+    with patch("llm_agent.agent.llm.context_manager.SemanticMemory"):
         context_manager = ContextManager(session, orchestrator.agent_state, verbose=False)
     orchestrator.context_manager = context_manager
     orchestrator.session = session
@@ -140,8 +140,8 @@ class _Orchestrator:
 
 
 def test_reactive_loop_executes_tool_through_full_gateway(monkeypatch):
-    monkeypatch.setattr("agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
-    monkeypatch.setattr("agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
     orchestrator = _Orchestrator()
 
     answer = ReactiveLoop(orchestrator).run_reactive("responda", {}, 0)
@@ -154,7 +154,7 @@ def test_reactive_loop_executes_tool_through_full_gateway(monkeypatch):
 
 
 def test_reactive_budget_stop_reuses_ledger_without_reset(monkeypatch):
-    monkeypatch.setattr("agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
     orchestrator = _Orchestrator()
     orchestrator.session.config = {"max_task_tool_calls": 1}
     orchestrator.fail_task = lambda: None
@@ -172,8 +172,8 @@ def test_reactive_budget_stop_reuses_ledger_without_reset(monkeypatch):
 
 
 def test_reactive_cost_limit_establishes_blocked_terminal_truth(monkeypatch):
-    monkeypatch.setattr("agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: True)
-    monkeypatch.setattr("agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: True)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.Watchdog.check_all", lambda *args: None)
     orchestrator = _Orchestrator()
     orchestrator.fail_task = lambda: None
 
@@ -186,7 +186,7 @@ def test_reactive_cost_limit_establishes_blocked_terminal_truth(monkeypatch):
 
 
 def test_reactive_watchdog_timeout_preserves_timeout_status(monkeypatch):
-    monkeypatch.setattr("agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
+    monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
     monkeypatch.setattr(
         "agent.planning.reactive_loop.Watchdog.check_all",
         lambda *args: "Timeout global da tarefa atingido.",

@@ -3,17 +3,17 @@ import os
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.health import standalone_checks
-from agent.health.standalone import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.health import standalone_checks
+from llm_agent.agent.health.standalone import (
     render_health_report,
     run_standalone_health_check,
 )
-from agent.health_check import run_health_check
-from agent.memory.memory import MemoryLoadError
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.agent.health_check import run_health_check
+from llm_agent.agent.memory.memory import MemoryLoadError
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway
 
 

@@ -8,8 +8,13 @@ from pathlib import Path
 from scripts import check_wave18_architecture as wave18
 from scripts import check_wave19_architecture as wave19
 from scripts import check_wave20_architecture as wave20
+from scripts.w21_architecture import SourceLayout
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def _final_path(root: Path, relative: str) -> Path:
+    return SourceLayout.for_profile(root, "final-w22").path_for_w21_relative(relative)
 
 
 def _copy_repository(source: Path, destination: Path) -> None:
@@ -36,7 +41,8 @@ def test_current_repository_remains_green_for_all_migrated_checkers(tmp_path: Pa
 def test_w18_negative_fixture_preserves_installer_boundary_rule(tmp_path: Path) -> None:
     fixture = tmp_path / "w18"
     _copy_repository(ROOT, fixture)
-    path = fixture / "agent/runtime/injected.py"
+    path = _final_path(fixture, "agent/runtime/injected.py")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("from installer import install\n", encoding="utf-8")
     findings = wave18.check_architecture(fixture)
     assert any(item.rule_id == "W18-ARCH-04" for item in findings)
@@ -45,7 +51,9 @@ def test_w18_negative_fixture_preserves_installer_boundary_rule(tmp_path: Path) 
 def test_w18_positive_fixture_accepts_a_safe_runtime_module(tmp_path: Path) -> None:
     fixture = tmp_path / "w18-positive"
     _copy_repository(ROOT, fixture)
-    (fixture / "agent/runtime/valid_fixture.py").write_text(
+    path = _final_path(fixture, "agent/runtime/valid_fixture.py")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         "from agent.runtime.paths import AppPaths\n\nVALID_FIXTURE = AppPaths\n",
         encoding="utf-8",
     )
@@ -55,7 +63,8 @@ def test_w18_positive_fixture_accepts_a_safe_runtime_module(tmp_path: Path) -> N
 def test_w19_negative_fixture_preserves_legacy_path_rule(tmp_path: Path) -> None:
     fixture = tmp_path / "w19"
     _copy_repository(ROOT, fixture)
-    path = fixture / "agent/fixture.py"
+    path = _final_path(fixture, "agent/fixture.py")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("from agent.runtime.paths import RUNTIME_DIR\n", encoding="utf-8")
     findings = wave19.check_architecture(fixture)
     assert any(item.rule_id == "W19-S05-002" for item in findings)
@@ -64,7 +73,9 @@ def test_w19_negative_fixture_preserves_legacy_path_rule(tmp_path: Path) -> None
 def test_w19_positive_fixture_accepts_typed_path_surface(tmp_path: Path) -> None:
     fixture = tmp_path / "w19-positive"
     _copy_repository(ROOT, fixture)
-    (fixture / "agent/typed_fixture.py").write_text(
+    path = _final_path(fixture, "agent/typed_fixture.py")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         "from agent.runtime.paths import AppPaths\n\nTYPED_PATHS = AppPaths\n",
         encoding="utf-8",
     )

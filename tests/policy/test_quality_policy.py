@@ -48,7 +48,7 @@ def test_repository_respects_stable_architecture_boundaries() -> None:
 
 def test_runtime_source_is_not_treated_as_generated_runtime_data() -> None:
     assert _is_ignored(ROOT / "runtime" / "agent.log")
-    assert not _is_ignored(ROOT / "agent" / "runtime" / "config.py")
+    assert not _is_ignored(ROOT / "src" / "agent" / "runtime" / "config.py")
 
 
 def test_repository_python_sources_are_visible_to_git() -> None:

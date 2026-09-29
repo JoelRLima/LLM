@@ -4,7 +4,7 @@ import builtins
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.interfaces.cli import app, ui
+from llm_agent.interfaces.cli import app, ui
 
 
 def test_headless_json_path_does_not_import_prompt_toolkit(monkeypatch, tmp_path: Path, capsys) -> None:

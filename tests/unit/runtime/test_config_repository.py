@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.config_repository import (
+from llm_agent.agent.runtime.config_repository import (
     ConfigError,
     ConfigNotFound,
     ConfigRepository,
     ConfigVersionError,
 )
-from agent.runtime.paths import AppPaths
+from llm_agent.workspace.paths import AppPaths
 
 
 @pytest.fixture

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.w21_architecture.source import SourceLayout
+
 ROOT = Path(__file__).resolve().parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 
 
 def _files(relative: str) -> list[Path]:
-    root = ROOT / relative
+    root = SOURCE_LAYOUT.path_for_w21_relative(relative)
     assert root.is_dir()
     files = sorted(root.rglob("*.py"))
     assert files
@@ -18,7 +21,7 @@ def _containing(files: list[Path], token: str) -> list[Path]:
 
 
 def test_decision_validity_projection_uses_canonical_contract_admission() -> None:
-    source = (ROOT / "agent/llm/structured_output.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/llm/structured_output.py").read_text(encoding="utf-8")
 
     assert "is_model_decision_contract_valid(" in source
     assert "admit_model_decision_value(" in source
@@ -27,8 +30,8 @@ def test_decision_validity_projection_uses_canonical_contract_admission() -> Non
 
 def test_decision_contract_production_has_no_regression_fixture_vocabulary() -> None:
     modules = [
-        ROOT / "agent/llm/decision_contract.py",
-        ROOT / "agent/llm/structured_output.py",
+        SOURCE_LAYOUT.path_for_w21_relative("agent/llm/decision_contract.py"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/llm/structured_output.py"),
     ]
     assert all(path.is_file() for path in modules)
 
@@ -38,8 +41,8 @@ def test_decision_contract_production_has_no_regression_fixture_vocabulary() -> 
 
 
 def test_final_request_measurement_precedes_provider_dispatch() -> None:
-    source = (ROOT / "agent/runtime/model_call.py").read_text(encoding="utf-8")
-    record_source = (ROOT / "agent/runtime/model_call_record.py").read_text(
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/runtime/model_call.py").read_text(encoding="utf-8")
+    record_source = SOURCE_LAYOUT.path_for_w21_relative("agent/runtime/model_call_record.py").read_text(
         encoding="utf-8"
     )
 
@@ -58,9 +61,9 @@ def test_eval_code_does_not_own_task_budget_call_accounting() -> None:
 
 
 def test_readiness_set_reuses_existing_scenarios_contract_and_has_no_runner() -> None:
-    source = (ROOT / "agent/evaluation/real_model_readiness.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/evaluation/real_model_readiness.py").read_text(encoding="utf-8")
 
-    assert "from agent.evaluation.scenario_contracts import H_SERIES" in source
+    assert "from llm_agent.agent.evaluation.scenario_contracts import H_SERIES" in source
     assert "CapabilityScenario" in source
     assert "REAL_MODEL_READINESS_VERSION" in source
     assert "class ReadinessRunner" not in source

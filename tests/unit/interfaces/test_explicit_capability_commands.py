@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interfaces.cli import command_handlers
-from agent.interfaces.cli.commands import EXACT_HANDLERS, PREFIX_HANDLERS, handle_command
-from agent.skills import load_tool_registry
-from agent.tools.authority import OperationalMode, operational_mode_capabilities
-from agent.tools.contracts import ToolResult, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.skills import load_tool_registry
+from llm_agent.agent.tools.authority import OperationalMode, operational_mode_capabilities
+from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.interfaces.cli import command_handlers
+from llm_agent.interfaces.cli.commands import EXACT_HANDLERS, PREFIX_HANDLERS, handle_command
 
 
 class _Console:

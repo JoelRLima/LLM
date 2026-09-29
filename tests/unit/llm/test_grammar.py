@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.llm import grammars
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import ModelResponse
-from agent.llm.grammars import AUTO_GRAMMAR, get_grammar
-from agent.llm.session import ChatSession
-from agent.llm.structured_output import normalize_model_decision
+from llm_agent.agent.llm import grammars
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import ModelResponse
+from llm_agent.agent.llm.grammars import AUTO_GRAMMAR, get_grammar
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.structured_output import normalize_model_decision
 
 # ----------------------------------------------------------------------
 # Fixtures / helpers
@@ -47,7 +47,7 @@ def make_session():
 
 
 def make_context_manager():
-    with patch("agent.llm.context_manager.SemanticMemory"):
+    with patch("llm_agent.agent.llm.context_manager.SemanticMemory"):
         session = make_session()
         agent_state = FakeAgentState()
         cm = ContextManager(session, agent_state, verbose=False)

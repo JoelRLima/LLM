@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.admission import admit_interaction
-from agent.interaction.guards import LocalConflictClassification, LocalEffectConflictGuard
-from agent.interaction.types import (
+from llm_agent.agent.interaction.admission import admit_interaction
+from llm_agent.agent.interaction.guards import LocalConflictClassification, LocalEffectConflictGuard
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     InteractionAction,
     InteractionAmbiguity,
     InteractionBoundary,
     InteractionModelDecision,
 )
-from agent.runtime.task_directives import TaskDirective
+from llm_agent.agent.runtime.task_directives import TaskDirective
 
 
 def test_same_segment_contradiction_is_not_silently_downgraded() -> None:

@@ -1,4 +1,4 @@
-from agent.actions.defaults import DEFAULT_ACTION_CATALOG
+from llm_agent.actions.defaults import DEFAULT_ACTION_CATALOG
 
 
 def test_action_catalog_has_stable_memory_action():

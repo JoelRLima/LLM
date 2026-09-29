@@ -4,13 +4,14 @@ import shutil
 from pathlib import Path
 
 from scripts import check_wave13_architecture as checker
+from scripts.w21_architecture.source import w21_source_layout
 
 ROOT = Path(__file__).parents[3]
 
 
 def _copy(root: Path, destination: Path, *relatives: str) -> None:
     for relative in relatives:
-        source = root / relative
+        source = w21_source_layout(root).path_for_w21_relative(relative)
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -28,6 +29,24 @@ def _write(root: Path, relative: str, source: str) -> None:
 
 def _rules(findings: list[checker.ArchitectureViolation]) -> set[str]:
     return {finding.rule_id for finding in findings}
+
+
+def test_w22_projection_preserves_context_codec_historical_identity() -> None:
+    assert checker._module_identities(ROOT, "agent.llm.context_projection") == frozenset(
+        {
+            "agent.llm.context_projection",
+            "llm_agent.agent.llm.context_projection",
+        }
+    )
+
+
+def test_w22_projection_preserves_repository_state_owner_identity() -> None:
+    assert checker._module_identities(ROOT, "agent.skills.repository_state") == frozenset(
+        {
+            "agent.skills.repository_state",
+            "llm_agent.agent.skills.repository_state",
+        }
+    )
 
 
 def test_real_repository_passes_wave13_checker() -> None:

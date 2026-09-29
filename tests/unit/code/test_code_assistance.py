@@ -3,21 +3,21 @@ from pathlib import Path
 
 import pytest
 
-from agent.code.changes import changeset_from_dict
-from agent.code.commands import CodeCommandError, parse_code_command
-from agent.code.context_selection import ContextSelector
-from agent.code.contracts import (
+from llm_agent.agent.code.changes import changeset_from_dict
+from llm_agent.agent.code.commands import CodeCommandError, parse_code_command
+from llm_agent.agent.code.context_selection import ContextSelector
+from llm_agent.agent.code.contracts import (
     AnalysisLevel,
     CodeAnalysis,
     ProjectProfile,
     RepositoryIndex,
 )
-from agent.code.diagnostics import FailureCategory, FailureClassifier
-from agent.code.intelligence import CodeIntelligenceService
-from agent.code.policy import ChangeApprovalPolicy, change_policy_from_config
-from agent.code.task_templates import build_code_task_template
-from agent.planning.task_graph import ResourceMode
-from agent.runtime.context import TaskResult, TaskStatus
+from llm_agent.agent.code.diagnostics import FailureCategory, FailureClassifier
+from llm_agent.agent.code.intelligence import CodeIntelligenceService
+from llm_agent.agent.code.policy import ChangeApprovalPolicy, change_policy_from_config
+from llm_agent.agent.code.task_templates import build_code_task_template
+from llm_agent.agent.planning.task_graph import ResourceMode
+from llm_agent.agent.runtime.context import TaskResult, TaskStatus
 
 
 def _hash(text: str) -> str:
@@ -289,8 +289,8 @@ def test_task_template_has_deterministic_dependencies_and_resources():
 
 
 def test_cli_code_command_bypasses_orchestrator(monkeypatch):
-    from agent.code.application import CodingApplicationService
-    from agent.interfaces.cli import commands as cli_commands
+    from llm_agent.agent.code.application import CodingApplicationService
+    from llm_agent.interfaces.cli import commands as cli_commands
 
     captured = {}
 

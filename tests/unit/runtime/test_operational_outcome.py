@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from agent.planning.completion_observations import publish_outcome
-from agent.reporting.operational_outcome import (
+from llm_agent.agent.planning.completion_observations import publish_outcome
+from llm_agent.agent.reporting.operational_outcome import (
     normalize_terminal_status,
     project_operational_outcome,
 )

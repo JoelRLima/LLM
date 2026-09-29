@@ -3,12 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.replan import (
+from llm_agent.agent.planning.replan import (
     ReplanContext,
     _surviving_steps,
     ask_llm_for_alternative,
 )
-from agent.runtime.failures import FailureFact
+from llm_agent.agent.runtime.failures import FailureFact
 
 
 def test_semantic_replan_frames_tool_failure_as_untrusted_evidence() -> None:

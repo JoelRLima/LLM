@@ -2,13 +2,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent.planning.plan_admission as admission_module
-from agent.planning.plan_admission import (
+import llm_agent.agent.planning.plan_admission as admission_module
+from llm_agent.agent.planning.plan_admission import (
     PlanAdmissionMode,
     PlanAdmissionService,
 )
-from agent.planning.plan_model import Plan, ToolPlanStep, deserialize_plan, serialize_plan
-from agent.planning.plan_validation_types import ValidationReport
+from llm_agent.agent.planning.plan_model import Plan, ToolPlanStep, deserialize_plan, serialize_plan
+from llm_agent.agent.planning.plan_validation_types import ValidationReport
 
 
 def _plan(*step_ids: str) -> Plan:

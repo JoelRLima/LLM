@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime import candidate_lease
+from llm_agent.agent.runtime import candidate_lease
 
 
 def test_object_names_contain_global_sid_and_validated_candidate() -> None:

@@ -2,8 +2,8 @@ import hashlib
 import json
 from types import SimpleNamespace
 
-from agent.llm.context_manager import ContextManager
-from agent.llm.context_projection import (
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.context_projection import (
     REQUIRED_EVIDENCE,
     UNTRUSTED_WORKSPACE,
     context_record_from_text,
@@ -11,9 +11,9 @@ from agent.llm.context_projection import (
     fit_contextual_request,
     render_untrusted_context_envelope,
 )
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse
-from agent.memory.prompt_context import build_memory_prompt_context, file_fact_freshness
-from agent.runtime.request_measurement import (
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse
+from llm_agent.agent.memory.prompt_context import build_memory_prompt_context, file_fact_freshness
+from llm_agent.agent.runtime.request_measurement import (
     PROVIDER_CHAT_INPUT_TOKENS,
     RequestInputMeasurement,
 )

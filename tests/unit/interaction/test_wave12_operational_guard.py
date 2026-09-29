@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.guards import (
+from llm_agent.agent.interaction.guards import (
     DirectOperationalRequestGuard,
     DirectOperationalTargetGuard,
     OperationalClassification,

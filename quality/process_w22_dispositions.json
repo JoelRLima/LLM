@@ -1,0 +1,73 @@
+{
+  "artifact": "w22-process-launch-dispositions",
+  "schema_version": 1,
+  "status": "CLOSED",
+  "allowed_dispositions": [
+    "MIGRATED_TO_COMMAND_EXECUTOR",
+    "PLATFORM_SESSION_PRIMITIVE",
+    "SPECIALIZED_RETAINED",
+    "NON_PRODUCTION/OUTSIDE_W22"
+  ],
+  "dispositions": [
+    {
+      "module": "llm_agent.execution.command",
+      "launcher": "subprocess.Popen (executor backend)",
+      "disposition": "PLATFORM_SESSION_PRIMITIVE",
+      "evidence": "src/llm_agent/execution/command.py"
+    },
+    {
+      "module": "llm_agent.application.services.query_git",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/application/services/query_git.py"
+    },
+    {
+      "module": "llm_agent.agent.code.validation_process",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/code/validation_process.py"
+    },
+    {
+      "module": "llm_agent.agent.skills.shell_process",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/skills/shell_process.py"
+    },
+    {
+      "module": "llm_agent.agent.skills.python_process",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/skills/python_process.py"
+    },
+    {
+      "module": "llm_agent.agent.engineering.backends.repository",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/engineering/backends/repository.py"
+    },
+    {
+      "module": "llm_agent.agent.evaluation.evaluation_identity",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/evaluation/evaluation_identity.py"
+    },
+    {
+      "module": "llm_agent.agent.tools.stdio_process",
+      "launcher": "CommandExecutor.execute",
+      "disposition": "MIGRATED_TO_COMMAND_EXECUTOR",
+      "evidence": "src/llm_agent/agent/tools/stdio_process.py"
+    },
+    {
+      "module": "llm_agent.extensions.stdio_launcher",
+      "launcher": "subprocess.Popen",
+      "disposition": "PLATFORM_SESSION_PRIMITIVE",
+      "evidence": "src/llm_agent/extensions/stdio_launcher.py"
+    },
+    {
+      "module": "llm_agent.process.tree",
+      "launcher": "subprocess.run",
+      "disposition": "PLATFORM_SESSION_PRIMITIVE",
+      "evidence": "src/llm_agent/process/tree.py"
+    }
+  ]
+}

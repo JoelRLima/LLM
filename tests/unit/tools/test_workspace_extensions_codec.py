@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from agent.tools.extension_catalog_errors import (
+from llm_agent.extensions.extension_catalog_errors import (
     WorkspaceCodecError,
     WorkspaceSchemaError,
     WorkspaceVersionError,
 )
-from agent.tools.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
-from agent.tools.workspace_extensions_codec import (
+from llm_agent.extensions.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
+from llm_agent.extensions.workspace_extensions_codec import (
     decode_workspace_extensions,
     encode_workspace_extensions,
 )

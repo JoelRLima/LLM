@@ -1,4 +1,4 @@
-from agent.skills.file_reader import FileReaderSkill
+from llm_agent.agent.skills.file_reader import FileReaderSkill
 
 
 def test_file_reader_uses_injected_scratch_directory(tmp_path):

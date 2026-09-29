@@ -6,37 +6,37 @@ from typing import Any
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.approval import AutoApprove
-from agent.evaluation.scripted_gateway import ScriptedEvaluationGateway
-from agent.llm.admitted_decisions import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.evaluation.scripted_gateway import ScriptedEvaluationGateway
+from llm_agent.agent.llm.admitted_decisions import (
     TaskContractDecision,
     TaskSpecDecision,
     admit_typed_model_decision,
 )
-from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities
-from agent.llm.decision_contract import ModelRequestContract
-from agent.orchestration.task_runner import TaskInputs, TaskRunner
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.state import AgentState
-from agent.task_definition.compiler import TaskDefinitionCompiler
-from agent.task_definition.errors import (
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.orchestration.task_runner import TaskInputs, TaskRunner
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.task_definition.compiler import TaskDefinitionCompiler
+from llm_agent.agent.task_definition.errors import (
     TaskDefinitionCompilationError,
     TaskDefinitionMismatchError,
     TaskDefinitionValidationError,
 )
-from agent.task_definition.models import TaskDefinitionRef
-from agent.task_definition.repository import TaskDefinitionRepository
-from agent.task_definition.resolver import TaskContextResolver
-from agent.task_definition.serialization import (
+from llm_agent.agent.task_definition.models import TaskDefinitionRef
+from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.task_definition.resolver import TaskContextResolver
+from llm_agent.agent.task_definition.serialization import (
     MAX_CONTRACT_BYTES,
     MAX_SPEC_BYTES,
     canonical_json_bytes,
     serialize_contract,
     serialize_spec,
 )
+from llm_agent.workspace.paths import AppPaths
 from tests.support.task_definition import make_contract, make_phase, make_spec
 
 

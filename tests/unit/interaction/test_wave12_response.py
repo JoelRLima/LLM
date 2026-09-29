@@ -4,16 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interaction.response import ResponseContextTooLarge, build_response_request_plan, complete_response
-from agent.llm.contracts import ProviderCapabilities, StreamEvent, StreamEventType, StructuredOutputMode
-from agent.runtime.request_measurement import PROVIDER_CHAT_INPUT_TOKENS, RequestInputMeasurement
-from agent.runtime.task_directives import DeliberationProfile
+from llm_agent.agent.interaction.response import ResponseContextTooLarge, build_response_request_plan, complete_response
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StreamEvent, StreamEventType, StructuredOutputMode
+from llm_agent.agent.runtime.request_measurement import PROVIDER_CHAT_INPUT_TOKENS, RequestInputMeasurement
+from llm_agent.agent.runtime.task_directives import DeliberationProfile
 
 from ._helpers import session
 
 
 def _context(current_session):
-    from agent.interaction.resolver import build_interaction_context
+    from llm_agent.agent.interaction.resolver import build_interaction_context
 
     return build_interaction_context(current_session)
 

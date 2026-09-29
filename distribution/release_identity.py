@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent._version import VERSION as RELEASE_VERSION
+from llm_agent._version import VERSION as RELEASE_VERSION
 
 SCHEMA_VERSION = "W18-RELEASE-MANIFEST-V3"
 DISPLAY_NAME = "LLM Agent"

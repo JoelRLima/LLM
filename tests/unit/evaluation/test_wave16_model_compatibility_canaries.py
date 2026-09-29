@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import agent.evaluation.model_compatibility_canaries as canaries
-from agent.evaluation.model_compatibility_canaries import (
+import llm_agent.agent.evaluation.model_compatibility_canaries as canaries
+from llm_agent.agent.evaluation.model_compatibility_canaries import (
     CANARY_CASE_IDS,
     CANARY_GBNF_GRAMMAR,
     CANARY_SCHEMA,
@@ -13,14 +13,18 @@ from agent.evaluation.model_compatibility_canaries import (
     _request,
     run_model_canaries,
 )
-from agent.llm.contracts import ModelResponse, StructuredOutputMode
-from agent.llm.model_profile import resolve_model_profile
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.llm.contracts import ModelResponse, StructuredOutputMode
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from scripts.w21_architecture.source import SourceLayout
 
 
 def _profile():
+    repository_root = Path(__file__).resolve().parents[3]
+    source_layout = SourceLayout.for_profile(repository_root, "final-w22")
+    source_config = source_layout.package_directory / "resources" / "default_config.json"
     document = json.loads(
-        (Path("agent/resources/default_config.json")).read_text(encoding="utf-8")
+        source_config.read_text(encoding="utf-8")
     )
     return resolve_model_profile(document, profile_name="local_8gb")
 

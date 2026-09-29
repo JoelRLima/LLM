@@ -11,15 +11,56 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.w21_architecture import RepositorySource, imported_module_names  # noqa: E402
+from scripts.w21_architecture import RepositorySource, SourceLayout, imported_module_names  # noqa: E402
 
-ENGINEERING = ROOT / "agent" / "engineering"
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
+
+_W22_LOGICAL_PREFIXES = (
+    ("agent/actions", "actions"),
+    ("agent/discovery", "discovery"),
+    ("agent/interfaces", "interfaces"),
+)
+_W22_EXACT_PATHS = {
+    "agent/engineering/cli.py": "interfaces/cli/engineering.py",
+}
+
+
+def _repository_path(relative: str) -> Path:
+    if relative in _W22_EXACT_PATHS:
+        return ROOT / "src" / "llm_agent" / _W22_EXACT_PATHS[relative]
+    for logical_prefix, physical_suffix in _W22_LOGICAL_PREFIXES:
+        if relative == logical_prefix or relative.startswith(logical_prefix + "/"):
+            suffix = relative[len(logical_prefix) :].lstrip("/")
+            return ROOT / "src" / "llm_agent" / physical_suffix / suffix
+    return SOURCE_LAYOUT.path_for_w21_relative(relative)
+
+
+def _logical_relative(path: Path) -> str:
+    resolved = path.resolve()
+    for logical, physical in _W22_EXACT_PATHS.items():
+        if resolved == (ROOT / "src" / "llm_agent" / physical).resolve():
+            return logical
+    for logical_prefix, physical_suffix in _W22_LOGICAL_PREFIXES:
+        physical_root = (ROOT / "src" / "llm_agent" / physical_suffix).resolve()
+        try:
+            suffix = resolved.relative_to(physical_root).as_posix()
+        except ValueError:
+            continue
+        return logical_prefix if suffix == "." else f"{logical_prefix}/{suffix}"
+    return SOURCE_LAYOUT.w21_relative_path(path)
+
+ENGINEERING = _repository_path("agent/engineering")
 FORBIDDEN_CORE_PREFIXES = (
     "agent.application",
     "agent.llm",
     "agent.planning",
     "agent.discovery",
     "agent.mcp",
+    "llm_agent.application",
+    "llm_agent.agent.llm",
+    "llm_agent.agent.planning",
+    "llm_agent.discovery",
+    "llm_agent.interfaces.mcp",
 )
 
 
@@ -35,11 +76,11 @@ def _imports(path: Path) -> set[str]:
 
 
 def _source(relative: str) -> str:
-    return (ROOT / relative).read_text(encoding="utf-8")
+    return _repository_path(relative).read_text(encoding="utf-8")
 
 
 def _tree(relative: str) -> ast.AST:
-    path = ROOT / relative
+    path = _repository_path(relative)
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
@@ -377,7 +418,7 @@ def _semantic_owner_is_canonical() -> bool:
         and node.value.func.attr == "import_module"
         and len(node.value.args) == 1
         and isinstance(node.value.args[0], ast.Constant)
-        and node.value.args[0].value == "agent.llm.providers"
+        and node.value.args[0].value == "llm_agent.agent.llm.providers"
     }
     delegates_to_provider_factory = bool(
         factory is not None
@@ -406,7 +447,7 @@ def _semantic_owner_is_canonical() -> bool:
 
     model_service_imported = any(
         isinstance(node, ast.ImportFrom)
-        and node.module == "agent.runtime.model_call"
+        and node.module == "llm_agent.agent.runtime.model_call"
         and any(item.name == "ModelCallService" for item in node.names)
         for node in ast.walk(semantic)
     )
@@ -593,8 +634,8 @@ def _semantic_cli_profile_path_is_canonical() -> bool:
         for node in ast.walk(resolver)
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
-    has_repository_import = "agent.runtime.config_repository" in resolver_imports
-    has_paths_import = "agent.runtime.paths" in resolver_imports
+    has_repository_import = "llm_agent.application.agent_boundary" in resolver_imports
+    has_paths_import = "llm_agent.application.context" in resolver_imports
     has_repository_load = any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
@@ -774,15 +815,34 @@ def _compatibility_exception_findings(problems: list[str]) -> None:
     for relative, code in unauthorized_owners:
         _append_missing(
             problems,
-            not (ROOT / relative).exists(),
+            not _repository_path(relative).exists(),
             code,
             f"unauthorized W20 owner remains: {relative}",
         )
 
 
 def _production_python_files(relative_root: str = "agent") -> tuple[Path, ...]:
-    root = ROOT / relative_root
+    root = _repository_path(relative_root)
     return tuple(sorted(item for item in root.rglob("*.py") if item.is_file()))
+
+
+def _discovery_import_findings(problems: list[str]) -> None:
+    discovery_root = _repository_path("agent/discovery")
+    forbidden_imports = (
+        "agent.interfaces.cli",
+        "agent.application",
+        "agent.llm",
+        "llm_agent.interfaces.cli",
+        "llm_agent.application",
+        "llm_agent.agent.llm",
+        "prompt_toolkit",
+        "ContextManager",
+    )
+    for path in discovery_root.glob("*.py"):
+        imports = _imports(path)
+        for imported in forbidden_imports:
+            if imported in imports or any(value.startswith(imported + ".") for value in imports):
+                problems.append(f"W20-DISCOVERY-LEAK: {_logical_relative(path)} -> {imported}")
 
 
 def _wave20_shape_findings(problems: list[str]) -> None:
@@ -806,7 +866,7 @@ def _wave20_shape_findings(problems: list[str]) -> None:
         "scripts/verify_wave20_mcp_extra.py",
     )
     for relative in required:
-        _append_missing(problems, (ROOT / relative).is_file(), "W20-SHAPE-MISSING", relative)
+        _append_missing(problems, _repository_path(relative).is_file(), "W20-SHAPE-MISSING", relative)
 
     exact_shapes = {
         "agent/engineering": {
@@ -844,12 +904,16 @@ def _wave20_shape_findings(problems: list[str]) -> None:
         },
     }
     for relative_root, expected in exact_shapes.items():
-        root = ROOT / relative_root
+        root = _repository_path(relative_root)
         actual = {
-            item.relative_to(ROOT).as_posix()
+            _logical_relative(item)
             for item in root.rglob("*.py")
             if item.is_file()
         } if root.is_dir() else set()
+        if relative_root == "agent/engineering":
+            moved_cli = _repository_path("agent/engineering/cli.py")
+            if moved_cli.is_file():
+                actual.add("agent/engineering/cli.py")
         for extra in sorted(actual - expected):
             problems.append(f"W20-SHAPE-EXTRA: {extra}")
         for missing in sorted(expected - actual):
@@ -867,22 +931,10 @@ def _wave20_shape_findings(problems: list[str]) -> None:
         "agent/evaluation/practical_receipt.py",
     )
     for relative in removed:
-        _append_missing(problems, not (ROOT / relative).exists(), "W20-SHAPE-DUPLICATE", relative)
+        _append_missing(problems, not _repository_path(relative).exists(), "W20-SHAPE-DUPLICATE", relative)
     _compatibility_exception_findings(problems)
 
-    discovery_root = ROOT / "agent" / "discovery"
-    forbidden_discovery_imports = (
-        "agent.interfaces.cli",
-        "agent.application",
-        "agent.llm",
-        "prompt_toolkit",
-        "ContextManager",
-    )
-    for path in discovery_root.glob("*.py"):
-        imports = _imports(path)
-        for imported in forbidden_discovery_imports:
-            if imported in imports or any(value.startswith(imported + ".") for value in imports):
-                problems.append(f"W20-DISCOVERY-LEAK: {path.relative_to(ROOT)} -> {imported}")
+    _discovery_import_findings(problems)
 
     completion = _source("agent/interfaces/cli/completion.py")
     shell = _source("agent/interfaces/cli/interactive_shell.py")
@@ -920,7 +972,7 @@ def _wave20_shape_findings(problems: list[str]) -> None:
     )
     _append_missing(problems, all(token in extensions for token in ("internal_adapters", "self._degraded", "application_extension_bootstrap_degraded")), "W20-EXTENSION-DEGRADED", "degraded extension composition does not preserve internals")
     _append_missing(problems, all(token in projection for token in ("cli_entries_from_parser", "engineering_entries", "mcp_engineering_availability")), "W20-DISCOVERY-PROJECTION", "CLI Discovery projection has a parallel catalog owner")
-    _append_missing(problems, all(token in registry for token in ("/commands", "agent.interfaces.cli.discovery_ui.commands_action", "ALWAYS_LOCAL", "NOT_APPLICABLE", "NEVER")), "W20-COMMAND-BINDING", "canonical /commands binding is incomplete")
+    _append_missing(problems, all(token in registry for token in ("/commands", "llm_agent.interfaces.cli.discovery_ui.commands_action", "ALWAYS_LOCAL", "NOT_APPLICABLE", "NEVER")), "W20-COMMAND-BINDING", "canonical /commands binding is incomplete")
     _append_missing(problems, _native_completion_is_structural(), "W20-COMPLETION-NATIVE", "completion is not a parser-driven native PowerShell completer")
     _append_missing(problems, "Select-Object -SkipLast" not in completion, "W20-COMPLETION-PS51", "completion uses a PowerShell version-specific SkipLast pipeline")
 
@@ -989,11 +1041,11 @@ def _practical_owner_is_canonical() -> bool:
         and comparison_compatibility is not None
         and candidate_owner is not None
         and model_owner is not None
-        and _imports_name_from(practical, "agent.evaluation.evidence", "practical_scenario_record")
-        and _imports_name_from(evidence, "agent.evaluation.practical_oracle_support", "_oracle_failures")
-        and _imports_name_from(practical, "agent.evaluation.evaluation_identity", "candidate_identity")
-        and _imports_name_from(practical, "agent.evaluation.evaluation_identity", "fake_model_identity")
-        and _imports_name_from(identity, "agent.evaluation.model_identity", "fake_model_identity")
+        and _imports_name_from(practical, "llm_agent.agent.evaluation.evidence", "practical_scenario_record")
+        and _imports_name_from(evidence, "llm_agent.agent.evaluation.practical_oracle_support", "_oracle_failures")
+        and _imports_name_from(practical, "llm_agent.agent.evaluation.evaluation_identity", "candidate_identity")
+        and _imports_name_from(practical, "llm_agent.agent.evaluation.evaluation_identity", "fake_model_identity")
+        and _imports_name_from(identity, "llm_agent.agent.evaluation.model_identity", "fake_model_identity")
         and "_run_practical_scripted" in _call_names(public_run)
         and "_compare_practical_profiles" in _call_names(public_compare)
         and {"candidate_identity", "candidate_identity_string", "fake_model_identity", "practical_scenario_record", "write_evidence_report"}.issubset(_call_names(run))
@@ -1142,7 +1194,7 @@ def _model_safe_projection_is_canonical() -> bool:
         and "project_health" in _call_names(project_health)
         and health_method is not None
         and "project_health" in _call_names(health_method)
-        and _imports_name_from(safe, "agent.engineering.backends.health", "project_health")
+        and _imports_name_from(safe, "llm_agent.agent.engineering.backends.health", "project_health")
         and builder is not None
         and "_BoundModelSafeEngineering" in _call_names(builder)
     )
@@ -1170,7 +1222,7 @@ def _wave20b_findings(problems: list[str]) -> None:
         and "_PROJECTION_KEYS" in inspection_projection
         and _imports_name_from(
             inspection_tree,
-            "agent.engineering.backends.inspection_projection",
+            "llm_agent.agent.engineering.backends.inspection_projection",
             "project_inspection",
         )
         and "project_inspection" in _call_names(inspection_tree)
@@ -1194,12 +1246,15 @@ def _engineering_findings(problems: list[str]) -> None:
         if not path.exists():
             if name == "store.py":
                 continue
-            problems.append(f"W20-A-MISSING: {path.relative_to(ROOT)}")
+            problems.append(f"W20-A-MISSING: {_logical_relative(path)}")
             continue
         for imported in _imports(path):
             if imported.startswith(FORBIDDEN_CORE_PREFIXES):
-                problems.append(f"W20-A-FORBIDDEN-IMPORT: {path.relative_to(ROOT)} -> {imported}")
-        if name == "service.py" and "agent.engineering.backends" in path.read_text(encoding="utf-8"):
+                problems.append(f"W20-A-FORBIDDEN-IMPORT: {_logical_relative(path)} -> {imported}")
+        if name == "service.py" and any(
+            prefix in path.read_text(encoding="utf-8")
+            for prefix in ("agent.engineering.backends", "llm_agent.agent.engineering.backends")
+        ):
             problems.append("W20-A-SERVICE-BACKEND-DIRECTION: service imports concrete backend")
 
     if not problems:
@@ -1278,17 +1333,49 @@ def _engineering_findings(problems: list[str]) -> None:
         _append_missing(problems, _all_calls_have_keyword_in_sources(lock_sources, {"create", "write_text_atomic"}, "create_parent", False), "W20-A-NO-PARENT-LOCK", "store lock/write calls must use create_parent=False")
         _append_missing(problems, "def prove_success" in transactions and transactions.count("if inspect_final_path(marker).exists:") == 2 and "sync_parent_directory(marker)" in transactions, "W20-A-SUCCESS-REPAIR", "success projection lacks marker absence durability repair")
         _append_missing(problems, "def resource_fingerprint" in policy and "hashlib.sha256" in policy, "W20-A-RESOURCE-HASH", "resource lock identity is not digest-derived")
-        _append_missing(problems, "source.root" in backend and "sys.executable" in backend and '"shell": False' in backend, "W20-A-FIXED-LAUNCH", "repository launch is not request-controlled and fixed")
+        _append_missing(
+            problems,
+            "source.root" in backend
+            and "sys.executable" in backend
+            and (
+                '"shell": False' in backend
+                or all(token in backend for token in ("CommandExecutor", "CommandRequest", "cwd=source.root"))
+            ),
+            "W20-A-FIXED-LAUNCH",
+            "repository launch is not request-controlled and fixed",
+        )
         _append_missing(problems, 'value["candidate_identity"] != trusted_identity' in backend, "W20-A-CANDIDATE-EQUALITY", "verifier identity is not compared with run-start identity")
-        _append_missing(problems, "EngineeringBackendStateIndeterminateError" in backend and "_cleanup" in backend, "W20-A-CLEANUP-INDIFFERENT", "managed cleanup uncertainty lacks typed indeterminate mapping")
+        _append_missing(
+            problems,
+            "EngineeringBackendStateIndeterminateError" in backend
+            and ("_cleanup" in backend or "except OSError" in backend),
+            "W20-A-CLEANUP-INDIFFERENT",
+            "managed cleanup uncertainty lacks typed indeterminate mapping",
+        )
         _append_missing(problems, not any(token in (store + service + policy + summary + transactions).lower() for token in ("run_index", "mutable index", "engineering_index")), "W20-A-MUTABLE-INDEX", "mutable run-index authority detected")
         _append_missing(problems, not ("subprocess.run" in backend or "shell=True" in backend or "['python'" in backend), "W20-A-ARBITRARY-LAUNCH", "arbitrary subprocess launch detected")
-        _append_missing(problems, "terminate_process" in backend and "process_group_id" in backend and "def terminate_process" not in backend, "W20-A-PROCESS-TREE-OWNER", "second process-tree implementation detected")
+        _append_missing(
+            problems,
+            (
+                "terminate_process" in backend
+                and "process_group_id" in backend
+                and "def terminate_process" not in backend
+            )
+            or all(token in backend for token in ("CommandExecutor", "CommandRequest")),
+            "W20-A-PROCESS-TREE-OWNER",
+            "second process-tree implementation detected",
+        )
         _append_missing(problems, all(token in summary for token in ("expected_active", "expected_terminal", "canonical_document_text")), "W20-A-SERIALIZER-FIELDS", "V1 serializer field checks are incomplete")
         _append_missing(problems, all(token in verifier for token in ("candidate_identity", "summary-json", "clean-acceptance", "installed_deterministic")), "W20-A-INSTALLED-PROBES", "canonical verifier lacks installed probes")
         _append_missing(problems, "ACCEPTANCE_INSTALLED_PACKAGE" in registry and "network=True" in registry, "W20-A-PRODUCTION-DESCRIPTOR", "installed acceptance descriptor is incomplete")
         _append_missing(problems, "relative_verifier" in cli and "scripts/verify_installed_package.py" in cli, "W20-A-SOURCE-CONTAINMENT", "trusted verifier containment is not literal")
-        _append_missing(problems, "def _spawn" in backend and "def _wait" in backend, "W20-A-PROCESS-LIFECYCLE", "repository process lifecycle is incomplete")
+        _append_missing(
+            problems,
+            ("def _spawn" in backend and "def _wait" in backend)
+            or all(token in backend for token in ("CommandExecutor", "CommandRequest", "result.completed")),
+            "W20-A-PROCESS-LIFECYCLE",
+            "repository process lifecycle is incomplete",
+        )
         _append_missing(problems, "def _safe_point" not in service and "safe_point_error" in service, "W20-A-SAFE-POINT-OWNER", "cancellation/deadline safe-point owner is duplicated")
         _append_missing(problems, "_observe_reconciliation_safe_point" in store and "observe_safe_point" in transactions and "_observe_reconciliation_safe_point" in recovery, "W20-A-RECONCILIATION-SAFE-POINT", "cleanup/reconciliation does not observe lifecycle safe points without abandoning evidence")
         _append_missing(problems, "EngineeringTransitionMode.TERMINAL_PENDING" in (transition + recovery) and "EngineeringTransitionMode.MANAGED_EXECUTION_GUARD" in transition, "W20-A-TRANSITION-MODES", "transition marker modes are incomplete")
@@ -1466,12 +1553,12 @@ def _base_installed_w20c_probes_are_wired() -> bool:
 
 
 def _mcp_findings(problems: list[str]) -> None:
-    mcp_server = ROOT / "agent/interfaces/mcp/engineering_server.py"
+    mcp_server = _repository_path("agent/interfaces/mcp/engineering_server.py")
     mcp_lock = ROOT / "distribution/mcp-windows-py312.lock"
     mcp_validator = ROOT / "distribution/mcp_lockfiles.py"
     extra_verifier = ROOT / "scripts/verify_wave20_mcp_extra.py"
     parser = _source("agent/interfaces/cli/parser.py")
-    cli_mcp_path = ROOT / "agent/interfaces/cli/mcp.py"
+    cli_mcp_path = _repository_path("agent/interfaces/cli/mcp.py")
     cli_mcp = _source("agent/interfaces/cli/mcp.py") if cli_mcp_path.is_file() else ""
     completion = _source("agent/interfaces/cli/completion.py")
     project = _source("pyproject.toml")
@@ -1490,12 +1577,12 @@ def _mcp_findings(problems: list[str]) -> None:
         _append_missing(problems, "lease.close()" in mcp_text and "begin_startup" in mcp_text, "W20-C-LIFECYCLE", "MCP lifecycle close is not explicit")
         _append_missing(problems, "AgentApplication" not in mcp_text and "agent.llm" not in mcp_text, "W20-C-NO-HEAVY-BOOTSTRAP", "MCP adapter imports application/model runtime")
     for relative in ("agent/interfaces/cli/parser.py", "agent/interfaces/cli/app.py", "agent/actions", "agent/discovery"):
-        path = ROOT / relative
+        path = _repository_path(relative)
         paths = path.rglob("*.py") if path.is_dir() else (path,)
         for item in paths:
             imports = _imports(item)
             if any(value == "mcp" or value.startswith("mcp.") for value in imports):
-                problems.append(f"W20-C-OPTIONAL-LEAK: {item.relative_to(ROOT)} imports MCP from base path")
+                problems.append(f"W20-C-OPTIONAL-LEAK: {_logical_relative(item)} imports MCP from base path")
     _append_missing(problems, "mcp = [" in project and '"mcp==2.2.0"' in project and '"mcp==2.2.0"' not in project.split("[project.optional-dependencies]", 1)[0], "W20-C-OPTIONAL-BOUNDARY", "MCP is not isolated in the optional dependency table")
     _append_missing(problems, "required=True" in parser and "mcp_engineering" in parser, "W20-C-WORKSPACE-ADMISSION", "MCP parser workspace contract is missing")
     _append_missing(problems, "ENGINEERING_MCP_EXTRA_REQUIRED" in cli_mcp and "find_spec" in cli_mcp, "W20-C-MISSING-EXTRA", "missing-extra behavior is not base-safe")

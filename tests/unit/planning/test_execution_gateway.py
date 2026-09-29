@@ -1,16 +1,16 @@
 import pytest
 
-from agent.planning.execution_gateway import ExecutionGateway
-from agent.planning.plan_model import Plan
-from agent.planning.planning_context import PlanningContextError, PlanningContextSnapshot, PlanningTool
-from agent.planning.replan import _validate_and_optimize_new_steps
-from agent.planning.replan_models import ReplanAction
-from agent.skills import load_skill_registry
-from agent.state import AgentState
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.planning.execution_gateway import ExecutionGateway
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.planning.planning_context import PlanningContextError, PlanningContextSnapshot, PlanningTool
+from llm_agent.agent.planning.replan import _validate_and_optimize_new_steps
+from llm_agent.agent.planning.replan_models import ReplanAction
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 class _Skill:

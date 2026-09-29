@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from agent.tools.extension_registry import ExtensionRegistry
+from llm_agent.extensions.extension_registry import ExtensionRegistry
 
 
 def test_extension_registry_persists_enabled_state(tmp_path: Path) -> None:

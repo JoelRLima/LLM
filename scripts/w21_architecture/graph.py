@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Iterable, TypedDict, cast
 
 from .imports import STATIC_KINDS, aggregate_edges, collect_import_edges
-from .source import RepositorySource
+from .source import RepositorySource, SourceLayout
 
 
 class _PackageEdge(TypedDict):
@@ -168,13 +168,14 @@ class ArchitectureGraph:
 def build_graph(source: RepositorySource) -> ArchitectureGraph:
     """Build static and architecture-union views from the explicit root."""
 
+    assert isinstance(source.layout, SourceLayout)
     edges = collect_import_edges(source)
     static = aggregate_edges(edges, set(STATIC_KINDS))
     dynamic = aggregate_edges(edges, {"literal_dynamic_import"})
     declarative = aggregate_edges(edges, {"declarative_runtime_import"})
     union = aggregate_edges(edges)
     modules = tuple(
-        {"module": module, "path": source.relative(path)}
+        {"module": module, "path": source.layout.graph_relative_path(path)}
         for module, path in sorted(source.module_paths().items())
     )
     return ArchitectureGraph(

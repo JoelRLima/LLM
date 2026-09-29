@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 @pytest.mark.parametrize(

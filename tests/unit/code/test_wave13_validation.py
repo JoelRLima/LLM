@@ -1,25 +1,25 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.cancellation import CancellationToken
-from agent.capabilities import Capability
-from agent.code.contracts import ProjectProfile
-from agent.code.discovery import ProjectDiscovery
-from agent.code.multitask import CodingTaskNodeExecutor
-from agent.code.validation import (
+from llm_agent.agent.capabilities import Capability
+from llm_agent.agent.code.contracts import ProjectProfile
+from llm_agent.agent.code.discovery import ProjectDiscovery
+from llm_agent.agent.code.multitask import CodingTaskNodeExecutor
+from llm_agent.agent.code.validation import (
     CommandResult,
     ProjectValidator,
     ValidationImpactPlanner,
     ValidationScope,
     ValidationStatus,
 )
-from agent.code.validation_impact import TestCoverage as Coverage
-from agent.code.workflows import CodingWorkflowService
-from agent.llm.contracts import ProviderCapabilities
-from agent.llm.model_profile import resolve_gateway_model_profile
-from agent.planning.task_graph import TaskNode
-from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
-from agent.tools.invocation_semantics import resolve_invocation_components
+from llm_agent.agent.code.validation_impact import TestCoverage as Coverage
+from llm_agent.agent.code.workflows import CodingWorkflowService
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.llm.model_profile import resolve_gateway_model_profile
+from llm_agent.agent.planning.task_graph import TaskNode
+from llm_agent.agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.tools.invocation_semantics import resolve_invocation_components
+from llm_agent.cancellation import CancellationToken
 
 
 def _profile(root: Path) -> ProjectProfile:

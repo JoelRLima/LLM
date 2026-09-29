@@ -1,9 +1,9 @@
 import pytest
 
-from agent.planning.planning_context import PlanningContextError, PlanningTool
-from agent.planning.presentation import PlanningPresentationError, PlanningPresentationSnapshot
-from agent.tools.contracts import ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.planning.planning_context import PlanningContextError, PlanningTool
+from llm_agent.agent.planning.presentation import PlanningPresentationError, PlanningPresentationSnapshot
+from llm_agent.agent.tools.contracts import ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
 def _view(*, planner_kind: str = "reactive") -> PlanningPresentationSnapshot:

@@ -1,4 +1,4 @@
-from agent.interfaces.cli.action_parser import parse_action
+from llm_agent.interfaces.cli.action_parser import parse_action
 
 
 def test_memory_legacy_alias_remains_accepted():

@@ -4,14 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent.final_response import FinalResponder
-from agent.llm.errors import ModelProviderError
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.llm.session import ChatSession
-from agent.reporting.observation_evidence import MAX_OBSERVATION_EVIDENCE_CHARS
-from agent.reporting.operational_outcome import OperationalOutcome
-from agent.runtime.budget import BudgetExhausted
-from agent.tools.contracts import ToolDescriptor
+from llm_agent.agent.final_response import FinalResponder
+from llm_agent.agent.llm.errors import ModelProviderError
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.reporting.observation_evidence import MAX_OBSERVATION_EVIDENCE_CHARS
+from llm_agent.agent.reporting.operational_outcome import OperationalOutcome
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.tools.contracts import ToolDescriptor
 
 
 class FailingSession:

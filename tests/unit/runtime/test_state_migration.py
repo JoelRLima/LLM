@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime import state_migration
-from agent.runtime.instance_lock import InstanceLock
-from agent.runtime.paths import AppPaths
-from agent.runtime.state_migration import StateMigrationError, migrate_legacy_state
+from llm_agent.agent.runtime import state_migration
+from llm_agent.agent.runtime.instance_lock import InstanceLock
+from llm_agent.agent.runtime.state_migration import StateMigrationError, migrate_legacy_state
+from llm_agent.workspace.paths import AppPaths
 
 
 def _workspace_paths(tmp_path: Path):

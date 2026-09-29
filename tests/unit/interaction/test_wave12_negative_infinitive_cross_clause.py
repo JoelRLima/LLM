@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 def test_shared_negative_infinitive_forms_are_seen_cross_clause() -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.transcript import bounded_prior_pairs
+from llm_agent.agent.interaction.transcript import bounded_prior_pairs
 
 
 def test_response_context_view_is_pair_bounded_before_fitting() -> None:

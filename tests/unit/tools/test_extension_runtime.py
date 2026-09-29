@@ -3,17 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.extension_catalog_document import PersistedCatalogEntry
-from agent.tools.extension_catalog_service import ExtensionCatalogService, host_path_flavor
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_path import PersistedManifestPath
-from agent.tools.extension_runtime import ExtensionRuntimeBinding, ExtensionRuntimeMaterializer
-from agent.tools.extension_state import fingerprint_for_bytes
-from agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter
-from agent.tools.workspace_extensions_resolver import ResolvedWorkspaceExtension, ResolvedWorkspaceExtensions
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.agent.tools.extension_runtime import ExtensionRuntimeBinding, ExtensionRuntimeMaterializer
+from llm_agent.agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter
+from llm_agent.extensions.extension_catalog_document import PersistedCatalogEntry
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService, host_path_flavor
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_state import fingerprint_for_bytes
+from llm_agent.extensions.workspace_extensions_resolver import ResolvedWorkspaceExtension, ResolvedWorkspaceExtensions
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _manifest(path: Path, *, entrypoint: list[str] | None = None, tool_name: str = "demo_tool") -> bytes:
@@ -235,7 +235,7 @@ def test_failure_in_one_tool_rejects_the_entire_extension(tmp_path: Path, monkey
     def fail_descriptors(_adapter):
         raise ValueError("second tool failed")
 
-    monkeypatch.setattr("agent.tools.extension_runtime.StdioToolAdapter.descriptors", fail_descriptors)
+    monkeypatch.setattr("llm_agent.agent.tools.extension_runtime.StdioToolAdapter.descriptors", fail_descriptors)
     result = ExtensionRuntimeMaterializer(workspace, host_flavor=catalog.host_flavor).materialize(resolved)
     assert result.bindings == ()
     assert result.diagnostics[0].code == "EXTENSION_RUNTIME_DESCRIPTOR_INVALID"

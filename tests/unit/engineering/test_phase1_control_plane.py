@@ -7,7 +7,7 @@ from threading import Event, Lock, Thread
 
 import pytest
 
-from agent.engineering.contracts import (
+from llm_agent.agent.engineering.contracts import (
     EngineeringBackendOutcome,
     EngineeringBackendStateIndeterminateError,
     EngineeringBackendStatus,
@@ -25,14 +25,14 @@ from agent.engineering.contracts import (
     EngineeringScope,
     EngineeringTerminalStatus,
 )
-from agent.engineering.policy import EngineeringPreflight
-from agent.engineering.registry import ACCEPTANCE_INSTALLED_PACKAGE, EngineeringRegistry, production_registry
-from agent.engineering.service import (
+from llm_agent.agent.engineering.policy import EngineeringPreflight
+from llm_agent.agent.engineering.registry import ACCEPTANCE_INSTALLED_PACKAGE, EngineeringRegistry, production_registry
+from llm_agent.agent.engineering.service import (
     EngineeringService,
     EngineeringStoreError,
     EngineeringTerminalIntent,
 )
-from agent.runtime.paths import AppPaths
+from llm_agent.workspace.paths import AppPaths
 
 RUN_ID = "engr-" + "a" * 32
 NOW = datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=timezone.utc)
@@ -107,7 +107,7 @@ class Store:
 
 
 def context(tmp_path: Path, permissions: frozenset[EngineeringPermission] = frozenset()) -> EngineeringExecutionContext:
-    from agent.engineering.contracts import SourceRepositoryContext
+    from llm_agent.agent.engineering.contracts import SourceRepositoryContext
 
     return EngineeringExecutionContext(
         EngineeringCaller.AUTOMATION_HEADLESS,
@@ -279,14 +279,14 @@ def test_fake_registry_does_not_contaminate_production() -> None:
 
 @pytest.mark.parametrize("operation_id", ["UPPER", ".leading", "trailing.", "two..dots", "white space"])
 def test_operation_id_grammar_rejects_noncanonical_forms(operation_id: str) -> None:
-    from agent.engineering.contracts import validate_operation_id
+    from llm_agent.agent.engineering.contracts import validate_operation_id
 
     with pytest.raises(ValueError):
         validate_operation_id(operation_id)
 
 
 def test_reason_codes_are_deduplicated_in_declaration_order() -> None:
-    from agent.engineering.contracts import order_reason_codes
+    from llm_agent.agent.engineering.contracts import order_reason_codes
 
     assert order_reason_codes(["ENGINEERING_INTERNAL_ERROR", "ENGINEERING_CANCELLED", "ENGINEERING_CANCELLED"]) == (
         "ENGINEERING_CANCELLED",

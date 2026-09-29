@@ -1564,10 +1564,10 @@ function Test-EmbeddedRuntime {
             throw "payload doctor não reportou offline_ready=true"
         }
 
-        $originCode = 'import agent,importlib.metadata,json,pathlib,platform,sys; print(json.dumps({"agent":str(pathlib.Path(agent.__file__).resolve()),"exe":str(pathlib.Path(sys.executable).resolve()),"agent_version":agent.__version__,"distribution_version":importlib.metadata.version("local-llm-agent"),"python":platform.python_version(),"path":list(sys.path)}))'
+        $originCode = 'import llm_agent,importlib.metadata,json,pathlib,platform,sys; print(json.dumps({"llm_agent":str(pathlib.Path(llm_agent.__file__).resolve()),"exe":str(pathlib.Path(sys.executable).resolve()),"llm_agent_version":llm_agent.__version__,"distribution_version":importlib.metadata.version("local-llm-agent"),"python":platform.python_version(),"path":list(sys.path)}))'
         $originResult = Invoke-ExplicitProcess $runtime @("-c", $originCode) $cwd $PersistentPath -StepName ("$candidateLabel / runtime import-origin")
         $origin = Get-DoctorDocument (Assert-ProcessSuccess $originResult "runtime import-origin")
-        if ([string]$origin.agent_version -cne "0.2.0rc1" -or
+        if ([string]$origin.llm_agent_version -cne "0.2.0rc1" -or
             [string]$origin.distribution_version -cne "0.2.0rc1" -or
             [string]$origin.python -cne "3.12.14") {
             throw "identidade do runtime embutido divergiu"
@@ -1576,11 +1576,11 @@ function Test-EmbeddedRuntime {
             throw "sys.executable não é o CPython do payload"
         }
         $runtimeRoot = [IO.Path]::GetFullPath((Join-Path $CandidatePath "runtime"))
-        if (-not ([IO.Path]::GetFullPath([string]$origin.agent)).StartsWith($runtimeRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            throw "agent importou fora do runtime embutido"
+        if (-not ([IO.Path]::GetFullPath([string]$origin.llm_agent)).StartsWith($runtimeRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "llm_agent importou fora do runtime embutido"
         }
         Assert-PathDoesNotContainCheckout $origin.path
-        Assert-PathDoesNotContainCheckout @($origin.agent, $origin.exe)
+        Assert-PathDoesNotContainCheckout @($origin.llm_agent, $origin.exe)
 
         $candidateVersion = Invoke-CmdLauncher $launcher @("--version") $cwd $PersistentPath "$candidateLabel / candidate launcher --version"
         if ((Assert-ProcessSuccess $candidateVersion "candidate launcher --version").Trim() -cne "llm-agent 0.2.0rc1") {
@@ -1595,7 +1595,7 @@ function Test-EmbeddedRuntime {
             doctor_offline_ready = $true
             python = "3.12.14"
             sys_executable = [IO.Path]::GetFullPath($runtime)
-            import_origin = [IO.Path]::GetFullPath([string]$origin.agent)
+            import_origin = [IO.Path]::GetFullPath([string]$origin.llm_agent)
             ensurepip = "frozen-stdlib-only; not invoked"
         }
     }

@@ -1,4 +1,4 @@
-from agent.evaluation.feedback import FEEDBACK_SCHEMA_VERSION, FeedbackVerdict
+from llm_agent.agent.evaluation.feedback import FEEDBACK_SCHEMA_VERSION, FeedbackVerdict
 
 
 def test_feedback_has_independent_schema_and_verdicts():

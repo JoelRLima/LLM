@@ -8,31 +8,31 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.approval import AutoApprove
-from agent.cancellation import CancellationToken
-from agent.evaluation.analysis_metrics import metric_summary
-from agent.evaluation.analysis_verdict import verdict
-from agent.evaluation.execution_attribution import classify_failure
-from agent.evaluation.oracle import deterministic_oracle_evidence
-from agent.evaluation.scenario_contracts import H_SERIES, CausalFailureClass, EvidenceLevel
-from agent.planning.task_graph import ResourceMode, TaskNode, TaskResource
-from agent.planning.task_semantics import (
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.evaluation.analysis_metrics import metric_summary
+from llm_agent.agent.evaluation.analysis_verdict import verdict
+from llm_agent.agent.evaluation.execution_attribution import classify_failure
+from llm_agent.agent.evaluation.oracle import deterministic_oracle_evidence
+from llm_agent.agent.evaluation.scenario_contracts import H_SERIES, CausalFailureClass, EvidenceLevel
+from llm_agent.agent.planning.task_graph import ResourceMode, TaskNode, TaskResource
+from llm_agent.agent.planning.task_semantics import (
     ObligationStatus,
     TaskIntent,
     TaskObligation,
     TaskSemantics,
     TaskSemanticsError,
 )
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.tools.contracts import (
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.tools.contracts import (
     CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
     ToolResult,
     ToolStatus,
 )
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.cancellation import CancellationToken
 
 
 def _lossy_read(value: str) -> dict[str, object]:
@@ -179,7 +179,7 @@ def test_r4_r6_actual_mutating_target_overrides_false_disjoint_claim() -> None:
         metadata={"action": "modify", "targets": ["src/shared.py"]},
     )
 
-    from agent.planning.task_scheduler import TaskGraphScheduler
+    from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
 
     selected = TaskGraphScheduler(SimpleNamespace(), max_workers=2)._select_batch([left, right])
     assert len(selected) == 1

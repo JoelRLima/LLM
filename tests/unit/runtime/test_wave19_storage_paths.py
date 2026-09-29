@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime import paths as paths_module
-from agent.runtime.paths import AppHomeOrigin, AppPaths
+from llm_agent.workspace import paths as paths_module
+from llm_agent.workspace.paths import AppHomeOrigin, AppPaths
 
 
 def test_explicit_home_is_one_side_effect_free_root(tmp_path: Path) -> None:

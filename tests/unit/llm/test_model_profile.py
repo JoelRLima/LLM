@@ -5,17 +5,17 @@ from types import MappingProxyType
 
 import pytest
 
-from agent.code.application import build_code_context
-from agent.llm.contracts import ModelMessage, ModelRequest, ProviderCapabilities, StructuredOutputMode
-from agent.llm.identity import declared_provider_identity, redact_identity
-from agent.llm.model_profile import (
+from llm_agent.agent.code.application import build_code_context
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.identity import declared_provider_identity, redact_identity
+from llm_agent.agent.llm.model_profile import (
     ResolvedModelProfile,
     resolve_gateway_model_profile,
     resolve_model_profile,
 )
-from agent.llm.model_profile_binding import cached_gateway_model_profile
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.llm.session import ChatSession
+from llm_agent.agent.llm.model_profile_binding import cached_gateway_model_profile
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.llm.session import ChatSession
 
 
 def test_named_profile_is_the_single_effective_precedence_result() -> None:
@@ -407,7 +407,7 @@ def test_temporary_nonweak_gateways_are_not_permanently_retained_by_profile_bind
             object.__setattr__(self, "model", model)
             object.__setattr__(self, "capabilities", ProviderCapabilities(streaming=False))
 
-    import agent.llm.model_profile_binding as binding
+    import llm_agent.agent.llm.model_profile_binding as binding
 
     gc.collect()
     initial_bindings = len(binding._GATEWAY_PROFILE_BINDINGS)

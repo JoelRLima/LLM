@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from agent.planning.intent_admission import AuthorityEnvelope
-from agent.planning.target_grounding import (
+from llm_agent.agent.planning.intent_admission import AuthorityEnvelope
+from llm_agent.agent.planning.target_grounding import (
     GroundingError,
     ground_intent_claim,
     revalidate_grounded_targets,
 )
-from agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
 from tests.unit.interaction.test_wave14_intent_admission import _claim, _memory_claim
 
 

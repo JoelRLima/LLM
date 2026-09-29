@@ -3,19 +3,19 @@ from pathlib import Path
 
 import pytest
 
-from agent.health.online_model import (
+from llm_agent.agent.health.online_model import (
     HEALTH_PROMPT,
     run_online_model_health_probe,
 )
-from agent.health.standalone import run_standalone_health_check
-from agent.health_check import run_health_check
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli.parser import build_parser
-from agent.llm.contracts import ModelResponse, StructuredOutputMode
-from agent.llm.errors import ModelTimeoutError, UnsupportedModelCapability
-from agent.llm.model_profile import resolve_model_profile
-from agent.runtime.config_repository import ConfigRepository, packaged_config_defaults
-from agent.runtime.paths import AppPaths
+from llm_agent.agent.health.standalone import run_standalone_health_check
+from llm_agent.agent.health_check import run_health_check
+from llm_agent.agent.llm.contracts import ModelResponse, StructuredOutputMode
+from llm_agent.agent.llm.errors import ModelTimeoutError, UnsupportedModelCapability
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.runtime.config_repository import ConfigRepository, packaged_config_defaults
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.workspace.paths import AppPaths
 
 
 class _StubGateway:
@@ -53,7 +53,7 @@ def test_plain_doctor_stays_offline_and_keeps_legacy_readiness(
 ) -> None:
     paths, workspace, _ = _initialized_context(tmp_path)
     monkeypatch.setattr(
-        "agent.health.online_model.create_model_gateway",
+        "llm_agent.agent.health.online_model.create_model_gateway",
         lambda profile: (_ for _ in ()).throw(AssertionError("plain doctor must stay offline")),
     )
 
@@ -187,7 +187,7 @@ def test_online_doctor_exit_and_json_preserve_offline_truth(tmp_path: Path, monk
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     monkeypatch.setattr(
-        "agent.health_check.run_health_check",
+        "llm_agent.application.agent_boundary.run_health_check",
         lambda **kwargs: {
             "readiness": {
                 "offline_ready": True,
@@ -217,7 +217,7 @@ def test_online_doctor_persists_bounded_sanitized_report(tmp_path: Path, monkeyp
     paths, workspace, _ = _initialized_context(tmp_path)
     gateway = _StubGateway('{"sentinel":"W13_HEALTH_OK"}')
     monkeypatch.setattr(
-        "agent.health.online_model.create_model_gateway",
+        "llm_agent.agent.health.online_model.create_model_gateway",
         lambda profile: gateway,
     )
 

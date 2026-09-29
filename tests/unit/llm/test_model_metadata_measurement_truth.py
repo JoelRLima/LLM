@@ -7,25 +7,25 @@ from typing import Any
 
 import pytest
 
-from agent.llm.contracts import (
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
     StreamEvent,
     StreamEventType,
 )
-from agent.llm.decision_contract import ModelRequestContract, legacy_model_decision_compatibility
-from agent.llm.grammars import (
+from llm_agent.agent.llm.decision_contract import ModelRequestContract, legacy_model_decision_compatibility
+from llm_agent.agent.llm.grammars import (
     EFFECT_OBSERVATION_CONTINUATION_GRAMMAR,
     get_grammar,
 )
-from agent.llm.session import ChatSession
-from agent.llm.structured_output import (
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.structured_output import (
     is_model_decision_contract_valid,
     normalize_model_decision,
     resolve_model_decision,
 )
-from agent.planning.result_bindings import validate_path, validate_result_bindings
+from llm_agent.agent.planning.result_bindings import validate_path, validate_result_bindings
 
 
 class _CountingGateway:

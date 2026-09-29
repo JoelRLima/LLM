@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agent.interaction.transcript import (
+from llm_agent.agent.interaction.transcript import (
     MAX_PRIOR_CONTENT,
     MAX_PRIOR_MESSAGE_LENGTH,
     MAX_PRIOR_PAIRS,
@@ -13,7 +13,7 @@ from agent.interaction.transcript import (
     snapshot_visible_messages,
     validate_transcript_messages,
 )
-from agent.llm.session import ChatSession
+from llm_agent.agent.llm.session import ChatSession
 
 from ._helpers import FakeGateway
 

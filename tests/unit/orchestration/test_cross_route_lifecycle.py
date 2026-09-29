@@ -2,14 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.task_completion import (
+from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     complete_direct_answer,
     mark_terminal_blocked,
     mark_terminal_cancelled,
 )
-from agent.reporting.operational_outcome import project_operational_outcome
-from agent.state import AgentState
+from llm_agent.agent.reporting.operational_outcome import project_operational_outcome
+from llm_agent.agent.state import AgentState
 
 
 def _orchestrator(state: AgentState | None = None) -> SimpleNamespace:

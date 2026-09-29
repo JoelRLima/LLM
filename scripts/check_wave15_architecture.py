@@ -16,6 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_ARCHITECTURE_RULES = tuple(f"W15-C{index:02d}" for index in range(1, 31))
 REQUIRED_MUTATION_ARMS = tuple(f"W15-M{index:02d}" for index in range(1, 25))
@@ -102,7 +107,7 @@ class MutationArm:
 
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return None
 
@@ -140,7 +145,7 @@ def _qualified_name(node: ast.AST) -> str:
 
 
 def _relative(root: Path, path: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _violation(rule: str, relative: str, detail: str, node: ast.AST | None = None) -> ArchitectureViolation:
@@ -779,8 +784,9 @@ _CHECKS: tuple[Callable[[Path], list[ArchitectureViolation]], ...] = (
 
 def _production_paths(root: Path) -> list[Path]:
     try:
+        production = w21_source_layout(root).agent_source_directory
         return sorted(
-            (path for path in (root / "agent").rglob("*.py") if path.is_file()),
+            (path for path in production.rglob("*.py") if path.is_file()) if production is not None else (),
             key=lambda path: _relative(root, path),
         )
     except OSError:
@@ -859,7 +865,7 @@ def _copy_for_mutation(root: Path, destination: Path) -> None:
     # expensive.  Copy every owner that the C-gates inspect, preserving its
     # real relative path, into an otherwise isolated temporary repository.
     for relative in (*_W15_PRODUCTION_FILES, _DEFAULT_CONFIG):
-        source = root / relative
+        source = w21_source_layout(root).path_for_w21_relative(relative)
         if not source.is_file():
             continue
         target = destination / relative

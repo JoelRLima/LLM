@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from agent.planning.errors import ToolNotFoundError
-from agent.runtime.failures import (
+from llm_agent.agent.planning.errors import ToolNotFoundError
+from llm_agent.agent.runtime.failures import (
     UNKNOWN_FAILURE_CODE,
     FailureFact,
 )
-from agent.runtime.outcome_taxonomy import error_definition
-from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from llm_agent.agent.runtime.outcome_taxonomy import error_definition
+from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 
 def test_registered_code_uses_the_existing_registry() -> None:

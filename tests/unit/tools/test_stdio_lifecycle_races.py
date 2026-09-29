@@ -8,8 +8,11 @@ from typing import Any
 
 import pytest
 
-from agent.tools import stdio_process as stdio
-from agent.tools.contracts import ToolStatus
+import llm_agent.execution.cleanup as cleanup
+import llm_agent.process.streams as streams
+from llm_agent.agent.tools import stdio_process as stdio
+from llm_agent.agent.tools.contracts import ToolStatus
+from llm_agent.execution import CommandExecutionError, CommandResult
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +61,7 @@ def test_immediate_exit_drains_stream_boundaries(stream: str, size: int) -> None
 def test_join_allows_all_pending_chunks_before_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     release = threading.Event()
     stop = threading.Event()
-    capture = stdio._StreamCapture(1024)
+    capture = streams.StreamCapture(1024)
 
     class Stream:
         chunks = iter([b"x" * 1024, b"y", b""])
@@ -67,7 +70,7 @@ def test_join_allows_all_pending_chunks_before_stop(monkeypatch: pytest.MonkeyPa
             assert release.wait(1)
             return next(self.chunks)
 
-    reader = threading.Thread(target=stdio._drain_stream, args=(Stream(), capture, stop), name="stdio-test-drain")
+    reader = threading.Thread(target=streams.drain_stream, args=(Stream(), capture, stop), name="stdio-test-drain")
     original_join = reader.join
 
     def join(timeout: float | None = None) -> None:
@@ -75,13 +78,13 @@ def test_join_allows_all_pending_chunks_before_stop(monkeypatch: pytest.MonkeyPa
         original_join(timeout)
 
     monkeypatch.setattr(reader, "join", join)
-    context = stdio._ProcessContext(
-        process=Any, windows_job=None, readers=[reader], stdout=capture,
-        stderr=stdio._StreamCapture(1024), stop_readers=stop,
+    context = cleanup.CommandContext(
+        process=Any, windows_job=None, process_group=None, readers=[reader], stdout=capture,
+        stderr=streams.StreamCapture(1024), stop_readers=stop, reader_errors=[],
     )
     reader.start()
     try:
-        assert stdio._join_readers(context) is None
+        assert cleanup._join_readers(context) is None
         assert capture.received == 1025
         assert capture.exceeded
         assert not stop.is_set()
@@ -90,73 +93,91 @@ def test_join_allows_all_pending_chunks_before_stop(monkeypatch: pytest.MonkeyPa
         original_join(1)
 
 
-@pytest.mark.parametrize("code,during_monitor", [
-    ("OUTPUT_LIMIT", False), ("STDERR_OUTPUT_LIMIT", False),
-    ("OUTPUT_LIMIT", True), ("STDERR_OUTPUT_LIMIT", True),
-    ("TIMEOUT", True), ("CANCELLED", True),
-])
+@pytest.mark.parametrize(
+    "code,during_monitor",
+    [
+        ("OUTPUT_LIMIT", False),
+        ("STDERR_OUTPUT_LIMIT", False),
+        ("OUTPUT_LIMIT", True),
+        ("STDERR_OUTPUT_LIMIT", True),
+        ("TIMEOUT", True),
+        ("CANCELLED", True),
+    ],
+)
 @pytest.mark.parametrize("with_cleanup", [False, True])
 def test_failure_precedence_matrix(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     code: str, during_monitor: bool, with_cleanup: bool,
 ) -> None:
-    status = {"TIMEOUT": ToolStatus.TIMED_OUT, "CANCELLED": ToolStatus.CANCELLED}.get(code, ToolStatus.PROTOCOL_ERROR)
-    primary = stdio.ProcessFailure(status, code, "primary-" + "x" * 5000, "primary")
-    secondary = stdio.ProcessFailure(ToolStatus.UNAVAILABLE, "CLEANUP_ERROR", "cleanup diagnostic", "cleanup")
-    process = type("Process", (), {"wait": lambda self: 0})()
-    context = stdio._ProcessContext(
-        process=process, windows_job=None, readers=[],
-        stdout=stdio._StreamCapture(1024), stderr=stdio._StreamCapture(1024), status_path=Path("unused"),
+    result = CommandResult(
+        return_code=0,
+        stdout=b"",
+        stderr=b"",
+        duration_seconds=0.0,
+        cancelled=code == "CANCELLED",
+        timed_out=code == "TIMEOUT",
+        stdout_truncated=code == "OUTPUT_LIMIT",
+        stderr_truncated=code == "STDERR_OUTPUT_LIMIT",
     )
-    monkeypatch.setattr(stdio, "_start_process", lambda *a: context)
-    monkeypatch.setattr(stdio, "_send_request", lambda *a: None)
-    monkeypatch.setattr(stdio, "_monitor_process", lambda *a: primary if during_monitor else None)
-    monkeypatch.setattr(stdio, "_limit_failure", lambda *a: primary)
-    monkeypatch.setattr(stdio, "launcher_status_failure_for_path", lambda *a: None)
-    monkeypatch.setattr(stdio, "_cleanup", lambda *a, **kw: secondary if with_cleanup else None)
+
+    class FakeExecutor:
+        def execute(self, request: object) -> CommandResult:
+            del request
+            if with_cleanup:
+                raise CommandExecutionError(
+                    f"primary-{code}-{during_monitor}; cleanup diagnostic",
+                    code="CLEANUP_ERROR",
+                    detail=f"primary-{code}-{during_monitor}; cleanup diagnostic",
+                )
+            return result
+
+    monkeypatch.setattr(stdio, "CommandExecutor", FakeExecutor)
+    real_os = stdio.os
+    monkeypatch.setattr(stdio, "os", SimpleNamespace(name="posix", environ=real_os.environ))
+    monkeypatch.setattr(stdio, "prepare_launcher", lambda entrypoint: (entrypoint, None))
     result = stdio.run_stdio_process(
         entrypoint=(sys.executable,), cwd=None, timeout_seconds=1,
         payload={}, stdout_limit=1024, stderr_limit=1024,
     )
-    assert result.failure is (secondary if with_cleanup else primary)
+    assert result.failure is not None
     if with_cleanup:
-        assert "CLEANUP_ERROR" in caplog.text
-        assert code in caplog.text
-        assert "primary" in caplog.text
-        assert "x" * 2000 not in caplog.text
+        assert result.failure.code == "CLEANUP_ERROR"
+        assert code in result.failure.detail
+        assert "cleanup diagnostic" in result.failure.detail
     else:
-        assert not caplog.records
+        assert result.failure.code == code
+        assert result.failure.status in {
+            ToolStatus.PROTOCOL_ERROR,
+            ToolStatus.TIMED_OUT,
+            ToolStatus.CANCELLED,
+        }
+    assert len(result.failure.detail) < 1024
 
 
 def test_natural_completion_preserves_launcher_status_precedence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(stdio, "os", SimpleNamespace(name="nt"))
-    primary = stdio.ProcessFailure(
-        ToolStatus.PROTOCOL_ERROR,
-        "OUTPUT_LIMIT",
-        "stream limit",
-        "stream limit",
-    )
-    process = type("Process", (), {"wait": lambda self: 0})()
-    context = stdio._ProcessContext(
-        process=process,
-        windows_job=None,
-        readers=[],
-        stdout=stdio._StreamCapture(1024),
-        stderr=stdio._StreamCapture(1024),
-        status_path=Path("unused"),
-    )
-    monkeypatch.setattr(stdio, "_start_process", lambda *a: context)
-    monkeypatch.setattr(stdio, "_send_request", lambda *a: None)
-    monkeypatch.setattr(stdio, "_monitor_process", lambda *a: None)
-    monkeypatch.setattr(stdio, "_limit_failure", lambda *a: primary)
+    real_os = stdio.os
+    monkeypatch.setattr(stdio, "os", SimpleNamespace(name="nt", environ=real_os.environ))
+    monkeypatch.setattr(stdio, "prepare_launcher", lambda entrypoint: (entrypoint, Path("unused")))
     monkeypatch.setattr(
         stdio,
-        "launcher_status_failure_for_path",
+        "CommandExecutor",
+        lambda: type(
+            "FakeExecutor",
+            (),
+            {
+                "execute": lambda self, request: CommandResult(
+                    0, b"", b"", 0.0, stdout_truncated=True
+                )
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        stdio,
+        "launcher_status_error",
         lambda *a: ("EXTENSION_START_FAILED", "launcher diagnostic"),
     )
-    monkeypatch.setattr(stdio, "_cleanup", lambda *a, **kw: None)
 
     result = stdio.run_stdio_process(
         entrypoint=(sys.executable,),
@@ -191,19 +212,19 @@ def test_emergency_join_keeps_existing_total_budget(monkeypatch: pytest.MonkeyPa
             return self.alive
 
     reader = Reader()
-    context = stdio._ProcessContext(
-        process=Any, windows_job=None, readers=[reader], stdout=stdio._StreamCapture(1),
-        stderr=stdio._StreamCapture(1), stop_readers=stop,
+    context = cleanup.CommandContext(
+        process=Any, windows_job=None, process_group=None, readers=[reader], stdout=streams.StreamCapture(1),
+        stderr=streams.StreamCapture(1), stop_readers=stop, reader_errors=[],
     )
-    monkeypatch.setattr(stdio.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(stdio, "_close_pipes", lambda p: None)
-    assert stdio._join_readers(context) is None
+    monkeypatch.setattr(cleanup.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cleanup, "close_pipes", lambda p: ())
+    assert cleanup._join_readers(context) is None
     assert stop.is_set()
-    assert waits == [stdio.CLEANUP_TIMEOUT_SECONDS / 2] * 2
+    assert waits == [0.5, 0.5]
 
 
 def test_launcher_immediate_exit_with_large_unread_request(tmp_path: Path) -> None:
-    from agent.tools import stdio_launcher
+    from llm_agent.extensions import stdio_launcher
 
     status_path = tmp_path / "early.status"
     assert stdio_launcher._run({
@@ -214,7 +235,7 @@ def test_launcher_immediate_exit_with_large_unread_request(tmp_path: Path) -> No
 
 
 def test_launcher_reports_real_startup_error(tmp_path: Path) -> None:
-    from agent.tools import stdio_launcher
+    from llm_agent.extensions import stdio_launcher
 
     status_path = tmp_path / "failed.status"
     assert stdio_launcher._run({

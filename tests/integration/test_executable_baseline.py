@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.evaluation import CapabilityEvaluator, load_scenario
+from llm_agent.agent.evaluation import CapabilityEvaluator, load_scenario
 from tests.support.offline_scenarios import OfflineScenarioExecutor
 
 CAPABILITY_SCENARIOS = Path(__file__).parents[1] / "fixtures" / "capabilities"

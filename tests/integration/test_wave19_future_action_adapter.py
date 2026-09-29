@@ -1,4 +1,4 @@
-from agent.actions.defaults import DEFAULT_ACTION_CATALOG
+from llm_agent.actions.defaults import DEFAULT_ACTION_CATALOG
 
 
 def test_future_adapter_can_enumerate_actions_without_cli_import():

@@ -1,4 +1,4 @@
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
 
 def test_memory_show_preferred_path_is_canonical():

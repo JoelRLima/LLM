@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application_services import query_git
-from agent.application_services.queries import (
+from llm_agent.application.services import query_git
+from llm_agent.application.services.queries import (
     QUERY_CANCELLED,
     QUERY_GIT_FAILED,
     QUERY_GIT_UNAVAILABLE,
@@ -13,7 +13,7 @@ from agent.application_services.queries import (
     WorkspaceQueryRequest,
     WorkspaceQueryStatus,
 )
-from agent.application_services.query_git import GitObservation
+from llm_agent.application.services.query_git import GitObservation
 
 
 class _NeverCancelled:
@@ -30,7 +30,7 @@ def test_git_status_and_diff_use_bounded_read_only_adapter(tmp_path: Path, monke
             return GitObservation(True, 0, "## main\n", "")
         return GitObservation(True, 0, "1\t2\ta.py\n-\t-\tb.bin\n", "")
 
-    monkeypatch.setattr("agent.application_services.queries.run_git", fake_run_git)
+    monkeypatch.setattr("llm_agent.application.services.queries.run_git", fake_run_git)
     service = ReadOnlyWorkspaceQueryService(tmp_path)
     cancel = _NeverCancelled()
     status = service.git_status(WorkspaceQueryRequest(WorkspaceQueryKind.GIT_STATUS, {}), cancel)
@@ -59,21 +59,21 @@ def test_git_observation_maps_unavailable_timeout_and_nonzero_exit(tmp_path: Pat
 
     monkeypatch.setattr(query_git.shutil, "which", lambda _name: "git")
     monkeypatch.setattr(
-        "agent.application_services.queries.run_git",
+        "llm_agent.application.services.queries.run_git",
         lambda *_args, **_kwargs: GitObservation(True, 1, "", "not a repository"),
     )
     failed = service.git_status(request, cancel)
     assert failed.reason_code == QUERY_GIT_FAILED
 
     monkeypatch.setattr(
-        "agent.application_services.queries.run_git",
+        "llm_agent.application.services.queries.run_git",
         lambda *_args, **_kwargs: GitObservation(True, None, "", "timeout", timed_out=True),
     )
     timed_out = service.git_status(request, cancel)
     assert timed_out.reason_code == QUERY_TIMEOUT
 
     monkeypatch.setattr(
-        "agent.application_services.queries.run_git",
+        "llm_agent.application.services.queries.run_git",
         lambda *_args, **_kwargs: GitObservation(True, None, "", "", cancelled=True),
     )
     cancelled = service.git_status(request, cancel)

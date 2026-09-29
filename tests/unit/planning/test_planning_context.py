@@ -2,16 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.planning_context import (
+from llm_agent.agent.planning.planning_context import (
     PlanningContextError,
     PlanningContextSnapshot,
     PlanningTool,
     build_planning_context,
 )
-from agent.planning.replan import _planning_view
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
-from agent.tools.contracts import ToolDescriptor, ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.planning.replan import _planning_view
+from llm_agent.agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
 class _Registry:

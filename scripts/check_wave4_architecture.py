@@ -14,6 +14,7 @@ try:
         parent_map,
         raw_event_aliases,
     )
+    from scripts.w21_architecture.source import w21_source_layout
 except ModuleNotFoundError:  # Direct script execution.
     from observability_architecture_ast import (  # type: ignore[no-redef]
         SymbolResolver,
@@ -22,9 +23,11 @@ except ModuleNotFoundError:  # Direct script execution.
         parent_map,
         raw_event_aliases,
     )
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_ROOT = ROOT / "agent"
+SOURCE_LAYOUT = w21_source_layout(ROOT)
+AGENT_ROOT = SOURCE_LAYOUT.agent_source_directory
 CORRELATION_OWNER = "agent/runtime/correlation.py"
 SNAPSHOT_OWNER = "agent/reporting/run_snapshot.py"
 EVENT_ADAPTER_FILES = frozenset(
@@ -75,11 +78,12 @@ METRIC_CALLS = frozenset(
     }
 )
 def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _files() -> Iterable[Path]:
-    yield from sorted(AGENT_ROOT.rglob("*.py"))
+    if AGENT_ROOT is not None:
+        yield from sorted(AGENT_ROOT.rglob("*.py"))
 
 
 def _literal_string(node: ast.AST | None) -> str | None:

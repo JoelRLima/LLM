@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
-from agent.runtime.storage_contracts import StorageMigrationError
-from agent.runtime.storage_migration import build_migration_plan, migrate_plan
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.storage_contracts import StorageMigrationError
+from llm_agent.agent.runtime.storage_migration import build_migration_plan, migrate_plan
+from llm_agent.workspace.paths import AppPaths
 
 
 def _legacy_home(tmp_path: Path) -> AppPaths:
@@ -47,7 +47,7 @@ def test_conflicting_target_fails_before_new_promotion(tmp_path: Path) -> None:
 def test_injected_promotion_failure_rolls_back_created_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = _legacy_home(tmp_path)
     (paths.home_dir / "state" / "last_workspace.json").write_text("{}", encoding="utf-8")
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     original = migration_module._copy_entry
     calls = 0
@@ -141,7 +141,7 @@ def _assert_single_metadata_writer_authority(tree: ast.AST) -> None:
 def test_failure_after_replace_removes_only_owned_promotion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     entry = _entry_for_health(paths)
@@ -183,7 +183,7 @@ def test_failure_after_replace_removes_only_owned_promotion(
 def test_replacement_after_promotion_failure_is_preserved_and_unproven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     entry = _entry_for_health(paths)
@@ -209,7 +209,7 @@ def test_replacement_after_promotion_failure_is_preserved_and_unproven(
 def test_same_byte_source_replacement_is_detected_and_rolled_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -239,8 +239,8 @@ def test_same_byte_source_replacement_is_detected_and_rolled_back(
 def test_identical_target_is_revalidated_before_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
-    import agent.runtime.storage_migration_revalidation as revalidation_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration_revalidation as revalidation_module
 
     paths = _legacy_home(tmp_path)
     identical = paths.health_report_file
@@ -277,7 +277,7 @@ def test_identical_target_is_revalidated_before_commit(
 
 
 def test_migration_has_no_parallel_atomic_metadata_writer() -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     source = Path(migration_module.__file__).read_text(encoding="utf-8")
     _assert_single_metadata_writer_authority(ast.parse(source))
@@ -322,7 +322,7 @@ def test_migration_has_no_parallel_atomic_metadata_writer() -> None:
     ],
 )
 def test_single_metadata_writer_gate_rejects_parallel_helpers(mutation: str) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     source = Path(migration_module.__file__).read_text(encoding="utf-8")
     with pytest.raises(AssertionError):
@@ -330,7 +330,7 @@ def test_single_metadata_writer_gate_rejects_parallel_helpers(mutation: str) -> 
 
 
 def test_single_metadata_writer_gate_rejects_direct_call_in_migrate_plan() -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     tree = ast.parse(Path(migration_module.__file__).read_text(encoding="utf-8"))
     migrate = next(
@@ -354,7 +354,7 @@ def test_single_metadata_writer_gate_rejects_direct_call_in_migrate_plan() -> No
 def test_receipt_rollback_removes_new_or_restores_previous_bytes(
     tmp_path: Path, previous: bytes | None
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     receipt = tmp_path / "receipt.json"
     marker = tmp_path / "marker.json"
@@ -373,7 +373,7 @@ def test_receipt_rollback_removes_new_or_restores_previous_bytes(
 def test_metadata_replacement_is_preserved_and_rollback_is_unproven(
     tmp_path: Path, kind: str
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     receipt = tmp_path / "receipt.json"
     marker = tmp_path / "marker.json"
@@ -399,7 +399,7 @@ def test_metadata_replacement_is_preserved_and_rollback_is_unproven(
 def test_replace_then_interrupt_removes_owned_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     entry = _entry_for_health(paths)
@@ -418,7 +418,7 @@ def test_replace_then_interrupt_removes_owned_target(
 def test_replace_then_foreign_replacement_is_preserved_and_unproven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     entry = _entry_for_health(paths)
@@ -448,7 +448,7 @@ def test_metadata_replace_then_interrupt_rolls_back_exact_attempt(
     kind: str,
     previous: bytes | None,
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -481,7 +481,7 @@ def test_metadata_replace_then_interrupt_rolls_back_exact_attempt(
 def test_target_retry_after_interrupt_has_no_orphans(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     entry = _entry_for_health(paths)
@@ -503,7 +503,7 @@ def test_target_retry_after_interrupt_has_no_orphans(
 def test_metadata_replace_then_foreign_replacement_is_preserved_and_unproven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     path = tmp_path / "metadata.json"
     path.write_bytes(b"attempt\n")
@@ -520,7 +520,7 @@ def test_metadata_replace_then_foreign_replacement_is_preserved_and_unproven(
 def test_promotion_ledger_is_recorded_before_wrapper_can_interrupt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     original = migration_module._copy_entry
@@ -538,7 +538,7 @@ def test_promotion_ledger_is_recorded_before_wrapper_can_interrupt(
 def test_interrupt_immediately_after_record_created_has_single_cleanup_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     original = migration_module._promote_entry
@@ -561,7 +561,7 @@ def test_interrupt_immediately_after_record_created_has_single_cleanup_owner(
 def test_foreign_target_after_record_created_is_preserved_and_unproven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     original = migration_module._promote_entry
@@ -588,7 +588,7 @@ def test_foreign_target_after_record_created_is_preserved_and_unproven(
 def test_interrupt_immediately_after_record_receipt_rolls_back_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_previous: bool
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -626,7 +626,7 @@ def test_interrupt_immediately_after_record_receipt_rolls_back_once(
 def test_interrupt_immediately_after_record_marker_rolls_back_transaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     real_write = migration_module.write_layout_marker
@@ -652,7 +652,7 @@ def test_interrupt_immediately_after_record_marker_rolls_back_transaction(
 def test_foreign_metadata_after_evidence_transfer_is_preserved_and_unproven(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     attribute = "write_migration_receipt" if kind == "receipt" else "write_layout_marker"
@@ -678,7 +678,7 @@ def test_foreign_metadata_after_evidence_transfer_is_preserved_and_unproven(
 
 
 def test_valid_receipt_from_different_profile_conflicts_before_promotion(tmp_path: Path) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -700,7 +700,7 @@ def test_valid_receipt_from_different_profile_conflicts_before_promotion(tmp_pat
 
 
 def test_valid_receipt_from_same_profile_remains_retry_safe(tmp_path: Path) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -719,7 +719,7 @@ def test_valid_receipt_from_same_profile_remains_retry_safe(tmp_path: Path) -> N
 def test_canonical_receipt_validation_failure_rolls_back_filesystem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
     plan = build_migration_plan(paths)
@@ -755,7 +755,7 @@ def test_canonical_receipt_validation_failure_rolls_back_filesystem(
 def test_canonical_marker_validation_failure_rolls_back_filesystem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent.runtime.storage_migration as migration_module
+    import llm_agent.agent.runtime.storage_migration as migration_module
 
     paths = _legacy_home(tmp_path)
 

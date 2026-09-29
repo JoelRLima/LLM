@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -14,7 +15,22 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.compatibility_ledger import LEDGER, validate_ledger  # noqa: E402
-from scripts.w21_architecture import RepositorySource  # noqa: E402
+from scripts.w21_architecture import SourceLayout  # noqa: E402
+
+SOURCE_LAYOUT_PROFILE = "final-w22"
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, SOURCE_LAYOUT_PROFILE)
+if str(SOURCE_LAYOUT.python_source_root) not in sys.path:
+    sys.path.insert(0, str(SOURCE_LAYOUT.python_source_root))
+
+_W22_LOGICAL_PREFIXES = (
+    ("agent/actions", "actions"),
+    ("agent/application_services", "application/services"),
+    ("agent/interfaces", "interfaces"),
+    ("agent/outputs", "outputs"),
+)
+_W22_EXACT_PATHS = {
+    "agent/engineering/cli.py": "interfaces/cli/engineering.py",
+}
 
 _LEGACY_NAMES = {
     "RUNTIME_DIR",
@@ -49,11 +65,11 @@ _STORAGE_FILES = {
 }
 _CANONICAL_TOP_LEVEL = {"config", "global", "workspaces", "cache", "logs"}
 _APPLICATION_SERVICE_ROOT = "agent/application_services"
-_QUERY_CANONICAL_MODULE = "agent.application_services.queries"
+_QUERY_CANONICAL_MODULE = "llm_agent.application.services.queries"
 _QUERY_CANONICAL_HELPERS = {
-    "agent.application_services.queries",
-    "agent.application_services.query_find",
-    "agent.application_services.query_git",
+    "llm_agent.application.services.queries",
+    "llm_agent.application.services.query_find",
+    "llm_agent.application.services.query_git",
 }
 _RETIRED_MODULES = {
     "agent.llm.router",
@@ -103,13 +119,26 @@ class ArchitectureViolation:
         return f"{self.rule_id} {self.path}: {self.detail}"
 
 
+def _layout_for_root(root: Path) -> SourceLayout:
+    """Use the final W22 projection for copied product trees as well as ROOT."""
+
+    resolved = root.resolve()
+    if resolved == ROOT.resolve() or (resolved / "src" / "llm_agent").is_dir():
+        return SourceLayout.for_profile(resolved, SOURCE_LAYOUT_PROFILE)
+    return SourceLayout.for_profile(resolved, "legacy-agent")
+
+
 def _relative(path: Path, root: Path = ROOT) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return _layout_for_root(root).w21_relative_path(path)
+
+
+def _repository_path(root: Path, relative: str) -> Path:
+    return _layout_for_root(root).path_for_w21_relative(relative)
 
 
 def _read(root: Path, relative: str) -> str:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return _repository_path(root, relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return ""
 
@@ -125,9 +154,20 @@ def _tree(root: Path, relative: str) -> ast.Module | None:
 
 
 def _python_files(root: Path) -> Iterable[Path]:
-    for base in (root / "agent", root / "scripts"):
-        if base.exists():
-            yield from sorted(base.rglob("*.py"))
+    layout = _layout_for_root(root)
+    roots = []
+    if layout.agent_source_directory is not None:
+        roots.append(layout.agent_source_directory)
+    if layout.profile == "final-w22":
+        roots.extend(layout.path_for_w21_relative(logical) for logical, _ in _W22_LOGICAL_PREFIXES)
+    scripts = root / "scripts"
+    if scripts.exists():
+        roots.append(scripts)
+    paths: set[Path] = set()
+    for base in roots:
+        if base.is_dir():
+            paths.update(path for path in base.rglob("*.py") if path.is_file())
+    yield from sorted(paths, key=lambda path: _relative(path, root))
 
 
 def _all_python_files(root: Path) -> Iterable[Path]:
@@ -191,13 +231,11 @@ def _check_no_workspace_reconstruction(root: Path) -> list[ArchitectureViolation
 
 def _check_legacy_imports(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    source = RepositorySource(root)
-    paths = (*source.python_files("agent"), *source.python_files("scripts"))
-    for path in paths:
-        relative = source.relative(path)
+    for path in _python_files(root):
+        relative = _relative(path, root)
         if relative in _LEGACY_IMPORT_ALLOWLIST or relative == "agent/runtime/paths.py":
             continue
-        tree = source.tree_for_path(path)
+        tree = _tree(root, relative)
         if tree is None:
             continue
         for node in ast.walk(tree):
@@ -250,7 +288,7 @@ def _check_storage_neutrality(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_runtime_paths(root: Path) -> list[ArchitectureViolation]:
-    from agent.runtime.paths import AppPaths
+    from llm_agent.workspace.paths import AppPaths
 
     findings: list[ArchitectureViolation] = []
     paths = AppPaths.discover(app_home=root / ".tmp" / "w19-architecture-home", env={})
@@ -273,8 +311,7 @@ def _check_runtime_paths(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_default_home_shape(root: Path) -> list[ArchitectureViolation]:
-    from agent.runtime import paths as paths_module
-    from agent.runtime.paths import AppHomeOrigin, AppPaths
+    from llm_agent.workspace.paths import AppHomeOrigin, AppPaths
 
     findings: list[ArchitectureViolation] = []
     environment = {
@@ -283,7 +320,7 @@ def _check_default_home_shape(root: Path) -> list[ArchitectureViolation]:
         "XDG_DATA_HOME": str(root / ".tmp" / "w19-xdg-data"),
     }
     platform_default = AppPaths.discover(env=environment)
-    if paths_module.os.name == "nt":
+    if os.name == "nt":
         expected_parent = Path(environment["LOCALAPPDATA"]) / "local-llm-agent"
         if platform_default.home_origin is not AppHomeOrigin.WINDOWS_DEFAULT or platform_default.home_dir != expected_parent / "home":
             findings.append(_violation("W19-S05-008", "agent/runtime/paths.py", "Windows default home is not the dedicated namespace/home child"))
@@ -333,11 +370,17 @@ def _imports(tree: ast.AST) -> Iterable[tuple[str, str]]:
 _APPLICATION_TERMINAL_PREFIXES = ("rich", "prompt_toolkit", "textual", "curses")
 _APPLICATION_AUTHORITY_PREFIXES = (
     "agent.llm",
+    "llm_agent.agent.llm",
     "agent.planning",
+    "llm_agent.agent.planning",
     "agent.orchestration",
+    "llm_agent.agent.orchestration",
     "agent.tools.invocation_gateway",
+    "llm_agent.agent.tools.invocation_gateway",
     "agent.tools.tool_registry",
+    "llm_agent.agent.tools.tool_registry",
     "agent.outputs",
+    "llm_agent.outputs",
 )
 
 
@@ -365,7 +408,7 @@ def _check_application_service_file(
 
 
 def _check_application_service_boundaries(root: Path) -> list[ArchitectureViolation]:
-    service_root = root / _APPLICATION_SERVICE_ROOT
+    service_root = _repository_path(root, _APPLICATION_SERVICE_ROOT)
     if not service_root.exists():
         return []
     findings: list[ArchitectureViolation] = []
@@ -492,7 +535,7 @@ def _check_output_owner_file(root: Path, path: Path) -> list[ArchitectureViolati
 
 
 def _check_output_owners(root: Path) -> list[ArchitectureViolation]:
-    output_root = root / _OUTPUT_ROOT
+    output_root = _repository_path(root, _OUTPUT_ROOT)
     if not output_root.exists():
         return []
     findings: list[ArchitectureViolation] = []
@@ -615,7 +658,7 @@ def _check_cleanup_retired_modules(root: Path) -> list[ArchitectureViolation]:
         "agent/interfaces/cli/query_find.py",
         "agent/interfaces/cli/query_git.py",
     ):
-        if (root / relative).exists():
+        if _repository_path(root, relative).exists():
             findings.append(_violation("W19-S07-001", relative, "retired W19 module is present"))
 
     for path in _all_python_files(root):
@@ -995,7 +1038,11 @@ def _check_integration_files(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_semantic_storage_properties(root: Path) -> list[ArchitectureViolation]:
-    paths_source = _read(root, "agent/runtime/paths.py")
+    layout = _layout_for_root(root)
+    if layout.profile == "final-w22":
+        paths_source = (layout.package_directory / "workspace" / "paths.py").read_text(encoding="utf-8")
+    else:
+        paths_source = _read(root, "agent/runtime/paths.py")
     findings: list[ArchitectureViolation] = []
     for property_name in ("feedback_file", "feedback_lock_file", "output_artifacts_dir"):
         if f"def {property_name}" not in paths_source:
@@ -1012,7 +1059,7 @@ def _check_output_action_unity(root: Path) -> list[ArchitectureViolation]:
 
 def _check_integration_boundaries(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    if not (root / "agent/interfaces/cli/output_projection.py").exists():
+    if not _repository_path(root, "agent/interfaces/cli/output_projection.py").exists():
         findings.append(_violation("W19-S08-002", "agent/interfaces/cli/output_projection.py", "canonical output adapter is missing"))
     findings.extend(_check_integration_files(root))
     findings.extend(_check_semantic_storage_properties(root))
@@ -1033,7 +1080,7 @@ _VARIANT_REQUIRED_FILES = (
 def _check_variant_required_files(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative in _VARIANT_REQUIRED_FILES:
-        if not (root / relative).is_file():
+        if not _repository_path(root, relative).is_file():
             findings.append(_violation("W19-S01-001", relative, "canonical variant owner is missing"))
     return findings
 
@@ -1052,7 +1099,7 @@ def _check_variant_model_contract(root: Path) -> list[ArchitectureViolation]:
 
 def _check_variant_reference_owner(root: Path) -> list[ArchitectureViolation]:
     reference = _read(root, "agent/routing/persona/variants/reference_w18.py")
-    if "CurrentPersonaRouter" in reference or "from agent.routing.persona.current" in reference:
+    if "CurrentPersonaRouter" in reference or "from llm_agent.agent.routing.persona.current" in reference:
         return [_violation("W19-S01-004", "agent/routing/persona/variants/reference_w18.py", "W18 reference depends on mutable current router")]
     return []
 
@@ -1108,7 +1155,7 @@ _EVALUATION_REQUIRED_FILES = (
 def _check_evaluation_required_files(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative in _EVALUATION_REQUIRED_FILES:
-        if not (root / relative).is_file():
+        if not _repository_path(root, relative).is_file():
             findings.append(_violation("W19-S02-001", relative, "canonical evaluation owner is missing"))
     return findings
 
@@ -1191,7 +1238,7 @@ _INTERACTION_REQUIRED_FILES = (
 def _check_interaction_required_files(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative in _INTERACTION_REQUIRED_FILES:
-        if not (root / relative).is_file():
+        if not _repository_path(root, relative).is_file():
             findings.append(_violation("W19-S03-001", relative, "canonical interaction owner is missing"))
     return findings
 

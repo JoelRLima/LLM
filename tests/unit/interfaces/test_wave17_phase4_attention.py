@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
-from agent.code.change_models import ChangePreview
-from agent.code.policy import ProposalAssessment
-from agent.interfaces.cli import interactive_commands
-from agent.interfaces.cli.attention import ApprovalBroker
+from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
+from llm_agent.agent.code.change_models import ChangePreview
+from llm_agent.agent.code.policy import ProposalAssessment
+from llm_agent.interfaces.cli import interactive_commands
+from llm_agent.interfaces.cli.attention import ApprovalBroker
 
 
 def _request(name: str = "write") -> ApprovalRequest:
@@ -148,7 +148,7 @@ def test_attention_details_exposes_the_exact_bounded_proposed_diff_without_new_r
 
 
 def test_attention_details_marks_diff_truncation_and_binds_original_digest() -> None:
-    from agent.interfaces.cli.attention import MAX_REVIEW_DIFF_CHARS
+    from llm_agent.interfaces.cli.attention import MAX_REVIEW_DIFF_CHARS
 
     broker = ApprovalBroker()
     broker.bind_generation(10)

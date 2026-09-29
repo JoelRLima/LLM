@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from agent.execution_state import StepStatus
-from agent.runtime.budget import TaskBudgetLedger
-from agent.state import AgentState
+from llm_agent.agent.execution_state import StepStatus
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.state import AgentState
 
 
 class _Memory:
@@ -13,7 +13,7 @@ class _Memory:
 
 
 def _state(monkeypatch):
-    monkeypatch.setattr("agent.state.AgentMemory", _Memory)
+    monkeypatch.setattr("llm_agent.agent.state.AgentMemory", _Memory)
     return AgentState()
 
 

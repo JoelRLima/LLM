@@ -21,11 +21,11 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from agent.llm.contracts import ModelRequest, ModelResponse  # noqa: E402
-from agent.llm.session import ChatSession  # noqa: E402
-from agent.orchestrator import Orchestrator  # noqa: E402
-from agent.routing.persona.current import CurrentPersonaRouter  # noqa: E402
-from agent.runtime.paths import AppPaths  # noqa: E402
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse  # noqa: E402
+from llm_agent.agent.llm.session import ChatSession  # noqa: E402
+from llm_agent.agent.orchestrator import Orchestrator  # noqa: E402
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter  # noqa: E402
+from llm_agent.workspace.paths import AppPaths  # noqa: E402
 from tests.support.task_definition import task_definition_response  # noqa: E402
 
 # Versão atual do schema dos fixtures. Deve ser incrementada sempre que
@@ -184,7 +184,7 @@ def agent(monkeypatch, fake_model: ScriptedModelGateway, tmp_path: Path) -> Orch
 
     session = ChatSession(config["default_system_prompt"], config)
 
-    from agent.skills import load_all_skills
+    from llm_agent.agent.skills import load_all_skills
     skills = load_all_skills(model_gateway=session.gateway, config=config)
 
     app_paths = AppPaths(
@@ -228,7 +228,7 @@ def assert_agent_invariants(result: str, agent_state: Any) -> None:
     Chamada por todo teste de regressão.
     """
     # O plano vivo deve ser o valor tipado canônico.
-    from agent.planning.plan_model import Plan
+    from llm_agent.agent.planning.plan_model import Plan
 
     assert isinstance(agent_state.plan, Plan), "Plano deve ser um valor tipado."
 

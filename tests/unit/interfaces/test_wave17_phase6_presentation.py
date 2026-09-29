@@ -8,17 +8,17 @@ from types import SimpleNamespace
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-from agent.interfaces.cli import command_handlers, interactive_rendering
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
-from agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
-from agent.interfaces.cli.interactive_shell import InteractiveShell
-from agent.interfaces.cli.interactive_worker import InteractiveWorkerResult, execute_submission
-from agent.interfaces.cli.ui_plane import RunViewModel
-from agent.interfaces.cli.worker_stream import BoundedWorkerStream
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.worker_output import emit_worker_output
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.runtime.worker_output import emit_worker_output
+from llm_agent.interfaces.cli import command_handlers, interactive_rendering
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
+from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
+from llm_agent.interfaces.cli.interactive_worker import InteractiveWorkerResult, execute_submission
+from llm_agent.interfaces.cli.ui_plane import RunViewModel
+from llm_agent.interfaces.cli.worker_stream import BoundedWorkerStream
 
 
 def test_debug_level_in_interactive_context_never_enables_worker_verbose_prints(monkeypatch) -> None:

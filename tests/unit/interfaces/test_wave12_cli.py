@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli import commands
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import commands
 
 
 @dataclass

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli.parser import build_parser
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _checkpoint(paths: AppPaths, workspace: Path, *, definition_state: str = "complete") -> Path:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox
 
 
 def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object) -> RuntimeEvent:

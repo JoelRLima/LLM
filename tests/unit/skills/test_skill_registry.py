@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.approval import RequireExplicitApproval
-from agent.skills import load_all_skills, load_skill_registry
-from agent.skills.descriptor import SkillCapability, SkillDescriptor, SkillSpec
-from agent.skills.policy import CapabilityPolicy, builtin_skills_for_persona
-from agent.skills.registry import SkillRegistry
+from llm_agent.agent.approval import RequireExplicitApproval
+from llm_agent.agent.skills import load_all_skills, load_skill_registry
+from llm_agent.agent.skills.descriptor import SkillCapability, SkillDescriptor, SkillSpec
+from llm_agent.agent.skills.policy import CapabilityPolicy, builtin_skills_for_persona
+from llm_agent.agent.skills.registry import SkillRegistry
 
 
 class EchoLike:

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.application import AgentApplication
+from llm_agent.agent.application import AgentApplication
 
 
 @pytest.mark.parametrize(

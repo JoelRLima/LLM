@@ -3,12 +3,12 @@ from typing import cast
 
 import pytest
 
-from agent.tools.extension_path import (
+from llm_agent.extensions.extension_path import (
     SUPPORTED_PATH_FLAVORS,
     PathFlavor,
     PersistedManifestPath,
 )
-from agent.tools.extension_state import ExtensionCatalog, ExtensionCatalogEntry
+from llm_agent.extensions.extension_state import ExtensionCatalog, ExtensionCatalogEntry
 
 
 @pytest.mark.parametrize("flavor", ["windows", "posix"])

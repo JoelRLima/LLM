@@ -68,12 +68,12 @@ def test_installed_shim_acquires_before_normal_application_import() -> None:
     source = (ROOT / "scripts" / "build_windows_payload.py").read_text(encoding="utf-8")
     shim = source.split("def _write_payload_shim", 1)[1].split("def _assert_required_payload_files", 1)[0]
     assert "spec_from_file_location" in shim
-    assert "runtime' / 'Lib' / 'site-packages' / 'agent' / 'runtime' / 'candidate_lease.py'" in shim
-    assert shim.index("exec_module(_lease_module)") < shim.index("from agent.interfaces.cli.app import main")
+    assert "runtime' / 'Lib' / 'site-packages' / 'llm_agent' / 'agent' / 'runtime' / 'candidate_lease.py'" in shim
+    assert shim.index("exec_module(_lease_module)") < shim.index("from llm_agent.interfaces.cli.app import main")
     assert shim.index("acquire_runtime_candidate_lease(_launcher)") < shim.index(
-        "from agent.interfaces.cli.app import main"
+        "from llm_agent.interfaces.cli.app import main"
     )
-    bootstrap = shim[: shim.index("from agent.interfaces.cli.app import main")]
+    bootstrap = shim[: shim.index("from llm_agent.interfaces.cli.app import main")]
     assert "from agent" not in bootstrap
     assert "import agent" not in bootstrap
 
@@ -81,7 +81,7 @@ def test_installed_shim_acquires_before_normal_application_import() -> None:
 def test_generated_launcher_establishes_reference_before_agent_package_import(tmp_path: Path) -> None:
     candidate = tmp_path / ("w18-" + "a" * 32)
     site_packages = candidate / "runtime" / "Lib" / "site-packages"
-    lease_source = site_packages / "agent" / "runtime" / "candidate_lease.py"
+    lease_source = site_packages / "llm_agent" / "agent" / "runtime" / "candidate_lease.py"
     lease_source.parent.mkdir(parents=True)
     lease_source.write_text(
         "from pathlib import Path\n"
@@ -90,7 +90,7 @@ def test_generated_launcher_establishes_reference_before_agent_package_import(tm
         "    return object()\n",
         encoding="utf-8",
     )
-    agent_root = site_packages / "agent"
+    agent_root = site_packages / "llm_agent"
     (agent_root / "interfaces" / "cli").mkdir(parents=True)
     (agent_root / "__init__.py").write_text(
         "from pathlib import Path\n"

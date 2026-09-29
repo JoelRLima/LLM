@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.execution_state import StepExecutionRecord, StepStatus
-from agent.final_response import compose_operational_answer
-from agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
-from agent.planning.plan_execution_loop import run_plan_loop
-from agent.planning.reasoning_boundary import (
+from llm_agent.agent.execution_state import StepExecutionRecord, StepStatus
+from llm_agent.agent.final_response import compose_operational_answer
+from llm_agent.agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.planning.plan_execution_loop import run_plan_loop
+from llm_agent.agent.planning.reasoning_boundary import (
     continue_after_reasoning_boundary as run_reasoning_boundary,
 )
-from agent.planning.task_completion import (
+from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     continue_after_observation,
     continue_after_reasoning_boundary,
@@ -18,10 +18,13 @@ from agent.planning.task_completion import (
     refresh_executed_effects,
     review_task_completion,
 )
-from agent.planning.task_semantics import TaskSemanticsError
-from agent.reporting.operational_outcome import project_operational_outcome
-from agent.reporting.run_receipt import build_run_receipt
-from agent.state import AgentState
+from llm_agent.agent.planning.task_semantics import TaskSemanticsError
+from llm_agent.agent.reporting.operational_outcome import project_operational_outcome
+from llm_agent.agent.reporting.run_receipt import build_run_receipt
+from llm_agent.agent.state import AgentState
+from scripts.w21_architecture.source import SourceLayout
+
+SOURCE_LAYOUT = SourceLayout.for_profile(Path(__file__).resolve().parents[3], "final-w22")
 
 
 @pytest.mark.parametrize(
@@ -852,7 +855,7 @@ def test_boundary_extension_with_no_persisted_steps_blocks_instead_of_succeeding
 
 
 def test_reasoning_policy_has_no_completion_import_cycle() -> None:
-    source = Path("agent/planning/reasoning_boundary.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/planning/reasoning_boundary.py").read_text(encoding="utf-8")
 
     assert "task_completion" not in source
 

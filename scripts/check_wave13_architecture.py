@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,11 +44,11 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _source(root: Path, relative: str) -> str | None:
-    path = root / relative
+    path = w21_source_layout(root).path_for_w21_relative(relative)
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
@@ -204,6 +209,17 @@ def _imported_names(tree: ast.AST | None, module: str) -> set[str]:
     return names
 
 
+def _module_identities(root: Path, historical: str) -> frozenset[str]:
+    """Return the frozen identity and its declared W22 physical identity."""
+
+    layout = w21_source_layout(root)
+    identities = {historical}
+    projected = layout.project_w21_module(historical)
+    if projected is not None:
+        identities.add(projected)
+    return frozenset(identities)
+
+
 def _contains_raw_context_delimiter(node: ast.AST | None) -> ast.Constant | None:
     markers = (
         "<untrusted",
@@ -221,10 +237,10 @@ def _contains_raw_context_delimiter(node: ast.AST | None) -> ast.Constant | None
 
 def _check_s1(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
-    production = root / "agent"
+    production = w21_source_layout(root).agent_source_directory
     try:
         paths = sorted(
-            (path for path in production.rglob("*.py") if path.is_file()),
+            (path for path in production.rglob("*.py") if path.is_file()) if production is not None else (),
             key=lambda path: _relative(path, root),
         )
     except OSError:
@@ -351,6 +367,7 @@ def _check_s4(root: Path) -> list[ArchitectureViolation]:
         ("agent/code/workflow_proposal.py", "_proposal_request"),
         ("agent/code/outcome_verifier.py", "verify"),
     )
+    codec_modules = _module_identities(root, "agent.llm.context_projection")
     for relative, function_name in owners:
         tree = _required_tree(root, "W13-S4", relative, findings)
         if tree is None:
@@ -365,7 +382,7 @@ def _check_s4(root: Path) -> list[ArchitectureViolation]:
             alias.name
             for node in _nodes(tree)
             if isinstance(node, ast.ImportFrom)
-            and node.module == "agent.llm.context_projection"
+            and node.module in codec_modules
             for alias in node.names
         }
         if "render_untrusted_context_envelope" not in codec_imported:
@@ -375,7 +392,7 @@ def _check_s4(root: Path) -> list[ArchitectureViolation]:
                 alias.asname or alias.name
                 for node in _nodes(tree)
                 if isinstance(node, ast.ImportFrom)
-                and node.module == "agent.llm.context_projection"
+                and node.module in codec_modules
                 for alias in node.names
                 if alias.name == "render_untrusted_context_envelope"
             }
@@ -537,18 +554,19 @@ def _capability_names(node: ast.AST | None) -> set[str] | None:
 
 
 def _find_repository_state_spec(
+    root: Path,
     catalog: ast.AST | None,
     relative: str,
     findings: list[ArchitectureViolation],
 ) -> ast.Call | None:
+    owner_modules = _module_identities(root, "agent.skills.repository_state")
     for node in _nodes(catalog):
         if not isinstance(node, ast.Call) or _qualified_name(node.func).rsplit(".", 1)[-1] != "SkillSpec":
             continue
         if len(node.args) < 3:
             continue
         identity = tuple(_literal_string(item) for item in node.args[:3])
-        if identity == (
-            "agent.skills.repository_state",
+        if identity[0] in owner_modules and identity[1:] == (
             "RepositoryStateSkill",
             "repository_state",
         ):
@@ -610,7 +628,7 @@ def _check_s7(root: Path) -> list[ArchitectureViolation]:
     skill_relative = "agent/skills/repository_state.py"
     catalog = _required_tree(root, "W13-S7", catalog_relative, findings)
     skill = _required_tree(root, "W13-S7", skill_relative, findings)
-    matching = _find_repository_state_spec(catalog, catalog_relative, findings)
+    matching = _find_repository_state_spec(root, catalog, catalog_relative, findings)
     if matching is None:
         return findings
     findings.extend(_check_s7_descriptor(matching, catalog_relative))
@@ -903,8 +921,9 @@ def _check_s12(root: Path) -> list[ArchitectureViolation]:
 
 def _production_python_paths(root: Path) -> list[Path]:
     try:
+        production = w21_source_layout(root).agent_source_directory
         return sorted(
-            (path for path in (root / "agent").rglob("*.py") if path.is_file()),
+            (path for path in production.rglob("*.py") if path.is_file()) if production is not None else (),
             key=lambda path: _relative(path, root),
         )
     except OSError:
@@ -959,7 +978,10 @@ def _check_s14_imports(
 ) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     practical = _required_tree(root, "W13-S14", paths[0], findings)
-    imported = _imported_names(practical, "agent.evaluation.evaluation_identity")
+    identity_modules = _module_identities(root, "agent.evaluation.evaluation_identity")
+    imported: set[str] = set()
+    for module in identity_modules:
+        imported.update(_imported_names(practical, module))
     practical_identity_imports = {
         "candidate_identity",
         "candidate_identity_string",

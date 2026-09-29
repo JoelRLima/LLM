@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.llm.contracts import ModelMessage, ModelRequest
-from agent.llm.errors import ModelConnectionError
-from agent.llm.providers import openai_compatible as openai_module
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.runtime.model_call import ModelCallService
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest
+from llm_agent.agent.llm.errors import ModelConnectionError
+from llm_agent.agent.llm.providers import openai_compatible as openai_module
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.runtime.model_call import ModelCallService
+from llm_agent.cancellation import CancellationToken
 
 _REFERENCE = {
     "source": "env",

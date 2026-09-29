@@ -2,15 +2,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.execution_state import StepExecutionRecord, StepStatus
-from agent.planning.hierarchical_executor import HierarchicalExecutor
-from agent.planning.hierarchical_planner import HierarchicalPlanner, MacroPlan, MacroStep
-from agent.planning.plan_builder import PlanBuildResult
-from agent.reporting.operational_outcome import project_operational_outcome
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.outcome_taxonomy import OperationalStatus
-from agent.state import AgentState
-from agent.tools.result_completeness import (
+from llm_agent.agent.execution_state import StepExecutionRecord, StepStatus
+from llm_agent.agent.planning.hierarchical_executor import HierarchicalExecutor
+from llm_agent.agent.planning.hierarchical_planner import HierarchicalPlanner, MacroPlan, MacroStep
+from llm_agent.agent.planning.plan_builder import PlanBuildResult
+from llm_agent.agent.reporting.operational_outcome import project_operational_outcome
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.outcome_taxonomy import OperationalStatus
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.result_completeness import (
     canonical_result_successful,
     legacy_result_successful,
 )

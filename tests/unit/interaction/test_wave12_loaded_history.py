@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agent.llm.session import ChatSession
+from llm_agent.agent.llm.session import ChatSession
 
 from ._helpers import FakeGateway
 

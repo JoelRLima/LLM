@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.w21_architecture import RepositorySource, imported_module_names  # noqa: E402
+from scripts.w21_architecture import RepositorySource, SourceLayout, imported_module_names  # noqa: E402
+from scripts.w21_architecture.source import w21_source_layout  # noqa: E402
+
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 
 PS7_PATTERNS = (
     (re.compile(r"\?\?"), "null-coalescing operator"),
@@ -45,7 +48,8 @@ class Violation:
 
 
 def _relative(path: Path, root: Path = ROOT) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    layout = SourceLayout.for_profile(root, SOURCE_LAYOUT.profile)
+    return layout.w21_relative_path(path)
 
 
 def _read(path: Path) -> str:
@@ -56,19 +60,21 @@ def _read(path: Path) -> str:
 
 
 def _exists(*relative_paths: str, root: Path = ROOT) -> list[Violation]:
+    layout = SourceLayout.for_profile(root, SOURCE_LAYOUT.profile)
     return [
         Violation("W18-ARCH-01", relative, "required W18 owner surface is missing")
         for relative in relative_paths
-        if not (root / relative).is_file()
+        if not layout.path_for_w21_relative(relative).is_file()
     ]
 
 
 def _check_runtime_firewall(root: Path = ROOT) -> list[Violation]:
     findings: list[Violation] = []
-    source = RepositorySource(root)
-    runtime_files = source.python_files("agent")
+    layout = SourceLayout.for_profile(root, SOURCE_LAYOUT.profile)
+    source = RepositorySource(root, layout)
+    runtime_files = source.python_files()
     for path in runtime_files:
-        relative = source.relative(path)
+        relative = layout.w21_relative_path(path)
         text = _read(path).casefold()
         if relative in {"agent/__init__.py", "agent/_version.py"}:
             continue
@@ -94,7 +100,7 @@ def _check_candidate_lease_surface() -> list[Violation]:
     return [
         Violation("W18-ARCH-20", path, "W18 C2 lease/instrumentation surface is missing")
         for path in required
-        if not (ROOT / path).is_file()
+        if not SOURCE_LAYOUT.path_for_w21_relative(path).is_file()
     ]
 
 
@@ -195,11 +201,11 @@ def _check_distribution_boundary() -> list[Violation]:
     ):
         if token not in identity:
             findings.append(Violation("W18-ARCH-08", IDENTITY_OWNER, f"frozen identity is missing {token}"))
-    version = _read(ROOT / "agent/_version.py")
+    version = _read(ROOT / "src/llm_agent/_version.py")
     if "VERSION = \"0.2.0rc1\"" not in version or "local-llm-agent" in version:
-        findings.append(Violation("W18-ARCH-09", "agent/_version.py", "version owner is not name-independent"))
+        findings.append(Violation("W18-ARCH-09", "src/llm_agent/_version.py", "version owner is not name-independent"))
     project = _read(ROOT / "pyproject.toml")
-    if 'dynamic = ["version"]' not in project or 'version = {attr = "agent._version.VERSION"}' not in project:
+    if 'dynamic = ["version"]' not in project or 'version = {attr = "llm_agent._version.VERSION"}' not in project:
         findings.append(Violation("W18-ARCH-10", "pyproject.toml", "setuptools version is not sourced from the single owner"))
     if 'version = "0.1.0"' in project:
         findings.append(Violation("W18-ARCH-11", "pyproject.toml", "old duplicated version remains"))
@@ -242,7 +248,7 @@ def _check_w17_ownership() -> list[Violation]:
         "agent/interfaces/cli/first_run.py",
         "agent/interfaces/cli/interactive_session.py",
     ):
-        path = ROOT / relative
+        path = SOURCE_LAYOUT.path_for_w21_relative(relative)
         candidates = sorted(path.rglob("*.py")) if path.is_dir() else [path]
         for candidate in candidates:
             text = _read(candidate).casefold()
@@ -279,7 +285,7 @@ if False and __name__ == "__main__":
 
 
 def _v3_read(root: Path, relative: str) -> str:
-    return _read(root / relative)
+    return _read(w21_source_layout(root).path_for_w21_relative(relative))
 
 
 _V3_REQUIRED_SURFACES = (

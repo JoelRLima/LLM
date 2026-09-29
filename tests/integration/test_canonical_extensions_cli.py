@@ -7,16 +7,16 @@ from typing import cast
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.approval import AutoApprove
-from agent.interfaces.cli import app as cli
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.contracts import ToolStatus
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.tools.contracts import ToolStatus
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway
 
 

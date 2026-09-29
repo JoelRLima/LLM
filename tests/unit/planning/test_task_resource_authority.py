@@ -5,18 +5,18 @@ import re
 import threading
 import time
 
-from agent.cancellation import CancellationToken
-from agent.code.multitask import CodingTaskNodeExecutor
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
-from agent.llm.model_profile import resolve_gateway_model_profile
-from agent.planning.task_graph import ResourceMode, TaskGraph, TaskNode, TaskResource
-from agent.planning.task_resources import (
+from llm_agent.agent.code.multitask import CodingTaskNodeExecutor
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.model_profile import resolve_gateway_model_profile
+from llm_agent.agent.planning.task_graph import ResourceMode, TaskGraph, TaskNode, TaskResource
+from llm_agent.agent.planning.task_resources import (
     WORKSPACE_RESOURCE,
     effective_resource_claims,
 )
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.resources.contracts import normalize_resource_id
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.resources.contracts import normalize_resource_id
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.cancellation import CancellationToken
 
 
 class _NoopExecutor:

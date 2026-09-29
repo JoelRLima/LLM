@@ -38,7 +38,7 @@ def should_retry(error_message):
 def test_checker_rejects_typed_mapping_alias_and_getattr_bypass() -> None:
     findings = check_source(
         """
-from agent.tools.contracts import ToolResult as CanonicalResult
+from llm_agent.agent.tools.contracts import ToolResult as CanonicalResult
 
 def policy(result: CanonicalResult):
     get = getattr(result, 'get')
@@ -53,7 +53,7 @@ def policy(result: CanonicalResult):
 def test_checker_propagates_legacy_result_and_dict_aliases() -> None:
     findings = check_source(
         """
-from agent.tools.contracts import ToolResult
+from llm_agent.agent.tools.contracts import ToolResult
 
 def should_recover(result: ToolResult):
     legacy = result.to_legacy_dict(include_details=True)
@@ -72,7 +72,7 @@ def should_recover(result: ToolResult):
 def test_checker_rejects_inline_legacy_result_conversions() -> None:
     findings = check_source(
         """
-from agent.tools.contracts import ToolResult
+from llm_agent.agent.tools.contracts import ToolResult
 
 def legacy_subscript(result: ToolResult):
     return result.to_legacy_dict()["status"] == "failed"
@@ -95,7 +95,7 @@ def dict_get(result: ToolResult):
 def test_checker_propagates_literal_getattr_result_conversion_and_access() -> None:
     findings = check_source(
         """
-from agent.tools.contracts import ToolResult
+from llm_agent.agent.tools.contracts import ToolResult
 
 def should_recover(result: ToolResult):
     convert = getattr(result, "to_legacy_dict")
@@ -183,7 +183,7 @@ def test_checker_rejects_policy_defaults_tables_and_keyword_raw_scope() -> None:
 def test_checker_rejects_alternate_owner_and_raw_scope_key() -> None:
     findings = check_source(
         """
-        from agent.runtime.recovery import RecoveryBudgetState
+        from llm_agent.agent.runtime.recovery import RecoveryBudgetState
 
         class RetryPolicy:
             pass
@@ -210,7 +210,7 @@ def sanitize_error(error_message):
     assert check_source(
         """
 from collections.abc import Mapping
-from agent.tools.contracts import ToolResult
+from llm_agent.agent.tools.contracts import ToolResult
 
 def project(result: ToolResult | Mapping):
     return result.get('status')

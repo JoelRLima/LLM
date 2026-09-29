@@ -6,46 +6,46 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.code.change_models import ChangeKind, ChangeSet, FileChange
-from agent.code.change_transaction import ChangeSetTransaction
-from agent.code.mutation_binding import MutationBindingError, assert_changeset_admitted
-from agent.code.workflow_application_flow_support import run_apply_changes
-from agent.interaction.intent_claim import (
+from llm_agent.agent.code.change_models import ChangeKind, ChangeSet, FileChange
+from llm_agent.agent.code.change_transaction import ChangeSetTransaction
+from llm_agent.agent.code.mutation_binding import MutationBindingError, assert_changeset_admitted
+from llm_agent.agent.code.workflow_application_flow_support import run_apply_changes
+from llm_agent.agent.interaction.intent_claim import (
     ConstraintClaim,
     EffectClaim,
     EvidenceSpan,
     IntentClaimV1,
     TargetSelectorClaim,
 )
-from agent.interaction.service import InteractionService
-from agent.llm.contracts import ProviderCapabilities
-from agent.orchestration.task_execution import _admit_runtime_intent
-from agent.planning.effect_intent import effect_intent_error
-from agent.planning.graph_authority import GraphAuthorityError, preflight_graph_capabilities
-from agent.planning.intent_admission import (
+from llm_agent.agent.interaction.service import InteractionService
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.orchestration.task_execution import _admit_runtime_intent
+from llm_agent.agent.planning.effect_intent import effect_intent_error
+from llm_agent.agent.planning.graph_authority import GraphAuthorityError, preflight_graph_capabilities
+from llm_agent.agent.planning.intent_admission import (
     AuthorityEnvelope,
     IntentAdmissionError,
     admit_intent_claim,
     authority_envelope_from_orchestrator,
 )
-from agent.planning.intent_continuation import W14IntentContinuation
-from agent.planning.target_grounding import (
+from llm_agent.agent.planning.intent_continuation import W14IntentContinuation
+from llm_agent.agent.planning.target_grounding import (
     GroundingError,
     ground_intent_claim,
     revalidate_grounded_targets,
 )
-from agent.planning.task_completion import review_task_completion
-from agent.planning.task_graph import TaskGraph, TaskNode
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
-from agent.runtime.task_execution_context import _authority_metadata
-from agent.runtime.task_policy_support import refresh_orchestrator_task_policy
-from agent.state import AgentState
-from agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.agent.planning.task_completion import review_task_completion
+from llm_agent.agent.planning.task_graph import TaskGraph, TaskNode
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
+from llm_agent.agent.runtime.task_execution_context import _authority_metadata
+from llm_agent.agent.runtime.task_policy_support import refresh_orchestrator_task_policy
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.cancellation import CancellationToken
 
 
 class _Gateway:
@@ -272,10 +272,10 @@ def test_c6_a06_resume_symlink_escape_is_denied(tmp_path: Path, monkeypatch: pyt
     source.parent.mkdir()
     source.write_text("TIMEOUT = 1\n", encoding="utf-8")
     envelope, admitted, grounded = _grounded_w14_metadata(tmp_path)
-    import agent.planning.target_grounding_revalidation as revalidation
+    import llm_agent.agent.planning.target_grounding_revalidation as revalidation
 
     def escaped(*_args, **_kwargs):
-        from agent.runtime.path_safety import WorkspacePathError
+        from llm_agent.agent.runtime.path_safety import WorkspacePathError
 
         raise WorkspacePathError("link escape")
 
@@ -439,7 +439,7 @@ def test_c6_a15_narrow_read_scope_never_enumerates_out_of_scope_tree(
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "sentinel.py").write_text("TIMEOUT = 2\n", encoding="utf-8")
-    import agent.planning.target_grounding_discovery as discovery
+    import llm_agent.agent.planning.target_grounding_discovery as discovery
 
     seen: list[str] = []
     original_scandir = discovery.os.scandir
@@ -560,7 +560,7 @@ def test_c6_a21_memory_revalidation_performs_zero_filesystem_io(
         current_subject="remember memory",
         workspace_root=tmp_path,
     )
-    import agent.planning.target_grounding_revalidation as revalidation
+    import llm_agent.agent.planning.target_grounding_revalidation as revalidation
 
     monkeypatch.setattr(revalidation, "resolve_workspace_path", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("filesystem path resolution")))
     monkeypatch.setattr(Path, "resolve", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("filesystem resolve")))
@@ -852,7 +852,7 @@ def test_c6_a37_approval_cannot_widen_admitted_target(tmp_path: Path) -> None:
 
 
 def test_c6_a38_approval_denial_causes_zero_durable_mutation(tmp_path: Path) -> None:
-    from agent.code.policy import ProposalAssessment
+    from llm_agent.agent.code.policy import ProposalAssessment
 
     target = tmp_path / "module.py"
     target.write_text("value = 1\n", encoding="utf-8")

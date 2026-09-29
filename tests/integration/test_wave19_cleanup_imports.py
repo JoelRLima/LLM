@@ -5,21 +5,21 @@ import importlib
 
 def test_current_w19_surfaces_import_without_retired_facades() -> None:
     modules = (
-        "agent.application",
-        "agent.application_services.queries",
-        "agent.interfaces.cli.action_registry",
-        "agent.interfaces.cli.action_parser",
-        "agent.interfaces.cli.commands",
-        "agent.interfaces.cli.interactive_resources",
-        "agent.interfaces.cli.query_executor",
-        "agent.interfaces.cli.output_projection",
-        "agent.interfaces.cli.output_viewer",
-        "agent.routing.persona.current",
-        "agent.evaluation.experiment",
-        "agent.evaluation.receipt",
-        "agent.evaluation.comparison",
-        "agent.evaluation.feedback",
-        "agent.outputs.service",
+        "llm_agent.agent.application",
+        "llm_agent.application.services.queries",
+        "llm_agent.interfaces.cli.action_registry",
+        "llm_agent.interfaces.cli.action_parser",
+        "llm_agent.interfaces.cli.commands",
+        "llm_agent.interfaces.cli.interactive_resources",
+        "llm_agent.interfaces.cli.query_executor",
+        "llm_agent.interfaces.cli.output_projection",
+        "llm_agent.interfaces.cli.output_viewer",
+        "llm_agent.agent.routing.persona.current",
+        "llm_agent.agent.evaluation.experiment",
+        "llm_agent.agent.evaluation.receipt",
+        "llm_agent.agent.evaluation.comparison",
+        "llm_agent.agent.evaluation.feedback",
+        "llm_agent.outputs.service",
     )
     for module in modules:
         assert importlib.import_module(module) is not None
@@ -27,11 +27,11 @@ def test_current_w19_surfaces_import_without_retired_facades() -> None:
 
 def test_retired_facades_are_not_importable() -> None:
     for module in (
-        "agent.llm.router",
-        "agent.interfaces.cli.manifest",
-        "agent.interfaces.cli.query_plane",
-        "agent.interfaces.cli.query_find",
-        "agent.interfaces.cli.query_git",
+        "llm_agent.agent.llm.router",
+        "llm_agent.interfaces.cli.manifest",
+        "llm_agent.interfaces.cli.query_plane",
+        "llm_agent.interfaces.cli.query_find",
+        "llm_agent.interfaces.cli.query_git",
     ):
         try:
             importlib.import_module(module)

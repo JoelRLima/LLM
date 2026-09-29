@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
-from agent.interaction.guards import (
+from llm_agent.agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
+from llm_agent.agent.interaction.guards import (
     CrossClauseEffectConflictGuard,
     CrossClauseRelation,
     DirectOperationalRequestGuard,
@@ -14,10 +14,10 @@ from agent.interaction.guards import (
     OperationalClassification,
     TargetProof,
 )
-from agent.interaction.model_contract import parse_interaction_resolution
-from agent.interaction.service import InteractionService
-from agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
-from agent.llm.session import ChatSession
+from llm_agent.agent.interaction.model_contract import parse_interaction_resolution
+from llm_agent.agent.interaction.service import InteractionService
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.session import ChatSession
 
 
 class FakeGateway:

@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
-from agent.observability import TraceCompleteness, TraceRetentionPolicy, TraceStore
-from agent.observability import trace_writer as trace_writer_module
-from agent.observability.live import ObservationSession
-from agent.observability.trace_catalog import TraceCatalog
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.observability import TraceCompleteness, TraceRetentionPolicy, TraceStore
+from llm_agent.agent.observability import trace_writer as trace_writer_module
+from llm_agent.agent.observability.live import ObservationSession
+from llm_agent.agent.observability.trace_catalog import TraceCatalog
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 def _paths(tmp_path: Path) -> WorkspacePaths:

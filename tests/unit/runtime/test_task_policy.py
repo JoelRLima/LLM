@@ -3,16 +3,16 @@ from __future__ import annotations
 import copy
 from types import SimpleNamespace
 
-from agent.cancellation import CancellationToken
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.runtime.model_call_support import context_for_session
-from agent.runtime.recovery import RecoveryBudgetState, RecoveryScope
-from agent.runtime.task_policy import (
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.runtime.model_call_support import context_for_session
+from llm_agent.agent.runtime.recovery import RecoveryBudgetState, RecoveryScope
+from llm_agent.agent.runtime.task_policy import (
     TaskPolicyDecision,
     TaskPolicyState,
     TaskRuntimePolicy,
 )
+from llm_agent.cancellation import CancellationToken
 
 
 def _limits(**overrides: int) -> RuntimeLimits:

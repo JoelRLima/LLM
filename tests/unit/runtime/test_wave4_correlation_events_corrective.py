@@ -2,32 +2,32 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.orchestration.operations import OrchestratorOperations
-from agent.orchestration.task_runner import TaskRunner
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.run_snapshot import build_canonical_run_snapshot
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.context import TaskExecutionContext
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.runtime.events import (
+from llm_agent.agent.orchestration.operations import OrchestratorOperations
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.run_snapshot import build_canonical_run_snapshot
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.context import TaskExecutionContext
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.runtime.events import (
     RESERVED_EVENT_IDENTITY_FIELDS,
     RuntimeEvent,
     deserialize_runtime_event,
 )
-from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
-from agent.state import AgentState
-from agent.task_definition.models import TaskDefinitionRef
-from agent.tools.contracts import (
+from llm_agent.agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.task_definition.models import TaskDefinitionRef
+from llm_agent.agent.tools.contracts import (
     ToolDescriptor,
     ToolInvocation,
     ToolInvocationRequest,
     ToolResult,
     ToolStatus,
 )
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.cancellation import CancellationToken
 
 
 class _Owner(TaskExecutionOwnershipMixin):

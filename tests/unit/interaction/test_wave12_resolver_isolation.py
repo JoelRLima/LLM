@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent.interaction.resolver import build_interaction_context, build_resolver_request
-from agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.interaction.resolver import build_interaction_context, build_resolver_request
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
 
 from ._helpers import session
 

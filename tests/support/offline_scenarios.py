@@ -9,17 +9,17 @@ from typing import Any, Dict, Iterator, Sequence
 
 from rich.console import Console
 
-from agent.evaluation import CapabilityScenario, ExecutionObservation
-from agent.interfaces.cli.chat import run_chat_turn
-from agent.llm.contracts import (
+from llm_agent.agent.evaluation import CapabilityScenario, ExecutionObservation
+from llm_agent.agent.llm.contracts import (
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     StreamEvent,
     StreamEventType,
 )
-from agent.llm.session import ChatSession
-from agent.skills import load_skill_registry
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.interfaces.cli.chat import run_chat_turn
 from tests.support.task_definition import task_definition_response
 
 

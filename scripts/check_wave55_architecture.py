@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 
 @dataclass(frozen=True, slots=True)
 class ArchitectureViolation:
@@ -36,7 +41,7 @@ class ArchitectureViolation:
 
 
 def _source(root: Path, relative: str) -> str | None:
-    path = root / relative
+    path = w21_source_layout(root).path_for_w21_relative(relative)
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -270,9 +275,11 @@ def _has_symbol_reference(tree: ast.AST, name: str) -> bool:
 def _check_s1(root: Path) -> list[ArchitectureViolation]:
     violations: list[ArchitectureViolation] = []
     authority_relative = "agent/tools/authority.py"
-    task_root = root / "agent" / "task_definition"
-    for path in (root / "agent").rglob("*.py"):
-        relative = path.relative_to(root).as_posix()
+    source_layout = w21_source_layout(root)
+    agent_root = source_layout.agent_source_directory
+    task_root = source_layout.path_for_w21_relative("agent/task_definition")
+    for path in agent_root.rglob("*.py") if agent_root is not None else ():
+        relative = source_layout.w21_relative_path(path)
         tree = _tree(root, relative)
         if tree is None:
             continue
@@ -284,7 +291,7 @@ def _check_s1(root: Path) -> list[ArchitectureViolation]:
                     )
     if task_root.exists():
         for path in task_root.rglob("*.py"):
-            relative = path.relative_to(root).as_posix()
+            relative = source_layout.w21_relative_path(path)
             tree = _tree(root, relative)
             if tree is not None and _has_symbol_reference(tree, 'TaskAuthoritySnapshot'):
                 violations.append(
@@ -443,9 +450,9 @@ def _check_s7(root: Path) -> list[ArchitectureViolation]:
 
 def _check_s8(root: Path) -> list[ArchitectureViolation]:
     scoped = [
-        root / 'agent' / 'task_definition',
-        root / 'agent' / 'orchestration' / 'task_runner.py',
-        root / 'agent' / 'interfaces' / 'cli' / 'app.py',
+        w21_source_layout(root).path_for_w21_relative('agent/task_definition'),
+        w21_source_layout(root).path_for_w21_relative('agent/orchestration/task_runner.py'),
+        w21_source_layout(root).path_for_w21_relative('agent/interfaces/cli/app.py'),
     ]
     tokens = (
         'advance_' + 'phase',
@@ -463,7 +470,7 @@ def _check_s8(root: Path) -> list[ArchitectureViolation]:
                 continue
             for token in tokens:
                 if token in text:
-                    violations.append(_violation('W55-S8', path.relative_to(root).as_posix(), 'future phase policy construct: ' + token))
+                    violations.append(_violation('W55-S8', w21_source_layout(root).w21_relative_path(path), 'future phase policy construct: ' + token))
     return violations
 
 

@@ -2,12 +2,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
+from tests.support.process_environment import source_child_environment
 
 _CHILD = """
 import sys
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
 lock = ExtensionCatalogLock(sys.argv[1])
 try:
     lock.acquire()
@@ -30,6 +31,7 @@ def test_same_workspace_lock_excludes_second_process(tmp_path: Path) -> None:
             text=True,
             check=True,
             timeout=15,
+            env=source_child_environment(),
         )
     finally:
         lock.release()

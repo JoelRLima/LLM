@@ -13,16 +13,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.approval import AutoApprove, RequireExplicitApproval
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.skills import shell_process as shell_process_module
-from agent.skills.process_environment import confined_process_environment
-from agent.skills.shell import ShellSkill, _is_command_allowed, _split_command
-from agent.skills.shell_process import (
+from llm_agent.agent.approval import AutoApprove, RequireExplicitApproval
+from llm_agent.agent.skills.process_environment import confined_process_environment
+from llm_agent.agent.skills.shell import ShellSkill, _is_command_allowed, _split_command
+from llm_agent.agent.skills.shell_process import (
     ShellProcessError,
     _resolve_executable,
     run_bounded_process,
 )
+from llm_agent.execution import cleanup as cleanup_module
+from llm_agent.execution import command as command_module
+from llm_agent.workspace.context import WorkspaceContext
 
 
 def test_shell_allows_only_the_reduced_read_only_surface() -> None:
@@ -69,7 +70,7 @@ def test_shell_rejects_external_reads_without_exposing_sentinel(
     secret = "SEGREDO-NAO-EXPOR"
     sentinel.write_text(secret, encoding="utf-8")
     rendered = [part.format(sentinel=sentinel) for part in argv]
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
 
     result = ShellSkill(base_dir=workspace, approval_policy=AutoApprove()).execute(
         {"command": shlex.join(rendered)}
@@ -104,7 +105,7 @@ def test_shell_rejects_mutation_or_external_output(
     monkeypatch: pytest.MonkeyPatch,
     command: str,
 ) -> None:
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
     result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
         {"command": command}
     )
@@ -139,7 +140,7 @@ def test_shell_rejects_symlink_that_resolves_outside_workspace(
         link.symlink_to(sentinel)
     except OSError as exc:
         pytest.skip(f"symlink unavailable: {exc}")
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
 
     result = ShellSkill(base_dir=workspace).execute({"command": "tree linked-secret.txt"})
 
@@ -159,7 +160,7 @@ def test_shell_runs_normal_git_read_only_command_with_sanitized_environment(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="clean\n", stderr="")
 
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", fake_run)
     monkeypatch.setenv("PYTHONPATH", str(tmp_path.parent))
     monkeypatch.setenv("GIT_TRACE", str(tmp_path / "trace"))
     skill = ShellSkill(base_dir=tmp_path)
@@ -184,7 +185,7 @@ def test_shell_requires_approval_for_ruff_validation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
     result = ShellSkill(base_dir=tmp_path, approval_policy=RequireExplicitApproval()).execute(
         {"command": "ruff check ."}
     )
@@ -203,7 +204,7 @@ def test_shell_hardens_ruff_into_isolated_read_only_validation(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
 
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", fake_run)
     result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
         {"command": "ruff check ."}
     )
@@ -217,7 +218,7 @@ def test_shell_rejects_explicit_ruff_configuration_even_inside_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n", encoding="utf-8")
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
     result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
         {"command": "ruff check --config ruff.toml ."}
     )
@@ -235,7 +236,7 @@ def test_shell_does_not_forward_ambient_secret_to_process(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
 
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", fake_run)
     result = ShellSkill(tmp_path, approval_policy=AutoApprove()).execute(
         {"command": "ruff check ."}
     )
@@ -247,7 +248,7 @@ def test_shell_formats_large_output_with_a_bound(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "agent.skills.shell._run_bounded_process",
+        "llm_agent.agent.skills.shell._run_bounded_process",
         lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="x" * 5000, stderr=""),
     )
     result = ShellSkill(tmp_path, approval_policy=AutoApprove()).execute(
@@ -263,7 +264,7 @@ def test_windows_tokenization_preserves_backslashes_and_quoted_spaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     outside = tmp_path.parent / "outside path" / "file.py"
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
     for command in (f"ruff check {outside}", f'ruff check "{outside}"'):
         result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
             {"command": command}
@@ -344,7 +345,7 @@ def test_posix_shell_process_terminates_parent_and_descendant(
         environment["PATH"] = str(trusted_tools)
         return environment
 
-    monkeypatch.setattr("agent.skills.shell.confined_process_environment", test_environment)
+    monkeypatch.setattr("llm_agent.agent.skills.shell.confined_process_environment", test_environment)
     skill = ShellSkill(
         workspace=WorkspaceContext.create(tmp_path),
         timeout=3 if mode == "timeout" else 10,
@@ -510,7 +511,7 @@ def test_shell_rejects_workspace_executable_shadow_in_real_runner(
         return environment
 
     monkeypatch.setattr(
-        "agent.skills.shell.confined_process_environment", workspace_only_environment
+        "llm_agent.agent.skills.shell.confined_process_environment", workspace_only_environment
     )
     skill = ShellSkill(workspace=workspace_context, approval_policy=AutoApprove())
     argument = "ruff check ." if command == "ruff" else f"{command} ." if command == "tree" else "git log"
@@ -534,7 +535,7 @@ def test_shell_rejects_workspace_executable_shadow_in_real_runner(
 def test_shell_rejects_signature_verification_before_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
 ) -> None:
-    monkeypatch.setattr("agent.skills.shell._run_bounded_process", _forbid_subprocess)
+    monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", _forbid_subprocess)
     result = ShellSkill(base_dir=tmp_path, approval_policy=AutoApprove()).execute(
         {"command": command}
     )
@@ -557,28 +558,29 @@ def test_post_popen_exception_terminates_process(
 ) -> None:
     workspace = WorkspaceContext.create(tmp_path)
     created: list[subprocess.Popen[object]] = []
-    original_popen = shell_process_module.subprocess.Popen
+    original_popen = command_module.subprocess.Popen
 
     def capture_popen(*args: object, **kwargs: object) -> subprocess.Popen[object]:
         process = original_popen(*args, **kwargs)
         created.append(process)
         return process
 
-    monkeypatch.setattr(shell_process_module.subprocess, "Popen", capture_popen)
+    monkeypatch.setattr(command_module.subprocess, "Popen", capture_popen)
     if failure_point == "readers":
         monkeypatch.setattr(
-            shell_process_module,
+            command_module,
             "start_readers",
             lambda *_args: (_ for _ in ()).throw(OSError("reader setup sentinel")),
         )
     else:
         monkeypatch.setattr(
-            shell_process_module,
-            "_monitor_process",
-            lambda *_args: (_ for _ in ()).throw(RuntimeError("monitor sentinel")),
+            command_module,
+            "_wait_for_process",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("monitor sentinel")),
         )
 
-    with pytest.raises((OSError, RuntimeError), match="sentinel"):
+    expected_error = ShellProcessError if failure_point == "readers" else RuntimeError
+    with pytest.raises(expected_error, match="sentinel"):
         run_bounded_process(
             [sys.executable, "-c", "import time; time.sleep(30)"],
             workspace=workspace.root,
@@ -674,7 +676,7 @@ def test_job_assignment_failure_terminates_started_process_before_surface_error(
     workspace = WorkspaceContext.create(tmp_path)
     created = []
     launched_argv = []
-    original_popen = shell_process_module.subprocess.Popen
+    original_popen = command_module.subprocess.Popen
 
     def capture_popen(*args, **kwargs):
         launched_argv.append(list(args[0]))
@@ -682,11 +684,11 @@ def test_job_assignment_failure_terminates_started_process_before_surface_error(
         created.append(process)
         return process
 
-    monkeypatch.setattr(shell_process_module.subprocess, "Popen", capture_popen)
-    monkeypatch.setattr(shell_process_module, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(shell_process_module, "create_windows_job", lambda: object())
-    monkeypatch.setattr(shell_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(shell_process_module, "close_windows_job", lambda _job: True)
+    monkeypatch.setattr(command_module.subprocess, "Popen", capture_popen)
+    monkeypatch.setattr(command_module, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(command_module, "create_windows_job", lambda: object())
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(cleanup_module, "close_windows_job", lambda _job: True)
 
     def terminate(process, _job, *, process_group_id):
         del process_group_id
@@ -694,9 +696,9 @@ def test_job_assignment_failure_terminates_started_process_before_surface_error(
         process.wait(timeout=5)
         return None
 
-    monkeypatch.setattr(shell_process_module, "terminate_process", terminate)
+    monkeypatch.setattr(cleanup_module, "terminate_process", terminate)
 
-    with pytest.raises(ShellProcessError, match="associar"):
+    with pytest.raises(ShellProcessError, match="assign process"):
         run_bounded_process(
             [sys.executable, "-c", "import time; time.sleep(30)"],
             workspace=workspace.root,
@@ -716,17 +718,17 @@ def test_windows_job_assignment_failure_uses_real_tree_cleanup(
 ) -> None:
     workspace = WorkspaceContext.create(tmp_path)
     created = []
-    original_popen = shell_process_module.subprocess.Popen
+    original_popen = command_module.subprocess.Popen
 
     def capture_popen(*args, **kwargs):
         process = original_popen(*args, **kwargs)
         created.append(process)
         return process
 
-    monkeypatch.setattr(shell_process_module.subprocess, "Popen", capture_popen)
-    monkeypatch.setattr(shell_process_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(command_module.subprocess, "Popen", capture_popen)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
 
-    with pytest.raises(ShellProcessError, match="associar"):
+    with pytest.raises(ShellProcessError, match="assign process"):
         run_bounded_process(
             [sys.executable, "-c", "import time; time.sleep(30)"],
             workspace=workspace.root,

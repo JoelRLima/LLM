@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_MUTATION_ARMS = tuple(f"W16-M{index:02d}" for index in range(1, 17))
 SEMANTIC_ROOTS = ("agent/planning", "agent/orchestration", "agent/tools", "agent/memory", "agent/interaction", "agent/runtime")
@@ -56,9 +61,13 @@ class MutationArm:
 
 def _source(root: Path, relative: str) -> str:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return ""
+
+
+def _path(root: Path, relative: str) -> Path:
+    return w21_source_layout(root).path_for_w21_relative(relative)
 
 
 def _violation(rule: str, path: str, detail: str) -> ArchitectureViolation:
@@ -156,7 +165,7 @@ def _check_portability_and_canaries(root: Path) -> list[ArchitectureViolation]:
 def _check_model_agnostic_semantics(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative_root in SEMANTIC_ROOTS:
-        base = root / relative_root
+        base = _path(root, relative_root)
         if not base.exists():
             continue
         for path in base.rglob("*.py"):
@@ -166,7 +175,7 @@ def _check_model_agnostic_semantics(root: Path) -> list[ArchitectureViolation]:
                 continue
             for token in FORBIDDEN_IDENTITY_TOKENS:
                 if token in source:
-                    findings.append(_violation("W16-C17", path.relative_to(root).as_posix(), f"semantic owner contains model identity token {token!r}"))
+                    findings.append(_violation("W16-C17", w21_source_layout(root).w21_relative_path(path), f"semantic owner contains model identity token {token!r}"))
     return findings
 
 
@@ -223,22 +232,22 @@ def _append_text(path: Path, text: str) -> bool:
 
 def _mutation_arms() -> tuple[MutationArm, ...]:
     return (
-        MutationArm("W16-M01", "inject model-name semantic branch", lambda root: _append_text(root / "agent/interaction/resolver.py", '\nif "qwen" in model: pass\n')),
-        MutationArm("W16-M02", "remove compatibility from fingerprint", lambda root: _replace_all(root / "agent/llm/model_profile.py", '"compatibility": self.compatibility.to_dict(),', "")),
-        MutationArm("W16-M03", "resolver bypasses central geometry", lambda root: _replace_all(root / "agent/interaction/resolver.py", "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
-        MutationArm("W16-M04", "session builder bypasses central geometry", lambda root: _replace_all(root / "agent/llm/session_requests.py", "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
-        MutationArm("W16-M05", "response builder bypasses central geometry", lambda root: _replace_all(root / "agent/interaction/response.py", "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
-        MutationArm("W16-M06", "JSON_PROMPT becomes constrained", lambda root: _replace_once(root / "agent/llm/request_geometry.py", "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA, StructuredOutputMode.JSON_PROMPT}")),
-        MutationArm("W16-M07", "GBNF compatibility adjustment omitted", lambda root: _replace_once(root / "agent/llm/request_geometry.py", "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.JSON_SCHEMA}")),
-        MutationArm("W16-M08", "JSON_SCHEMA compatibility adjustment omitted", lambda root: _replace_once(root / "agent/llm/request_geometry.py", "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.GBNF}")),
-        MutationArm("W16-M09", "prompt uses requested budget", lambda root: _replace_once(root / "agent/interaction/response.py", "build_effective_system_prompt_for_budget(\n        base_system,\n        geometry.effective_reasoning_budget,", "build_effective_system_prompt_for_budget(\n        base_system,\n        geometry.requested_reasoning_budget,")),
-        MutationArm("W16-M10", "provider infers compatibility by model name", lambda root: _append_text(root / "agent/llm/providers/openai_compatible.py", '\nif "qwen" in request.model: pass\n')),
-        MutationArm("W16-M11", "native tool calls become default", lambda root: _replace_once(root / "agent/llm/contracts.py", "tool_calls: bool = False", "tool_calls: bool = True")),
-        MutationArm("W16-M12", "evaluation directly constructs provider", lambda root: _append_text(root / "scripts/run_evaluation_campaign.py", "\nOpenAICompatibleGateway(profile)\n")),
-        MutationArm("W16-M13", "authorization becomes Qwen-only", lambda root: _replace_all(root / "scripts/run_evaluation_campaign.py", "arguments.live_model_authorized", "arguments.qwen_loaded")),
-        MutationArm("W16-M14", "canary emits release verdict", lambda root: _append_text(root / "agent/evaluation/model_compatibility_canaries.py", '\nrelease_verdict = "RELEASE_READY"\n')),
-        MutationArm("W16-M15", "reasoning content enters metric", lambda root: _append_text(root / "agent/llm/model_metrics.py", '\nreasoning_text = getattr(response, "reasoning", "")\n')),
-        MutationArm("W16-M16", "deterministic gate invokes live mode", lambda root: _replace_once(root / "scripts/run_model_compatibility_canaries.py", 'default="deterministic"', 'default="live-model"')),
+        MutationArm("W16-M01", "inject model-name semantic branch", lambda root: _append_text(_path(root, "agent/interaction/resolver.py"), '\nif "qwen" in model: pass\n')),
+        MutationArm("W16-M02", "remove compatibility from fingerprint", lambda root: _replace_all(_path(root, "agent/llm/model_profile.py"), '"compatibility": self.compatibility.to_dict(),', "")),
+        MutationArm("W16-M03", "resolver bypasses central geometry", lambda root: _replace_all(_path(root, "agent/interaction/resolver.py"), "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
+        MutationArm("W16-M04", "session builder bypasses central geometry", lambda root: _replace_all(_path(root, "agent/llm/session_requests.py"), "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
+        MutationArm("W16-M05", "response builder bypasses central geometry", lambda root: _replace_all(_path(root, "agent/interaction/response.py"), "resolve_effective_request_geometry", "resolve_ordinary_reasoning_budget")),
+        MutationArm("W16-M06", "JSON_PROMPT becomes constrained", lambda root: _replace_once(_path(root, "agent/llm/request_geometry.py"), "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA, StructuredOutputMode.JSON_PROMPT}")),
+        MutationArm("W16-M07", "GBNF compatibility adjustment omitted", lambda root: _replace_once(_path(root, "agent/llm/request_geometry.py"), "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.JSON_SCHEMA}")),
+        MutationArm("W16-M08", "JSON_SCHEMA compatibility adjustment omitted", lambda root: _replace_once(_path(root, "agent/llm/request_geometry.py"), "{StructuredOutputMode.GBNF, StructuredOutputMode.JSON_SCHEMA}", "{StructuredOutputMode.GBNF}")),
+        MutationArm("W16-M09", "prompt uses requested budget", lambda root: _replace_once(_path(root, "agent/interaction/response.py"), "build_effective_system_prompt_for_budget(\n        base_system,\n        geometry.effective_reasoning_budget,", "build_effective_system_prompt_for_budget(\n        base_system,\n        geometry.requested_reasoning_budget,")),
+        MutationArm("W16-M10", "provider infers compatibility by model name", lambda root: _append_text(_path(root, "agent/llm/providers/openai_compatible.py"), '\nif "qwen" in request.model: pass\n')),
+        MutationArm("W16-M11", "native tool calls become default", lambda root: _replace_once(_path(root, "agent/llm/contracts.py"), "tool_calls: bool = False", "tool_calls: bool = True")),
+        MutationArm("W16-M12", "evaluation directly constructs provider", lambda root: _append_text(_path(root, "scripts/run_evaluation_campaign.py"), "\nOpenAICompatibleGateway(profile)\n")),
+        MutationArm("W16-M13", "authorization becomes Qwen-only", lambda root: _replace_all(_path(root, "scripts/run_evaluation_campaign.py"), "arguments.live_model_authorized", "arguments.qwen_loaded")),
+        MutationArm("W16-M14", "canary emits release verdict", lambda root: _append_text(_path(root, "agent/evaluation/model_compatibility_canaries.py"), '\nrelease_verdict = "RELEASE_READY"\n')),
+        MutationArm("W16-M15", "reasoning content enters metric", lambda root: _append_text(_path(root, "agent/llm/model_metrics.py"), '\nreasoning_text = getattr(response, "reasoning", "")\n')),
+        MutationArm("W16-M16", "deterministic gate invokes live mode", lambda root: _replace_once(_path(root, "scripts/run_model_compatibility_canaries.py"), 'default="deterministic"', 'default="live-model"')),
     )
 
 

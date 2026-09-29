@@ -5,22 +5,22 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent.llm import context_manager as context_manager_module
-from agent.llm.context_manager import ContextManager
-from agent.llm.context_views import (
+from llm_agent.agent.llm import context_manager as context_manager_module
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.context_views import (
     build_compact_view,
     compress_conversation,
     discover_project_context,
     get_file_hints,
 )
-from agent.llm.contracts import (
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
     StructuredOutputMode,
     StructuredOutputRequest,
 )
-from agent.memory.prompt_context import build_memory_prompt_context
+from llm_agent.agent.memory.prompt_context import build_memory_prompt_context
 
 
 class _Memory:

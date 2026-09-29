@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 DIRECTIVE_ROOTS = (
@@ -118,12 +123,13 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _tree(root: Path, relative: str) -> ast.Module | None:
     try:
-        return ast.parse((root / relative).read_text(encoding="utf-8"), filename=relative)
+        path = w21_source_layout(root).path_for_w21_relative(relative)
+        return ast.parse(path.read_text(encoding="utf-8"), filename=relative)
     except (OSError, SyntaxError, UnicodeError):
         return None
 

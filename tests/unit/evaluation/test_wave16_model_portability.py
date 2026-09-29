@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.llm.model_compatibility import StructuredReasoningPolicy
-from agent.llm.model_profile import resolve_model_profile
-from agent.llm.providers.factory import create_model_gateway
+from llm_agent.agent.llm.model_compatibility import StructuredReasoningPolicy
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.llm.providers.factory import create_model_gateway
 
 
 def _profile():

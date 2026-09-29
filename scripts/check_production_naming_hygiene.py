@@ -9,6 +9,11 @@ import tokenize
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 GOVERNANCE_EXCEPTIONS = frozenset(
     {
         "scripts/check_wave1_architecture.py",
@@ -28,6 +33,11 @@ GOVERNANCE_EXCEPTIONS = frozenset(
         "scripts/w21_architecture/__init__.py",
         "scripts/w21_architecture/authority.py",
         "scripts/w21_architecture/projection.py",
+        "scripts/w21_architecture/source.py",
+        "scripts/w22_architecture/__init__.py",
+        "scripts/w22_architecture/namespace_audit.py",
+        "scripts/w22_architecture/phase0_inventory.json",
+        "scripts/w22_architecture/phase0_inventory.py",
     }
 )
 SELF_PATH = "scripts/check_production_naming_hygiene.py"
@@ -142,7 +152,10 @@ def check_text(text: str, relative_path: str | Path) -> list[str]:
 
 def _iter_production_files(root: Path) -> Iterable[Path]:
     candidates: set[Path] = set()
-    for directory in (root / "agent", root / "scripts"):
+    agent_root = w21_source_layout(root).agent_source_directory
+    for directory in (agent_root, root / "scripts"):
+        if directory is None:
+            continue
         if directory.is_dir():
             candidates.update(path for path in directory.rglob("*") if path.is_file())
     for name in (
@@ -155,14 +168,15 @@ def _iter_production_files(root: Path) -> Iterable[Path]:
         candidate = root / name
         if candidate.is_file():
             candidates.add(candidate)
+    layout = w21_source_layout(root)
     return sorted(
         (
             path
             for path in candidates
             if path.suffix.lower() in SCAN_EXTENSIONS
-            and not _is_excluded(path.relative_to(root).as_posix())
+            and not _is_excluded(layout.w21_relative_path(path))
         ),
-        key=lambda path: path.relative_to(root).as_posix(),
+        key=layout.w21_relative_path,
     )
 
 
@@ -171,8 +185,9 @@ def check_repository(root: str | Path = ".") -> list[str]:
 
     repository = Path(root).resolve()
     findings: list[str] = []
+    layout = w21_source_layout(repository)
     for path in _iter_production_files(repository):
-        relative = path.relative_to(repository).as_posix()
+        relative = layout.w21_relative_path(path)
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:

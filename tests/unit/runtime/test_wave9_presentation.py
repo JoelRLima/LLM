@@ -5,18 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from agent.observability import (
+from llm_agent.agent.observability import (
     DiagnosticRecord,
     ObservationEnvelope,
     ObservationSource,
     TraceStore,
 )
-from agent.observability.live import SilenceLevel, SilencePolicy
-from agent.presentation import ActivityProjection, InspectionQuery, InspectionService
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.observability.live import SilenceLevel, SilencePolicy
+from llm_agent.agent.presentation import ActivityProjection, InspectionQuery, InspectionService
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 def _paths(tmp_path: Path) -> WorkspacePaths:
@@ -121,9 +121,9 @@ def test_query_bounds_and_invalid_range() -> None:
 
 
 def test_standalone_service_and_installed_cli_project_persisted_sections(tmp_path: Path, capsys) -> None:
-    from agent.interfaces.cli.app import main
-    from agent.runtime.paths import AppPaths
-    from agent.runtime.workspace_context import WorkspaceContext
+    from llm_agent.interfaces.cli.app import main
+    from llm_agent.workspace.context import WorkspaceContext
+    from llm_agent.workspace.paths import AppPaths
 
     app_home = tmp_path / "app-home"
     workspace = tmp_path / "workspace"

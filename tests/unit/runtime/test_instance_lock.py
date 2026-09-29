@@ -12,11 +12,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.runtime import instance_lock as instance_lock_module
-from agent.runtime import lock_filesystem
-from agent.runtime.file_lock import OPEN_BINARY
-from agent.runtime.instance_lock import InstanceLock, InstanceLockError
-from agent.runtime.process_identity import (
+from llm_agent.agent.runtime import instance_lock as instance_lock_module
+from llm_agent.agent.runtime import lock_filesystem
+from llm_agent.agent.runtime.file_lock import OPEN_BINARY
+from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.agent.runtime.process_identity import (
     OwnerStatus,
     ProcessOwnerLiveness,
     current_process_start_id,

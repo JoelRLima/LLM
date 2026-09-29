@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _manifest(extension_id: str, capabilities: list[str]) -> dict[str, object]:

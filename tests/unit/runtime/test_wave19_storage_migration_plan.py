@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.config_repository import packaged_config_defaults
-from agent.runtime.paths import AppHomeOrigin, AppPaths
-from agent.runtime.storage_contracts import StorageMigrationError
-from agent.runtime.storage_migration import build_migration_plan, source_profile_for
+from llm_agent.agent.runtime.config_repository import packaged_config_defaults
+from llm_agent.agent.runtime.storage_contracts import StorageMigrationError
+from llm_agent.agent.runtime.storage_migration import build_migration_plan, source_profile_for
+from llm_agent.workspace.paths import AppHomeOrigin, AppPaths
 
 
 def test_explicit_profile_maps_only_allowlisted_durable_files(tmp_path: Path) -> None:

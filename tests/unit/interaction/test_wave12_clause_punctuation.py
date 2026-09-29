@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.evidence import scan_clause_spans
+from llm_agent.agent.interaction.evidence import scan_clause_spans
 
 
 def test_terminal_dot_splits_but_token_internal_dot_does_not() -> None:

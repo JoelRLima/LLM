@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.admission import project_guard_result
-from agent.interaction.guards import DirectReadRequestGuard, ReadClassification
-from agent.interaction.types import InteractionBoundary
+from llm_agent.agent.interaction.admission import project_guard_result
+from llm_agent.agent.interaction.guards import DirectReadRequestGuard, ReadClassification
+from llm_agent.agent.interaction.types import InteractionBoundary
 
 
 @pytest.mark.parametrize(

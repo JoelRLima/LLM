@@ -3,23 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.approval import ApprovalDecision, AutoApprove
-from agent.interfaces.cli import command_handlers
-from agent.interfaces.cli.commands import handle_command
-from agent.tools.authority import (
+from llm_agent.agent.approval import ApprovalDecision, AutoApprove
+from llm_agent.agent.tools.authority import (
     OperationalMode,
     TaskAuthoritySnapshot,
     operational_mode_capabilities,
 )
-from agent.tools.contracts import (
+from llm_agent.agent.tools.contracts import (
     AuthorizationContext,
     ToolDescriptor,
     ToolInvocation,
     ToolResult,
     ToolStatus,
 )
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.interfaces.cli import command_handlers
+from llm_agent.interfaces.cli.commands import handle_command
 
 
 class _Adapter:
@@ -212,7 +212,7 @@ def test_direct_code_mutation_fails_closed_without_mode_boundary(monkeypatch) ->
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise AssertionError("service must not be constructed")
 
-    monkeypatch.setattr("agent.code.application.CodingApplicationService", _Service)
+    monkeypatch.setattr("llm_agent.agent.code.application.CodingApplicationService", _Service)
     context = SimpleNamespace(
         orchestrator=SimpleNamespace(),
         session=SimpleNamespace(gateway=None),
@@ -234,7 +234,7 @@ def test_editor_direct_code_cannot_request_test_execution(monkeypatch) -> None:
         def __init__(self, *_args: object, **_kwargs: object) -> None:
             raise AssertionError("service must not be constructed")
 
-    monkeypatch.setattr("agent.code.application.CodingApplicationService", _Service)
+    monkeypatch.setattr("llm_agent.agent.code.application.CodingApplicationService", _Service)
     context = SimpleNamespace(
         orchestrator=SimpleNamespace(
             operational_mode=OperationalMode.EDITOR,

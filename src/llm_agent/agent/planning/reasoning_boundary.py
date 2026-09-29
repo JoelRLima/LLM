@@ -1,0 +1,240 @@
+"""Single bounded continuation after an explicit plan frontier."""
+
+from __future__ import annotations
+
+import inspect
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from llm_agent.agent.planning.plan_builder import PlanningDecisionKind
+from llm_agent.agent.planning.plan_model import Plan, serialize_plan
+from llm_agent.agent.planning.progress_receipt import progress_receipt_from_history
+from llm_agent.agent.planning.task_semantics import TaskSemanticsError
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.limits import runtime_limit_values
+from llm_agent.agent.runtime.recovery import RecoveryScope
+
+
+@dataclass(frozen=True)
+class BoundaryContinuationResult:
+    answer: str | None = None
+    extended: bool = False
+    completed: bool = False
+    blocked: bool = False
+    planning_view: Any = None
+
+
+def _apply_canonical_review(orchestrator: Any, continuation: Any) -> bool:
+    raw = getattr(continuation, "review_obligations", None)
+    if raw is None:
+        return True
+    report_reviewer = getattr(orchestrator.agent_state, "review_task_obligations_report", None)
+    if not callable(report_reviewer):
+        return False
+    try:
+        review = report_reviewer(raw, source="canonical_review")
+        added = review.accepted
+        rejected = review.rejected
+    except (TaskSemanticsError, TypeError, ValueError):
+        return False
+    emit = getattr(orchestrator, "_emit", None)
+    if callable(emit):
+        emit("canonical_review_amendment", {"added": len(added)})
+        if rejected:
+            emit(
+                "canonical_review_rejected",
+                {
+                    "rejected": len(rejected),
+                    "reasons": [item.reason for item in rejected],
+                },
+            )
+    objective = str(getattr(orchestrator.agent_state, "objective", "") or "").casefold()
+    required_rejection = any(
+        _rejection_is_required(item, objective, orchestrator.agent_state)
+        for item in rejected
+    )
+    if required_rejection and callable(emit):
+        emit("canonical_review_required_rejection", {"count": 1})
+    # Unrelated model additions remain safely ignored for compatibility, but
+    # a rejected obligation grounded in the user objective cannot coexist with
+    # a COMPLETE continuation.
+    return not required_rejection
+
+
+def _rejection_is_required(rejection: Any, objective: str, state: Any) -> bool:
+    proposal = getattr(rejection, "proposal", None)
+    if not isinstance(proposal, Mapping):
+        return False
+    effect = proposal.get("effect")
+    requested = set(getattr(state, "requested_effects", ()))
+    if isinstance(effect, str) and effect.casefold() in requested:
+        return True
+    for key in ("target", "query", "fallback_target"):
+        value = proposal.get(key)
+        if isinstance(value, str) and value.strip().casefold() in objective:
+            return True
+    operands = proposal.get("operands")
+    if isinstance(operands, (list, tuple)) and any(
+        isinstance(value, str) and value.strip().casefold() in objective
+        for value in operands
+    ):
+        return True
+    return False
+
+
+def reasoning_progress_fingerprint(history: Sequence[Mapping[str, Any]]) -> str:
+    """Compatibility spelling delegated to the single receipt owner."""
+
+    progress_id = progress_receipt_from_history(history).aggregate_progress_id or ""
+    return progress_id.removeprefix("progress:")
+
+
+def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:
+    state = orchestrator.agent_state
+    config = getattr(getattr(orchestrator, "session", None), "config", {}) or {}
+    configure = getattr(state, "configure_recovery_policy", None)
+    if callable(configure):
+        configure(config)
+    budget = getattr(state, "recovery_budget", None)
+    policy = getattr(orchestrator, "task_policy", None)
+    limit = (
+        budget.limit(RecoveryScope.REASONING_CONTINUATIONS)
+        if budget is not None
+        else runtime_limit_values(config)["max_reasoning_turns"]
+    )
+    history = state.tool_history
+    stored_cursor = int(getattr(state, "reasoning_last_history_count", -1))
+    uninitialized_cursor = stored_cursor < 0
+    cursor = 0 if uninitialized_cursor else min(stored_cursor, len(history))
+    window = history[cursor:]
+    progress = reasoning_progress_fingerprint(window)
+    turns_used = (
+        budget.used(RecoveryScope.REASONING_CONTINUATIONS)
+        if budget is not None
+        else int(getattr(state, "reasoning_turns_used", 0))
+    )
+    last_progress = getattr(state, "reasoning_last_progress_token", None)
+    if _boundary_is_blocked(
+        turns_used, limit, uninitialized_cursor, window, last_progress, progress
+    ):
+        return BoundaryContinuationResult(blocked=True)
+    if policy is not None:
+        if not policy.authorize_recovery(
+            RecoveryScope.REASONING_CONTINUATIONS
+        ).allowed:
+            return BoundaryContinuationResult(blocked=True)
+    elif budget is not None:
+        if not budget.try_consume(RecoveryScope.REASONING_CONTINUATIONS):
+            return BoundaryContinuationResult(blocked=True)
+    else:
+        state.reasoning_turns_used = turns_used + 1
+    state.reasoning_last_history_count = len(history)
+    state.reasoning_last_progress_token = progress
+    continuation = _request_continuation(orchestrator, objective)
+    if continuation is None or continuation.kind is PlanningDecisionKind.FAIL:
+        return BoundaryContinuationResult(blocked=True)
+    if not _apply_canonical_review(orchestrator, continuation):
+        return BoundaryContinuationResult(blocked=True)
+    return _project_continuation(orchestrator, continuation, objective)
+
+
+def _boundary_is_blocked(
+    turns_used: int,
+    limit: int,
+    uninitialized_cursor: bool,
+    window: Sequence[Mapping[str, Any]],
+    last_progress: str | None,
+    progress: str,
+) -> bool:
+    return turns_used >= limit or (
+        not uninitialized_cursor and not window
+    ) or (last_progress is not None and last_progress == progress)
+
+
+def _request_continuation(orchestrator: Any, objective: str) -> Any | None:
+    try:
+        return orchestrator.plan_builder.continue_after_reasoning_boundary(objective)
+    except BudgetExhausted:
+        raise
+    except Exception:
+        return None
+
+
+def _project_continuation(
+    orchestrator: Any, continuation: Any, objective: str,
+) -> BoundaryContinuationResult:
+    if continuation.kind is PlanningDecisionKind.COMPLETE:
+        return BoundaryContinuationResult(completed=True)
+    if continuation.kind is PlanningDecisionKind.BLOCK:
+        return BoundaryContinuationResult(blocked=True)
+    if continuation.kind is not PlanningDecisionKind.EXECUTE or not continuation.plan:
+        return BoundaryContinuationResult(blocked=True)
+    proposed_plan = (
+        serialize_plan(continuation.plan)
+        if isinstance(continuation.plan, Plan)
+        else continuation.plan
+    )
+    orchestrator._emit(
+        "reasoning_boundary_plan_proposed",
+        {"steps": len(continuation.plan), "plan": proposed_plan},
+    )
+    return _extend_plan(
+        orchestrator,
+        continuation.plan,
+        objective,
+        getattr(continuation, "planning_view", None),
+    )
+
+
+def _extend_plan(
+    orchestrator: Any, plan: Any, objective: str, planning_view: Any = None,
+) -> BoundaryContinuationResult:
+    extender = getattr(orchestrator.execution_gateway, "extend_validated_plan", None)
+    if not callable(extender):
+        return BoundaryContinuationResult(blocked=True)
+    try:
+        validated = call_extension_boundary(extender, plan, objective, planning_view)
+    except BudgetExhausted:
+        raise
+    except Exception:
+        validated = None
+    if validated is None:
+        return BoundaryContinuationResult(blocked=True)
+    return BoundaryContinuationResult(extended=True, planning_view=planning_view)
+
+
+def call_extension_boundary(
+    extender: Callable[..., Any], plan: Any, objective: str, planning_view: Any
+) -> Any:
+    """Call the extension seam using its declared supported keyword shape.
+
+    Signature inspection happens before invocation.  A ``TypeError`` raised by
+    the extension body therefore remains an extension failure; it is never
+    interpreted as permission to retry under another call shape.
+    """
+
+    extension_kwargs: dict[str, Any] = {"allow_conditional_preview": True}
+    if planning_view is not None:
+        extension_kwargs["planning_view"] = planning_view
+    try:
+        parameters = inspect.signature(extender).parameters
+    except (TypeError, ValueError) as exc:
+        raise TypeError("extension seam has no inspectable signature") from exc
+    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+        supported_kwargs = extension_kwargs
+    else:
+        supported_kwargs = {
+            name: value
+            for name, value in extension_kwargs.items()
+            if name in parameters
+            and parameters[name].kind
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        }
+    return extender(plan, objective, **supported_kwargs)
+
+
+__all__ = [
+    "BoundaryContinuationResult",
+    "continue_after_reasoning_boundary",
+]

@@ -11,27 +11,27 @@ from typing import Any, Mapping, cast
 
 import pytest
 
-from agent.evaluation import campaign
-from agent.evaluation.analysis import analyze_campaign, secret_safe_report, validate_campaign_report
-from agent.evaluation.artifact_paths import (
+from llm_agent.agent.evaluation import campaign
+from llm_agent.agent.evaluation.analysis import analyze_campaign, secret_safe_report, validate_campaign_report
+from llm_agent.agent.evaluation.artifact_paths import (
     canonical_artifact_paths,
     live_owned_artifact_paths,
     progress_path_for,
 )
-from agent.evaluation.campaign_artifacts import (
+from llm_agent.agent.evaluation.campaign_artifacts import (
     deterministic_readiness,
     deterministic_summary_from_readiness,
 )
-from agent.evaluation.campaign_progress import (
+from llm_agent.agent.evaluation.campaign_progress import (
     CampaignProgressError,
     ProgressWriter,
     build_progress_document,
     load_campaign_progress,
     resume_report_from_progress,
 )
-from agent.evaluation.campaign_report import _write_report, run_real_model_campaign
-from agent.evaluation.campaign_serialization import write_campaign_report
-from agent.evaluation.evaluation_identity import (
+from llm_agent.agent.evaluation.campaign_report import _write_report, run_real_model_campaign
+from llm_agent.agent.evaluation.campaign_serialization import write_campaign_report
+from llm_agent.agent.evaluation.evaluation_identity import (
     CAMPAIGN_SCHEMA_VERSION,
     DEFAULT_REAL_MODEL_EPOCH,
     candidate_identity,
@@ -43,21 +43,23 @@ from agent.evaluation.evaluation_identity import (
     semantic_candidate_manifest,
     semantic_manifest_hash,
 )
-from agent.evaluation.evaluation_snapshot_projection import snapshot_evaluation_projection
-from agent.evaluation.evidence import MAX_EVIDENCE_DEPTH, sanitize_evidence
-from agent.evaluation.experiment import evaluation_context
-from agent.evaluation.real_model_preflight import build_real_model_preflight
-from agent.evaluation.release_prerequisites import (
+from llm_agent.agent.evaluation.evaluation_snapshot_projection import snapshot_evaluation_projection
+from llm_agent.agent.evaluation.evidence import MAX_EVIDENCE_DEPTH, sanitize_evidence
+from llm_agent.agent.evaluation.experiment import evaluation_context
+from llm_agent.agent.evaluation.real_model_preflight import build_real_model_preflight
+from llm_agent.agent.evaluation.release_prerequisites import (
     project_release_prerequisite_snapshot,
     validate_release_prerequisite_projection,
 )
-from agent.evaluation.scenario_contracts import H_SERIES, H_SERIES_VERSION, EvidenceLevel, RepetitionPolicy
-from agent.evaluation.scripted_gateway import _scripted_factory
-from agent.evaluation.scripted_gateway_logic import _engineering_response
-from agent.runtime.filesystem_primitives import write_bytes_atomic
+from llm_agent.agent.evaluation.scenario_contracts import H_SERIES, H_SERIES_VERSION, EvidenceLevel, RepetitionPolicy
+from llm_agent.agent.evaluation.scripted_gateway import _scripted_factory
+from llm_agent.agent.evaluation.scripted_gateway_logic import _engineering_response
+from llm_agent.filesystem.primitives import write_bytes_atomic
+from scripts.w21_architecture.source import SourceLayout
 from tests.unit.evaluation.test_campaign_corrective import _analysis_report
 
 ROOT = Path(__file__).resolve().parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 _LOCAL_EVIDENCE_MARKERS = (
     "prm" + "-",
     "." + "audit" + "-" + "local",
@@ -357,8 +359,8 @@ def test_prerequisite_snapshots_are_frozen_after_preflight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import agent.evaluation.artifact_paths as artifact_paths_module
-    import agent.evaluation.real_model_preflight as preflight_module
+    import llm_agent.agent.evaluation.artifact_paths as artifact_paths_module
+    import llm_agent.agent.evaluation.real_model_preflight as preflight_module
 
     base = _analysis_report()
     old_installed = {
@@ -528,7 +530,7 @@ def test_persisted_report_cannot_drop_frozen_acceptance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import agent.evaluation.campaign_report as report_module
+    import llm_agent.agent.evaluation.campaign_report as report_module
 
     report = _analysis_report()
     installed = copy.deepcopy(report["installed_acceptance"])
@@ -871,13 +873,13 @@ def test_moved_campaign_payloads_are_utf8_and_not_mojibake() -> None:
         "agent/evaluation/structured_proof_scenarios.py",
         "scripts/verify_installed_package.py",
     ):
-        raw = (ROOT / relative).read_bytes()
+        raw = SOURCE_LAYOUT.path_for_w21_relative(relative).read_bytes()
         text_value = raw.decode("utf-8")
         assert not any(marker in text_value for marker in ("Ã", "ƒ", "Â")), relative
 
 
 def test_external_identity_readiness_round_trips_into_preflight(tmp_path: Path) -> None:
-    from agent.evaluation.analysis import build_corrective_readiness
+    from llm_agent.agent.evaluation.analysis import build_corrective_readiness
 
     external_identity = "https://provider.example/model-a"
     candidate = candidate_identity(ROOT)

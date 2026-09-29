@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.orchestration import route_coordinator, task_runner
-from agent.orchestration.operations import OrchestratorOperations
-from agent.orchestration.route_result import RouteResult
-from agent.orchestration.task_runner import TaskInputs, TaskRunner
-from agent.planning.execution_gateway import ExecutionResult
-from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
-from agent.planning.plan_model import Plan
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.state import AgentState
+from llm_agent.agent.orchestration import route_coordinator, task_runner
+from llm_agent.agent.orchestration.operations import OrchestratorOperations
+from llm_agent.agent.orchestration.route_result import RouteResult
+from llm_agent.agent.orchestration.task_runner import TaskInputs, TaskRunner
+from llm_agent.agent.planning.execution_gateway import ExecutionResult
+from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.state import AgentState
 
 RUN_ID = "run-route-trace"
 ROOT_ID = "task-route-root"

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
+from llm_agent.workspace.paths import AppPaths
 from scripts import verify_installed_product as verifier
 
 

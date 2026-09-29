@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.llm.contracts import ProviderCapabilities
-from agent.llm.session import ChatSession
-from agent.llm.session_requests import (
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.session_requests import (
     build_effective_system_prompt_for_budget,
     build_model_request,
     resolve_effective_reasoning_budget,

@@ -4,31 +4,31 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
     WorkspaceQueryRequest,
     WorkspaceQueryStatus,
 )
-from agent.interfaces.cli.action_parser import parse_action
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
-from agent.interfaces.cli.interactive_rendering import query_arguments
-from agent.interfaces.cli.output_projection import (
+from llm_agent.interfaces.cli.action_parser import parse_action
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.interactive_rendering import query_arguments
+from llm_agent.interfaces.cli.output_projection import (
     format_workspace_query_result,
     publish_workspace_query_result,
 )
-from agent.interfaces.cli.output_viewer import render_output_viewer
-from agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion
-from agent.outputs.models import (
+from llm_agent.interfaces.cli.output_viewer import render_output_viewer
+from llm_agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion
+from llm_agent.outputs.models import (
     OutputContentPolicy,
     OutputDisposition,
     OutputKind,
     OutputPublishRequest,
     OutputSource,
 )
-from agent.outputs.service import OutputService
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.outputs.service import OutputService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 class _Shell:
@@ -133,7 +133,7 @@ def test_actions_queries_and_outputs_share_identity_and_strict_publication_bound
     shell = _Shell()
     context = SimpleNamespace(
         shell=shell,
-        application=SimpleNamespace(output_service=lambda: output_service),
+        output_service=output_service,
     )
     assert render_output_viewer(f"/inspect output {strict_artifact.artifact.output_id}", context)
     assert any(strict_artifact.artifact.output_id in str(value) for value in shell.values)

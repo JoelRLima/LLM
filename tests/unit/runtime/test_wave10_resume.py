@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from agent.checkpoint_manager import CheckpointManager
-from agent.memory import json_persistence
-from agent.orchestration.task_runner import TaskRunner
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.paths import WorkspacePaths
-from agent.task_definition.compiler import TaskDefinitionCompiler
-from agent.task_definition.repository import TaskDefinitionRepository
-from agent.task_definition.resolver import TaskContextResolver
+from llm_agent.agent.checkpoint_manager import CheckpointManager
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.task_definition.compiler import TaskDefinitionCompiler
+from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.task_definition.resolver import TaskContextResolver
+from llm_agent.storage import json_persistence
+from llm_agent.workspace.paths import WorkspacePaths
 from tests.support.task_definition import make_contract, make_spec
 from tests.unit.runtime.test_wave4_correlation_events_corrective import (
     _checkpoint,

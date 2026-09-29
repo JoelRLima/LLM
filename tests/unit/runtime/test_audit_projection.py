@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.llm.identity import declared_model_audit_identity
-from agent.observability.audit_projection import (
+from llm_agent.agent.llm.identity import declared_model_audit_identity
+from llm_agent.agent.observability.audit_projection import (
     MAX_AUDIT_MODEL_IDS,
     MAX_AUDIT_TOOLS,
     RunAuditReceipt,
@@ -20,10 +20,10 @@ from agent.observability.audit_projection import (
     project_required_capabilities,
     project_tool_descriptor,
 )
-from agent.runtime.context_results import Artifact
-from agent.runtime.correlation import RunCorrelation
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
-from agent.tools.contracts import ToolDescriptor, ToolOriginKind, ToolResult, ToolStatus
+from llm_agent.agent.runtime.context_results import Artifact
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolOriginKind, ToolResult, ToolStatus
 
 
 def _descriptor(

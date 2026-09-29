@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.application import AgentApplication
-from agent.cancellation import CancellationToken
-from agent.interaction.service import InteractionService
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.interaction.service import InteractionService
+from llm_agent.cancellation import CancellationToken
 
 from ._helpers import application
 

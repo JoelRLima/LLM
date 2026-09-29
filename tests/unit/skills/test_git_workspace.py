@@ -9,13 +9,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.approval import AutoApprove
-from agent.skills import git as git_module
-from agent.skills import shell as shell_module
-from agent.skills.git import GitSkill
-from agent.skills.process_environment import confined_process_environment
-from agent.skills.process_safety import local_history_arguments, resolve_trusted_executable
-from agent.skills.shell import ShellSkill
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.skills import git as git_module
+from llm_agent.agent.skills import shell as shell_module
+from llm_agent.agent.skills.git import GitSkill
+from llm_agent.agent.skills.process_environment import confined_process_environment
+from llm_agent.agent.skills.process_safety import local_history_arguments, resolve_trusted_executable
+from llm_agent.agent.skills.shell import ShellSkill
 
 
 def _signed_repo_with_verifier(tmp_path: Path) -> tuple[Path, Path]:
@@ -336,7 +336,7 @@ def test_git_skill_executes_in_injected_workspace(tmp_path, monkeypatch):
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="clean\n", stderr="")
 
-    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.git.run_bounded_process", fake_run)
     skill = GitSkill(base_dir=tmp_path)
 
     result = skill.execute({"command": "log"})
@@ -454,7 +454,7 @@ def test_git_skill_accepts_log_and_disables_extension_hooks(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.git.run_bounded_process", fake_run)
     result = GitSkill(base_dir=tmp_path).execute(
         {
             "command": "log",
@@ -495,7 +495,7 @@ def test_git_skill_reuses_bounded_runner_with_cancellation_context(
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("agent.skills.git.run_bounded_process", fake_run)
+    monkeypatch.setattr("llm_agent.agent.skills.git.run_bounded_process", fake_run)
     token = object()
     event = object()
     result = GitSkill(base_dir=tmp_path).execute_with_context(
@@ -652,7 +652,7 @@ def test_model_actionable_git_status_diff_reject_before_content_filter(
         monkeypatch.setattr(git_module.subprocess, "run", forbidden_process)
         result = GitSkill(base_dir=repo).execute(invocation)
     else:
-        monkeypatch.setattr("agent.skills.shell._run_bounded_process", forbidden_process)
+        monkeypatch.setattr("llm_agent.agent.skills.shell._run_bounded_process", forbidden_process)
         result = ShellSkill(base_dir=repo, approval_policy=AutoApprove()).execute(invocation)
 
     assert result["ok"] is False

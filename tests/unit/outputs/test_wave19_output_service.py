@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.outputs.models import (
+from llm_agent.outputs.models import (
     INLINE_OUTPUT_MAX_CHARS,
     INLINE_OUTPUT_MAX_LINES,
     MAX_OUTPUT_PAYLOAD_BYTES,
@@ -16,8 +16,8 @@ from agent.outputs.models import (
     OutputSource,
     OutputValidationError,
 )
-from agent.outputs.service import OutputService
-from agent.runtime.paths import AppPaths
+from llm_agent.outputs.service import OutputService
+from llm_agent.workspace.paths import AppPaths
 
 
 def _service(tmp_path: Path) -> OutputService:

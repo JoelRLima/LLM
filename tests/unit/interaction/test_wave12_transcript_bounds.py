@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.transcript import MAX_PRIOR_CONTENT, bounded_prior_pairs
+from llm_agent.agent.interaction.transcript import MAX_PRIOR_CONTENT, bounded_prior_pairs
 
 
 def test_total_prior_content_is_bounded() -> None:

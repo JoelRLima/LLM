@@ -3,13 +3,13 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
-from agent.evaluation.analysis_verdict import verdict
-from agent.evaluation.campaign_report import _observed_identity_summary
-from agent.evaluation.evaluation_identity import campaign_config, model_config_identity, resume_compatible
-from agent.evaluation.execution_evidence import identity_drift
-from agent.evaluation.trace import RecordingGateway
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
-from agent.llm.identity import declared_provider_identity
+from llm_agent.agent.evaluation.analysis_verdict import verdict
+from llm_agent.agent.evaluation.campaign_report import _observed_identity_summary
+from llm_agent.agent.evaluation.evaluation_identity import campaign_config, model_config_identity, resume_compatible
+from llm_agent.agent.evaluation.execution_evidence import identity_drift
+from llm_agent.agent.evaluation.trace import RecordingGateway
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.identity import declared_provider_identity
 
 
 class SequenceGateway:
@@ -255,7 +255,7 @@ def test_c6b_frozen_external_identity_is_part_of_live_model_config_resume_identi
 
 def test_c6b_live_model_cli_freezes_external_identity_without_provider_probe(tmp_path: Path, monkeypatch) -> None:
     import scripts.run_evaluation_campaign as run_evaluation_campaign
-    from agent.llm.providers import openai_compatible
+    from llm_agent.agent.llm.providers import openai_compatible
 
     class StubProvider:
         def __init__(self, profile: dict) -> None:

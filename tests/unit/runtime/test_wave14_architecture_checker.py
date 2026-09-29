@@ -5,12 +5,14 @@ from pathlib import Path
 
 from scripts import check_wave14_architecture as checker
 from scripts.check_wave14_architecture import REQUIRED_MUTATION_ARMS, check_architecture
+from scripts.w21_architecture import SourceLayout
 
 ROOT = Path(__file__).parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 
 
 def _copy(root: Path, destination: Path, relative: str) -> None:
-    source = root / relative
+    source = SOURCE_LAYOUT.path_for_w21_relative(relative)
     target = destination / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)

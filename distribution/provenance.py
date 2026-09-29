@@ -60,6 +60,21 @@ W19_CANDIDATE_PATH_SURFACE = (
 # candidate.  W19 remains unchanged for historical provenance checks.
 W20_CANDIDATE_PATH_SURFACE = (
     *W19_CANDIDATE_PATH_SURFACE,
+    # W22's integrated candidate is rooted in the canonical src-layout
+    # package.  Keep the prefix explicit so the W20 provenance boundary
+    # covers the final product tree without broadening the historical W18
+    # default surface.
+    "src/llm_agent/",
+    ".github/workflows/ci.yml",
+    "distribution/release_identity.py",
+    "docs/guia-extensao.md",
+    "installer/install.ps1",
+    "quality/architecture_w22_dispositions.json",
+    "quality/architecture_w22_policy.json",
+    "quality/process_w22_dispositions.json",
+    # The runtime corrective disposition is part of the W22 candidate
+    # evidence surface, just like the architecture and process dispositions.
+    "quality/runtime_w22_dispositions.json",
     "pyproject.toml",
     "distribution/lockfiles.py",
     "distribution/mcp-windows-py312.lock",
@@ -143,6 +158,19 @@ def _clean_repository_environment() -> dict[str, str]:
     return environment
 
 
+def _summarise_git_arguments(arguments: Sequence[str]) -> str:
+    """Render a bounded diagnostic representation of one Git argv."""
+
+    limit = 12
+    rendered = [
+        argument if len(argument) <= 256 else f"{argument[:253]}..."
+        for argument in arguments[:limit]
+    ]
+    if len(arguments) > limit:
+        rendered.append(f"... ({len(arguments) - limit} more arguments)")
+    return " ".join(rendered)
+
+
 def _run_git(root: Path, arguments: Sequence[str], environment: Mapping[str, str] | None = None) -> str:
     try:
         completed = subprocess.run(
@@ -156,7 +184,9 @@ def _run_git(root: Path, arguments: Sequence[str], environment: Mapping[str, str
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         detail = getattr(exc, "stderr", "") or getattr(exc, "stdout", "") or str(exc)
-        raise ProvenanceError(f"git command failed: git {' '.join(arguments)}\n{detail[-2000:]}") from exc
+        raise ProvenanceError(
+            f"git command failed: git {_summarise_git_arguments(arguments)}\n{detail[-2000:]}"
+        ) from exc
     return completed.stdout.strip()
 
 
@@ -172,7 +202,9 @@ def _run_git_bytes(root: Path, arguments: Sequence[str]) -> bytes:
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         detail = getattr(exc, "stderr", b"") or getattr(exc, "stdout", b"") or str(exc).encode()
-        raise ProvenanceError(f"git command failed: git {' '.join(arguments)}\n{detail[-2000:]!r}") from exc
+        raise ProvenanceError(
+            f"git command failed: git {_summarise_git_arguments(arguments)}\n{detail[-2000:]!r}"
+        ) from exc
     return completed.stdout
 
 
@@ -285,7 +317,29 @@ def isolated_candidate_tree(
 
         _run_git(root, ["read-tree", base_commit], environment)
         if changed_paths:
-            _run_git(root, ["add", "--all", "--", *changed_paths], environment)
+            # Git's pathspec input file is part of the compatibility contract
+            # used by the bounded process/path helpers.  Literal NUL-delimited
+            # entries preserve the exact inventory without putting it in argv.
+            pathspec_file = temporary_root / "candidate-pathspecs"
+            try:
+                pathspec_file.write_bytes(
+                    b"".join(
+                        f":(literal){path}\0".encode("utf-8")
+                        for path in changed_paths
+                    )
+                )
+            except OSError as exc:
+                raise ProvenanceError("cannot create candidate Git pathspec input") from exc
+            _run_git(
+                root,
+                [
+                    "add",
+                    "--all",
+                    f"--pathspec-from-file={pathspec_file}",
+                    "--pathspec-file-nul",
+                ],
+                environment,
+            )
         tree = _validate_hex40(_run_git(root, ["write-tree"], environment), "candidate tree")
         object_type = _run_git(root, ["cat-file", "-t", tree], environment)
         if object_type != "tree":

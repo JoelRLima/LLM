@@ -1,4 +1,4 @@
-from agent.code.workflow_proposal import _prompt
+from llm_agent.agent.code.workflow_proposal import _prompt
 
 
 def test_proposal_prompt_supplies_untrusted_workspace_content_through_separate_canonical_envelope() -> None:

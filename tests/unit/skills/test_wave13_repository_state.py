@@ -5,14 +5,13 @@ from pathlib import Path
 
 import pytest
 
-import agent.skills.repository_state as repository_state_module
-from agent.approval import AutoApprove
-from agent.llm.context_projection import UNTRUSTED_REPOSITORY_STATE
-from agent.llm.context_view_support import repository_state_records
-from agent.resources.contracts import WORKSPACE_RESOURCE
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.skills import load_skill_registry
-from agent.skills.repository_state import (
+import llm_agent.agent.skills.repository_state as repository_state_module
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.llm.context_projection import UNTRUSTED_REPOSITORY_STATE
+from llm_agent.agent.llm.context_view_support import repository_state_records
+from llm_agent.agent.resources.contracts import WORKSPACE_RESOURCE
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.skills.repository_state import (
     MAX_METADATA_ENTRIES,
     RepositoryStateSkill,
     RepositoryStateSnapshot,
@@ -20,11 +19,12 @@ from agent.skills.repository_state import (
     _parse_porcelain_v2,
     _RepositoryStateError,
 )
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import CancellationSafetyMode, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.invocation_semantics import resolve_invocation_semantics
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import CancellationSafetyMode, ToolStatus
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.workspace.context import WorkspaceContext
 
 _OID = "a" * 40
 

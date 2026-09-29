@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 def test_cross_clause_independence_requires_disjoint_normalized_paths() -> None:

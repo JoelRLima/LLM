@@ -3,15 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
-from agent.tools.extension_catalog_service import host_path_flavor
-from agent.tools.extension_catalog_validation import (
+from llm_agent.extensions.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
+from llm_agent.extensions.extension_catalog_service import host_path_flavor
+from llm_agent.extensions.extension_catalog_validation import (
     ManifestObservation,
     ManifestSummary,
     observe_catalog_document,
 )
-from agent.tools.extension_path import PersistedManifestPath
-from agent.tools.extension_state import fingerprint_for_bytes
+from llm_agent.extensions.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_state import fingerprint_for_bytes
 
 
 def test_manifest_summary_copies_and_canonicalizes_capabilities() -> None:

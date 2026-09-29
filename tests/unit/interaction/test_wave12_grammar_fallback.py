@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.interaction.resolver import InteractionResolver, select_interaction_structured_output
-from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
-from agent.llm.errors import UnsupportedModelCapability
+from llm_agent.agent.interaction.resolver import InteractionResolver, select_interaction_structured_output
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.errors import UnsupportedModelCapability
 
 from ._helpers import session
 

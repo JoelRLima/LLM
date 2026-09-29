@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.memory import memory as memory_module
-from agent.memory import path_safety
-from agent.memory.json_persistence import AtomicJsonWriteError
-from agent.memory.memory import AgentMemory, MemoryDatabaseError, MemoryLoadError
+from llm_agent.agent.memory import memory as memory_module
+from llm_agent.agent.memory import path_safety
+from llm_agent.agent.memory.memory import AgentMemory, MemoryDatabaseError, MemoryLoadError
+from llm_agent.storage.json_persistence import AtomicJsonWriteError
 
 
 def _symlink_or_skip(

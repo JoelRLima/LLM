@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from agent.observability import (
+from llm_agent.agent.observability import (
     DiagnosticRecord,
     DiagnosticSeverity,
     ObservabilityMode,
@@ -13,8 +13,8 @@ from agent.observability import (
     ObservationSource,
     redact_observation_value,
 )
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.events import RuntimeEvent
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.events import RuntimeEvent
 from scripts import check_wave9_architecture as architecture_checker
 
 

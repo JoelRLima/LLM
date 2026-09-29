@@ -27,7 +27,7 @@ jobs:
         run: python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
 
       - name: Installed entry point smoke test
-        run: python -c "from agent.interfaces.cli import main; assert callable(main)"
+        run: python -c "from llm_agent.interfaces.cli import main; assert callable(main)"
 
       - name: Ruff
         run: ruff check .

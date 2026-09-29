@@ -13,8 +13,14 @@ import textwrap
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_ROOT = ROOT / "agent"
+SOURCE_LAYOUT = w21_source_layout(ROOT)
+AGENT_ROOT = SOURCE_LAYOUT.agent_source_directory
 
 # These modules are named compatibility/projection edges.  They may inspect a
 # mapping because their contract is explicitly to translate or project one;
@@ -133,11 +139,12 @@ RENDER_NAME_PARTS = ("sanitize", "render", "format", "public", "prompt")
 
 
 def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _files() -> Iterable[Path]:
-    yield from sorted(AGENT_ROOT.rglob("*.py"))
+    if AGENT_ROOT is not None:
+        yield from sorted(AGENT_ROOT.rglob("*.py"))
 
 
 def _literal_string(node: ast.AST | None) -> str | None:
@@ -189,7 +196,10 @@ def _annotation_has_mapping(annotation: ast.AST | None) -> bool:
 def _tool_result_import_aliases(tree: ast.AST) -> set[str]:
     aliases = {"ToolResult"}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.ImportFrom) or node.module != "agent.tools.contracts":
+        if not isinstance(node, ast.ImportFrom) or node.module not in {
+            "agent.tools.contracts",
+            "llm_agent.agent.tools.contracts",
+        }:
             continue
         for imported in node.names:
             if imported.name == "ToolResult":

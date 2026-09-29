@@ -6,7 +6,7 @@ import ast
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .source import RepositorySource, qualified_name
+from .source import RepositorySource, SourceLayout, qualified_name
 
 LEGACY_PATH_SYMBOLS = frozenset(
     {
@@ -23,7 +23,7 @@ LEGACY_PATH_SYMBOLS = frozenset(
 
 
 def _is_python_surface(value: str) -> bool:
-    return value.startswith("agent.") and " " not in value and "::" not in value
+    return value.startswith(("agent.", "llm_agent.")) and " " not in value and "::" not in value
 
 
 def _is_symbol(part: str) -> bool:
@@ -134,6 +134,52 @@ def normalize_registry(document: Mapping[str, Any]) -> CompatibilityRegistry:
     return CompatibilityRegistry.from_document(document)
 
 
+def project_compatibility_document(
+    document: Mapping[str, Any],
+    layout: SourceLayout,
+) -> dict[str, Any]:
+    """Project exact W21 module surfaces through a declared source layout."""
+
+    result = dict(document)
+
+    def surface(value: Any) -> Any:
+        if not isinstance(value, str) or not value.startswith("agent.") or " " in value or "::" in value:
+            return value
+        module, symbol = _surface(value)
+        projected = layout.project_w21_module(module)
+        if projected is None:
+            return value
+        return f"{projected}.{symbol}" if symbol else projected
+
+    bridges = result.get("bridges", [])
+    if isinstance(bridges, list):
+        projected_bridges = []
+        for raw in bridges:
+            if not isinstance(raw, Mapping):
+                projected_bridges.append(raw)
+                continue
+            item = dict(raw)
+            item["surface"] = surface(item.get("surface"))
+            item["target_owner"] = surface(item.get("target_owner"))
+            projected_bridges.append(item)
+        result["bridges"] = projected_bridges
+
+    adapters = result.get("adapter_edges", [])
+    if isinstance(adapters, list):
+        projected_adapters = []
+        for raw in adapters:
+            if not isinstance(raw, Mapping):
+                projected_adapters.append(raw)
+                continue
+            item = dict(raw)
+            field = "source_module" if isinstance(item.get("source_module"), str) else "source_surface"
+            item[field] = surface(item.get(field))
+            item["destination_package"] = surface(item.get("destination_package"))
+            projected_adapters.append(item)
+        result["adapter_edges"] = projected_adapters
+    return result
+
+
 def resolve_relative_module(
     source_module: str,
     level: int,
@@ -168,7 +214,7 @@ def _legacy_from_imports(
     consumers: set[tuple[str, str]] = set()
     aliases: dict[str, str] = {}
     imported_module = _legacy_module_for_from(source_module, node, package_init=package_init)
-    if imported_module == "agent.runtime.paths":
+    if imported_module in {"agent.runtime.paths", "llm_agent.agent.runtime.paths"}:
         if any(alias.name == "*" for alias in node.names):
             # A wildcard import is a closed-world consumption of every
             # legacy export.  Recording the full surface makes an expansion
@@ -180,9 +226,9 @@ def _legacy_from_imports(
             for alias in node.names
             if alias.name in LEGACY_PATH_SYMBOLS
         )
-    elif imported_module == "agent.runtime":
+    elif imported_module in {"agent.runtime", "llm_agent.agent.runtime"}:
         aliases.update(
-            (alias.asname or alias.name, "agent.runtime.paths")
+            (alias.asname or alias.name, imported_module + ".paths")
             for alias in node.names
             if alias.name == "paths"
         )
@@ -225,7 +271,10 @@ def _legacy_attribute_consumers(
             continue
         dotted = ".".join(qualified_name(node.value))
         module = module_aliases.get(dotted)
-        if module == "agent.runtime.paths" or dotted == "agent.runtime.paths":
+        if module in {"agent.runtime.paths", "llm_agent.agent.runtime.paths"} or dotted in {
+            "agent.runtime.paths",
+            "llm_agent.agent.runtime.paths",
+        }:
             consumers.add((source_module, node.attr))
     return consumers
 
@@ -252,8 +301,10 @@ def legacy_consumers(source: RepositorySource) -> frozenset[tuple[str, str]]:
 
     consumers: set[tuple[str, str]] = set()
     module_paths = source.module_paths()
+    assert isinstance(source.layout, SourceLayout)
     for source_module, path in sorted(module_paths.items()):
-        if source_module == "agent.runtime.paths":
+        identity = source.layout.w21_module_identity(source_module) or source_module
+        if identity == "agent.runtime.paths":
             continue
         tree = source.tree_for_path(path)
         if tree is None:
@@ -261,7 +312,7 @@ def legacy_consumers(source: RepositorySource) -> frozenset[tuple[str, str]]:
         consumers.update(
             legacy_consumers_from_tree(
                 tree,
-                source_module,
+                identity,
                 package_init=path.name == "__init__.py",
             )
         )

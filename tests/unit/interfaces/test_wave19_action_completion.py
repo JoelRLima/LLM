@@ -1,4 +1,4 @@
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
 
 def test_memory_completion_prefers_canonical_leaf_paths():

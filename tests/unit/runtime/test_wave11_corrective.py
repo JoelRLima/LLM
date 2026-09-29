@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-from agent.continuity.checkpoint_projection import classify_checkpoint_document
-from agent.continuity.models import TaskContinuityStatus
-from agent.interfaces.cli import app as cli
-from agent.runtime.paths import AppPaths
-from agent.runtime.task_directives import (
+from llm_agent.agent.continuity.checkpoint_projection import classify_checkpoint_document
+from llm_agent.agent.continuity.models import TaskContinuityStatus
+from llm_agent.agent.runtime.task_directives import (
     DeliberationProfile,
     TaskDirective,
     TaskRunDirective,
 )
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _checkpoint(

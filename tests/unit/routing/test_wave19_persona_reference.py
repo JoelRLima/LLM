@@ -1,4 +1,4 @@
-from agent.routing.persona.variants.reference_w18 import W18ReferencePersonaRouter
+from llm_agent.agent.routing.persona.variants.reference_w18 import W18ReferencePersonaRouter
 
 
 def test_reference_router_does_not_inherit_current_router():

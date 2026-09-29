@@ -1,10 +1,10 @@
 import pytest
 
-from agent.planning.dependency_map import build_dependency_map
-from agent.planning.plan_optimizer import PlanningOptimizationError, PlanOptimizer
-from agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
-from agent.tools.contracts import ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.planning.dependency_map import build_dependency_map
+from llm_agent.agent.planning.plan_optimizer import PlanningOptimizationError, PlanOptimizer
+from llm_agent.agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
+from llm_agent.agent.tools.contracts import ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
 def test_optimizer_uses_context_metadata_instead_of_static_catalog() -> None:

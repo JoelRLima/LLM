@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.logging import (
+from llm_agent.agent.runtime.logging import (
     LoggingConfigurationError,
     logger,
     setup_logger,

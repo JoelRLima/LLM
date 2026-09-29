@@ -2,12 +2,13 @@
 
 from .graph import ArchitectureGraph, build_graph
 from .imports import ImportEdge, collect_import_edges, imported_module_names
-from .source import RepositorySource
+from .source import RepositorySource, SourceLayout
 
 __all__ = [
     "ArchitectureGraph",
     "ImportEdge",
     "RepositorySource",
+    "SourceLayout",
     "build_graph",
     "collect_import_edges",
     "imported_module_names",

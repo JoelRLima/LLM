@@ -1,13 +1,13 @@
 import pytest
 
-from agent.tools.authority import (
+from llm_agent.agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
     bind_task_authority,
     derive_effective_task_authority,
 )
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.workspace_extensions_resolver import ResolvedWorkspaceExtension, ResolvedWorkspaceExtensions
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.extensions.workspace_extensions_resolver import ResolvedWorkspaceExtension, ResolvedWorkspaceExtensions
 
 
 def _resolved(*entries: tuple[str, tuple[str, ...]]) -> ResolvedWorkspaceExtensions:

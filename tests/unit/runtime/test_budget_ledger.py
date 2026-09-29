@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
+from llm_agent.agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
 
 
 def test_model_reservation_is_atomic_and_bounded_under_concurrency() -> None:

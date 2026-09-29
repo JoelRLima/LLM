@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agent.skills.summarize import SummarizeSkill
+from llm_agent.agent.skills.summarize import SummarizeSkill
 
 
 class _Session:

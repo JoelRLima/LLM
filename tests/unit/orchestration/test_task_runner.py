@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.checkpoint_manager import CheckpointLoadError
-from agent.memory.json_persistence import AtomicJsonWriteError
-from agent.orchestration import task_runner as task_runner_module
-from agent.orchestration.route_result import RouteDisposition, RouteResult
-from agent.orchestration.task_runner import TaskInputs, TaskRunner
-from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
-from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
-from agent.state import AgentState
+from llm_agent.agent.checkpoint_manager import CheckpointLoadError
+from llm_agent.agent.orchestration import task_runner as task_runner_module
+from llm_agent.agent.orchestration.route_result import RouteDisposition, RouteResult
+from llm_agent.agent.orchestration.task_runner import TaskInputs, TaskRunner
+from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
+from llm_agent.agent.state import AgentState
+from llm_agent.storage.json_persistence import AtomicJsonWriteError
 
 
 class _CancellationToken:
@@ -207,7 +207,7 @@ def test_new_task_boundary_resets_shared_ledger_once() -> None:
         cancellation_token=_CancellationToken(),
     )
 
-    from agent.orchestrator import Orchestrator
+    from llm_agent.agent.orchestrator import Orchestrator
 
     Orchestrator._reset_task_state(orchestrator, "task B")
 
@@ -218,7 +218,7 @@ def test_new_task_boundary_resets_shared_ledger_once() -> None:
 
 
 def test_new_task_boundary_clears_terminal_and_cancellation_state() -> None:
-    from agent.orchestrator import Orchestrator
+    from llm_agent.agent.orchestrator import Orchestrator
 
     state = AgentState()
     state.terminal_disposition = "complete"
@@ -296,7 +296,7 @@ def test_route_selector_returns_typed_not_applicable_without_calling_handler(mon
 
 
 def test_allowed_fallback_emits_transition_and_preserves_state() -> None:
-    from agent.runtime.budget import TaskBudgetLedger
+    from llm_agent.agent.runtime.budget import TaskBudgetLedger
 
     ledger = TaskBudgetLedger()
     ledger.reserve_tool_call()

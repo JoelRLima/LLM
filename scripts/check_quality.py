@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Iterable, cast
 from urllib.parse import unquote
 
+try:
+    from scripts.w21_architecture.source import SourceLayout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import SourceLayout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
+PRODUCT_SOURCE_ROOT = SOURCE_LAYOUT.package_directory
 BASELINE_PATH = ROOT / "quality" / "baseline.json"
 IGNORED_PARTS = {
     ".git",
@@ -44,6 +51,12 @@ TEXT_FILENAMES = {".editorconfig", ".gitattributes", ".gitignore"}
 
 def _relative(path: Path) -> str:
     return path.resolve().relative_to(ROOT).as_posix()
+
+
+def _source_identity(path: Path) -> str:
+    """Keep the stable Agent source identity independent of checkout layout."""
+
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _is_ignored(path: Path) -> bool:
@@ -115,7 +128,7 @@ def check_complexity(baseline: dict[str, object]) -> tuple[list[str], int]:
         filename = Path(diagnostic["filename"])
         if not filename.is_absolute():
             filename = ROOT / filename
-        key = f"{_relative(filename)}::{match.group('name')}"
+        key = f"{_source_identity(filename)}::{match.group('name')}"
         line = int(diagnostic["location"]["row"])
         value = int(match.group("value"))
         if key in current:
@@ -130,7 +143,7 @@ def check_complexity(baseline: dict[str, object]) -> tuple[list[str], int]:
 
 
 def _production_python_files() -> Iterable[Path]:
-    yield from sorted((ROOT / "agent").rglob("*.py"))
+    yield from sorted(PRODUCT_SOURCE_ROOT.rglob("*.py"))
     yield from sorted(ROOT.glob("*.py"))
 
 
@@ -150,7 +163,7 @@ def check_module_size(baseline: dict[str, object]) -> tuple[list[str], int]:
     for path in _production_python_files():
         line_count = len(path.read_text(encoding="utf-8").splitlines())
         if line_count > max_lines:
-            current[_relative(path)] = line_count
+            current[_source_identity(path)] = line_count
     failures = _ratchet_failures(label="tamanho de modulo", current=current, allowed=allowed)
     return failures, len(current)
 
@@ -192,8 +205,14 @@ def _resolve_import(current_module: str, is_package: bool, node: ast.ImportFrom)
     return ".".join(prefix)
 
 
+def _stable_import_identity(module: str) -> str:
+    """Project canonical W22 Agent imports onto their frozen W21 identity."""
+
+    return SOURCE_LAYOUT.w21_module_identity(module) or module
+
+
 def _imports(path: Path) -> Iterable[tuple[int, str]]:
-    relative = path.relative_to(ROOT).with_suffix("")
+    relative = Path(_source_identity(path)).with_suffix("")
     parts = list(relative.parts)
     is_package = parts[-1] == "__init__"
     if is_package:
@@ -203,12 +222,12 @@ def _imports(path: Path) -> Iterable[tuple[int, str]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                yield node.lineno, alias.name
+                yield node.lineno, _stable_import_identity(alias.name)
         elif isinstance(node, ast.ImportFrom):
             base = _resolve_import(current_module, is_package, node)
             for alias in node.names:
                 imported = base if alias.name == "*" else ".".join(part for part in (base, alias.name) if part)
-                yield node.lineno, imported
+                yield node.lineno, _stable_import_identity(imported)
 
 
 def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
@@ -229,7 +248,7 @@ def _is_allowed_w15_bridge(relative: str, imported: str) -> bool:
 
 
 def _forbidden_imports(path: Path) -> tuple[str, ...]:
-    relative = _relative(path)
+    relative = _source_identity(path)
     root_compatibility = (
         "benchmark",
         "cli",
@@ -275,17 +294,17 @@ def _forbidden_imports(path: Path) -> tuple[str, ...]:
 def check_architecture() -> tuple[list[str], int]:
     failures: list[str] = []
     checked = 0
-    for path in sorted((ROOT / "agent").rglob("*.py")):
+    for path in sorted(PRODUCT_SOURCE_ROOT.rglob("*.py")):
         forbidden = _forbidden_imports(path)
         if not forbidden:
             continue
         checked += 1
         for line, imported in _imports(path):
             if _matches_prefix(imported, forbidden) and not _is_allowed_w15_bridge(
-                _relative(path), imported
+                _source_identity(path), imported
             ):
                 failures.append(
-                    f"arquitetura: {_relative(path)}:{line} importa camada proibida {imported}"
+                    f"arquitetura: {_source_identity(path)}:{line} importa camada proibida {imported}"
                 )
     return failures, checked
 

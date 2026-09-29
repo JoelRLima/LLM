@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.interaction.model_contract import INTERACTION_RESOLUTION_GBNF
-from agent.interaction.resolver import build_resolver_request
-from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.interaction.model_contract import INTERACTION_RESOLUTION_GBNF
+from llm_agent.agent.interaction.resolver import build_resolver_request
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
 
 from ._helpers import session
 

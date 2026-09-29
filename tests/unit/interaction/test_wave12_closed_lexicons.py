@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import DirectOperationalRequestGuard, OperationalClassification
+from llm_agent.agent.interaction.guards import DirectOperationalRequestGuard, OperationalClassification
 
 
 def test_unlisted_effect_synonyms_do_not_become_direct_operations() -> None:

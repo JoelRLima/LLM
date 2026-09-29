@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.skills import load_skill_registry, load_tool_registry
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
-from agent.tools.extension_registry import ExtensionRegistry
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.skills import load_skill_registry, load_tool_registry
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.extensions.extension_registry import ExtensionRegistry
 
 
 class _Adapter:
@@ -130,7 +130,7 @@ def test_frozen_registry_descriptors_and_schemas_are_read_only() -> None:
 
 
 def test_freeze_json_like_is_composed_and_strict() -> None:
-    from agent.tools.contracts import freeze_json_like
+    from llm_agent.agent.tools.contracts import freeze_json_like
 
     value = {"nested": [{"items": ("x",)}, True, 0, -2, "unicode ✓"]}
     snapshot = freeze_json_like(value)

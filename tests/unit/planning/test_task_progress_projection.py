@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agent.execution_state import StepStatus
-from agent.planning.task_progress_projection import (
+from llm_agent.agent.execution_state import StepStatus
+from llm_agent.agent.planning.task_progress_projection import (
     ProgressStatus,
     build_task_progress_projection,
 )

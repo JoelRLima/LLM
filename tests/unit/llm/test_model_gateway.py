@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.llm.contracts import (
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -10,13 +10,13 @@ from agent.llm.contracts import (
     StructuredOutputMode,
     StructuredOutputRequest,
 )
-from agent.llm.errors import ModelConnectionError, ModelResponseError, UnsupportedModelCapability
-from agent.llm.model_profile import resolve_model_profile
-from agent.llm.providers.factory import create_model_gateway
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.model_call_stream import consume_events
-from agent.runtime.paths import AppPaths
+from llm_agent.agent.llm.errors import ModelConnectionError, ModelResponseError, UnsupportedModelCapability
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.llm.providers.factory import create_model_gateway
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.runtime.model_call_stream import consume_events
+from llm_agent.workspace.paths import AppPaths
 
 
 def _request(**overrides):
@@ -135,7 +135,7 @@ def test_credential_reference_resolves_at_http_boundary_and_sets_exact_bearer_he
         "choices": [{"message": {"content": "ok"}}],
     }
 
-    with patch("agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
+    with patch("llm_agent.agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
         gateway.complete(_request())
 
     assert post.call_args.kwargs["headers"] == {"Authorization": f"Bearer {sentinel}"}
@@ -158,7 +158,7 @@ def test_missing_or_empty_credential_reference_makes_zero_http_calls(
         }
     )
 
-    with patch("agent.llm.providers.openai_compatible.requests.post") as post:
+    with patch("llm_agent.agent.llm.providers.openai_compatible.requests.post") as post:
         with pytest.raises(ModelConnectionError) as caught:
             gateway.complete(_request())
 
@@ -173,7 +173,7 @@ def test_credential_free_profile_preserves_unauthenticated_request_shape() -> No
     response = MagicMock()
     response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
 
-    with patch("agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
+    with patch("llm_agent.agent.llm.providers.openai_compatible.requests.post", return_value=response) as post:
         gateway.complete(_request())
 
     assert "headers" not in post.call_args.kwargs

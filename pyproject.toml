@@ -30,16 +30,17 @@ dev = [
 ]
 
 [project.scripts]
-llm-agent = "agent.interfaces.cli.app:main"
+llm-agent = "llm_agent.interfaces.cli.app:main"
 
 [tool.setuptools.packages.find]
-include = ["agent*"]
+where = ["src"]
+include = ["llm_agent*"]
 
 [tool.setuptools.dynamic]
-version = {attr = "agent._version.VERSION"}
+version = {attr = "llm_agent._version.VERSION"}
 
 [tool.setuptools.package-data]
-"agent.resources" = ["*.json"]
+"llm_agent.resources" = ["*.json"]
 
 [tool.ruff]
 line-length = 120
@@ -59,10 +60,10 @@ no_site_packages = true
 follow_imports = "skip"
 exclude = ["^\\.venv/", "^\\.temp_analysis/", "^runtime/"]
 files = [
-    "agent",
+    "src/llm_agent",
     "scripts",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = ["tests"]

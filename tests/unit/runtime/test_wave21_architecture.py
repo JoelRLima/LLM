@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 from scripts.check_wave21_architecture import FROZEN_GRAPH, check_architecture
-from scripts.w21_architecture import RepositorySource, build_graph
-from scripts.w21_architecture.policy import stable_violation_id
+from scripts.w21_architecture import RepositorySource, SourceLayout, build_graph
+from scripts.w21_architecture.policy import stable_violation_id, w22_owner_violations
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -114,6 +114,87 @@ def load():
     assert {"normal_import", "type_checking", "local_import", "literal_dynamic_import"}.issubset(edge["edge_kinds"])
     assert any(item["source_module"] == "agent.skills.registry" and item["destination_module"] == "agent.skills.impl" for item in graph.declarative_edges)
     assert any(item["destination_module"] == "agent.interfaces.cli.handler" for item in graph.declarative_edges)
+
+
+def test_source_root_layout_keeps_repository_source_and_import_roots_distinct(tmp_path: Path) -> None:
+    _write(tmp_path, "src/agent/__init__.py", "")
+    _write(tmp_path, "src/agent/foo.py", "")
+    source = RepositorySource(tmp_path, "src-agent")
+
+    assert source.root == tmp_path.resolve()
+    assert source.layout is not None
+    assert source.layout.python_source_root == (tmp_path / "src").resolve()
+    assert source.layout.package_directory == (tmp_path / "src/agent").resolve()
+    assert source.module_paths()["agent.foo"] == (tmp_path / "src/agent/foo.py").resolve()
+
+
+def test_product_source_path_maps_to_full_import_namespace(tmp_path: Path) -> None:
+    _write(tmp_path, "src/llm_agent/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/agent/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/agent/foo.py", "")
+    _write(tmp_path, "src/llm_agent/application/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/application/core.py", "")
+    source = RepositorySource(tmp_path, "final-w22")
+    graph = build_graph(source)
+
+    assert source.layout is not None
+    assert source.layout.import_module_root == "llm_agent"
+    assert source.layout.agent_module_root == "llm_agent.agent"
+    assert "llm_agent.agent.foo" in source.module_paths()
+    assert "llm_agent.application.core" in source.module_paths()
+    assert {item["module"] for item in graph.modules} == {
+        "llm_agent", "llm_agent.agent", "llm_agent.agent.foo",
+        "llm_agent.application", "llm_agent.application.core",
+    }
+
+
+def test_w22_checker_rejects_agent_to_application_owner_edge(tmp_path: Path) -> None:
+    _write(tmp_path, "src/llm_agent/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/agent/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/agent/interaction/__init__.py", "")
+    _write(
+        tmp_path,
+        "src/llm_agent/agent/interaction/service.py",
+        "from llm_agent.application.task_directives import parse_task_request\n",
+    )
+    _write(tmp_path, "src/llm_agent/application/__init__.py", "")
+    _write(tmp_path, "src/llm_agent/application/task_directives.py", "def parse_task_request(): pass\n")
+    source = RepositorySource(tmp_path, "final-w22")
+    graph = build_graph(source)
+    assert source.layout is not None
+    policy = json.loads((ROOT / "quality/architecture_w22_policy.json").read_text(encoding="utf-8"))
+
+    violations = w22_owner_violations(
+        list(graph.architecture_union_edges), source.layout, policy
+    )
+
+    assert any(
+        item.target_rule_id == "W22-OWNER-AGENT-APPLICATION-001"
+        and item.source_module == "llm_agent.agent.interaction.service"
+        and item.destination_module == "llm_agent.application.task_directives"
+        for item in violations
+    )
+
+
+def test_w22_checker_preserves_application_to_agent_direction(tmp_path: Path) -> None:
+    layout = SourceLayout.for_profile(tmp_path, "final-w22")
+    policy = json.loads((ROOT / "quality/architecture_w22_policy.json").read_text(encoding="utf-8"))
+    edge = {
+        "source_module": "llm_agent.application.agent_boundary",
+        "destination_module": "llm_agent.agent.application",
+        "edge_kinds": ["normal_import"],
+    }
+
+    assert w22_owner_violations([edge], layout, policy) == []
+
+
+def test_source_layout_rejects_unbounded_profile_names(tmp_path: Path) -> None:
+    try:
+        SourceLayout.for_profile(tmp_path, "arbitrary-plugin-root")
+    except ValueError as exc:
+        assert "unsupported W22 source layout profile" in str(exc)
+    else:
+        raise AssertionError("unbounded layout profile was accepted")
 
 
 def test_generic_future_authority_does_not_infer_the_frozen_graph_rule(tmp_path: Path) -> None:

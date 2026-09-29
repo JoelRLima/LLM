@@ -3,14 +3,14 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
     WorkspaceQueryRequest,
     WorkspaceQueryStatus,
 )
-from agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion, CliQuerySubmission
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.interfaces.cli.query_executor import BoundedQueryExecutor, CliQueryCompletion, CliQuerySubmission
+from llm_agent.workspace.context import WorkspaceContext
 
 
 def test_cli_executor_wraps_canonical_truth_and_keeps_live_marker_at_adapter_boundary(tmp_path: Path) -> None:

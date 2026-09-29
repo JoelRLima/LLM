@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.model_contract import parse_interaction_resolution
+from llm_agent.agent.interaction.model_contract import parse_interaction_resolution
 
 from ._helpers import decision
 

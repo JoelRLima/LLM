@@ -6,21 +6,22 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
+from tests.support.process_environment import source_child_environment
 
 _CHILD = """
 import sys
 from pathlib import Path
-from agent.runtime.paths import AppPaths
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.paths import AppPaths
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
 
 workspace_id, catalog_path, action = sys.argv[1:]
 app_home = Path(catalog_path).parents[2]
@@ -41,11 +42,11 @@ _PAUSING_CHILD = """
 import sys
 import time
 from pathlib import Path
-from agent.runtime.paths import AppPaths
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from agent.tools.workspace_extensions_storage import WorkspaceExtensionsStorage
+from llm_agent.workspace.paths import AppPaths
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.extensions.workspace_extensions_storage import WorkspaceExtensionsStorage
 
 workspace_id, catalog_path, action, ready_path, release_path = sys.argv[1:]
 app_paths = AppPaths.discover(Path(catalog_path).parents[2], env={})
@@ -127,6 +128,7 @@ def _start_paused_writer(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=source_child_environment(),
     )
     _wait_for_signal(ready)
     return process, ready, release
@@ -173,6 +175,7 @@ def test_mutations_are_excluded_while_same_workspace_lock_is_held(
             text=True,
             check=True,
             timeout=15,
+            env=source_child_environment(),
         )
     finally:
         service.lock.release()

@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from agent.tools.extension_catalog_codec import decode_catalog, encode_catalog
-from agent.tools.extension_catalog_document import (
+from llm_agent.extensions.extension_catalog_codec import decode_catalog, encode_catalog
+from llm_agent.extensions.extension_catalog_document import (
     ExtensionCatalogDocument,
     PersistedCatalogEntry,
 )
-from agent.tools.extension_catalog_errors import CatalogCodecError, CatalogSchemaError, CatalogVersionError
-from agent.tools.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_catalog_errors import CatalogCodecError, CatalogSchemaError, CatalogVersionError
+from llm_agent.extensions.extension_path import PersistedManifestPath
 
 FINGERPRINT = "0123456789abcdef" * 4
 

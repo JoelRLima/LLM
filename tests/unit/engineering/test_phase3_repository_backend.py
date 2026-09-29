@@ -7,16 +7,14 @@ from pathlib import Path
 
 import pytest
 
-import agent
-from agent.engineering.backends import repository
-from agent.engineering.backends.repository import (
+import llm_agent
+from llm_agent.agent.engineering.backends.repository import (
     MAX_ENGINEERING_ACCEPTANCE_SUMMARY_BYTES,
     RepositoryBackend,
     _read_summary,
     _validate_and_project,
 )
-from agent.engineering.cli import discover_source_repository_context
-from agent.engineering.contracts import (
+from llm_agent.agent.engineering.contracts import (
     EngineeringBackendProtocolError,
     EngineeringBackendStateIndeterminateError,
     EngineeringCaller,
@@ -24,7 +22,9 @@ from agent.engineering.contracts import (
     EngineeringRequest,
     SourceRepositoryContext,
 )
-from agent.runtime.paths import AppPaths
+from llm_agent.execution import CommandExecutionError, CommandRequest, CommandResult
+from llm_agent.interfaces.cli.engineering import discover_source_repository_context
+from llm_agent.workspace.paths import AppPaths
 
 IDENTITY_A = "a" * 40 + ":" + "b" * 64 + ":" + "c" * 64
 IDENTITY_B = "d" * 40 + ":" + "e" * 64 + ":" + "f" * 64
@@ -49,12 +49,12 @@ def valid_summary() -> dict[str, object]:
 def test_source_context_derives_from_running_package_not_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     context = discover_source_repository_context()
-    expected_root = Path(agent.__file__).resolve().parent.parent
+    expected_root = Path(llm_agent.__file__).resolve().parents[2]
     assert context is not None
     assert context.root != tmp_path
     assert context.root == expected_root
     assert (context.root / "pyproject.toml").is_file()
-    assert (context.root / "agent").is_dir()
+    assert (context.root / "src" / "llm_agent").is_dir()
     assert (context.root / "scripts" / "verify_installed_package.py").is_file()
 
 
@@ -132,21 +132,25 @@ class SetToken:
         return True
 
 
-class FakeProcess:
-    def __init__(self, returncode: int | None) -> None:
-        self.returncode = returncode
-        self.stdout = None
-        self.stderr = None
-        self.stdin = None
+class FakeExecutor:
+    def __init__(
+        self,
+        *,
+        error: CommandExecutionError | None = None,
+        result: CommandResult | None = None,
+        summary: dict[str, object] | None = None,
+    ) -> None:
+        self.error = error
+        self.result = result or CommandResult(0, b"", b"", 0.0)
+        self.summary = summary
 
-    def poll(self) -> int | None:
-        return self.returncode
-
-    def wait(self, timeout: float | None = None) -> int:
-        del timeout
-        if self.returncode is None:
-            self.returncode = -1
-        return self.returncode
+    def execute(self, request: CommandRequest) -> CommandResult:
+        if self.summary is not None:
+            argv = request.argv
+            Path(argv[-1]).write_text(json.dumps(self.summary), encoding="utf-8")
+        if self.error is not None:
+            raise self.error
+        return self.result
 
 
 def backend_context(tmp_path: Path, *, cancelled: bool = False) -> EngineeringExecutionContext:
@@ -162,18 +166,14 @@ def backend_context(tmp_path: Path, *, cancelled: bool = False) -> EngineeringEx
     )
 
 
-def patch_reader_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(repository, "start_readers", lambda *args: ([], object(), object(), None, []))
-    monkeypatch.setattr(repository, "close_pipes", lambda process: None)
-    monkeypatch.setattr(repository, "create_windows_job", lambda: object())
-    monkeypatch.setattr(repository, "close_windows_job", lambda job: True)
-
-
-def test_cleanup_uncertainty_propagates_as_typed_indeterminate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    patch_reader_lifecycle(monkeypatch)
-    monkeypatch.setattr(repository, "assign_windows_job", lambda job, process: True)
-    monkeypatch.setattr(repository, "terminate_process", lambda *args, **kwargs: "cleanup uncertain")
-    backend = RepositoryBackend(lambda *args, **kwargs: FakeProcess(None))
+def test_cleanup_uncertainty_propagates_as_typed_indeterminate(tmp_path: Path) -> None:
+    backend = RepositoryBackend(
+        FakeExecutor(
+            error=CommandExecutionError(
+                "cleanup uncertain", code="CLEANUP_ERROR"
+            )
+        )
+    )
     with pytest.raises(EngineeringBackendStateIndeterminateError):
         backend.execute(
             EngineeringRequest("acceptance.installed-package", {}), backend_context(tmp_path, cancelled=True)
@@ -182,30 +182,31 @@ def test_cleanup_uncertainty_propagates_as_typed_indeterminate(monkeypatch: pyte
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object semantics are Windows-only")
 def test_windows_job_association_failure_with_settled_cleanup_is_protocol_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
-    patch_reader_lifecycle(monkeypatch)
-    monkeypatch.setattr(repository, "assign_windows_job", lambda job, process: False)
-    monkeypatch.setattr(repository, "terminate_process", lambda *args, **kwargs: None)
-    backend = RepositoryBackend(lambda *args, **kwargs: FakeProcess(None))
+    backend = RepositoryBackend(
+        FakeExecutor(
+            error=CommandExecutionError(
+                "association failed", code="WINDOWS_JOB_ASSOCIATION"
+            )
+        )
+    )
     with pytest.raises(EngineeringBackendProtocolError):
         backend.execute(EngineeringRequest("acceptance.installed-package", {}), backend_context(tmp_path))
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object semantics are Windows-only")
 def test_windows_job_close_uncertainty_overrides_apparent_success(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    tmp_path: Path,
 ) -> None:
-    patch_reader_lifecycle(monkeypatch)
-    monkeypatch.setattr(repository, "assign_windows_job", lambda job, process: True)
-    monkeypatch.setattr(repository, "close_windows_job", lambda job: False)
-
-    def popen(argv: tuple[str, ...], **kwargs: object) -> FakeProcess:
-        del kwargs
-        Path(argv[-1]).write_text(json.dumps(valid_summary()), encoding="utf-8")
-        return FakeProcess(0)
-
     with pytest.raises(EngineeringBackendStateIndeterminateError):
-        RepositoryBackend(popen).execute(
+        RepositoryBackend(
+            FakeExecutor(
+                error=CommandExecutionError(
+                    "Job Object close did not confirm closure", code="CLEANUP_ERROR"
+                ),
+                summary=valid_summary(),
+            )
+        ).execute(
             EngineeringRequest("acceptance.installed-package", {}), backend_context(tmp_path)
         )

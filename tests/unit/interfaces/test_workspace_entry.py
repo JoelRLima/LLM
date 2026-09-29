@@ -3,20 +3,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli import command_handlers, workspace_entry
-from agent.interfaces.cli.commands import handle_command
-from agent.interfaces.cli.workspace_entry import (
+from llm_agent.agent.runtime.config_errors import ConfigNotFound
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import command_handlers, workspace_entry
+from llm_agent.interfaces.cli.commands import handle_command
+from llm_agent.interfaces.cli.workspace_entry import (
     canonical_workspace,
     choose_workspace,
     load_last_workspace,
     remember_workspace,
     workspace_storage_path,
 )
-from agent.memory.json_persistence import AtomicJsonWriteError
-from agent.runtime.config_errors import ConfigNotFound
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
+from llm_agent.storage.json_persistence import AtomicJsonWriteError
+from llm_agent.workspace.paths import AppPaths
 
 
 class _Console:

@@ -1,4 +1,4 @@
-from agent.evaluation.experiment import evaluation_context
+from llm_agent.agent.evaluation.experiment import evaluation_context
 
 
 def test_current_and_reference_contexts_have_distinct_compositions():

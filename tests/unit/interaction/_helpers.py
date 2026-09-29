@@ -4,8 +4,8 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode, TokenUsage
-from agent.llm.session import ChatSession
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode, TokenUsage
+from llm_agent.agent.llm.session import ChatSession
 
 
 class FakeGateway:

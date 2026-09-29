@@ -57,16 +57,16 @@ from pathlib import Path
 import sys
 import time
 
-from agent.engineering.contracts import EngineeringCaller, EngineeringExecutionContext, EngineeringRequest, EngineeringTerminalStatus, EngineeringWorkspaceContext
-from agent.engineering.policy import EngineeringPreflight, preflight
-from agent.engineering.registry import EngineeringTerminalIntent, production_registry
-from agent.engineering.store import EngineeringRunStore
-from agent.observability.trace_store import TraceStore
-from agent.runtime.paths import AppPaths
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.storage_bootstrap import StorageBootstrap
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.agent.engineering.contracts import EngineeringCaller, EngineeringExecutionContext, EngineeringRequest, EngineeringTerminalStatus, EngineeringWorkspaceContext
+from llm_agent.agent.engineering.policy import EngineeringPreflight, preflight
+from llm_agent.agent.engineering.registry import EngineeringTerminalIntent, production_registry
+from llm_agent.agent.engineering.store import EngineeringRunStore
+from llm_agent.agent.observability.trace_store import TraceStore
+from llm_agent.workspace.paths import AppPaths
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.workspace.context import WorkspaceContext
 
 paths = AppPaths.discover(Path(sys.argv[1]))
 StorageBootstrap().prepare(paths)

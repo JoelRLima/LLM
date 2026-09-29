@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
-from agent.observability import TraceCompleteness, TraceStore
-from agent.observability import trace_writer as trace_writer_module
-from agent.presentation import InspectionQuery, InspectionService
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.observability import TraceCompleteness, TraceStore
+from llm_agent.agent.observability import trace_writer as trace_writer_module
+from llm_agent.agent.presentation import InspectionQuery, InspectionService
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 def _paths(tmp_path: Path) -> WorkspacePaths:
@@ -164,7 +164,7 @@ def test_time_window_input_rejects_invalid_and_inverted_ranges() -> None:
 
 
 def test_cli_time_window_invalid_input_is_a_usage_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from agent.interfaces.cli.app import main
+    from llm_agent.interfaces.cli.app import main
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()

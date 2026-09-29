@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interfaces.task_directives import (
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective
+from llm_agent.application.task_directives import (
     TASK_CONTINUE_ARGUMENTS_NOT_ALLOWED,
     TASK_DIRECTIVE_CONFLICT,
     TASK_DIRECTIVE_OBJECTIVE_REQUIRED,
@@ -14,7 +15,6 @@ from agent.interfaces.task_directives import (
     TaskRequestAction,
     parse_task_request,
 )
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective
 
 
 def test_default_request_is_auto_normal_with_exact_subject() -> None:

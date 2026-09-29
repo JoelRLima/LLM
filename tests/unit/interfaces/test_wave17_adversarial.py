@@ -5,6 +5,7 @@ import pytest
 from scripts.run_wave17_adversarial import (
     _W17_BOUNDED_GIT_TOKENS,
     _assert_required_git_tokens,
+    _canonical_query_git_source,
     _scenario_group_05,
     run_campaign,
 )
@@ -25,7 +26,10 @@ def test_wave17_a17_uses_canonical_query_git_owner_without_retired_module(tmp_pa
 
 @pytest.mark.parametrize("token", _W17_BOUNDED_GIT_TOKENS)
 def test_wave17_a17_rejects_missing_bounded_git_token(token: str) -> None:
-    source = Path("agent/application_services/query_git.py").read_text(encoding="utf-8")
+    # A17 spans the query owner and the generic Platform executor.  Mutate
+    # the same projected source boundary used by the campaign so each
+    # protection remains independently observable after W22 extraction.
+    source = _canonical_query_git_source()
     broken_source = source.replace(token, "", 1)
     with pytest.raises(AssertionError):
         _assert_required_git_tokens(broken_source, _W17_BOUNDED_GIT_TOKENS)

@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import ModelRequest, ModelResponse
-from agent.runtime.budget import TaskBudgetLedger
-from agent.state import AgentState
-from agent.task_definition.errors import TaskDefinitionMismatchError
-from agent.task_definition.models import TaskDefinitionRef
-from agent.task_definition.resolver import (
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.task_definition.errors import TaskDefinitionMismatchError
+from llm_agent.agent.task_definition.models import TaskDefinitionRef
+from llm_agent.agent.task_definition.resolver import (
     AUTHORITY_FOOTER,
     AUTHORITY_HEADER,
     TaskContextResolver,

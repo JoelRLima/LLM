@@ -1,14 +1,14 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.planning.plan_validator import PlanValidator
-from agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
-from agent.skills import load_skill_registry
-from agent.skills.policy import persona_allowed_capabilities
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.skills.policy import persona_allowed_capabilities
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 def test_plan_validator_blocks_tool_with_disallowed_capabilities(tmp_path: Path) -> None:

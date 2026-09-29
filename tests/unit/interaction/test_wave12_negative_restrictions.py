@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation, parse_negative_restriction
+from llm_agent.agent.interaction.guards import (
+    CrossClauseEffectConflictGuard,
+    CrossClauseRelation,
+    parse_negative_restriction,
+)
 
 
 def test_family_all_restriction_conflicts_without_extra_target() -> None:

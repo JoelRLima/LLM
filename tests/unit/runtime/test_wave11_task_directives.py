@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.runtime.task_directives import (
+from llm_agent.agent.runtime.task_directives import (
     MAX_STRING_LENGTH,
     DeliberationProfile,
     TaskDirective,

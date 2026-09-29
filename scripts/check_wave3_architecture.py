@@ -6,8 +6,14 @@ import ast
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_ROOT = ROOT / "agent"
+SOURCE_LAYOUT = w21_source_layout(ROOT)
+AGENT_ROOT = SOURCE_LAYOUT.agent_source_directory
 
 # These files are intentional raw/compatibility boundaries.  They either own
 # exact admission, project measurements, or preserve a public legacy API.
@@ -114,11 +120,12 @@ MODEL_REQUEST_FAMILIES = frozenset(
 
 
 def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _files() -> Iterable[Path]:
-    yield from sorted(AGENT_ROOT.rglob("*.py"))
+    if AGENT_ROOT is not None:
+        yield from sorted(AGENT_ROOT.rglob("*.py"))
 
 
 def _name(node: ast.AST) -> str | None:
@@ -697,8 +704,12 @@ def _is_ordinal_subtraction(node: ast.AST) -> bool:
 def _validator_import_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
     aliases = {"PlanValidator"}
     module_aliases: set[str] = set()
+    validator_modules = {
+        "agent.planning.plan_validator",
+        "llm_agent.agent.planning.plan_validator",
+    }
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "agent.planning.plan_validator":
+        if isinstance(node, ast.ImportFrom) and node.module in validator_modules:
             aliases.update(
                 imported.asname or imported.name
                 for imported in node.names
@@ -708,7 +719,7 @@ def _validator_import_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
             module_aliases.update(
                 imported.asname or imported.name.rsplit(".", 1)[-1]
                 for imported in node.names
-                if imported.name == "agent.planning.plan_validator"
+                if imported.name in validator_modules
             )
     return aliases, module_aliases
 

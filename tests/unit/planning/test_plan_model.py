@@ -4,10 +4,10 @@ from copy import deepcopy
 
 import pytest
 
-from agent.llm.admitted_decisions import InitialPlanDecision, admit_typed_model_decision
-from agent.llm.decision_contract import ModelRequestContract, admit_model_decision_value
-from agent.planning.deferred_condition import validate_deferred_condition
-from agent.planning.plan_model import (
+from llm_agent.agent.llm.admitted_decisions import InitialPlanDecision, admit_typed_model_decision
+from llm_agent.agent.llm.decision_contract import ModelRequestContract, admit_model_decision_value
+from llm_agent.agent.planning.deferred_condition import validate_deferred_condition
+from llm_agent.agent.planning.plan_model import (
     DeferredConditionStep,
     Plan,
     PlanDecodeError,

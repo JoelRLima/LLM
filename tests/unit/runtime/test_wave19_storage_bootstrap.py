@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
-from agent.runtime.storage_contracts import StorageLayoutError, StorageLayoutStatus
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.storage_contracts import StorageLayoutError, StorageLayoutStatus
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_probe_distinguishes_fresh_and_canonical(tmp_path: Path) -> None:

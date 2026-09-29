@@ -13,13 +13,16 @@ from typing import Any, Callable
 
 import pytest
 
-import agent.tools.stdio_adapter as stdio_adapter_module
-import agent.tools.stdio_cleanup as stdio_cleanup_module
-import agent.tools.stdio_launcher as stdio_launcher_module
-import agent.tools.stdio_process as stdio_process_module
-from agent.cancellation import CancellationToken
-from agent.tools.contracts import ToolInvocation, ToolStatus
-from agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter, load_extension_manifest
+import llm_agent.agent.tools.stdio_adapter as stdio_adapter_module
+import llm_agent.agent.tools.stdio_cleanup as stdio_cleanup_module
+import llm_agent.agent.tools.stdio_process as stdio_process_module
+import llm_agent.execution.cleanup as cleanup_module
+import llm_agent.execution.command as command_module
+import llm_agent.extensions.stdio_launcher as stdio_launcher_module
+import llm_agent.process.streams as streams_module
+from llm_agent.agent.tools.contracts import ToolInvocation, ToolStatus
+from llm_agent.agent.tools.stdio_adapter import ExtensionManifest, StdioToolAdapter, load_extension_manifest
+from llm_agent.cancellation import CancellationToken
 
 
 @pytest.fixture(autouse=True)
@@ -904,7 +907,7 @@ def test_stdio_adapter_success_terminates_detached_descendant(
         print(json.dumps({{"invocation_id": payload["invocation_id"], "status": "succeeded"}}))
         """,
     )
-    original_monitor = stdio_process_module._monitor_process
+    original_monitor = command_module._wait_for_process
     pidfd: int | None = None
 
     def monitor_after_ready(*args: Any, **kwargs: Any) -> object:
@@ -914,7 +917,7 @@ def test_stdio_adapter_success_terminates_detached_descendant(
         pidfd = os.pidfd_open(_read_test_pid(pid_path), 0)  # type: ignore[attr-defined]
         return original_monitor(*args, **kwargs)
 
-    monkeypatch.setattr(stdio_process_module, "_monitor_process", monitor_after_ready)
+    monkeypatch.setattr(command_module, "_wait_for_process", monitor_after_ready)
     try:
         result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
         assert result.status == ToolStatus.SUCCEEDED
@@ -974,7 +977,7 @@ def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_reade
     control: socket.socket | None = None
     released = False
 
-    original_join = stdio_process_module._join_readers
+    original_join = cleanup_module._join_readers
 
     def join_only_after_tree_termination(context: Any) -> object:
         assert windows_handle is not None
@@ -982,7 +985,7 @@ def test_stdio_adapter_success_terminates_inherited_pipe_descendant_before_reade
         return original_join(context)
 
     monkeypatch.setattr(
-        stdio_process_module, "_join_readers", join_only_after_tree_termination
+        cleanup_module, "_join_readers", join_only_after_tree_termination
     )
     worker = threading.Thread(
         target=lambda: result_box.append(adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))),
@@ -1067,7 +1070,7 @@ def test_stdio_adapter_terminates_descendant_before_probe_effect(
         timeout_seconds=1,
     )
 
-    original_monitor = stdio_process_module._monitor_process
+    original_monitor = command_module._wait_for_process
     windows_handle: tuple[Any, Any] | None = None
     pidfd: int | None = None
 
@@ -1083,7 +1086,7 @@ def test_stdio_adapter_terminates_descendant_before_probe_effect(
             pidfd = os.pidfd_open(pid, 0)  # type: ignore[attr-defined]
         return original_monitor(*args, **kwargs)
 
-    monkeypatch.setattr(stdio_process_module, "_monitor_process", monitor_after_watching)
+    monkeypatch.setattr(command_module, "_wait_for_process", monitor_after_watching)
     try:
         result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
         assert result.status == ToolStatus.TIMED_OUT
@@ -1150,7 +1153,7 @@ def test_stdio_adapter_kills_sigterm_resistant_posix_descendant(
     )
 
     _require_pidfd()
-    original_monitor = stdio_process_module._monitor_process
+    original_monitor = command_module._wait_for_process
     pidfd: int | None = None
 
     def monitor_after_watching(*args: Any, **kwargs: Any) -> object:
@@ -1161,7 +1164,7 @@ def test_stdio_adapter_kills_sigterm_resistant_posix_descendant(
         pidfd = os.pidfd_open(_read_test_pid(pid_path), 0)  # type: ignore[attr-defined]
         return original_monitor(*args, **kwargs)
 
-    monkeypatch.setattr(stdio_process_module, "_monitor_process", monitor_after_watching)
+    monkeypatch.setattr(command_module, "_wait_for_process", monitor_after_watching)
     try:
         result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
         assert result.status == ToolStatus.TIMED_OUT
@@ -1198,28 +1201,28 @@ def test_windows_launcher_waits_for_job_association_before_immediate_extension_s
     )
     association_entered = threading.Event()
     release_association = threading.Event()
-    original_assign = stdio_process_module.assign_windows_job
+    original_assign = command_module.assign_windows_job
     original_popen = subprocess.Popen
-    original_send_request = stdio_process_module._send_request
+    original_write_stdin = command_module.write_stdin
     created_commands: list[list[str]] = []
-    sent_requests: list[dict[str, Any]] = []
+    sent_requests: list[bytes] = []
 
     def record_popen(command: list[str], **kwargs: Any) -> subprocess.Popen[Any]:
         created_commands.append(command)
         return original_popen(command, **kwargs)
 
-    def record_send_request(process: subprocess.Popen[Any], payload: dict[str, Any]) -> None:
-        sent_requests.append(payload)
-        original_send_request(process, payload)
+    def record_write_stdin(process: subprocess.Popen[Any], request: bytes) -> None:
+        sent_requests.append(request)
+        original_write_stdin(process, request)
 
     def blocked_assign(job: object, process: object) -> bool:
         association_entered.set()
         assert release_association.wait(5)
         return original_assign(job, process)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", blocked_assign)
-    monkeypatch.setattr(stdio_process_module.subprocess, "Popen", record_popen)
-    monkeypatch.setattr(stdio_process_module, "_send_request", record_send_request)
+    monkeypatch.setattr(command_module, "assign_windows_job", blocked_assign)
+    monkeypatch.setattr(command_module.subprocess, "Popen", record_popen)
+    monkeypatch.setattr(command_module, "write_stdin", record_write_stdin)
     result_holder: dict[str, object] = {}
     worker = threading.Thread(
         target=lambda: result_holder.setdefault(
@@ -1261,8 +1264,8 @@ def test_windows_association_failure_does_not_start_extension(
     private_status = tmp_path / "private-status.json"
     terminate_calls: list[object] = []
     close_calls: list[object] = []
-    original_terminate = stdio_cleanup_module.terminate_process
-    original_close = stdio_cleanup_module.close_windows_job
+    original_terminate = cleanup_module.terminate_process
+    original_close = cleanup_module.close_windows_job
 
     def track_terminate(*args: object, **kwargs: object) -> str | None:
         terminate_calls.append(args[0] if args else None)
@@ -1273,9 +1276,9 @@ def test_windows_association_failure_does_not_start_extension(
         return original_close(job)
 
     monkeypatch.setattr(stdio_launcher_module, "create_status_file", lambda: private_status)
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(stdio_cleanup_module, "terminate_process", track_terminate)
-    monkeypatch.setattr(stdio_cleanup_module, "close_windows_job", track_close)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(cleanup_module, "terminate_process", track_terminate)
+    monkeypatch.setattr(cleanup_module, "close_windows_job", track_close)
 
     result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
 
@@ -1296,21 +1299,21 @@ def test_windows_association_cleanup_termination_failure_is_observable(
         tmp_path,
         "import pathlib; pathlib.Path('extension-started.txt').write_text('started')",
     )
-    original_terminate = stdio_cleanup_module.terminate_process
+    original_terminate = cleanup_module.terminate_process
 
     def fail_terminate(*args: object, **kwargs: object) -> str:
         original_terminate(*args, **kwargs)  # type: ignore[arg-type]
         return "terminate did not confirm cleanup"
 
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(stdio_cleanup_module, "terminate_process", fail_terminate)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(cleanup_module, "terminate_process", fail_terminate)
 
     result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
 
     assert result.status == ToolStatus.UNAVAILABLE
     assert result.error is not None
     assert result.error.code == "CLEANUP_ERROR"
-    assert "falha ao associar launcher" in result.error.message
+    assert "failed to assign process" in result.error.message
     assert "terminate did not confirm cleanup" in result.error.message
     assert not (tmp_path / "extension-started.txt").exists()
 
@@ -1323,21 +1326,21 @@ def test_windows_association_cleanup_job_close_failure_is_observable(
         tmp_path,
         "import pathlib; pathlib.Path('extension-started.txt').write_text('started')",
     )
-    original_close = stdio_cleanup_module.close_windows_job
+    original_close = cleanup_module.close_windows_job
 
     def fail_close(job: object) -> bool:
         original_close(job)
         return False
 
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(stdio_cleanup_module, "close_windows_job", fail_close)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(cleanup_module, "close_windows_job", fail_close)
 
     result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
 
     assert result.status == ToolStatus.UNAVAILABLE
     assert result.error is not None
     assert result.error.code == "CLEANUP_ERROR"
-    assert "falha ao associar launcher" in result.error.message
+    assert "failed to assign process" in result.error.message
     assert "close Job" in result.error.message
     assert not (tmp_path / "extension-started.txt").exists()
 
@@ -1351,8 +1354,8 @@ def test_windows_association_cleanup_failures_are_bounded(
         tmp_path,
         "import pathlib; pathlib.Path('extension-started.txt').write_text('started')",
     )
-    original_terminate = stdio_cleanup_module.terminate_process
-    original_close = stdio_cleanup_module.close_windows_job
+    original_terminate = cleanup_module.terminate_process
+    original_close = cleanup_module.close_windows_job
     calls: list[str] = []
 
     def terminate(*args: object, **kwargs: object) -> str | None:
@@ -1365,18 +1368,18 @@ def test_windows_association_cleanup_failures_are_bounded(
         calls.append("close")
         return failure_kind not in {"close", "both"}
 
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(stdio_cleanup_module, "terminate_process", terminate)
-    monkeypatch.setattr(stdio_cleanup_module, "close_windows_job", close)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(cleanup_module, "terminate_process", terminate)
+    monkeypatch.setattr(cleanup_module, "close_windows_job", close)
 
     result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
 
     assert result.status == ToolStatus.UNAVAILABLE
     assert result.error is not None
     assert result.error.code == "CLEANUP_ERROR"
-    assert len(result.error.message) <= stdio_cleanup_module.MAX_CLEANUP_DETAIL_CHARS
+    assert len(result.error.message) <= stdio_process_module.MAX_CLEANUP_DETAIL_CHARS
     assert calls == ["terminate", "close"]
-    assert "falha ao associar launcher" in result.error.message
+    assert "failed to assign process" in result.error.message
     if failure_kind in {"terminate", "both"}:
         assert "terminate failure" in result.error.message
     if failure_kind in {"close", "both"}:
@@ -1388,21 +1391,21 @@ def test_windows_association_status_cleanup_failure_preserves_original_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     adapter = _adapter_for_script(tmp_path, "import pathlib; pathlib.Path('started').write_text('x')")
-    original_remove = stdio_cleanup_module.remove_status_file
+    original_remove = stdio_process_module.remove_status_file
 
     def remove_with_diagnostic(path: Path | None) -> str | None:
         original_remove(path)
         return "status privado nao removido: teste"
 
-    monkeypatch.setattr(stdio_process_module, "assign_windows_job", lambda *_args: False)
-    monkeypatch.setattr(stdio_cleanup_module, "remove_status_file", remove_with_diagnostic)
+    monkeypatch.setattr(command_module, "assign_windows_job", lambda *_args: False)
+    monkeypatch.setattr(stdio_process_module, "remove_status_file", remove_with_diagnostic)
 
     result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
 
     assert result.status == ToolStatus.UNAVAILABLE
     assert result.error is not None
     assert result.error.code == "PROCESS_ERROR"
-    assert "falha ao associar launcher" in result.error.message
+    assert "failed to assign process" in result.error.message
     assert "status privado nao removido" in result.error.message
 
 
@@ -1589,7 +1592,7 @@ def test_stdio_adapter_terminates_three_level_windows_tree(
         timeout_seconds=1,
     )
 
-    original_monitor = stdio_process_module._monitor_process
+    original_monitor = command_module._wait_for_process
     windows_handle: tuple[Any, Any] | None = None
 
     def monitor_after_watching(*args: Any, **kwargs: Any) -> object:
@@ -1600,7 +1603,7 @@ def test_stdio_adapter_terminates_three_level_windows_tree(
         windows_handle = _open_windows_process_handle(_read_test_pid(pid_path))
         return original_monitor(*args, **kwargs)
 
-    monkeypatch.setattr(stdio_process_module, "_monitor_process", monitor_after_watching)
+    monkeypatch.setattr(command_module, "_wait_for_process", monitor_after_watching)
     started = time.monotonic()
     try:
         result = adapter.invoke(ToolInvocation(tool_name="echo_tool", args={}))
@@ -1622,23 +1625,24 @@ def test_stdio_reader_cleanup_failure_is_observable(monkeypatch: pytest.MonkeyPa
     stop = threading.Event()
     reader = threading.Thread(target=stop.wait, daemon=True, name="stdio-stuck-reader")
     process = type("Process", (), {"stdin": None, "stdout": None, "stderr": None})()
-    context = stdio_process_module._ProcessContext(
+    context = cleanup_module.CommandContext(
         process=process,
         windows_job=None,
+        process_group=None,
         readers=[reader],
-        stdout=stdio_process_module._StreamCapture(16),
-        stderr=stdio_process_module._StreamCapture(16),
+        stdout=streams_module.StreamCapture(16),
+        stderr=streams_module.StreamCapture(16),
         stop_readers=threading.Event(),
         reader_errors=[],
     )
     reader.start()
 
-    failure = stdio_process_module._join_readers(context)
+    failure = cleanup_module._join_readers(context)
 
     stop.set()
     reader.join(timeout=1)
     assert failure is not None
-    assert failure.code == "CLEANUP_ERROR"
+    assert failure == "command output readers did not settle"
 
 
 def test_stdio_reader_errors_are_observable() -> None:
@@ -1647,9 +1651,9 @@ def test_stdio_reader_errors_are_observable() -> None:
             raise RuntimeError("read failed")
 
     errors: list[str] = []
-    stdio_process_module._drain_stream(
+    streams_module.drain_stream(
         FailingStream(),
-        stdio_process_module._StreamCapture(16),
+        streams_module.StreamCapture(16),
         threading.Event(),
         errors,
     )
@@ -1661,23 +1665,26 @@ def test_stdio_tree_cleanup_failure_is_observable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = type("Process", (), {"stdin": None, "stdout": None, "stderr": None})()
-    context = stdio_process_module._ProcessContext(
+    context = cleanup_module.CommandContext(
         process=process,
         windows_job=None,
+        process_group=None,
         readers=[],
-        stdout=stdio_process_module._StreamCapture(16),
-        stderr=stdio_process_module._StreamCapture(16),
+        stdout=streams_module.StreamCapture(16),
+        stderr=streams_module.StreamCapture(16),
+        stop_readers=threading.Event(),
+        reader_errors=[],
     )
     monkeypatch.setattr(
-        stdio_process_module,
+        cleanup_module,
         "terminate_process",
         lambda *_args, **_kwargs: "tree termination failed",
     )
 
-    failure = stdio_process_module._cleanup(context, terminate_tree=True)
+    failure = cleanup_module.cleanup_command(context, terminate_tree=True)
 
     assert failure is not None
-    assert failure.code == "CLEANUP_ERROR"
+    assert "tree termination failed" in failure
 
 
 @pytest.mark.parametrize(

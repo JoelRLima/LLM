@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.model_contract import parse_interaction_resolution
+from llm_agent.agent.interaction.model_contract import parse_interaction_resolution
 
 
 def test_surrogate_scalar_is_rejected_before_typed_projection() -> None:

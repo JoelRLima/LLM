@@ -15,38 +15,44 @@ from types import SimpleNamespace
 from typing import Any, Callable, cast
 
 ROOT = Path(__file__).resolve().parents[1]
+try:
+    from scripts.w21_architecture.source import SourceLayout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import SourceLayout  # type: ignore[no-redef]
+
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent.application_services.queries import (  # noqa: E402
+from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled  # noqa: E402
+from llm_agent.agent.runtime.config_errors import ConfigNotFound  # noqa: E402
+from llm_agent.agent.runtime.config_repository import ConfigRepository  # noqa: E402
+from llm_agent.agent.runtime.correlation import RunCorrelation  # noqa: E402
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind  # noqa: E402
+from llm_agent.agent.runtime.events import RuntimeEvent  # noqa: E402
+from llm_agent.application.services.queries import (  # noqa: E402
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
     WorkspaceQueryRequest,
     WorkspaceQueryResult,
     WorkspaceQueryStatus,
 )
-from agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled  # noqa: E402
-from agent.interfaces.cli import app, command_handlers, first_run, interactive_admission, ui  # noqa: E402
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
-from agent.interfaces.cli.attention import ApprovalBroker  # noqa: E402
-from agent.interfaces.cli.controller import (  # noqa: E402
+from llm_agent.interfaces.cli import app, command_handlers, first_run, interactive_admission, ui  # noqa: E402
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
+from llm_agent.interfaces.cli.attention import ApprovalBroker  # noqa: E402
+from llm_agent.interfaces.cli.controller import (  # noqa: E402
     InteractiveExecutionController,
     PendingStore,
     SubmissionEnvelope,
 )
-from agent.interfaces.cli.query_executor import (  # noqa: E402
+from llm_agent.interfaces.cli.query_executor import (  # noqa: E402
     BoundedQueryExecutor,
     CliQueryCompletion,
     CliQuerySubmission,
 )
-from agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox  # noqa: E402
-from agent.runtime.config_errors import ConfigNotFound  # noqa: E402
-from agent.runtime.config_repository import ConfigRepository  # noqa: E402
-from agent.runtime.correlation import RunCorrelation  # noqa: E402
-from agent.runtime.event_kinds import RuntimeEventKind  # noqa: E402
-from agent.runtime.events import RuntimeEvent  # noqa: E402
-from agent.runtime.paths import AppPaths  # noqa: E402
-from agent.runtime.workspace_context import WorkspaceContext  # noqa: E402
+from llm_agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox  # noqa: E402
+from llm_agent.workspace.context import WorkspaceContext  # noqa: E402
+from llm_agent.workspace.paths import AppPaths  # noqa: E402
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,8 +101,11 @@ def _fake_query_result(request: WorkspaceQueryRequest, data: object = "ok") -> W
 
 
 _W17_BOUNDED_GIT_TOKENS = (
-    "shell=False",
-    "stdin=subprocess.DEVNULL",
+    # Git constructs the request in the query owner; CommandExecutor owns
+    # the subprocess kwargs and therefore spells the shell invariant as a
+    # mapping entry rather than ``shell=False`` in query_git.py.
+    '"shell": False',
+    '"stdin": subprocess.PIPE if request.stdin is not None else subprocess.DEVNULL',
     "GIT_EXTERNAL_DIFF",
     "core.fsmonitor=false",
 )
@@ -104,7 +113,17 @@ _W17_HARDENED_GIT_TOKENS = ("--no-ext-diff", "--no-textconv", "GIT_OPTIONAL_LOCK
 
 
 def _canonical_query_git_source() -> str:
-    return (ROOT / "agent/application_services/query_git.py").read_text(encoding="utf-8")
+    query_git = SOURCE_LAYOUT.path_for_w21_relative(
+        "agent/application_services/query_git.py"
+    ).read_text(encoding="utf-8")
+    command = SOURCE_LAYOUT.path_for_w21_relative(
+        "agent/execution/command.py"
+    ).read_text(encoding="utf-8")
+    return f"{query_git}\n{command}"
+
+
+def _current_source(relative: str) -> str:
+    return SOURCE_LAYOUT.path_for_w21_relative(relative).read_text(encoding="utf-8")
 
 
 def _assert_required_git_tokens(source: str, tokens: tuple[str, ...]) -> None:
@@ -419,7 +438,7 @@ def _scenario_group_06(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a24() -> None:
-        source = (Path(__file__).resolve().parents[1] / "agent/interfaces/cli/task_continuity.py").read_text(encoding="utf-8")
+        source = _current_source("agent/interfaces/cli/task_continuity.py")
         assert "Resume:" in source and "run_task_resume" in source
 
 
@@ -627,21 +646,21 @@ def _scenario_group_10(root: Path) -> tuple[Callable[[], None], ...]:
 
 def _scenario_group_11(root: Path) -> tuple[Callable[[], None], ...]:
     def a41() -> None:
-        source = (Path(__file__).resolve().parents[1] / "agent/interfaces/cli/interactive_admission.py").read_text(encoding="utf-8")
+        source = _current_source("agent/interfaces/cli/interactive_admission.py")
         assert "controller.submit" in source and "execute_submission" in source
 
 
 
 
     def a42() -> None:
-        source = (Path(__file__).resolve().parents[1] / "agent/interfaces/cli/interactive_worker.py").read_text(encoding="utf-8")
+        source = _current_source("agent/interfaces/cli/interactive_worker.py")
         assert 'envelope.command_id == "retry"' in source
 
 
 
 
     def a43() -> None:
-        source = (Path(__file__).resolve().parents[1] / "agent/interfaces/cli/interactive_worker.py").read_text(encoding="utf-8")
+        source = _current_source("agent/interfaces/cli/interactive_worker.py")
         assert "CodingApplicationService" in source and "_execute_code" in source
 
 
@@ -770,8 +789,8 @@ def _scenario_group_13(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a52() -> None:
-        from agent.interfaces.cli.interactive_worker import InteractiveWorkerResult, execute_submission
-        from agent.runtime.worker_output import emit_worker_output
+        from llm_agent.agent.runtime.worker_output import emit_worker_output
+        from llm_agent.interfaces.cli.interactive_worker import InteractiveWorkerResult, execute_submission
 
         def interact(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
             emit_worker_output("worker-rerouted-output")
@@ -829,7 +848,7 @@ def _scenario_group_14(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a56() -> None:
-        from agent.interfaces.cli.interactive_shell import InteractiveShell
+        from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
 
         shell = InteractiveShell(session=SimpleNamespace(prompt=lambda *_args, **_kwargs: "ok", output=None))
         with shell.temporary_prompt():
@@ -936,8 +955,8 @@ def _scenario_group_16(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a64() -> None:
-        support = (Path(__file__).resolve().parents[1] / "agent/code/workflow_application_flow_support.py").read_text(encoding="utf-8")
-        tools = (Path(__file__).resolve().parents[1] / "agent/tools/approval_execution.py").read_text(encoding="utf-8")
+        support = _current_source("agent/code/workflow_application_flow_support.py")
+        tools = _current_source("agent/tools/approval_execution.py")
         assert "ApprovalWaitCancelled" in support and "TaskStatus.CANCELLED" in support
         assert "ApprovalWaitCancelled" in tools and "ToolStatus.CANCELLED" in tools
 

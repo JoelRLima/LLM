@@ -6,8 +6,14 @@ import ast
 from collections.abc import Iterable
 from pathlib import Path
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_ROOT = ROOT / "agent"
+SOURCE_LAYOUT = w21_source_layout(ROOT)
+AGENT_ROOT = SOURCE_LAYOUT.agent_source_directory
 
 FILEWRITER_RUNTIME = "agent/skills/file_writer_runtime.py"
 FILEWRITER_SKILL = "agent/skills/file_writer.py"
@@ -98,11 +104,11 @@ GENERIC_EFFECT_NAMES = frozenset(
 
 
 def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _files() -> Iterable[Path]:
-    if AGENT_ROOT.is_dir():
+    if AGENT_ROOT is not None and AGENT_ROOT.is_dir():
         yield from sorted(AGENT_ROOT.rglob("*.py"))
 
 

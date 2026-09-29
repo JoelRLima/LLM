@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from agent.cancellation import CancellationToken
-from agent.memory.memory import AgentMemory
-from agent.skills.session_memory import SessionMemorySkill
-from agent.state import AgentState
+from llm_agent.agent.memory.memory import AgentMemory
+from llm_agent.agent.skills.session_memory import SessionMemorySkill
+from llm_agent.agent.state import AgentState
+from llm_agent.cancellation import CancellationToken
 
 
 class DummyOrchestrator:
@@ -18,7 +18,7 @@ class DummyOrchestrator:
 
 
 def test_session_memory_set_get_delete_keys(tmp_path: Path, monkeypatch):
-    from agent.memory import memory as memory_module
+    from llm_agent.agent.memory import memory as memory_module
 
     monkeypatch.setattr(memory_module.paths, "MEMORY_DB_FILE", str(tmp_path / "agent_memory.db"))
     orch = DummyOrchestrator()
@@ -43,7 +43,7 @@ def test_session_memory_set_get_delete_keys(tmp_path: Path, monkeypatch):
 
 
 def test_session_memory_keys_empty(tmp_path: Path, monkeypatch):
-    from agent.memory import memory as memory_module
+    from llm_agent.agent.memory import memory as memory_module
 
     monkeypatch.setattr(memory_module.paths, "MEMORY_DB_FILE", str(tmp_path / "agent_memory.db"))
     orch = DummyOrchestrator()
@@ -75,7 +75,7 @@ def test_session_memory_reports_sqlite_insert_failure(
     tmp_path: Path,
     monkeypatch,
 ):
-    from agent.memory import memory as memory_module
+    from llm_agent.agent.memory import memory as memory_module
 
     memory = AgentMemory(
         db_path=tmp_path / "agent_memory.db",
@@ -105,7 +105,7 @@ def test_session_memory_reports_sqlite_delete_failure_without_losing_state(
     tmp_path: Path,
     monkeypatch,
 ):
-    from agent.memory import memory as memory_module
+    from llm_agent.agent.memory import memory as memory_module
 
     memory = AgentMemory(
         db_path=tmp_path / "agent_memory.db",

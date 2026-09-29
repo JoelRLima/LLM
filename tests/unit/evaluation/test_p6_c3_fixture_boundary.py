@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.code.outcome_verifier import (
+from llm_agent.agent.code.outcome_verifier import (
     MAX_VERIFIER_EVIDENCE_IDS,
     CodeEvidenceManifest,
     CodeEvidenceRecord,
@@ -14,27 +14,27 @@ from agent.code.outcome_verifier import (
     CodeProposalKind,
     CodeProposalReasonCode,
 )
-from agent.evaluation.agent_executor import snapshot_evaluation_projection
-from agent.evaluation.contracts import CapabilityScenario, ExecutionObservation, ScenarioExpectation
-from agent.evaluation.practical_scenarios import (
+from llm_agent.agent.evaluation.agent_executor import snapshot_evaluation_projection
+from llm_agent.agent.evaluation.contracts import CapabilityScenario, ExecutionObservation, ScenarioExpectation
+from llm_agent.agent.evaluation.practical_scenarios import (
     PRACTICAL_V1,
     prepare_practical_application,
     prepare_practical_workspace,
 )
-from agent.evaluation.runner import CapabilityEvaluator
-from agent.evaluation.scripted_gateway import (
+from llm_agent.agent.evaluation.runner import CapabilityEvaluator
+from llm_agent.agent.evaluation.scripted_gateway import (
     ScriptedEvaluationGateway,
     _select_verifier_evidence,
 )
-from agent.evaluation.scripted_gateway_logic import scripted_required_tools, scripted_response
-from agent.evaluation.scripted_tool_guidance import selection_response
-from agent.llm.context_projection import render_untrusted_context_envelope
-from agent.planning.plan_model import Plan
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.run_snapshot import build_canonical_run_snapshot
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.paths import AppPaths
-from agent.state import AgentState
+from llm_agent.agent.evaluation.scripted_gateway_logic import scripted_required_tools, scripted_response
+from llm_agent.agent.evaluation.scripted_tool_guidance import selection_response
+from llm_agent.agent.llm.context_projection import render_untrusted_context_envelope
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.run_snapshot import build_canonical_run_snapshot
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.state import AgentState
+from llm_agent.workspace.paths import AppPaths
 
 
 class _BoundaryExecutor:

@@ -12,16 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent.evaluation.model_compatibility_canaries import (  # noqa: E402
+from llm_agent.agent.evaluation.model_compatibility_canaries import (  # noqa: E402
     DeterministicCanaryGateway,
     run_model_canaries,
 )
-from agent.llm.model_profile import resolve_model_profile  # noqa: E402
-from agent.llm.providers.factory import create_model_gateway  # noqa: E402
+from llm_agent.agent.llm.model_profile import resolve_model_profile  # noqa: E402
+from llm_agent.agent.llm.providers.factory import create_model_gateway  # noqa: E402
+from scripts.w21_architecture.source import SourceLayout  # noqa: E402
 
 
 def _load_profile(profile_name: str) -> Any:
-    config_path = ROOT / "agent" / "resources" / "default_config.json"
+    source_layout = SourceLayout.for_profile(ROOT, "final-w22")
+    config_path = source_layout.package_directory / "resources" / "default_config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     return resolve_model_profile(config, profile_name=profile_name)
 

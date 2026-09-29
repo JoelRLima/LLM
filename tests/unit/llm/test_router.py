@@ -1,9 +1,9 @@
 import json
 
-from agent.llm.contracts import ModelResponse
-from agent.llm.session import ChatSession
-from agent.routing.persona.contracts import PersonaRouteRequest
-from agent.routing.persona.current import (
+from llm_agent.agent.llm.contracts import ModelResponse
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.routing.persona.contracts import PersonaRouteRequest
+from llm_agent.agent.routing.persona.current import (
     CurrentPersonaRouter,
     _is_clearly_trivial,
     is_listing_objective,

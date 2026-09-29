@@ -5,12 +5,12 @@ import json
 
 import pytest
 
-from agent.llm.model_compatibility import StructuredReasoningPolicy
-from agent.llm.model_profile import resolve_model_profile
-from agent.runtime.config import carregar_config
-from agent.runtime.config_errors import ConfigError
-from agent.runtime.config_repository import packaged_config_defaults
-from agent.runtime.config_schema import validate_config_document
+from llm_agent.agent.llm.model_compatibility import StructuredReasoningPolicy
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.runtime.config import carregar_config
+from llm_agent.agent.runtime.config_errors import ConfigError
+from llm_agent.agent.runtime.config_repository import packaged_config_defaults
+from llm_agent.agent.runtime.config_schema import validate_config_document
 
 
 def _document() -> dict[str, object]:

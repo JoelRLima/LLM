@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tempfile
@@ -22,8 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent.runtime import paths as runtime_paths  # noqa: E402
-from agent.runtime.paths import APP_DIRECTORY_NAME, AppPaths  # noqa: E402
+from scripts.w21_architecture.source import SourceLayout  # noqa: E402
+
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 from distribution.provenance import (  # noqa: E402
     W20_CANDIDATE_PATH_SURFACE,
     ProvenanceError,
@@ -47,6 +49,7 @@ from installer.path_semantics import (  # noqa: E402
     add_owned_segment,
     remove_owned_segment,
 )
+from llm_agent.workspace.paths import APP_DIRECTORY_NAME, AppPaths  # noqa: E402
 from scripts.conpty_authority import (  # noqa: E402
     ConPtyAuthorityError,
     validate_conpty_authority_evidence,
@@ -584,7 +587,7 @@ def _v3_alias_state_namespace() -> str:
     if APP_DIRECTORY_NAME != APPLICATION_NAMESPACE:
         raise ScenarioFailure("storage and release namespace authorities diverged")
 
-    if runtime_paths.os.name == "nt":
+    if os.name == "nt":
         config_home = ROOT / ".tmp" / "a59-roaming"
         data_home = ROOT / ".tmp" / "a59-local"
         environment = {

@@ -1,6 +1,6 @@
 import pytest
 
-from agent.tools.extension_state import (
+from llm_agent.extensions.extension_state import (
     CATALOG_SCHEMA_VERSION,
     WORKSPACE_SCHEMA_VERSION,
     ExtensionCatalog,

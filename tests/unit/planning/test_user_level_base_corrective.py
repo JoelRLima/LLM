@@ -2,29 +2,29 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.execution_state import StepStatus
-from agent.memory.memory import AgentMemory
-from agent.memory.prompt_context import build_memory_prompt_context
-from agent.planning.capability_manifest import render_validation_repair_manual
-from agent.planning.execution_gateway import ExecutionGateway
-from agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
-from agent.planning.plan_executor import PlanExecutor
-from agent.planning.plan_model import Plan
-from agent.planning.plan_optimizer import PlanOptimizer
-from agent.planning.plan_prompts import (
+from llm_agent.agent.execution_state import StepStatus
+from llm_agent.agent.memory.memory import AgentMemory
+from llm_agent.agent.memory.prompt_context import build_memory_prompt_context
+from llm_agent.agent.planning.capability_manifest import render_validation_repair_manual
+from llm_agent.agent.planning.execution_gateway import ExecutionGateway
+from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.planning.plan_executor import PlanExecutor
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.planning.plan_optimizer import PlanOptimizer
+from llm_agent.agent.planning.plan_prompts import (
     PLANNING_GUIDANCE,
     build_reasoning_boundary_prompt,
 )
-from agent.planning.plan_validator import BlockedStep
-from agent.planning.provenance_validation import grounded_user_literal_narrowing
-from agent.planning.step_executor import StepExecutor, StepOutcomeKind
-from agent.skills import load_skill_registry
-from agent.skills.code_analyzer import CodeAnalyzerSkill
-from agent.skills.grep import GrepSkill
-from agent.state import AgentState
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.planning.plan_validator import BlockedStep
+from llm_agent.agent.planning.provenance_validation import grounded_user_literal_narrowing
+from llm_agent.agent.planning.step_executor import StepExecutor, StepOutcomeKind
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.skills.code_analyzer import CodeAnalyzerSkill
+from llm_agent.agent.skills.grep import GrepSkill
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.cancellation import CancellationToken
 
 
 def _analyzer(target: str, **args: object) -> dict[str, object]:

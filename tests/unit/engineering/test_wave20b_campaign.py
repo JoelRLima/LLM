@@ -9,8 +9,52 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent.engineering.backends.inspection as inspection_backend
-from agent.discovery.contracts import (
+import llm_agent.agent.engineering.backends.inspection as inspection_backend
+from llm_agent.agent.engineering.backends.health import HealthBackend
+from llm_agent.agent.engineering.backends.inspection import InspectionBackend, project_inspection
+from llm_agent.agent.engineering.contracts import (
+    EngineeringEnvironmentV1,
+    EngineeringOperationViewV1,
+    EngineeringRunPhase,
+    EngineeringRunResultV1,
+    EngineeringScope,
+    EngineeringTerminalStatus,
+)
+from llm_agent.agent.engineering.model_safe import (
+    MODEL_SAFE_OPERATIONS,
+    MODEL_SAFE_TOOL_DESCRIPTORS,
+    ModelSafeEngineering,
+    ModelSafeStatus,
+    _context_from_owner,
+    _project_health,
+    _project_reference,
+)
+from llm_agent.agent.engineering.registry import production_registry
+from llm_agent.agent.evaluation.comparison import (
+    EVALUATION_COMPARISON_INCOMPATIBLE,
+    EvaluationComparisonError,
+    compare_receipt_groups,
+)
+from llm_agent.agent.evaluation.contracts import ExecutionObservation, ScenarioReport
+from llm_agent.agent.evaluation.evaluation_identity import fake_model_identity
+from llm_agent.agent.evaluation.experiment import evaluation_context
+from llm_agent.agent.evaluation.practical import (
+    MAX_ENGINEERING_FAULT_JSON_BYTES,
+    FaultController,
+    FaultEffect,
+    FaultingEvaluationGateway,
+    FaultPlanV1,
+    FaultPlanV1Error,
+    FaultStepV1,
+    parse_fault_json,
+    run_practical_scripted,
+)
+from llm_agent.agent.evaluation.receipt import build_evaluation_receipt
+from llm_agent.agent.evaluation.scenario_contracts import EvidenceLevel
+from llm_agent.agent.tools.contracts import ToolDescriptor
+from llm_agent.agent.tools.extension_bootstrap import WorkspaceToolRegistryComposer
+from llm_agent.agent.tools.extension_runtime import ExtensionRuntimeMaterialization
+from llm_agent.discovery.contracts import (
     DISCOVERY_AVAILABILITY_UNKNOWN,
     DISCOVERY_NO_MATCH,
     DISCOVERY_QUERY_EMPTY,
@@ -25,67 +69,23 @@ from agent.discovery.contracts import (
     DiscoveryMatchKind,
     DiscoverySourceKind,
 )
-from agent.discovery.index import DiscoveryCatalog
-from agent.discovery.ranking import normalize_query, rank_entries, score_entry
-from agent.discovery.semantic import (
+from llm_agent.discovery.index import DiscoveryCatalog
+from llm_agent.discovery.ranking import normalize_query, rank_entries, score_entry
+from llm_agent.discovery.semantic import (
     COMMAND_DISCOVERY_SCHEMA,
     MAX_COMMAND_DISCOVERY_PAYLOAD_BYTES,
     SemanticCommandDiscovery,
     validate_command_discovery_response,
 )
-from agent.discovery.service import DiscoveryService
-from agent.discovery.store import FrecencyStore
-from agent.engineering.backends.health import HealthBackend
-from agent.engineering.backends.inspection import InspectionBackend, project_inspection
-from agent.engineering.contracts import (
-    EngineeringEnvironmentV1,
-    EngineeringOperationViewV1,
-    EngineeringRunPhase,
-    EngineeringRunResultV1,
-    EngineeringScope,
-    EngineeringTerminalStatus,
-)
-from agent.engineering.model_safe import (
-    MODEL_SAFE_OPERATIONS,
-    MODEL_SAFE_TOOL_DESCRIPTORS,
-    ModelSafeEngineering,
-    ModelSafeStatus,
-    _context_from_owner,
-    _project_health,
-    _project_reference,
-)
-from agent.engineering.registry import production_registry
-from agent.evaluation.comparison import (
-    EVALUATION_COMPARISON_INCOMPATIBLE,
-    EvaluationComparisonError,
-    compare_receipt_groups,
-)
-from agent.evaluation.contracts import ExecutionObservation, ScenarioReport
-from agent.evaluation.evaluation_identity import fake_model_identity
-from agent.evaluation.experiment import evaluation_context
-from agent.evaluation.practical import (
-    MAX_ENGINEERING_FAULT_JSON_BYTES,
-    FaultController,
-    FaultEffect,
-    FaultingEvaluationGateway,
-    FaultPlanV1,
-    FaultPlanV1Error,
-    FaultStepV1,
-    parse_fault_json,
-    run_practical_scripted,
-)
-from agent.evaluation.receipt import build_evaluation_receipt
-from agent.evaluation.scenario_contracts import EvidenceLevel
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
-from agent.interfaces.cli.completion import complete_command, completion_commands, powershell_completion_script
-from agent.interfaces.cli.discovery_projection import availability_for_binding, build_catalog
-from agent.interfaces.cli.discovery_ui import select_palette_entry
-from agent.interfaces.cli.interactive_shell import InteractiveShell
-from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.cli.workspace_recents import load_recent_workspaces
-from agent.tools.contracts import ToolDescriptor
-from agent.tools.extension_bootstrap import WorkspaceToolRegistryComposer
-from agent.tools.extension_runtime import ExtensionRuntimeMaterialization
+from llm_agent.discovery.service import DiscoveryService
+from llm_agent.discovery.store import FrecencyStore
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.completion import complete_command, completion_commands, powershell_completion_script
+from llm_agent.interfaces.cli.discovery_projection import availability_for_binding, build_catalog
+from llm_agent.interfaces.cli.discovery_ui import select_palette_entry
+from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.interfaces.cli.workspace_recents import load_recent_workspaces
 
 ROOT = Path(__file__).resolve().parents[3]
 PRACTICAL_IDS = tuple(f"PV1-{index:02d}" for index in range(1, 9))
@@ -169,7 +169,7 @@ def _entry(entry_id: str, preferred: str, *, source=DiscoverySourceKind.CLI_COMM
 
 
 def _result(candidates, query="query", *, requested=True):
-    from agent.discovery.contracts import DiscoveryResultV1
+    from llm_agent.discovery.contracts import DiscoveryResultV1
 
     return DiscoveryResultV1(query, tuple(candidates), (), requested, False)
 
@@ -283,7 +283,7 @@ def test_B10_duplicate_fault_call_index_is_rejected() -> None:
 
 def test_fault_timeout_effect_is_typed_and_exact() -> None:
     gateway = FaultingEvaluationGateway(SimpleNamespace(complete=lambda _request: None), FaultController(FaultPlanV1(steps=(FaultStepV1(1, FaultEffect.TIMEOUT),))))
-    from agent.llm.errors import ModelTimeoutError
+    from llm_agent.agent.llm.errors import ModelTimeoutError
 
     with pytest.raises(ModelTimeoutError, match="Injected W20 model timeout\\."):
         gateway.complete(object())
@@ -291,14 +291,14 @@ def test_fault_timeout_effect_is_typed_and_exact() -> None:
 
 def test_fault_provider_effect_is_typed_and_exact() -> None:
     gateway = FaultingEvaluationGateway(SimpleNamespace(complete=lambda _request: None), FaultController(FaultPlanV1(steps=(FaultStepV1(1, FaultEffect.PROVIDER_ERROR),))))
-    from agent.llm.errors import ModelProviderError
+    from llm_agent.agent.llm.errors import ModelProviderError
 
     with pytest.raises(ModelProviderError, match="Injected W20 provider failure\\."):
         gateway.complete(object())
 
 
 def test_fault_invalid_structured_response_is_exact() -> None:
-    from agent.llm.contracts import ModelResponse
+    from llm_agent.agent.llm.contracts import ModelResponse
 
     gateway = FaultingEvaluationGateway(SimpleNamespace(complete=lambda _request: None), FaultController(FaultPlanV1(steps=(FaultStepV1(1, FaultEffect.INVALID_STRUCTURED_RESPONSE),))))
     response = gateway.complete(object())
@@ -347,7 +347,7 @@ def test_fault_untriggered_calls_delegate_unchanged() -> None:
 
 
 def test_B11_health_backend_reuses_offline_standalone_owner(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent.health.standalone as standalone
+    import llm_agent.agent.health.standalone as standalone
 
     monkeypatch.setattr(
         standalone,
@@ -672,7 +672,7 @@ def test_B24_exact_precedes_prefix_token_substring_and_fuzzy() -> None:
 
 
 def test_B25_fuzzy_matching_uses_the_frozen_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent.discovery.ranking as ranking
+    import llm_agent.discovery.ranking as ranking
 
     observed: dict[str, object] = {}
 
@@ -770,7 +770,7 @@ def test_B32_commands_binding_is_the_canonical_action_owner() -> None:
     assert binding.busy_submit == "NOT_APPLICABLE"
     assert binding.model_use == "NEVER"
     assert binding.mutation_policy == "UI_SESSION"
-    assert binding.handler_owner == "agent.interfaces.cli.discovery_ui.commands_action"
+    assert binding.handler_owner == "llm_agent.interfaces.cli.discovery_ui.commands_action"
 
 
 def test_B33_f2_palette_reuses_the_active_buffer_without_nested_prompt() -> None:
@@ -850,7 +850,7 @@ def test_B38_semantic_unauthorized_makes_zero_calls() -> None:
 
 
 def test_B39_semantic_uses_one_complete_and_merges_offered_ids() -> None:
-    from agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
+    from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
 
     class Gateway:
         model = "fake"
@@ -927,7 +927,7 @@ def test_B41_semantic_returned_ids_are_independently_validated() -> None:
 
 
 def test_B42_semantic_merge_never_changes_local_availability() -> None:
-    from agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
+    from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
 
     class Gateway:
         capabilities = ProviderCapabilities(structured_output_modes=(StructuredOutputMode.GBNF,))
@@ -946,7 +946,7 @@ def test_B42_semantic_merge_never_changes_local_availability() -> None:
 
 
 def test_B43_semantic_invalid_response_falls_back_locally() -> None:
-    from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+    from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
 
     class Gateway:
         capabilities = ProviderCapabilities(structured_output_modes=(StructuredOutputMode.GBNF,))
@@ -987,9 +987,9 @@ def test_B46_commands_projection_is_local_and_json_serializable() -> None:
 
 
 def test_engineering_views_reach_commands_discovery_without_application(tmp_path: Path) -> None:
-    from agent.engineering.cli import discovery_operation_views
-    from agent.interfaces.cli.discovery_projection import discover_commands
-    from agent.runtime.paths import AppPaths
+    from llm_agent.interfaces.cli.discovery_projection import discover_commands
+    from llm_agent.interfaces.cli.engineering import discovery_operation_views
+    from llm_agent.workspace.paths import AppPaths
 
     paths = AppPaths.discover(tmp_path / "home")
     result = discover_commands(
@@ -1010,7 +1010,7 @@ def test_B47_powershell_completion_is_parser_and_registry_derived() -> None:
 
 
 def test_B48_internal_adapters_are_present_before_extensions() -> None:
-    from agent.engineering.model_safe import build_model_safe_internal_adapters
+    from llm_agent.agent.engineering.model_safe import build_model_safe_internal_adapters
 
     owner = ModelSafeEngineering(SimpleNamespace(), object())
     adapters = build_model_safe_internal_adapters(owner)
@@ -1037,7 +1037,7 @@ def test_completion_returns_current_token_and_delegates_only_path_values() -> No
 
 
 def test_semantic_projection_reuses_selected_profile_without_application_bootstrap(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    import agent.interfaces.cli.discovery_projection as projection
+    import llm_agent.interfaces.cli.discovery_projection as projection
 
     selected_profile = object()
     observed: dict[str, object] = {}
@@ -1054,8 +1054,8 @@ def test_semantic_projection_reuses_selected_profile_without_application_bootstr
         def __init__(self, *, gateway_config):
             observed["profile"] = gateway_config
 
-    monkeypatch.setattr("agent.runtime.config_repository.ConfigRepository", Repository)
-    monkeypatch.setattr("agent.runtime.paths.AppPaths.discover", lambda app_home=None: SimpleNamespace(discovery_frecency_file=tmp_path / "frecency.json"))
+    monkeypatch.setattr("llm_agent.application.agent_boundary.ConfigRepository", Repository)
+    monkeypatch.setattr("llm_agent.application.context.AppPaths.discover", lambda app_home=None: SimpleNamespace(discovery_frecency_file=tmp_path / "frecency.json"))
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", SemanticOwner)
     projection.build_service(
         semantic=True,
@@ -1070,7 +1070,7 @@ def test_semantic_projection_reuses_selected_profile_without_application_bootstr
 
 
 def test_missing_semantic_config_falls_back_without_first_run_or_model_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    import agent.interfaces.cli.discovery_projection as projection
+    import llm_agent.interfaces.cli.discovery_projection as projection
 
     class MissingRepository:
         def __init__(self, *_args, **_kwargs):
@@ -1079,7 +1079,7 @@ def test_missing_semantic_config_falls_back_without_first_run_or_model_call(monk
         def load(self, **_kwargs):
             raise RuntimeError("missing")
 
-    monkeypatch.setattr("agent.runtime.config_repository.ConfigRepository", MissingRepository)
+    monkeypatch.setattr("llm_agent.agent.runtime.config_repository.ConfigRepository", MissingRepository)
     home = tmp_path / "missing-home"
     before = home.exists()
     result = projection.discover_commands("commands", semantic=True, home=home)
@@ -1100,8 +1100,8 @@ def test_commands_local_cli_uses_zero_model_calls_and_no_first_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import agent.interfaces.cli.app as cli_app
-    import agent.interfaces.cli.discovery_projection as projection
+    import llm_agent.interfaces.cli.app as cli_app
+    import llm_agent.interfaces.cli.discovery_projection as projection
 
     def fail_if_semantic_is_constructed(**_kwargs: object) -> None:
         raise AssertionError("local commands must not construct semantic Discovery")
@@ -1124,15 +1124,15 @@ def test_standalone_commands_projects_explicit_workspace_without_bootstrap(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import agent.interfaces.cli.app as cli_app
-    import agent.interfaces.cli.discovery_projection as projection
+    import llm_agent.interfaces.cli.app as cli_app
+    import llm_agent.interfaces.cli.discovery_projection as projection
 
     def unexpected(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("commands must not bootstrap application, config, or model")
 
     monkeypatch.setattr(cli_app, "_create_application", unexpected)
     monkeypatch.setattr(cli_app.first_run, "recover_first_run_config", unexpected)
-    monkeypatch.setattr("agent.runtime.config_repository.ConfigRepository.load", unexpected)
+    monkeypatch.setattr("llm_agent.agent.runtime.config_repository.ConfigRepository.load", unexpected)
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", unexpected)
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
@@ -1152,11 +1152,11 @@ def test_commands_semantic_cli_propagates_profile_and_bounds_one_model_call(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import agent.discovery.semantic as semantic_module
-    import agent.interfaces.cli.app as cli_app
-    import agent.interfaces.cli.discovery_projection as projection
-    from agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
-    from agent.runtime.context import TaskExecutionContext
+    import llm_agent.discovery.semantic as semantic_module
+    import llm_agent.interfaces.cli.app as cli_app
+    import llm_agent.interfaces.cli.discovery_projection as projection
+    from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities, StructuredOutputMode
+    from llm_agent.agent.runtime.context import TaskExecutionContext
 
     selected_profile = object()
     observed: dict[str, object] = {}
@@ -1193,9 +1193,9 @@ def test_commands_semantic_cli_propagates_profile_and_bounds_one_model_call(
         )
 
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", semantic_owner)
-    monkeypatch.setattr("agent.runtime.config_repository.ConfigRepository", Repository)
+    monkeypatch.setattr("llm_agent.application.agent_boundary.ConfigRepository", Repository)
     monkeypatch.setattr(
-        "agent.runtime.paths.AppPaths.discover",
+        "llm_agent.application.context.AppPaths.discover",
         lambda app_home=None: SimpleNamespace(
             discovery_frecency_file=tmp_path / "frecency.json"
         ),
@@ -1258,8 +1258,8 @@ def test_powershell_completion_cli_is_deterministic_and_side_effect_free(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import agent.discovery.semantic as semantic_module
-    import agent.interfaces.cli.app as cli_app
+    import llm_agent.discovery.semantic as semantic_module
+    import llm_agent.interfaces.cli.app as cli_app
 
     def fail_if_model_is_touched(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("PowerShell completion must not touch a model")

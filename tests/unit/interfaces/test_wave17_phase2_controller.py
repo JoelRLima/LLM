@@ -4,7 +4,7 @@ import time
 from threading import Event
 from types import SimpleNamespace
 
-from agent.interfaces.cli.controller import (
+from llm_agent.interfaces.cli.controller import (
     ControllerState,
     InteractiveExecutionController,
     SubmissionEnvelope,
@@ -115,7 +115,7 @@ def test_worker_exception_is_returned_and_controller_recovers() -> None:
 
 
 def test_pending_bounds_reject_without_silent_eviction() -> None:
-    from agent.interfaces.cli.controller import PendingStore
+    from llm_agent.interfaces.cli.controller import PendingStore
 
     store = PendingStore(max_items=1, max_item_chars=4, max_total_chars=4)
     store.add(_envelope("one"))
@@ -150,7 +150,7 @@ def test_shutdown_reports_unsettled_non_daemon_worker_with_a_bound() -> None:
 
 
 def test_shutdown_order_closes_application_before_releasing_shell() -> None:
-    from agent.interfaces.cli import interactive_resources
+    from llm_agent.interfaces.cli import interactive_resources
 
     order: list[str] = []
     resources = interactive_resources._SessionResources()
@@ -163,7 +163,7 @@ def test_shutdown_order_closes_application_before_releasing_shell() -> None:
 
 
 def test_shutdown_settles_worker_and_query_before_detaching_ui_sink() -> None:
-    from agent.interfaces.cli import interactive_resources
+    from llm_agent.interfaces.cli import interactive_resources
 
     order: list[str] = []
 
@@ -202,15 +202,15 @@ def test_shutdown_settles_worker_and_query_before_detaching_ui_sink() -> None:
 
 
 def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(tmp_path) -> None:
-    from agent.application_services.queries import (
+    from llm_agent.application.services.queries import (
         WorkspaceQueryKind,
         WorkspaceQueryRequest,
         WorkspaceQueryResult,
         WorkspaceQueryStatus,
     )
-    from agent.interfaces.cli import interactive_resources
-    from agent.interfaces.cli.query_executor import BoundedQueryExecutor
-    from agent.runtime.workspace_context import WorkspaceContext
+    from llm_agent.interfaces.cli import interactive_resources
+    from llm_agent.interfaces.cli.query_executor import BoundedQueryExecutor
+    from llm_agent.workspace.context import WorkspaceContext
 
     controller = InteractiveExecutionController()
     worker_started = Event()
@@ -277,7 +277,7 @@ def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(
 
 
 def test_run_chat_propagates_failed_shutdown_status_as_nonzero_exit(monkeypatch) -> None:
-    from agent.interfaces.cli import interactive_session
+    from llm_agent.interfaces.cli import interactive_session
 
     monkeypatch.setattr(interactive_session.first_run, "is_interactive_terminal", lambda: True)
     monkeypatch.setattr(

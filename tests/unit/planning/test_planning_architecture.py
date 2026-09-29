@@ -2,11 +2,11 @@ import ast
 import inspect
 import textwrap
 
-from agent.planning.execution_gateway import ExecutionGateway
-from agent.planning.plan_builder import PlanBuilder
-from agent.planning.plan_optimizer import PlanOptimizer
-from agent.planning.plan_validator import PlanValidator
-from agent.planning.reactive_loop import ReactiveLoop
+from llm_agent.agent.planning.execution_gateway import ExecutionGateway
+from llm_agent.agent.planning.plan_builder import PlanBuilder
+from llm_agent.agent.planning.plan_optimizer import PlanOptimizer
+from llm_agent.agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.reactive_loop import ReactiveLoop
 
 
 def _function_tree(function) -> ast.FunctionDef | ast.AsyncFunctionDef:

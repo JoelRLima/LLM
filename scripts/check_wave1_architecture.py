@@ -6,8 +6,14 @@ import ast
 from pathlib import Path
 from typing import Callable, Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
-AGENT_ROOT = ROOT / "agent"
+SOURCE_LAYOUT = w21_source_layout(ROOT)
+AGENT_ROOT = SOURCE_LAYOUT.agent_source_directory
 
 # These are explicit semantic boundaries, not a blanket grep allowlist.  The
 # provider implementation owns transport, the runtime service owns lifecycle,
@@ -62,11 +68,12 @@ _CONTEXT_ROOT_NAMES = frozenset({"context", "execution_context", "task_context"}
 
 
 def _relative(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    return SOURCE_LAYOUT.w21_relative_path(path)
 
 
 def _files() -> Iterable[Path]:
-    yield from sorted(AGENT_ROOT.rglob("*.py"))
+    if AGENT_ROOT is not None:
+        yield from sorted(AGENT_ROOT.rglob("*.py"))
 
 
 def _attribute_parts(node: ast.AST) -> tuple[str, ...]:

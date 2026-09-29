@@ -4,15 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.memory import json_persistence
-from agent.memory.json_persistence import AtomicJsonWriteError
-from agent.memory.memory import (
+from llm_agent.agent.memory.memory import (
     AgentMemory,
     MemoryDatabaseError,
     MemoryLoadError,
 )
-from agent.runtime import paths
-from agent.tool_executor import ToolExecutor
+from llm_agent.agent.tool_executor import ToolExecutor
+from llm_agent.storage import json_persistence
+from llm_agent.storage.json_persistence import AtomicJsonWriteError
+from llm_agent.workspace import paths
 
 
 def test_memory_save_load_excludes_sqlite_sections(tmp_path, monkeypatch):
@@ -113,7 +113,7 @@ def test_strict_memory_restore_rejects_corrupt_json_without_mutating_state(
 
 
 def test_sqlite_connections_are_closed_deterministically(tmp_path, monkeypatch):
-    from agent.memory import memory as memory_module
+    from llm_agent.agent.memory import memory as memory_module
 
     real_connect = memory_module.sqlite3.connect
     connections = []

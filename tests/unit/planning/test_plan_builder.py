@@ -1,7 +1,7 @@
 import pytest
 
-from agent.planning.plan_builder import PlanBuilder, build_planner_tools_description
-from agent.state import AgentState
+from llm_agent.agent.planning.plan_builder import PlanBuilder, build_planner_tools_description
+from llm_agent.agent.state import AgentState
 
 
 class _PromptContext:

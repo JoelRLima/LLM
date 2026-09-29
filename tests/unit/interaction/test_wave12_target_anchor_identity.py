@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import normalize_target_anchor_identity
+from llm_agent.agent.interaction.guards import normalize_target_anchor_identity
 
 
 def test_lexical_target_aliases_share_canonical_identity() -> None:

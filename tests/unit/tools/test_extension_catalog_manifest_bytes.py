@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agent.tools.stdio_adapter import load_extension_manifest_bytes
+from llm_agent.agent.tools.stdio_adapter import load_extension_manifest_bytes
 
 
 def _payload() -> dict[str, object]:

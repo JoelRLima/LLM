@@ -6,9 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.code.workflow_proposal import _complete
-from agent.llm.contracts import (
+from llm_agent.agent.code.workflow_proposal import _complete
+from llm_agent.agent.llm.contracts import (
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
@@ -16,16 +15,17 @@ from agent.llm.contracts import (
     StreamEventType,
     TokenUsage,
 )
-from agent.llm.errors import ModelResponseError
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.llm.session import ChatSession
-from agent.llm.structured_output import resolve_model_decision
-from agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
-from agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
-from agent.routing.persona.contracts import PersonaRouteRequest
-from agent.routing.persona.current import CurrentPersonaRouter
-from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.llm.errors import ModelResponseError
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.structured_output import resolve_model_decision
+from llm_agent.agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
+from llm_agent.agent.reporting.task_report_rendering import aggregate_metrics, render_markdown
+from llm_agent.agent.routing.persona.contracts import PersonaRouteRequest
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter
+from llm_agent.agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.cancellation import CancellationToken
 
 
 class _Gateway:

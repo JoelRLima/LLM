@@ -5,9 +5,9 @@ from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
-from agent.planning.replan_models import ReplanAction, ReplanContext
-from agent.runtime.failures import FailureFact
-from agent.runtime.recovery import RecoveryBudgetState, RecoveryPolicy, RecoveryScope
+from llm_agent.agent.planning.replan_models import ReplanAction, ReplanContext
+from llm_agent.agent.runtime.failures import FailureFact
+from llm_agent.agent.runtime.recovery import RecoveryBudgetState, RecoveryPolicy, RecoveryScope
 
 
 def _policy(**overrides: int) -> RecoveryPolicy:
@@ -85,7 +85,7 @@ def test_recovery_consumption_is_atomic_under_concurrent_attempts() -> None:
 def test_replan_fallback_uses_distinct_heuristic_and_llm_scopes(monkeypatch) -> None:
     import importlib
 
-    replan_module = importlib.import_module("agent.planning.replan")
+    replan_module = importlib.import_module("llm_agent.agent.planning.replan")
     budget = RecoveryBudgetState(_policy(heuristic_replans=1, llm_replans=1))
     orchestrator = SimpleNamespace(
         agent_state=SimpleNamespace(recovery_budget=budget),
@@ -283,7 +283,7 @@ def test_valid_legacy_replan_checkpoint_migrates_exactly_once() -> None:
 
 
 def test_agent_state_legacy_surplus_total_is_rejected_before_migration() -> None:
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     checkpoint = AgentState().to_checkpoint_dict()
     checkpoint.pop("recovery_budget")
@@ -341,7 +341,7 @@ def test_serialized_budget_cannot_override_canonical_aggregate_cap() -> None:
 
 
 def test_legacy_state_counter_projection_is_read_only() -> None:
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     state = AgentState()
     state.recovery_budget.try_consume(RecoveryScope.HEURISTIC_REPLANS)
@@ -353,7 +353,7 @@ def test_legacy_state_counter_projection_is_read_only() -> None:
 
 
 def test_agent_state_checkpoint_prefers_canonical_recovery_and_migrates_legacy() -> None:
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     source = AgentState()
     for scope in (
@@ -381,7 +381,7 @@ def test_agent_state_checkpoint_prefers_canonical_recovery_and_migrates_legacy()
 
 
 def test_agent_state_checkpoint_rejects_recovery_legacy_conflict() -> None:
-    from agent.state import AgentState
+    from llm_agent.agent.state import AgentState
 
     source = AgentState()
     source.recovery_budget.try_consume(RecoveryScope.LLM_REPLANS)

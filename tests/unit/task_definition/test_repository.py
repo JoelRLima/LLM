@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from agent.task_definition.errors import (
+from llm_agent.agent.task_definition.errors import (
     TaskDefinitionMismatchError,
     TaskDefinitionMissingError,
     TaskDefinitionPersistenceError,
     TaskDefinitionValidationError,
 )
-from agent.task_definition.models import TaskSpecPhase
-from agent.task_definition.repository import (
+from llm_agent.agent.task_definition.models import TaskSpecPhase
+from llm_agent.agent.task_definition.repository import (
     CONTRACT_FILE_NAME,
     MANIFEST_FILE_NAME,
     SPEC_FILE_NAME,

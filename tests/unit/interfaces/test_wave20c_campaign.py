@@ -10,13 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.discovery.index import cli_entries_from_parser
-from agent.engineering.model_safe import MODEL_SAFE_TOOL_DESCRIPTORS, ModelSafeResponse, ModelSafeStatus
-from agent.interfaces.cli.completion import completion_commands
-from agent.interfaces.cli.discovery_projection import build_catalog
-from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.mcp.projection import response_document
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.agent.engineering.model_safe import MODEL_SAFE_TOOL_DESCRIPTORS, ModelSafeResponse, ModelSafeStatus
+from llm_agent.discovery.index import cli_entries_from_parser
+from llm_agent.interfaces.cli.completion import completion_commands
+from llm_agent.interfaces.cli.discovery_projection import build_catalog
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.interfaces.mcp.projection import response_document
+from llm_agent.workspace.context import WorkspaceContext
 
 ROOT = Path(__file__).resolve().parents[3]
 W20C_CAMPAIGN_CASES = tuple(f"C{i:02d}" for i in range(1, 25))
@@ -30,7 +30,7 @@ def test_C01_base_import_parser_has_no_optional_import_leakage() -> None:
 
 
 def test_C02_missing_extra_contract_is_lazy_and_stable(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    from agent.interfaces.cli import mcp as cli_mcp
+    from llm_agent.interfaces.cli import mcp as cli_mcp
 
     monkeypatch.setattr(cli_mcp.importlib.util, "find_spec", lambda _name: None)
     assert cli_mcp.run_mcp_engineering(SimpleNamespace(workspace=str(ROOT), home=None)) == 2
@@ -46,7 +46,7 @@ def test_C03_mcp_workspace_is_mandatory() -> None:
 
 def test_C04_workspace_binding_is_canonical_and_immutable() -> None:
     pytest.importorskip("mcp")
-    from agent.interfaces.mcp.engineering_server import MCPWorkspaceBinding
+    from llm_agent.interfaces.mcp.engineering_server import MCPWorkspaceBinding
 
     value = WorkspaceContext.create(ROOT)
     assert value.root == value.root.resolve() and value.workspace_id
@@ -71,7 +71,7 @@ def test_C06_tools_list_is_exactly_the_five_model_safe_tools() -> None:
 
 def test_C07_low_level_server_advertises_tools_only() -> None:
     pytest.importorskip("mcp")
-    from agent.interfaces.mcp.engineering_server import MCPWorkspaceBinding, create_server
+    from llm_agent.interfaces.mcp.engineering_server import MCPWorkspaceBinding, create_server
 
     server = create_server(
         MCPWorkspaceBinding.from_path(ROOT),
@@ -87,7 +87,7 @@ def test_C07_low_level_server_advertises_tools_only() -> None:
 
 def test_C08_mcp_schema_owner_is_model_safe_descriptor_metadata() -> None:
     pytest.importorskip("mcp")
-    from agent.interfaces.mcp.engineering_server import _tool
+    from llm_agent.interfaces.mcp.engineering_server import _tool
 
     assert all(item.result_data_schema is None and item.adapter_id == "builtin" for item in MODEL_SAFE_TOOL_DESCRIPTORS)
     for descriptor in MODEL_SAFE_TOOL_DESCRIPTORS:
@@ -108,7 +108,7 @@ def test_C10_engineering_error_projection_is_error_safe() -> None:
 
 def test_C11_unexpected_adapter_failure_has_generic_reason() -> None:
     pytest.importorskip("mcp")
-    from agent.interfaces.mcp.engineering_server import _safe_adapter_failure
+    from llm_agent.interfaces.mcp.engineering_server import _safe_adapter_failure
 
     response = _safe_adapter_failure("engineering_list", RuntimeError("private detail"))
     assert response.reason_code == "MCP_ADAPTER_ERROR"
@@ -116,7 +116,7 @@ def test_C11_unexpected_adapter_failure_has_generic_reason() -> None:
 
 
 def test_C12_foreign_workspace_result_is_unknown() -> None:
-    from agent.engineering.model_safe import ModelSafeEngineering
+    from llm_agent.agent.engineering.model_safe import ModelSafeEngineering
 
     owner = ModelSafeEngineering(
         SimpleNamespace(),
@@ -132,7 +132,7 @@ def test_C12_foreign_workspace_result_is_unknown() -> None:
 
 
 def test_C13_mcp_reuses_bounded_redaction_projection() -> None:
-    from agent.engineering.model_safe import _project_health, _project_reference
+    from llm_agent.agent.engineering.model_safe import _project_health, _project_reference
 
     health = _project_health({"checks": [{"id": "disk", "status": "ok", "message": "private"}]})
     reference = _project_reference(SimpleNamespace(owner="store", kind="run", reference_id="r", sha256=None, label="private"))
@@ -142,14 +142,14 @@ def test_C13_mcp_reuses_bounded_redaction_projection() -> None:
 
 def test_C14_anyio_bridge_is_non_abandoning() -> None:
     pytest.importorskip("mcp")
-    from agent.interfaces.mcp.engineering_server import MCP_ABANDON_ON_CANCEL
+    from llm_agent.interfaces.mcp.engineering_server import MCP_ABANDON_ON_CANCEL
 
     assert MCP_ABANDON_ON_CANCEL is False
 
 
 def test_C15_lifecycle_closes_after_stdio(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     pytest.importorskip("mcp")
-    import agent.interfaces.mcp.engineering_server as server_module
+    import llm_agent.interfaces.mcp.engineering_server as server_module
 
     events: list[str] = []
 
@@ -180,14 +180,14 @@ def test_C16_stdio_diagnostics_are_stderr_only() -> None:
 
 def test_C17_mcp_startup_does_not_require_application_or_model() -> None:
     pytest.importorskip("mcp")
-    import agent.interfaces.mcp.engineering_server as server_module
+    import llm_agent.interfaces.mcp.engineering_server as server_module
 
     assert "AgentApplication" not in vars(server_module)
     assert "ModelProvider" not in vars(server_module)
 
 
 def test_C18_discovery_disabled_reason_is_stable_when_extra_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agent.discovery.service.importlib.util.find_spec", lambda _name: None)
+    monkeypatch.setattr("llm_agent.discovery.service.importlib.util.find_spec", lambda _name: None)
     catalog, availability = build_catalog()
     entry = next(item for item in catalog.entries() if item.preferred_invocation == "mcp engineering")
     assert entry.entry_id in availability

@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-import agent.tools.stdio_launcher as stdio_launcher_module
-from agent.tools.stdio_launcher import _validate_envelope
+import llm_agent.extensions.stdio_launcher as stdio_launcher_module
+from llm_agent.extensions.stdio_launcher import _validate_envelope
 
 
 class _BlockingLauncherInput:
@@ -82,7 +82,7 @@ def test_launcher_forwards_streams_and_writes_status(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     status_path = tmp_path / "status.json"
-    launcher = Path(__import__("agent.tools.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
+    launcher = Path(__import__("llm_agent.extensions.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
     process = subprocess.Popen(
         [sys.executable, str(launcher)],
         stdin=subprocess.PIPE,
@@ -175,7 +175,7 @@ def test_launcher_does_not_swallow_communication_error(
 
 
 def test_launcher_without_envelope_stays_silent_and_fails() -> None:
-    launcher = Path(__import__("agent.tools.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
+    launcher = Path(__import__("llm_agent.extensions.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
     process = subprocess.Popen(
         [sys.executable, str(launcher)],
         stdin=subprocess.PIPE,
@@ -226,7 +226,7 @@ def test_launcher_does_not_create_extension_before_reading_envelope(
 
 
 def test_launcher_reports_invalid_envelope_in_private_status(tmp_path: Path) -> None:
-    launcher = Path(__import__("agent.tools.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
+    launcher = Path(__import__("llm_agent.extensions.stdio_launcher", fromlist=["__file__"]).__file__).resolve()
     status_path = tmp_path / "invalid-status.json"
     process = subprocess.Popen(
         [sys.executable, str(launcher)],

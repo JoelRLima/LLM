@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.observability import (
+from llm_agent.agent.observability import (
     DiagnosticRecord,
     ObservationSource,
     TraceCompleteness,
@@ -10,9 +10,9 @@ from agent.observability import (
     TraceStore,
     safe_run_key,
 )
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 def _paths(tmp_path: Path) -> WorkspacePaths:

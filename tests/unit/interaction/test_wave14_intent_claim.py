@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agent.interaction.intent_claim import (
+from llm_agent.agent.interaction.intent_claim import (
     IntentClaimError,
     IntentClaimV1,
     bind_current_subject_evidence,

@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.runtime import storage_maintenance as maintenance_module
-from agent.runtime.filesystem_primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
-from agent.runtime.storage_contracts import (
+from llm_agent.agent.runtime import storage_maintenance as maintenance_module
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.storage_contracts import (
     MaintenanceConfirmation,
     MaintenanceOperation,
     StorageMaintenanceError,
 )
-from agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.filesystem.primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
+from llm_agent.workspace.paths import AppPaths
 
 
 def _canonical(tmp_path: Path) -> tuple[AppPaths, StorageMaintenanceService]:

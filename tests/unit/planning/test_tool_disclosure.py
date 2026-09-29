@@ -4,26 +4,26 @@ from typing import Any
 
 import pytest
 
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import (
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import (
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     StructuredOutputMode,
 )
-from agent.llm.errors import ModelProviderError
-from agent.llm.session import ChatSession
-from agent.llm.tool_discovery_contract import (
+from llm_agent.agent.llm.errors import ModelProviderError
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.tool_discovery_contract import (
     MAX_DISCLOSED_TOOLS,
     valid_tool_discovery,
 )
-from agent.planning.plan_validator import PlanValidator
-from agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
-from agent.planning.tool_disclosure import disclose_tools, render_tool_guidance
-from agent.runtime.recovery import RecoveryBudgetState, RecoveryScope
-from agent.state import AgentState
-from agent.tools.contracts import ToolOriginKind
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.planning_context import PlanningContextSnapshot, PlanningTool
+from llm_agent.agent.planning.tool_disclosure import disclose_tools, render_tool_guidance
+from llm_agent.agent.runtime.recovery import RecoveryBudgetState, RecoveryScope
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.contracts import ToolOriginKind
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
 
 
 def _context(
@@ -377,14 +377,14 @@ def test_real_structured_hidden_selection_gets_one_dynamic_correction() -> None:
 
 def test_static_discovery_contract_is_projected_without_duplicate_rules() -> None:
     repository = Path(__file__).resolve().parents[3]
-    disclosure_source = (repository / "agent/planning/tool_disclosure.py").read_text(
+    disclosure_source = (repository / "src/llm_agent/agent/planning/tool_disclosure.py").read_text(
         encoding="utf-8"
     )
-    guidance_source = (repository / "agent/evaluation/scripted_tool_guidance.py").read_text(
+    guidance_source = (repository / "src/llm_agent/agent/evaluation/scripted_tool_guidance.py").read_text(
         encoding="utf-8"
     )
 
-    assert "from agent.llm.tool_discovery_contract import" in disclosure_source
+    assert "from llm_agent.agent.llm.tool_discovery_contract import" in disclosure_source
     assert "MAX_DISCLOSED_TOOLS = " not in disclosure_source
     assert "len(raw_names)" not in disclosure_source
     assert "len(tools) <= 8" not in disclosure_source

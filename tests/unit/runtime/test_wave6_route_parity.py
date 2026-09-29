@@ -4,16 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.llm.contracts import ProviderCapabilities
-from agent.orchestration.security_service import SecurityAnalysisService
-from agent.planning.plan_executor import PlanExecutor
-from agent.planning.reactive_loop import ReactiveLoop
-from agent.planning.task_graph import TaskGraph, TaskNode
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
-from agent.runtime.model_call import ModelCallService
-from agent.runtime.task_policy import TaskPolicyDecision, TaskPolicyError, TaskPolicyResult, TaskRuntimePolicy
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.orchestration.security_service import SecurityAnalysisService
+from llm_agent.agent.planning.plan_executor import PlanExecutor
+from llm_agent.agent.planning.reactive_loop import ReactiveLoop
+from llm_agent.agent.planning.task_graph import TaskGraph, TaskNode
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.runtime.model_call import ModelCallService
+from llm_agent.agent.runtime.task_policy import TaskPolicyDecision, TaskPolicyError, TaskPolicyResult, TaskRuntimePolicy
+from llm_agent.cancellation import CancellationToken
 
 
 class _Gateway:

@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.effect_intent import effect_intent_error
-from agent.planning.task_semantics import (
+from llm_agent.agent.planning.effect_intent import effect_intent_error
+from llm_agent.agent.planning.task_semantics import (
     AuthorityDecision,
     AuthorizedEffect,
     EffectAuthority,
@@ -19,14 +19,17 @@ from agent.planning.task_semantics import (
     TaskSemantics,
     admit_effect_authority,
 )
-from agent.planning.task_semantics_inference import (
+from llm_agent.agent.planning.task_semantics_inference import (
     infer_effect_semantics,
     inferred_obligations,
 )
-from agent.planning.task_semantics_inference import (
+from llm_agent.agent.planning.task_semantics_inference import (
     infer_requested_effects as infer_requested_effects_compat,
 )
-from agent.planning.task_semantics_positive_proof import authorized_effect_from_proof
+from llm_agent.agent.planning.task_semantics_positive_proof import authorized_effect_from_proof
+from scripts.w21_architecture.source import SourceLayout
+
+SOURCE_LAYOUT = SourceLayout.for_profile(Path(__file__).resolve().parents[3], "final-w22")
 
 _WRITE_CONTRACT = SimpleNamespace(capabilities=frozenset({"write"}))
 
@@ -267,8 +270,7 @@ def test_bounded_scope_instruction_preserves_the_authorized_target() -> None:
 
 
 def test_production_authority_parser_has_no_eval_owned_grammar() -> None:
-    root = Path(__file__).resolve().parents[3]
-    planning = root / "agent" / "planning"
+    planning = SOURCE_LAYOUT.path_for_w21_relative("agent/planning")
     modules = sorted(planning.glob("task_semantics_positive_proof*.py"))
     modules.append(planning / "task_semantics_effect_inference.py")
 

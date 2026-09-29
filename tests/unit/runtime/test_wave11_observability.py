@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.orchestration import task_runner as task_runner_module
-from agent.orchestration.task_runner import TaskRunner
-from agent.orchestration.task_runner_continuity import TaskInputs
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
+from llm_agent.agent.orchestration import task_runner as task_runner_module
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.orchestration.task_runner_continuity import TaskInputs
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
 
 
 def _owner(directive: TaskRunDirective | None) -> tuple[SimpleNamespace, list[tuple[str, dict[str, object]]]]:

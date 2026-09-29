@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from agent import __version__
-from agent.interfaces.cli import app as cli
+from llm_agent import __version__
+from llm_agent.interfaces.cli import app as cli
 
 
 @dataclass
@@ -306,7 +306,7 @@ def test_first_run_init_failure_preserves_error_without_false_success(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent.interfaces.cli import maintenance
+    from llm_agent.interfaces.cli import maintenance
 
     home = tmp_path / "app"
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
@@ -447,8 +447,6 @@ def test_doctor_json_is_one_document_and_maps_diagnostics_to_exit_one(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import agent.health_check
-
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
     config = tmp_path / "config.json"
@@ -463,7 +461,7 @@ def test_doctor_json_is_one_document_and_maps_diagnostics_to_exit_one(
             "readiness": {"offline_ready": False},
         }
 
-    monkeypatch.setattr(agent.health_check, "run_health_check", health)
+    monkeypatch.setattr("llm_agent.application.agent_boundary.run_health_check", health)
 
     assert (
         cli.main(
@@ -502,8 +500,6 @@ def test_doctor_writes_report_only_when_explicit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import agent.health_check
-
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     requested: list[bool] = []
@@ -512,7 +508,7 @@ def test_doctor_writes_report_only_when_explicit(
         requested.append(kwargs["write_report"])
         return {"readiness": {"offline_ready": True}}
 
-    monkeypatch.setattr(agent.health_check, "run_health_check", health)
+    monkeypatch.setattr("llm_agent.application.agent_boundary.run_health_check", health)
 
     assert cli.main(["doctor", "--workspace", str(workspace)]) == 0
     assert cli.main(["doctor", "--workspace", str(workspace), "--write-report"]) == 0
@@ -576,8 +572,8 @@ def test_json_bootstrap_error_is_a_single_document(
 def test_run_yes_is_the_only_headless_auto_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent.application import AgentApplication
-    from agent.approval import AutoApprove, RequireExplicitApproval
+    from llm_agent.agent.application import AgentApplication
+    from llm_agent.agent.approval import AutoApprove, RequireExplicitApproval
 
     policies: list[Any] = []
     application = _Application()
@@ -604,7 +600,7 @@ def test_run_yes_is_the_only_headless_auto_approval(
 def test_run_task_authority_is_explicit_product_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent.application import AgentApplication
+    from llm_agent.agent.application import AgentApplication
 
     captured: dict[str, Any] = {}
 

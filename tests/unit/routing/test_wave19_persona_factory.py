@@ -1,6 +1,6 @@
-from agent.routing.persona.current import CurrentPersonaRouter
-from agent.routing.persona.factory import build_persona_router
-from agent.variants.models import (
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter
+from llm_agent.agent.routing.persona.factory import build_persona_router
+from llm_agent.agent.variants.models import (
     VariantLifecycle,
     VariantSeam,
     VariantSelection,

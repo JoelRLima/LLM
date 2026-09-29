@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_errors import CatalogDriftError
-from agent.tools.extension_catalog_migration import migrate_legacy
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_catalog_errors import CatalogDriftError
+from llm_agent.extensions.extension_catalog_migration import migrate_legacy
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
 
 
 def _manifest(extension_id: str = "demo.extension", version: str = "1.0.0") -> dict[str, object]:

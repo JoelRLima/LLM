@@ -8,8 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.runtime import paths as runtime_paths
-from agent.runtime.paths import APP_DIRECTORY_NAME, AppPaths
 from distribution.release_identity import APPLICATION_NAMESPACE
 from installer.path_semantics import (
     PathSnapshot,
@@ -18,6 +16,8 @@ from installer.path_semantics import (
     reconstructed_persistent_path,
     remove_owned_segment,
 )
+from llm_agent.workspace import paths as runtime_paths
+from llm_agent.workspace.paths import APP_DIRECTORY_NAME, AppPaths
 
 OWNED = r"C:\Users\José Teste\AppData\Local\local-llm-agent\install\bin"
 ENVIRONMENT = {

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.evaluation.trace import RecordingGateway
-from agent.llm.contracts import (
+from llm_agent.agent.evaluation.trace import RecordingGateway
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -15,12 +15,12 @@ from agent.llm.contracts import (
     StreamEventType,
     TokenUsage,
 )
-from agent.llm.providers import openai_compatible as openai_module
-from agent.llm.providers.openai_compatible import OpenAICompatibleGateway
-from agent.llm.session import ChatSession
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.task_report_rendering import render_markdown
-from agent.runtime.budget_estimation import (
+from llm_agent.agent.llm.providers import openai_compatible as openai_module
+from llm_agent.agent.llm.providers.openai_compatible import OpenAICompatibleGateway
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.task_report_rendering import render_markdown
+from llm_agent.agent.runtime.budget_estimation import (
     HEURISTIC_CHARS_PER_TOKEN,
     PROVIDER_CHAT_INPUT_TOKENS,
     PROVIDER_TEXT_TOKENIZER,

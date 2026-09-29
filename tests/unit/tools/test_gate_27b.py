@@ -4,19 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
-from agent.llm.session import ChatSession
-from agent.orchestrator import Orchestrator
-from agent.routing.persona.current import CurrentPersonaRouter
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import WorkspacePaths
-from agent.skills.descriptor import SkillDescriptor, SkillSpec
-from agent.skills.echo import EchoSkill
-from agent.skills.registry import SkillRegistry
-from agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
-from agent.tools.contracts import (
+from llm_agent.agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.orchestrator import Orchestrator
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.skills.descriptor import SkillDescriptor, SkillSpec
+from llm_agent.agent.skills.echo import EchoSkill
+from llm_agent.agent.skills.registry import SkillRegistry
+from llm_agent.agent.tools.authority import ApplicationAuthoritySnapshot, TaskAuthoritySnapshot
+from llm_agent.agent.tools.contracts import (
     ToolDescriptor,
     ToolInvocation,
     ToolInvocationRequest,
@@ -24,9 +23,10 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.runtime_identity import RuntimeSnapshotIdentity
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.runtime_identity import RuntimeSnapshotIdentity
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 class _Adapter:

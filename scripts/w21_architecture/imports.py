@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from .source import RepositorySource, is_type_checking_test, literal_value, qualified_name
+from .source import RepositorySource, SourceLayout, is_type_checking_test, literal_value, qualified_name
 
 STATIC_KINDS = frozenset({"normal_import", "local_import", "type_checking", "reexport"})
 
@@ -224,13 +224,30 @@ def _positional_literal(call: ast.Call, index: int | None) -> str | None:
 
 def _declarative_destination(
     node: ast.Call,
-    modules: set[str],
+    source: RepositorySource,
 ) -> tuple[str, str] | None:
+    modules = set(source.module_paths())
+    assert isinstance(source.layout, SourceLayout)
+
+    def resolve(value: str | None) -> str | None:
+        if not value:
+            return None
+        direct = _destination(value, modules)
+        if direct:
+            return direct
+        projected = source.layout.project_w21_module(value)
+        return _destination(projected, modules) if projected else None
+
+    def authority_source(value: str) -> str | None:
+        projected = source.layout.project_w21_module(value)
+        return _destination(projected, modules) if projected else None
+
     name = qualified_name(node.func)[-1:]
     if name == ("SkillSpec",):
         value = _keyword_literal(node, "module") or _positional_literal(node, 0)
-        destination = _destination(value, modules) if value else None
-        return ("agent.skills.registry", destination) if destination else None
+        destination = resolve(value)
+        registry = authority_source("agent.skills.registry")
+        return (registry, destination) if registry and destination else None
 
     handler_positions = {"_binding": 8, "c": 3, "q": 3, "a": 3, "CliActionBinding": 0}
     call_name = name[0] if name else ""
@@ -240,18 +257,26 @@ def _declarative_destination(
     if not value:
         return None
     owner = value.rsplit(".", 1)[0] if "." in value else value
-    destination = _destination(owner, modules)
-    return ("agent.interfaces.cli.action_registry", destination) if destination else None
+    destination = resolve(owner)
+    registry_identity = (
+        "interfaces.cli.action_registry"
+        if source.layout.profile == "final-w22"
+        else "agent.interfaces.cli.action_registry"
+    )
+    registry = _destination(
+        f"{source.layout.import_module_root}.{registry_identity}",
+        modules,
+    )
+    return (registry, destination) if registry and destination else None
 
 
 def _collect_declarative(source: RepositorySource, module: str, tree: ast.Module) -> list[ImportEdge]:
     path = source.module_paths()[module]
-    modules = set(source.module_paths())
     edges: list[ImportEdge] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        result = _declarative_destination(node, modules)
+        result = _declarative_destination(node, source)
         if result is None:
             continue
         source_module, destination = result

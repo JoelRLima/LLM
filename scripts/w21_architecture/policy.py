@@ -9,10 +9,15 @@ from dataclasses import dataclass
 from typing import AbstractSet, Any, Mapping, cast
 
 from .compatibility import CompatibilityRegistry, normalize_registry
-from .source import RepositorySource, qualified_name
+from .source import RepositorySource, SourceLayout, qualified_name
 
 NEW_EDGE_RULE = "W21-POLICY-NEW-EDGE"
 NEUTRAL_OWNER_RULE = "W21-POLICY-NEUTRAL-OWNER"
+W22_AGENT_APPLICATION_RULE = {
+    "rule_id": "W22-OWNER-AGENT-APPLICATION-001",
+    "source_owner": "Agent",
+    "destination_owner": "Application",
+}
 
 
 @dataclass(frozen=True)
@@ -32,16 +37,30 @@ class PolicyViolation:
 
     @property
     def violation_id(self) -> str:
-        return stable_violation_id(self.source_module, self.destination_module, self.edge_kind, self.target_rule_id)
+        prefix = "W22" if self.target_rule_id.startswith("W22-") else "W21"
+        return stable_violation_id(
+            self.source_module,
+            self.destination_module,
+            self.edge_kind,
+            self.target_rule_id,
+            prefix=prefix,
+        )
 
     def format(self) -> str:
         return f"{self.violation_id} {self.source_module} -> {self.destination_module} ({self.edge_kind}) [{self.target_rule_id}]"
 
 
-def stable_violation_id(source_module: str, destination_module: str, edge_kind: str, target_rule_id: str) -> str:
+def stable_violation_id(
+    source_module: str,
+    destination_module: str,
+    edge_kind: str,
+    target_rule_id: str,
+    *,
+    prefix: str = "W21",
+) -> str:
     payload = {"source_module": source_module, "destination_module": destination_module, "edge_kind": edge_kind, "target_rule_id": target_rule_id}
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return f"W21-V-{hashlib.sha256(encoded).hexdigest()[:16]}"
+    return f"{prefix}-V-{hashlib.sha256(encoded).hexdigest()[:16]}"
 
 
 def _matches(selector: Mapping[str, Any], value: str) -> bool:
@@ -235,8 +254,10 @@ def neutral_owner_violations(source: RepositorySource) -> list[PolicyViolation]:
     """Check mechanically stable neutral-owner shape invariants."""
 
     findings: list[PolicyViolation] = []
+    assert isinstance(source.layout, SourceLayout)
     for module, path in sorted(source.module_paths().items()):
-        if not module.startswith(("agent.operation", "agent.process", "agent.intent")):
+        identity = source.layout.w21_module_identity(module)
+        if identity is None or not identity.startswith(("agent.operation", "agent.process", "agent.intent")):
             continue
         tree = source.tree_for_path(path)
         if tree is None:
@@ -252,5 +273,78 @@ def neutral_owner_violations(source: RepositorySource) -> list[PolicyViolation]:
             elif isinstance(node, (ast.Name, ast.Attribute)) and qualified_name(node)[-1:] in {("Orchestrator",), ("AgentApplication",)}:
                 bad = True
         if bad:
-            findings.append(PolicyViolation(module, module, "neutral_owner_shape", NEUTRAL_OWNER_RULE, "neutral owner contains a forbidden application/service-bag shape"))
+            findings.append(PolicyViolation(identity, identity, "neutral_owner_shape", NEUTRAL_OWNER_RULE, "neutral owner contains a forbidden application/service-bag shape"))
     return findings
+
+
+def w22_owner_for_module(module: str, layout: SourceLayout, policy: Mapping[str, Any]) -> str | None:
+    """Classify one in-product module using the finite W22 ownership map."""
+
+    root = layout.import_module_root
+    if module == root:
+        return "Product"
+    if not module.startswith(root + "."):
+        return None
+    suffix = module[len(root) + 1 :]
+    package = suffix.split(".", 1)[0]
+    owners = policy.get("owner_subpackages", {})
+    if not isinstance(owners, Mapping):
+        return None
+    matches = [
+        str(owner)
+        for owner, packages in owners.items()
+        if isinstance(packages, list) and package in packages
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def w22_owner_classification_errors(
+    modules: list[str] | tuple[str, ...],
+    layout: SourceLayout,
+    policy: Mapping[str, Any],
+) -> list[str]:
+    """Fail closed when a product module has no unique declared owner."""
+
+    errors: list[str] = []
+    for module in sorted(modules):
+        if module != layout.import_module_root and not module.startswith(layout.import_module_root + "."):
+            continue
+        owner = w22_owner_for_module(module, layout, policy)
+        if owner is None:
+            errors.append(f"W22 module has no unique owner classification: {module}")
+    return errors
+
+
+def w22_owner_violations(
+    edges: list[dict[str, Any]],
+    layout: SourceLayout,
+    policy: Mapping[str, Any],
+) -> list[PolicyViolation]:
+    """Enforce the declared W22 owner boundaries over every graph edge kind."""
+
+    forbidden = [*policy.get("forbidden_owner_edges", []), W22_AGENT_APPLICATION_RULE]
+    findings: list[PolicyViolation] = []
+    for edge in edges:
+        source = str(edge["source_module"])
+        destination = str(edge["destination_module"])
+        source_owner = w22_owner_for_module(source, layout, policy)
+        destination_owner = w22_owner_for_module(destination, layout, policy)
+        if source_owner is None or destination_owner is None:
+            continue
+        for rule in forbidden:
+            if not isinstance(rule, Mapping):
+                continue
+            if source_owner != rule.get("source_owner") or destination_owner != rule.get("destination_owner"):
+                continue
+            rule_id = str(rule.get("rule_id", "W22-OWNER-UNSPECIFIED"))
+            for kind in edge.get("edge_kinds", []):
+                findings.append(
+                    PolicyViolation(
+                        source,
+                        destination,
+                        str(kind),
+                        rule_id,
+                        f"{source_owner} may not depend on {destination_owner}",
+                    )
+                )
+    return sorted(findings, key=lambda item: item.violation_id)

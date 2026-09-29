@@ -22,7 +22,7 @@ def test_root_compatibility_modules_are_retired() -> None:
 
 
 def test_script_entry_points_are_explicitly_canonical() -> None:
-    from agent.interfaces.cli.app import main as canonical_cli
+    from llm_agent.interfaces.cli.app import main as canonical_cli
     from scripts.benchmark import main as canonical_benchmark
 
     assert callable(canonical_cli)

@@ -3,18 +3,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.application_result import AgentRunResult
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.run_receipt import build_run_receipt
-from agent.reporting.run_snapshot import build_canonical_run_snapshot
-from agent.reporting.task_report import TaskReportBuilder
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_data import bounded_event_data
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.runtime.events import MAX_EVENT_DATA_CHARS, RuntimeEvent, RuntimeEventKind
-from agent.runtime.failures import FailureFact
-from agent.state import AgentState
-from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from llm_agent.agent.application_result import AgentRunResult
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.run_receipt import build_run_receipt
+from llm_agent.agent.reporting.run_snapshot import build_canonical_run_snapshot
+from llm_agent.agent.reporting.task_report import TaskReportBuilder
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_data import bounded_event_data
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.runtime.events import MAX_EVENT_DATA_CHARS, RuntimeEvent, RuntimeEventKind
+from llm_agent.agent.runtime.failures import FailureFact
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
 from scripts.check_wave4_architecture import check_source, run_checks
 
 

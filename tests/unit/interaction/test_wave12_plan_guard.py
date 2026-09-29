@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import DirectPlanRequestGuard, PlanClassification
+from llm_agent.agent.interaction.guards import DirectPlanRequestGuard, PlanClassification
 
 
 def test_plan_admission_has_one_direct_speech_act_owner() -> None:

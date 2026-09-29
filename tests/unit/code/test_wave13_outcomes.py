@@ -4,11 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent.code.workflow_application as workflow_application
-from agent.cancellation import CancellationToken
-from agent.code.change_models import ChangeKind, ChangeSet, FileChange
-from agent.code.context_selection import SelectedFile
-from agent.code.outcome_verifier import (
+import llm_agent.agent.code.workflow_application as workflow_application
+from llm_agent.agent.code.change_models import ChangeKind, ChangeSet, FileChange
+from llm_agent.agent.code.context_selection import SelectedFile
+from llm_agent.agent.code.outcome_verifier import (
     CodeEvidenceManifest,
     CodeEvidenceRecord,
     CodeOutcomeSeal,
@@ -21,20 +20,21 @@ from agent.code.outcome_verifier import (
     bind_selected_file_evidence,
     parse_code_proposal,
 )
-from agent.code.validation import ValidationStatus
-from agent.code.workflow_application import apply_changes
-from agent.code.workflows import CodingWorkflowService
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
-from agent.llm.model_profile import resolve_gateway_model_profile
-from agent.planning.completion_observations import refresh_executed_effects
-from agent.planning.task_semantics import (
+from llm_agent.agent.code.validation import ValidationStatus
+from llm_agent.agent.code.workflow_application import apply_changes
+from llm_agent.agent.code.workflows import CodingWorkflowService
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.model_profile import resolve_gateway_model_profile
+from llm_agent.agent.planning.completion_observations import refresh_executed_effects
+from llm_agent.agent.planning.task_semantics import (
     EffectIntent,
     TaskIntent,
     TaskObligation,
     TaskSemantics,
 )
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
-from agent.state import AgentState
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
+from llm_agent.agent.state import AgentState
+from llm_agent.cancellation import CancellationToken
 
 
 def _proposal(decision="CHANGE", rationale="do it", reason_code="NONE", question="", changes=None):

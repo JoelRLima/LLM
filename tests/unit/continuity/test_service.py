@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.checkpoint_manager import CheckpointLoadError, CheckpointManager
-from agent.continuity.models import MAX_OBJECTIVE_PREVIEW, MAX_REASON, MAX_RELATED_RUNS, TaskContinuityStatus
-from agent.continuity.service import (
+from llm_agent.agent.checkpoint_manager import CheckpointLoadError, CheckpointManager
+from llm_agent.agent.continuity.models import MAX_OBJECTIVE_PREVIEW, MAX_REASON, MAX_RELATED_RUNS, TaskContinuityStatus
+from llm_agent.agent.continuity.service import (
     REASON_CHECKPOINT_INVALID_CONTINUITY,
     REASON_CHECKPOINT_ROOT_MISSING,
     REASON_HIERARCHICAL_RESUME_UNSUPPORTED,

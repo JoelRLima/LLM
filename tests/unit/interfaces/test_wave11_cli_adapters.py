@@ -8,19 +8,19 @@ from typing import Any
 
 import pytest
 
-from agent import application_result
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli import command_handlers, commands
-from agent.interfaces.cli.parser import build_parser
-from agent.interfaces.task_directives import (
-    TASK_DIRECTIVE_CONFLICT,
-    TaskRequestAction,
-)
-from agent.runtime.task_directives import (
+from llm_agent.agent import application_result
+from llm_agent.agent.runtime.task_directives import (
     DeliberationProfile,
     TaskDirective,
     TaskRunDirective,
 )
+from llm_agent.application.task_directives import (
+    TASK_DIRECTIVE_CONFLICT,
+    TaskRequestAction,
+)
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import command_handlers, commands
+from llm_agent.interfaces.cli.parser import build_parser
 
 
 @dataclass
@@ -203,7 +203,7 @@ def test_headless_do_keeps_existing_approval_flag_boundary(
 def test_headless_continue_delegates_to_w10_without_creating_application(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent.interfaces.cli import task_continuity
+    from llm_agent.interfaces.cli import task_continuity
 
     captured: dict[str, Any] = {}
 

@@ -1,10 +1,10 @@
 import pytest
 
-from agent.tools.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
-from agent.tools.extension_catalog_validation import ManifestObservation, ManifestSummary
-from agent.tools.extension_path import PersistedManifestPath
-from agent.tools.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
-from agent.tools.workspace_extensions_resolver import resolve_workspace_extensions
+from llm_agent.extensions.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
+from llm_agent.extensions.extension_catalog_validation import ManifestObservation, ManifestSummary
+from llm_agent.extensions.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
+from llm_agent.extensions.workspace_extensions_resolver import resolve_workspace_extensions
 
 
 def _observation(extension_id: str, status: str, capabilities: tuple[str, ...]) -> ManifestObservation:

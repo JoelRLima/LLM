@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from agent.watchdog import Watchdog
+from llm_agent.agent.watchdog import Watchdog
 
 # ---------------------------------------------------------------------------
 # Fixtures

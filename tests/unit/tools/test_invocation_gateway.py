@@ -6,18 +6,24 @@ from pathlib import Path
 
 import pytest
 
-from agent.approval import ApprovalDecision
-from agent.cancellation import CancellationToken
-from agent.interfaces.cli.approval import ConsoleApproval
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.runtime.events import RuntimeEvent
-from agent.skills import load_skill_registry
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.approval import ApprovalDecision
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import (
+    ToolDescriptor,
+    ToolInvocation,
+    ToolInvocationRequest,
+    ToolResult,
+    ToolStatus,
+)
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.cancellation import CancellationToken
+from llm_agent.interfaces.cli.approval import ConsoleApproval
 
 
 def _event_projection(events: list[tuple[str, dict[str, object]]]) -> RuntimeEventDispatcher:
@@ -363,7 +369,7 @@ def test_changed_retry_arguments_require_a_fresh_approval_snapshot() -> None:
 def test_console_approval_presents_concrete_operation(monkeypatch) -> None:
     prompts = []
     monkeypatch.setattr(
-        "agent.interfaces.cli.approval.console.input",
+        "llm_agent.interfaces.cli.approval.console.input",
         lambda prompt: prompts.append(prompt) or "sim",
     )
 

@@ -3,18 +3,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.final_response import FinalResponder
-from agent.planning.hierarchical_executor import HierarchicalExecutor
-from agent.planning.reactive_loop import ReactiveLoop
-from agent.reporting.observation_evidence import (
+from llm_agent.agent.final_response import FinalResponder
+from llm_agent.agent.planning.hierarchical_executor import HierarchicalExecutor
+from llm_agent.agent.planning.reactive_loop import ReactiveLoop
+from llm_agent.agent.reporting.observation_evidence import (
     MAX_OBSERVATION_EVIDENCE_CHARS,
     ObservationEvidence,
     project_executed_invocation,
     project_tool_observation,
     serialize_tool_observations,
 )
-from agent.tools.contracts import ToolDescriptor, ToolOriginKind
-from agent.tools.result_completeness import canonical_completeness
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolOriginKind
+from llm_agent.agent.tools.result_completeness import canonical_completeness
 
 
 def _record(summary: str, index: int = 0) -> dict:

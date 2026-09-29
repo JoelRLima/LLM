@@ -4,8 +4,7 @@ from typing import Any
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.llm.contracts import (
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -14,14 +13,15 @@ from agent.llm.contracts import (
     StreamEventType,
     TokenUsage,
 )
-from agent.llm.errors import ModelResponseError
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.budget_estimation import (
+from llm_agent.agent.llm.errors import ModelResponseError
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.budget_estimation import (
     PROVIDER_CHAT_INPUT_TOKENS,
     RequestInputMeasurement,
 )
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext
-from agent.runtime.model_call import ModelCallService
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext
+from llm_agent.agent.runtime.model_call import ModelCallService
+from llm_agent.cancellation import CancellationToken
 
 
 class _Sink:

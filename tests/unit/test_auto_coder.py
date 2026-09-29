@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent.code.application import CodeRequest, CodingApplicationService, build_code_context
-from agent.llm.contracts import ModelResponse
+from llm_agent.agent.code.application import CodeRequest, CodingApplicationService, build_code_context
+from llm_agent.agent.llm.contracts import ModelResponse
 
 
 class _Gateway:

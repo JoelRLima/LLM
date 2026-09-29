@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.code.validation import ValidationReport, ValidationStatus
-from agent.workspace import WorkspaceManager
+from llm_agent.agent.code.validation import ValidationReport, ValidationStatus
+from llm_agent.agent.workspace import WorkspaceManager
 
 
 def test_restore_and_rollback_are_scoped_to_injected_workspace(tmp_path):

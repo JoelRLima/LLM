@@ -4,15 +4,15 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.evaluation import (
+from llm_agent.agent.evaluation import (
     CapabilityEvaluator,
     CapabilityScenario,
     EvaluationSetReport,
     ExecutionObservation,
     ScenarioExpectation,
 )
-from agent.evaluation.execution_evidence import critical_incidents
-from agent.evaluation.regressions import CURATED_REGRESSION_SET
+from llm_agent.agent.evaluation.execution_evidence import critical_incidents
+from llm_agent.agent.evaluation.regressions import CURATED_REGRESSION_SET
 
 
 class StaticExecutor:

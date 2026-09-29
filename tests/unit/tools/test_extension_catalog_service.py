@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
-from agent.tools.extension_catalog_errors import (
+from llm_agent.extensions.extension_catalog_document import ExtensionCatalogDocument, PersistedCatalogEntry
+from llm_agent.extensions.extension_catalog_errors import (
     CatalogDriftError,
     CatalogIdConflictError,
     CatalogManifestIncompatibleError,
@@ -17,9 +17,10 @@ from agent.tools.extension_catalog_errors import (
     CatalogPathConflictError,
     CatalogReplaceConflictError,
 )
-from agent.tools.extension_catalog_service import ExtensionCatalogService, host_path_flavor
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService, host_path_flavor
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_path import PersistedManifestPath
+from tests.support.process_environment import source_child_environment
 
 
 def _manifest(
@@ -488,9 +489,9 @@ _DETERMINISTIC_CHILD = """
 import sys
 import time
 from pathlib import Path
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
 
 catalog, ready, proceed, action, value, paused = sys.argv[1:]
 
@@ -537,6 +538,7 @@ def _run_deterministic_pair(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=source_child_environment(),
     )
     try:
         for _ in range(2000):
@@ -561,6 +563,7 @@ def _run_deterministic_pair(
             text=True,
             check=True,
             timeout=10,
+            env=source_child_environment(),
         )
         proceed.write_text("continue", encoding="utf-8")
         first_output = first.communicate(timeout=15)

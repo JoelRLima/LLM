@@ -183,10 +183,10 @@ def _assert_no_volatile_bytecode(payload_root: Path) -> None:
 
 def _origin_code() -> str:
     return (
-        "import agent,importlib.metadata,json,pathlib,platform,sys; "
-        "print(json.dumps({\"agent\":str(pathlib.Path(agent.__file__).resolve()),"
+        "import llm_agent,importlib.metadata,json,pathlib,platform,sys; "
+        "print(json.dumps({\"llm_agent\":str(pathlib.Path(llm_agent.__file__).resolve()),"
         "\"exe\":str(pathlib.Path(sys.executable).resolve()),"
-        "\"agent_version\":agent.__version__,"
+        "\"llm_agent_version\":llm_agent.__version__,"
         "\"distribution_version\":importlib.metadata.version(\"local-llm-agent\"),"
         "\"python\":platform.python_version(),\"path\":list(sys.path)}))"
     )

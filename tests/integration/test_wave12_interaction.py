@@ -4,10 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interaction.admission import admit_interaction
-from agent.interaction.service import InteractionService
-from agent.interaction.types import ActionGrounding, InteractionAction, InteractionBoundary, InteractionModelDecision
-from agent.runtime.task_directives import TaskDirective
+from llm_agent.agent.interaction.admission import admit_interaction
+from llm_agent.agent.interaction.service import InteractionService
+from llm_agent.agent.interaction.types import (
+    ActionGrounding,
+    InteractionAction,
+    InteractionBoundary,
+    InteractionModelDecision,
+)
+from llm_agent.agent.runtime.task_directives import TaskDirective
 from tests.unit.interaction._helpers import application, semantic_decision
 
 

@@ -7,17 +7,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.code.change_models import ChangeKind, ChangeSet, FileChange
-from agent.code.change_transaction import ChangeSetTransaction
-from agent.code.validation import ValidationStatus
-from agent.code.workflow_application_flow_support import run_apply_changes
-from agent.interaction.intent_claim import ConstraintClaim
-from agent.orchestration import task_execution, task_execution_authority
-from agent.orchestration.task_execution import execute_task
-from agent.planning.target_grounding import GroundingError, ground_intent_claim
-from agent.planning.target_grounding_discovery import discover_symbol_definitions
-from agent.runtime.context import TaskExecutionContext, TaskStatus
+from llm_agent.agent.code.change_models import ChangeKind, ChangeSet, FileChange
+from llm_agent.agent.code.change_transaction import ChangeSetTransaction
+from llm_agent.agent.code.validation import ValidationStatus
+from llm_agent.agent.code.workflow_application_flow_support import run_apply_changes
+from llm_agent.agent.interaction.intent_claim import ConstraintClaim
+from llm_agent.agent.orchestration import task_execution, task_execution_authority
+from llm_agent.agent.orchestration.task_execution import execute_task
+from llm_agent.agent.planning.target_grounding import GroundingError, ground_intent_claim
+from llm_agent.agent.planning.target_grounding_discovery import discover_symbol_definitions
+from llm_agent.agent.runtime.context import TaskExecutionContext, TaskStatus
+from llm_agent.cancellation import CancellationToken
 from tests.unit.runtime.test_wave14_c6 import _claim as make_claim
 from tests.unit.runtime.test_wave14_c6 import _envelope
 from tests.unit.runtime.test_wave14_c7 import _resume_fixture
@@ -314,7 +314,7 @@ def test_c8_a11_single_directory_entry_list_is_bounded_during_scandir(
     source.mkdir()
     for index in range(20):
         (source / f"empty_{index:02d}").mkdir()
-    import agent.planning.target_grounding_discovery as discovery
+    import llm_agent.agent.planning.target_grounding_discovery as discovery
 
     original = discovery.os.scandir
     observed = 0
@@ -362,7 +362,7 @@ def test_c8_a12_authorized_directory_scandir_error_fails_closed(
     broken = source / "broken"
     broken.mkdir(parents=True)
     (source / "settings.py").write_text("TIMEOUT = 1\n", encoding="utf-8")
-    import agent.planning.target_grounding_discovery as discovery
+    import llm_agent.agent.planning.target_grounding_discovery as discovery
 
     original = discovery.os.scandir
 

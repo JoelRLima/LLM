@@ -12,6 +12,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 # These are the only source locations allowed to own the corresponding
 # low-level mechanisms.  The lists are deliberately exact: a new production
 # owner must be reviewed rather than silently inheriting a directory-wide
@@ -240,12 +245,12 @@ def _violation(
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -261,8 +266,8 @@ def _tree(root: Path, relative: str) -> ast.AST | None:
 
 
 def _agent_files(root: Path) -> Iterator[Path]:
-    agent_root = root / "agent"
-    if agent_root.is_dir():
+    agent_root = w21_source_layout(root).agent_source_directory
+    if agent_root is not None and agent_root.is_dir():
         yield from sorted(agent_root.rglob("*.py"))
 
 
@@ -754,7 +759,7 @@ def _retired_module_violations(root: Path) -> list[ArchitectureViolation]:
     return [
         _violation("W8-S9", relative, "W7 retired module is present")
         for relative in RETIRED_MODULES
-        if (root / relative).exists()
+        if w21_source_layout(root).path_for_w21_relative(relative).exists()
     ]
 
 

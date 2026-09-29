@@ -4,11 +4,11 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from agent.evaluation.execution_attribution import (
+from llm_agent.agent.evaluation.execution_attribution import (
     classify_failure,
     derive_attribution_evidence,
 )
-from agent.evaluation.scenario_contracts import CausalFailureClass, EvidenceLevel
+from llm_agent.agent.evaluation.scenario_contracts import CausalFailureClass, EvidenceLevel
 
 
 def _report(evidence: dict[str, Any], *, measurement: dict[str, Any] | None = None) -> Any:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.admission import admit_interaction
-from agent.interaction.types import (
+from llm_agent.agent.interaction.admission import admit_interaction
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     InteractionAction,
     InteractionAmbiguity,

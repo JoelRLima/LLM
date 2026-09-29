@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agent.llm.contracts import (
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -10,7 +10,7 @@ from agent.llm.contracts import (
     StructuredOutputMode,
     StructuredOutputRequest,
 )
-from agent.llm.model_metrics import build_model_call_metric
+from llm_agent.agent.llm.model_metrics import build_model_call_metric
 
 
 def _request() -> ModelRequest:

@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from agent.llm.context_manager import ContextManager
-from agent.llm.contracts import (
+from llm_agent.agent.llm.context_manager import ContextManager
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -16,12 +16,12 @@ from agent.llm.contracts import (
     StructuredOutputMode,
     TokenUsage,
 )
-from agent.llm.errors import ModelProviderError
-from agent.llm.session import ChatSession
-from agent.llm.structured_output import resolve_model_decision
-from agent.runtime.budget import BudgetExhausted
-from agent.runtime.recovery import RecoveryScope
-from agent.state import AgentState
+from llm_agent.agent.llm.errors import ModelProviderError
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.structured_output import resolve_model_decision
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.runtime.recovery import RecoveryScope
+from llm_agent.agent.state import AgentState
 
 GRAMMAR = 'root ::= "ok"'
 

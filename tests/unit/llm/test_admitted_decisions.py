@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-import agent.llm.admitted_decisions as admitted_module
-from agent.llm.admitted_decisions import (
+import llm_agent.agent.llm.admitted_decisions as admitted_module
+from llm_agent.agent.llm.admitted_decisions import (
     DirectResponseDecision,
     EffectObservationCompleteWithoutEffectDecision,
     EffectObservationExecuteDecision,
@@ -19,9 +19,9 @@ from agent.llm.admitted_decisions import (
     admit_typed_model_decision,
     ask_typed_model_decision,
 )
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse
-from agent.llm.decision_contract import ModelRequestContract
-from agent.llm.structured_output import resolve_model_decision
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.llm.structured_output import resolve_model_decision
 
 
 @pytest.mark.parametrize(

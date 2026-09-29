@@ -2,9 +2,8 @@ import time
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.llm.contracts import ProviderCapabilities
-from agent.planning.task_graph import (
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.planning.task_graph import (
     FailurePolicy,
     NodeState,
     ResourceMode,
@@ -16,8 +15,9 @@ from agent.planning.task_graph import (
     TaskResource,
     task_graph_from_dict,
 )
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.cancellation import CancellationToken
 
 
 class FakeGateway:

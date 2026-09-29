@@ -5,20 +5,20 @@ from typing import Any, Callable
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.orchestration.task_runner_continuity import (
+from llm_agent.agent.orchestration.task_runner_continuity import (
     ExplicitResumeRefused,
     resolve_inputs,
 )
-from agent.planning.task_completion import initialize_task_progression
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.task_directives import (
+from llm_agent.agent.planning.task_completion import initialize_task_progression
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.task_directives import (
     DeliberationProfile,
     TaskDirective,
     TaskRunDirective,
 )
-from agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
-from agent.state import AgentState
+from llm_agent.agent.runtime.task_execution_context import TaskExecutionOwnershipMixin
+from llm_agent.agent.state import AgentState
+from llm_agent.cancellation import CancellationToken
 
 
 def _runner() -> SimpleNamespace:

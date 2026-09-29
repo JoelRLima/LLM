@@ -23,6 +23,7 @@ from scripts.w21_architecture.compatibility import (  # noqa: E402
     legacy_consumers,
     legacy_consumers_from_tree,
     normalize_registry,
+    project_compatibility_document,
 )
 from scripts.w21_architecture.policy import classify_edge  # noqa: E402
 from scripts.w21_architecture.structural import (  # noqa: E402
@@ -117,7 +118,7 @@ def _registry_findings(registry: Mapping[str, Any]) -> list[CompatibilityFinding
 
 def _shape_findings(source: RepositorySource) -> list[CompatibilityFinding]:
     findings: list[CompatibilityFinding] = []
-    for path in source.python_files("agent"):
+    for path in source.python_files():
         relative = source.relative(path)
         text = source.text(relative)
         findings.extend(item for item in check_source_text(text, relative) if item.code != "W21-COMP-LEGACY-PATH")
@@ -340,10 +341,13 @@ def analyze_registered_bridges(
     registry: Mapping[str, Any] | CompatibilityRegistry | None = None,
     mode: str = "transition",
     activated_lanes: Iterable[str] = (),
+    layout_profile: str | None = None,
 ) -> tuple[BridgeLifecycleResult, ...]:
     """Return analyzer facts and lifecycle states for registered symbol bridges."""
 
     resolved = Path(root).resolve()
+    if layout_profile is None:
+        layout_profile = "final-w22" if resolved == ROOT.resolve() else "legacy-agent"
     if registry is None:
         document = _load(
             resolved / "quality" / "architecture_compatibility.json",
@@ -354,8 +358,12 @@ def analyze_registered_bridges(
         parsed = registry
     else:
         parsed = normalize_registry(registry)
+    source = RepositorySource(resolved, layout_profile)
+    if source.layout.agent_module_root is None:
+        return ()
+    parsed = normalize_registry(project_compatibility_document(parsed.document, source.layout))
     return _symbol_bridge_lifecycle(
-        RepositorySource(resolved),
+        source,
         parsed,
         mode=mode,
         activated_lanes=activated_lanes,
@@ -375,20 +383,25 @@ def _facade_findings(
         for item in baseline.get("baseline_cross_package_module_pairs", [])
         if isinstance(item, Mapping)
     }
+    assert source.layout is not None
     for bridge in registry.module_bridges:
+        bridge_source = source.layout.w21_module_identity(bridge.source_module) or bridge.source_module
+        bridge_target = source.layout.w21_module_identity(bridge.target_module) or bridge.target_module
         for edge in graph.architecture_union_edges:
-            if edge["source_module"] != bridge.source_module:
+            origin_source = source.layout.w21_module_identity(str(edge["source_module"]))
+            origin_destination = source.layout.w21_module_identity(str(edge["destination_module"]))
+            if origin_source != bridge_source or origin_destination is None:
                 continue
-            destination = str(edge["destination_module"])
-            target_package = ".".join(bridge.target_module.split(".")[:2])
-            if destination == bridge.target_module:
+            destination = origin_destination
+            target_package = ".".join(bridge_target.split(".")[:2])
+            if destination == bridge_target:
                 continue
             if destination == target_package or destination.startswith(target_package + "."):
-                findings.append(CompatibilityFinding("W21-COMP-UNKNOWN-BRIDGE", f"{bridge.bridge_id}: sibling/transitive bridge expansion {bridge.source_module} -> {destination}"))
+                findings.append(CompatibilityFinding("W21-COMP-UNKNOWN-BRIDGE", f"{bridge.bridge_id}: sibling/transitive bridge expansion {bridge_source} -> {destination}"))
                 continue
             for kind in cast(Iterable[object], edge.get("edge_kinds", [])):
                 decision = classify_edge(
-                    bridge.source_module,
+                    bridge_source,
                     destination,
                     str(kind),
                     policy=policy,
@@ -396,7 +409,7 @@ def _facade_findings(
                     baseline_pairs=baseline_pairs,
                 )
                 if decision.edge_class == "forbidden":
-                    findings.append(CompatibilityFinding("W21-COMP-FORBIDDEN-CANONICAL", f"facade hides forbidden dependency: {bridge.source_module} -> {destination}"))
+                    findings.append(CompatibilityFinding("W21-COMP-FORBIDDEN-CANONICAL", f"facade hides forbidden dependency: {bridge_source} -> {destination}"))
                     break
     return findings
 
@@ -409,12 +422,15 @@ def check_compatibility(
     baseline: Mapping[str, Any] | None = None,
     mode: str = "transition",
     activated_lanes: Iterable[str] = (),
+    layout_profile: str | None = None,
 ) -> list[CompatibilityFinding]:
     """Validate registry shape, exact bridge use, and closed-world legacy paths."""
 
     _validate_lifecycle_mode(mode)
     activated = _normalize_activated_lanes(activated_lanes)
     resolved = Path(root).resolve()
+    if layout_profile is None:
+        layout_profile = "final-w22" if resolved == ROOT.resolve() else "legacy-agent"
     document = dict(
         registry
         if registry is not None
@@ -439,9 +455,11 @@ def check_compatibility(
             ROOT / "quality" / "architecture_baseline.json",
         )
     )
-    parsed = normalize_registry(document)
+    source = RepositorySource(resolved, layout_profile)
+    if source.layout.agent_module_root is None:
+        return [CompatibilityFinding("W21-COMP-LAYOUT", f"layout {layout_profile!r} has no W21 Agent namespace")]
+    parsed = normalize_registry(project_compatibility_document(document, source.layout))
     findings = _registry_findings(document)
-    source = RepositorySource(resolved)
     findings.extend(_shape_findings(source))
     findings.extend(
         _symbol_bridge_findings(
@@ -479,11 +497,16 @@ def _main() -> int:
         metavar="LANE",
         help="explicitly activate a migration lane; repeatable",
     )
+    parser.add_argument(
+        "--layout-profile",
+        choices=("legacy-agent", "src-agent", "final-w22"),
+    )
     arguments = parser.parse_args()
     findings = check_compatibility(
         arguments.root,
         mode=arguments.mode,
         activated_lanes=arguments.activated_lane,
+        layout_profile=arguments.layout_profile,
     )
     if findings:
         print("W21 compatibility checker: FAIL")
@@ -498,6 +521,7 @@ def _main() -> int:
             arguments.root,
             mode=arguments.mode,
             activated_lanes=arguments.activated_lane,
+            layout_profile=arguments.layout_profile,
         )
         if result.lifecycle == BridgeLifecycle.PENDING_MIGRATION
     )

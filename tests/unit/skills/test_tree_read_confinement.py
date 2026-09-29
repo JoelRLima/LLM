@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.skills.code_analyzer import CodeAnalyzerSkill
-from agent.skills.grep import GrepSkill
+from llm_agent.agent.skills.code_analyzer import CodeAnalyzerSkill
+from llm_agent.agent.skills.grep import GrepSkill
 
 
 def _external_symlink(link: Path, target: Path) -> None:

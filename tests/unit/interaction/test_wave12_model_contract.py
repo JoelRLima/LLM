@@ -4,15 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interaction.model_contract import (
+from llm_agent.agent.interaction.model_contract import (
     INTERACTION_RESOLUTION_GBNF,
     parse_interaction_resolution,
     validate_interaction_resolution,
     verify_interaction_request_contract,
 )
-from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
-from agent.llm.decision_contract import ModelRequestContract
-from agent.runtime.task_directives import TaskDirective
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.runtime.task_directives import TaskDirective
 
 from ._helpers import decision, session
 
@@ -78,7 +78,7 @@ def test_resolver_grammar_is_authoritative_and_not_regenerated() -> None:
         reasoning=False,
     )
     current_session, _gateway = session(capabilities=capabilities)
-    from agent.interaction.resolver import build_resolver_request
+    from llm_agent.agent.interaction.resolver import build_resolver_request
 
     request = build_resolver_request(current_session, boundary="natural", subject="hello")
     assert request.request_contract is ModelRequestContract.INTERACTION_RESOLUTION

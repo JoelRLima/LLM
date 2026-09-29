@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_errors import CatalogLockBusyError, CatalogLockError
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError, CatalogLockError
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
+from tests.support.process_environment import source_child_environment
 
 
 def test_lock_acquire_release_and_reacquire(tmp_path: Path) -> None:
@@ -50,8 +51,8 @@ def test_lock_excludes_child_process_and_releases_for_child(tmp_path: Path) -> N
     path = tmp_path / "catalog.lock"
     child_code = """
 import sys
-from agent.tools.extension_catalog_errors import CatalogLockBusyError
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_errors import CatalogLockBusyError
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
 lock = ExtensionCatalogLock(sys.argv[1])
 try:
     lock.acquire()
@@ -70,6 +71,7 @@ else:
             text=True,
             check=True,
             timeout=10,
+            env=source_child_environment(),
         )
         assert busy.stdout.strip() == "BUSY"
     finally:
@@ -81,6 +83,7 @@ else:
         text=True,
         check=True,
         timeout=10,
+        env=source_child_environment(),
     )
     assert acquired.stdout.strip() == "ACQUIRED"
 

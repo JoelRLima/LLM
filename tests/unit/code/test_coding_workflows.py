@@ -3,15 +3,15 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.approval import AutoApprove, RequireExplicitApproval
-from agent.cancellation import CancellationToken
-from agent.code.diagnostics import FailureCategory, FailureClassifier
-from agent.code.validation import ValidationStatus
-from agent.code.workflows import CodingWorkflowService
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
-from agent.llm.model_profile import resolve_gateway_model_profile
-from agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
-from agent.skills.code_task import CodeTaskSkill
+from llm_agent.agent.approval import AutoApprove, RequireExplicitApproval
+from llm_agent.agent.code.diagnostics import FailureCategory, FailureClassifier
+from llm_agent.agent.code.validation import ValidationStatus
+from llm_agent.agent.code.workflows import CodingWorkflowService
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.model_profile import resolve_gateway_model_profile
+from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
+from llm_agent.agent.skills.code_task import CodeTaskSkill
+from llm_agent.cancellation import CancellationToken
 
 
 class FakeGateway:
@@ -636,7 +636,7 @@ def test_unavailable_rollback_failure_preserves_surviving_mutation_truth(
     service = _service(tmp_path, gateway)
     service.validator = UnavailableValidator()
     monkeypatch.setattr(
-        "agent.code.workflow_application.ChangeSetTransaction.rollback",
+        "llm_agent.agent.code.change_transaction.ChangeSetTransaction.rollback",
         lambda _transaction: False,
     )
 

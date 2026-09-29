@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 def test_typographic_apostrophe_remains_plain_negation() -> None:

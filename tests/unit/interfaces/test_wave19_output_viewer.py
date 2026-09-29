@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.interfaces.cli.output_viewer import render_output_viewer
-from agent.outputs.models import OutputContentPolicy, OutputKind, OutputPublishRequest, OutputSource
-from agent.outputs.service import OutputService
-from agent.runtime.paths import AppPaths
+from llm_agent.interfaces.cli.output_viewer import render_output_viewer
+from llm_agent.outputs.models import OutputContentPolicy, OutputKind, OutputPublishRequest, OutputSource
+from llm_agent.outputs.service import OutputService
+from llm_agent.workspace.paths import AppPaths
 
 
 class _Shell:
@@ -22,7 +22,7 @@ def _context(tmp_path: Path) -> tuple[SimpleNamespace, OutputService, _Shell]:
     shell = _Shell()
     ctx = SimpleNamespace(
         shell=shell,
-        application=SimpleNamespace(output_service=lambda: service),
+        output_service=service,
     )
     return ctx, service, shell
 
@@ -53,7 +53,7 @@ def test_invalid_output_syntax_does_not_call_service(tmp_path: Path) -> None:
         called = True
         raise AssertionError("invalid viewer syntax touched the service")
 
-    ctx = SimpleNamespace(shell=_Shell(), application=SimpleNamespace(output_service=fail))
+    ctx = SimpleNamespace(shell=_Shell(), output_service=fail)
     assert render_output_viewer("/inspect output ../../secret", ctx)
     assert called is False
     assert render_output_viewer("/inspect", ctx) is False

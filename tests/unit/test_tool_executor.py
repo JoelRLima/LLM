@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-from agent.planning.plan_model import Plan
-from agent.planning.step_contracts import PreparedInvocation
-from agent.tool_executor import ToolExecutor
-from agent.tools.contracts import ToolResult, ToolStatus
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.planning.step_contracts import PreparedInvocation
+from llm_agent.agent.tool_executor import ToolExecutor
+from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
 
 
 class _Gateway:

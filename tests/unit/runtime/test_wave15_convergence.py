@@ -4,32 +4,32 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.llm.context_pressure import (
+from llm_agent.agent.llm.context_pressure import (
     ContextPressureDecision,
     decide_context_pressure,
 )
-from agent.llm.context_projection import (
+from llm_agent.agent.llm.context_projection import (
     REQUIRED_EVIDENCE,
     context_record_from_text,
 )
-from agent.llm.contracts import ModelMessage, ModelRequest
-from agent.planning.execution_frontier import build_execution_frontier
-from agent.planning.observation_receipts import (
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest
+from llm_agent.agent.planning.execution_frontier import build_execution_frontier
+from llm_agent.agent.planning.observation_receipts import (
     ObservationClassification,
     build_observation_receipt,
     classify_observation,
 )
-from agent.planning.progress_receipt import (
+from llm_agent.agent.planning.progress_receipt import (
     ProgressReceiptV1,
     build_progress_receipt,
     compare_progress_receipts,
 )
-from agent.runtime.convergence import (
+from llm_agent.agent.runtime.convergence import (
     ConvergenceAccountingContext,
     ConvergenceStateV1,
 )
-from agent.runtime.limits import runtime_limit_values
-from agent.runtime.request_measurement import (
+from llm_agent.agent.runtime.limits import runtime_limit_values
+from llm_agent.agent.runtime.request_measurement import (
     PROVIDER_CHAT_INPUT_TOKENS,
     RequestInputMeasurement,
 )

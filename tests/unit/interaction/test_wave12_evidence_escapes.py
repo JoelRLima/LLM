@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.evidence import SpanKind, scan_spans
+from llm_agent.agent.interaction.evidence import SpanKind, scan_spans
 
 
 def test_escaped_quote_stays_inside_quoted_evidence_span() -> None:

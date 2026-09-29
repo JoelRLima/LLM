@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
-from agent.planning.hierarchical_executor import HierarchicalExecutor
-from agent.planning.semantic_projection import project_outcomes
-from agent.planning.step_contracts import StepExecutionOutcome, StepOutcomeKind
+from llm_agent.agent.planning.hierarchical_executor import HierarchicalExecutor
+from llm_agent.agent.planning.semantic_projection import project_outcomes
+from llm_agent.agent.planning.step_contracts import StepExecutionOutcome, StepOutcomeKind
 
 
 def test_projection_uses_first_decisive_logical_slot() -> None:

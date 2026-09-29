@@ -4,17 +4,23 @@ from pathlib import Path
 
 import pytest
 
-from agent.approval import AutoApprove
-from agent.execution_incidents import MAX_EXECUTION_INCIDENTS, MAX_INCIDENT_FILES
-from agent.reporting.operational_outcome import project_operational_outcome
-from agent.reporting.run_receipt import build_run_receipt
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_dispatch import RuntimeEventDispatcher
-from agent.runtime.events import RuntimeEvent
-from agent.state import AgentState
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolInvocationRequest, ToolResult, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.execution_incidents import MAX_EXECUTION_INCIDENTS, MAX_INCIDENT_FILES
+from llm_agent.agent.reporting.operational_outcome import project_operational_outcome
+from llm_agent.agent.reporting.run_receipt import build_run_receipt
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_dispatch import RuntimeEventDispatcher
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.contracts import (
+    ToolDescriptor,
+    ToolInvocation,
+    ToolInvocationRequest,
+    ToolResult,
+    ToolStatus,
+)
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 def _registry(adapter: object) -> ToolRegistry:

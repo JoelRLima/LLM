@@ -17,19 +17,19 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
+try:
+    from scripts.w21_architecture.source import SourceLayout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import SourceLayout  # type: ignore[no-redef]
+
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
+AGENT_SOURCE_ROOT = SOURCE_LAYOUT.agent_source_directory
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent.application import AgentApplication  # noqa: E402
-from agent.application_services.queries import (  # noqa: E402
-    ReadOnlyWorkspaceQueryService,
-    WorkspaceQueryKind,
-    WorkspaceQueryRequest,
-    WorkspaceQueryResult,
-    WorkspaceQueryStatus,
-)
-from agent.approval import AutoApprove  # noqa: E402
-from agent.evaluation import (  # noqa: E402
+from llm_agent.agent.application import AgentApplication  # noqa: E402
+from llm_agent.agent.approval import AutoApprove  # noqa: E402
+from llm_agent.agent.evaluation import (  # noqa: E402
     ExecutionObservation,
     FeedbackError,
     FeedbackService,
@@ -42,32 +42,65 @@ from agent.evaluation import (  # noqa: E402
     evaluation_context,
     validate_evaluation_receipt,
 )
-from agent.evaluation.analysis_structure import validate_campaign_report  # noqa: E402
-from agent.evaluation.analysis_support import CampaignAnalysisError  # noqa: E402
-from agent.evaluation.evaluation_identity import (  # noqa: E402
+from llm_agent.agent.evaluation.analysis_structure import validate_campaign_report  # noqa: E402
+from llm_agent.agent.evaluation.analysis_support import CampaignAnalysisError  # noqa: E402
+from llm_agent.agent.evaluation.evaluation_identity import (  # noqa: E402
     CAMPAIGN_LEGACY_SCHEMA_VERSION,
     CAMPAIGN_SCHEMA_VERSION,
 )
-from agent.interfaces.cli.action_parser import parse_action  # noqa: E402
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
-from agent.interfaces.cli.output_projection import (  # noqa: E402
-    format_workspace_query_result,
-    publish_workspace_query_result,
-)
-from agent.interfaces.cli.output_viewer import render_output_viewer  # noqa: E402
-from agent.interfaces.cli.query_executor import (  # noqa: E402
-    BoundedQueryExecutor,
-    CliQueryCompletion,
-)
-from agent.llm.contracts import (  # noqa: E402
+from llm_agent.agent.llm.contracts import (  # noqa: E402
     ModelRequest,
     ModelResponse,
     ProviderCapabilities,
     StreamEvent,
     StreamEventType,
 )
-from agent.llm.session import ChatSession  # noqa: E402
-from agent.outputs.models import (  # noqa: E402
+from llm_agent.agent.llm.session import ChatSession  # noqa: E402
+from llm_agent.agent.routing.persona.contracts import PersonaRouteRequest  # noqa: E402
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter, persona_config_for_decision  # noqa: E402
+from llm_agent.agent.routing.persona.factory import build_persona_router  # noqa: E402
+from llm_agent.agent.runtime.config_repository import ConfigRepository, packaged_config_defaults  # noqa: E402
+from llm_agent.agent.runtime.home_lifecycle import HomeLifecycleLease  # noqa: E402
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap  # noqa: E402
+from llm_agent.agent.runtime.storage_contracts import (  # noqa: E402
+    MaintenanceConfirmation,
+    MaintenanceOperation,
+    StorageMaintenanceError,
+    StorageMigrationError,
+)
+from llm_agent.agent.runtime.storage_maintenance import StorageMaintenanceService  # noqa: E402
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway  # noqa: E402
+from llm_agent.agent.tools.tool_registry import ToolRegistry  # noqa: E402
+from llm_agent.agent.variants.models import (  # noqa: E402
+    CompositionPurpose,
+    VariantComposition,
+    VariantLifecycle,
+    VariantSeam,
+    VariantSelection,
+)
+from llm_agent.agent.variants.preflight import (  # noqa: E402
+    VariantPreflightError,
+    validate_variant_composition,
+)
+from llm_agent.application.services.queries import (  # noqa: E402
+    ReadOnlyWorkspaceQueryService,
+    WorkspaceQueryKind,
+    WorkspaceQueryRequest,
+    WorkspaceQueryResult,
+    WorkspaceQueryStatus,
+)
+from llm_agent.interfaces.cli.action_parser import parse_action  # noqa: E402
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
+from llm_agent.interfaces.cli.output_projection import (  # noqa: E402
+    format_workspace_query_result,
+    publish_workspace_query_result,
+)
+from llm_agent.interfaces.cli.output_viewer import render_output_viewer  # noqa: E402
+from llm_agent.interfaces.cli.query_executor import (  # noqa: E402
+    BoundedQueryExecutor,
+    CliQueryCompletion,
+)
+from llm_agent.outputs.models import (  # noqa: E402
     INLINE_OUTPUT_MAX_CHARS,
     INLINE_OUTPUT_MAX_LINES,
     OutputContentPolicy,
@@ -77,35 +110,9 @@ from agent.outputs.models import (  # noqa: E402
     OutputSource,
     OutputValidationError,
 )
-from agent.outputs.service import OutputService  # noqa: E402
-from agent.routing.persona.contracts import PersonaRouteRequest  # noqa: E402
-from agent.routing.persona.current import CurrentPersonaRouter, persona_config_for_decision  # noqa: E402
-from agent.routing.persona.factory import build_persona_router  # noqa: E402
-from agent.runtime.config_repository import ConfigRepository, packaged_config_defaults  # noqa: E402
-from agent.runtime.home_lifecycle import HomeLifecycleLease  # noqa: E402
-from agent.runtime.paths import AppPaths  # noqa: E402
-from agent.runtime.storage_bootstrap import StorageBootstrap  # noqa: E402
-from agent.runtime.storage_contracts import (  # noqa: E402
-    MaintenanceConfirmation,
-    MaintenanceOperation,
-    StorageMaintenanceError,
-    StorageMigrationError,
-)
-from agent.runtime.storage_maintenance import StorageMaintenanceService  # noqa: E402
-from agent.runtime.workspace_context import WorkspaceContext  # noqa: E402
-from agent.tools.invocation_gateway import ToolInvocationGateway  # noqa: E402
-from agent.tools.tool_registry import ToolRegistry  # noqa: E402
-from agent.variants.models import (  # noqa: E402
-    CompositionPurpose,
-    VariantComposition,
-    VariantLifecycle,
-    VariantSeam,
-    VariantSelection,
-)
-from agent.variants.preflight import (  # noqa: E402
-    VariantPreflightError,
-    validate_variant_composition,
-)
+from llm_agent.outputs.service import OutputService  # noqa: E402
+from llm_agent.workspace.context import WorkspaceContext  # noqa: E402
+from llm_agent.workspace.paths import AppPaths  # noqa: E402
 from scripts import check_wave19_architecture as architecture_checker  # noqa: E402
 from scripts.compatibility_ledger import LEDGER, validate_ledger  # noqa: E402
 
@@ -300,8 +307,8 @@ def _case_a04(root: Path) -> None:
     del root
     findings = architecture_checker.check_architecture(ROOT)
     _assert(not findings, "architecture checker reports a composition violation")
-    _assert((ROOT / "agent/application.py").read_text(encoding="utf-8").count("class AgentApplication") == 1, "composition root missing")
-    for path in (ROOT / "agent").rglob("*.py"):
+    _assert(SOURCE_LAYOUT.path_for_w21_relative("agent/application.py").read_text(encoding="utf-8").count("class AgentApplication") == 1, "composition root missing")
+    for path in AGENT_SOURCE_ROOT.rglob("*.py") if AGENT_SOURCE_ROOT is not None else ():
         if path.as_posix().replace("\\", "/").endswith("agent/application.py"):
             continue
         _assert("AgentApplicationV2" not in path.read_text(encoding="utf-8"), f"parallel root in {path}")
@@ -324,11 +331,11 @@ def _case_a05(root: Path) -> None:
 def _case_a06(root: Path) -> None:
     del root
     roots = (
-        ROOT / "agent/routing",
-        ROOT / "agent/application_services",
-        ROOT / "agent/outputs",
-        ROOT / "agent/evaluation",
-        ROOT / "agent/runtime/storage_contracts.py",
+        SOURCE_LAYOUT.path_for_w21_relative("agent/routing"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/application_services"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/outputs"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/evaluation"),
+        SOURCE_LAYOUT.path_for_w21_relative("agent/runtime/storage_contracts.py"),
     )
     for candidate in roots:
         files = (candidate,) if candidate.is_file() else tuple(candidate.rglob("*.py"))
@@ -344,7 +351,7 @@ def _case_a06(root: Path) -> None:
 def _case_a07(root: Path) -> None:
     del root
     forbidden = {"legacy_mode", "use_legacy", "old_router", "new_actions", "compatibility_mode"}
-    for path in (ROOT / "agent").rglob("*.py"):
+    for path in AGENT_SOURCE_ROOT.rglob("*.py") if AGENT_SOURCE_ROOT is not None else ():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
         _assert(not names.intersection(forbidden), f"global switch remains in {path}")
@@ -486,7 +493,7 @@ def _case_a18(root: Path) -> None:
 
 def _case_a19(root: Path) -> None:
     del root
-    current = (ROOT / "agent/routing/persona/current.py").read_text(encoding="utf-8")
+    current = SOURCE_LAYOUT.path_for_w21_relative("agent/routing/persona/current.py").read_text(encoding="utf-8")
     _assert("reference_w18" not in current, "current routing statically imports reference")
 
 
@@ -595,7 +602,7 @@ def _case_a28(root: Path) -> None:
 
 def _case_a29(root: Path) -> None:
     del root
-    source = (ROOT / "agent/application_services/queries.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/application_services/queries.py").read_text(encoding="utf-8")
     for token in ("live_marker", "slash_command", "rendered_text", "generation"):
         _assert(token not in source, f"query contract contains CLI field {token}")
 
@@ -626,7 +633,7 @@ def _case_a31(root: Path) -> None:
 
 
 def _case_a32(root: Path) -> None:
-    source = (ROOT / "agent/application_services/queries.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/application_services/queries.py").read_text(encoding="utf-8")
     workspace = root / "headless"
     workspace.mkdir()
     (workspace / "a.txt").write_text("needle", encoding="utf-8")
@@ -688,7 +695,8 @@ def _case_a37(root: Path) -> None:
     with AgentApplication.create(paths=paths, workspace=workspace, gateway=_OfflineGateway(), configure_logging=False) as application:
         result = application.run("oi")
         _assert(result.success, "ordinary assistant response failed")
-        _assert(application.output_service().list() == (), "ordinary assistant created an output artifact")
+        output_service = OutputService(application.workspace_paths)
+        _assert(output_service.list() == (), "ordinary assistant created an output artifact")
 
 
 def _case_a38(root: Path) -> None:
@@ -700,7 +708,7 @@ def _case_a38(root: Path) -> None:
     values: list[object] = []
     context = SimpleNamespace(
         shell=SimpleNamespace(print_background=values.append),
-        application=SimpleNamespace(output_service=lambda: service),
+        output_service=service,
     )
     _assert(render_output_viewer(f"/inspect output {publication.artifact.output_id}", context), "viewer did not handle output")
     _assert(any("<literal> & text" in str(value) for value in values), "viewer did not render literal payload")
@@ -717,7 +725,7 @@ def _case_a40(root: Path) -> None:
     del root
     _assert(architecture_checker._check_output_boundaries(ROOT) == [], "output semantics flow into operational authority")
     for relative in ("agent/planning", "agent/orchestration", "agent/tools", "agent/approval"):
-        for path in (ROOT / relative).rglob("*.py"):
+        for path in SOURCE_LAYOUT.path_for_w21_relative(relative).rglob("*.py"):
             _assert("agent.outputs" not in path.read_text(encoding="utf-8"), f"output evidence backflow in {path}")
 
 
@@ -772,7 +780,7 @@ def _case_a45(root: Path) -> None:
 
 
 def _case_a46(root: Path) -> None:
-    import agent.evaluation.feedback_store as feedback_store
+    import llm_agent.agent.evaluation.feedback_store as feedback_store
 
     service = FeedbackService(AppPaths.discover(root / "feedback-a46", env={}).for_workspace("w"))
     first = service.submit(FeedbackTarget("run-a46-1", "root-a46-1", "succeeded", "now"), FeedbackVerdict.CORRECT)
@@ -817,7 +825,7 @@ def _case_a50(root: Path) -> None:
     del root
     _assert(architecture_checker._check_cleanup_retired_modules(ROOT) == [], "retired symbols/imports remain")
     for relative in ("agent/interfaces/cli/app.py", "agent/interfaces/cli/interactive_commands.py"):
-        source = (ROOT / relative).read_text(encoding="utf-8")
+        source = SOURCE_LAYOUT.path_for_w21_relative(relative).read_text(encoding="utf-8")
         for symbol in ("obter_status_think", "show_events", "git_status", "def diff("):
             _assert(symbol not in source, f"retired CLI symbol remains: {symbol}")
 
@@ -835,8 +843,8 @@ def _case_a52(root: Path) -> None:
 def _case_a53(root: Path) -> None:
     del root
     _assert(architecture_checker._check_single_owner_shapes(ROOT) == [], "heuristic authority duplicated")
-    current = (ROOT / "agent/routing/persona/current.py").read_text(encoding="utf-8")
-    reference = (ROOT / "agent/routing/persona/variants/reference_w18.py").read_text(encoding="utf-8")
+    current = SOURCE_LAYOUT.path_for_w21_relative("agent/routing/persona/current.py").read_text(encoding="utf-8")
+    reference = SOURCE_LAYOUT.path_for_w21_relative("agent/routing/persona/variants/reference_w18.py").read_text(encoding="utf-8")
     _assert("class CurrentPersonaRouter" in current and "class W18ReferencePersonaRouter" in reference, "persona owners are missing")
 
 
@@ -847,7 +855,7 @@ def _case_a54(root: Path) -> None:
 
 
 def _case_a55(root: Path) -> None:
-    from agent.interfaces.cli.thinking_presets import (
+    from llm_agent.interfaces.cli.thinking_presets import (
         DEFAULT_THINKING_BUDGET,
         THINKING_LABEL_BY_BUDGET,
         THINKING_PRESET_BY_KEY,
@@ -958,7 +966,6 @@ def _case_a62(root: Path) -> None:
         str(ROOT / "scripts/verify_installed_package.py"),
         "--project-root",
         str(ROOT),
-        "--no-build-isolation",
         "--summary-json",
         str(destination),
     ]

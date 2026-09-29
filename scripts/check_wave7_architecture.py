@@ -37,6 +37,11 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 ROOT = Path(__file__).resolve().parents[1]
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT_ALIASES = (
     "benchmark.py",
     "cli.py",
@@ -235,12 +240,12 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -256,8 +261,8 @@ def _tree(root: Path, relative: str) -> ast.AST | None:
 
 
 def _agent_files(root: Path) -> Iterator[Path]:
-    agent_root = root / "agent"
-    if agent_root.is_dir():
+    agent_root = w21_source_layout(root).agent_source_directory
+    if agent_root is not None and agent_root.is_dir():
         yield from sorted(agent_root.rglob("*.py"))
 
 
@@ -494,7 +499,7 @@ def _check_root_aliases(root: Path) -> list[ArchitectureViolation]:
     return [
         _violation("W7-S1", relative, "retired root alias is present")
         for relative in ROOT_ALIASES
-        if (root / relative).exists()
+        if w21_source_layout(root).path_for_w21_relative(relative).exists()
     ]
 
 
@@ -502,7 +507,7 @@ def _check_retired_modules(root: Path) -> list[ArchitectureViolation]:
     return [
         _violation("W7-S2", relative, "retired compatibility module is present")
         for relative in RETIRED_MODULES
-        if (root / relative).exists()
+        if w21_source_layout(root).path_for_w21_relative(relative).exists()
     ]
 
 
@@ -749,9 +754,13 @@ def _check_health_config_retirement(root: Path) -> list[ArchitectureViolation]:
 
     violations: list[ArchitectureViolation] = []
     canonical_import = False
+    canonical_config_modules = {
+        "agent.runtime.config",
+        "llm_agent.agent.runtime.config",
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.module == "agent.runtime.config" and any(
+            if node.module in canonical_config_modules and any(
                 alias.name == "carregar_config" for alias in node.names
             ):
                 canonical_import = True

@@ -7,27 +7,28 @@ from typing import Any, Mapping, cast
 
 import pytest
 
-from agent.evaluation import campaign
-from agent.evaluation.analysis import analyze_campaign, secret_safe_report, validate_campaign_report
-from agent.evaluation.campaign_observed_identity import _observed_identity_summary
-from agent.evaluation.contracts import ScenarioExpectation
-from agent.evaluation.evaluation_identity import (
+from llm_agent.agent.evaluation import campaign
+from llm_agent.agent.evaluation.analysis import analyze_campaign, secret_safe_report, validate_campaign_report
+from llm_agent.agent.evaluation.campaign_observed_identity import _observed_identity_summary
+from llm_agent.agent.evaluation.contracts import ScenarioExpectation
+from llm_agent.agent.evaluation.evaluation_identity import (
     candidate_identity_string,
     fake_model_identity,
     fixture_identity,
     semantic_candidate_fingerprint,
     semantic_candidate_manifest,
     semantic_manifest_hash,
+    source_fingerprint,
 )
-from agent.evaluation.execution import CampaignRun, _run_one, classify_failure
-from agent.evaluation.fixture_context import fixture_marker, runtime_objective
-from agent.evaluation.oracle import (
+from llm_agent.agent.evaluation.execution import CampaignRun, _run_one, classify_failure
+from llm_agent.agent.evaluation.fixture_context import fixture_marker, runtime_objective
+from llm_agent.agent.evaluation.oracle import (
     declared_oracle_keys,
     deterministic_oracle_failures,
     validate_oracle_coverage,
 )
-from agent.evaluation.release_prerequisites import project_release_prerequisite_snapshot
-from agent.evaluation.scenario_contracts import (
+from llm_agent.agent.evaluation.release_prerequisites import project_release_prerequisite_snapshot
+from llm_agent.agent.evaluation.scenario_contracts import (
     H_SERIES,
     H_SERIES_VERSION,
     CausalFailureClass,
@@ -37,8 +38,8 @@ from agent.evaluation.scenario_contracts import (
     RepetitionPolicy,
     digest_fixture,
 )
-from agent.evaluation.scripted_gateway import _scripted_factory
-from agent.llm.errors import ModelConnectionError
+from llm_agent.agent.evaluation.scripted_gateway import _scripted_factory
+from llm_agent.agent.llm.errors import ModelConnectionError
 
 _CANDIDATE = {
     "head": "head",
@@ -447,7 +448,7 @@ def test_oracle_h11_terminal_truth_and_grounding_paths() -> None:
 def _analysis_report(*, h3_mixed: bool = False, runtime_incident: bool = False, identity_drift: bool = False) -> dict[str, Any]:
     candidate = dict(_CANDIDATE)
     candidate_id = candidate_identity_string(candidate)
-    manifest = [{"path": "agent/runtime.py", "sha256": "x"}]
+    manifest = [{"path": "src/llm_agent/agent/runtime.py", "sha256": "x"}]
     runs: list[dict[str, Any]] = []
     for scenario in H_SERIES:
         count = 5 if scenario.h_id == "H2" else 3
@@ -710,21 +711,47 @@ def test_analyzer_verdict_thresholds_and_blocker_precedence() -> None:
         analyze_campaign(_analysis_report(identity_drift=True))
 
 
-def test_semantic_candidate_changes_for_runtime_but_not_documentation(tmp_path) -> None:
+def _semantic_identity_fixture(tmp_path):
     root = tmp_path / "repo"
-    (root / "agent").mkdir(parents=True)
+    (root / "src" / "llm_agent" / "agent").mkdir(parents=True)
+    (root / "src" / "llm_agent" / "execution").mkdir(parents=True)
     (root / "scripts").mkdir()
     (root / "docs").mkdir()
-    (root / "agent" / "runtime.py").write_text("runtime = 1\n", encoding="utf-8")
+    (root / "src" / "llm_agent" / "agent" / "runtime.py").write_text("runtime = 1\n", encoding="utf-8")
+    (root / "src" / "llm_agent" / "execution" / "command.py").write_text("command = 1\n", encoding="utf-8")
     (root / "scripts" / "run_evaluation_campaign.py").write_text("runner = 1\n", encoding="utf-8")
     (root / "docs" / "note.md").write_text("one\n", encoding="utf-8")
+    return root
+
+
+def test_semantic_candidate_changes_for_agent_source(tmp_path) -> None:
+    root = _semantic_identity_fixture(tmp_path)
+    first = semantic_candidate_fingerprint(root)
+    (root / "src" / "llm_agent" / "agent" / "runtime.py").write_text("runtime = 2\n", encoding="utf-8")
+    assert semantic_candidate_fingerprint(root) != first
+
+
+def test_semantic_candidate_changes_for_platform_source(tmp_path) -> None:
+    root = _semantic_identity_fixture(tmp_path)
+    first = semantic_candidate_fingerprint(root)
+    (root / "src" / "llm_agent" / "execution" / "command.py").write_text("command = 2\n", encoding="utf-8")
+    assert semantic_candidate_fingerprint(root) != first
+
+
+def test_semantic_candidate_ignores_documentation_changes(tmp_path) -> None:
+    root = _semantic_identity_fixture(tmp_path)
     first = semantic_candidate_fingerprint(root)
     first_manifest_hash = semantic_manifest_hash(semantic_candidate_manifest(root))
     (root / "docs" / "note.md").write_text("two\n", encoding="utf-8")
     assert semantic_candidate_fingerprint(root) == first
     assert semantic_manifest_hash(semantic_candidate_manifest(root)) == first_manifest_hash
-    (root / "agent" / "runtime.py").write_text("runtime = 2\n", encoding="utf-8")
-    assert semantic_candidate_fingerprint(root) != first
+
+
+def test_source_fingerprint_observes_w22_product_source_tree(tmp_path) -> None:
+    root = _semantic_identity_fixture(tmp_path)
+    first = source_fingerprint(root)
+    (root / "src" / "llm_agent" / "execution" / "command.py").write_text("command = 2\n", encoding="utf-8")
+    assert source_fingerprint(root) != first
 
 
 def test_model_identity_is_stable_and_resume_mismatch_is_rejected() -> None:

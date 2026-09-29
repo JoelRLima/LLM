@@ -4,9 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.extension_catalog_errors import (
+from llm_agent.extensions.extension_catalog_errors import (
     WorkspaceCapabilityInvalidError,
     WorkspaceCapabilityNotDeclaredError,
     WorkspaceExtensionMissingError,
@@ -14,11 +12,13 @@ from agent.tools.extension_catalog_errors import (
     WorkspaceManifestBlockedError,
     WorkspacePathError,
 )
-from agent.tools.extension_catalog_lock import ExtensionCatalogLock
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from agent.tools.workspace_extensions_storage import WorkspaceExtensionsStorage
+from llm_agent.extensions.extension_catalog_lock import ExtensionCatalogLock
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.extensions.workspace_extensions_storage import WorkspaceExtensionsStorage
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _manifest(extension_id: str = "demo.extension", capabilities: list[str] | None = None) -> dict:

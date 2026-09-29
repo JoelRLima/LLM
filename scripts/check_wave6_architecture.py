@@ -10,6 +10,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 CANONICAL_POLICY = "agent/runtime/task_policy.py"
 POLICY_STATE_MODULE = "agent/runtime/task_policy_state.py"
 POLICY_SUPPORT_MODULES = frozenset(
@@ -82,12 +87,12 @@ class ArchitectureViolation:
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.relative_to(root).as_posix()
+    return w21_source_layout(root).w21_relative_path(path)
 
 
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -277,7 +282,8 @@ def _check_s1_duplicates(root: Path) -> list[ArchitectureViolation]:
         "TaskPolicyDecision",
         "TaskPolicyResult",
     }
-    for path in sorted((root / "agent").rglob("*.py")):
+    agent_root = w21_source_layout(root).agent_source_directory
+    for path in sorted(agent_root.rglob("*.py")) if agent_root is not None else ():
         path_relative = _relative(path, root)
         if path_relative in POLICY_SUPPORT_MODULES:
             continue
@@ -318,7 +324,8 @@ def _check_s2(root: Path) -> list[ArchitectureViolation]:
     missing = sorted(POLICY_STATE_FIELDS - canonical_fields)
     if missing:
         violations.append(_violation("W6-S2", state_owner_relative, "canonical state fields are missing: " + ", ".join(missing)))
-    for path in sorted((root / "agent").rglob("*.py")):
+    agent_root = w21_source_layout(root).agent_source_directory
+    for path in sorted(agent_root.rglob("*.py")) if agent_root is not None else ():
         relative = _relative(path, root)
         if relative in POLICY_SUPPORT_MODULES:
             continue
@@ -573,7 +580,7 @@ def _check_s8(root: Path) -> list[ArchitectureViolation]:
         tree = _tree(root, relative)
         if tree is None or symbol not in _names(tree):
             violations.append(_violation("W6-S8", relative, f"W5.5 task-definition authority symbol is missing: {symbol}"))
-    task_root = root / "agent" / "task_definition"
+    task_root = w21_source_layout(root).path_for_w21_relative("agent/task_definition")
     if task_root.is_dir():
         forbidden = ("taskruntimepolicy", "taskpolicystate", "task_policy", "task_progress_projection")
         for path in sorted(task_root.rglob("*.py")):

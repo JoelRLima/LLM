@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli.parser import build_parser
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 from tests.support.task_definition import make_contract, make_spec
 
 

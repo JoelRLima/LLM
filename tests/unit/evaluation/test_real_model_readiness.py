@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from agent.evaluation.real_model_readiness import (
+from llm_agent.agent.evaluation.real_model_readiness import (
     REAL_MODEL_READINESS_VERSION,
     readiness_campaign_policy,
     real_model_readiness_scenarios,
 )
-from agent.evaluation.scenario_contracts import H_SERIES
-from agent.evaluation.trace import RecordingGateway
-from agent.llm.contracts import (
+from llm_agent.agent.evaluation.scenario_contracts import H_SERIES
+from llm_agent.agent.evaluation.trace import RecordingGateway
+from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
     ModelResponse,

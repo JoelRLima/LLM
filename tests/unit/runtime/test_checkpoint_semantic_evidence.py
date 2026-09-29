@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.completion_observations import eligible_waiver_observations
-from agent.planning.task_completion import refresh_executed_effects
-from agent.planning.task_semantics import (
+from llm_agent.agent.planning.completion_observations import eligible_waiver_observations
+from llm_agent.agent.planning.task_completion import refresh_executed_effects
+from llm_agent.agent.planning.task_semantics import (
     AdmissionSource,
     ObligationStatus,
     TaskIntent,
@@ -15,7 +15,7 @@ from agent.planning.task_semantics import (
     TaskSemantics,
     TaskSemanticsError,
 )
-from agent.state import AgentState
+from llm_agent.agent.state import AgentState
 
 
 class _Memory:

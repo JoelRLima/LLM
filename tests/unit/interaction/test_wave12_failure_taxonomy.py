@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent.interaction.errors import public_explanation
-from agent.interaction.service import InteractionService
+from llm_agent.agent.interaction.errors import public_explanation
+from llm_agent.agent.interaction.service import InteractionService
 
 from ._helpers import application
 

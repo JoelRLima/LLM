@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime import filesystem_primitives
+from llm_agent.filesystem import primitives as filesystem_primitives
 
 
 def test_write_bytes_atomic_publishes_exact_bytes_and_syncs_parent(

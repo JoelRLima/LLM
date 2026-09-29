@@ -1,0 +1,83 @@
+"""Dispatch completion-review reasons to canonical terminal operations."""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from llm_agent.agent.planning.completion_observations import publish_outcome
+from llm_agent.agent.planning.task_completion_types import CompletionDisposition
+from llm_agent.agent.planning.task_terminal import (
+    _canonical_last_result,
+    _set_terminal,
+    _terminal_message,
+    mark_terminal_blocked,
+    mark_terminal_cancelled,
+    mark_terminal_failure,
+    mark_unfinished_effect,
+    mark_unfinished_obligation,
+)
+from llm_agent.agent.runtime.outcome_taxonomy import NON_SUCCESS_STATUSES
+
+
+def accept_review(orchestrator: Any, existing: str | None) -> str | None:
+    if existing != CompletionDisposition.COMPLETE.value:
+        # A local invocation may have set the compatibility task-failed flag
+        # before an exact user fallback was observed.  The accepted review is
+        # the single lifecycle owner that clears that derived flag; history,
+        # receipt, and evidence still retain the failed invocation.
+        orchestrator._task_failed = False
+        _set_terminal(orchestrator.agent_state, CompletionDisposition.COMPLETE.value)
+        publish_outcome(orchestrator)
+    return None
+
+
+def _terminal_failure_review(orchestrator: Any) -> str:
+    mark_terminal_failure(orchestrator)
+    publish_outcome(orchestrator)
+    result = _canonical_last_result(orchestrator.agent_state)
+    if result is not None and str(getattr(result.status, "value", result.status) or "") in NON_SUCCESS_STATUSES:
+        return _terminal_message(orchestrator.agent_state) or "A tarefa não pôde ser concluída."
+    return "A tarefa não pôde ser concluída."
+
+
+def reject_review(orchestrator: Any, objective: str, review: Any) -> str | None:
+    handlers: dict[str, Callable[[], str | None]] = {
+        "cancelled": lambda: mark_terminal_cancelled(orchestrator)
+        or _terminal_message(orchestrator.agent_state)
+        or "Tarefa cancelada pelo usuario.",
+        "terminal_failure": lambda: _terminal_failure_review(orchestrator),
+        "prohibited_effect_occurred": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="prohibited_effect_occurred",
+            message="A tarefa foi bloqueada: ocorreu um efeito proibido.",
+        ),
+        "unrequested_effect_occurred": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="unrequested_effect_occurred",
+            message="A tarefa foi bloqueada: ocorreu um efeito nao solicitado.",
+        ),
+        "existing_terminal": lambda: _terminal_message(orchestrator.agent_state) or None,
+        "obligation_evidence_missing": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="obligation_evidence_missing",
+            message="A tarefa foi bloqueada: falta evidencia canonica para uma obrigacao terminal.",
+        ),
+        "requested_effect_pending": lambda: mark_unfinished_effect(orchestrator, objective),
+        "task_obligation_pending": lambda: mark_unfinished_obligation(orchestrator, objective),
+        "task_obligation_blocked": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="task_obligation_blocked",
+            message="A tarefa foi bloqueada por uma obrigacao canonica.",
+        ),
+    }
+    handler = handlers.get(getattr(review, "reason_code", None) or "")
+    if handler is not None:
+        return handler()
+    return mark_terminal_blocked(
+        orchestrator,
+        reason_code=getattr(review, "reason_code", None) or "completion_review_failed",
+        message="A tarefa nao passou pela revisao canonica de conclusao.",
+    )
+
+
+__all__ = ["accept_review", "reject_review"]

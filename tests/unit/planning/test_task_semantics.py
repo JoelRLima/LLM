@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.planning.effect_intent import effect_intent_error, effect_intent_matches
-from agent.planning.task_completion import initialize_task_progression
-from agent.planning.task_semantics import (
+from llm_agent.agent.planning.effect_intent import effect_intent_error, effect_intent_matches
+from llm_agent.agent.planning.task_completion import initialize_task_progression
+from llm_agent.agent.planning.task_semantics import (
     ObligationStatus,
     PredicateResolutionState,
     TaskIntent,
@@ -13,8 +13,8 @@ from agent.planning.task_semantics import (
     TaskSemanticsError,
     infer_effect_semantics,
 )
-from agent.resources.contracts import ResourceAccess, ResourceMode
-from agent.state import AgentState
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode
+from llm_agent.agent.state import AgentState
 
 
 def test_effect_semantics_preserves_requested_and_prohibited_without_direct_text_effect() -> None:

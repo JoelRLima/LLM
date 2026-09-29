@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.llm.admitted_decisions import DirectResponseDecision, InitialPlanDecision
-from agent.orchestration.task_execution import execute_task
-from agent.orchestration.task_runner import TaskRunner
-from agent.planning import plan_builder as plan_builder_module
-from agent.planning.execution_gateway import ExecutionGateway
-from agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
-from agent.planning.plan_model import Plan
-from agent.planning.plan_preview import (
+from llm_agent.agent.llm.admitted_decisions import DirectResponseDecision, InitialPlanDecision
+from llm_agent.agent.orchestration.task_execution import execute_task
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.planning import plan_builder as plan_builder_module
+from llm_agent.agent.planning.execution_gateway import ExecutionGateway
+from llm_agent.agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.planning.plan_preview import (
     MAX_PREVIEW_STEPS,
     MAX_PREVIEW_TOTAL_CHARS,
     PLAN_PREVIEW_PLAN_REQUIRED,
@@ -19,16 +19,16 @@ from agent.planning.plan_preview import (
     render_plan_preview,
     run_plan_preview,
 )
-from agent.planning.plan_prompts import build_plan_prompt
-from agent.runtime.task_directives import (
+from llm_agent.agent.planning.plan_prompts import build_plan_prompt
+from llm_agent.agent.runtime.task_directives import (
     DeliberationProfile,
     TaskDirective,
     TaskRunDirective,
 )
-from agent.state import AgentState
-from agent.tools.authority import OperationalMode, TaskAuthoritySnapshot
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.authority import OperationalMode, TaskAuthoritySnapshot
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from llm_agent.agent.tools.tool_registry import ToolRegistry
 
 
 class _CancellationToken:
@@ -317,7 +317,7 @@ def test_positive_plan_preview_passes_task_definition_and_never_executes(
         owner.agent_state.objective = inputs.objective
         owner.agent_state.task_run_directive = inputs.task_run_directive
         owner.agent_state.initialize_task_semantics(inputs.objective, plan_only=True)
-        from agent.orchestration.task_directive_runtime import (
+        from llm_agent.agent.orchestration.task_directive_runtime import (
             apply_task_run_directive_runtime,
         )
 
@@ -602,7 +602,7 @@ def test_pause_persists_plan_directive_without_executable_preview_and_can_resume
         owner.agent_state.objective = inputs.objective
         owner.agent_state.task_run_directive = inputs.task_run_directive
         owner.agent_state.initialize_task_semantics(inputs.objective, plan_only=True)
-        from agent.orchestration.task_directive_runtime import (
+        from llm_agent.agent.orchestration.task_directive_runtime import (
             apply_task_run_directive_runtime,
         )
 

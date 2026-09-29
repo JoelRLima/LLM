@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 def test_one_exact_polite_prefix_is_consumed_by_negative_scanner() -> None:

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.interfaces.cli.app import main
-from agent.interfaces.cli.parser import build_parser
+from llm_agent.interfaces.cli.app import main
+from llm_agent.interfaces.cli.parser import build_parser
 
 
 def test_parser_exposes_only_w20a_test_commands() -> None:
@@ -33,7 +33,7 @@ def test_list_json_is_one_document_and_does_not_create_home(tmp_path: Path, caps
 def test_describe_known_unavailable_is_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent.engineering.cli.discover_source_repository_context", lambda: None)
+    monkeypatch.setattr("llm_agent.interfaces.cli.engineering.discover_source_repository_context", lambda: None)
     assert main(["test", "describe", "acceptance.installed-package", "--json", "--home", str(tmp_path / "home")]) == 0
     assert json.loads(capsys.readouterr().out)["unavailable_reason"] == "ENGINEERING_SOURCE_REPOSITORY_REQUIRED"
 

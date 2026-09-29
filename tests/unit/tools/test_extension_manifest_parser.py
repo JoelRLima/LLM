@@ -2,16 +2,16 @@ import json
 
 import pytest
 
-from agent.tools.extension_manifest_parser import (
+from llm_agent.agent.tools.stdio_adapter import (
+    SUPPORTED_PROTOCOL,
+    ExtensionManifest,
+    load_extension_manifest,
+)
+from llm_agent.extensions.extension_manifest_parser import (
     ManifestParseError,
     ManifestProtocolError,
     ManifestStructureError,
     load_extension_manifest_bytes,
-)
-from agent.tools.stdio_adapter import (
-    SUPPORTED_PROTOCOL,
-    ExtensionManifest,
-    load_extension_manifest,
 )
 
 
@@ -85,7 +85,7 @@ def test_manifest_module_exports_protocol_and_path_wrapper(tmp_path) -> None:
     assert SUPPORTED_PROTOCOL == "1.0"
     result = load_extension_manifest(manifest_path)
     assert type(result) is ExtensionManifest
-    assert type(result).__module__ == "agent.tools.stdio_adapter"
+    assert type(result).__module__ == "llm_agent.agent.tools.stdio_adapter"
     assert isinstance(result, ExtensionManifest)
     assert result.id == "demo.extension"
 

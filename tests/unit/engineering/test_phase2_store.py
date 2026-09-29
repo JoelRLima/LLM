@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.engineering.contracts import (
+from llm_agent.agent.engineering.contracts import (
     EngineeringCaller,
     EngineeringErrorV1,
     EngineeringExecutionContext,
@@ -17,19 +17,19 @@ from agent.engineering.contracts import (
     EngineeringWorkspaceContext,
     SourceRepositoryContext,
 )
-from agent.engineering.policy import EngineeringPreflight, preflight
-from agent.engineering.registry import production_registry
-from agent.engineering.store import (
+from llm_agent.agent.engineering.policy import EngineeringPreflight, preflight
+from llm_agent.agent.engineering.registry import production_registry
+from llm_agent.agent.engineering.store import (
     MAX_ENGINEERING_RUN_RECORD_BYTES,
     EngineeringRecordError,
     EngineeringRunStore,
     _bounded_document,
     canonical_document_text,
 )
-from agent.engineering.transactions import enforce_capacity
-from agent.runtime.instance_lock import InstanceLock, InstanceLockError
-from agent.runtime.paths import AppPaths
-from agent.runtime.process_identity import OwnerStatus
+from llm_agent.agent.engineering.transactions import enforce_capacity
+from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.agent.runtime.process_identity import OwnerStatus
+from llm_agent.workspace.paths import AppPaths
 
 CANDIDATE = "a" * 40 + ":" + "b" * 64 + ":" + "c" * 64
 
@@ -106,7 +106,7 @@ def test_app_paths_exact_engineering_layout_and_hashed_resource(tmp_path: Path) 
 
 
 def test_no_parent_creation_writer_and_lock_fail_closed(tmp_path: Path) -> None:
-    from agent.memory.json_persistence import AtomicWriteError, write_text_atomic
+    from llm_agent.storage.json_persistence import AtomicWriteError, write_text_atomic
 
     missing = tmp_path / "missing" / "value.json"
     with pytest.raises(AtomicWriteError):
@@ -161,8 +161,8 @@ def test_store_history_fails_closed_on_corrupt_canonical_run(tmp_path: Path) -> 
 
 
 def test_store_end_to_end_terminal_removes_marker(tmp_path: Path) -> None:
-    from agent.engineering.contracts import EngineeringTerminalStatus
-    from agent.engineering.service import EngineeringTerminalIntent
+    from llm_agent.agent.engineering.contracts import EngineeringTerminalStatus
+    from llm_agent.agent.engineering.service import EngineeringTerminalIntent
 
     context = ctx(tmp_path)
     store = EngineeringRunStore()
@@ -178,7 +178,7 @@ def test_store_end_to_end_terminal_removes_marker(tmp_path: Path) -> None:
 
 
 def test_timestamp_shape_is_exact_and_lexically_ordered() -> None:
-    from agent.engineering.contracts import canonical_utc
+    from llm_agent.agent.engineering.contracts import canonical_utc
 
     first = canonical_utc(datetime(2026, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc))
     second = canonical_utc(datetime(2026, 1, 1, 0, 0, 0, 2, tzinfo=timezone.utc))
@@ -226,8 +226,8 @@ def test_model_safe_foreign_result_is_not_found_without_liveness_or_recovery(
     phase: str,
     owner_status: OwnerStatus,
 ) -> None:
-    from agent.engineering.contracts import EngineeringTerminalStatus
-    from agent.engineering.registry import EngineeringTerminalIntent
+    from llm_agent.agent.engineering.contracts import EngineeringTerminalStatus
+    from llm_agent.agent.engineering.registry import EngineeringTerminalIntent
 
     paths = AppPaths.discover(tmp_path / "home")
     paths.ensure_base_directories()
@@ -305,8 +305,8 @@ def test_liveness_change_dead_to_indeterminate_between_query_passes_stays_active
 
 
 def test_backend_indeterminate_guard_quarantines_matching_admission(tmp_path: Path) -> None:
-    from agent.engineering.contracts import EngineeringTerminalStatus
-    from agent.engineering.service import EngineeringStoreError, EngineeringTerminalIntent
+    from llm_agent.agent.engineering.contracts import EngineeringTerminalStatus
+    from llm_agent.agent.engineering.service import EngineeringStoreError, EngineeringTerminalIntent
 
     context = ctx(tmp_path)
     admitted = admission(context)
@@ -333,7 +333,7 @@ def test_dead_recovery_lifecycle_failure_is_unverified(monkeypatch: pytest.Monke
     context = ctx(tmp_path)
     active = EngineeringRunStore().begin(admission(context), context)
     monkeypatch.setattr(
-        "agent.engineering.store.HomeLifecycleLease.begin_transient",
+        "llm_agent.agent.engineering.store.HomeLifecycleLease.begin_transient",
         lambda home: (_ for _ in ()).throw(RuntimeError("lease failed")),
     )
     result = EngineeringRunStore(Liveness(OwnerStatus.DEAD)).result(active.run_id, context)
@@ -399,8 +399,8 @@ def test_capacity_rejects_mismatched_run_before_eviction(tmp_path: Path) -> None
     admitted = admission(context)
     active = store.begin(admitted, context)
     store.publish_managed_guard(active, admitted, context)
-    from agent.engineering.contracts import EngineeringTerminalStatus
-    from agent.engineering.registry import EngineeringTerminalIntent
+    from llm_agent.agent.engineering.contracts import EngineeringTerminalStatus
+    from llm_agent.agent.engineering.registry import EngineeringTerminalIntent
 
     store.finish(active, admitted, EngineeringTerminalIntent(EngineeringTerminalStatus.SUCCEEDED, (), {}, ()), context)
     path = context.app_paths.engineering_run_file(active.run_id)

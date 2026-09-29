@@ -1,6 +1,6 @@
 import pytest
 
-from agent.planning.plan_model import (
+from llm_agent.agent.planning.plan_model import (
     Plan,
     PlanStepReference,
     resolve_previous_step_reference,
@@ -15,7 +15,7 @@ def test_current_wave3_decision_identity_gates_are_clean() -> None:
 def test_w3s1_rejects_direct_typed_decision_mapping_access() -> None:
     findings = check_source(
         """
-from agent.llm.admitted_decisions import ReactiveToolDecision
+from llm_agent.agent.llm.admitted_decisions import ReactiveToolDecision
 
 def consume(decision: ReactiveToolDecision):
     return decision.get("action")
@@ -44,7 +44,7 @@ def consume():
 def test_w3s1_allows_typed_union_dispatch_and_typed_attributes() -> None:
     assert check_source(
         """
-from agent.llm.admitted_decisions import ReactiveFinalDecision, ReactiveToolDecision
+from llm_agent.agent.llm.admitted_decisions import ReactiveFinalDecision, ReactiveToolDecision
 
 def consume(decision: ReactiveToolDecision | ReactiveFinalDecision):
     if isinstance(decision, ReactiveFinalDecision):
@@ -72,7 +72,7 @@ def compatibility(value: dict):
 def test_w3s1_follows_module_qualified_typed_producer() -> None:
     findings = check_source(
         """
-import agent.llm.admitted_decisions as decisions
+import llm_agent.agent.llm.admitted_decisions as decisions
 
 def consume():
     value = decisions.admit_typed_model_decision({})
@@ -160,7 +160,7 @@ def consume(value):
 def test_w3s1_keeps_trusted_exact_admission_boundary_clean() -> None:
     assert check_source(
         """
-from agent.llm.admitted_decisions import _project_exactly_admitted_model_decision as project
+from llm_agent.agent.llm.admitted_decisions import _project_exactly_admitted_model_decision as project
 alias = project
 
 def admit(raw, contract):
@@ -180,7 +180,7 @@ def admit(raw, contract):
 def test_w3s1_follows_typed_decision_through_local_helper_hops(helpers: str) -> None:
     findings = check_source(
         f"""
-from agent.llm.admitted_decisions import ReactiveToolDecision
+from llm_agent.agent.llm.admitted_decisions import ReactiveToolDecision
 
 {helpers}
 
@@ -273,7 +273,7 @@ def choose(context, prompt, contract):
 def test_w3s3_rejects_raw_typed_plan_step_access(expression: str) -> None:
     findings = check_source(
         f"""
-from agent.planning.plan_model import ToolPlanStep
+from llm_agent.agent.planning.plan_model import ToolPlanStep
 
 def consume(step: ToolPlanStep):
     {expression}
@@ -286,7 +286,7 @@ def consume(step: ToolPlanStep):
 def test_w3s3_allows_serializer_and_unrelated_dict_controls() -> None:
     serializer = check_source(
         """
-from agent.planning.plan_model import ToolPlanStep
+from llm_agent.agent.planning.plan_model import ToolPlanStep
 
 def serialize(step: ToolPlanStep):
     return step.get("tool")
@@ -316,7 +316,7 @@ def test_w3s4_allows_the_single_typed_ordinal_resolver() -> None:
     ) == 0
     assert check_source(
         """
-from agent.planning.plan_model import resolve_previous_step_reference
+from llm_agent.agent.planning.plan_model import resolve_previous_step_reference
 
 def consume(reference, index, plan):
     return resolve_previous_step_reference(reference, index, plan)
@@ -346,20 +346,20 @@ def resolve_path(data, path):
     "source",
     [
         """
-from agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.plan_validator import PlanValidator
 
 def build(value):
     return PlanValidator(value)
 """,
         """
-from agent.planning.plan_validator import PlanValidator as PV
+from llm_agent.agent.planning.plan_validator import PlanValidator as PV
 
 def build(value):
     alias = PV
     return alias(value)
 """,
         """
-import agent.planning.plan_validator as validator_module
+import llm_agent.agent.planning.plan_validator as validator_module
 
 def build(value):
     return validator_module.PlanValidator(value)
@@ -374,7 +374,7 @@ def test_w3s5_rejects_validator_composition_outside_owner(source: str) -> None:
 def test_w3s5_allows_the_single_validator_composition_owner() -> None:
     assert check_source(
         """
-from agent.planning.plan_validator import PlanValidator
+from llm_agent.agent.planning.plan_validator import PlanValidator
 
 def build(value):
     return PlanValidator(value)
@@ -386,7 +386,7 @@ def build(value):
 def test_w3s6_requires_an_explicit_admission_mode() -> None:
     findings = check_source(
         """
-from agent.planning.plan_admission import PlanAdmissionService
+from llm_agent.agent.planning.plan_admission import PlanAdmissionService
 
 def build(orchestrator, plan, objective):
     admission = PlanAdmissionService(orchestrator)
@@ -400,7 +400,7 @@ def build(orchestrator, plan, objective):
 def test_w3s6_allows_explicit_admission_mode() -> None:
     assert check_source(
         """
-from agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
+from llm_agent.agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
 
 def build(orchestrator, plan, objective):
     admission = PlanAdmissionService(orchestrator)

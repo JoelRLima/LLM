@@ -8,22 +8,22 @@ from types import SimpleNamespace
 
 from rich.console import Console
 
-from agent.approval import ApprovalDecision, AutoApprove
-from agent.interfaces.cli import app as cli
-from agent.interfaces.cli import bootstrap, chat, command_handlers, ui
-from agent.interfaces.cli.approval import ConsoleApproval
-from agent.interfaces.cli.commands import handle_command
-from agent.interfaces.cli.parser import build_parser
-from agent.llm.contracts import ModelResponse, ProviderCapabilities
-from agent.llm.session import ChatSession
-from agent.orchestrator import Orchestrator
-from agent.routing.persona.current import CurrentPersonaRouter
-from agent.runtime.paths import WorkspacePaths
-from agent.skills.catalog import BUILTIN_SPEC_BY_NAME
-from agent.tools.authority import OperationalMode, operational_mode_capabilities
-from agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.approval import ApprovalDecision, AutoApprove
+from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.orchestrator import Orchestrator
+from llm_agent.agent.routing.persona.current import CurrentPersonaRouter
+from llm_agent.agent.skills.catalog import BUILTIN_SPEC_BY_NAME
+from llm_agent.agent.tools.authority import OperationalMode, operational_mode_capabilities
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import bootstrap, chat, command_handlers, ui
+from llm_agent.interfaces.cli.approval import ConsoleApproval
+from llm_agent.interfaces.cli.commands import handle_command
+from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 class _Adapter:
@@ -252,7 +252,7 @@ def test_console_approval_accepts_explicit_yes_aliases_and_denies_other_input(mo
     answers = iter(["s", "sim", "y", "YES", "", "talvez", "no", "não"])
     output = _Console()
     output.input = lambda _prompt: next(answers)  # type: ignore[method-assign]
-    monkeypatch.setattr("agent.interfaces.cli.approval.console", output)
+    monkeypatch.setattr("llm_agent.interfaces.cli.approval.console", output)
     approval = ConsoleApproval()
 
     decisions = [approval.request(SimpleNamespace(prompt="Autorizar?")) for _ in range(8)]

@@ -3,20 +3,20 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.skills import load_skill_registry
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import ToolDescriptor, ToolResult
-from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap, WorkspaceToolRegistryComposer
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_runtime import (
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import ToolDescriptor, ToolResult
+from llm_agent.agent.tools.extension_bootstrap import ApplicationExtensionBootstrap, WorkspaceToolRegistryComposer
+from llm_agent.agent.tools.extension_runtime import (
     ExtensionRuntimeBinding,
     ExtensionRuntimeMaterialization,
 )
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 class _Adapter:
@@ -226,7 +226,7 @@ def test_unexpected_bootstrap_errors_propagate(
     builtin = BuiltinToolAdapter(load_skill_registry(base_dir=workspace))
 
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.ExtensionCatalogStorage.load",
+        "llm_agent.extensions.extension_catalog_storage.ExtensionCatalogStorage.load",
         lambda _storage: (_ for _ in ()).throw(error("unexpected")),
     )
 

@@ -2,14 +2,14 @@ import json
 
 import pytest
 
-from agent.capabilities import Capability
-from agent.interaction.intent_claim import parse_intent_claim
-from agent.planning.intent_admission import (
+from llm_agent.agent.capabilities import Capability
+from llm_agent.agent.interaction.intent_claim import parse_intent_claim
+from llm_agent.agent.planning.intent_admission import (
     AuthorityEnvelope,
     IntentAdmissionError,
     admit_intent_claim,
 )
-from agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
+from llm_agent.agent.resources.contracts import ResourceAccess, ResourceMode, ResourceProvenance
 
 
 def _claim(*, operation="do", selector_kind="symbol", selector_value="TIMEOUT", effect="write"):

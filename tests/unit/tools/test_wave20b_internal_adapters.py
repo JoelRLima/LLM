@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from agent.tools.contracts import ToolDescriptor
-from agent.tools.extension_bootstrap import WorkspaceToolRegistryComposer
-from agent.tools.extension_runtime import ExtensionRuntimeMaterialization
+from llm_agent.agent.tools.contracts import ToolDescriptor
+from llm_agent.agent.tools.extension_bootstrap import WorkspaceToolRegistryComposer
+from llm_agent.agent.tools.extension_runtime import ExtensionRuntimeMaterialization
 
 
 class _Adapter:

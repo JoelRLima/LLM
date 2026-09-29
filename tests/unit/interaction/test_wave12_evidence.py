@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.evidence import (
+from llm_agent.agent.interaction.evidence import (
     SpanKind,
     dot_is_token_internal,
     evidence_is_plain_exact,

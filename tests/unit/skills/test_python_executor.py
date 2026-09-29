@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.skills.python_executor import PythonExecutorSkill
+from llm_agent.agent.skills.python_executor import PythonExecutorSkill
+from llm_agent.cancellation import CancellationToken
 
 
 @pytest.fixture
@@ -145,16 +145,16 @@ def test_limpeza_apos_falha(skill: PythonExecutorSkill) -> None:
 # ---------------------------------------------------------------------------
 
 def test_cwd_correto(skill: PythonExecutorSkill) -> None:
-    import subprocess as real_subprocess
-
     captured_kwargs = {}
-    original_run = real_subprocess.run
+    from llm_agent.agent.skills import python_process
+
+    original_run = python_process.run_python_process
 
     def spy_run(*args, **kwargs):
         captured_kwargs.update(kwargs)
         return original_run(*args, **kwargs)
 
-    with patch("agent.skills.python_executor.subprocess.run", side_effect=spy_run):
+    with patch("llm_agent.agent.skills.python_executor.run_python_process", side_effect=spy_run):
         result = skill.execute({"code": "print('cwd test')"})
 
     assert result["ok"] is True

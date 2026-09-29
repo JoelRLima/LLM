@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from agent.interaction.profile import (
+from llm_agent.agent.interaction.profile import (
     deterministic_effort_signal,
     response_reasoning_budget,
     select_fresh_profile,
 )
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective
 
 
 def test_effort_profile_precedence_and_plain_only_matching() -> None:

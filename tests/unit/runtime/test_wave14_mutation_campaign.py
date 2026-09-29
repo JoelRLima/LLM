@@ -5,8 +5,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from scripts.check_wave14_architecture import REQUIRED_MUTATION_ARMS, check_architecture
+from scripts.w21_architecture import SourceLayout
 
 ROOT = Path(__file__).resolve().parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 CHECKED_FILES = (
     "agent/planning/intent_admission.py",
     "agent/planning/intent_admission_logic.py",
@@ -40,7 +42,7 @@ def _replace_once(root: Path, relative: str, old: str, new: str) -> None:
 
 def _copy_checked_sources(destination: Path) -> None:
     for relative in CHECKED_FILES:
-        source = ROOT / relative
+        source = SOURCE_LAYOUT.path_for_w21_relative(relative)
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.code.change_models import ChangeKind, ChangePreview, ChangeSet, FileChange
-from agent.code.mutation_binding import (
+from llm_agent.agent.code.change_models import ChangeKind, ChangePreview, ChangeSet, FileChange
+from llm_agent.agent.code.mutation_binding import (
     MutationBindingError,
     assert_changeset_admitted,
     assert_resources_subset,

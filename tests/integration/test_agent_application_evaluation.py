@@ -11,25 +11,31 @@ from typing import Any, Iterator
 import pytest
 from rich.console import Console
 
-from agent.application import AgentApplication
-from agent.approval import AutoApprove
-from agent.evaluation import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.approval import AutoApprove
+from llm_agent.agent.evaluation import (
     AgentApplicationScenarioExecutor,
     CapabilityEvaluator,
     CapabilityScenario,
     ScenarioExpectation,
 )
-from agent.evaluation.curated import CURATED_CAPABILITY_SET
-from agent.interfaces.cli.chat import run_agent_turn
-from agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StreamEvent, StreamEventType
-from agent.llm.decision_contract import ModelRequestContract
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.tools.authority import TaskAuthoritySnapshot
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.agent.evaluation.curated import CURATED_CAPABILITY_SET
+from llm_agent.agent.llm.contracts import (
+    ModelRequest,
+    ModelResponse,
+    ProviderCapabilities,
+    StreamEvent,
+    StreamEventType,
+)
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.tools.authority import TaskAuthoritySnapshot
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.interfaces.cli.chat import run_agent_turn
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 from tests.support.task_definition import task_definition_response
 
 

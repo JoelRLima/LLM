@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from agent import checkpoint_manager as checkpoint_manager_module
-from agent.checkpoint_manager import (
+from llm_agent.agent import checkpoint_manager as checkpoint_manager_module
+from llm_agent.agent.checkpoint_manager import (
     CHECKPOINT_SCHEMA_VERSION,
     CheckpointLoadError,
     CheckpointManager,

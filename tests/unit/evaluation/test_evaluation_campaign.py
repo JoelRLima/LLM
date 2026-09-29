@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.evaluation.campaign_runner import adversarial_audit, campaign_config, resume_compatible
-from agent.evaluation.scenario_contracts import (
+from llm_agent.agent.evaluation.campaign_runner import adversarial_audit, campaign_config, resume_compatible
+from llm_agent.agent.evaluation.scenario_contracts import (
     H_SERIES,
     H_SERIES_VERSION,
     CausalFailureClass,
@@ -14,8 +14,8 @@ from agent.evaluation.scenario_contracts import (
     sanitize_evidence,
     validate_h_series,
 )
-from agent.evaluation.trace import RecordingGateway
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from llm_agent.agent.evaluation.trace import RecordingGateway
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
 
 
 def test_h_series_is_exactly_versioned_h1_to_h19() -> None:

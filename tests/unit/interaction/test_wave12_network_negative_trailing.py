@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
+from llm_agent.agent.interaction.guards import CrossClauseEffectConflictGuard, CrossClauseRelation
 
 
 def test_network_family_all_negative_keeps_trailing_purpose_in_scope() -> None:

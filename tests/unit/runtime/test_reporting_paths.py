@@ -2,21 +2,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.llm.contracts import TokenUsage
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.operational_outcome import normalize_terminal_status
-from agent.reporting.run_receipt import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.llm.contracts import TokenUsage
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.operational_outcome import normalize_terminal_status
+from llm_agent.agent.reporting.run_receipt import (
     build_run_diagnostics,
     build_run_receipt,
     derive_status,
     public_exception_message,
 )
-from agent.reporting.task_report import TaskReportBuilder
-from agent.reporting.task_report_rendering import render_markdown
-from agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
-from agent.runtime.paths import REPORTS_DIR
-from agent.state import AgentState
+from llm_agent.agent.reporting.task_report import TaskReportBuilder
+from llm_agent.agent.reporting.task_report_rendering import render_markdown
+from llm_agent.agent.runtime.budget import BudgetExhausted, TaskBudgetLedger
+from llm_agent.agent.state import AgentState
+from llm_agent.workspace.paths import REPORTS_DIR
 
 
 def test_task_report_default_stays_under_the_canonical_runtime_directory() -> None:

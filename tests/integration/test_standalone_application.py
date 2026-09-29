@@ -8,29 +8,27 @@ from pathlib import Path
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.application_result import finalize_application_result
-from agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
-from agent.llm.contracts import ModelRequest, ModelResponse
-from agent.llm.decision_contract import ModelRequestContract
-from agent.memory.memory import MemoryLoadError
-from agent.orchestration.task_runner import TaskRunner
-from agent.planning.plan_model import Plan
-from agent.planning.step_policies import StepPolicies
-from agent.planning.task_completion import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.application_result import finalize_application_result
+from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.memory.memory import MemoryLoadError
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.planning.step_policies import StepPolicies
+from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     initialize_task_progression,
 )
-from agent.runtime.config_errors import ConfigNotFound
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.instance_lock import InstanceLockError
-from agent.runtime.paths import AppPaths
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
-from agent.runtime.workspace_context import WorkspaceContext
-from agent.skills import load_skill_registry
-from agent.tools.authority import OperationalMode
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import (
+from llm_agent.agent.runtime.config_errors import ConfigNotFound
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.runtime.instance_lock import InstanceLockError
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.tools.authority import OperationalMode
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import (
     CancellationSafetyMode,
     ToolDescriptor,
     ToolInvocation,
@@ -38,13 +36,15 @@ from agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
-from agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
-from agent.tools.extension_catalog_service import ExtensionCatalogService
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.invocation_execution import InvocationLivenessError
-from agent.tools.tool_registry import ToolRegistry
-from agent.tools.workspace_extensions_service import WorkspaceExtensionService
-from agent.watchdog import Watchdog
+from llm_agent.agent.tools.extension_bootstrap import ApplicationExtensionBootstrap
+from llm_agent.agent.tools.invocation_execution import InvocationLivenessError
+from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.agent.watchdog import Watchdog
+from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway, OfflineModelGateway
 from tests.support.task_definition import task_definition_response
 
@@ -228,7 +228,7 @@ def test_application_does_not_publish_or_close_while_mutator_is_alive(tmp_path: 
 
     monkeypatch.setattr(application.orchestrator, "run", invoke_mutator)
     monkeypatch.setattr(
-        "agent.tools.invocation_quiescence.CANCELLATION_GRACE_SECONDS", 0.05
+        "llm_agent.agent.tools.invocation_quiescence.CANCELLATION_GRACE_SECONDS", 0.05
     )
 
     try:
@@ -1949,7 +1949,7 @@ def test_startup_failure_releases_only_owned_resources(
         raise RuntimeError("falha de bootstrap")
 
     monkeypatch.setattr(
-        "agent.tools.extension_bootstrap.ApplicationExtensionBootstrap.build",
+        "llm_agent.agent.tools.extension_bootstrap.ApplicationExtensionBootstrap.build",
         fail_bootstrap,
     )
     with pytest.raises(RuntimeError, match="falha de bootstrap"):
@@ -2332,7 +2332,7 @@ def test_code_task_uses_workspace_bounded_canonical_workflow(
     )
     sentinel_content = "def sentinel():\n    return 'cwd-sentinel'\n"
     cwd_sentinel.write_text(sentinel_content, encoding="utf-8")
-    from agent.skills.code_task import CodeTaskSkill
+    from llm_agent.agent.skills.code_task import CodeTaskSkill
 
     skill = CodeTaskSkill(
         base_dir=workspace,

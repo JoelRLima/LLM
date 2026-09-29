@@ -1,23 +1,35 @@
 import pytest
 
-from agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
-from agent.code.changes import ChangeKind, ChangeSetTransaction
-from agent.skills import file_writer_runtime
-from agent.skills.file_writer import FileWriterSkill
-from agent.workspace import WorkspaceManager
+from llm_agent.agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
+from llm_agent.agent.code.changes import ChangeKind, ChangeSetTransaction
+from llm_agent.agent.skills import file_writer_runtime
+from llm_agent.agent.skills.file_writer import FileWriterSkill
+from llm_agent.agent.workspace import WorkspaceManager
 
 
-def test_file_writer_blocks_agent_directory(tmp_path, monkeypatch):
+def test_file_writer_blocks_current_agent_source(tmp_path):
     base_dir = tmp_path
     writer = FileWriterSkill(base_dir=str(base_dir))
 
-    target = base_dir / "agent" / "orchestrator.py"
+    target = base_dir / "src" / "llm_agent" / "agent" / "orchestrator.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("print('x')", encoding="utf-8")
 
     ok, reason = writer._is_safe(target)
     assert ok is False
-    assert "core do agente" in reason.lower()
+    assert "código fonte do produto" in reason.lower()
+
+
+def test_file_writer_blocks_platform_source_as_product_code(tmp_path):
+    writer = FileWriterSkill(base_dir=tmp_path)
+    target = tmp_path / "src" / "llm_agent" / "execution" / "command.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def execute(): pass\n", encoding="utf-8")
+
+    ok, reason = writer._is_safe(target)
+
+    assert ok is False
+    assert "src/llm_agent/execution/command.py" in reason
 
 
 def test_file_writer_allows_non_agent_file(tmp_path):
@@ -36,14 +48,67 @@ def test_file_writer_respects_allowlist(tmp_path, monkeypatch):
     base_dir = tmp_path
     writer = FileWriterSkill(base_dir=str(base_dir))
 
-    monkeypatch.setattr("agent.skills.file_writer.AGENT_EDIT_ALLOWLIST", {"agent/orchestrator.py"})
-    target = base_dir / "agent" / "orchestrator.py"
+    monkeypatch.setattr(
+        "llm_agent.agent.skills.file_writer.PRODUCT_SOURCE_EDIT_ALLOWLIST",
+        {"src/llm_agent/agent/orchestrator.py"},
+    )
+    target = base_dir / "src" / "llm_agent" / "agent" / "orchestrator.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("print('x')", encoding="utf-8")
 
     ok, reason = writer._is_safe(target)
     assert ok is True
     assert reason == ""
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ("src/llm_agent_backup/module.py", "src/llm_agentish/module.py", "agent/orchestrator.py"),
+)
+def test_file_writer_does_not_block_similar_paths(tmp_path, relative_path):
+    writer = FileWriterSkill(base_dir=tmp_path)
+    target = tmp_path / relative_path
+    target.parent.mkdir(parents=True)
+    target.write_text("value = 1\n", encoding="utf-8")
+
+    ok, reason = writer._is_safe(target)
+
+    assert ok is True
+    assert reason == ""
+
+
+def test_file_writer_blocks_paths_outside_workspace(tmp_path):
+    writer = FileWriterSkill(base_dir=tmp_path / "workspace")
+    outside = tmp_path / "outside.txt"
+
+    ok, reason = writer._is_safe(outside)
+
+    assert ok is False
+    assert "fora do diretório do projeto" in reason
+
+
+def test_primary_product_source_block_precedes_approval(tmp_path):
+    class ApprovalRecorder:
+        requested = False
+
+        def request(self, _request):
+            self.requested = True
+            return ApprovalDecision.APPROVED
+
+    target = tmp_path / "src" / "llm_agent" / "execution" / "command.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("original\n", encoding="utf-8")
+    approval = ApprovalRecorder()
+    writer = FileWriterSkill(base_dir=tmp_path, approval_policy=approval)
+
+    result = writer.execute(
+        {"action": "write", "file_path": "src/llm_agent/execution/command.py", "content": "changed\n"}
+    )
+
+    assert result["ok"] is False
+    assert result["error"].startswith("Escrita bloqueada:")
+    assert approval.requested is False
+    assert target.read_text(encoding="utf-8") == "original\n"
 
 
 def test_ast_patch_commits_to_original_file(tmp_path):

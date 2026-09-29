@@ -1,4 +1,4 @@
-from agent.parsers import extract_json, normalize_tool_result, validate_decision
+from llm_agent.agent.parsers import extract_json, normalize_tool_result, validate_decision
 
 
 def test_extract_json_puro():

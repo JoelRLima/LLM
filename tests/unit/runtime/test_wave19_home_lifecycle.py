@@ -8,11 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.runtime import home_lifecycle as lifecycle_module
-from agent.runtime.filesystem_primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
-from agent.runtime.home_lifecycle import HomeLifecycleLease, maintenance_guard
-from agent.runtime.process_identity import OwnerStatus
-from agent.runtime.storage_contracts import StorageMaintenanceError
+from llm_agent.agent.runtime import home_lifecycle as lifecycle_module
+from llm_agent.agent.runtime.home_lifecycle import HomeLifecycleLease, maintenance_guard
+from llm_agent.agent.runtime.process_identity import OwnerStatus
+from llm_agent.agent.runtime.storage_contracts import StorageMaintenanceError
+from llm_agent.filesystem.primitives import WINDOWS_REPARSE_POINT, FinalPathInspection
 
 
 class _Status:

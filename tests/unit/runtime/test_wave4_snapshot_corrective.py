@@ -4,19 +4,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.evaluation.agent_executor import snapshot_evaluation_projection
-from agent.evaluation.execution_evidence import h2_reporting
-from agent.planning.plan_model import Plan
-from agent.reporting.metrics import project_run_metrics
-from agent.reporting.public_projection import canonical_effect_projection
-from agent.reporting.run_receipt import build_run_receipt
-from agent.reporting.run_snapshot import build_canonical_run_snapshot
-from agent.reporting.task_report import TaskReportBuilder
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.failure_policy import local_failure_permitted
-from agent.runtime.outcome_taxonomy import FailureLayer
-from agent.state import AgentState
-from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from llm_agent.agent.evaluation.agent_executor import snapshot_evaluation_projection
+from llm_agent.agent.evaluation.execution_evidence import h2_reporting
+from llm_agent.agent.planning.plan_model import Plan
+from llm_agent.agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.reporting.public_projection import canonical_effect_projection
+from llm_agent.agent.reporting.run_receipt import build_run_receipt
+from llm_agent.agent.reporting.run_snapshot import build_canonical_run_snapshot
+from llm_agent.agent.reporting.task_report import TaskReportBuilder
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.failure_policy import local_failure_permitted
+from llm_agent.agent.runtime.outcome_taxonomy import FailureLayer
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 
 def _owner(state: object, correlation: RunCorrelation, **values: object) -> SimpleNamespace:

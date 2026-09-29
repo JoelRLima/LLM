@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from agent.interaction.resolver import InteractionResolver, ResolverInvalid
-from agent.interaction.semantic_contract import (
+from llm_agent.agent.interaction.resolver import InteractionResolver, ResolverInvalid
+from llm_agent.agent.interaction.semantic_contract import (
     SemanticInteractionParseError,
     parse_semantic_interaction_resolution,
 )

@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent.application as application_module
-import agent.application_cleanup as cleanup_module
-from agent.application import AgentApplication
-from agent.application_cleanup import StartupCleanupError, abort_startup
+import llm_agent.agent.application as application_module
+import llm_agent.agent.application_cleanup as cleanup_module
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.application_cleanup import StartupCleanupError, abort_startup
 
 
 class _Resource:

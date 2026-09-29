@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import agent.runtime.config as config_module
-from agent.runtime.config import DEFAULT_CONFIG, carregar_config
+import llm_agent.agent.runtime.config as config_module
+from llm_agent.agent.runtime.config import DEFAULT_CONFIG, carregar_config
+from scripts.w21_architecture.source import SourceLayout
 
 
 def test_carregar_config_sucesso(tmp_path):
@@ -27,8 +28,11 @@ def test_carregar_config_sucesso(tmp_path):
 
 
 def test_reasoning_turn_default_has_one_packaged_source() -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    source_layout = SourceLayout.for_profile(repository_root, "final-w22")
+    source_config = source_layout.package_directory / "resources" / "default_config.json"
     packaged = json.loads(
-        Path("agent/resources/default_config.json").read_text(encoding="utf-8")
+        source_config.read_text(encoding="utf-8")
     )
 
     assert packaged["max_reasoning_turns"] == 3

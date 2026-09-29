@@ -1,7 +1,7 @@
 import pytest
 
-from agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
-from agent.llm.structured_output import (
+from llm_agent.agent.llm.contracts import ProviderCapabilities, StructuredOutputMode
+from llm_agent.agent.llm.structured_output import (
     StructuredOutputError,
     StructuredOutputStrategy,
     parse_structured_response,

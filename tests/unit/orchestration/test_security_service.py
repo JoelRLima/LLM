@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.orchestration.route_result import RouteDisposition, RouteResult
-from agent.orchestration.security_service import SecurityAnalysisService
-from agent.runtime.budget import BudgetExhausted
-from agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from llm_agent.agent.orchestration.route_result import RouteDisposition, RouteResult
+from llm_agent.agent.orchestration.security_service import SecurityAnalysisService
+from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 
 class _FakeGateway:

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
-from agent.interfaces.cli.interactive_session import _handle_ctrl_c
-from agent.interfaces.cli.interactive_shell import InteractiveShell
+from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+from llm_agent.interfaces.cli.interactive_session import _handle_ctrl_c
+from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
 
 
 def test_registry_completion_uses_preferred_commands_and_preserves_alias_metadata() -> None:

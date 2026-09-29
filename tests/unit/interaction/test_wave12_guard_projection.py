@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.interaction.admission import project_guard_result
-from agent.interaction.guards import OperationalClassification
-from agent.interaction.types import InteractionAction, InteractionBoundary
+from llm_agent.agent.interaction.admission import project_guard_result
+from llm_agent.agent.interaction.guards import OperationalClassification
+from llm_agent.agent.interaction.types import InteractionAction, InteractionBoundary
 
 
 def test_unknown_operational_guard_projects_to_effect_clarify() -> None:

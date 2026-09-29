@@ -5,23 +5,23 @@ from pathlib import Path
 
 import pytest
 
-from agent.application import AgentApplication
-from agent.evaluation import FeedbackService, FeedbackTarget, FeedbackVerdict
-from agent.outputs.models import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.evaluation import FeedbackService, FeedbackTarget, FeedbackVerdict
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.runtime.storage_contracts import (
+    MaintenanceConfirmation,
+    MaintenanceOperation,
+    StorageMaintenanceError,
+)
+from llm_agent.agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.outputs.models import (
     OutputContentPolicy,
     OutputKind,
     OutputPublishRequest,
     OutputSource,
 )
-from agent.outputs.service import OutputService
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_contracts import (
-    MaintenanceConfirmation,
-    MaintenanceOperation,
-    StorageMaintenanceError,
-)
-from agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.outputs.service import OutputService
+from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway
 
 
@@ -60,7 +60,7 @@ def test_feedback_is_revisioned_and_reset_restore_is_lease_safe_and_hash_validat
         assert feedback_service.history(first.feedback_id) == (first, second)
         assert result.receipt == technical_receipt
 
-        output_service = application.output_service()
+        output_service = OutputService(application.workspace_paths)
         publication = output_service.publish(
             OutputPublishRequest(
                 kind=OutputKind.TEXT,
@@ -129,4 +129,5 @@ def test_feedback_is_revisioned_and_reset_restore_is_lease_safe_and_hash_validat
     ) as restarted:
         assert restarted.paths.storage_layout_file.exists()
         assert restarted.feedback_service().latest(first.feedback_id).revision == 2
-        assert restarted.output_service().metadata(publication.artifact.output_id).output_id == publication.artifact.output_id
+        restarted_output = OutputService(restarted.workspace_paths)
+        assert restarted_output.metadata(publication.artifact.output_id).output_id == publication.artifact.output_id

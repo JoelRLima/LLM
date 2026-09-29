@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_ARCHITECTURE_RULES = tuple(f"W155-C{index:02d}" for index in range(1, 17))
 REQUIRED_MUTATION_ARMS = tuple(f"W155-M{index:02d}" for index in range(1, 17))
@@ -62,7 +67,7 @@ class MutationArm:
 
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return None
 
@@ -358,8 +363,10 @@ def _check_c04_audit_read_only(root: Path) -> list[ArchitectureViolation]:
 def _check_c05_audit_authority_separation(root: Path) -> list[ArchitectureViolation]:
     rule = "W155-C05"
     findings: list[ArchitectureViolation] = []
-    for path in sorted((root / "agent").rglob("*.py")):
-        relative = path.relative_to(root).as_posix()
+    source_layout = w21_source_layout(root)
+    agent_root = source_layout.agent_source_directory
+    for path in sorted(agent_root.rglob("*.py")) if agent_root is not None else ():
+        relative = source_layout.w21_relative_path(path)
         if not (relative.startswith("agent/planning/") or relative in {"agent/tools/authority.py", "agent/approval.py"}):
             continue
         source = _source(root, relative) or ""
@@ -613,12 +620,12 @@ def _check_c18_provider_http_boundary(root: Path) -> list[ArchitectureViolation]
     findings.extend(missing)
     if provider is not None and _function(provider, "_request_headers") is None:
         findings.append(_violation(rule, _PROVIDER, "provider credential-aware HTTP header boundary is missing"))
-    provider_root = root / "agent" / "llm" / "providers"
+    provider_root = w21_source_layout(root).path_for_w21_relative("agent/llm/providers")
     if not provider_root.is_dir():
         findings.append(_violation(rule, "agent/llm/providers", "provider package is missing"))
         return findings
     for path in sorted(provider_root.rglob("*.py")):
-        relative = path.relative_to(root).as_posix()
+        relative = w21_source_layout(root).w21_relative_path(path)
         tree = _tree(root, relative)
         if tree is None:
             findings.append(_violation(rule, relative, "provider HTTP owner is unparsable"))
@@ -774,9 +781,16 @@ def _corrective_mutation_arms() -> tuple[MutationArm, ...]:
 
 
 def _copy_for_mutation(root: Path, destination: Path) -> None:
-    source_agent = root / "agent"
-    if source_agent.is_dir():
-        shutil.copytree(source_agent, destination / "agent", ignore=shutil.ignore_patterns("__pycache__"))
+    source_layout = w21_source_layout(root)
+    source_root = source_layout.python_source_root
+    if source_root.is_dir():
+        for source in source_root.rglob("*.py"):
+            relative = source_layout.w21_relative_path(source)
+            if not relative.startswith("agent/") and relative != "agent":
+                continue
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
     for relative in (_INSTALLED_GATE,):
         source = root / relative
         if source.is_file():

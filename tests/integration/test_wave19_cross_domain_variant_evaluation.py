@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application import AgentApplication
-from agent.evaluation import (
+from llm_agent.agent.application import AgentApplication
+from llm_agent.agent.evaluation import (
     ExecutionObservation,
     ScenarioReport,
     aggregate_receipts,
@@ -11,9 +11,9 @@ from agent.evaluation import (
     evaluation_context,
     validate_evaluation_receipt,
 )
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.paths import AppPaths
-from agent.variants.models import VariantLifecycle
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.variants.models import VariantLifecycle
+from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway
 
 

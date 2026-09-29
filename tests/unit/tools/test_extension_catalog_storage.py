@@ -5,13 +5,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from agent.tools.extension_catalog_document import (
+from llm_agent.extensions.extension_catalog_document import (
     ExtensionCatalogDocument,
     PersistedCatalogEntry,
 )
-from agent.tools.extension_catalog_errors import CatalogCorruptError, CatalogStorageError
-from agent.tools.extension_catalog_storage import ExtensionCatalogStorage
-from agent.tools.extension_path import PersistedManifestPath
+from llm_agent.extensions.extension_catalog_errors import CatalogCorruptError, CatalogStorageError
+from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
+from llm_agent.extensions.extension_path import PersistedManifestPath
 
 FINGERPRINT = "a" * 64
 
@@ -77,7 +77,7 @@ def test_replace_callback_only_observes_complete_temp_payload(tmp_path: Path, mo
         observed.append(Path(source).read_bytes())
         real_replace(source, destination)
 
-    monkeypatch.setattr("agent.tools.extension_catalog_storage.os.replace", observe_then_replace)
+    monkeypatch.setattr("llm_agent.extensions.extension_catalog_storage.os.replace", observe_then_replace)
 
     storage.save(_document())
 
@@ -155,7 +155,7 @@ def test_setup_failure_closes_descriptor_and_removes_tempfile(
         closed.append(descriptor)
         real_close(descriptor)
 
-    monkeypatch.setattr("agent.tools.extension_catalog_storage.os.close", track_close)
+    monkeypatch.setattr("llm_agent.extensions.extension_catalog_storage.os.close", track_close)
     if failure == "chmod":
         monkeypatch.setattr(
             "agent.tools.extension_catalog_storage.os.chmod",
@@ -266,7 +266,7 @@ def test_isolated_close_failure_is_the_primary_error(
             descriptor, "close", close_fails=True
         ),
     )
-    monkeypatch.setattr("agent.tools.extension_catalog_storage.os.fsync", lambda _fd: None)
+    monkeypatch.setattr("llm_agent.extensions.extension_catalog_storage.os.fsync", lambda _fd: None)
 
     with pytest.raises(CatalogStorageError) as caught:
         ExtensionCatalogStorage(path).save(_document())

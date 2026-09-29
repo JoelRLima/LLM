@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agent.interaction.admission import admit_interaction
-from agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
-from agent.interaction.types import (
+from llm_agent.agent.interaction.admission import admit_interaction
+from llm_agent.agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     InteractionAction,
     InteractionAmbiguity,

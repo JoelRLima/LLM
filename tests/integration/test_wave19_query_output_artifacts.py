@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     WorkspaceQueryKind,
     WorkspaceQueryResult,
     WorkspaceQueryStatus,
 )
-from agent.interfaces.cli.output_projection import (
+from llm_agent.interfaces.cli.output_projection import (
     format_workspace_query_result,
     publish_workspace_query_result,
 )
-from agent.outputs.service import OutputService
-from agent.runtime.paths import AppPaths
+from llm_agent.outputs.service import OutputService
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_query_projection_preserves_canonical_truth_and_uses_one_formatter(tmp_path: Path) -> None:

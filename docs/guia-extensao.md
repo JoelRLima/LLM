@@ -13,37 +13,37 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 
 | Necessidade | Fonte principal | Regra |
 | :--- | :--- | :--- |
-| novo provider | [`agent/llm/providers/`](../agent/llm/providers/) e [`factory.py`](../agent/llm/providers/factory.py) | implemente `ModelGateway`; não altere workflows |
-| contrato de modelo | [`contracts.py`](../agent/llm/contracts.py) | mantenha request/response independentes de protocolo |
-| saída estruturada | [`structured_output.py`](../agent/llm/structured_output.py) | fallback deve continuar validando schema em runtime |
-| compressão de contexto | [`context_manager.py`](../agent/llm/context_manager.py) | respeite o perfil de hardware e use o gateway para tokens |
-| perfil de hardware | [`hardware.py`](../agent/runtime/hardware.py) e [`config.py`](../agent/runtime/config.py) | para 8 GB, mantenha concorrência de modelo em 1 |
-| composição da aplicação | [`application.py`](../agent/application.py) | interfaces reutilizam esta raiz; não montam runtime paralelo |
-| consentimento para efeitos | [`approval.py`](../agent/approval.py) | injete `ApprovalPort`; approval não cria authority e o domínio nunca consulta stdin |
-| workspace | [`workspace_context.py`](../agent/runtime/workspace_context.py) | receba a raiz explicitamente e injete-a em consumidores |
-| nova linguagem | [`agent/code/languages/`](../agent/code/languages/) | implemente o adapter e declare limitações reais |
-| descoberta do projeto | [`discovery.py`](../agent/code/discovery.py) | não execute scripts de manifests durante descoberta |
-| análise/índice | [`intelligence.py`](../agent/code/intelligence.py) | retorne diagnósticos, não exceções globais por arquivo inválido |
-| seleção de contexto | [`context_selection.py`](../agent/code/context_selection.py) | use sinais determinísticos, limites e hashes; não peça ao modelo para escolher arquivos |
-| aplicação de mudanças | [`changes.py`](../agent/code/changes.py) | preserve path seguro, hash, diff e rollback |
-| risco/confirmação | [`policy.py`](../agent/code/policy.py) | score explicável antes do commit; confirmação não substitui validação |
-| classificação de falha | [`diagnostics.py`](../agent/code/diagnostics.py) | heurística determinística antes de qualquer retry por modelo |
-| validator | [`validation.py`](../agent/code/validation.py) | `shell=False`, timeout, cancelamento; não instale pacotes |
-| nova extension stdio | [`examples/extensions/demo_extension/`](../examples/extensions/demo_extension/) e [`agent/tools/stdio_adapter.py`](../agent/tools/stdio_adapter.py) | protocolo `1.0`; toda resposta deve ecoar o `invocation_id` recebido |
-| workflow de código | [`workflows.py`](../agent/code/workflows.py) | componha serviços e retorne `TaskResult` |
-| entrada CLI/skill | [`application.py`](../agent/code/application.py) | mantenha uma entrada única independente de UI e planner |
-| comando explícito | [`commands.py`](../agent/code/commands.py) | parser puro; não execute efeitos nem importe CLI |
-| template de grafo | [`task_templates.py`](../agent/code/task_templates.py) | IDs, dependências, capabilities e recursos determinísticos |
-| nova skill | [`agent/operation/catalog.py`](../agent/operation/catalog.py) e um módulo de skill | um `SkillSpec`; sem mapa paralelo |
-| política de persona | [`policy.py`](../agent/skills/policy.py) | conceda capacidades, não nomes de tools |
-| schema de plano legado | [`agent/contracts.py`](../agent/contracts.py) | preserve formato JSON público |
-| execução unitária | [`step_executor.py`](../agent/planning/step_executor.py) | não devolva coordenação global ao passo |
-| validação de planos | [`execution_gateway.py`](../agent/planning/execution_gateway.py) | mantenha o gateway nos fluxos linear, reativo e hierárquico |
-| dependências/multitarefa | [`task_graph.py`](../agent/planning/task_graph.py) e [`task_scheduler.py`](../agent/planning/task_scheduler.py) | preserve DAG, isolamento, recursos e determinismo |
-| retry/replan legado | [`replan.py`](../agent/planning/replan.py) | heurística segura antes de modelo |
-| segurança estática | [`security_patterns.py`](../agent/security/security_patterns.py) | mantenha o registro canônico de padrões |
-| caminhos gerados | [`paths.py`](../agent/runtime/paths.py) | escolha escopo global ou de workspace; não use literals de `runtime/` |
-| configuração | [`config_repository.py`](../agent/runtime/config_repository.py), [`config_schema.py`](../agent/runtime/config_schema.py) e [`config_effective.py`](../agent/runtime/config_effective.py) | versione, valide, materialize o perfil e mantenha paths internos fora do schema |
+| novo provider | [`agent/llm/providers/`](../src/llm_agent/agent/llm/providers/) e [`factory.py`](../src/llm_agent/agent/llm/providers/factory.py) | implemente `ModelGateway`; não altere workflows |
+| contrato de modelo | [`contracts.py`](../src/llm_agent/agent/llm/contracts.py) | mantenha request/response independentes de protocolo |
+| saída estruturada | [`structured_output.py`](../src/llm_agent/agent/llm/structured_output.py) | fallback deve continuar validando schema em runtime |
+| compressão de contexto | [`context_manager.py`](../src/llm_agent/agent/llm/context_manager.py) | respeite o perfil de hardware e use o gateway para tokens |
+| perfil de hardware | [`hardware.py`](../src/llm_agent/agent/runtime/hardware.py) e [`config.py`](../src/llm_agent/agent/runtime/config.py) | para 8 GB, mantenha concorrência de modelo em 1 |
+| composição da aplicação | [`application.py`](../src/llm_agent/agent/application.py) | interfaces reutilizam esta raiz; não montam runtime paralelo |
+| consentimento para efeitos | [`approval.py`](../src/llm_agent/agent/approval.py) | injete `ApprovalPort`; approval não cria authority e o domínio nunca consulta stdin |
+| workspace | [`workspace_context.py`](../src/llm_agent/agent/runtime/workspace_context.py) | receba a raiz explicitamente e injete-a em consumidores |
+| nova linguagem | [`agent/code/languages/`](../src/llm_agent/agent/code/languages/) | implemente o adapter e declare limitações reais |
+| descoberta do projeto | [`discovery.py`](../src/llm_agent/agent/code/discovery.py) | não execute scripts de manifests durante descoberta |
+| análise/índice | [`intelligence.py`](../src/llm_agent/agent/code/intelligence.py) | retorne diagnósticos, não exceções globais por arquivo inválido |
+| seleção de contexto | [`context_selection.py`](../src/llm_agent/agent/code/context_selection.py) | use sinais determinísticos, limites e hashes; não peça ao modelo para escolher arquivos |
+| aplicação de mudanças | [`changes.py`](../src/llm_agent/agent/code/changes.py) | preserve path seguro, hash, diff e rollback |
+| risco/confirmação | [`policy.py`](../src/llm_agent/agent/code/policy.py) | score explicável antes do commit; confirmação não substitui validação |
+| classificação de falha | [`diagnostics.py`](../src/llm_agent/agent/code/diagnostics.py) | heurística determinística antes de qualquer retry por modelo |
+| validator | [`validation.py`](../src/llm_agent/agent/code/validation.py) | `shell=False`, timeout, cancelamento; não instale pacotes |
+| nova extension stdio | [`examples/extensions/demo_extension/`](../examples/extensions/demo_extension/) e [`agent/tools/stdio_adapter.py`](../src/llm_agent/agent/tools/stdio_adapter.py) | protocolo `1.0`; toda resposta deve ecoar o `invocation_id` recebido |
+| workflow de código | [`workflows.py`](../src/llm_agent/agent/code/workflows.py) | componha serviços e retorne `TaskResult` |
+| entrada CLI/skill | [`application.py`](../src/llm_agent/agent/code/application.py) | mantenha uma entrada única independente de UI e planner |
+| comando explícito | [`commands.py`](../src/llm_agent/agent/code/commands.py) | parser puro; não execute efeitos nem importe CLI |
+| template de grafo | [`task_templates.py`](../src/llm_agent/agent/code/task_templates.py) | IDs, dependências, capabilities e recursos determinísticos |
+| nova skill | [`agent/operation/catalog.py`](../src/llm_agent/agent/operation/catalog.py) e um módulo de skill | um `SkillSpec`; sem mapa paralelo |
+| política de persona | [`policy.py`](../src/llm_agent/agent/skills/policy.py) | conceda capacidades, não nomes de tools |
+| schema de plano legado | [`agent/contracts.py`](../src/llm_agent/agent/contracts.py) | preserve formato JSON público |
+| execução unitária | [`step_executor.py`](../src/llm_agent/agent/planning/step_executor.py) | não devolva coordenação global ao passo |
+| validação de planos | [`execution_gateway.py`](../src/llm_agent/agent/planning/execution_gateway.py) | mantenha o gateway nos fluxos linear, reativo e hierárquico |
+| dependências/multitarefa | [`task_graph.py`](../src/llm_agent/agent/planning/task_graph.py) e [`task_scheduler.py`](../src/llm_agent/agent/planning/task_scheduler.py) | preserve DAG, isolamento, recursos e determinismo |
+| retry/replan legado | [`replan.py`](../src/llm_agent/agent/planning/replan.py) | heurística segura antes de modelo |
+| segurança estática | [`security_patterns.py`](../src/llm_agent/agent/security/security_patterns.py) | mantenha o registro canônico de padrões |
+| caminhos gerados | [`paths.py`](../src/llm_agent/agent/runtime/paths.py) | escolha escopo global ou de workspace; não use literals de `runtime/` |
+| configuração | [`config_repository.py`](../src/llm_agent/agent/runtime/config_repository.py), [`config_schema.py`](../src/llm_agent/agent/runtime/config_schema.py) e [`config_effective.py`](../src/llm_agent/agent/runtime/config_effective.py) | versione, valide, materialize o perfil e mantenha paths internos fora do schema |
 
 ## Adicionar um provider
 

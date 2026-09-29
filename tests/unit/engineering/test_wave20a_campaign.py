@@ -8,13 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from agent.engineering.backends.repository import (
+from llm_agent.agent.engineering.backends.repository import (
     MAX_ENGINEERING_SUBPROCESS_STDERR_BYTES,
     MAX_ENGINEERING_SUBPROCESS_STDOUT_BYTES,
     _validate_and_project,
 )
-from agent.engineering.cli import discover_source_repository_context
-from agent.engineering.contracts import (
+from llm_agent.agent.engineering.contracts import (
     EngineeringCaller,
     EngineeringEffects,
     EngineeringPermission,
@@ -28,16 +27,19 @@ from agent.engineering.contracts import (
     validate_operation_id,
     validate_run_id,
 )
-from agent.engineering.policy import (
+from llm_agent.agent.engineering.policy import (
     MAX_ENGINEERING_PARAMETERS_BYTES,
     MAX_ENGINEERING_RUN_ID_ATTEMPTS,
     MAX_ENGINEERING_RUN_RECORD_BYTES,
     MAX_ENGINEERING_TRANSITION_RECORD_BYTES,
 )
-from agent.engineering.registry import ACCEPTANCE_INSTALLED_PACKAGE, production_registry
-from agent.engineering.summary import EngineeringRecordError, _bounded_document, validate_transition
+from llm_agent.agent.engineering.registry import ACCEPTANCE_INSTALLED_PACKAGE, production_registry
+from llm_agent.agent.engineering.summary import EngineeringRecordError, _bounded_document, validate_transition
+from llm_agent.interfaces.cli.engineering import discover_source_repository_context
+from scripts.w21_architecture.source import SourceLayout
 
 ROOT = Path(__file__).resolve().parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 IDENTITY_A = "a" * 40 + ":" + "b" * 64 + ":" + "c" * 64
 
 
@@ -124,7 +126,7 @@ def test_A09_network_permission_is_declared() -> None:
 
 
 def test_A10_resource_identity_is_not_a_path() -> None:
-    from agent.engineering.policy import resource_fingerprint
+    from llm_agent.agent.engineering.policy import resource_fingerprint
     assert resource_fingerprint("source-repository:secret/path") == __import__("hashlib").sha256(b"source-repository:secret/path").hexdigest()
     assert "secret/path" not in resource_fingerprint("source-repository:secret/path")
 
@@ -188,12 +190,12 @@ def test_A23_resource_hash_is_sha256() -> None:
 
 
 def test_A24_no_parent_writer(tmp_path: Path) -> None:
-    from agent.memory.json_persistence import write_text_atomic
+    from llm_agent.storage.json_persistence import write_text_atomic
 
     signature = inspect.signature(write_text_atomic)
     assert "create_parent" in signature.parameters
     assert signature.parameters["create_parent"].default is True
-    from agent.memory.json_persistence import AtomicWriteError
+    from llm_agent.storage.json_persistence import AtomicWriteError
 
     missing = tmp_path / "missing-parent" / "value.txt"
     with pytest.raises(AtomicWriteError):
@@ -202,7 +204,7 @@ def test_A24_no_parent_writer(tmp_path: Path) -> None:
 
 
 def test_A25_no_parent_lock(tmp_path: Path) -> None:
-    from agent.runtime.instance_lock import InstanceLock, InstanceLockError
+    from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
 
     signature = inspect.signature(InstanceLock.create)
     assert "create_parent" in signature.parameters
@@ -227,11 +229,11 @@ def test_A27_active_owner_alive_code() -> None:
 
 
 def test_A28_active_owner_indeterminate_code() -> None:
-    assert "ENGINEERING_OWNER_LIVENESS_INDETERMINATE" in __import__("agent.engineering.contracts", fromlist=["ENGINEERING_REASON_CODES"]).ENGINEERING_REASON_CODES
+    assert "ENGINEERING_OWNER_LIVENESS_INDETERMINATE" in __import__("llm_agent.agent.engineering.contracts", fromlist=["ENGINEERING_REASON_CODES"]).ENGINEERING_REASON_CODES
 
 
 def test_A29_owner_dead_duration_is_null(tmp_path: Path) -> None:
-    from agent.engineering.contracts import (
+    from llm_agent.agent.engineering.contracts import (
         EngineeringCaller,
         EngineeringExecutionContext,
         EngineeringPermission,
@@ -239,11 +241,11 @@ def test_A29_owner_dead_duration_is_null(tmp_path: Path) -> None:
         EngineeringRunResultV1,
         SourceRepositoryContext,
     )
-    from agent.engineering.policy import preflight
-    from agent.engineering.registry import production_registry
-    from agent.engineering.store import EngineeringRunStore
-    from agent.runtime.paths import AppPaths
-    from agent.runtime.process_identity import OwnerStatus
+    from llm_agent.agent.engineering.policy import preflight
+    from llm_agent.agent.engineering.registry import production_registry
+    from llm_agent.agent.engineering.store import EngineeringRunStore
+    from llm_agent.agent.runtime.process_identity import OwnerStatus
+    from llm_agent.workspace.paths import AppPaths
 
     class DeadOwner:
         def check(self, pid: int, process_start_id: str | None) -> OwnerStatus:
@@ -279,7 +281,7 @@ def test_A29_owner_dead_duration_is_null(tmp_path: Path) -> None:
 
 
 def test_A30_terminal_persisted_projection_follows_contract() -> None:
-    from agent.engineering.contracts import EngineeringEnvironmentV1, EngineeringRunResultV1
+    from llm_agent.agent.engineering.contracts import EngineeringEnvironmentV1, EngineeringRunResultV1
 
     for persisted in (True, False):
         result = EngineeringRunResultV1(
@@ -303,12 +305,12 @@ def test_A30_terminal_persisted_projection_follows_contract() -> None:
 
 
 def test_A31_terminal_marker_repair() -> None:
-    from agent.engineering.transactions import prove_success
+    from llm_agent.agent.engineering.transactions import prove_success
     assert callable(prove_success)
 
 
 def test_A32_terminal_pending_recovery_reason() -> None:
-    from agent.engineering.contracts import ENGINEERING_REASON_CODES
+    from llm_agent.agent.engineering.contracts import ENGINEERING_REASON_CODES
     assert "ENGINEERING_RESULT_PERSIST_FAILED" in ENGINEERING_REASON_CODES
 
 
@@ -321,13 +323,13 @@ def test_A34_foreign_entry_is_not_canonical() -> None:
 
 
 def test_A35_capacity_run_limit() -> None:
-    from agent.engineering.policy import EngineeringCapacityPolicy
+    from llm_agent.agent.engineering.policy import EngineeringCapacityPolicy
     assert EngineeringCapacityPolicy._over_capacity(255, 0, 0) is False
     assert EngineeringCapacityPolicy._over_capacity(256, 0, 0) is True
 
 
 def test_A36_capacity_transition_limit() -> None:
-    from agent.engineering.policy import EngineeringCapacityPolicy
+    from llm_agent.agent.engineering.policy import EngineeringCapacityPolicy
     assert EngineeringCapacityPolicy._over_capacity(0, 255, 0) is False
     assert EngineeringCapacityPolicy._over_capacity(0, 256, 0) is True
 
@@ -348,22 +350,22 @@ def test_A39_candidate_identity_equality() -> None:
 
 
 def test_A40_fixed_argv_contract() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/backends/repository.py").read_text(encoding="utf-8")
     assert all(flag in source for flag in ("--project-root", "--python", "--summary-json"))
 
 
 def test_A41_fixed_cwd_contract() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
-    assert '"cwd": cwd' in source
+    source = (ROOT / "src/llm_agent/execution/command.py").read_text(encoding="utf-8")
+    assert '"cwd": None if request.cwd is None else str(request.cwd)' in source
 
 
 def test_A42_scrubbed_pythonpath() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/backends/repository.py").read_text(encoding="utf-8")
     assert 'pop("PYTHONPATH"' in source
 
 
 def test_A43_scrubbed_pythonhome() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/backends/repository.py").read_text(encoding="utf-8")
     assert 'pop("PYTHONHOME"' in source
 
 
@@ -373,13 +375,13 @@ def test_A44_bounded_output_drain() -> None:
 
 
 def test_A45_posix_process_group_owner() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
+    source = (ROOT / "src/llm_agent/execution/command.py").read_text(encoding="utf-8")
     assert "start_new_session" in source
 
 
 def test_A46_windows_prechild_failure_type() -> None:
-    source = Path(ROOT / "agent/engineering/backends/repository.py").read_text(encoding="utf-8")
-    assert "_PreChildLaunchFailure" in source
+    source = (ROOT / "src/llm_agent/execution/command.py").read_text(encoding="utf-8")
+    assert "CommandExecutionError" in source
 
 
 def test_A47_json_list_surface() -> None:
@@ -407,7 +409,7 @@ def test_A52_exit_map_surface() -> None:
 
 
 def test_A53_lifecycle_lease_surface() -> None:
-    source = Path(ROOT / "agent/engineering/cli.py").read_text(encoding="utf-8")
+    source = SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/cli.py").read_text(encoding="utf-8")
     assert "HomeLifecycleLease" in source
 
 
@@ -421,7 +423,7 @@ def test_A55_installed_probe_surface() -> None:
 
 
 def test_A56_clean_wheel_import_surface() -> None:
-    tree = ast.parse(Path(ROOT / "agent/engineering/__init__.py").read_text(encoding="utf-8"))
+    tree = ast.parse(SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/__init__.py").read_text(encoding="utf-8"))
     assert isinstance(tree, ast.Module)
 
 

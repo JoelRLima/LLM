@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
+from llm_agent.agent.interaction.continue_intent import DirectTaskResumeGuard, ResumeClassification
 
 
 @pytest.mark.parametrize(

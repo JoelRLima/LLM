@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.interaction.guards import MixedIntentClassification, MixedIntentTailGuard
+from llm_agent.agent.interaction.guards import MixedIntentClassification, MixedIntentTailGuard
 
 
 def test_read_and_plan_tails_with_effects_are_mixed() -> None:

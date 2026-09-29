@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
     WorkspaceQueryRequest,

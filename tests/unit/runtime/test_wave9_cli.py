@@ -6,16 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.interfaces.cli import inspector as inspector_module
-from agent.interfaces.cli.app import main
-from agent.observability import TraceStore
-from agent.observability.bookmarks import BookmarkStore
-from agent.presentation import InspectionService
-from agent.runtime.correlation import RunCorrelation
-from agent.runtime.event_kinds import RuntimeEventKind
-from agent.runtime.events import RuntimeEvent
-from agent.runtime.paths import AppPaths
-from agent.runtime.workspace_context import WorkspaceContext
+from llm_agent.agent.observability import TraceStore
+from llm_agent.agent.observability.bookmarks import BookmarkStore
+from llm_agent.agent.presentation import InspectionService
+from llm_agent.agent.runtime.correlation import RunCorrelation
+from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
+from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.interfaces.cli import inspector as inspector_module
+from llm_agent.interfaces.cli.app import main
+from llm_agent.workspace.context import WorkspaceContext
+from llm_agent.workspace.paths import AppPaths
 
 
 def _fixture(tmp_path: Path) -> tuple[Path, Path, RunCorrelation]:

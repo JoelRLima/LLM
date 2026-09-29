@@ -1,8 +1,8 @@
 import json
 
-from agent.health import state_checks
-from agent.health.core import EXPECTED_MEMORY_SECTIONS, STATUS_OK
-from agent.health.runtime_checks import check_skills
+from llm_agent.agent.health import state_checks
+from llm_agent.agent.health.core import EXPECTED_MEMORY_SECTIONS, STATUS_OK
+from llm_agent.agent.health.runtime_checks import check_skills
 
 
 def test_health_check_uses_the_echo_skill_public_contract() -> None:

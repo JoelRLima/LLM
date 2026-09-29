@@ -1,15 +1,15 @@
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.llm.contracts import ProviderCapabilities
-from agent.planning.graph_authority import (
+from llm_agent.agent.llm.contracts import ProviderCapabilities
+from llm_agent.agent.planning.graph_authority import (
     GraphAuthorityError,
     derive_graph_requirements,
     preflight_graph_capabilities,
 )
-from agent.planning.task_graph import TaskGraph, TaskNode
-from agent.planning.task_scheduler import TaskGraphScheduler
-from agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.agent.planning.task_graph import TaskGraph, TaskNode
+from llm_agent.agent.planning.task_scheduler import TaskGraphScheduler
+from llm_agent.agent.runtime.context import TaskExecutionContext, TaskResult, TaskStatus
+from llm_agent.cancellation import CancellationToken
 
 
 class _Gateway:

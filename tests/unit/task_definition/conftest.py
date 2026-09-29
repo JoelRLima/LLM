@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from agent.runtime.paths import WorkspacePaths
-from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
-from agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.workspace.paths import WorkspacePaths
 
 
 @pytest.fixture

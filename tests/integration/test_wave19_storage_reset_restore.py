@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.runtime.paths import AppPaths
-from agent.runtime.storage_bootstrap import StorageBootstrap
-from agent.runtime.storage_contracts import MaintenanceConfirmation, MaintenanceOperation
-from agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
+from llm_agent.agent.runtime.storage_contracts import MaintenanceConfirmation, MaintenanceOperation
+from llm_agent.agent.runtime.storage_maintenance import StorageMaintenanceService
+from llm_agent.workspace.paths import AppPaths
 
 
 def test_integrated_reset_restore_preserves_canonical_home_contents(tmp_path: Path) -> None:

@@ -5,18 +5,18 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from agent.health.standalone import run_standalone_health_check
-from agent.llm.model_profile import resolve_model_profile
-from agent.runtime.config_errors import ConfigError
-from agent.runtime.config_repository import ConfigRepository
-from agent.runtime.config_schema import validate_config_document
-from agent.runtime.paths import AppPaths
-from agent.runtime.secret_reference import (
+from llm_agent.agent.health.standalone import run_standalone_health_check
+from llm_agent.agent.llm.model_profile import resolve_model_profile
+from llm_agent.agent.runtime.config_errors import ConfigError
+from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.agent.runtime.config_schema import validate_config_document
+from llm_agent.agent.runtime.secret_reference import (
     SecretReferenceError,
     SecretReferenceResolutionError,
     SecretReferenceV1,
     resolve_secret_reference,
 )
+from llm_agent.workspace.paths import AppPaths
 
 _SENTINEL = "PV155_SECRET_SENTINEL_8fd77e"
 
@@ -147,7 +147,7 @@ def test_offline_config_validation_and_doctor_never_resolve_reference(
         raise AssertionError("offline validation resolved a credential")
 
     monkeypatch.setattr(
-        "agent.runtime.secret_reference.resolve_secret_reference",
+        "llm_agent.agent.runtime.secret_reference.resolve_secret_reference",
         fail_if_resolved,
     )
     workspace = tmp_path / "workspace"

@@ -11,7 +11,7 @@
         {
             "tool": "code_analyzer",
             "args": {
-                "target": "agent/interfaces/cli/app.py",
+                "target": "src/llm_agent/interfaces/cli/app.py",
                 "mode": "file",
                 "compact": true
             }
@@ -19,7 +19,7 @@
         {
             "tool": "file_reader",
             "args": {
-                "file_path": "agent/interfaces/cli/app.py"
+                "file_path": "src/llm_agent/interfaces/cli/app.py"
             }
         }
     ]

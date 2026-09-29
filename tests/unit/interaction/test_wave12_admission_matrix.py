@@ -2,23 +2,23 @@ from __future__ import annotations
 
 import pytest
 
-from agent.interaction.admission import admit_interaction, project_guard_result
-from agent.interaction.continue_intent import ResumeClassification
-from agent.interaction.guards import (
+from llm_agent.agent.interaction.admission import admit_interaction, project_guard_result
+from llm_agent.agent.interaction.continue_intent import ResumeClassification
+from llm_agent.agent.interaction.guards import (
     CrossClauseRelation,
     LocalConflictClassification,
     MixedIntentClassification,
     ReadClassification,
 )
-from agent.interaction.types import (
+from llm_agent.agent.interaction.types import (
     ActionGrounding,
     InteractionAction,
     InteractionAmbiguity,
     InteractionBoundary,
     InteractionModelDecision,
 )
-from agent.interfaces.task_directives import parse_task_request
-from agent.runtime.task_directives import DeliberationProfile, TaskDirective
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective
+from llm_agent.application.task_directives import parse_task_request
 
 
 def candidate(**overrides: object) -> InteractionModelDecision:

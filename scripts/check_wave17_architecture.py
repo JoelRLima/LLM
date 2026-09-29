@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+try:
+    from scripts.w21_architecture.source import w21_source_layout
+except ModuleNotFoundError:  # Direct script execution.
+    from w21_architecture.source import w21_source_layout  # type: ignore[no-redef]
+
 ROOT = Path(__file__).resolve().parents[1]
 CLI_ROOT = "agent/interfaces/cli"
 PRIMARY_FILES = (
@@ -48,7 +53,7 @@ class ArchitectureViolation:
 
 def _source(root: Path, relative: str) -> str:
     try:
-        return (root / relative).read_text(encoding="utf-8")
+        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return ""
 
@@ -112,10 +117,17 @@ class _FunctionRef:
 def _module_relative(root: Path, module_name: str) -> str | None:
     if not module_name:
         return None
-    module_path = root.joinpath(*module_name.split("."))
+    layout = w21_source_layout(root)
+    if module_name == layout.import_module_root:
+        module_path = layout.package_directory
+    elif module_name.startswith(layout.import_module_root + "."):
+        suffix = module_name[len(layout.import_module_root) + 1 :]
+        module_path = layout.package_directory.joinpath(*suffix.split("."))
+    else:
+        module_path = layout.path_for_w21_relative("/".join(module_name.split(".")))
     for candidate in (module_path.with_suffix(".py"), module_path / "__init__.py"):
         if candidate.is_file():
-            return candidate.relative_to(root).as_posix()
+            return layout.w21_relative_path(candidate)
     return None
 
 
@@ -250,10 +262,26 @@ def _resolve_module_alias(
     from_binding = _from_import_binding(tree, module_alias)
     if from_binding is not None:
         node, alias = from_binding
-        target = _import_target(root, relative, node, alias.name)
-        if target is not None:
-            target_relative, _ = target
-            return _resolve_exported_function(root, target_relative, function_name)
+        module_name = _qualified_import_name(relative, node)
+        # ``from package import module`` is a module binding when the
+        # submodule exists, but it may also be a package-level re-export.
+        # Resolve the exact submodule first and retain the package fallback
+        # when the package deliberately exports the same public function.
+        target_names = (
+            f"{module_name}.{alias.name}" if module_name else alias.name,
+            module_name,
+        )
+        seen_targets: set[str] = set()
+        for target_name in target_names:
+            if not target_name or target_name in seen_targets:
+                continue
+            seen_targets.add(target_name)
+            target_relative = _module_relative(root, target_name)
+            if target_relative is None:
+                continue
+            resolved = _resolve_exported_function(root, target_relative, function_name)
+            if resolved is not None:
+                return resolved
         return None
     return _resolve_plain_binding(root, _plain_import_binding(tree, module_alias), function_name)
 
@@ -387,13 +415,25 @@ def _check_query_plane(root: Path) -> list[ArchitectureViolation]:
         root,
         relative,
         "agent/application_services/query_git.py",
+        "agent/execution/command.py",
         f"{CLI_ROOT}/query_executor.py",
     )
     findings: list[ArchitectureViolation] = []
     if any(token in source for token in ("ToolInvocationGateway", "tool_invocation_gateway", "orchestrator")):
         findings.append(_violation("W17-ARCH-04", relative, "query plane calls or owns the active task gateway"))
-    for token in ("shell=False", "stdin=subprocess.DEVNULL", "GIT_TERMINAL_PROMPT", "GIT_EXTERNAL_DIFF", "core.fsmonitor=false"):
-        if token not in source:
+    required_tokens = (
+        ("shell=False", '"shell": False', "shell=False"),
+        (
+            "stdin=subprocess.DEVNULL",
+            '"stdin": subprocess.PIPE if request.stdin is not None else subprocess.DEVNULL',
+            "stdin=subprocess.DEVNULL",
+        ),
+        ("GIT_TERMINAL_PROMPT", "GIT_TERMINAL_PROMPT"),
+        ("GIT_EXTERNAL_DIFF", "GIT_EXTERNAL_DIFF"),
+        ("core.fsmonitor=false", "core.fsmonitor=false"),
+    )
+    for token, *alternates in required_tokens:
+        if not any(alternate in source for alternate in alternates):
             findings.append(_violation("W17-ARCH-17", relative, f"bounded Git query contract is missing {token}"))
     executor_tree = _tree(root, f"{CLI_ROOT}/query_executor.py")
     executor_class = next(
@@ -557,8 +597,8 @@ def _check_agentic_boundary(root: Path) -> list[ArchitectureViolation]:
 def _check_manifest(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     try:
-        sys.path.insert(0, str(root))
-        from agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
+        sys.path.insert(0, str(w21_source_layout(root).python_source_root))
+        from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
         seen: set[str] = set()
         for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:

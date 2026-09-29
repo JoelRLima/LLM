@@ -1,6 +1,6 @@
 import pytest
 
-from agent.tools.contracts import ToolInvocationRequest
+from llm_agent.agent.tools.contracts import ToolInvocationRequest
 
 
 def test_invocation_request_requires_and_preserves_id() -> None:

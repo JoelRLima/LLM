@@ -6,17 +6,17 @@ from typing import Any
 
 import pytest
 
-from agent.evaluation.analysis import CampaignAnalysisError, analyze_campaign, validate_campaign_report
-from agent.evaluation.analysis_metrics import metric_summary
-from agent.evaluation.analysis_verdict import installed_acceptance_state
-from agent.evaluation.evaluation_identity import fake_model_identity, resume_compatible
-from agent.evaluation.execution_attribution import classify_failure
-from agent.evaluation.execution_evidence import critical_incidents, identity_drift
-from agent.evaluation.oracle import deterministic_oracle_evidence
-from agent.evaluation.scenario_contracts import H_SERIES, CausalFailureClass, EvidenceLevel
-from agent.evaluation.trace import RecordingGateway
-from agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
-from agent.reporting.metrics import project_run_metrics
+from llm_agent.agent.evaluation.analysis import CampaignAnalysisError, analyze_campaign, validate_campaign_report
+from llm_agent.agent.evaluation.analysis_metrics import metric_summary
+from llm_agent.agent.evaluation.analysis_verdict import installed_acceptance_state
+from llm_agent.agent.evaluation.evaluation_identity import fake_model_identity, resume_compatible
+from llm_agent.agent.evaluation.execution_attribution import classify_failure
+from llm_agent.agent.evaluation.execution_evidence import critical_incidents, identity_drift
+from llm_agent.agent.evaluation.oracle import deterministic_oracle_evidence
+from llm_agent.agent.evaluation.scenario_contracts import H_SERIES, CausalFailureClass, EvidenceLevel
+from llm_agent.agent.evaluation.trace import RecordingGateway
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse, ProviderCapabilities
+from llm_agent.agent.reporting.metrics import project_run_metrics
 from tests.unit.evaluation.test_campaign_corrective import _analysis_report
 
 

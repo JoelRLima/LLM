@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from agent.planning.planning_context import validate_planning_tool_arguments
-from agent.resources.contracts import ResourceMode
-from agent.skills import load_skill_registry
-from agent.tools.builtin_adapter import BuiltinToolAdapter
-from agent.tools.contracts import CancellationSafetyMode, ToolInvocation, ToolStatus
-from agent.tools.invocation_gateway import ToolInvocationGateway
-from agent.tools.invocation_semantics import resolve_invocation_semantics
+from llm_agent.agent.planning.planning_context import validate_planning_tool_arguments
+from llm_agent.agent.resources.contracts import ResourceMode
+from llm_agent.agent.skills import load_skill_registry
+from llm_agent.agent.tools.builtin_adapter import BuiltinToolAdapter
+from llm_agent.agent.tools.contracts import CancellationSafetyMode, ToolInvocation, ToolStatus
+from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.agent.tools.invocation_semantics import resolve_invocation_semantics
 
 
 def test_builtin_adapter_descriptors(tmp_path: Path) -> None:

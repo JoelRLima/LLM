@@ -5,9 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.cancellation import CancellationToken
-from agent.code.discovery import ProjectDiscovery
-from agent.code.validation import (
+from llm_agent.agent.code.discovery import ProjectDiscovery
+from llm_agent.agent.code.validation import (
     CommandSpec,
     ProcessRunner,
     ProjectValidator,
@@ -15,6 +14,7 @@ from agent.code.validation import (
     ValidationRegistry,
     ValidationStatus,
 )
+from llm_agent.cancellation import CancellationToken
 
 
 def _symlink_or_skip(

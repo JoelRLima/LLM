@@ -8,7 +8,7 @@ def test_pyproject_owns_dependencies_and_console_entry_point() -> None:
     assert "[project]" in content
     assert "dependencies = [" in content
     assert "[project.optional-dependencies]" in content
-    assert 'llm-agent = "agent.interfaces.cli.app:main"' in content
+    assert 'llm-agent = "llm_agent.interfaces.cli.app:main"' in content
 
 
 def test_compatibility_requirements_delegate_to_pyproject() -> None:

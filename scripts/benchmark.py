@@ -41,8 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _create_application(args: argparse.Namespace) -> Any:
-    from agent.application import AgentApplication
-    from agent.runtime.paths import AppPaths
+    from llm_agent.agent.application import AgentApplication
+    from llm_agent.workspace.paths import AppPaths
 
     return AgentApplication.create(
         workspace=Path(args.workspace).expanduser(),
@@ -208,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERRO: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
-        from agent.runtime.config_errors import ConfigError
+        from llm_agent.agent.runtime.config_errors import ConfigError
 
         if isinstance(exc, ConfigError):
             print(f"ERRO: {exc}", file=sys.stderr)

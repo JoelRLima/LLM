@@ -1,7 +1,7 @@
 
-from agent.cost_guard import CostGuard
-from agent.runtime.budget import TaskBudgetLedger
-from agent.runtime.limits import default_runtime_limit
+from llm_agent.agent.cost_guard import CostGuard
+from llm_agent.agent.runtime.budget import TaskBudgetLedger
+from llm_agent.agent.runtime.limits import default_runtime_limit
 
 
 def test_default_limits_coming_from_config_constants() -> None:

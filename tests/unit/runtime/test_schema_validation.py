@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from agent.parsers import validate_tool_args
-from agent.runtime.schema_validation import validate_schema_arguments
-from agent.tools.invocation_support import validate_arguments
+from llm_agent.agent.parsers import validate_tool_args
+from llm_agent.agent.runtime.schema_validation import validate_schema_arguments
+from llm_agent.agent.tools.invocation_support import validate_arguments
 
 SCHEMA = {
     "type": "object",

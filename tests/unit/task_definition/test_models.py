@@ -4,11 +4,11 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from agent.task_definition.errors import (
+from llm_agent.agent.task_definition.errors import (
     TaskDefinitionMismatchError,
     TaskDefinitionValidationError,
 )
-from agent.task_definition.models import (
+from llm_agent.agent.task_definition.models import (
     MAX_COLLECTION_ITEMS,
     MAX_PHASES,
     MAX_STRING_LENGTH,
@@ -17,7 +17,7 @@ from agent.task_definition.models import (
     TaskSpec,
     TaskSpecPhase,
 )
-from agent.task_definition.serialization import (
+from llm_agent.agent.task_definition.serialization import (
     contract_digest,
     deserialize_contract,
     deserialize_ref,

@@ -4,15 +4,15 @@ import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
-from agent.planning.step_policies import StepPolicies
-from agent.planning.task_semantics import (
+from llm_agent.agent.planning.step_policies import StepPolicies
+from llm_agent.agent.planning.task_semantics import (
     ObligationStatus,
     TaskIntent,
     TaskObligation,
     TaskSemantics,
 )
-from agent.state import AgentState
-from agent.tools.result_completeness import (
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.result_completeness import (
     EvidenceProvenance,
     canonical_completeness,
     exact_source_covers_whole_result,

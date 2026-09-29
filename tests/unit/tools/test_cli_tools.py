@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from agent.interfaces.cli.app import build_parser
-from agent.tools.extension_registry import ExtensionRegistry
+from llm_agent.extensions.extension_registry import ExtensionRegistry
+from llm_agent.interfaces.cli.app import build_parser
 
 
 def test_cli_tools_commands_parse(tmp_path: Path) -> None:

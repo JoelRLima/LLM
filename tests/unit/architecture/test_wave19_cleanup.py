@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.interfaces.cli.thinking_presets import (
+from llm_agent.interfaces.cli.thinking_presets import (
     DEFAULT_THINKING_BUDGET,
     THINKING_LABEL_BY_BUDGET,
     THINKING_PRESET_BY_KEY,
 )
 from scripts import check_wave19_architecture as checker
 from scripts.compatibility_ledger import LEDGER, validate_ledger
+from scripts.w21_architecture.source import SourceLayout
 
 ROOT = Path(__file__).resolve().parents[3]
+SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 
 
 def test_s07_retired_modules_are_absent_and_no_retired_imports_remain() -> None:
@@ -47,7 +49,7 @@ def test_s07_converged_single_owners_and_exact_thinking_presets() -> None:
     assert THINKING_PRESET_BY_KEY == {"B": 512, "M": 1024, "A": 2048}
     assert THINKING_LABEL_BY_BUDGET == {512: "BAIXO", 1024: "MÉDIO", 2048: "ALTO"}
     assert DEFAULT_THINKING_BUDGET == 1024
-    app_source = (ROOT / "agent/interfaces/cli/app.py").read_text(encoding="utf-8")
+    app_source = SOURCE_LAYOUT.path_for_w21_relative("agent/interfaces/cli/app.py").read_text(encoding="utf-8")
     assert "NIVEIS_THINKING" not in app_source
     assert "obter_status_think" not in app_source
 

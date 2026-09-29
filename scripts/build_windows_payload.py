@@ -40,7 +40,7 @@ from distribution.payload import (  # noqa: E402
     validate_inventory,
 )
 from distribution.provenance import (  # noqa: E402
-    W19_CANDIDATE_PATH_SURFACE,
+    W20_CANDIDATE_PATH_SURFACE,
     CandidateTree,
     isolated_candidate_tree,
     materialize_candidate_tree,
@@ -683,7 +683,9 @@ def _materialize_source_snapshot(snapshot: CandidateTree, target: Path) -> None:
         materialize_candidate_tree(snapshot, target)
     except (OSError, ValueError) as exc:
         raise BuildError(f"cannot materialize candidate Git tree {snapshot.tree}") from exc
-    if not (target / "pyproject.toml").is_file() or not (target / "agent").is_dir():
+    if not (target / "pyproject.toml").is_file() or not (
+        target / "src" / "llm_agent"
+    ).is_dir():
         raise BuildError("candidate Git tree is missing the PEP 517 source inputs")
 
 
@@ -768,9 +770,9 @@ def _validate_wheel(wheel: Path) -> tuple[str, ...]:
         entrypoints = archive.read(entrypoint_names[0]).decode("utf-8")
         if "Name: local-llm-agent" not in metadata or f"Version: {RELEASE_VERSION}" not in metadata:
             raise BuildError("wheel metadata identity/version mismatch")
-        if "llm-agent = agent.interfaces.cli.app:main" not in entrypoints:
+        if "llm-agent = llm_agent.interfaces.cli.app:main" not in entrypoints:
             raise BuildError("wheel console entry point mismatch")
-        if "agent/resources/default_config.json" not in members:
+        if "llm_agent/resources/default_config.json" not in members:
             raise BuildError("required package data is missing from wheel")
     return members
 
@@ -1161,8 +1163,8 @@ def _write_payload_shim(payload_root: Path) -> None:
         "from pathlib import Path\n\n"
         "_launcher = Path(__file__).resolve()\n"
         "_candidate = _launcher.parent.parent\n"
-        "_lease_source = _candidate / 'runtime' / 'Lib' / 'site-packages' / 'agent' / 'runtime' / 'candidate_lease.py'\n"
-        "if not _lease_source.is_file() or _lease_source.resolve().parents[5] != _candidate:\n"
+        "_lease_source = _candidate / 'runtime' / 'Lib' / 'site-packages' / 'llm_agent' / 'agent' / 'runtime' / 'candidate_lease.py'\n"
+        "if not _lease_source.is_file() or _lease_source.resolve().parents[6] != _candidate:\n"
         "    raise RuntimeError('candidate lease bootstrap source is not canonical')\n"
         "_lease_spec = importlib.util.spec_from_file_location('_w18_candidate_lease_bootstrap', _lease_source)\n"
         "if _lease_spec is None or _lease_spec.loader is None:\n"
@@ -1170,7 +1172,7 @@ def _write_payload_shim(payload_root: Path) -> None:
         "_lease_module = importlib.util.module_from_spec(_lease_spec)\n"
         "_lease_spec.loader.exec_module(_lease_module)\n"
         "_candidate_lease = _lease_module.acquire_runtime_candidate_lease(_launcher)\n"
-        "from agent.interfaces.cli.app import main\n\n"
+        "from llm_agent.interfaces.cli.app import main\n\n"
         "if __name__ == \"__main__\":\n    raise SystemExit(main())\n",
     )
     _write_utf8(
@@ -1366,19 +1368,19 @@ def _probe_payload(payload_root: Path) -> None:
         if payload.get("readiness", {}).get("offline_ready") is not True:
             raise BuildError("embedded offline doctor did not report offline_ready")
         code = (
-            "import agent,importlib.metadata,json,pathlib,sys;"
-            "print(json.dumps({'agent':str(pathlib.Path(agent.__file__).resolve()),"
-            "'exe':str(pathlib.Path(sys.executable).resolve()),'agent_version':agent.__version__,"
+            "import llm_agent,importlib.metadata,json,pathlib,sys;"
+            "print(json.dumps({'llm_agent':str(pathlib.Path(llm_agent.__file__).resolve()),"
+            "'exe':str(pathlib.Path(sys.executable).resolve()),'llm_agent_version':llm_agent.__version__,"
             "'version':importlib.metadata.version('local-llm-agent'),'path':list(sys.path)}))"
         )
         origin = _run_target(runtime, ["-c", code], cwd)
         origin_data = json.loads(_assert_target_success(origin, "embedded import-origin probe"))
-        if origin_data["agent_version"] != RELEASE_VERSION or origin_data["version"] != RELEASE_VERSION:
+        if origin_data["llm_agent_version"] != RELEASE_VERSION or origin_data["version"] != RELEASE_VERSION:
             raise BuildError("embedded metadata/version equality failed")
         if Path(origin_data["exe"]).resolve() != runtime.resolve():
             raise BuildError("embedded sys.executable is not payload runtime/python.exe")
-        if not Path(origin_data["agent"]).resolve().is_relative_to(runtime.parent.resolve()):
-            raise BuildError("embedded agent import escaped payload runtime")
+        if not Path(origin_data["llm_agent"]).resolve().is_relative_to(runtime.parent.resolve()):
+            raise BuildError("embedded llm_agent import escaped payload runtime")
         if any(str(value).casefold().startswith(str(ROOT).casefold()) for value in origin_data["path"] if value):
             raise BuildError("source checkout leaked into embedded sys.path")
         if os.name == "nt":
@@ -1448,7 +1450,7 @@ def build_release(
     uv_verification = _verify_uv_artifact(Path(uv_artifact_value))
     python_executable = python_executable.resolve()
     _verify_build_driver(python_executable)
-    with isolated_candidate_tree(ROOT, allowed_paths=W19_CANDIDATE_PATH_SURFACE) as candidate:
+    with isolated_candidate_tree(ROOT, allowed_paths=W20_CANDIDATE_PATH_SURFACE) as candidate:
         release_epoch = derive_release_epoch(ROOT, candidate.base_commit)
         with tempfile.TemporaryDirectory(prefix="candidate-build-") as raw:
             scratch = Path(raw)

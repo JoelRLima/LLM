@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools.extension_catalog_errors import (
+from llm_agent.extensions.extension_catalog_errors import (
     CatalogStorageError,
     WorkspaceConfigurationCorruptError,
     WorkspaceStorageError,
 )
-from agent.tools.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
-from agent.tools.workspace_extensions_storage import WorkspaceExtensionsStorage
+from llm_agent.extensions.extension_state import WorkspaceExtensionSelection, WorkspaceExtensionsState
+from llm_agent.extensions.workspace_extensions_storage import WorkspaceExtensionsStorage
 
 
 def test_missing_workspace_file_is_empty_without_creation(tmp_path: Path) -> None:

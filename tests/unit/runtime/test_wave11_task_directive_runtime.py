@@ -4,22 +4,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.llm.session import ChatSession
-from agent.llm.session_requests import resolve_effective_reasoning_budget
-from agent.orchestration import task_runner as task_runner_module
-from agent.orchestration.operational_modes import refresh_capability_projection
-from agent.orchestration.task_directive_runtime import (
+from llm_agent.agent.llm.session import ChatSession
+from llm_agent.agent.llm.session_requests import resolve_effective_reasoning_budget
+from llm_agent.agent.orchestration import task_runner as task_runner_module
+from llm_agent.agent.orchestration.operational_modes import refresh_capability_projection
+from llm_agent.agent.orchestration.task_directive_runtime import (
     apply_task_run_directive_runtime,
     restore_task_run_directive_runtime,
 )
-from agent.orchestration.task_runner import TaskRunner
-from agent.runtime.task_directives import (
+from llm_agent.agent.orchestration.task_runner import TaskRunner
+from llm_agent.agent.runtime.task_directives import (
     DeliberationProfile,
     TaskDirective,
     TaskRunDirective,
 )
-from agent.state import AgentState
-from agent.tools.authority import OperationalMode, TaskAuthoritySnapshot
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.tools.authority import OperationalMode, TaskAuthoritySnapshot
 
 READ_CAPABILITIES = frozenset({"read", "vcs_read", "analyze"})
 BROAD_CAPABILITIES = frozenset(

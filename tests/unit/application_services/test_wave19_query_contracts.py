@@ -4,7 +4,7 @@ from types import MappingProxyType
 
 import pytest
 
-from agent.application_services.queries import (
+from llm_agent.application.services.queries import (
     QUERY_CANCELLED,
     WorkspaceQueryKind,
     WorkspaceQueryRequest,

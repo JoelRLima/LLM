@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent.llm.decision_contract import ModelRequestContract
-from agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
 
 
 def make_contract(

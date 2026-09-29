@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agent.llm.admitted_decisions import (
+from llm_agent.agent.llm.admitted_decisions import (
     TaskContractDecision,
     TaskContractNeedsInputDecision,
     TaskSpecDecision,
     admit_typed_model_decision,
 )
-from agent.llm.decision_contract import (
+from llm_agent.agent.llm.decision_contract import (
     ModelRequestContract,
     admit_model_decision_value,
 )

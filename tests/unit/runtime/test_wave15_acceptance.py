@@ -15,19 +15,19 @@ from typing import Any
 
 import pytest
 
-from agent.continuity.checkpoint_projection import (
+from llm_agent.agent.continuity.checkpoint_projection import (
     REASON_HIERARCHICAL_RESUME_UNSUPPORTED,
     classify_checkpoint_document,
 )
-from agent.continuity.models import TaskContinuityStatus
-from agent.llm.context_manager_auxiliary import ContextAuxiliaryMixin
-from agent.llm.context_model_call import (
+from llm_agent.agent.continuity.models import TaskContinuityStatus
+from llm_agent.agent.llm.context_manager_auxiliary import ContextAuxiliaryMixin
+from llm_agent.agent.llm.context_model_call import (
     _apply_projection,
     _prepare_model_state,
     run_model_call,
 )
-from agent.llm.context_pressure import ContextPressureDecision, decide_context_pressure
-from agent.llm.context_projection import (
+from llm_agent.agent.llm.context_pressure import ContextPressureDecision, decide_context_pressure
+from llm_agent.agent.llm.context_projection import (
     OPTIONAL_AUXILIARY,
     REQUIRED_EVIDENCE,
     UNTRUSTED_SESSION,
@@ -36,32 +36,32 @@ from agent.llm.context_projection import (
     fixed_untrusted_data_policy,
     render_untrusted_context_envelope,
 )
-from agent.llm.contracts import ModelMessage, ModelRequest
-from agent.memory.memory import AgentMemory
-from agent.planning.execution_frontier import build_execution_frontier
-from agent.planning.observation_receipts import (
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest
+from llm_agent.agent.memory.memory import AgentMemory
+from llm_agent.agent.planning.execution_frontier import build_execution_frontier
+from llm_agent.agent.planning.observation_receipts import (
     ObservationClassification,
     build_observation_receipt,
     classify_observation,
 )
-from agent.planning.progress_receipt import (
+from llm_agent.agent.planning.progress_receipt import (
     ProgressReceiptV1,
     build_progress_receipt,
     compare_progress_receipts,
     progress_receipt_from_history,
 )
-from agent.runtime.convergence import (
+from llm_agent.agent.runtime.convergence import (
     ConvergenceAccountingContext,
     ConvergenceStateV1,
 )
-from agent.runtime.convergence_runtime import _bounded_observation_payload, accounting_context_for
-from agent.runtime.outcome_taxonomy import error_definition
-from agent.state import AgentState
-from agent.state_checkpoint import (
+from llm_agent.agent.runtime.convergence_runtime import _bounded_observation_payload, accounting_context_for
+from llm_agent.agent.runtime.outcome_taxonomy import error_definition
+from llm_agent.agent.state import AgentState
+from llm_agent.agent.state_checkpoint import (
     _restore_convergence,
     reconcile_convergence_after_restore,
 )
-from agent.tools.contracts import ToolResult, ToolStatus
+from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
 
 
 class _ExactGateway:
@@ -73,7 +73,7 @@ class _ExactGateway:
 
     def measure_request_input_tokens(self, request: ModelRequest) -> Any:
         del request
-        from agent.runtime.request_measurement import (
+        from llm_agent.agent.runtime.request_measurement import (
             PROVIDER_CHAT_INPUT_TOKENS,
             RequestInputMeasurement,
         )
@@ -490,7 +490,7 @@ def test_w15_a18_task_definition_is_intact_and_subject_is_not_duplicated() -> No
 
 
 def test_w15_a19_external_frontier_lookalike_cannot_self_promote(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent.llm.context_manager_auxiliary as auxiliary
+    import llm_agent.agent.llm.context_manager_auxiliary as auxiliary
 
     monkeypatch.setattr(auxiliary, "build_memory_prompt_context", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(auxiliary, "discover_project_guidance", lambda *_args, **_kwargs: SimpleNamespace(records=()))
@@ -541,7 +541,7 @@ def test_w15_a21_giant_malformed_optional_cannot_evict_mandatory_state() -> None
 
 
 def test_w15_a22_model_path_restores_messages_and_makes_no_summary_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent.llm.context_model_call as model_call
+    import llm_agent.agent.llm.context_model_call as model_call
 
     class _Session:
         def __init__(self) -> None:
@@ -640,7 +640,7 @@ def test_w15_a27_canonical_failed_validation_has_no_positive_credit() -> None:
 
 
 def test_w15_a28_no_summary_continuation_uses_the_same_receipt_owner() -> None:
-    manager = object.__new__(__import__("agent.llm.context_manager", fromlist=["ContextManager"]).ContextManager)
+    manager = object.__new__(__import__("llm_agent.agent.llm.context_manager", fromlist=["ContextManager"]).ContextManager)
     before = build_progress_receipt(credit_fact_ids=("fact:one",))
     manager.maybe_compress_context()
     after = build_progress_receipt(credit_fact_ids=("fact:one",))
@@ -1078,14 +1078,14 @@ def test_w15_a60_hierarchical_running_resume_remains_unsupported() -> None:
 
 
 def test_w15_a36_stale_credit_through_step_executor_and_semantic_history(tmp_path) -> None:
-    from agent.application import AgentApplication
-    from agent.approval import AutoApprove
-    from agent.capabilities import ALL_CAPABILITIES
-    from agent.evaluation.long_horizon_production import ProductionGateway
-    from agent.planning.plan_model import Plan
-    from agent.planning.plan_step_types import ToolPlanStep
-    from agent.runtime.config_repository import ConfigRepository
-    from agent.runtime.paths import AppPaths
+    from llm_agent.agent.application import AgentApplication
+    from llm_agent.agent.approval import AutoApprove
+    from llm_agent.agent.capabilities import ALL_CAPABILITIES
+    from llm_agent.agent.evaluation.long_horizon_production import ProductionGateway
+    from llm_agent.agent.planning.plan_model import Plan
+    from llm_agent.agent.planning.plan_step_types import ToolPlanStep
+    from llm_agent.agent.runtime.config_repository import ConfigRepository
+    from llm_agent.workspace.paths import AppPaths
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
