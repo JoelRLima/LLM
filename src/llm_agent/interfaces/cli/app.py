@@ -6,12 +6,18 @@ import json
 import sys
 from typing import Any, Sequence, cast
 
-from llm_agent.application.agent_boundary import ConfigError, ConfigNotFound, TaskRunDirective
+from llm_agent.application.configuration_errors import ConfigurationError, ConfigurationNotFound
 from llm_agent.application.task_directives import (
-    ParsedTaskRequest,
     TaskDirectiveParseError,
-    TaskRequestAction,
-    parse_task_request,
+)
+from llm_agent.application.task_execution import (
+    TaskDispatch,
+    TaskExecutionRuntime,
+    TaskSettlement,
+    close_task_execution,
+    execute_submission,
+    observe_task_settlement,
+    prepare_task_dispatch,
 )
 from llm_agent.interfaces.cli import (
     first_run,
@@ -27,7 +33,7 @@ from llm_agent.interfaces.cli.ui import console
 
 def _sync_console() -> None:
     for module in (interactive_admission, interactive_rendering, interactive_resources, interactive_session):
-        module.console = console  # type: ignore[attr-defined]
+        module.console = console  # type: ignore[attr-defined,union-attr]
 def _prompt(ctx: Any) -> str | None:
     _sync_console()
     return cast(str | None, interactive_rendering.prompt(ctx))
@@ -45,16 +51,9 @@ def _app_paths(args: argparse.Namespace) -> Any:
 def _create_application(args: argparse.Namespace, *, configure_logging: bool) -> Any:
     from llm_agent.interfaces.cli.bootstrap import create_application
     return create_application(args, configure_logging=configure_logging)
-def _run_application_task(application: Any, request: ParsedTaskRequest, *, visible_text: str | None = None) -> Any:
-    """Call the typed application boundary without dropping W11 state."""
-    directive = request.directive_state
-    if not isinstance(directive, TaskRunDirective) or not isinstance(request.subject, str):
-        raise ValueError("RUN requires a TaskRunDirective")
-    interact = getattr(application, "interact", None)
-    if callable(interact):
-        surface = visible_text if visible_text is not None else request.subject
-        return interact(request.subject, boundary="task", visible_user_text=surface, task_payload=surface)
-    return application.run(request.subject, task_run_directive=directive)
+def _run_application_task(application: TaskExecutionRuntime, request: TaskDispatch, *, visible_text: str | None = None) -> TaskSettlement:
+    return execute_submission(application, visible_text or "", entry="headless-run", dispatch=request, visible_text=visible_text)
+
 def _run_chat(args: argparse.Namespace) -> int:
     _sync_console()
     if not first_run.is_interactive_terminal():
@@ -78,11 +77,11 @@ def _run_once(args: argparse.Namespace) -> int:
     json_output = bool(_value(args, "json_output", False))
     objective = " ".join(args.objective) if workspace_entry.require_task_workspace(args) else ""
     try:
-        request = parse_task_request(objective)
+        request = prepare_task_dispatch(objective)
     except TaskDirectiveParseError as exc:
         _emit_error(exc.detail, json_output=json_output, reason_code=exc.reason_code)
         return 2
-    if request.action is TaskRequestAction.CONTINUE:
+    if request.continues_task:
         from llm_agent.interfaces.cli.task_continuity import run_task_resume
         return cast(
             int,
@@ -95,23 +94,24 @@ def _run_once(args: argparse.Namespace) -> int:
         )
     application = _create_application(args, configure_logging=not json_output)
     try:
-        result = _run_application_task(application, request, visible_text=objective)
+        settlement = _run_application_task(application, request, visible_text=objective)
     finally:
-        application.close()
+        close_task_execution(application)
+    result = observe_task_settlement(settlement, channel="headless")
     if json_output:
-        _print_json(result.to_dict())
-    elif result.success:
-        print(result.answer)
+        _print_json(result)
+    elif result["success"]:
+        print(result["answer"])
         _print_operational_receipt(result)
-    elif getattr(result, "receipt", None):
-        if result.answer:
-            print(result.answer)
+    elif result.get("receipt"):
+        if result["answer"]:
+            print(result["answer"])
         _print_operational_receipt(result)
-        if result.error:
-            print(result.error, file=sys.stderr)
+        if result["error"]:
+            print(result["error"], file=sys.stderr)
     else:
-        print(result.error or result.answer or "A tarefa falhou.", file=sys.stderr)
-    return 0 if result.success else 1
+        print(result["error"] or result["answer"] or "A tarefa falhou.", file=sys.stderr)
+    return 0 if result["success"] else 1
 def _run_doctor(args: argparse.Namespace) -> int:
     from llm_agent.interfaces.cli.maintenance import run_doctor
     json_output = bool(_value(args, "json_output", False))
@@ -127,9 +127,6 @@ def _run_doctor(args: argparse.Namespace) -> int:
             online=bool(_value(args, "online", False)),
         ),
     )
-def _config_repository(args: argparse.Namespace) -> Any:
-    from llm_agent.interfaces.cli.maintenance import config_repository
-    return config_repository(_app_paths(args), _value(args, "config"))
 def _run_config(args: argparse.Namespace) -> int:
     from llm_agent.interfaces.cli.maintenance import run_config
     return cast(
@@ -256,24 +253,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except Exception as exc:
         from llm_agent.application.agent_boundary import (
-            StateMigrationError,
-            TaskDefinitionError,
             TraceCorruptError,
             TraceUnavailableError,
         )
-        if isinstance(exc, ConfigNotFound):
+        from llm_agent.application.inspection import (
+            InspectionCorruptDataError,
+            InspectionUnavailableError,
+        )
+        from llm_agent.application.state_migration import StateMigrationFailedError
+        from llm_agent.application.task_context import TaskContextReadError
+        if isinstance(exc, ConfigurationNotFound):
             _emit_error(first_run.actionable_missing_config(args, exc), json_output=json_output)
             return 2
-        if isinstance(exc, TaskDefinitionError):
+        if isinstance(exc, TaskContextReadError):
             _emit_error(str(exc), json_output=json_output)
             return 2
-        if isinstance(exc, (TraceUnavailableError, TraceCorruptError)):
+        if isinstance(
+            exc,
+            (
+                InspectionUnavailableError,
+                InspectionCorruptDataError,
+                TraceUnavailableError,
+                TraceCorruptError,
+            ),
+        ):
             _emit_error(str(exc), json_output=json_output)
             return 2
         if isinstance(exc, (FileNotFoundError, NotADirectoryError, PermissionError, ValueError)):
             _emit_error(str(exc), json_output=json_output, reason_code=getattr(exc, "reason_code", None))
             return 2
-        if isinstance(exc, (ConfigError, StateMigrationError)):
+        if isinstance(exc, StateMigrationFailedError):
+            _emit_error(str(exc), json_output=json_output)
+            return 2
+        if isinstance(exc, ConfigurationError):
             _emit_error(str(exc), json_output=json_output)
             return 2
         _emit_error(f"{type(exc).__name__}: {exc}", json_output=json_output)

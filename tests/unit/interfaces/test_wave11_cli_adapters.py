@@ -14,10 +14,13 @@ from llm_agent.agent.runtime.task_directives import (
     TaskDirective,
     TaskRunDirective,
 )
+from llm_agent.application.conversation import bind_conversation
 from llm_agent.application.task_directives import (
     TASK_DIRECTIVE_CONFLICT,
     TaskRequestAction,
+    parse_task_request,
 )
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
 from llm_agent.interfaces.cli import command_handlers, commands
 from llm_agent.interfaces.cli.parser import build_parser
@@ -75,7 +78,7 @@ def test_headless_run_passes_typed_directive_and_preserves_model_profile(
     def create(args: Any, *, configure_logging: bool) -> _Application:
         seen["args"] = args
         seen["configure_logging"] = configure_logging
-        return application
+        return _retain_runtime(application)
 
     monkeypatch.setattr(cli, "_create_application", create)
 
@@ -111,7 +114,7 @@ def test_headless_default_keeps_objective_joining_and_auto_normal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application = _Application()
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
 
     assert cli.main(["run", "--workspace", "workspace", "Analyze", "the", "repo"]) == 0
 
@@ -135,7 +138,7 @@ def test_headless_recognized_directive_never_downgrades_to_old_run_signature(
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: OldStyleFacade())
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(OldStyleFacade()))
 
     assert cli.main(["run", "--workspace", "workspace", "--json", "/read", "inspect", "source"]) == 1
 
@@ -169,7 +172,7 @@ def test_headless_first_unknown_slash_token_preserves_baseline_subject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application = _Application()
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
 
     assert cli.main(["run", "--workspace", "workspace", "/custom", "/read", "Analyze", "repo"]) == 0
 
@@ -186,7 +189,7 @@ def test_headless_do_keeps_existing_approval_flag_boundary(
 
     def create(args: Any, **_kwargs: Any) -> _Application:
         seen["assume_yes"] = getattr(args, "assume_yes", False)
-        return application
+        return _retain_runtime(application)
 
     monkeypatch.setattr(cli, "_create_application", create)
 
@@ -271,7 +274,7 @@ def test_bare_interactive_read_stays_with_file_reader_and_skips_w11_parser(
     monkeypatch.setattr(command_handlers, "parse_task_request", fail_parser)
     monkeypatch.setattr(command_handlers, "_skill_result", fake_skill_result)
 
-    context = SimpleNamespace(orchestrator=SimpleNamespace())
+    context = SimpleNamespace(task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace())))
     handled, should_exit = commands.handle_command("/read README.md", context)
 
     assert (handled, should_exit) == (True, False)
@@ -284,10 +287,7 @@ def test_interactive_agent_read_uses_application_run_with_w11_directive(
 ) -> None:
     application = _Application()
     messages: list[str] = []
-    context = SimpleNamespace(
-        application=application,
-        session=SimpleNamespace(add_assistant_message=messages.append),
-    )
+    context = SimpleNamespace(conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(add_assistant_message=messages.append)))), task_execution=_fixture_runtime(application))
 
     commands.handle_command("/agent /read Analyze README.md", context)
 
@@ -304,10 +304,7 @@ def test_interactive_agent_read_uses_application_run_with_w11_directive(
 def test_interactive_agent_continue_uses_application_resume_without_override() -> None:
     application = _Application()
     messages: list[str] = []
-    context = SimpleNamespace(
-        application=application,
-        session=SimpleNamespace(add_assistant_message=messages.append),
-    )
+    context = SimpleNamespace(conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(add_assistant_message=messages.append)))), task_execution=_fixture_runtime(application))
 
     commands.handle_command("/agent /continue", context)
 
@@ -325,10 +322,7 @@ def test_canonical_result_metadata_comes_from_restored_state(
         agent_state=SimpleNamespace(task_run_directive=directive),
         _canonical_run_snapshot=None,
     )
-    application = SimpleNamespace(
-        orchestrator=orchestrator,
-        workspace=SimpleNamespace(root=tmp_path),
-    )
+    application = SimpleNamespace(workspace=SimpleNamespace(root=tmp_path), orchestrator=orchestrator)
     monkeypatch.setattr(application_result, "ensure_runtime_correlation", lambda _owner: object())
     monkeypatch.setattr(
         application_result,
@@ -386,7 +380,13 @@ def test_parser_keeps_model_profile_flag_separate_from_task_profile() -> None:
     )
 
     assert args.profile == "configured_model"
-    request = cli.parse_task_request(" ".join(args.objective))
+    request = parse_task_request(" ".join(args.objective))
     assert request.action is TaskRequestAction.RUN
     assert request.directive_state is not None
     assert request.directive_state.deliberation_profile is DeliberationProfile.SMART
+
+
+def _fixture_runtime(owner, orchestrator=None):
+    if orchestrator is not None:
+        owner.orchestrator = orchestrator
+    return _retain_runtime(owner)

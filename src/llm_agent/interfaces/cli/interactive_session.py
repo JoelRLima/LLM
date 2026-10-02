@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from llm_agent.application.agent_boundary import ConfigNotFound
+from llm_agent.application.configuration_errors import ConfigurationNotFound
 from llm_agent.interfaces.cli import (
     first_run,
     interactive_admission,
@@ -227,7 +227,7 @@ def run_chat(
     shell_holder: dict[str, Any] = {"shell": None}
     controller_holder: dict[str, Any] = {"controller": None}
     view_holder: dict[str, Any] = {"view": None}
-    application_holder: dict[str, Any] = {"application": None}
+    application_holder: dict[str, Any] = {"task_execution": None}
 
     def get_shell() -> Any:
         return interactive_resources.get_shell(shell_holder, view_holder, application_holder, controller_holder)
@@ -246,7 +246,7 @@ def run_chat(
         return 0
     try:
         application = create_application(args, configure_logging=True)
-    except ConfigNotFound as error:
+    except ConfigurationNotFound as error:
         guided, result = interactive_resources.recover_missing_config(
             error,
             args,

@@ -18,9 +18,23 @@ from llm_agent.agent.tools.contracts import (
 )
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import command_handlers
 from llm_agent.interfaces.cli.commands import handle_command
 
+
+def _fixture_context(**kwargs):
+    owner = kwargs.pop("application", SimpleNamespace())
+    owner.orchestrator = kwargs.pop("orchestrator", SimpleNamespace())
+    session = kwargs.pop("session", None)
+    if session is not None:
+        owner.session = session
+    runtime = _retain_runtime(owner)
+    kwargs["task_execution"] = runtime
+    if session is not None:
+        kwargs["conversation"] = bind_conversation(runtime)
+    return SimpleNamespace(**kwargs)
 
 class _Adapter:
     def __init__(self, capabilities: frozenset[str], target: Path) -> None:
@@ -213,7 +227,7 @@ def test_direct_code_mutation_fails_closed_without_mode_boundary(monkeypatch) ->
             raise AssertionError("service must not be constructed")
 
     monkeypatch.setattr("llm_agent.agent.code.application.CodingApplicationService", _Service)
-    context = SimpleNamespace(
+    context = _fixture_context(
         orchestrator=SimpleNamespace(),
         session=SimpleNamespace(gateway=None),
         config={},
@@ -235,7 +249,7 @@ def test_editor_direct_code_cannot_request_test_execution(monkeypatch) -> None:
             raise AssertionError("service must not be constructed")
 
     monkeypatch.setattr("llm_agent.agent.code.application.CodingApplicationService", _Service)
-    context = SimpleNamespace(
+    context = _fixture_context(
         orchestrator=SimpleNamespace(
             operational_mode=OperationalMode.EDITOR,
             mode_allows=lambda _capabilities: True,

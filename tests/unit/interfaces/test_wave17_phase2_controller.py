@@ -4,6 +4,7 @@ import time
 from threading import Event
 from types import SimpleNamespace
 
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli.controller import (
     ControllerState,
     InteractiveExecutionController,
@@ -157,7 +158,7 @@ def test_shutdown_order_closes_application_before_releasing_shell() -> None:
     application = SimpleNamespace(close=lambda: order.append("application"))
     shell = SimpleNamespace(close=lambda: order.append("shell"))
 
-    interactive_resources.settle(resources, None, shell, application)
+    interactive_resources.settle(resources, None, shell, _retain_runtime(application))
 
     assert order == ["application", "shell"]
 
@@ -181,13 +182,13 @@ def test_shutdown_settles_worker_and_query_before_detaching_ui_sink() -> None:
     resources = interactive_resources._SessionResources(
         controller=_Controller(),
         query_executor=_Query(),
-        event_dispatcher=SimpleNamespace(remove_sink=lambda value: order.append("ui-sink-detached")),
+        detach_runtime=lambda: order.append("ui-sink-detached"),
         event_sink=sink,
     )
     application = SimpleNamespace(close=lambda: order.append("application"))
     shell = SimpleNamespace(close=lambda: order.append("shell"))
 
-    status = interactive_resources.settle(resources, None, shell, application)
+    status = interactive_resources.settle(resources, None, shell, _retain_runtime(application))
 
     assert status.settled
     assert order == [
@@ -251,7 +252,7 @@ def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(
     resources = interactive_resources._SessionResources(
         controller=controller,
         query_executor=query_executor,
-        event_dispatcher=SimpleNamespace(remove_sink=lambda _value: order.append("ui-sink-detached")),
+        detach_runtime=lambda: order.append("ui-sink-detached"),
         event_sink=sink,
     )
 
@@ -259,7 +260,7 @@ def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(
         resources,
         context,
         shell,
-        application,
+        _retain_runtime(application),
         timeout_seconds=0.01,
     )
     assert not failed.settled and failed.exit_code == 1
@@ -271,7 +272,7 @@ def test_noncooperative_worker_and_query_return_truthful_failed_shutdown_status(
     query_release.set()
     assert controller.wait_for_settlement(timeout_seconds=2) is not None
     assert query_executor.cancel_and_wait(timeout_seconds=2) is not None
-    settled = interactive_resources.settle(resources, context, shell, application, timeout_seconds=2)
+    settled = interactive_resources.settle(resources, context, shell, _retain_runtime(application), timeout_seconds=2)
     assert settled.settled
     assert order[-3:] == ["ui-sink-detached", "application", "shell"]
 

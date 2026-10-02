@@ -3,16 +3,17 @@ from __future__ import annotations
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
-from llm_agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox
+from llm_agent.application.task_execution import _project_task_activity_update
+from llm_agent.interfaces.cli.ui_plane import RunViewModel, TaskActivityUISink, UIEventMailbox
 
 
-def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object) -> RuntimeEvent:
-    return RuntimeEvent.from_fields(kind, correlation, data)
+def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object):
+    return _project_task_activity_update(RuntimeEvent.from_fields(kind, correlation, data))
 
 
 def test_sink_is_presentation_only_and_mailbox_is_bounded_under_flood() -> None:
     mailbox = UIEventMailbox(milestone_capacity=2, latest_capacity=1)
-    sink = RuntimeEventUISink(mailbox)
+    sink = TaskActivityUISink(mailbox)
     correlation = RunCorrelation.fresh()
     for index in range(20):
         sink.emit(_event(RuntimeEventKind.STEP_COMPLETED, correlation, step=index, activity=f"step-{index}"))
@@ -20,7 +21,7 @@ def test_sink_is_presentation_only_and_mailbox_is_bounded_under_flood() -> None:
     stats = mailbox.stats()
     assert stats.dropped_milestones >= 18
     drained = mailbox.drain()
-    assert all(item.event.run_id == correlation.run_id for item in drained)
+    assert all(item.update.run_id == correlation.run_id for item in drained)
 
 
 def test_mailbox_coalesces_latest_progress_and_isolates_sink_failures() -> None:
@@ -38,7 +39,7 @@ def test_mailbox_coalesces_latest_progress_and_isolates_sink_failures() -> None:
 
     # A caller-facing broken observer is outside the mailbox and can be
     # isolated by the canonical dispatcher; the W17 sink itself never raises.
-    RuntimeEventUISink(mailbox).emit(_event(RuntimeEventKind.WARNING, correlation, message="safe"))
+    TaskActivityUISink(mailbox).emit(_event(RuntimeEventKind.WARNING, correlation, message="safe"))
 
 
 def test_terminal_event_uses_dedicated_mailbox_lane_under_milestone_flood() -> None:
@@ -48,7 +49,7 @@ def test_terminal_event_uses_dedicated_mailbox_lane_under_milestone_flood() -> N
         mailbox.emit(_event(RuntimeEventKind.STEP_COMPLETED, correlation, step=index))
     mailbox.emit(_event(RuntimeEventKind.TASK_OUTCOME, correlation, status="succeeded"))
     drained = mailbox.drain()
-    assert any(item.event.kind is RuntimeEventKind.TASK_OUTCOME for item in drained)
+    assert any(item.update.delivery == "terminal" for item in drained)
 
 
 def test_run_view_filters_prior_run_and_correlates_tool_end_identity() -> None:

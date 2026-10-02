@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import fields
 
 import pytest
 
@@ -12,6 +13,11 @@ from llm_agent.agent.health.standalone import (
 from llm_agent.agent.health_check import run_health_check
 from llm_agent.agent.memory.memory import MemoryLoadError
 from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.application.health import (
+    HealthDiagnosticsRequest,
+    HealthDiagnosticsResult,
+    run_health_diagnostics,
+)
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.workspace.paths import AppPaths
 from tests.support.offline_scenarios import OfflineChatGateway
@@ -247,3 +253,54 @@ def test_doctor_checks_sqlite_integrity_read_only(tmp_path):
     assert state["details"]["memory_db"]["integrity"] == "error"
     assert report["readiness"]["offline_ready"] is False
     assert workspace_paths.memory_db_file.read_bytes() == before
+
+
+def test_application_health_diagnostics_preserves_report_and_human_projection(tmp_path):
+    assert [field.name for field in fields(HealthDiagnosticsRequest)] == [
+        "app_paths", "workspace", "config_path", "profile", "write_report", "online"
+    ]
+    assert [field.name for field in fields(HealthDiagnosticsResult)] == [
+        "structured_report", "rendered_report", "offline_ready", "online_ready"
+    ]
+    paths, workspace = _initialized_context(tmp_path)
+    context = WorkspaceContext.create(workspace)
+
+    result = run_health_diagnostics(
+        HealthDiagnosticsRequest(app_paths=paths, workspace=context)
+    )
+
+    assert result.structured_report["checks"]
+    assert json.loads(json.dumps(result.structured_report)) == result.structured_report
+    assert result.offline_ready is result.structured_report["readiness"]["offline_ready"]
+    assert result.online_ready is None
+    assert "RELATÓRIO DE SAÚDE DO AGENTE" in result.rendered_report
+    assert "Prontidão offline:" in result.rendered_report
+
+
+def test_application_health_diagnostics_forwards_write_report_and_online(tmp_path, monkeypatch):
+    import llm_agent.application.health.diagnostics as diagnostics
+
+    paths, workspace = _initialized_context(tmp_path)
+    report = run_standalone_health_check(app_paths=paths, workspace=workspace)
+    report["online"] = {"state": "degraded", "online_ready": False}
+    report["readiness"]["online_ready"] = False
+    observed = {}
+
+    def run(**kwargs):
+        observed.update(kwargs)
+        return report
+
+    monkeypatch.setattr(diagnostics, "run_standalone_health_check", run)
+    result = run_health_diagnostics(
+        HealthDiagnosticsRequest(
+            app_paths=paths,
+            workspace=workspace,
+            write_report=True,
+            online=True,
+        )
+    )
+
+    assert observed["write_report"] is True
+    assert observed["online"] is True
+    assert result.offline_ready is report["readiness"]["offline_ready"]
+    assert result.online_ready is False

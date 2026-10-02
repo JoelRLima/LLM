@@ -1,3 +1,4 @@
+
 import hashlib
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from llm_agent.agent.code.policy import ChangeApprovalPolicy, change_policy_from
 from llm_agent.agent.code.task_templates import build_code_task_template
 from llm_agent.agent.planning.task_graph import ResourceMode
 from llm_agent.agent.runtime.context import TaskResult, TaskStatus
+from llm_agent.application.task_execution import _retain_runtime
 
 
 def _hash(text: str) -> str:
@@ -308,7 +310,11 @@ def test_cli_code_command_bypasses_orchestrator(monkeypatch):
         return TaskResult(TaskStatus.SUCCEEDED, summary="analisado")
 
     monkeypatch.setattr(CodingApplicationService, "execute", fake_execute)
-    context = cli_commands.CommandContext(Session(), Orchestrator())
+    from types import SimpleNamespace
+
+    from llm_agent.application.conversation import bind_conversation
+    session = Session()
+    context = cli_commands.CommandContext(bind_conversation(_retain_runtime(SimpleNamespace(session=session))), Orchestrator(), session.config)
 
     handled, should_exit = cli_commands.handle_command(
         "/code analyze agent/code/workflows.py", context

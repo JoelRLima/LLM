@@ -9,7 +9,10 @@ from typing import Any
 import pytest
 
 from llm_agent import __version__
+from llm_agent.application.health import HealthDiagnosticsResult
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import command_handlers
 
 
 @dataclass
@@ -35,7 +38,7 @@ class _Application:
     def __init__(self, result: _Result | None = None) -> None:
         self.result = result or _Result(True, "resposta")
         self.closed = False
-        self.session = SimpleNamespace(config={}, thinking_budget=0)
+        self.session = SimpleNamespace(config={}, thinking_budget=0, get_effective_system_prompt=lambda: "", model_profile=SimpleNamespace(model="m", provider="p"))
         self.orchestrator = SimpleNamespace()
         self.config: dict[str, Any] = {}
         self.paths = SimpleNamespace()
@@ -306,14 +309,12 @@ def test_first_run_init_failure_preserves_error_without_false_success(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from llm_agent.interfaces.cli import maintenance
-
     home = tmp_path / "app"
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     monkeypatch.setattr(cli.console, "input", lambda _prompt: "y")
     monkeypatch.setattr(
-        maintenance,
-        "initialize_config",
+        cli.first_run,
+        "initialize_configuration",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("sem permissão")),
     )
 
@@ -334,7 +335,7 @@ def test_run_json_emits_one_document_and_disables_logging(
 
     def create(_: Any, *, configure_logging: bool) -> _Application:
         captured["configure_logging"] = configure_logging
-        return application
+        return _retain_runtime(application)
 
     monkeypatch.setattr(cli, "_create_application", create)
 
@@ -363,7 +364,7 @@ def test_run_failure_returns_one_and_still_closes_application(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     application = _Application(_Result(False, error="falhou"))
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
 
     assert cli.main(["run", "--workspace", str(Path.cwd()), "objetivo"]) == 1
 
@@ -389,7 +390,7 @@ def test_human_run_projects_operational_receipt_without_hiding_model_answer(
         report_path="/tmp/report.json",
     )
     application = _Application(result)
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
 
     assert cli.main(
         ["run", "--workspace", str(Path.cwd()), "modifique", "sample.py"]
@@ -419,7 +420,7 @@ def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
         },
     )
     application = _Application(result)
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
 
     assert cli.main(
         ["run", "--workspace", str(Path.cwd()), "leia", "sample.py"]
@@ -433,7 +434,7 @@ def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
 def test_default_command_is_chat_non_tty_fails_fast(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     application = _Application()
     seen: dict[str, Any] = {}
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
     monkeypatch.setattr(cli, "_chat_loop", lambda context: seen.setdefault("context", context))
 
     assert cli.main(["--workspace", str(Path.cwd())]) == 2
@@ -453,15 +454,23 @@ def test_doctor_json_is_one_document_and_maps_diagnostics_to_exit_one(
     workspace.mkdir()
     captured_options: dict[str, Any] = {}
 
-    def health(**kwargs: Any) -> dict[str, Any]:
-        captured_options.update(kwargs)
-        return {
+    def health(request: Any) -> HealthDiagnosticsResult:
+        captured_options.update(
+            app_paths=request.app_paths,
+            workspace=request.workspace,
+            config_path=request.config_path,
+            profile=request.profile,
+            write_report=request.write_report,
+            online=request.online,
+        )
+        report = {
             "errors": 1,
             "warnings": 0,
             "readiness": {"offline_ready": False},
         }
+        return HealthDiagnosticsResult(report, "diagnostics", False, None)
 
-    monkeypatch.setattr("llm_agent.application.agent_boundary.run_health_check", health)
+    monkeypatch.setattr("llm_agent.application.health.run_health_diagnostics", health)
 
     assert (
         cli.main(
@@ -489,7 +498,6 @@ def test_doctor_json_is_one_document_and_maps_diagnostics_to_exit_one(
         "warnings": 0,
     }
     assert captured_options["write_report"] is False
-    assert captured_options["verbose"] is False
     assert captured_options["app_paths"].config_file == (home / "config" / "config.json").resolve()
     assert captured_options["workspace"] == workspace
     assert captured_options["config_path"] == str(config)
@@ -504,16 +512,41 @@ def test_doctor_writes_report_only_when_explicit(
     workspace.mkdir()
     requested: list[bool] = []
 
-    def health(**kwargs: Any) -> dict[str, Any]:
-        requested.append(kwargs["write_report"])
-        return {"readiness": {"offline_ready": True}}
+    def health(request: Any) -> HealthDiagnosticsResult:
+        requested.append(request.write_report)
+        return HealthDiagnosticsResult({"readiness": {"offline_ready": True}}, "diagnostics", True, None)
 
-    monkeypatch.setattr("llm_agent.application.agent_boundary.run_health_check", health)
+    monkeypatch.setattr("llm_agent.application.health.run_health_diagnostics", health)
 
     assert cli.main(["doctor", "--workspace", str(workspace)]) == 0
     assert cli.main(["doctor", "--workspace", str(workspace), "--write-report"]) == 0
 
     assert requested == [False, True]
+
+
+def test_interactive_doctor_uses_application_health_api(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    from llm_agent.application.context import AppPaths
+
+    observed: list[Any] = []
+
+    def health(request: Any) -> HealthDiagnosticsResult:
+        observed.append(request)
+        return HealthDiagnosticsResult({}, "human health report", True, None)
+
+    monkeypatch.setattr("llm_agent.application.health.run_health_diagnostics", health)
+    context = SimpleNamespace(
+        app_paths=AppPaths.discover("C:/doctor-home"),
+        workspace=Path("C:/doctor-workspace"),
+        config_path="C:/doctor-config.json",
+        config={"default_model_profile": "alternate"},
+    )
+
+    command_handlers.doctor("/doctor --write-report", context)
+
+    assert len(observed) == 1
+    assert observed[0].write_report is True
+    assert observed[0].profile == "alternate"
+    assert capsys.readouterr().out == "human health report\n"
 
 
 def test_state_migrate_copies_into_workspace_scope_and_preserves_source(
@@ -544,7 +577,10 @@ def test_state_migrate_copies_into_workspace_scope_and_preserves_source(
     assert result == 0
     assert legacy_memory.read_text(encoding="utf-8") == "{}"
     assert list((home / "workspaces").glob("*/data/agent_memory.json"))
-    assert "Origem mantida" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip() == (
+        f"Migra\u00e7\u00e3o conclu\u00edda: 1 copiado(s), 0 preservado(s). "
+        f"Origem mantida em {source.resolve()}."
+    )
 
 
 def test_json_bootstrap_error_is_a_single_document(

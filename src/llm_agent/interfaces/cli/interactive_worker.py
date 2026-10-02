@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
-from llm_agent.application.agent_boundary import bind_worker_output
+from llm_agent.application.code_commands import execute_code_command
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
+from llm_agent.application.interactive_worker import run_interactive_worker
+from llm_agent.application.task_execution import (
+    bind_submission_cancellation,
+    execute_workspace_command,
+    read_execution_capabilities,
+)
+from llm_agent.application.task_execution import (
+    execute_submission as execute_task_submission,
+)
 from llm_agent.interfaces.cli.controller import SubmissionEnvelope
 from llm_agent.interfaces.cli.worker_stream import BoundedTextBuffer, BoundedWorkerStream
 
@@ -23,28 +32,12 @@ class InteractiveWorkerResult:
 
 
 def _bind_application(ctx: Any, cancel_event: Any, register: Callable[[Callable[[], None]], None]) -> Callable[[], None]:
-    application = ctx.application
-    bind = getattr(application, "bind_interactive_cancellation", None)
-    request = getattr(application, "request_cancel_only", None)
-    cleanup = bind(cancel_event) if callable(bind) else (lambda: None)
-    if callable(request):
-        register(request)
+    cleanup: Callable[[], None] = bind_submission_cancellation(ctx.task_execution, cancel_event, register)
     return cleanup
 
 
 def _execute_search(ctx: Any, envelope: SubmissionEnvelope, cancel_event: Any) -> Any:
-    gateway = getattr(ctx.orchestrator, "tool_invocation_gateway", None)
-    if gateway is None:
-        return SimpleNamespace(status="unavailable", error="web_search indisponível", data=None)
-    query = envelope.payload.strip()
-    result = gateway.run(
-        "web_search",
-        {"query": query},
-        active_skills=None,
-        allowed_capabilities=getattr(ctx.orchestrator, "allowed_capabilities", None),
-        cancellation_token=cancel_event,
-    )
-    return result
+    return execute_workspace_command(ctx.task_execution, "search", envelope.payload.strip(), cancellation_event=cancel_event)
 
 
 def _execute_code(
@@ -53,58 +46,32 @@ def _execute_code(
     cancel_event: Any,
     register: Callable[[Callable[[], None]], None],
 ) -> Any:
-    from llm_agent.application.agent_boundary import (
-        CODE_TASK_ACTIONS,
-        ChangeApprover,
-        CodeCommandError,
-        CodeRequest,
-        CodingApplicationService,
-        OperationalMode,
-        build_code_context,
-        parse_code_command,
-        requests_test_execution,
-    )
+    def allows_write_validate() -> bool:
+        capability: bool = read_execution_capabilities(ctx.task_execution).allows_write_validate
+        return capability
 
-    try:
-        parsed = parse_code_command(envelope.visible_text)
-    except CodeCommandError as exc:
-        return SimpleNamespace(status="failed", error=str(exc), summary=str(exc))
-    if parsed.action in CODE_TASK_ACTIONS - {"analyze", "review"}:
-        mode_allows = getattr(ctx.orchestrator, "mode_allows", None)
-        if not callable(mode_allows) or not mode_allows({"write", "validate"}):
-            return SimpleNamespace(status="blocked", error="Ação negada pelo modo operacional ativo.", summary="ação negada")
-        mode = getattr(ctx.orchestrator, "operational_mode", None)
-        if mode is not OperationalMode.FULL and requests_test_execution({"include_tests": parsed.include_tests}):
-            return SimpleNamespace(status="blocked", error="Execução de testes exige modo FULL.", summary="modo FULL exigido")
-    if parsed.action == "help":
-        return SimpleNamespace(status="succeeded", answer="/code help", summary="/code help")
-
-    request = CodeRequest(
-        action=parsed.action,
-        objective=parsed.objective,
-        targets=parsed.targets,
-        include_tests=parsed.include_tests,
-        template=parsed.template,
-    )
-    service_context = build_code_context(ctx.config, ctx.session.gateway)
-    register(service_context.cancellation.cancel)
-    if cancel_event.is_set():
-        service_context.cancellation.cancel()
-    workspace = getattr(ctx, "workspace", None)
-    base_dir = workspace.root if workspace is not None else "."
     broker = getattr(ctx, "approval_broker", None)
 
-    class _BrokerChangeApprover(ChangeApprover):
-        requires_explicit_approval = True
+    def approval_factory(_assume_yes: bool) -> Callable[[CodeReviewPreview, CodeReviewAssessment], bool] | None:
+        if broker is None:
+            return None
 
-        def approve(self, preview: Any, assessment: Any) -> bool:
-            if broker is None:
-                return False
+        def approve(preview: CodeReviewPreview, assessment: CodeReviewAssessment) -> bool:
             return bool(broker.approve_change(preview, assessment))
 
-    return CodingApplicationService(base_dir, service_context, ctx.config).execute(
-        request,
-        approver=_BrokerChangeApprover() if broker is not None else None,
+        return approve
+
+    workspace = getattr(ctx, "workspace", None)
+    return execute_code_command(
+        envelope.visible_text,
+        config=ctx.config,
+        conversation=ctx.conversation,
+        workspace_root=workspace.root if workspace is not None else ".",
+        allows_write_validate=allows_write_validate,
+        is_full_mode=lambda: read_execution_capabilities(ctx.task_execution).is_full_mode,
+        approval_factory=approval_factory,
+        register_cancellation=register,
+        cancellation_requested=cancel_event.is_set,
     )
 
 
@@ -148,33 +115,25 @@ def _execute_application_submission(
     output: Callable[[str], None],
 ) -> tuple[Callable[[], None], Any]:
     cleanup = _bind_application(ctx, cancel_event, register)
-    application = ctx.application
-    if envelope.command_id == "retry":
-        resume = getattr(application, "resume", None)
-        result = resume(stream_callback=output) if callable(resume) else application.interact(
-            "/continue",
-            boundary="task",
-            visible_user_text=envelope.visible_text,
-            task_payload="/continue",
-            stream_callback=output,
-        )
-    elif envelope.command_id == "agent":
-        result = application.interact(
-            envelope.payload,
-            boundary="task",
-            visible_user_text=envelope.visible_text,
-            task_payload=envelope.payload,
-            stream_callback=output,
-        )
-    else:
-        result = application.interact(
-            envelope.payload,
-            boundary="natural",
-            visible_user_text=envelope.visible_text,
-            task_payload=envelope.payload,
-            stream_callback=output,
-        )
+    entry: Literal["retry", "agent", "natural"] = "retry" if envelope.command_id == "retry" else ("agent" if envelope.command_id == "agent" else "natural")
+    result = execute_task_submission(ctx.task_execution, envelope.payload, entry=entry,
+                                visible_text=envelope.visible_text, stream_callback=output)
     return cleanup, result
+
+
+def _dispatch_interactive_submission(
+    ctx: Any,
+    envelope: SubmissionEnvelope,
+    cancel_event: Any,
+    register: Callable[[Callable[[], None]], None],
+    output: Callable[[str], None],
+) -> tuple[Callable[[], None], Any]:
+    """Run the route selected by the submitted command metadata."""
+    if envelope.command_id == "search":
+        return (lambda: None), _execute_search(ctx, envelope, cancel_event)
+    if envelope.command_id == "code":
+        return (lambda: None), _execute_code(ctx, envelope, cancel_event, register)
+    return _execute_application_submission(ctx, envelope, cancel_event, register, output)
 
 
 def execute_submission(
@@ -216,17 +175,15 @@ def execute_submission(
         else:
             stream_channel.publish(envelope.run_generation, "diagnostic", text)
 
-    result: Any
+    result: Any = None
     try:
-        with bind_worker_output(publish_diagnostic):
-            if envelope.command_id == "search":
-                result = _execute_search(ctx, envelope, cancel_event)
-            elif envelope.command_id == "code":
-                result = _execute_code(ctx, envelope, cancel_event, register)
-            else:
-                cleanup, result = _execute_application_submission(
-                    ctx, envelope, cancel_event, register, publish_assistant
-                )
+        def operation() -> None:
+            nonlocal cleanup, result
+            cleanup, result = _dispatch_interactive_submission(
+                ctx, envelope, cancel_event, register, publish_assistant
+            )
+
+        run_interactive_worker(operation, publish_text=publish_diagnostic)
         stream_status = (
             stream_channel.status(envelope.run_generation)
             if stream_channel is not None

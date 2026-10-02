@@ -1,0 +1,1024 @@
+{
+  "candidate_count": 24,
+  "family_counts": {
+    "config": 6,
+    "lifecycle_and_support": 5,
+    "locking": 5,
+    "storage": 8
+  },
+  "records": [
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "File descriptor lock/unlock primitives; stdlib mechanics, no PID identity responsibility.",
+        "Exact graph inbound/outbound module IDs and tests are recorded in this row; existing consumers cross Agent and Application for the lock cohort."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/file_lock.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock",
+        "llm_agent.agent.runtime.lock_filesystem",
+        "llm_agent.agent.runtime.lock_record"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "locking",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.file_lock",
+      "production_consumers": [
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock",
+        "llm_agent.agent.runtime.lock_filesystem",
+        "llm_agent.agent.runtime.lock_record"
+      ],
+      "responsibility_and_reason": "File descriptor lock/unlock primitives; stdlib mechanics, no PID identity responsibility.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Platform",
+      "target_path": "src/llm_agent/process/",
+      "test_consumers": [
+        "tests/unit/runtime/test_instance_lock.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Mixed safe filesystem-entry/descriptor helpers and lock coordination; split by existing filesystem/process responsibility.",
+        "Exact graph inbound/outbound module IDs and tests are recorded in this row; existing consumers cross Agent and Application for the lock cohort."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/lock_filesystem.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.checkpoint_manager",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.file_lock",
+        "llm_agent.filesystem.primitives"
+      ],
+      "disposition": "SPLIT",
+      "external_public_support": "UNKNOWN",
+      "family": "locking",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.lock_filesystem",
+      "production_consumers": [
+        "llm_agent.agent.checkpoint_manager",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "responsibility_and_reason": "Mixed safe filesystem-entry/descriptor helpers and lock coordination; split by existing filesystem/process responsibility.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "split_components": [
+        {
+          "responsibility": "secure filesystem entry and descriptor primitives",
+          "target_owner": "Platform",
+          "target_path": "src/llm_agent/filesystem/"
+        },
+        {
+          "responsibility": "lock coordination composition",
+          "target_owner": "Platform",
+          "target_path": "src/llm_agent/process/"
+        }
+      ],
+      "target_owner": "Platform",
+      "target_path": "Split across existing Platform owners; exact component destinations below.",
+      "test_consumers": [
+        "tests/unit/runtime/test_instance_lock.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Ephemeral lock metadata serialization and validation; preserve existing on-disk fields and recovery behavior.",
+        "Exact graph inbound/outbound module IDs and tests are recorded in this row; existing consumers cross Agent and Application for the lock cohort."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/lock_record.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.file_lock"
+      ],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "locking",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.lock_record",
+      "production_consumers": [
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "responsibility_and_reason": "Ephemeral lock metadata serialization and validation; preserve existing on-disk fields and recovery behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Platform",
+      "target_path": "src/llm_agent/process/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Exclusive cross-process lock for a filesystem path, including acquisition and release semantics.",
+        "Exact graph inbound/outbound module IDs and tests are recorded in this row; existing consumers cross Agent and Application for the lock cohort."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/instance_lock.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.evaluation.feedback_store",
+        "llm_agent.agent.runtime.state_migration",
+        "llm_agent.application.agent_boundary",
+        "llm_agent.discovery.store",
+        "llm_agent.outputs.store"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.file_lock",
+        "llm_agent.agent.runtime.lock_filesystem",
+        "llm_agent.agent.runtime.lock_record",
+        "llm_agent.agent.runtime.process_identity"
+      ],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "locking",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.instance_lock",
+      "production_consumers": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.evaluation.feedback_store",
+        "llm_agent.agent.runtime.state_migration",
+        "llm_agent.application.agent_boundary",
+        "llm_agent.discovery.store",
+        "llm_agent.outputs.store"
+      ],
+      "responsibility_and_reason": "Exclusive cross-process lock for a filesystem path, including acquisition and release semantics.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Platform",
+      "target_path": "src/llm_agent/process/",
+      "test_consumers": [
+        "tests/integration/test_standalone_application.py",
+        "tests/unit/engineering/test_phase2_store.py",
+        "tests/unit/engineering/test_wave20a_campaign.py",
+        "tests/unit/runtime/test_instance_lock.py",
+        "tests/unit/runtime/test_state_migration.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "PID/start identity and process liveness detection.",
+        "Exact graph inbound/outbound module IDs and tests are recorded in this row; existing consumers cross Agent and Application for the lock cohort."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/process_identity.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.engineering.recovery",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.summary",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "locking",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.process_identity",
+      "production_consumers": [
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.engineering.recovery",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.summary",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "responsibility_and_reason": "PID/start identity and process liveness detection.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Platform",
+      "target_path": "src/llm_agent/process/",
+      "test_consumers": [
+        "tests/unit/engineering/test_phase2_store.py",
+        "tests/unit/engineering/test_wave20a_campaign.py",
+        "tests/unit/runtime/test_instance_lock.py",
+        "tests/unit/runtime/test_process_identity.py",
+        "tests/unit/runtime/test_wave19_home_lifecycle.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_bootstrap.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.health.standalone",
+        "llm_agent.application.agent_boundary"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.agent.runtime.storage_migration",
+        "llm_agent.filesystem.primitives",
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_bootstrap",
+      "production_consumers": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.health.standalone",
+        "llm_agent.application.agent_boundary"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/integration/test_wave19_cross_domain_migrated_home.py",
+        "tests/integration/test_wave19_storage_migration.py",
+        "tests/integration/test_wave19_storage_reset_restore.py",
+        "tests/unit/runtime/test_wave19_storage_bootstrap.py",
+        "tests/unit/runtime/test_wave19_storage_maintenance.py",
+        "tests/unit/runtime/test_wave19_storage_migration_promotion.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_contracts.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.storage_bootstrap",
+        "llm_agent.agent.runtime.storage_maintenance",
+        "llm_agent.agent.runtime.storage_migration",
+        "llm_agent.agent.runtime.storage_migration_plan",
+        "llm_agent.agent.runtime.storage_migration_revalidation",
+        "llm_agent.agent.runtime.storage_receipts"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_receipts",
+        "llm_agent.filesystem.path_safety",
+        "llm_agent.filesystem.primitives",
+        "llm_agent.storage.json_persistence"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_contracts",
+      "production_consumers": [
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.storage_bootstrap",
+        "llm_agent.agent.runtime.storage_maintenance",
+        "llm_agent.agent.runtime.storage_migration",
+        "llm_agent.agent.runtime.storage_migration_plan",
+        "llm_agent.agent.runtime.storage_migration_revalidation",
+        "llm_agent.agent.runtime.storage_receipts"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/integration/test_wave19_cross_domain_feedback_reset_restore.py",
+        "tests/integration/test_wave19_storage_reset_restore.py",
+        "tests/unit/runtime/test_wave19_home_lifecycle.py",
+        "tests/unit/runtime/test_wave19_storage_bootstrap.py",
+        "tests/unit/runtime/test_wave19_storage_contracts.py",
+        "tests/unit/runtime/test_wave19_storage_maintenance.py",
+        "tests/unit/runtime/test_wave19_storage_migration_plan.py",
+        "tests/unit/runtime/test_wave19_storage_migration_promotion.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_maintenance.py",
+      "direct_inbound_dependencies": [],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.home_lifecycle",
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.filesystem.path_safety",
+        "llm_agent.filesystem.primitives",
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_maintenance",
+      "production_consumers": [],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/integration/test_wave19_cross_domain_feedback_reset_restore.py",
+        "tests/integration/test_wave19_storage_reset_restore.py",
+        "tests/unit/runtime/test_wave19_storage_maintenance.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_migration.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.storage_bootstrap"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.agent.runtime.storage_migration_plan",
+        "llm_agent.agent.runtime.storage_migration_revalidation",
+        "llm_agent.filesystem.primitives",
+        "llm_agent.storage.json_persistence",
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_migration",
+      "production_consumers": [
+        "llm_agent.agent.runtime.storage_bootstrap"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/unit/runtime/test_wave19_storage_migration_plan.py",
+        "tests/unit/runtime/test_wave19_storage_migration_promotion.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_migration_plan.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.storage_migration",
+        "llm_agent.agent.runtime.storage_migration_revalidation"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.agent.runtime.storage_migration_sources",
+        "llm_agent.filesystem.primitives",
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_migration_plan",
+      "production_consumers": [
+        "llm_agent.agent.runtime.storage_migration",
+        "llm_agent.agent.runtime.storage_migration_revalidation"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_migration_revalidation.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.storage_migration"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.agent.runtime.storage_migration_plan",
+        "llm_agent.filesystem.primitives"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_migration_revalidation",
+      "production_consumers": [
+        "llm_agent.agent.runtime.storage_migration"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/unit/runtime/test_wave19_storage_migration_promotion.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_migration_sources.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.storage_migration_plan"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_migration_sources",
+      "production_consumers": [
+        "llm_agent.agent.runtime.storage_migration_plan"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/storage_receipts.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.storage.json_persistence"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "storage",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.storage_receipts",
+      "production_consumers": [
+        "llm_agent.agent.runtime.storage_contracts"
+      ],
+      "responsibility_and_reason": "W18/W19 schema, migration, receipts, and identity semantics; do not move wholesale or alter persistence/history behavior.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_environment.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.config_errors"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_environment",
+      "production_consumers": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_errors.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.health.standalone_checks",
+        "llm_agent.agent.runtime.config_environment",
+        "llm_agent.agent.runtime.config_repository",
+        "llm_agent.agent.runtime.config_schema",
+        "llm_agent.application.agent_boundary"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_errors",
+      "production_consumers": [
+        "llm_agent.agent.health.standalone_checks",
+        "llm_agent.agent.runtime.config_environment",
+        "llm_agent.agent.runtime.config_repository",
+        "llm_agent.agent.runtime.config_schema",
+        "llm_agent.application.agent_boundary"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/integration/test_standalone_application.py",
+        "tests/unit/interfaces/test_wave17_phase7_navigation.py",
+        "tests/unit/interfaces/test_workspace_entry.py",
+        "tests/unit/runtime/test_secret_reference.py",
+        "tests/unit/runtime/test_wave16_config_schema.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_schema.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.config_errors",
+        "llm_agent.agent.runtime.hardware",
+        "llm_agent.agent.runtime.secret_reference"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_schema",
+      "production_consumers": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/unit/runtime/test_secret_reference.py",
+        "tests/unit/runtime/test_wave16_config_schema.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_validation.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.config"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.hardware"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_validation",
+      "production_consumers": [
+        "llm_agent.agent.runtime.config"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_repository.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.code.policy",
+        "llm_agent.agent.evaluation.agent_executor",
+        "llm_agent.agent.evaluation.long_horizon_production",
+        "llm_agent.agent.health.standalone_checks",
+        "llm_agent.agent.llm.grammars",
+        "llm_agent.agent.runtime.config",
+        "llm_agent.agent.runtime.limits",
+        "llm_agent.agent.workspace",
+        "llm_agent.application.agent_boundary"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.llm.model_profile",
+        "llm_agent.agent.runtime.config_effective",
+        "llm_agent.agent.runtime.config_environment",
+        "llm_agent.agent.runtime.config_errors",
+        "llm_agent.agent.runtime.config_schema",
+        "llm_agent.storage.json_persistence",
+        "llm_agent.workspace.paths"
+      ],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_repository",
+      "production_consumers": [
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.code.policy",
+        "llm_agent.agent.evaluation.agent_executor",
+        "llm_agent.agent.evaluation.long_horizon_production",
+        "llm_agent.agent.health.standalone_checks",
+        "llm_agent.agent.llm.grammars",
+        "llm_agent.agent.runtime.config",
+        "llm_agent.agent.runtime.limits",
+        "llm_agent.agent.workspace",
+        "llm_agent.application.agent_boundary"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/integration/test_agent_application_evaluation.py",
+        "tests/integration/test_canonical_extensions_cli.py",
+        "tests/integration/test_standalone_application.py",
+        "tests/integration/test_wave19_cross_domain_application.py",
+        "tests/integration/test_wave19_cross_domain_feedback_reset_restore.py",
+        "tests/integration/test_wave19_cross_domain_migrated_home.py",
+        "tests/integration/test_wave19_cross_domain_variant_evaluation.py",
+        "tests/integration/test_wave19_storage_application_lifecycle.py",
+        "tests/unit/interfaces/test_wave17_phase7_navigation.py",
+        "tests/unit/interfaces/test_workspace_entry.py",
+        "tests/unit/llm/test_model_gateway.py",
+        "tests/unit/runtime/test_config_repository.py",
+        "tests/unit/runtime/test_health_link_safety.py",
+        "tests/unit/runtime/test_secret_reference.py",
+        "tests/unit/runtime/test_standalone_health.py",
+        "tests/unit/runtime/test_wave13_online_health.py",
+        "tests/unit/runtime/test_wave15_acceptance.py",
+        "tests/unit/runtime/test_wave16_config_schema.py",
+        "tests/unit/runtime/test_wave19_storage_migration_plan.py",
+        "tests/unit/task_definition/test_corrective.py",
+        "tests/unit/tools/test_extension_bootstrap.py",
+        "tests/unit/tools/test_stdio_extension_example.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/config_effective.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "KEEP_RESHAPE",
+      "external_public_support": "UNKNOWN",
+      "family": "config",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.config_effective",
+      "production_consumers": [
+        "llm_agent.agent.runtime.config_repository"
+      ],
+      "responsibility_and_reason": "Agent model/task configuration semantics; no wholesale Platform move.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "HIGH",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/home_lifecycle.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.health.standalone",
+        "llm_agent.agent.runtime.storage_maintenance",
+        "llm_agent.application.agent_boundary"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.file_lock",
+        "llm_agent.agent.runtime.lock_filesystem",
+        "llm_agent.agent.runtime.process_identity",
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.filesystem.primitives"
+      ],
+      "disposition": "SPLIT",
+      "external_public_support": "UNKNOWN",
+      "family": "lifecycle_and_support",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.home_lifecycle",
+      "production_consumers": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.health.standalone",
+        "llm_agent.agent.runtime.storage_maintenance",
+        "llm_agent.application.agent_boundary"
+      ],
+      "responsibility_and_reason": "Separate application home lifecycle policy from neutral locking/process mechanics.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Application",
+      "target_path": "existing application/ plus process/",
+      "test_consumers": [
+        "tests/unit/runtime/test_wave19_home_lifecycle.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/candidate_lease.py",
+      "direct_inbound_dependencies": [],
+      "direct_outbound_dependencies": [],
+      "disposition": "KEEP",
+      "external_public_support": "UNKNOWN",
+      "family": "lifecycle_and_support",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.candidate_lease",
+      "production_consumers": [],
+      "responsibility_and_reason": "Only test consumer observed; test existence does not prove neutral owner or justify removal; external support unknown.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/unit/test_wave18_candidate_lease.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/schema_validation.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.operation.usage_examples",
+        "llm_agent.agent.parsers",
+        "llm_agent.agent.planning.planning_context",
+        "llm_agent.agent.planning.planning_schema",
+        "llm_agent.agent.tools.builtin_adapter",
+        "llm_agent.agent.tools.invocation_support"
+      ],
+      "direct_outbound_dependencies": [
+        "llm_agent.agent.runtime.schema_validation_values"
+      ],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "lifecycle_and_support",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.schema_validation",
+      "production_consumers": [
+        "llm_agent.agent.operation.usage_examples",
+        "llm_agent.agent.parsers",
+        "llm_agent.agent.planning.planning_context",
+        "llm_agent.agent.planning.planning_schema",
+        "llm_agent.agent.tools.builtin_adapter",
+        "llm_agent.agent.tools.invocation_support"
+      ],
+      "responsibility_and_reason": "Pure shape validation/value contracts; existing W21 policy prefers existing operation.schema if behavior preserving; six inbound families.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/operation/schema/",
+      "test_consumers": [
+        "tests/unit/runtime/test_schema_validation.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/schema_validation_values.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.runtime.schema_validation"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "MOVE",
+      "external_public_support": "UNKNOWN",
+      "family": "lifecycle_and_support",
+      "migration_strategy": "EXPAND_MIGRATE_CONTRACT",
+      "module": "llm_agent.agent.runtime.schema_validation_values",
+      "production_consumers": [
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.runtime.schema_validation"
+      ],
+      "responsibility_and_reason": "Pure shape validation/value contracts; existing W21 policy prefers existing operation.schema if behavior preserving; six inbound families.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/operation/schema/",
+      "test_consumers": [],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    },
+    {
+      "behavior_risk": "MEDIUM",
+      "boundary_evidence": [
+        "Source responsibility and dependency inspection by runtime reviewer.",
+        "Fresh graph captures non-Agent consumers and current dependency directions."
+      ],
+      "change_coupling": {
+        "confidence": "UNKNOWN",
+        "evidence": "No unsupported historical coupling claim."
+      },
+      "current_owner": "Agent",
+      "current_path": "src/llm_agent/agent/runtime/secret_reference.py",
+      "direct_inbound_dependencies": [
+        "llm_agent.agent.llm.model_profile",
+        "llm_agent.agent.llm.providers.openai_compatible",
+        "llm_agent.agent.runtime.config_schema"
+      ],
+      "direct_outbound_dependencies": [],
+      "disposition": "KEEP",
+      "external_public_support": "UNKNOWN",
+      "family": "lifecycle_and_support",
+      "migration_strategy": "IN_PLACE",
+      "module": "llm_agent.agent.runtime.secret_reference",
+      "production_consumers": [
+        "llm_agent.agent.llm.model_profile",
+        "llm_agent.agent.llm.providers.openai_compatible",
+        "llm_agent.agent.runtime.config_schema"
+      ],
+      "responsibility_and_reason": "Agent-specific secret reference semantics; retain pending consumer and owner review.",
+      "retirement_condition": "Preserve behavior and import compatibility; resolve external support and all production/test consumers before contraction.",
+      "target_owner": "Agent",
+      "target_path": "src/llm_agent/agent/runtime/",
+      "test_consumers": [
+        "tests/unit/runtime/test_secret_reference.py"
+      ],
+      "test_isolation": "See exact test consumers; subprocess/crash coverage exists for lock cohort."
+    }
+  ],
+  "status": "PHASE0_CLASSIFICATION"
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "amendments": [
+    {
+      "id": "W23-P2-BROKER-IMPORT-COMPAT-001",
+      "surface": "llm_agent.application.agent_boundary",
+      "previous_disposition": "COMPAT_TEMPORARY broad facade while external import support remained UNKNOWN",
+      "proposed_disposition": "INTERNAL_REPO_API import path; REMOVE the broad broker after all repository consumers migrate; no narrow compatibility facade for this path",
+      "triggering_evidence": [
+        "Sol/user architectural review authorizes this controlled compatibility decision for planning and ledger reconciliation.",
+        "The llm_agent package root and llm_agent.application package do not export agent_boundary in their __all__ surfaces.",
+        "Installed acceptance, user and extension documentation use canonical owners rather than promising the agent_boundary import path.",
+        "No persisted Python-path identity for llm_agent.application.agent_boundary was found.",
+        "Unknown third-party imports of an internal path do not establish a supported compatibility promise."
+      ],
+      "owner_or_dependency_delta": "No canonical owner or dependency direction changes in this administrative amendment; only the broad broker import-compatibility decision changes.",
+      "scope_delta": "CROSS_LANE",
+      "required_revalidation": [
+        "Prove zero repository consumers before deleting the broker.",
+        "Project historical architecture invariants and replace CURRENT checks that require the live broker.",
+        "Run the bounded user evidence for each authorized contraction lane."
+      ],
+      "review_status": "SOL_USER_REVIEWED_AUTHORIZED_FOR_PLANNING_AND_LEDGER_RECORD",
+      "production_contraction_authorized": false
+    }
+  ]
+}

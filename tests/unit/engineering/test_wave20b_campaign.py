@@ -54,6 +54,8 @@ from llm_agent.agent.evaluation.scenario_contracts import EvidenceLevel
 from llm_agent.agent.tools.contracts import ToolDescriptor
 from llm_agent.agent.tools.extension_bootstrap import WorkspaceToolRegistryComposer
 from llm_agent.agent.tools.extension_runtime import ExtensionRuntimeMaterialization
+from llm_agent.application.context import AppPaths
+from llm_agent.application.workspace_recents import list_recent_workspaces
 from llm_agent.discovery.contracts import (
     DISCOVERY_AVAILABILITY_UNKNOWN,
     DISCOVERY_NO_MATCH,
@@ -85,7 +87,6 @@ from llm_agent.interfaces.cli.discovery_projection import availability_for_bindi
 from llm_agent.interfaces.cli.discovery_ui import select_palette_entry
 from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
 from llm_agent.interfaces.cli.parser import build_parser
-from llm_agent.interfaces.cli.workspace_recents import load_recent_workspaces
 
 ROOT = Path(__file__).resolve().parents[3]
 PRACTICAL_IDS = tuple(f"PV1-{index:02d}" for index in range(1, 9))
@@ -820,10 +821,11 @@ def test_B35_recent_workspaces_are_newest_first_and_skip_stale(tmp_path: Path) -
             {"path": str(tmp_path / "missing"), "last_opened_utc": "2026-01-01T00:00:03Z"},
         ],
     }
-    recent = tmp_path / "recent.json"
+    app_paths = AppPaths.discover(app_home=tmp_path / "app-home")
+    app_paths.global_dir.mkdir(parents=True, exist_ok=True)
+    recent = app_paths.recent_workspaces_file
     recent.write_text(json.dumps(payload), encoding="utf-8")
-    paths = SimpleNamespace(recent_workspaces_file=recent)
-    assert load_recent_workspaces(paths) == (second, first)
+    assert list_recent_workspaces(app_paths) == (second, first)
 
 
 def test_B36_path_completion_delegates_path_values_to_filesystem() -> None:
@@ -1042,29 +1044,27 @@ def test_semantic_projection_reuses_selected_profile_without_application_bootstr
     selected_profile = object()
     observed: dict[str, object] = {}
 
-    class Repository:
-        def __init__(self, _paths, config_path=None):
-            observed["config_path"] = config_path
-
-        def load(self, *, overrides=None):
-            observed["overrides"] = overrides
-            return SimpleNamespace(model_profile=selected_profile)
-
     class SemanticOwner:
         def __init__(self, *, gateway_config):
             observed["profile"] = gateway_config
 
-    monkeypatch.setattr("llm_agent.application.agent_boundary.ConfigRepository", Repository)
-    monkeypatch.setattr("llm_agent.application.context.AppPaths.discover", lambda app_home=None: SimpleNamespace(discovery_frecency_file=tmp_path / "frecency.json"))
+    def resolve(*, app_paths, config_path, profile, home):
+        observed.update(app_paths=app_paths, config_path=config_path, profile_arg=profile, home=home)
+        return selected_profile
+
+    monkeypatch.setattr("llm_agent.application.discovery_configuration.resolve_semantic_discovery_profile", resolve)
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", SemanticOwner)
     projection.build_service(
         semantic=True,
         config_path="selected.json",
         profile="selected-profile",
+        home=tmp_path,
     )
     assert observed == {
+        "app_paths": None,
         "config_path": "selected.json",
-        "overrides": {"default_model_profile": "selected-profile"},
+        "profile_arg": "selected-profile",
+        "home": tmp_path,
         "profile": selected_profile,
     }
 
@@ -1072,14 +1072,7 @@ def test_semantic_projection_reuses_selected_profile_without_application_bootstr
 def test_missing_semantic_config_falls_back_without_first_run_or_model_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import llm_agent.interfaces.cli.discovery_projection as projection
 
-    class MissingRepository:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def load(self, **_kwargs):
-            raise RuntimeError("missing")
-
-    monkeypatch.setattr("llm_agent.agent.runtime.config_repository.ConfigRepository", MissingRepository)
+    monkeypatch.setattr("llm_agent.application.discovery_configuration.resolve_semantic_discovery_profile", lambda **_kwargs: None)
     home = tmp_path / "missing-home"
     before = home.exists()
     result = projection.discover_commands("commands", semantic=True, home=home)
@@ -1132,7 +1125,7 @@ def test_standalone_commands_projects_explicit_workspace_without_bootstrap(
 
     monkeypatch.setattr(cli_app, "_create_application", unexpected)
     monkeypatch.setattr(cli_app.first_run, "recover_first_run_config", unexpected)
-    monkeypatch.setattr("llm_agent.agent.runtime.config_repository.ConfigRepository.load", unexpected)
+    monkeypatch.setattr("llm_agent.application.discovery_configuration.resolve_semantic_discovery_profile", unexpected)
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", unexpected)
     home = tmp_path / "home"
     workspace = tmp_path / "workspace"
@@ -1161,14 +1154,6 @@ def test_commands_semantic_cli_propagates_profile_and_bounds_one_model_call(
     selected_profile = object()
     observed: dict[str, object] = {}
 
-    class Repository:
-        def __init__(self, _paths: object, config_path: object = None) -> None:
-            observed["config_path"] = config_path
-
-        def load(self, *, overrides: object = None) -> object:
-            observed["overrides"] = overrides
-            return SimpleNamespace(model_profile=selected_profile)
-
     class Gateway:
         model = "fake"
         provider_name = "fake"
@@ -1193,12 +1178,24 @@ def test_commands_semantic_cli_propagates_profile_and_bounds_one_model_call(
         )
 
     monkeypatch.setattr(projection, "SemanticCommandDiscovery", semantic_owner)
-    monkeypatch.setattr("llm_agent.application.agent_boundary.ConfigRepository", Repository)
+
+    def resolve(*, app_paths: object, config_path: object, profile: object, home: object) -> object:
+        observed.update(
+            app_paths=app_paths,
+            config_path=config_path,
+            profile_arg=profile,
+            home=home,
+        )
+        return selected_profile
+
+    monkeypatch.setattr(
+        "llm_agent.application.discovery_configuration.resolve_semantic_discovery_profile",
+        resolve,
+    )
+    paths = SimpleNamespace(discovery_frecency_file=tmp_path / "frecency.json")
     monkeypatch.setattr(
         "llm_agent.application.context.AppPaths.discover",
-        lambda app_home=None: SimpleNamespace(
-            discovery_frecency_file=tmp_path / "frecency.json"
-        ),
+        lambda app_home=None: paths,
     )
 
     original_for_context = semantic_module.ModelCallService.for_context.__func__
@@ -1244,8 +1241,10 @@ def test_commands_semantic_cli_propagates_profile_and_bounds_one_model_call(
     assert document["semantic_used"] is True
     assert gateway.calls == 1
     assert observed == {
+        "app_paths": paths,
         "config_path": "selected.json",
-        "overrides": {"default_model_profile": "selected-profile"},
+        "profile_arg": "selected-profile",
+        "home": str(home),
         "profile": selected_profile,
         "max_model_calls": 1,
         "operation": "command_discovery",

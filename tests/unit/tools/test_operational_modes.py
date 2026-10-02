@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from rich.console import Console
 
+from llm_agent.agent.application import AgentApplication as _AgentApplication
 from llm_agent.agent.approval import ApprovalDecision, AutoApprove
 from llm_agent.agent.llm.contracts import ModelResponse, ProviderCapabilities
 from llm_agent.agent.llm.session import ChatSession
@@ -18,6 +19,8 @@ from llm_agent.agent.tools.authority import OperationalMode, operational_mode_ca
 from llm_agent.agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
 from llm_agent.interfaces.cli import bootstrap, chat, command_handlers, ui
 from llm_agent.interfaces.cli.approval import ConsoleApproval
@@ -25,6 +28,18 @@ from llm_agent.interfaces.cli.commands import handle_command
 from llm_agent.interfaces.cli.parser import build_parser
 from llm_agent.workspace.paths import WorkspacePaths
 
+
+def _fixture_context(**kwargs):
+    owner = kwargs.pop("application", SimpleNamespace())
+    owner.orchestrator = kwargs.pop("orchestrator", SimpleNamespace())
+    session = kwargs.pop("session", None)
+    if session is not None:
+        owner.session = session
+    runtime = _retain_runtime(owner)
+    kwargs["task_execution"] = runtime
+    if session is not None:
+        kwargs["conversation"] = bind_conversation(runtime)
+    return SimpleNamespace(**kwargs)
 
 class _Adapter:
     def __init__(self, descriptor: ToolDescriptor, target: Path) -> None:
@@ -201,7 +216,7 @@ def test_mode_command_changes_only_by_explicit_user_command(monkeypatch) -> None
             self.operational_mode = mode
 
     orchestrator = _Orchestrator()
-    context = SimpleNamespace(orchestrator=orchestrator)
+    context = _fixture_context(orchestrator=orchestrator)
 
     handled, exiting = handle_command("/modo editor", context)
     assert handled is True and exiting is False
@@ -219,7 +234,7 @@ def test_mode_command_changes_only_by_explicit_user_command(monkeypatch) -> None
 def test_mode_query_and_help_explain_available_modes(monkeypatch) -> None:
     output = _Console()
     monkeypatch.setattr(command_handlers, "console", output)
-    context = SimpleNamespace(
+    context = _fixture_context(
         orchestrator=SimpleNamespace(operational_mode=OperationalMode.READ_ONLY),
     )
 
@@ -236,7 +251,7 @@ def test_mode_query_and_help_explain_available_modes(monkeypatch) -> None:
 def test_global_help_discovers_control_plane_commands(monkeypatch) -> None:
     stream = StringIO()
     monkeypatch.setattr(ui, "console", Console(file=stream, force_terminal=False))
-    context = SimpleNamespace(
+    context = _fixture_context(
         orchestrator=SimpleNamespace(operational_mode=OperationalMode.READ_ONLY),
     )
 
@@ -313,7 +328,7 @@ def test_direct_code_edit_respects_read_only_then_editor_approval(tmp_path: Path
     output.input = lambda _prompt: "s"  # type: ignore[method-assign]
     monkeypatch.setattr(command_handlers, "console", output)
     monkeypatch.setattr(ui, "console", output)
-    context = SimpleNamespace(
+    context = _fixture_context(
         orchestrator=_Orchestrator(OperationalMode.READ_ONLY),
         session=SimpleNamespace(gateway=_Gateway()),
         config={},
@@ -325,7 +340,7 @@ def test_direct_code_edit_respects_read_only_then_editor_approval(tmp_path: Path
     )
     assert target.read_text(encoding="utf-8") == "original"
 
-    context.orchestrator.operational_mode = OperationalMode.EDITOR
+    context.task_execution._owner.orchestrator.operational_mode = OperationalMode.EDITOR
     command_handlers.code_command(
         "/code modify controle.txt -- Altere para modificado", context
     )
@@ -342,20 +357,20 @@ def test_model_text_cannot_change_operational_mode(monkeypatch) -> None:
         def set_operational_mode(self, mode: OperationalMode) -> None:
             self.operational_mode = mode
 
-    context = SimpleNamespace(
+    context = _fixture_context(
         session=SimpleNamespace(),
         orchestrator=_Orchestrator(),
         modo_agente=True,
     )
 
     assert cli._handle_input("analise o projeto", context) is False
-    assert context.orchestrator.operational_mode is OperationalMode.READ_ONLY
+    assert context.task_execution._owner.orchestrator.operational_mode is OperationalMode.READ_ONLY
 
 
 def test_prompt_exposes_current_mode(monkeypatch) -> None:
     output = _Console()
     monkeypatch.setattr(cli, "console", output)
-    context = SimpleNamespace(
+    context = _fixture_context(
         session=SimpleNamespace(thinking_budget=0),
         orchestrator=SimpleNamespace(operational_mode_label="READ ONLY"),
         modo_diagnostico=0,
@@ -374,7 +389,7 @@ def test_cli_bootstrap_defaults_chat_to_read_only_and_leaves_run_unbounded(monke
         captured.append(kwargs.get("operational_mode"))
         return object()
 
-    monkeypatch.setattr(bootstrap.AgentApplication, "create", create)
+    monkeypatch.setattr(_AgentApplication, "create", create)
     bootstrap.create_application(build_parser().parse_args(["chat"]), configure_logging=False)
     bootstrap.create_application(build_parser().parse_args(["run", "oi"]), configure_logging=False)
 

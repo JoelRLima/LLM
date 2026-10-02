@@ -13,6 +13,14 @@ from rich.console import Console
 
 from llm_agent.application.agent_boundary import InspectionQuery, InspectionService, InspectorSnapshot
 from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.application.inspection import (
+    BookmarkAddRequest,
+    BookmarkListRequest,
+    BookmarkRemoveRequest,
+    DiagnosticExportRequest,
+    InspectionAuxiliaryOperations,
+)
+from llm_agent.application.task_execution import read_runtime_inspection
 from llm_agent.interfaces.cli.inspector_rendering import (
     render_runs as _render_runs_to_console,
 )
@@ -120,14 +128,14 @@ def _run_follow(service: InspectionService, run_id: str | None, args: Any) -> in
         return 0
 
 
-def _run_export(args: Any, service: InspectionService) -> int:
-    from llm_agent.application.agent_boundary import DiagnosticExporter
-
-    receipt = DiagnosticExporter(service).export(
-        _value(args, "inspect_run_id"),
-        output=_value(args, "output"),
-        force=bool(_value(args, "force", False)),
-        include_bookmarks=bool(_value(args, "include_bookmarks", False)),
+def _run_export(args: Any, operations: InspectionAuxiliaryOperations) -> int:
+    receipt = operations.export_diagnostics(
+        DiagnosticExportRequest(
+            run_id=_value(args, "inspect_run_id"),
+            output=_value(args, "output"),
+            force=bool(_value(args, "force", False)),
+            include_bookmarks=bool(_value(args, "include_bookmarks", False)),
+        )
     )
     if _value(args, "json_output", False):
         _print_json(receipt.to_dict())
@@ -136,27 +144,29 @@ def _run_export(args: Any, service: InspectionService) -> int:
     return 0
 
 
-def _run_bookmark(args: Any, service: InspectionService) -> int:
-    from llm_agent.application.agent_boundary import BookmarkStore
-
-    store = BookmarkStore(_workspace_paths(args))
+def _run_bookmark(args: Any, operations: InspectionAuxiliaryOperations) -> int:
     run_id = _value(args, "inspect_run_id")
-    if not run_id:
-        run_id = service.select().metadata.run_id
     command = _value(args, "bookmark_command")
     if command == "add":
-        sequence = _value(args, "inspect_sequence")
-        if sequence is None:
-            raise ValueError("bookmark add requer --sequence")
-        bookmark = store.add(run_id, sequence, _value(args, "note"))
-        document: Any = {"bookmark": bookmark.to_dict()}
+        add_result = operations.add_bookmark(
+            BookmarkAddRequest(
+                run_id=run_id,
+                sequence=_value(args, "inspect_sequence"),
+                note=_value(args, "note"),
+            )
+        )
+        document: Any = add_result.to_dict()
     elif command == "remove":
-        sequence = _value(args, "inspect_sequence")
-        if sequence is None:
-            raise ValueError("bookmark remove requer --sequence")
-        document = {"removed": store.remove(run_id, sequence), "run_id": run_id, "sequence": sequence}
+        remove_result = operations.remove_bookmark(
+            BookmarkRemoveRequest(
+                run_id=run_id,
+                sequence=_value(args, "inspect_sequence"),
+            )
+        )
+        document = remove_result.to_dict()
     else:
-        document = {"bookmarks": [item.to_dict() for item in store.list(run_id)]}
+        list_result = operations.list_bookmarks(BookmarkListRequest(run_id=run_id))
+        document = list_result.to_dict()
     if _value(args, "json_output", False):
         _print_json(document)
     else:
@@ -215,15 +225,18 @@ def _run_snapshot(args: Any, service: InspectionService, run_id: str | None) -> 
 def run_inspect(args: Any) -> int:
     """Dispatch the installed inspect surface without constructing AgentApplication."""
 
-    service = _service(args)
     command = _value(args, "inspect_command")
     run_id = _value(args, "inspect_run_id")
     if command == "list":
+        service = _service(args)
         return _run_list(args, service)
     if command == "bookmark":
-        return _run_bookmark(args, service)
+        operations = InspectionAuxiliaryOperations(_workspace_paths(args))
+        return _run_bookmark(args, operations)
     if command == "export":
-        return _run_export(args, service)
+        operations = InspectionAuxiliaryOperations(_workspace_paths(args))
+        return _run_export(args, operations)
+    service = _service(args)
     if _value(args, "follow", False):
         return _run_follow(service, run_id, args)
     if command is None and _is_tty() and not _value(args, "json_output", False):
@@ -236,10 +249,7 @@ def run_inspect(args: Any) -> int:
 def render_context_inspect(context: Any) -> None:
     """Render `/inspect` through the application's already-created service."""
 
-    application = getattr(context, "application", None)
-    service_factory = getattr(application, "inspection_service", None)
-    service = service_factory() if callable(service_factory) else InspectionService(context.workspace_paths)
-    render_snapshot(service.snapshot(limit=100))
+    render_snapshot(read_runtime_inspection(context.task_execution))
 
 
 __all__ = ["render_context_inspect", "run_inspect", "render_snapshot"]

@@ -4,6 +4,7 @@ import builtins
 from pathlib import Path
 from types import SimpleNamespace
 
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app, ui
 
 
@@ -34,7 +35,7 @@ def test_headless_json_path_does_not_import_prompt_toolkit(monkeypatch, tmp_path
             return None
 
     monkeypatch.setattr(builtins, "__import__", no_prompt_toolkit)
-    monkeypatch.setattr(app, "_create_application", lambda *_args, **_kwargs: Application())
+    monkeypatch.setattr(app, "_create_application", lambda *_args, **_kwargs: _retain_runtime(Application()))
 
     assert app.main(["run", "--json", "--workspace", str(tmp_path), "hello"]) == 0
     output = capsys.readouterr()
@@ -45,12 +46,15 @@ def test_headless_json_path_does_not_import_prompt_toolkit(monkeypatch, tmp_path
 def test_dynamic_code_result_text_is_literal_without_rich_markup(monkeypatch) -> None:
     rendered: list[tuple[object, dict[str, object]]] = []
     monkeypatch.setattr(ui, "console", SimpleNamespace(print=lambda value, **kwargs: rendered.append((value, kwargs))))
-    result = SimpleNamespace(
-        status=SimpleNamespace(value="failed"),
+    from llm_agent.application.code_commands import CodeCommandOutcome
+
+    result = CodeCommandOutcome(
+        kind="executed",
+        status="failed",
         summary="[model] user text [/model]",
         error=None,
         artifacts=(),
-        diagnostics=({"code": "X", "message": "[red]literal[/red]"},),
+        diagnostics=(("X", "", "", "[red]literal[/red]"),),
     )
 
     ui.render_code_result(result)

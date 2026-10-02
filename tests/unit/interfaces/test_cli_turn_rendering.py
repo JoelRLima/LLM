@@ -8,6 +8,8 @@ from typing import Any
 
 from rich.console import Console
 
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app, chat, inspector_rendering, turn_rendering
 from llm_agent.interfaces.cli.commands import handle_command
 
@@ -22,12 +24,7 @@ def _console_with_stream(*, width: int = 120) -> tuple[Console, io.StringIO]:
 
 
 def _context(*, diagnostic: int = 0) -> SimpleNamespace:
-    return SimpleNamespace(
-        workspace=SimpleNamespace(root="/tmp/project"),
-        orchestrator=SimpleNamespace(operational_mode_label="READ ONLY"),
-        session=SimpleNamespace(thinking_budget=2048),
-        modo_diagnostico=diagnostic,
-    )
+    return SimpleNamespace(workspace=SimpleNamespace(root='/tmp/project'), conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(thinking_budget=2048, get_effective_system_prompt=lambda: '', model_profile=SimpleNamespace(model='m', provider='p'))))), modo_diagnostico=diagnostic, task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(operational_mode_label='READ ONLY'))))
 
 
 def _result(
@@ -104,7 +101,7 @@ def test_ux_t05_natural_boundary_and_ux_t06_streamed_answer_once() -> None:
     result = _result(answer="abcdef")
     application = _Application(result, ("abc", "def"))
     console, stream = _console_with_stream()
-    ctx = SimpleNamespace(application=application, modo_diagnostico=0)
+    ctx = SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(application))
 
     chat.run_agent_turn(console, ctx, "oi")
     output = stream.getvalue()
@@ -119,7 +116,7 @@ def test_ux_t07_empty_chunks_and_t08_non_stream_answer_once() -> None:
     for chunks in (("", ""), ()):
         result = _result(answer="fallback")
         console, stream = _console_with_stream()
-        chat.run_agent_turn(console, SimpleNamespace(application=_Application(result, chunks), modo_diagnostico=0), "oi")
+        chat.run_agent_turn(console, SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(result, chunks))), "oi")
         assert stream.getvalue().count("fallback") == 1
 
 
@@ -214,7 +211,7 @@ def test_corrective_streamed_answer_is_literal_and_not_rich_wrapped() -> None:
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(_result(answer=answer), (answer,)), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(_result(answer=answer), (answer,)))),
         "oi",
     )
 
@@ -230,7 +227,7 @@ def test_corrective_fallback_answer_is_literal_once_with_only_cli_newline() -> N
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(_result(answer=answer)), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(_result(answer=answer)))),
         "oi",
     )
 
@@ -333,7 +330,7 @@ def test_ux_t27_failed_interaction_is_visible_once_without_fake_facts() -> None:
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(failure), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(failure))),
         "oi",
     )
 
@@ -358,3 +355,9 @@ def test_ux_t28_prompt_preserves_eof_and_keyboard_interrupt_shutdown(monkeypatch
 
         assert app._prompt(_context()) is None
         assert "Encerrando..." in stream.getvalue()
+
+
+def _fixture_runtime(owner, orchestrator=None):
+    if orchestrator is not None:
+        owner.orchestrator = orchestrator
+    return _retain_runtime(owner)

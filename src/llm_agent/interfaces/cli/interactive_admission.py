@@ -42,7 +42,7 @@ def build_agentic_envelope(text: str, entry: CliActionMatch) -> Any:
 def build_natural_envelope(text: str) -> Any:
     from llm_agent.interfaces.cli.controller import SubmissionEnvelope
 
-    return SubmissionEnvelope(0, text, "natural_text", "AGENTIC", "AGENTIC_SUBMIT", "PENDING_EXACT_TEXT", text, "natural", "llm_agent.agent.application.AgentApplication.interact")
+    return SubmissionEnvelope(0, text, "natural_text", "AGENTIC", "AGENTIC_SUBMIT", "PENDING_EXACT_TEXT", text, "natural", "llm_agent.application.task_execution.execute_submission")
 
 
 def confirm_exit(ctx: Any) -> bool:

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
-from llm_agent.application.agent_boundary import ChatSession, Orchestrator
+from llm_agent.application.conversation import ConversationRuntime
+from llm_agent.application.task_execution import TaskExecutionRuntime
 from llm_agent.interfaces.cli.action_parser import parse_action
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.ui import ConsoleChangeApprover, exibir_menu
 
 if TYPE_CHECKING:
-    from llm_agent.application.agent_boundary import AgentApplication
     from llm_agent.application.context import AppPaths, WorkspaceContext, WorkspacePaths
 
 __all__ = ["CommandContext", "ConsoleChangeApprover", "exibir_menu", "handle_command"]
@@ -32,11 +32,10 @@ def inspect_command(_: str, ctx: CommandContext) -> None:
 class CommandContext:
     def __init__(
         self,
-        session: ChatSession,
-        orchestrator: Orchestrator,
-        config: Optional[Dict[str, Any]] = None,
+        conversation: ConversationRuntime,
+        task_execution: TaskExecutionRuntime,
+        config: Dict[str, Any],
         *,
-        application: AgentApplication | None = None,
         app_paths: AppPaths | None = None,
         workspace: WorkspaceContext | None = None,
         workspace_paths: WorkspacePaths | None = None,
@@ -50,10 +49,9 @@ class CommandContext:
         query_executor: Any | None = None,
         output_service: Any | None = None,
     ) -> None:
-        self.session = session
-        self.orchestrator = orchestrator
-        self.config = config or session.config
-        self.application = application
+        self.conversation = conversation
+        self.task_execution = task_execution
+        self.config = config
         self.app_paths = app_paths
         self.workspace = workspace
         self.workspace_paths = workspace_paths

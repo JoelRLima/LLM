@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from llm_agent.actions.defaults import DEFAULT_ACTION_CATALOG
+from llm_agent.application.context import AppPaths
 from llm_agent.discovery.contracts import (
     DISCOVERY_REQUIRES_ATTENTION,
     DISCOVERY_REQUIRES_IDLE,
@@ -183,26 +184,17 @@ def _resolve_semantic_gateway_config(
     profile: str | None,
     home: str | Path | None,
 ) -> Any | None:
-    """Resolve the selected model profile without starting the application.
+    """Delegate optional profile resolution without starting the application."""
+    from llm_agent.application.discovery_configuration import (
+        resolve_semantic_discovery_profile,
+    )
 
-    Local Discovery never needs configuration. An explicit semantic request
-    resolves the same ConfigRepository/profile seam used by application
-    startup, but does not initialize storage, mutate the profile, or open the
-    full application runtime.
-    """
-
-    try:
-        from llm_agent.application.agent_boundary import ConfigRepository
-        from llm_agent.application.context import AppPaths
-
-        paths = cast(AppPaths, app_paths) if app_paths is not None else AppPaths.discover(app_home=home)
-        repository = ConfigRepository(paths, config_path=config_path)
-        overrides = {"default_model_profile": profile} if profile is not None else None
-        return repository.load(overrides=overrides).model_profile
-    except Exception:
-        # ConfigError/ConfigNotFound and schema/provider-shape failures are
-        # semantic prerequisites, never reasons to trigger first-run setup.
-        return None
+    return resolve_semantic_discovery_profile(
+        app_paths=cast(AppPaths | None, app_paths),
+        config_path=config_path,
+        profile=profile,
+        home=home,
+    )
 
 
 __all__ = [

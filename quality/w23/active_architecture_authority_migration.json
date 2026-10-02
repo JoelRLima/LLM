@@ -1,0 +1,866 @@
+{
+  "future_single_current_authority": "quality/architecture_current_policy.json with scripts/check_current_architecture.py",
+  "historical_checker_treatment": {
+    "scripts/check_quality.py:check_architecture": "delegates to scripts/check_current_architecture.py; no independent architecture authority",
+    "scripts/check_wave21_architecture.py": "HISTORICAL_ONLY; run only on its frozen historical layout/evidence, not as a current-tree verdict"
+  },
+  "historical_policy_treatment": "W21/W22 policy/hash/path baselines and historical evidence remain unchanged and historical.",
+  "principles": [
+    "Preserve every active semantic rule, canonical direction, neutral-owner invariant, exact compatibility bridge/adapter, and all seven owner prohibitions.",
+    "One CURRENT declarative authority/checker after P1; no duplicate active shadow policy.",
+    "No waivers, baseline amnesty, hidden dynamic/reexport edges, or transient W23 filename fitness rules."
+  ],
+  "records": [
+    {
+      "current_rule_id": "CURRENT-LEGACY-LAYER",
+      "disposition": "REPLACED_BY_CURRENT_RULE:CURRENT-LEGACY-LAYER",
+      "id": "QUALITY-CHECK-ARCH-LAYERS",
+      "kind": "active_checker_rule_set",
+      "rationale": "The old hardcoded W15 layer rules and exact bridge exceptions are now data under the CURRENT policy and evaluated by the sole checker; the former independent implementation was removed.",
+      "source": "scripts/check_quality.py:_forbidden_imports"
+    },
+    {
+      "current_rule_id": "W21-ADAPTER-BUILTIN-TOOLS",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-ADAPTER-BUILTIN-TOOLS",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "adapter_id": "W21-ADAPTER-BUILTIN-TOOLS",
+        "destination_package": "agent.skills",
+        "purpose": "adapt SkillRegistry/SkillDescriptor implementations into ToolDescriptor/ToolAdapter runtime contracts",
+        "source_module": "agent.tools.builtin_adapter"
+      }
+    },
+    {
+      "current_rule_id": "W21-ADAPTER-SKILL-TOOL-REGISTRY",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-ADAPTER-SKILL-TOOL-REGISTRY",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "adapter_id": "W21-ADAPTER-SKILL-TOOL-REGISTRY",
+        "destination_package": "agent.tools",
+        "purpose": "bounded construction adapter retained at the existing public skill-loading surface",
+        "source_surface": "agent.skills.load_tool_registry"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-CHECKPOINT-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-CHECKPOINT-001",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-CHECKPOINT-001",
+        "class": "compatibility",
+        "constraint": "no schema change, reader removal, or migration removal in W21",
+        "lane": "COORDINATOR",
+        "surface": "checkpoint v2 / historical readers and migration paths",
+        "target_owner": "existing checkpoint/continuity/storage-migration owners"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-META-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-META-001",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-META-001",
+        "class": "compatibility",
+        "constraint": "source-compatible alias/re-export only; no second editable metadata definition",
+        "lane": "A",
+        "surface": "agent.skills.descriptor.SkillSpec",
+        "target_owner": "agent.operation.spec.SkillSpec"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-META-002",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-META-002",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-META-002",
+        "class": "compatibility",
+        "constraint": "compatibility projection/re-export only; canonical builtin metadata lives in agent.operation",
+        "lane": "A",
+        "surface": "agent.skills.catalog.BUILTIN_SKILL_SPECS",
+        "target_owner": "agent.operation.catalog.BUILTIN_SKILL_SPECS"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-META-003",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-META-003",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-META-003",
+        "class": "compatibility",
+        "constraint": "identity-preserving alias/re-export",
+        "lane": "A",
+        "surface": "agent.tools.contracts.CancellationSafetyMode",
+        "target_owner": "agent.operation.contracts.CancellationSafetyMode"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-META-004",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-META-004",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-META-004",
+        "class": "compatibility",
+        "constraint": "identity-preserving alias/re-export where required",
+        "lane": "A",
+        "surface": "agent.tools.provenance.ArgumentOrigin",
+        "target_owner": "agent.operation.provenance.ArgumentOrigin"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-META-005",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-META-005",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-META-005",
+        "class": "compatibility",
+        "constraint": "projection/alias only; planning must not maintain an independent editable metadata table",
+        "lane": "A",
+        "surface": "agent.planning.tool_metadata.ToolMetadata",
+        "target_owner": "agent.operation.planning_metadata.ToolMetadata"
+      }
+    },
+    {
+      "current_rule_id": null,
+      "disposition": "HISTORICAL_ONLY",
+      "id": "W21-CB-PATH-001",
+      "kind": "bridge_or_adapter",
+      "rationale": "The source authority makes this conditional on unresolved CHAR-PATH-001 consumer dispositions; no current authorization is inferred.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-PATH-001",
+        "class": "compatibility",
+        "constraint": "definitions may remain for compatibility; no new consumer; exact existing consumer disposition is frozen by CHAR-PATH-001 before edit execution",
+        "freeze_requirement": "Exact existing-consumer dispositions must be filled before Phase 5 architecture/behavior freeze.",
+        "lane": "E",
+        "phase3_state": "SURFACE_REGISTERED_DISPOSITIONS_PENDING_CHAR_PATH_001",
+        "surface": "agent.runtime.paths module-level legacy path globals",
+        "target_owner": "agent.runtime.paths AppPaths/WorkspacePaths"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-PERSIST-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-PERSIST-001",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-PERSIST-001",
+        "class": "compatibility",
+        "constraint": "retain only at persisted/history compatibility boundaries; agent.contracts is not neutral",
+        "lane": "COORDINATOR",
+        "surface": "agent.contracts legacy result/history persistence shapes",
+        "target_owner": "agent.tools.contracts.ToolResult + explicit result adapters"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-PROC-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-PROC-001",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-PROC-001",
+        "class": "compatibility",
+        "constraint": "bounded compatibility facade only; no canonical production caller may remain on the old owner",
+        "lane": "B",
+        "surface": "agent.tools.process_tree",
+        "target_owner": "agent.process.tree"
+      }
+    },
+    {
+      "current_rule_id": "W21-CB-PROC-002",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-CB-PROC-002",
+      "kind": "bridge_or_adapter",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 compatibility registry",
+      "source_record": {
+        "bridge_id": "W21-CB-PROC-002",
+        "class": "compatibility",
+        "constraint": "bounded compatibility facade only; no canonical production caller may remain on the old owner",
+        "lane": "B",
+        "surface": "agent.tools.stdio_streams",
+        "target_owner": "agent.process.streams"
+      }
+    },
+    {
+      "current_rule_id": null,
+      "disposition": "HISTORICAL_ONLY",
+      "id": "W21-CHECKER-CURRENT-TREE-INVOCATION",
+      "kind": "historical_checker_surface",
+      "rationale": "The checker remains available for frozen W21 reproducibility but is not a current-tree gate; live semantics are projected into the canonical CURRENT checker.",
+      "source": "scripts/check_wave21_architecture.py"
+    },
+    {
+      "current_rule_id": "W21-DIR-INTERACTION-PLANNING",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-DIR-INTERACTION-PLANNING",
+      "kind": "direction",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "class": "canonical",
+        "constraint": "Interaction may call deterministic planning/admission services; reverse planning-to-interaction dependencies are forbidden.",
+        "destination": "agent.planning",
+        "direction_id": "W21-DIR-INTERACTION-PLANNING",
+        "source": "agent.interaction"
+      }
+    },
+    {
+      "current_rule_id": "W21-DIR-PLANNING-TOOLS",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-DIR-PLANNING-TOOLS",
+      "kind": "direction",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "class": "canonical",
+        "constraint": "Planning may consume tool invocation/result contracts; planning metadata ownership must not live in tools.",
+        "destination": "agent.tools",
+        "direction_id": "W21-DIR-PLANNING-TOOLS",
+        "source": "agent.planning"
+      }
+    },
+    {
+      "current_rule_id": "W21-DIR-SKILLS-TOOLS",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-DIR-SKILLS-TOOLS",
+      "kind": "direction",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "class": "canonical",
+        "constraint": "Execution/implementation skills may consume canonical tool runtime contracts; shared metadata exceptions are governed by W21-R-META-005/006.",
+        "destination": "agent.tools",
+        "direction_id": "W21-DIR-SKILLS-TOOLS",
+        "source": "agent.skills"
+      }
+    },
+    {
+      "current_rule_id": "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+      "kind": "direction",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "class": "adapter",
+        "constraint": "Existing bounded construction surface only; not a generic reverse dependency authorization.",
+        "destination": "agent.tools",
+        "direction_id": "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+        "source": "agent.skills.load_tool_registry"
+      }
+    },
+    {
+      "current_rule_id": "W21-DIR-TOOLS-SKILLS-ADAPTER",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-DIR-TOOLS-SKILLS-ADAPTER",
+      "kind": "direction",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "class": "adapter",
+        "constraint": "Only the explicit builtin adapter may depend from tools into skills.",
+        "destination": "agent.skills",
+        "direction_id": "W21-DIR-TOOLS-SKILLS-ADAPTER",
+        "source": "agent.tools.builtin_adapter"
+      }
+    },
+    {
+      "current_rule_id": "W21-NEUTRAL-INVARIANT-1",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-NEUTRAL-INVARIANT-1",
+      "kind": "neutral_owner_invariant",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": "Neutral owners contain data/value contracts or shared mechanics, not application objects."
+    },
+    {
+      "current_rule_id": "W21-NEUTRAL-INVARIANT-2",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-NEUTRAL-INVARIANT-2",
+      "kind": "neutral_owner_invariant",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": "No neutral owner may accept/store Orchestrator, AgentApplication, generic services: Any, or caller-domain registries."
+    },
+    {
+      "current_rule_id": "W21-NEUTRAL-INVARIANT-3",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-NEUTRAL-INVARIANT-3",
+      "kind": "neutral_owner_invariant",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": "No neutral owner may add model calls, authority decisions, approval decisions, or caller-specific execution policy."
+    },
+    {
+      "current_rule_id": "W21-POLICY-NEUTRAL-OWNER",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-POLICY-NEUTRAL-OWNER",
+      "kind": "checker_invariant",
+      "rationale": "CURRENT neutral-owner AST shape invariants are declared in the canonical policy and checked over declared neutral owners.",
+      "source": "scripts/w21_architecture/policy.py"
+    },
+    {
+      "current_rule_id": null,
+      "disposition": "HISTORICAL_ONLY",
+      "id": "W21-POLICY-NEW-EDGE",
+      "kind": "checker_invariant",
+      "rationale": "The generic fallback's final decision depends on membership in the frozen W21 exact module-pair baseline and would require a permanent closed-world allowlist/amnesty to reproduce; Spec §6.5 forbids copying that baseline. Its still-durable properties are represented by the explicit forbidden selectors, owner directions, same-family handling in scoped rules, neutral-owner constraints, and exact compatibility declarations projected separately to CURRENT.",
+      "source": "scripts/w21_architecture/policy.py"
+    },
+    {
+      "current_rule_id": "W21-R-INTENT-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-INTENT-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefix": "agent.interaction.intent_claim"
+        },
+        "edge_class": "forbidden",
+        "reason": "Untrusted intent claim value contracts move to neutral agent.intent; planning/runtime must not import interaction parsing ownership.",
+        "remediation_lane": "D",
+        "rule_id": "W21-R-INTENT-001",
+        "source": {
+          "any_of": [
+            {
+              "package_prefix": "agent.planning"
+            },
+            {
+              "module": "agent.runtime.task_directives"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefix": "agent.planning"
+        },
+        "edge_class": "forbidden",
+        "reason": "Tool runtime must not depend upward on planning metadata/schema ownership.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-001",
+        "source": {
+          "package_prefix": "agent.tools"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-002",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-002",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefix": "agent.skills"
+        },
+        "edge_class": "forbidden",
+        "exceptions": [
+          {
+            "destination_package_prefix": "agent.skills",
+            "edge_class": "adapter",
+            "reason": "BuiltinToolAdapter is the explicit skill-to-tool adaptation boundary.",
+            "source_module": "agent.tools.builtin_adapter"
+          }
+        ],
+        "reason": "Canonical tool contracts cannot import skill-domain contracts; only the explicit builtin adapter may depend on skills.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-002",
+        "source": {
+          "package_prefix": "agent.tools"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-003",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-003",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefix": "agent.skills"
+        },
+        "edge_class": "forbidden",
+        "reason": "Planning consumes neutral operation metadata/projections rather than skill implementation/catalog ownership.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-003",
+        "source": {
+          "package_prefix": "agent.planning"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-004",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-004",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "module": "agent.planning.schema_safety"
+        },
+        "edge_class": "forbidden",
+        "reason": "Shared descriptor schema safety moves to neutral operation metadata ownership.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-004",
+        "source": {
+          "module": "agent.skills.descriptor"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-005",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-005",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "modules": [
+            "agent.tools.contracts",
+            "agent.tools.provenance"
+          ]
+        },
+        "edge_class": "forbidden",
+        "reason": "Builtin construction metadata must not be authored in terms of tool-runtime metadata contracts.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-005",
+        "source": {
+          "module": "agent.skills.catalog"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-META-006",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-META-006",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "modules": [
+            "agent.tools.contracts",
+            "agent.tools.provenance",
+            "agent.tools.usage_examples"
+          ]
+        },
+        "edge_class": "forbidden",
+        "reason": "Metadata primitives shared by skills/tools/planning move to the neutral operation owner.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-META-006",
+        "source": {
+          "module": "agent.skills.descriptor"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-NEUTRAL-INTENT-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-NEUTRAL-INTENT-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefixes": [
+            "agent.interaction",
+            "agent.planning",
+            "agent.runtime",
+            "agent.application",
+            "agent.orchestration",
+            "agent.llm"
+          ]
+        },
+        "edge_class": "forbidden",
+        "reason": "agent.intent owns shared intent value contracts only and cannot depend on parser/planner/runtime owners.",
+        "remediation_lane": "D",
+        "rule_id": "W21-R-NEUTRAL-INTENT-001",
+        "source": {
+          "package_prefix": "agent.intent"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-NEUTRAL-OP-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-NEUTRAL-OP-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefixes": [
+            "agent.skills",
+            "agent.tools",
+            "agent.planning",
+            "agent.interaction",
+            "agent.application",
+            "agent.orchestration",
+            "agent.engineering",
+            "agent.code"
+          ]
+        },
+        "edge_class": "forbidden",
+        "reason": "agent.operation is a neutral metadata/contract owner and cannot depend on consumer domains.",
+        "remediation_lane": "A",
+        "rule_id": "W21-R-NEUTRAL-OP-001",
+        "source": {
+          "package_prefix": "agent.operation"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-NEUTRAL-PROC-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-NEUTRAL-PROC-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "package_prefixes": [
+            "agent.skills",
+            "agent.tools",
+            "agent.planning",
+            "agent.interaction",
+            "agent.application",
+            "agent.application_services",
+            "agent.engineering",
+            "agent.code",
+            "agent.reporting"
+          ]
+        },
+        "edge_class": "forbidden",
+        "reason": "agent.process owns mechanism only and cannot import caller policy domains.",
+        "remediation_lane": "B",
+        "rule_id": "W21-R-NEUTRAL-PROC-001",
+        "source": {
+          "package_prefix": "agent.process"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-PROC-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-PROC-001",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "module": "agent.tools.process_tree"
+        },
+        "edge_class": "forbidden",
+        "reason": "Shared process-tree mechanics move to agent.process; old tools path may remain only as an explicit compatibility facade with no canonical production consumers.",
+        "remediation_lane": "B",
+        "rule_id": "W21-R-PROC-001",
+        "source": {
+          "production_module_except": "agent.tools.process_tree"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-R-PROC-002",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-R-PROC-002",
+      "kind": "rule",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "destination": {
+          "module": "agent.tools.stdio_streams"
+        },
+        "edge_class": "forbidden",
+        "reason": "Shared bounded stream/reader mechanics move to agent.process; old tools path may remain only as a compatibility facade.",
+        "remediation_lane": "B",
+        "rule_id": "W21-R-PROC-002",
+        "source": {
+          "production_module_except": "agent.tools.stdio_streams"
+        }
+      }
+    },
+    {
+      "current_rule_id": "W21-neutral_owner-1",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-neutral_owner-1",
+      "kind": "neutral_owner",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "allowed_consumer_families": [
+          "agent.skills",
+          "agent.tools",
+          "agent.planning",
+          "agent.application",
+          "agent.orchestration"
+        ],
+        "allowed_dependency_families": [
+          "stdlib",
+          "agent.capabilities",
+          "agent.resources.contracts",
+          "agent.runtime.schema_validation (narrow existing pure schema-validation dependency only)"
+        ],
+        "lane": "A",
+        "must_not_own": [
+          "tool invocation execution",
+          "skill implementation",
+          "planner policy",
+          "approval/authority policy"
+        ],
+        "package": "agent.operation",
+        "purpose": "Shared operation/builtin metadata value contracts and pure metadata normalization used by skills, tools and planning.",
+        "runtime_dependency_constraint": "No other agent.runtime dependency is authorized by this owner declaration; if Lane A can move pure schema-shape validation into agent.operation without behavior change, that is preferred.",
+        "target_modules": [
+          "agent.operation.contracts",
+          "agent.operation.schema",
+          "agent.operation.provenance",
+          "agent.operation.usage_examples",
+          "agent.operation.spec",
+          "agent.operation.catalog",
+          "agent.operation.planning_metadata"
+        ]
+      }
+    },
+    {
+      "current_rule_id": "W21-neutral_owner-2",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-neutral_owner-2",
+      "kind": "neutral_owner",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "allowed_consumer_families": [
+          "agent.skills",
+          "agent.tools",
+          "agent.code",
+          "agent.application_services",
+          "agent.engineering"
+        ],
+        "allowed_dependency_families": [
+          "stdlib",
+          "agent.cancellation"
+        ],
+        "lane": "B",
+        "must_not_own": [
+          "shell allowlist/policy",
+          "Python AST/code policy",
+          "Git authorization/query semantics",
+          "stdio protocol semantics",
+          "Engineering authorization",
+          "validation command policy"
+        ],
+        "package": "agent.process",
+        "purpose": "Shared subprocess lifecycle mechanics only.",
+        "target_modules": [
+          "agent.process.tree",
+          "agent.process.streams",
+          "agent.process.lifecycle"
+        ]
+      }
+    },
+    {
+      "current_rule_id": "W21-neutral_owner-3",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W21-neutral_owner-3",
+      "kind": "neutral_owner",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W21 historical authority",
+      "source_record": {
+        "allowed_consumer_families": [
+          "agent.interaction",
+          "agent.planning",
+          "agent.runtime"
+        ],
+        "allowed_dependency_families": [
+          "stdlib",
+          "agent.capabilities",
+          "agent.resources.contracts"
+        ],
+        "lane": "D",
+        "must_not_own": [
+          "lexical/semantic parsing",
+          "model calls",
+          "authority admission policy",
+          "target grounding policy",
+          "clarification routing"
+        ],
+        "package": "agent.intent",
+        "purpose": "Shared, authority-neutral intent claim value contracts used by parsing and deterministic admission.",
+        "target_modules": [
+          "agent.intent.claim_types",
+          "agent.intent.claim_contracts"
+        ]
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-AGENT-APPLICATION-001",
+      "direction": "Agent->Application",
+      "disposition": "REPLACED_BY_CURRENT_RULE:W22-OWNER-AGENT-APPLICATION-001",
+      "id": "W22-HARDCODED-AGENT-APPLICATION",
+      "kind": "hardcoded_owner_prohibition",
+      "rationale": "The formerly hardcoded prohibition is represented by the exact declarative CURRENT owner direction.",
+      "source": "scripts/w21_architecture/policy.py authority review"
+    },
+    {
+      "current_rule_id": "W22-OWNER-AGENT-INTERFACES-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-AGENT-INTERFACES-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Interfaces",
+        "rule_id": "W22-OWNER-AGENT-INTERFACES-001",
+        "source_owner": "Agent"
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-APPLICATION-INTERFACES-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-APPLICATION-INTERFACES-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Interfaces",
+        "rule_id": "W22-OWNER-APPLICATION-INTERFACES-001",
+        "source_owner": "Application"
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-INTERFACES-AGENT-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-INTERFACES-AGENT-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Agent",
+        "rule_id": "W22-OWNER-INTERFACES-AGENT-001",
+        "source_owner": "Interfaces"
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-INTERFACES-PLATFORM-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-INTERFACES-PLATFORM-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Platform",
+        "rule_id": "W22-OWNER-INTERFACES-PLATFORM-001",
+        "source_owner": "Interfaces"
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-PLATFORM-AGENT-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-PLATFORM-AGENT-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Agent",
+        "rule_id": "W22-OWNER-PLATFORM-AGENT-001",
+        "source_owner": "Platform"
+      }
+    },
+    {
+      "current_rule_id": "W22-OWNER-PLATFORM-INTERFACES-001",
+      "disposition": "PROJECT_TO_CURRENT",
+      "id": "W22-OWNER-PLATFORM-INTERFACES-001",
+      "kind": "owner_prohibition",
+      "rationale": "Durable semantic constraint is represented once by CURRENT policy; frozen W21/W22 artifacts remain historical evidence.",
+      "source": "W22 owner policy",
+      "source_record": {
+        "destination_owner": "Interfaces",
+        "rule_id": "W22-OWNER-PLATFORM-INTERFACES-001",
+        "source_owner": "Platform"
+      }
+    }
+  ],
+  "status": "PHASE1_GREEN_COMPLETE",
+  "phase1_authority_decisions": {
+    "current_application_api": "workspace_query only",
+    "candidate_api_families": [
+      "agent_boundary",
+      "approval_authority",
+      "configuration_maintenance",
+      "discovery",
+      "engineering",
+      "evaluation_administration",
+      "event_output_projection",
+      "inspection_diagnostics_presentation",
+      "model_conversation",
+      "outputs",
+      "task_directives",
+      "workspace_extensions"
+    ],
+    "event_output_projection": "CANDIDATE / NOT_CURRENT; physical path absent; no inferred owner/path authorization",
+    "dynamic_import_boundaries": {
+      "cli_action_registry": "literal _default_bindings targets only; injected bindings excluded",
+      "skill_registry": "builtin literal SkillSpec declarations only; injected/custom specs excluded",
+      "agent_boundary": "literal _EXPORTS graph targets; temporary closed broker only"
+    },
+    "historical_and_current_separation": "W21/W22 evidence remains historical unless explicitly projected into declarative CURRENT policy."
+  },
+  "phase1_bounded_user_evidence": {
+    "source": "User-reported final bounded Phase 1 evidence gate",
+    "pytest tests/unit/test_current_architecture.py": "10 passed",
+    "scripts/check_current_architecture.py": "CURRENT architecture PASS: 867 modules, 3082 edges",
+    "ruff check scripts/check_current_architecture.py scripts/check_quality.py tests/unit/test_current_architecture.py": "All checks passed",
+    "mypy scripts/check_current_architecture.py scripts/check_quality.py": "Success: no issues found in 2 source files"
+  },
+  "phase1_closure": {
+    "single_current_authority": "PASS: quality/architecture_current_policy.json with scripts/check_current_architecture.py; check_quality delegates to it.",
+    "narrow_application_api": "PASS: workspace_query is the sole CURRENT Application API; candidate families remain proposals.",
+    "complete_graph_visibility": "PASS: 867 modules and 3082 edges, including exact closed schemas for the three nonliteral dynamic sites.",
+    "historical_rule_dispositions": "PASS: W21-POLICY-NEW-EDGE is HISTORICAL_ONLY; still-active explicit W21/W22 rules remain projected.",
+    "split_brain_and_residuals": "PASS: no duplicate CURRENT authority or P0/P1 residual identified in closure review and reported gates."
+  }
+}

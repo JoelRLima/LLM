@@ -6,8 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
-from llm_agent.agent.code.change_models import ChangePreview
-from llm_agent.agent.code.policy import ProposalAssessment
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 from llm_agent.interfaces.cli import interactive_commands
 from llm_agent.interfaces.cli.attention import ApprovalBroker
 
@@ -114,8 +113,8 @@ def test_attention_details_exposes_the_exact_bounded_proposed_diff_without_new_r
     broker = ApprovalBroker()
     broker.bind_generation(9)
     diff = "--- a/file.py\n+++ b/file.py\n@@\n+return 42\n"
-    preview = ChangePreview("change-1", ("file.py",), diff)
-    assessment = ProposalAssessment(0.8, True, ("needs confirmation",))
+    preview = CodeReviewPreview("change-1", ("file.py",), diff)
+    assessment = CodeReviewAssessment(0.8, ("needs confirmation",))
     values: list[object] = []
     thread = Thread(target=lambda: values.append(broker.approve_change(preview, assessment)))
     thread.start()
@@ -153,8 +152,8 @@ def test_attention_details_marks_diff_truncation_and_binds_original_digest() -> 
     broker = ApprovalBroker()
     broker.bind_generation(10)
     diff = "+" + ("x" * (MAX_REVIEW_DIFF_CHARS + 50))
-    preview = ChangePreview("change-2", ("large.py",), diff)
-    assessment = ProposalAssessment(0.5, True)
+    preview = CodeReviewPreview("change-2", ("large.py",), diff)
+    assessment = CodeReviewAssessment(0.5)
     values: list[object] = []
 
     def wait_for_approval() -> None:

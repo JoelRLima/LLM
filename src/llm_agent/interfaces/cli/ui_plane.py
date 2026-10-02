@@ -3,41 +3,20 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
-from llm_agent.application.agent_boundary import RuntimeEvent, RuntimeEventKind
+from llm_agent.application.task_execution import TaskActivityUpdate
 from llm_agent.interfaces.cli.ui_mailbox import (
     MailboxStats,
-    RuntimeEventUISink,
+    TaskActivityUISink,
     UIEventEnvelope,
     UIEventMailbox,
 )
 
-_MILESTONE_KINDS = frozenset(
-    {
-        RuntimeEventKind.PLAN_CREATED,
-        RuntimeEventKind.PLAN_EXTENDED,
-        RuntimeEventKind.PLAN_PREVIEW_READY,
-        RuntimeEventKind.STEP_COMPLETED,
-        RuntimeEventKind.STEP_FAILED,
-        RuntimeEventKind.STEP_BLOCKED,
-        RuntimeEventKind.STEP_CANCELLED,
-        RuntimeEventKind.STEP_SKIPPED,
-        RuntimeEventKind.STEP_UNVERIFIED,
-        RuntimeEventKind.REPLAN,
-        RuntimeEventKind.REPLAN_BLOCKED,
-        RuntimeEventKind.CONVERGENCE_REPLAN_REQUESTED,
-        RuntimeEventKind.CONVERGENCE_REPLAN_DENIED,
-        RuntimeEventKind.VALIDATION_REPAIR,
-        RuntimeEventKind.TASK_RESUMED,
-        RuntimeEventKind.EXECUTION_FRONTIER_PROJECTED,
-        RuntimeEventKind.PROGRESS_RECEIPT_ADVANCED,
-    }
-)
-_TERMINAL_KINDS = frozenset({RuntimeEventKind.TASK_OUTCOME, RuntimeEventKind.FINAL})
 MAX_STALE_RUN_IDS = 256
 
 
@@ -131,90 +110,69 @@ class RunViewModel:
             elif not self._attention_pending and self._state == "WAITING_ATTENTION":
                 self._state = "RUNNING"
 
-    def _is_current(self, event: RuntimeEvent) -> bool:
+    def _is_current(self, update: TaskActivityUpdate) -> bool:
         if self._run_id is None:
-            self._run_id = event.run_id
+            self._run_id = update.run_id
             return True
-        return bool(event.run_id == self._run_id)
+        return bool(update.run_id == self._run_id)
 
     @staticmethod
-    def _activity(event: RuntimeEvent) -> str:
-        data = event.data
-        for key in ("activity", "phase", "tool", "step", "message"):
-            value = data.get(key)
-            if value is not None and str(value).strip():
-                return str(value)
-        return str(event.kind.value)
+    def _activity(update: TaskActivityUpdate) -> str:
+        return update.activity
 
-    def _apply_tool_end(self, event: RuntimeEvent) -> None:
-        invocation = event.invocation_id or str(event.data.get("invocation_id") or "")
+    def _apply_tool_end(self, update: TaskActivityUpdate) -> None:
+        invocation = update.invocation_id or ""
         if self._current_invocation_id in {None, "unknown"} or invocation == self._current_invocation_id:
             self._current_tool = None
             self._current_invocation_id = None
 
-    def _apply_kind(self, event: RuntimeEvent) -> None:
-        kind = event.kind
-        if kind is RuntimeEventKind.MODEL_CALL_STARTED:
-            self._model_active = True
-        elif kind is RuntimeEventKind.MODEL_CALL_COMPLETED:
-            self._model_active = False
-        elif kind is RuntimeEventKind.TOOL_START:
-            self._current_tool = str(event.data.get("tool") or "unknown")
-            self._current_invocation_id = event.invocation_id or str(event.data.get("invocation_id") or "unknown")
-        elif kind is RuntimeEventKind.TOOL_END:
-            self._apply_tool_end(event)
-        elif kind in {
-            RuntimeEventKind.STEP_COMPLETED,
-            RuntimeEventKind.STEP_FAILED,
-            RuntimeEventKind.STEP_BLOCKED,
-            RuntimeEventKind.STEP_CANCELLED,
-            RuntimeEventKind.STEP_SKIPPED,
-            RuntimeEventKind.STEP_UNVERIFIED,
-        }:
-            self._current_step = event.step_id or str(event.data.get("step_id") or event.data.get("step") or "unknown")
-        elif kind is RuntimeEventKind.WARNING:
+    def _apply_update(self, update: TaskActivityUpdate) -> None:
+        if update.model_active is not None:
+            self._model_active = update.model_active
+        if update.tool_transition == "start":
+            self._current_tool = update.tool_name
+            self._current_invocation_id = update.invocation_id
+        elif update.tool_transition == "end":
+            self._apply_tool_end(update)
+        if update.step_label is not None:
+            self._current_step = update.step_label
+        if update.warning:
             self._warning_count += 1
-        elif kind is RuntimeEventKind.ERROR:
+        if update.delivery == "error":
             self._error_count += 1
-        elif kind in _TERMINAL_KINDS:
-            self._terminalize(str(event.data.get("status") or event.data.get("outcome") or kind.value))
+        elif update.delivery == "terminal":
+            self._terminalize(update.terminal_outcome or "")
 
-    def _record_activity(self, event: RuntimeEvent) -> None:
-        kind = event.kind
-        if kind in _MILESTONE_KINDS or kind in _TERMINAL_KINDS:
-            self._milestones.append(self._activity(event))
-        if kind not in {
-            RuntimeEventKind.WARNING,
-            RuntimeEventKind.CONTEXT_REFRESH,
-            RuntimeEventKind.OBSERVATION_REUSE,
-            RuntimeEventKind.OBSERVATION_REHYDRATION,
-        }:
-            self._last_activity_at = event.timestamp
+    def _record_activity(self, update: TaskActivityUpdate) -> None:
+        if update.delivery in {"milestone", "terminal"}:
+            self._milestones.append(self._activity(update))
+        if update.advances_activity:
+            self._last_activity_at = update.timestamp
 
-    def apply(self, event: RuntimeEvent) -> bool:
-        if not isinstance(event, RuntimeEvent):
+    def apply(self, update: TaskActivityUpdate) -> bool:
+        if not isinstance(update, TaskActivityUpdate):
             return False
         with self._lock:
             if self._generation is None:
                 return False
-            if event.run_id in self._blocked_run_ids:
+            if update.run_id in self._blocked_run_ids:
                 return False
-            if not self._is_current(event):
+            if not self._is_current(update):
                 return False
             if self._terminal_barrier:
                 return False
-            self._apply_kind(event)
-            if event.kind in _TERMINAL_KINDS:
+            self._apply_update(update)
+            if update.delivery == "terminal":
                 self._terminal_barrier = True
-            self._record_activity(event)
+            self._record_activity(update)
             return True
 
     def apply_result(self, generation: int, result: Any) -> bool:
         with self._lock:
             if self._generation != generation:
                 return False
-            status = getattr(result, "status", None)
-            outcome = getattr(status, "value", status) or getattr(result, "summary", None) or "completed"
+            status = _observed(result, "status", None)
+            outcome = getattr(status, "value", status) or _observed(result, "summary", None) or "completed"
             self._terminalize(str(outcome))
             return True
 
@@ -279,7 +237,11 @@ __all__ = [
     "MailboxStats",
     "RunSnapshot",
     "RunViewModel",
-    "RuntimeEventUISink",
+    "TaskActivityUISink",
     "UIEventEnvelope",
     "UIEventMailbox",
 ]
+
+
+def _observed(value: Any, name: str, default: Any = None) -> Any:
+    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)

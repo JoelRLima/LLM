@@ -12,6 +12,8 @@ from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
 from llm_agent.agent.runtime.worker_output import emit_worker_output
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _project_task_activity_update, _retain_runtime
 from llm_agent.interfaces.cli import command_handlers, interactive_rendering
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
@@ -21,11 +23,23 @@ from llm_agent.interfaces.cli.ui_plane import RunViewModel
 from llm_agent.interfaces.cli.worker_stream import BoundedWorkerStream
 
 
+def _fixture_context(**kwargs):
+    owner = kwargs.pop("application", SimpleNamespace())
+    owner.orchestrator = kwargs.pop("orchestrator", SimpleNamespace())
+    session = kwargs.pop("session", None)
+    if session is not None:
+        owner.session = session
+    runtime = _retain_runtime(owner)
+    kwargs["task_execution"] = runtime
+    if session is not None:
+        kwargs["conversation"] = bind_conversation(runtime)
+    return SimpleNamespace(**kwargs)
+
 def test_debug_level_in_interactive_context_never_enables_worker_verbose_prints(monkeypatch) -> None:
     output: list[str] = []
     monkeypatch.setattr(command_handlers, "console", SimpleNamespace(print=lambda value, **_: output.append(str(value))))
     orchestrator = SimpleNamespace(verbose=False, context_manager=SimpleNamespace(verbose=False))
-    ctx = SimpleNamespace(orchestrator=orchestrator, controller=object(), modo_diagnostico=0)
+    ctx = _fixture_context(orchestrator=orchestrator, controller=object(), modo_diagnostico=0)
     command_handlers.toggle_debug("/debug", ctx)
     command_handlers.toggle_debug("/debug", ctx)
     assert ctx.diagnostic_level == "VERBOSE"
@@ -39,12 +53,12 @@ def test_view_remains_bounded_and_heartbeat_does_not_refresh_semantic_activity()
     view.begin_run(1, owner="owner")
     start = RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": "step-1"}, timestamp="2026-01-01T00:00:00+00:00")
     heartbeat = RuntimeEvent.from_fields(RuntimeEventKind.CONTEXT_REFRESH, correlation, {"heartbeat": True}, timestamp="2026-01-01T00:00:10+00:00")
-    view.apply(start)
+    view.apply(_project_task_activity_update(start))
     assert view.snapshot().last_activity_at == "2026-01-01T00:00:00+00:00"
-    view.apply(heartbeat)
+    view.apply(_project_task_activity_update(heartbeat))
     assert view.snapshot().last_activity_at == "2026-01-01T00:00:00+00:00"
     for index in range(2000):
-        view.apply(RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": f"s{index}"}))
+        view.apply(_project_task_activity_update(RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": f"s{index}"})))
     snapshot = view.snapshot()
     assert len(snapshot.milestones) <= 8
     assert len(command_handlers._view_snapshot(SimpleNamespace(view_model=view)).milestones) <= 8
@@ -60,7 +74,7 @@ def test_worker_output_uses_thread_local_sink_without_rebinding_process_stdout()
         return SimpleNamespace(answer="ok")
 
     envelope = SubmissionEnvelope(1, "hello", "natural_text", "AGENTIC", "AGENTIC_SUBMIT", "PENDING_EXACT_TEXT", "hello", "natural", "owner")
-    context = SimpleNamespace(
+    context = _fixture_context(
         application=SimpleNamespace(interact=interact),
         orchestrator=SimpleNamespace(),
         controller=None,
@@ -75,11 +89,56 @@ def test_worker_output_uses_thread_local_sink_without_rebinding_process_stdout()
     assert sys.stdout is original_stdout
 
 
+def test_search_code_and_agent_routes_share_scoped_worker_publication(monkeypatch) -> None:
+    from llm_agent.interfaces.cli import interactive_worker
+
+    routes = (
+        ("search", "search-text", "search-result"),
+        ("code", "code-text", "code-result"),
+        ("natural_text", "agent-text", "agent-result"),
+    )
+
+    def make_route(output_text, result_value):
+        def route(*_args, **_kwargs):
+            emit_worker_output(output_text)
+            return result_value
+
+        return route
+
+    def make_application_submission(route):
+        def execute(*_args, **_kwargs):
+            return (lambda: None, route())
+
+        return execute
+
+    for command_id, output_text, result_value in routes:
+        route = make_route(output_text, result_value)
+
+        if command_id == "search":
+            monkeypatch.setattr(interactive_worker, "_execute_search", route)
+        elif command_id == "code":
+            monkeypatch.setattr(interactive_worker, "_execute_code", route)
+        else:
+            monkeypatch.setattr(
+                interactive_worker,
+                "_execute_application_submission",
+                make_application_submission(route),
+            )
+        envelope = SubmissionEnvelope(
+            5, "visible", command_id, "AGENTIC", "AGENTIC_SUBMIT",
+            "PENDING_EXACT_TEXT", "payload", "natural", "owner",
+        )
+        context = _fixture_context(controller=None, approval_broker=None, view_model=None)
+        result = execute_submission(context, envelope, Event(), lambda _callback: None)
+        assert result.result == result_value
+        assert output_text in result.stdout
+
+
 def test_worker_error_terminalizes_view_projection_and_clears_live_fields() -> None:
     view = RunViewModel()
     correlation = RunCorrelation.fresh()
     view.begin_run(3, owner="worker")
-    view.apply(RuntimeEvent.from_fields(RuntimeEventKind.TOOL_START, correlation, {"tool": "reader", "invocation_id": "inv"}))
+    view.apply(_project_task_activity_update(RuntimeEvent.from_fields(RuntimeEventKind.TOOL_START, correlation, {"tool": "reader", "invocation_id": "inv"})))
     view.set_attention(True)
     output: list[str] = []
     context = SimpleNamespace(
@@ -123,7 +182,7 @@ def test_live_stream_survives_active_composer_cancel_without_terminal_duplicatio
         return SimpleNamespace(status="failed", answer="part-1-part-2", error="cancelled")
 
     application = SimpleNamespace(interact=interact, bind_interactive_cancellation=bind)
-    context = SimpleNamespace(
+    context = _fixture_context(
         application=application,
         orchestrator=SimpleNamespace(),
         controller=controller,
@@ -225,7 +284,7 @@ def test_rejected_first_assistant_publish_keeps_canonical_answer_visible() -> No
         kwargs["stream_callback"]("answer-from-model")
         return SimpleNamespace(status="succeeded", answer="canonical-answer")
 
-    context = SimpleNamespace(
+    context = _fixture_context(
         application=SimpleNamespace(interact=interact),
         orchestrator=SimpleNamespace(),
         controller=SimpleNamespace(stream_channel=channel),

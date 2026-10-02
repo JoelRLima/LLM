@@ -3,10 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_agent.agent.runtime.config_errors import ConfigNotFound
 from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.application import workspace_recents as application_workspace_recents
+from llm_agent.application.configuration_errors import ConfigurationNotFound
+from llm_agent.application.context import AppPaths, WorkspaceContext, WorkspacePaths
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
-from llm_agent.interfaces.cli import command_handlers, workspace_entry
+from llm_agent.interfaces.cli import command_handlers, first_run, interactive_commands, workspace_entry
 from llm_agent.interfaces.cli.commands import handle_command
 from llm_agent.interfaces.cli.workspace_entry import (
     canonical_workspace,
@@ -16,7 +19,35 @@ from llm_agent.interfaces.cli.workspace_entry import (
     workspace_storage_path,
 )
 from llm_agent.storage.json_persistence import AtomicJsonWriteError
-from llm_agent.workspace.paths import AppPaths
+
+
+def _workspace_binding(
+    app_paths: AppPaths,
+    root: Path,
+) -> tuple[WorkspaceContext, WorkspacePaths]:
+    workspace = WorkspaceContext.create(root)
+    return workspace, app_paths.for_workspace(workspace.workspace_id)
+
+
+def _task_runtime(owner: SimpleNamespace):
+    """Give workspace-entry tests the opaque C10 handle around their fake owner."""
+    return _retain_runtime(owner)
+
+
+def _chat_owner(
+    app_paths: AppPaths,
+    workspace: WorkspaceContext,
+    workspace_paths: WorkspacePaths,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        session=SimpleNamespace(config={}),
+        orchestrator=SimpleNamespace(),
+        config={},
+        paths=app_paths,
+        workspace=workspace,
+        workspace_paths=workspace_paths,
+        close=lambda: None,
+    )
 
 
 class _Console:
@@ -76,6 +107,7 @@ def test_last_workspace_state_round_trip_and_stale_state_fails_closed(
     remember_workspace(app_paths, last)
 
     assert load_last_workspace(app_paths) == last.resolve()
+    assert application_workspace_recents.list_recent_workspaces(app_paths) == (last.resolve(),)
     app_paths.last_workspace_file.write_text(
         '{"schema_version": 1, "workspace": "missing"}\n',
         encoding="utf-8",
@@ -113,6 +145,99 @@ def test_remember_workspace_absorbs_atomic_writer_failure(
     remember_workspace(app_paths, workspace)
 
     assert not app_paths.last_workspace_file.exists()
+
+
+def test_recent_workspace_failure_does_not_fail_last_workspace_remember(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_paths = AppPaths.discover(app_home=tmp_path / "app")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    def fail_recents(_app_paths: AppPaths, _workspace: Path) -> None:
+        raise OSError("recent history unavailable")
+
+    monkeypatch.setattr(application_workspace_recents, "remember_recent_workspace", fail_recents)
+
+    remember_workspace(app_paths, workspace)
+
+    assert load_last_workspace(app_paths) == workspace.resolve()
+
+
+def test_first_run_passes_application_recents_to_workspace_chooser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_paths = AppPaths.discover(app_home=tmp_path / "app")
+    app_paths.config_file.parent.mkdir(parents=True, exist_ok=True)
+    app_paths.config_file.touch()
+    selected = tmp_path / "selected"
+    selected.mkdir()
+    recents = (tmp_path / "recent",)
+    observed: dict[str, object] = {}
+
+    def choose(**kwargs: object) -> Path:
+        observed.update(kwargs)
+        return selected
+
+    monkeypatch.setattr(first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(first_run, "configuration_ready_for_chat_entry", lambda *_args: True)
+    monkeypatch.setattr(workspace_entry, "load_last_workspace", lambda _paths: None)
+    monkeypatch.setattr(workspace_entry, "choose_workspace", choose)
+    monkeypatch.setattr(
+        application_workspace_recents,
+        "list_recent_workspaces",
+        lambda _paths: recents,
+    )
+    args = SimpleNamespace(workspace=None, config=None)
+
+    assert first_run.prepare_chat_workspace(
+        args,
+        console=_Console(),
+        app_paths=app_paths,
+        prompt=lambda _message: "",
+    )
+
+    assert observed["recent_workspaces"] == recents
+    assert args.workspace == str(selected)
+
+
+def test_interactive_workspace_switch_passes_application_recents_to_chooser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app_paths = AppPaths.discover(app_home=tmp_path / "app")
+    current = tmp_path / "current"
+    current.mkdir()
+    selected = tmp_path / "selected"
+    selected.mkdir()
+    recents = (tmp_path / "recent",)
+    observed: dict[str, object] = {}
+
+    def choose(**kwargs: object) -> Path:
+        observed.update(kwargs)
+        return selected
+
+    monkeypatch.setattr(interactive_commands, "_output_console", lambda: _Console())
+    monkeypatch.setattr(workspace_entry, "load_last_workspace", lambda _paths: None)
+    monkeypatch.setattr(workspace_entry, "choose_workspace", choose)
+    monkeypatch.setattr(
+        application_workspace_recents,
+        "list_recent_workspaces",
+        lambda _paths: recents,
+    )
+    context = SimpleNamespace(
+        app_paths=app_paths,
+        workspace=WorkspaceContext.create(current),
+        controller=None,
+        approval_broker=None,
+        query_executor=None,
+        prompt_line=lambda _message: "",
+        prompt_path=lambda _message: "",
+    )
+
+    interactive_commands.show_workspace("/workspace switch", context)
+
+    assert observed["recent_workspaces"] == recents
+    assert context.rebootstrap_workspace == selected
 
 
 def test_stale_last_workspace_does_not_remove_normal_selection(
@@ -220,19 +345,13 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app_home = tmp_path / "app-home"
-    ConfigRepository(AppPaths.discover(app_home=app_home)).initialize()
+    app_paths = AppPaths.discover(app_home=app_home)
+    ConfigRepository(app_paths).initialize()
     canonical_root = tmp_path / "canonical-root"
     canonical_root.mkdir()
-    application = SimpleNamespace(
-        session=SimpleNamespace(config={}),
-        orchestrator=SimpleNamespace(),
-        config={},
-        paths=SimpleNamespace(),
-        workspace=SimpleNamespace(root=canonical_root.resolve()),
-        workspace_paths=SimpleNamespace(),
-        closed=False,
-        close=lambda: None,
-    )
+    workspace_context, workspace_paths = _workspace_binding(app_paths, canonical_root)
+    owner = _chat_owner(app_paths, workspace_context, workspace_paths)
+    runtime = _task_runtime(owner)
     selected = tmp_path / "selected"
     selected.mkdir()
     seen: dict[str, object] = {}
@@ -242,7 +361,7 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
     def create(args: object, **_: object) -> object:
         seen["args"] = args
-        return application
+        return runtime
 
     monkeypatch.setattr(cli, "_create_application", create)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
@@ -261,22 +380,16 @@ def test_chat_continues_when_optional_workspace_persistence_fails(
     ConfigRepository(app_paths).initialize()
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    application = SimpleNamespace(
-        session=SimpleNamespace(config={}),
-        orchestrator=SimpleNamespace(),
-        config={},
-        paths=app_paths,
-        workspace=SimpleNamespace(root=workspace.resolve()),
-        workspace_paths=SimpleNamespace(),
-        close=lambda: None,
-    )
+    workspace_context, workspace_paths = _workspace_binding(app_paths, workspace)
+    owner = _chat_owner(app_paths, workspace_context, workspace_paths)
+    runtime = _task_runtime(owner)
     reached_chat: list[bool] = []
 
     def fail(_path: object, _payload: object) -> None:
         raise AtomicJsonWriteError(Path("last-workspace.json"), OSError("read-only"))
 
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
-    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: runtime)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: reached_chat.append(True))
     monkeypatch.setattr(workspace_entry, "write_json_atomic", fail)
 
@@ -294,19 +407,13 @@ def test_chat_tty_reopens_persisted_last_workspace_and_records_active_root(
     last = tmp_path / "Pasta com espaços – projeto"
     last.mkdir()
     remember_workspace(app_paths, last)
-    application = SimpleNamespace(
-        session=SimpleNamespace(config={}),
-        orchestrator=SimpleNamespace(),
-        config={},
-        paths=app_paths,
-        workspace=SimpleNamespace(root=last.resolve()),
-        workspace_paths=SimpleNamespace(),
-        close=lambda: None,
-    )
+    workspace_context, workspace_paths = _workspace_binding(app_paths, last)
+    owner = _chat_owner(app_paths, workspace_context, workspace_paths)
+    runtime = _task_runtime(owner)
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     output = _Console("1")
     monkeypatch.setattr(cli, "console", output)
-    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: runtime)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
     monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
 
@@ -314,7 +421,7 @@ def test_chat_tty_reopens_persisted_last_workspace_and_records_active_root(
 
     rendered = "\n".join(output.output)
     assert "Reabrir último diretório" in rendered
-    assert Path(application.workspace.root) == last.resolve()
+    assert Path(owner.workspace.root) == last.resolve()
     assert load_last_workspace(app_paths) == last.resolve()
 
 
@@ -323,18 +430,17 @@ def test_chat_explicit_workspace_bypasses_chooser(
 ) -> None:
     selected = tmp_path / "selected"
     selected.mkdir()
-    application = SimpleNamespace(
-        session=SimpleNamespace(config={}), orchestrator=SimpleNamespace(), config={},
-        paths=SimpleNamespace(), workspace=SimpleNamespace(root=selected),
-        workspace_paths=SimpleNamespace(), close=lambda: None,
-    )
+    app_paths = AppPaths.discover(app_home=tmp_path / "app-home")
+    workspace_context, workspace_paths = _workspace_binding(app_paths, selected)
+    owner = _chat_owner(app_paths, workspace_context, workspace_paths)
+    runtime = _task_runtime(owner)
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     output = _Console()
     monkeypatch.setattr(cli, "console", output)
     seen: dict[str, object] = {}
     def create(args: object, **_: object) -> object:
         seen["args"] = args
-        return application
+        return runtime
 
     monkeypatch.setattr(cli, "_create_application", create)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
@@ -396,7 +502,7 @@ def test_first_run_recovery_happens_before_workspace_display(
     monkeypatch.setattr(
         cli,
         "_create_application",
-        lambda *args, **kwargs: (_ for _ in ()).throw(ConfigNotFound("missing")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(ConfigurationNotFound("missing")),
     )
     monkeypatch.setattr(cli.first_run, "recover_first_run_config", lambda *args, **kwargs: 0)
 

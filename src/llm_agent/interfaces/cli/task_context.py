@@ -2,28 +2,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
-from llm_agent.application.agent_boundary import TaskContextResolver, TaskDefinitionRepository
-from llm_agent.application.context import WorkspaceContext
+from llm_agent.application.context import AppPaths
+from llm_agent.application.task_context import TaskContextRequest, read_task_context
 
 
 def run_task_context(
     args: Any,
     *,
-    app_paths: Any,
-    workspace: Any,
+    app_paths: AppPaths,
+    workspace: str | Path,
     print_json: Callable[[Any], None],
 ) -> int:
-    workspace_context = WorkspaceContext.create(workspace)
-    workspace_paths = app_paths.for_workspace(workspace_context.workspace_id)
-    repository = TaskDefinitionRepository(workspace_paths)
-    materialization = TaskContextResolver(repository).resolve(
-        str(args.task_id),
-        phase_id=getattr(args, "phase_id", None),
+    result = read_task_context(
+        TaskContextRequest(
+            app_paths=app_paths,
+            workspace=workspace,
+            task_id=str(args.task_id),
+            phase_id=getattr(args, "phase_id", None),
+        )
     )
     if bool(getattr(args, "json_output", False)):
-        print_json(materialization.to_dict())
+        print_json(result.to_dict())
     else:
-        print(materialization.trusted_text)
+        print(result.trusted_text)
     return 0

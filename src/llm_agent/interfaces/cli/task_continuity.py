@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
-from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.application.context import AppPaths
+from llm_agent.application.task_continuity import (
+    TaskContinuityRequest,
+    TaskContinuityResult,
+    read_task_continuity,
+)
+from llm_agent.application.task_execution import close_task_execution, execute_submission, observe_task_settlement
 from llm_agent.interfaces.cli.workspace_entry import argument_workspace, require_task_workspace
 
 
@@ -14,29 +20,22 @@ def _value(args: Any, name: str, default: Any = None) -> Any:
     return getattr(args, name, default)
 
 
-def _snapshot(args: Any) -> Any:
-    from llm_agent.application.agent_boundary import TaskContinuityService
-
-    workspace_context = WorkspaceContext.create(argument_workspace(args))
-    workspace_paths = AppPaths.discover(app_home=_value(args, "home")).for_workspace(
-        workspace_context.workspace_id
+def _snapshot(args: Any) -> TaskContinuityResult:
+    return read_task_continuity(
+        TaskContinuityRequest(
+            app_paths=AppPaths.discover(app_home=_value(args, "home")),
+            workspace=argument_workspace(args),
+        )
     )
-    return TaskContinuityService(workspace_paths).snapshot()
 
 
-def _document(snapshot: Any) -> dict[str, Any]:
-    to_dict = getattr(snapshot, "to_dict", None)
-    if not callable(to_dict):
-        raise TypeError("snapshot de continuidade invalido")
-    document = to_dict()
-    if not isinstance(document, dict):
-        raise TypeError("snapshot de continuidade invalido")
-    return document
+def _document(snapshot: TaskContinuityResult) -> dict[str, Any]:
+    return cast(dict[str, Any], snapshot.to_dict())
 
 
-def _status(snapshot: Any, document: dict[str, Any]) -> str:
-    value = document.get("status", getattr(snapshot, "status", "invalid"))
-    return str(getattr(value, "value", value)).casefold()
+def _status(snapshot: TaskContinuityResult) -> str:
+    status = cast(str, snapshot.status)
+    return status.casefold()
 
 
 def _print_json(document: Any) -> None:
@@ -67,7 +66,7 @@ def run_task_status(
     if bool(_value(args, "json_output", False)):
         print_json(document)
     else:
-        status = _status(snapshot, document)
+        status = _status(snapshot)
         print(f"Task continuity: {status.upper()}")
         print(f"Objective: {document.get('objective_preview') or '(none)'}")
         print(f"Root task: {document.get('root_task_id') or '(none)'}")
@@ -90,7 +89,7 @@ def run_task_status(
         if status in {"terminal", "unsupported", "invalid"}:
             print(f"Reason: {document.get('reason_code', 'CHECKPOINT_INVALID')}")
             print("Checkpoint preserved: yes")
-    return 2 if _status(snapshot, document) == "invalid" else 0
+    return 2 if _status(snapshot) == "invalid" else 0
 
 
 def run_task_resume(
@@ -105,8 +104,8 @@ def run_task_resume(
     require_task_workspace(args)
     snapshot = _snapshot(args)
     document = _document(snapshot)
-    if not bool(document.get("resumable", getattr(snapshot, "resumable", False))):
-        reason = str(document.get("reason_code") or "TASK_NOT_RESUMABLE")
+    if not snapshot.resumable:
+        reason = snapshot.reason_code
         message = f"A tarefa não pode ser retomada: {reason}."
         if bool(_value(args, "json_output", False)):
             print_json(
@@ -126,25 +125,25 @@ def run_task_resume(
     json_output = bool(_value(args, "json_output", False))
     application = create_application(args, configure_logging=not json_output)
     try:
-        resume = getattr(application, "resume", None)
-        result = resume() if callable(resume) else application.run(None, explicit_resume=True)
+        settlement = execute_submission(application, "", entry="headless-resume")
     finally:
-        application.close()
+        close_task_execution(application)
 
+    result = observe_task_settlement(settlement, channel="headless")
     if json_output:
-        print_json(result.to_dict())
-    elif result.success:
-        print(result.answer)
+        print_json(result)
+    elif result["success"]:
+        print(result["answer"])
         print_receipt(result)
-    elif getattr(result, "receipt", None):
-        if result.answer:
-            print(result.answer)
+    elif result.get("receipt"):
+        if result["answer"]:
+            print(result["answer"])
         print_receipt(result)
-        if result.error:
-            print(result.error, file=sys.stderr)
+        if result["error"]:
+            print(result["error"], file=sys.stderr)
     else:
-        print(result.error or result.answer or "A retomada falhou.", file=sys.stderr)
-    return 0 if result.success else 1
+        print(result["error"] or result["answer"] or "A retomada falhou.", file=sys.stderr)
+    return 0 if result["success"] else 1
 
 
 def dispatch_task(

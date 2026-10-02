@@ -105,9 +105,18 @@ class MutationArm:
     mutate: Callable[[Path], bool]
 
 
+def _historical_path(root: Path, relative: str) -> Path:
+    path = w21_source_layout(root).path_for_w21_relative(relative)
+    if relative == _DEFAULT_CONFIG and not path.is_file():
+        packaged = root / "src/llm_agent/resources/default_config.json"
+        if packaged.is_file():
+            return packaged
+    return path
+
+
 def _source(root: Path, relative: str) -> str | None:
     try:
-        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
+        return _historical_path(root, relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return None
 
@@ -865,7 +874,7 @@ def _copy_for_mutation(root: Path, destination: Path) -> None:
     # expensive.  Copy every owner that the C-gates inspect, preserving its
     # real relative path, into an otherwise isolated temporary repository.
     for relative in (*_W15_PRODUCTION_FILES, _DEFAULT_CONFIG):
-        source = w21_source_layout(root).path_for_w21_relative(relative)
+        source = _historical_path(root, relative)
         if not source.is_file():
             continue
         target = destination / relative

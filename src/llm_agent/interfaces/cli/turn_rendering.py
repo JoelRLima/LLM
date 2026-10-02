@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from llm_agent.application.conversation import ConversationRuntime, read_conversation
+from llm_agent.application.task_execution import read_execution_capabilities
 from llm_agent.interfaces.cli.thinking_presets import THINKING_LABEL_BY_BUDGET
 
 _DIAGNOSTIC_LABELS = ("OFF", "DIAG", "VERBOSE")
@@ -28,27 +30,22 @@ def diagnostic_prompt_token(level: int) -> str:
     return "" if label == "OFF" else f" [{label}]"
 
 
-def thinking_label(session: object) -> str:
-    value = getattr(session, "thinking_budget", 0)
-    if isinstance(value, int) and not isinstance(value, bool):
-        if value <= 0:
-            return "OFF"
-        return THINKING_LABEL_BY_BUDGET.get(value, str(value))
-    configured = getattr(session, "thinking_level", getattr(session, "thinking", "OFF"))
-    text = _display_text(configured).upper()
-    return {"HIGH": "ALTO", "MEDIUM": "MÉDIO", "LOW": "BAIXO"}.get(text, text or "OFF")
+def thinking_label(conversation: ConversationRuntime) -> str:
+    value = read_conversation(conversation).thinking_budget
+    if value <= 0:
+        return "OFF"
+    return cast(str, THINKING_LABEL_BY_BUDGET.get(value, str(value)))
 
 
-def render_startup_status(console: Console, ctx: object) -> None:
+def render_startup_status(console: Console, ctx: Any) -> None:
     workspace = getattr(ctx, "workspace", None)
     root = getattr(workspace, "root", workspace)
-    orchestrator = getattr(ctx, "orchestrator", None)
-    mode = _display_text(getattr(orchestrator, "operational_mode_label", "FULL")) or "FULL"
+    mode = read_execution_capabilities(ctx.task_execution).label
     level = int(getattr(ctx, "modo_diagnostico", 0))
     console.print("LLM Agent", style="bold cyan")
     console.print(f"Workspace: {root}", markup=False)
     console.print(
-        f"{mode} · Think {thinking_label(getattr(ctx, 'session', None))} · Diag {diagnostic_label(level)}",
+        f"{mode} · Think {thinking_label(ctx.conversation)} · Diag {diagnostic_label(level)}",
         markup=False,
     )
     console.print("Digite /help para comandos.", style="dim")
@@ -108,22 +105,24 @@ def _snapshot_receipt(snapshot: Any, run_result: Any) -> Mapping[str, Any]:
     failure = _as_mapping(snapshot_data.get("failure_fact"))
     if failure:
         projected["error"] = failure
-    report_path = getattr(run_result, "report_path", None)
+    report_path = _observed(run_result, "report_path", None)
     if isinstance(report_path, str) and report_path:
         projected["report_path"] = report_path
     return projected
 
 
 def _receipt_for(result: Any) -> tuple[Mapping[str, Any], Any]:
-    run_result = getattr(result, "run_result", None)
+    if isinstance(result, Mapping):
+        return _as_mapping(result.get("receipt")), result
+    run_result = _observed(result, "run_result", None)
     if run_result is None:
         return {}, None
-    receipt = _as_mapping(getattr(run_result, "receipt", None))
+    receipt = _as_mapping(_observed(run_result, "receipt", None))
     if receipt:
         return receipt, run_result
-    snapshot = getattr(run_result, "canonical_snapshot", None)
+    snapshot = _observed(run_result, "canonical_snapshot", None)
     if snapshot is None:
-        snapshot = getattr(run_result, "snapshot", None)
+        snapshot = _observed(run_result, "snapshot", None)
     return _snapshot_receipt(snapshot, run_result), run_result
 
 
@@ -189,16 +188,16 @@ def build_operational_summary(result: Any) -> tuple[str, ...]:
 
 
 def _result_success(result: Any) -> bool:
-    value = getattr(result, "success", None)
+    value = _observed(result, "success", None)
     if value is not None:
         return bool(value)
-    return _display_text(getattr(result, "status", "")).casefold() == "succeeded"
+    return _display_text(_observed(result, "status", "")).casefold() == "succeeded"
 
 
 def _completion(result: Any) -> tuple[str, str]:
     if _result_success(result):
         return "✓ Concluído", "bold green"
-    status = _display_text(getattr(result, "status", "failed")).casefold()
+    status = _display_text(_observed(result, "status", "failed")).casefold()
     bounded = {
         "blocked": ("⚠ Bloqueado", "bold yellow"),
         "cancelled": ("■ Cancelado", "bold yellow"),
@@ -232,7 +231,7 @@ def _verbose_receipt_rows(receipt: Mapping[str, Any], run_result: Any) -> list[t
     layer = _display_text(error.get("layer"))
     error_value = "/".join(item for item in (code, layer) if item)
     rows += [("error", error_value)] if error_value else []
-    report_path = getattr(run_result, "report_path", None) or receipt.get("report_path")
+    report_path = _observed(run_result, "report_path", None) or receipt.get("report_path")
     rows += [("report_path", report_path)] if isinstance(report_path, str) and report_path else []
     return rows
 
@@ -251,21 +250,21 @@ def _render_verbose_receipt(console: Console, receipt: Mapping[str, Any], run_re
 
 def _diagnostic_rows(result: Any) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
-    resolution = getattr(result, "resolution", None)
+    resolution = _observed(result, "resolution", None)
     for key in _RESOLUTION_FIELDS:
         raw = resolution.get(key) if isinstance(resolution, Mapping) else getattr(resolution, key, None)
         value = _display_text(raw) if resolution is not None else ""
         if value:
             rows.append((key, value))
-    usage = _as_mapping(getattr(result, "interaction_usage", None))
+    usage = _as_mapping(_observed(result, "interaction_usage", None))
     for key in ("model_calls", "accounted_tokens", "token_usage_complete"):
         usage_value = usage.get(key)
         if isinstance(usage_value, (int, bool)):
             rows.append((key, str(usage_value)))
-    status = _display_text(getattr(result, "status", ""))
+    status = _display_text(_observed(result, "status", ""))
     if status:
         rows.append(("status", status))
-    reason = _display_text(getattr(result, "reason_code", None))
+    reason = _display_text(_observed(result, "reason_code", None))
     if reason:
         rows.append(("reason_code", reason))
     return rows
@@ -298,3 +297,7 @@ def render_turn_result(console: Console, result: Any, diagnostic_level: int) -> 
 
 
 __all__ = ["build_operational_summary", "diagnostic_label", "diagnostic_prompt_token", "render_agent_label", "render_diagnostic_details", "render_startup_status", "render_turn_result", "render_turn_waiting", "thinking_label"]
+
+
+def _observed(value: Any, name: str, default: Any = None) -> Any:
+    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)

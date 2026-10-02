@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import json
 import sys
@@ -12,7 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 try:
@@ -30,6 +31,8 @@ from llm_agent.agent.runtime.config_repository import ConfigRepository  # noqa: 
 from llm_agent.agent.runtime.correlation import RunCorrelation  # noqa: E402
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind  # noqa: E402
 from llm_agent.agent.runtime.events import RuntimeEvent  # noqa: E402
+from llm_agent.application.code_commands import CodeCommandOutcome  # noqa: E402
+from llm_agent.application.conversation import bind_conversation  # noqa: E402
 from llm_agent.application.services.queries import (  # noqa: E402
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
@@ -37,6 +40,7 @@ from llm_agent.application.services.queries import (  # noqa: E402
     WorkspaceQueryResult,
     WorkspaceQueryStatus,
 )
+from llm_agent.application.task_execution import _project_task_activity_update, _retain_runtime  # noqa: E402
 from llm_agent.interfaces.cli import app, command_handlers, first_run, interactive_admission, ui  # noqa: E402
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
 from llm_agent.interfaces.cli.attention import ApprovalBroker  # noqa: E402
@@ -50,7 +54,7 @@ from llm_agent.interfaces.cli.query_executor import (  # noqa: E402
     CliQueryCompletion,
     CliQuerySubmission,
 )
-from llm_agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox  # noqa: E402
+from llm_agent.interfaces.cli.ui_plane import RunViewModel, TaskActivityUISink, UIEventMailbox  # noqa: E402
 from llm_agent.workspace.context import WorkspaceContext  # noqa: E402
 from llm_agent.workspace.paths import AppPaths  # noqa: E402
 
@@ -74,8 +78,8 @@ class _Console:
         return next(self.answers)
 
 
-def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object) -> RuntimeEvent:
-    return RuntimeEvent.from_fields(kind, correlation, data)
+def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object):
+    return _project_task_activity_update(RuntimeEvent.from_fields(kind, correlation, data))
 
 
 def _envelope(text: str, *, command_id: str = "natural_text") -> SubmissionEnvelope:
@@ -377,7 +381,7 @@ def _scenario_group_05(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a19() -> None:
-        context = SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m", provider="p")), config={"model_profiles": {"x": {}}}, controller=SimpleNamespace(is_busy=lambda: True), shell=None)
+        context = SimpleNamespace(conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m", provider="p"), thinking_budget=0, get_effective_system_prompt=lambda: "")))), config={"model_profiles": {"x": {}}}, controller=SimpleNamespace(is_busy=lambda: True), shell=None)
         old = command_handlers.console
         command_handlers.console = _Console()
         try:
@@ -452,7 +456,7 @@ def _scenario_group_07(root: Path) -> tuple[Callable[[], None], ...]:
         old = ui.console
         ui.console = SimpleNamespace(print=lambda value, **kwargs: rendered.append((value, kwargs)))
         try:
-            ui.render_code_result(cast(Any, SimpleNamespace(status=SimpleNamespace(value="failed"), summary="[red]literal[/red]", error=None, artifacts=(), diagnostics=())))
+            ui.render_code_result(CodeCommandOutcome(kind="executed", status="failed", summary="[red]literal[/red]"))
         finally:
             ui.console = old
         assert rendered and rendered[0][1].get("markup") is False
@@ -474,7 +478,7 @@ def _scenario_group_07(root: Path) -> tuple[Callable[[], None], ...]:
         app.console = _Console()
         app.console.input = lambda _prompt: (_ for _ in ()).throw(KeyboardInterrupt())  # type: ignore[method-assign]
         try:
-            assert app._prompt(SimpleNamespace(orchestrator=SimpleNamespace(operational_mode_label="FULL"))) is None
+            assert app._prompt(SimpleNamespace(task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(operational_mode_label="FULL"))))) is None
         finally:
             app.console = old
 
@@ -509,7 +513,7 @@ def _scenario_group_08(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a30() -> None:
-        context = SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m")), workspace=SimpleNamespace(root=root), orchestrator=SimpleNamespace(operational_mode_label="FULL"), controller=None, view_model=None, shell=None)
+        context = SimpleNamespace(conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m", provider="p"), thinking_budget=0, get_effective_system_prompt=lambda: "")))), workspace=SimpleNamespace(root=root), task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(operational_mode_label="FULL"))), controller=None, view_model=None, shell=None)
         old = command_handlers.console
         command_handlers.console = _Console()
         try:
@@ -571,7 +575,7 @@ def _scenario_group_09(root: Path) -> tuple[Callable[[], None], ...]:
 
     def a35() -> None:
         mailbox = UIEventMailbox()
-        sink = RuntimeEventUISink(mailbox)
+        sink = TaskActivityUISink(mailbox)
         sink.emit(_event(RuntimeEventKind.WARNING, RunCorrelation.fresh(), message="safe"))
         assert len(mailbox) == 1
 
@@ -630,7 +634,7 @@ def _scenario_group_10(root: Path) -> tuple[Callable[[], None], ...]:
 
 
     def a40() -> None:
-        context = SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m", provider="p")), config={"model_profiles": {"x": {}}}, controller=SimpleNamespace(is_busy=lambda: True), shell=None)
+        context = SimpleNamespace(conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="m", provider="p"), thinking_budget=0, get_effective_system_prompt=lambda: "")))), config={"model_profiles": {"x": {}}}, controller=SimpleNamespace(is_busy=lambda: True), shell=None)
         old = command_handlers.console
         command_handlers.console = _Console()
         try:
@@ -661,7 +665,24 @@ def _scenario_group_11(root: Path) -> tuple[Callable[[], None], ...]:
 
     def a43() -> None:
         source = _current_source("agent/interfaces/cli/interactive_worker.py")
-        assert "CodingApplicationService" in source and "_execute_code" in source
+        tree = ast.parse(source)
+        imported = any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "llm_agent.application.code_commands"
+            and any(alias.name == "execute_code_command" for alias in node.names)
+            for node in tree.body
+        )
+        worker = next(
+            (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_execute_code"),
+            None,
+        )
+        delegates = worker is not None and any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "execute_code_command"
+            for node in ast.walk(worker)
+        )
+        assert imported and delegates
 
 
 
@@ -796,7 +817,7 @@ def _scenario_group_13(root: Path) -> tuple[Callable[[], None], ...]:
             emit_worker_output("worker-rerouted-output")
             return SimpleNamespace(answer="ok")
 
-        context = SimpleNamespace(application=SimpleNamespace(interact=interact), orchestrator=SimpleNamespace(), controller=None, approval_broker=None, view_model=None)
+        context = SimpleNamespace(task_execution=_retain_runtime(SimpleNamespace(interact=interact, orchestrator=SimpleNamespace())), controller=None, approval_broker=None, view_model=None)
         ui_output = io.StringIO()
         original_stdout = sys.stdout
         sys.stdout = ui_output
@@ -942,7 +963,7 @@ def _scenario_group_16(root: Path) -> tuple[Callable[[], None], ...]:
         for index in range(100):
             mailbox.emit(_event(RuntimeEventKind.STEP_COMPLETED, correlation, step=index))
         mailbox.emit(_event(RuntimeEventKind.TASK_OUTCOME, correlation, status="succeeded"))
-        assert any(item.event.kind is RuntimeEventKind.TASK_OUTCOME for item in mailbox.drain())
+        assert any(item.update.delivery == "terminal" for item in mailbox.drain())
 
 
 

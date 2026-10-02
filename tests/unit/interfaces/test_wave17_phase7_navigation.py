@@ -9,6 +9,7 @@ import pytest
 
 from llm_agent.agent.runtime.config_errors import ConfigVersionError
 from llm_agent.agent.runtime.config_repository import ConfigError, ConfigRepository
+from llm_agent.application.conversation import bind_conversation
 from llm_agent.application.services.queries import (
     ReadOnlyWorkspaceQueryService,
     WorkspaceQueryKind,
@@ -16,6 +17,7 @@ from llm_agent.application.services.queries import (
     WorkspaceQueryStatus,
 )
 from llm_agent.application.services.query_git import GitObservation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import command_handlers, first_run, interactive_admission
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.controller import InteractiveExecutionController, PendingStore, SubmissionEnvelope
@@ -69,7 +71,7 @@ def test_model_profile_switch_is_idle_canonical_and_rebootstrap_requested(tmp_pa
     output = _Console()
     monkeypatch.setattr(command_handlers, "console", output)
     context = SimpleNamespace(
-        session=SimpleNamespace(model_profile=SimpleNamespace(model="default", provider="openai_compatible")),
+        conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(model_profile=SimpleNamespace(model="default", provider="openai_compatible"), thinking_budget=0, get_effective_system_prompt=lambda: "")))),
         config=config,
         controller=SimpleNamespace(is_busy=lambda: False),
         app_paths=paths,

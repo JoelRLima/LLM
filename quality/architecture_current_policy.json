@@ -1,0 +1,1900 @@
+{
+    "application_api_surfaces":  {
+        "task_execution": {
+    "canonical_owner": "Application",
+    "public_surface": "src/llm_agent/application/task_execution.py",
+    "implementation_modules": [
+        "src/llm_agent/application/task_execution.py"
+    ],
+    "allowed_consumer_owners": [
+        "Interfaces",
+        "Application"
+    ],
+    "allowed_dependency_families": [
+          "llm_agent.agent.observability.trace_store",
+          "llm_agent.agent.runtime.events",
+          "llm_agent.agent.runtime.event_kinds",
+          "llm_agent.application.inspection.errors",
+        "llm_agent.agent.application",
+        "llm_agent.agent.approval",
+        "llm_agent.agent.interaction.task_directives",
+        "llm_agent.agent.interaction.types",
+        "llm_agent.agent.tools.authority",
+        "llm_agent.application.configuration_errors",
+        "llm_agent.application.context",
+        "llm_agent.application.conversation"
+    ],
+    "exports": [
+        "TaskExecutionRuntime",
+        "TaskExecutionStart",
+        "TaskDispatch",
+        "TaskSettlement",
+        "TaskExecutionContext",
+        "TaskExecutionCapabilities",
+        "ModeSelection",
+        "TaskActivityUpdate",
+        "start_interactive_session",
+        "start_headless_task",
+        "prepare_task_dispatch",
+        "execute_submission",
+        "observe_task_settlement",
+        "read_execution_context",
+        "read_execution_capabilities",
+        "select_execution_mode",
+        "bind_interactive_services",
+        "bind_submission_cancellation",
+        "execute_memory_command",
+        "execute_workspace_command",
+        "set_session_diagnostics",
+        "read_runtime_inspection",
+        "close_task_execution"
+    ],
+    "export_categories": [
+        {
+            "category": "dto",
+            "names": [
+                "TaskExecutionRuntime",
+                "TaskExecutionStart",
+                "TaskDispatch",
+                "TaskSettlement",
+                "TaskExecutionContext",
+                "TaskExecutionCapabilities",
+                "ModeSelection",
+                "TaskActivityUpdate"
+            ]
+        },
+        {
+            "category": "operation",
+            "names": [
+                "start_interactive_session",
+                "start_headless_task",
+                "prepare_task_dispatch",
+                "execute_submission",
+                "observe_task_settlement",
+                "read_execution_context",
+                "read_execution_capabilities",
+                "select_execution_mode",
+                "bind_interactive_services",
+                "bind_submission_cancellation",
+                "execute_memory_command",
+                "execute_workspace_command",
+                "set_session_diagnostics",
+                "read_runtime_inspection",
+                "close_task_execution"
+            ]
+        }
+    ],
+    "consumer_files": [
+        "src/llm_agent/interfaces/cli/app.py",
+        "src/llm_agent/interfaces/cli/bootstrap.py",
+        "src/llm_agent/interfaces/cli/chat.py",
+        "src/llm_agent/interfaces/cli/command_handlers.py",
+        "src/llm_agent/interfaces/cli/commands.py",
+        "src/llm_agent/interfaces/cli/inspector.py",
+        "src/llm_agent/interfaces/cli/interactive_admission.py",
+        "src/llm_agent/interfaces/cli/interactive_commands.py",
+        "src/llm_agent/interfaces/cli/interactive_rendering.py",
+        "src/llm_agent/interfaces/cli/interactive_resources.py",
+        "src/llm_agent/interfaces/cli/interactive_worker.py",
+        "src/llm_agent/interfaces/cli/legacy_compat.py",
+        "src/llm_agent/interfaces/cli/memory_commands.py",
+        "src/llm_agent/interfaces/cli/task_commands.py",
+        "src/llm_agent/interfaces/cli/task_continuity.py",
+        "src/llm_agent/interfaces/cli/turn_rendering.py",
+        "src/llm_agent/application/conversation.py"
+    ],
+    "responsibility": "Finite task dispatch and lifecycle over one private Agent runtime; live capabilities and validated primitive observations.",
+    "implementation_responsibilities": {
+        "src/llm_agent/application/task_execution.py": [
+            "TaskExecutionRuntime",
+            "TaskExecutionStart",
+            "TaskDispatch",
+            "TaskSettlement",
+            "TaskExecutionContext",
+            "TaskExecutionCapabilities",
+            "ModeSelection",
+            "TaskActivityUpdate",
+            "start_interactive_session",
+            "start_headless_task",
+            "prepare_task_dispatch",
+            "execute_submission",
+            "observe_task_settlement",
+            "read_execution_context",
+            "read_execution_capabilities",
+            "select_execution_mode",
+            "bind_interactive_services",
+            "bind_submission_cancellation",
+            "execute_memory_command",
+            "execute_workspace_command",
+            "set_session_diagnostics",
+            "read_runtime_inspection",
+            "close_task_execution"
+        ]
+    }
+},
+        "conversation": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/conversation.py",
+            "implementation_modules": [
+                "src/llm_agent/application/conversation.py"
+            ],
+            "allowed_consumer_owners": [
+                "Interfaces"
+            ],
+            "allowed_dependency_families": [
+                "llm_agent.application.task_execution",
+                "llm_agent.agent.llm.contracts",
+                "llm_agent.agent.llm.session",
+                "llm_agent.agent.runtime.worker_output",
+                "llm_agent.application.model_errors"
+            ],
+            "exports": [
+                "ConversationRuntime",
+                "ConversationView",
+                "ChatRequestPreview",
+                "HistoryOutcome",
+                "ChatTurn",
+                "bind_conversation",
+                "read_conversation",
+                "configure_conversation",
+                "execute_history_command",
+                "begin_chat_turn",
+                "stream_chat_turn",
+                "finish_chat_turn",
+                "append_legacy_transcript"
+            ],
+            "export_categories": [
+                {
+                    "category": "dto",
+                    "names": [
+                        "ConversationRuntime",
+                        "ConversationView",
+                        "ChatRequestPreview",
+                        "HistoryOutcome",
+                        "ChatTurn"
+                    ]
+                },
+                {
+                    "category": "operation",
+                    "names": [
+                        "bind_conversation",
+                        "read_conversation",
+                        "configure_conversation",
+                        "execute_history_command",
+                        "begin_chat_turn",
+                        "stream_chat_turn",
+                        "finish_chat_turn",
+                        "append_legacy_transcript"
+                    ]
+                }
+            ],
+            "consumer_files": [
+                "src/llm_agent/interfaces/cli/bootstrap.py",
+                "src/llm_agent/interfaces/cli/commands.py",
+                "src/llm_agent/interfaces/cli/chat.py",
+                "src/llm_agent/interfaces/cli/streaming.py",
+                "src/llm_agent/interfaces/cli/command_handlers.py",
+                "src/llm_agent/interfaces/cli/interactive_commands.py",
+                "src/llm_agent/interfaces/cli/legacy_compat.py",
+                "src/llm_agent/interfaces/cli/turn_rendering.py"
+            ],
+            "responsibility": "Finite operations over the original privately retained conversation session.",
+            "implementation_responsibilities": {
+                "src/llm_agent/application/conversation.py": [
+                    "ConversationRuntime",
+                    "ConversationView",
+                    "ChatRequestPreview",
+                    "HistoryOutcome",
+                    "ChatTurn",
+                    "bind_conversation",
+                    "read_conversation",
+                    "configure_conversation",
+                    "execute_history_command",
+                    "begin_chat_turn",
+                    "stream_chat_turn",
+                    "finish_chat_turn",
+                    "append_legacy_transcript"
+                ]
+            }
+        },
+        "interactive_worker": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/interactive_worker.py",
+            "implementation_modules": [
+                "src/llm_agent/application/interactive_worker.py"
+            ],
+            "allowed_consumer_owners": ["Interfaces"],
+            "allowed_dependency_families": [
+                "llm_agent.agent.runtime.worker_output"
+            ],
+            "exports": ["run_interactive_worker"],
+            "export_categories": [
+                {"category": "operation", "names": ["run_interactive_worker"]}
+            ],
+            "consumer_files": [
+                "src/llm_agent/interfaces/cli/interactive_worker.py"
+            ],
+            "responsibility": "Execute one bounded interactive-worker operation inside the canonical scoped worker-text publication lifecycle.",
+            "implementation_responsibilities": {
+                "src/llm_agent/application/interactive_worker.py": [
+                    "run_interactive_worker"
+                ]
+            },
+            "anti_proxy_contract": {
+                "operation": "run_interactive_worker",
+                "private_agent_symbol": "bind_worker_output",
+                "scope_call": "operation",
+                "callback_parameter": "publish_text",
+                "forbidden_public_types": ["ContextVar", "Token", "WorkerOutput"]
+            }
+        },
+        "model_profile_selection": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/model_profile_selection.py",
+            "implementation_modules": ["src/llm_agent/application/model_profile_selection.py"],
+            "allowed_consumer_owners": ["Interfaces"],
+            "allowed_dependency_families": ["llm_agent.application.context", "llm_agent.agent.llm.model_profile", "llm_agent.agent.runtime.config_repository"],
+            "exports": ["select_default_model_profile"],
+            "export_categories": [{"category": "operation", "names": ["select_default_model_profile"]}],
+            "consumer_files": ["src/llm_agent/interfaces/cli/interactive_commands.py"],
+            "responsibility": "Validate a selected default profile against the supplied effective configuration and persist only that default selection.",
+            "implementation_responsibilities": {"src/llm_agent/application/model_profile_selection.py": ["select_default_model_profile"]},
+            "anti_proxy_contract": {"operation": "select_default_model_profile", "private_agent_symbols": ["resolve_model_profile", "ConfigRepository"], "required_order": ["resolve_model_profile", "update"], "forbidden_public_types": ["ConfigRepository", "ResolvedConfig", "ResolvedModelProfile"], "must_not_load": true}
+        },
+        "session_diagnostics": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/session_diagnostics.py",
+            "implementation_modules": ["src/llm_agent/application/session_diagnostics.py"],
+            "allowed_consumer_owners": ["Interfaces"],
+            "allowed_dependency_families": ["llm_agent.application.task_execution", "llm_agent.agent.runtime.logging"],
+            "exports": ["apply_interactive_diagnostic_mode"],
+            "export_categories": [{"category": "operation", "names": ["apply_interactive_diagnostic_mode"]}],
+            "consumer_files": ["src/llm_agent/interfaces/cli/command_handlers.py"],
+            "responsibility": "Apply the interactive diagnostic mode to session diagnostics when owned by the command context and to the canonical console logging level.",
+            "implementation_responsibilities": {"src/llm_agent/application/session_diagnostics.py": ["apply_interactive_diagnostic_mode"]}
+        },
+        "model_errors": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/model_errors.py",
+            "implementation_modules": [
+                "src/llm_agent/application/model_errors.py"
+            ],
+            "allowed_consumer_owners": [
+                "Interfaces"
+            ],
+            "allowed_dependency_families": [
+                "llm_agent.agent.llm.errors"
+            ],
+            "exports": [
+                "ModelConnectionError",
+                "ModelTimeoutError"
+            ],
+            "export_categories": [
+                {
+                    "category": "error",
+                    "names": [
+                        "ModelConnectionError",
+                        "ModelTimeoutError"
+                    ]
+                }
+            ],
+            "consumer_files": [
+                "src/llm_agent/interfaces/cli/chat.py"
+            ],
+            "responsibility": "Own transport error identities and privately translate only canonical Agent model errors.",
+            "implementation_responsibilities": {
+                "src/llm_agent/application/model_errors.py": [
+                    "ModelConnectionError",
+                    "ModelTimeoutError"
+                ]
+            }
+        },
+                                     "health_diagnostics": {
+                                         "canonical_owner": "Application",
+                                         "public_surface": "src/llm_agent/application/health/__init__.py",
+                                         "implementation_modules": [
+                                             "src/llm_agent/application/health/diagnostics.py"
+                                         ],
+                                         "allowed_consumer_owners": ["Interfaces"],
+                                         "allowed_dependency_families": [
+                                             "llm_agent.agent.health.standalone",
+                                             "llm_agent.application.context"
+                                         ],
+                                         "exports": [
+                                             "HealthDiagnosticsRequest",
+                                             "HealthDiagnosticsResult",
+                                             "run_health_diagnostics"
+                                         ],
+                                         "export_categories": [
+                                             {"category": "dto", "names": ["HealthDiagnosticsRequest", "HealthDiagnosticsResult"]},
+                                             {"category": "operation", "names": ["run_health_diagnostics"]}
+                                         ],
+                                         "consumer_files": [
+                                             "src/llm_agent/interfaces/cli/command_handlers.py",
+                                             "src/llm_agent/interfaces/cli/maintenance.py"
+                                         ],
+                                         "migration_rule": "EXPAND -> migrate both doctor consumers -> prove zero broker consumers -> CONTRACT run_health_check.",
+                                         "responsibility": "Execute the product/Agent health-diagnostics use case and return a structured report, human rendering, and readiness projection.",
+                                         "implementation_responsibilities": {
+                                             "src/llm_agent/application/health/diagnostics.py": [
+                                                 "HealthDiagnosticsRequest",
+                                                 "HealthDiagnosticsResult",
+                                                 "run_health_diagnostics"
+                                             ]
+                                         },
+                                         "anti_proxy_contract": {
+                                             "request_type": "HealthDiagnosticsRequest",
+                                             "result_type": "HealthDiagnosticsResult",
+                                             "operation": "run_health_diagnostics",
+                                             "required_calls": ["run_standalone_health_check", "render_health_report"],
+                                             "result_fields": ["structured_report", "rendered_report", "offline_ready", "online_ready"]
+                                         }
+                                     },
+                                     "inspection_auxiliary": {
+                                         "canonical_owner": "Application",
+                                         "public_surface": "src/llm_agent/application/inspection/__init__.py",
+                                         "implementation_modules": [
+                                             "src/llm_agent/application/inspection/contracts.py",
+                                             "src/llm_agent/application/inspection/errors.py",
+                                             "src/llm_agent/application/inspection/operations.py"
+                                         ],
+                                         "allowed_consumer_owners": ["Interfaces"],
+                                         "allowed_dependency_families": [
+                                             "llm_agent.application.context",
+                                             "llm_agent.agent.presentation.service",
+                                             "llm_agent.agent.observability.bookmarks",
+                                             "llm_agent.agent.observability.export",
+                                             "llm_agent.agent.observability.trace_store"
+                                         ],
+                                         "exports": [
+                                             "BookmarkAddRequest",
+                                             "BookmarkAddResult",
+                                             "BookmarkListRequest",
+                                             "BookmarkListResult",
+                                             "BookmarkRemoveRequest",
+                                             "BookmarkRemoveResult",
+                                             "BookmarkView",
+                                             "DiagnosticExportRequest",
+                                             "DiagnosticExportResult",
+                                             "InspectionAuxiliaryOperations",
+                                             "InspectionCorruptDataError",
+                                             "InspectionUnavailableError"
+                                         ],
+                                         "export_categories": [
+                                             {"category": "dto", "names": ["BookmarkAddRequest", "BookmarkAddResult", "BookmarkListRequest", "BookmarkListResult", "BookmarkRemoveRequest", "BookmarkRemoveResult", "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult"]},
+                                             {"category": "error", "names": ["InspectionCorruptDataError", "InspectionUnavailableError"]},
+                                             {"category": "operation", "names": ["InspectionAuxiliaryOperations"]}
+                                         ],
+                                         "consumer_files": [
+                                             "src/llm_agent/interfaces/cli/inspector.py"
+                                         ],
+                                         "migration_rule": "EXPAND -> migrate bookmark list/add/remove and diagnostic export -> prove zero broker consumers for both Agent mechanisms -> CONTRACT only BookmarkStore and DiagnosticExporter.",
+                                         "responsibility": "Workspace-scoped auxiliary inspection operations over retained traces: bookmark management and diagnostic export.",
+                                         "implementation_responsibilities": {
+                                             "src/llm_agent/application/inspection/contracts.py": [
+                                                 "BookmarkAddRequest",
+                                                 "BookmarkAddResult",
+                                                 "BookmarkListRequest",
+                                                 "BookmarkListResult",
+                                                 "BookmarkRemoveRequest",
+                                                 "BookmarkRemoveResult",
+                                                 "BookmarkView",
+                                                 "DiagnosticExportRequest",
+                                                 "DiagnosticExportResult"
+                                             ],
+                                             "src/llm_agent/application/inspection/errors.py": [
+                                                 "InspectionCorruptDataError",
+                                                 "InspectionUnavailableError"
+                                             ],
+                                             "src/llm_agent/application/inspection/operations.py": [
+                                                 "InspectionAuxiliaryOperations"
+                                             ]
+                                         },
+                                         "anti_proxy_contract": {
+                                             "operation_type": "InspectionAuxiliaryOperations",
+                                             "private_mechanisms": ["InspectionService", "BookmarkStore", "DiagnosticExporter"],
+                                             "forbidden_agent_types": ["Bookmark", "BookmarkStore", "DiagnosticExporter", "ExportReceipt", "InspectionService", "InspectionQuery", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+                                             "operations": {
+                                                 "list_bookmarks": {"request_type": "BookmarkListRequest", "result_type": "BookmarkListResult", "required_calls": ["_selected_bookmark_run", "list", "BookmarkListResult"]},
+                                                 "add_bookmark": {"request_type": "BookmarkAddRequest", "result_type": "BookmarkAddResult", "required_calls": ["_selected_bookmark_run", "add", "BookmarkAddResult"]},
+                                                 "remove_bookmark": {"request_type": "BookmarkRemoveRequest", "result_type": "BookmarkRemoveResult", "required_calls": ["_selected_bookmark_run", "remove", "BookmarkRemoveResult"]},
+                                                 "export_diagnostics": {"request_type": "DiagnosticExportRequest", "result_type": "DiagnosticExportResult", "required_calls": ["export", "DiagnosticExportResult"]}
+                                             }
+                                         }
+                                     },
+                                     "state_migration": {
+                                         "canonical_owner": "Application",
+                                         "public_surface": "src/llm_agent/application/state_migration/__init__.py",
+                                         "implementation_modules": [
+                                             "src/llm_agent/application/state_migration/contracts.py",
+                                             "src/llm_agent/application/state_migration/errors.py",
+                                             "src/llm_agent/application/state_migration/operations.py"
+                                         ],
+                                         "allowed_consumer_owners": ["Interfaces"],
+                                         "allowed_dependency_families": [
+                                             "llm_agent.application.context",
+                                             "llm_agent.agent.runtime.home_lifecycle",
+                                             "llm_agent.agent.runtime.storage_bootstrap",
+                                             "llm_agent.agent.runtime.state_migration"
+                                         ],
+                                         "exports": [
+                                             "StateMigrationFailedError",
+                                             "StateMigrationRequest",
+                                             "StateMigrationResult",
+                                             "migrate_state"
+                                         ],
+                                         "export_categories": [
+                                             {"category": "dto", "names": ["StateMigrationRequest", "StateMigrationResult"]},
+                                             {"category": "error", "names": ["StateMigrationFailedError"]},
+                                             {"category": "operation", "names": ["migrate_state"]}
+                                         ],
+                                         "consumer_files": [
+                                             "src/llm_agent/interfaces/cli/maintenance.py",
+                                             "src/llm_agent/interfaces/cli/app.py"
+                                         ],
+                                         "migration_rule": "EXPAND -> migrate run_state and its error mapping -> prove zero broker consumers for migrate_legacy_state and StateMigrationError -> CONTRACT only those two exports.",
+                                         "responsibility": "Orchestrate explicit non-destructive migration of supported legacy runtime state into the selected canonical workspace.",
+                                         "implementation_responsibilities": {
+                                             "src/llm_agent/application/state_migration/contracts.py": ["StateMigrationRequest", "StateMigrationResult"],
+                                             "src/llm_agent/application/state_migration/errors.py": ["StateMigrationFailedError"],
+                                             "src/llm_agent/application/state_migration/operations.py": ["migrate_state"]
+                                         },
+                                         "anti_proxy_contract": {
+                                             "operation": "migrate_state",
+                                             "request_type": "StateMigrationRequest",
+                                             "result_type": "StateMigrationResult",
+                                             "error_type": "StateMigrationFailedError",
+                                             "agent_error_type": "StateMigrationError",
+                                             "agent_result_type": "StateMigrationReport",
+                                             "required_order": [
+                                                 "WorkspaceContext.create",
+                                                 "request.app_paths.for_workspace",
+                                                 "HomeLifecycleLease.begin_transient",
+                                                 "StorageBootstrap().prepare",
+                                                 "migrate_legacy_state",
+                                                 "StateMigrationResult"
+                                             ],
+                                             "result_fields": ["source", "copied", "skipped"],
+                                             "request_fields": ["source", "workspace", "app_paths"],
+                                             "forbidden_public_types": ["StateMigrationReport", "StateMigrationError", "HomeLifecycleLease", "StorageBootstrap", "InstanceLock", "WorkspacePaths"]
+                                         }
+                                     },
+                                     "workspace_recents": {
+                                         "canonical_owner": "Application",
+                                         "public_surface": "src/llm_agent/application/workspace_recents.py",
+                                         "implementation_modules": [
+                                             "src/llm_agent/application/workspace_recents.py"
+                                         ],
+                                         "allowed_consumer_owners": ["Interfaces"],
+                                         "allowed_dependency_families": [
+                                             "llm_agent.application.context",
+                                             "llm_agent.storage.json_persistence",
+                                             "llm_agent.agent.runtime.instance_lock"
+                                         ],
+                                         "exports": [
+                                             "list_recent_workspaces",
+                                             "remember_recent_workspace"
+                                         ],
+                                         "export_categories": [
+                                             {"category": "operation", "names": ["list_recent_workspaces", "remember_recent_workspace"]}
+                                         ],
+                                         "consumer_files": [
+                                             "src/llm_agent/interfaces/cli/first_run.py",
+                                             "src/llm_agent/interfaces/cli/interactive_commands.py",
+                                             "src/llm_agent/interfaces/cli/workspace_entry.py"
+                                         ],
+                                         "migration_rule": "EXPAND -> migrate recents consumers and B35 -> prove the old Interface module is compatibility-only and InstanceLock has zero broker consumers -> CONTRACT only InstanceLock.",
+                                         "responsibility": "Own the bounded best-effort persistent history of recently opened canonical workspaces.",
+                                         "implementation_responsibilities": {
+                                             "src/llm_agent/application/workspace_recents.py": [
+                                                 "_records",
+                                                 "list_recent_workspaces",
+                                                 "remember_recent_workspace"
+                                             ]
+                                         },
+                                         "anti_proxy_contract": {
+                                             "operations": ["list_recent_workspaces", "remember_recent_workspace"],
+                                             "required_calls": {
+                                                 "list_recent_workspaces": ["_records"],
+                                                 "remember_recent_workspace": [
+                                                     "WorkspaceContext.create",
+                                                     "_records",
+                                                     "InstanceLock.create",
+                                                     "write_text_atomic"
+                                                 ]
+                                             },
+                                             "forbidden_public_types": [
+                                                 "InstanceLock",
+                                                 "InstanceLockError",
+                                                 "JsonObjectReadError",
+                                                 "AtomicWriteError"
+                                             ],
+                                             "persistence_owner": "llm_agent.storage.json_persistence",
+                                             "lock_owner": "llm_agent.agent.runtime.instance_lock",
+                                             "compatibility_module": "src/llm_agent/interfaces/cli/workspace_recents.py",
+                                             "compatibility_exports": ["load_recent_workspaces", "remember_recent_workspace"]
+                                         }
+                                     },
+                                     "task_context": {
+                                         "canonical_owner": "Application",
+                                         "public_surface": "src/llm_agent/application/task_context.py",
+                                         "implementation_modules": [
+                                             "src/llm_agent/application/task_context.py"
+                                         ],
+                                         "allowed_consumer_owners": ["Interfaces"],
+                                         "allowed_dependency_families": [
+                                             "llm_agent.application.context",
+                                             "llm_agent.agent.task_definition.errors",
+                                             "llm_agent.agent.task_definition.repository",
+                                             "llm_agent.agent.task_definition.resolver"
+                                         ],
+                                         "exports": [
+                                             "TaskContextRequest",
+                                             "TaskContextResult",
+                                             "TaskContextReadError",
+                                             "read_task_context"
+                                         ],
+                                         "export_categories": [
+                                             {"category": "dto", "names": ["TaskContextRequest", "TaskContextResult"]},
+                                             {"category": "error", "names": ["TaskContextReadError"]},
+                                             {"category": "operation", "names": ["read_task_context"]}
+                                         ],
+                                         "consumer_files": [
+                                             "src/llm_agent/interfaces/cli/task_context.py",
+                                             "src/llm_agent/interfaces/cli/app.py"
+                                         ],
+                                         "migration_rule": "EXPAND -> migrate task context composition and CLI error mapping -> prove zero broker consumers for all three Agent symbols -> CONTRACT exactly those exports.",
+                                         "responsibility": "Read and materialize persisted task-definition authority for one workspace, task, and optional phase.",
+                                         "implementation_responsibilities": {
+                                             "src/llm_agent/application/task_context.py": [
+                                                 "TaskContextRequest",
+                                                 "TaskContextResult",
+                                                 "TaskContextReadError",
+                                                 "read_task_context",
+                                                 "_copy_json",
+                                                 "_copy_json_object",
+                                                 "_freeze_json",
+                                                 "_freeze_json_object"
+                                             ]
+                                         },
+                                         "anti_proxy_contract": {
+                                             "request_type": "TaskContextRequest",
+                                             "result_type": "TaskContextResult",
+                                             "error_type": "TaskContextReadError",
+                                             "operation": "read_task_context",
+                                             "required_calls": [
+                                                 "WorkspaceContext.create",
+                                                 "request.app_paths.for_workspace",
+                                                 "TaskDefinitionRepository",
+                                                 "TaskContextResolver",
+                                                 "resolve"
+                                             ],
+                                             "forbidden_agent_types": [
+                                                 "TaskContextMaterialization",
+                                                 "TaskDefinitionRecord",
+                                                 "TaskDefinitionRef",
+                                                 "TaskContract",
+                                                 "TaskSpec",
+                                                 "TaskSpecPhase",
+                                                 "TaskDefinitionRepository",
+                                                 "TaskContextResolver"
+                                             ],
+                                             "result_fields": [
+                                                 "task_id",
+                                                 "workspace_id",
+                                                 "contract_version",
+                                                 "contract_digest",
+                                                 "spec_version",
+                                                 "spec_digest",
+                                                 "phase_id",
+                                                 "trusted_text",
+                                                 "authority"
+                                             ],
+                                             "request_fields": ["app_paths", "workspace", "task_id", "phase_id"],
+                                             "document_fields": [
+                                                 "task_id",
+                                                 "workspace_id",
+                                                 "contract_version",
+                                                 "contract_digest",
+                                                 "spec_version",
+                                                 "spec_digest",
+                                                 "phase_id",
+                                                 "context",
+                                                 "authority"
+                                             ]
+                                         }
+                                     },
+                                      "legacy_extension_registry": {
+                                          "canonical_owner": "Application",
+                                          "public_surface": "src/llm_agent/application/legacy_extension_registry.py",
+                                          "implementation_modules": ["src/llm_agent/application/legacy_extension_registry.py"],
+                                          "allowed_consumer_owners": ["Interfaces"],
+                                          "allowed_dependency_families": [
+                                              "llm_agent.application.context",
+                                              "llm_agent.extensions.extension_registry",
+                                              "llm_agent.extensions.extension_manifest_parser",
+                                              "llm_agent.agent.runtime.home_lifecycle",
+                                              "llm_agent.agent.runtime.storage_bootstrap"
+                                          ],
+                                          "exports": [
+                                              "LegacyExtensionRegistryEntry",
+                                              "list_legacy_extensions",
+                                              "add_legacy_extension",
+                                              "set_legacy_extension_enabled",
+                                              "doctor_legacy_extensions"
+                                          ],
+                                          "export_categories": [
+                                              {"category": "dto", "names": ["LegacyExtensionRegistryEntry"]},
+                                              {"category": "operation", "names": [
+                                                  "list_legacy_extensions",
+                                                  "add_legacy_extension",
+                                                  "set_legacy_extension_enabled",
+                                                  "doctor_legacy_extensions"
+                                              ]}
+                                          ],
+                                          "consumer_files": ["src/llm_agent/interfaces/cli/maintenance.py"],
+                                          "migration_rule": "EXPAND -> migrate llm-agent tools -> prove zero ExtensionRegistry broker consumers -> CONTRACT ExtensionRegistry only.",
+                                          "responsibility": "Own the legacy llm-agent tools registry workflow while preserving extensions/registry.json and its separation from the modern catalog.",
+                                          "implementation_responsibilities": {
+                                              "src/llm_agent/application/legacy_extension_registry.py": [
+                                                  "LegacyExtensionRegistryEntry",
+                                                  "list_legacy_extensions",
+                                                  "add_legacy_extension",
+                                                  "set_legacy_extension_enabled",
+                                                  "doctor_legacy_extensions"
+                                              ]
+                                          },
+                                          "anti_proxy_contract": {
+                                              "platform_owner": "ExtensionRegistry",
+                                              "entry_type": "LegacyExtensionRegistryEntry",
+                                              "list_operation": "list_legacy_extensions",
+                                              "add_operation": "add_legacy_extension",
+                                              "set_enabled_operation": "set_legacy_extension_enabled",
+                                              "doctor_operation": "doctor_legacy_extensions",
+                                              "forbidden_public_types": ["ExtensionRegistry", "ExtensionState", "ExtensionManifest"],
+                                              "canonical_write_guards": [
+                                                  "HomeLifecycleLease.begin_transient",
+                                                  "StorageBootstrap().prepare"
+                                              ],
+                                              "doctor_parser": "load_extension_manifest_bytes",
+                                              "doctor_mode": "strict_catalog"
+                                          }
+                                      },
+                                      "task_continuity": {
+                                          "canonical_owner": "Application",
+                                          "public_surface": "src/llm_agent/application/task_continuity.py",
+                                          "implementation_modules": ["src/llm_agent/application/task_continuity.py"],
+                                          "allowed_consumer_owners": ["Interfaces"],
+                                          "allowed_dependency_families": [
+                                              "llm_agent.application.context",
+                                              "llm_agent.agent.continuity.service"
+                                          ],
+                                          "exports": [
+                                              "TaskContinuityRequest",
+                                              "TaskContinuityResult",
+                                              "read_task_continuity"
+                                          ],
+                                          "export_categories": [
+                                              {"category": "dto", "names": ["TaskContinuityRequest", "TaskContinuityResult"]},
+                                              {"category": "operation", "names": ["read_task_continuity"]}
+                                          ],
+                                          "consumer_files": ["src/llm_agent/interfaces/cli/task_continuity.py"],
+                                          "migration_rule": "EXPAND -> migrate task status and resume preflight -> prove zero TaskContinuityService broker consumers -> CONTRACT that export only.",
+                                          "responsibility": "Read and project task continuity for one workspace without execution or storage mutation.",
+                                          "implementation_responsibilities": {
+                                              "src/llm_agent/application/task_continuity.py": [
+                                                  "TaskContinuityRequest",
+                                                  "TaskContinuityResult",
+                                                  "read_task_continuity",
+                                                  "_freeze_json",
+                                                  "_freeze_json_object",
+                                                  "_copy_json",
+                                                  "_copy_json_object"
+                                              ]
+                                          },
+                                          "anti_proxy_contract": {
+                                              "request_type": "TaskContinuityRequest",
+                                              "result_type": "TaskContinuityResult",
+                                              "operation": "read_task_continuity",
+                                              "required_calls": [
+                                                  "WorkspaceContext.create",
+                                                  "request.app_paths.for_workspace",
+                                                  "TaskContinuityService",
+                                                  "snapshot",
+                                                  "TaskContinuityResult",
+                                                  "_freeze_json_object"
+                                              ],
+                                              "forbidden_agent_types": [
+                                                  "TaskContinuityService",
+                                                  "TaskContinuitySnapshot",
+                                                  "TaskContinuityStatus",
+                                                  "TaskDefinitionRefSummary",
+                                                  "TaskDefinitionSummary",
+                                                  "PlanProgress",
+                                                  "ContinuityMetadata",
+                                                  "RelatedRun",
+                                                  "CheckpointManager"
+                                              ],
+                                              "request_fields": ["app_paths", "workspace"],
+                                              "result_fields": ["status", "reason_code", "resumable", "_document"],
+                                              "document_fields": [
+                                                  "schema_version", "workspace_id", "status", "reason_code", "reason",
+                                                  "resumable", "checkpoint_present", "checkpoint_schema_version",
+                                                  "objective_preview", "root_task_id", "task_definition_ref",
+                                                  "terminal_disposition", "hierarchical_status", "plan_progress",
+                                                  "continuity", "resume_generation", "related_runs"
+                                              ]
+                                          }
+                                      },
+                                      "code_commands": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/code_commands.py",
+                                        "implementation_modules": ["src/llm_agent/application/code_commands.py"],
+                                        "allowed_consumer_owners": ["Interfaces"],
+                                        "allowed_dependency_families": [
+                                             "llm_agent.application.conversation","llm_agent.agent.code.application", "llm_agent.agent.code.commands", "llm_agent.agent.code.changes", "llm_agent.agent.code.policy", "llm_agent.agent.llm.contracts", "llm_agent.agent.tools.invocation_semantics", "llm_agent.agent.tools.mode_enforcement", "llm_agent.application.code_review"],
+                                        "exports": ["CodeCommandOutcome", "execute_code_command"],
+                                        "export_categories": [{"category": "dto", "names": ["CodeCommandOutcome"]}, {"category": "operation", "names": ["execute_code_command"]}],
+                                        "consumer_files": ["src/llm_agent/interfaces/cli/command_handlers.py", "src/llm_agent/interfaces/cli/interactive_worker.py", "src/llm_agent/interfaces/cli/ui.py"],
+                                        "migration_rule": "C7 execute a finite code command, project an Application-owned outcome, and contract nine broker symbols after zero-consumer proof.",
+                                        "responsibility": "Interpret, gate, execute, and project one explicit CLI code command without exposing Agent request, context, approval, or result contracts.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/code_commands.py": ["CodeCommandOutcome", "execute_code_command"]},
+                                        "anti_proxy_contract": {"exports": ["CodeCommandOutcome", "execute_code_command"], "private_agent_symbols": ["CODE_COMMAND_HELP", "CODE_TASK_ACTIONS", "ChangeApprover", "CodeCommandError", "CodeRequest", "CodingApplicationService", "build_code_context", "parse_code_command", "requests_test_execution"], "outcome_kinds": ["parse_error", "mode_denied", "tests_denied", "help", "executed"]}
+                                      },
+                                      "code_review": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/code_review.py",
+                                        "implementation_modules": ["src/llm_agent/application/code_review.py"],
+                                        "allowed_consumer_owners": ["Interfaces", "Application"],
+                                        "allowed_dependency_families": ["llm_agent.agent.code.changes", "llm_agent.agent.code.policy"],
+                                        "exports": ["CodeReviewPreview", "CodeReviewAssessment"],
+                                        "export_categories": [{"category": "dto", "names": ["CodeReviewPreview", "CodeReviewAssessment"]}],
+                                        "consumer_files": ["src/llm_agent/application/code_commands.py", "src/llm_agent/interfaces/cli/ui.py", "src/llm_agent/interfaces/cli/attention.py", "src/llm_agent/interfaces/cli/interactive_worker.py"],
+                                        "migration_rule": "Project private Agent review values into owned immutable DTOs at the C7 approval callback; contract exactly ChangePreview and ProposalAssessment after zero-consumer proof.",
+                                        "responsibility": "Present the finite code review without exposing Agent mutation evidence or confirmation policy.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/code_review.py": ["CodeReviewPreview", "CodeReviewAssessment"]}
+                                      },
+                                      "configuration_errors": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/configuration_errors.py",
+                                        "implementation_modules": ["src/llm_agent/application/configuration_errors.py"],
+                                        "allowed_consumer_owners": ["Interfaces", "Application"],
+                                        "allowed_dependency_families": ["llm_agent.agent.runtime.config_errors"],
+                                        "exports": ["ConfigurationError", "ConfigurationNotFound", "translate_configuration_errors"],
+                                        "export_categories": [{"category": "error", "names": ["ConfigurationError", "ConfigurationNotFound"]}, {"category": "operation", "names": ["translate_configuration_errors"]}],
+                                        "consumer_files": ["src/llm_agent/application/configuration_admin.py", "src/llm_agent/application/first_run_configuration.py", "src/llm_agent/interfaces/cli/app.py", "src/llm_agent/interfaces/cli/bootstrap.py", "src/llm_agent/interfaces/cli/first_run.py", "src/llm_agent/interfaces/cli/interactive_resources.py", "src/llm_agent/interfaces/cli/interactive_session.py"],
+                                        "migration_rule": "C6 Application-owned configuration error types and narrow Agent-to-Application translation.",
+                                        "responsibility": "Own the finite configuration error contract used by Application operations and Interface startup/error mapping.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/configuration_errors.py": ["ConfigurationError", "ConfigurationNotFound", "translate_configuration_errors"]},
+                                        "anti_proxy_contract": {"exports": ["ConfigurationError", "ConfigurationNotFound", "translate_configuration_errors"], "forbidden_public_types": ["ConfigError", "ConfigNotFound"]}
+                                      },
+                                      "configuration_admin": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/configuration_admin.py",
+                                        "implementation_modules": ["src/llm_agent/application/configuration_admin.py"],
+                                        "allowed_consumer_owners": ["Interfaces"],
+                                        "allowed_dependency_families": ["llm_agent.application.context", "llm_agent.application.configuration_errors", "llm_agent.agent.runtime.config_repository", "llm_agent.agent.runtime.home_lifecycle", "llm_agent.agent.runtime.storage_bootstrap"],
+                                        "exports": ["configuration_path", "validate_configuration", "initialize_configuration", "migrate_configuration"],
+                                        "export_categories": [{"category": "operation", "names": ["configuration_path", "validate_configuration", "initialize_configuration", "migrate_configuration"]}],
+                                        "consumer_files": ["src/llm_agent/interfaces/cli/maintenance.py", "src/llm_agent/interfaces/cli/first_run.py"],
+                                        "migration_rule": "C5 finite configuration administration use cases; preserve owner semantics and canonical/external guarded-write split.",
+                                        "responsibility": "Expose finite path, validation, initialization, and migration operations over the Agent-owned configuration repository.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/configuration_admin.py": ["configuration_path", "validate_configuration", "initialize_configuration", "migrate_configuration"]},
+                                        "anti_proxy_contract": {"exports": ["configuration_path", "validate_configuration", "initialize_configuration", "migrate_configuration"], "forbidden_public_types": ["ConfigRepository", "ResolvedConfig"], "canonical_operations": ["initialize_configuration", "migrate_configuration"]}
+                                      },
+                                      "first_run_configuration": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/first_run_configuration.py",
+                                        "implementation_modules": ["src/llm_agent/application/first_run_configuration.py"],
+                                        "allowed_consumer_owners": ["Interfaces"],
+                                        "allowed_dependency_families": ["llm_agent.application.context", "llm_agent.application.configuration_errors", "llm_agent.agent.runtime.config_repository", "llm_agent.agent.runtime.config_errors"],
+                                        "exports": ["FirstRunProfileView", "FirstRunConfigurationView", "read_first_run_configuration", "update_first_run_configuration", "configuration_ready_for_chat_entry"],
+                                        "export_categories": [{"category": "dto", "names": ["FirstRunProfileView", "FirstRunConfigurationView"]}, {"category": "operation", "names": ["read_first_run_configuration", "update_first_run_configuration", "configuration_ready_for_chat_entry"]}],
+                                        "consumer_files": ["src/llm_agent/interfaces/cli/first_run.py"],
+                                        "migration_rule": "C5 UI-neutral first-run configuration projections; guided lifecycle remains Interface-owned through C23.",
+                                        "responsibility": "Project bounded first-run profile choices and chat-entry readiness without exposing repository/config objects.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/first_run_configuration.py": ["FirstRunProfileView", "FirstRunConfigurationView", "read_first_run_configuration", "update_first_run_configuration", "configuration_ready_for_chat_entry"]},
+                                        "anti_proxy_contract": {"exports": ["FirstRunProfileView", "FirstRunConfigurationView", "read_first_run_configuration", "update_first_run_configuration", "configuration_ready_for_chat_entry"], "forbidden_public_types": ["ConfigRepository", "ResolvedConfig"], "profile_fields": ["name", "model", "endpoint"], "configuration_fields": ["path", "default_profile", "profiles"]}
+                                      },
+                                      "discovery_configuration": {
+                                        "canonical_owner": "Application",
+                                        "public_surface": "src/llm_agent/application/discovery_configuration.py",
+                                        "implementation_modules": ["src/llm_agent/application/discovery_configuration.py"],
+                                        "allowed_consumer_owners": ["Interfaces"],
+                                        "allowed_dependency_families": ["llm_agent.application.context", "llm_agent.agent.runtime.config_repository", "llm_agent.agent.llm.model_profile"],
+                                        "exports": ["resolve_semantic_discovery_profile"],
+                                        "export_categories": [{"category": "operation", "names": ["resolve_semantic_discovery_profile"]}],
+                                        "consumer_files": ["src/llm_agent/interfaces/cli/discovery_projection.py"],
+                                        "migration_rule": "C5 optional, read-only semantic Discovery configuration resolution; never initializes, mutates, or starts the application.",
+                                        "responsibility": "Resolve the canonical model profile needed by semantic Discovery and return it intact.",
+                                        "implementation_responsibilities": {"src/llm_agent/application/discovery_configuration.py": ["resolve_semantic_discovery_profile"]},
+                                        "anti_proxy_contract": {"exports": ["resolve_semantic_discovery_profile"], "allowed_agent_return_type": "ResolvedModelProfile", "forbidden_public_types": ["ConfigRepository", "ResolvedConfig", "AgentApplication", "HomeLifecycleLease", "StorageBootstrap"], "required_calls": ["AppPaths.discover", "ConfigRepository", "load", "model_profile"], "forbidden_calls": ["HomeLifecycleLease", "StorageBootstrap", "AgentApplication", "initialize", "update", "migrate"]}
+                                      },
+                                      "workspace_query":  {
+                                                             "canonical_owner":  "Application",
+                                                             "public_surface":  "src/llm_agent/application/services/__init__.py",
+                                                             "implementation_modules":  [
+                                                                                            "src/llm_agent/application/services/queries.py",
+                                                                                            "src/llm_agent/application/services/query_find.py",
+                                                                                            "src/llm_agent/application/services/query_git.py"
+                                                                                        ],
+                                                             "allowed_consumer_owners":  [
+                                                                                             "Interfaces"
+                                                                                         ],
+                                                             "allowed_dependency_families":  [
+                                                                                                 "llm_agent.application.services",
+                                                                                                 "llm_agent.filesystem",
+                                                                                                 "llm_agent.workspace",
+                                                                                                 "llm_agent.execution"
+                                                                                             ],
+                                                             "exports":  [
+                                                                             "MAX_DIFF_FILES",
+                                                                             "MAX_FIND_FILE_BYTES",
+                                                                             "MAX_FIND_FILES",
+                                                                             "MAX_FIND_MATCHES",
+                                                                             "MAX_FIND_PATTERN_CHARS",
+                                                                             "MAX_FIND_SCAN_CHARS",
+                                                                             "MAX_FIND_SCAN_ENTRIES",
+                                                                             "MAX_GIT_OUTPUT_BYTES",
+                                                                             "MAX_LIST_ITEMS",
+                                                                             "MAX_LIST_SCAN_ENTRIES",
+                                                                             "MAX_QUERY_OUTPUT_CHARS",
+                                                                             "MAX_READ_BYTES",
+                                                                             "QUERY_TIMEOUT_SECONDS",
+                                                                             "QUERY_CANCELLED",
+                                                                             "QUERY_FIND_PATTERN_EMPTY",
+                                                                             "QUERY_FIND_PATTERN_INVALID",
+                                                                             "QUERY_GIT_FAILED",
+                                                                             "QUERY_GIT_UNAVAILABLE",
+                                                                             "QUERY_INVALID_REQUEST",
+                                                                             "QUERY_IO_FAILED",
+                                                                             "QUERY_PATH_INVALID",
+                                                                             "QUERY_PATH_NOT_FOUND",
+                                                                             "QUERY_PATH_TYPE_INVALID",
+                                                                             "QUERY_PERMISSION_DENIED",
+                                                                             "QUERY_FILE_TYPE_UNSUPPORTED",
+                                                                             "QUERY_FILE_NOT_UTF8",
+                                                                             "QueryCancellation",
+                                                                             "ReadOnlyWorkspaceQueryService",
+                                                                             "WORKSPACE_QUERY_CONTRACT_VERSION",
+                                                                             "WorkspaceQueryKind",
+                                                                             "WorkspaceQueryRequest",
+                                                                             "WorkspaceQueryResult",
+                                                                             "WorkspaceQueryStatus"
+                                                                         ],
+                                                             "export_categories":  [
+                                                                                       {
+                                                                                           "category":  "bounded_limits",
+                                                                                           "names":  [
+                                                                                                         "MAX_DIFF_FILES",
+                                                                                                         "MAX_FIND_FILE_BYTES",
+                                                                                                         "MAX_FIND_FILES",
+                                                                                                         "MAX_FIND_MATCHES",
+                                                                                                         "MAX_FIND_PATTERN_CHARS",
+                                                                                                         "MAX_FIND_SCAN_CHARS",
+                                                                                                         "MAX_FIND_SCAN_ENTRIES",
+                                                                                                         "MAX_GIT_OUTPUT_BYTES",
+                                                                                                         "MAX_LIST_ITEMS",
+                                                                                                         "MAX_LIST_SCAN_ENTRIES",
+                                                                                                         "MAX_QUERY_OUTPUT_CHARS",
+                                                                                                         "MAX_READ_BYTES",
+                                                                                                         "QUERY_TIMEOUT_SECONDS"
+                                                                                                     ]
+                                                                                       },
+                                                                                       {
+                                                                                           "category":  "error_codes",
+                                                                                           "names":  [
+                                                                                                         "QUERY_CANCELLED",
+                                                                                                         "QUERY_FIND_PATTERN_EMPTY",
+                                                                                                         "QUERY_FIND_PATTERN_INVALID",
+                                                                                                         "QUERY_GIT_FAILED",
+                                                                                                         "QUERY_GIT_UNAVAILABLE",
+                                                                                                         "QUERY_INVALID_REQUEST",
+                                                                                                         "QUERY_IO_FAILED",
+                                                                                                         "QUERY_PATH_INVALID",
+                                                                                                         "QUERY_PATH_NOT_FOUND",
+                                                                                                         "QUERY_PATH_TYPE_INVALID",
+                                                                                                         "QUERY_PERMISSION_DENIED",
+                                                                                                         "QUERY_FILE_TYPE_UNSUPPORTED",
+                                                                                                         "QUERY_FILE_NOT_UTF8"
+                                                                                                     ]
+                                                                                       },
+                                                                                       {
+                                                                                           "category":  "typed_contracts",
+                                                                                           "names":  [
+                                                                                                         "QueryCancellation",
+                                                                                                         "WORKSPACE_QUERY_CONTRACT_VERSION",
+                                                                                                         "WorkspaceQueryKind",
+                                                                                                         "WorkspaceQueryRequest",
+                                                                                                         "WorkspaceQueryResult",
+                                                                                                         "WorkspaceQueryStatus"
+                                                                                                     ]
+                                                                                       },
+                                                                                       {
+                                                                                           "category":  "use_case_operation",
+                                                                                           "names":  [
+                                                                                                         "ReadOnlyWorkspaceQueryService"
+                                                                                                     ]
+                                                                                       }
+                                                                                   ],
+                                                             "consumer_files":  [
+
+                                                                                ],
+                                                             "migration_rule":  "CURRENT narrow Application API: workspace_query only; preserve physical paths and expose typed read-only workspace queries.",
+                                                             "responsibility":  "Typed, UI-neutral, read-only workspace query operations for list, read, find, git status, and diff.",
+                                                             "implementation_responsibilities":  {
+                                                                                                     "src/llm_agent/application/services/queries.py":  [
+                                                                                                                                                           "ReadOnlyWorkspaceQueryService",
+                                                                                                                                                           "WorkspaceQueryRequest",
+                                                                                                                                                           "WorkspaceQueryResult"
+                                                                                                                                                       ],
+                                                                                                     "src/llm_agent/application/services/query_find.py":  [
+                                                                                                                                                              "execute_find"
+                                                                                                                                                          ],
+                                                                                                     "src/llm_agent/application/services/query_git.py":  [
+                                                                                                                                                             "execute_git_status",
+                                                                                                                                                             "execute_diff"
+                                                                                                                                                         ]
+                                                                                                 }
+                                                         }
+                                 },
+    "approved_neutral_owners":  [
+                                    {
+                                        "allowed_consumer_families":  [
+                                                                          "agent.skills",
+                                                                          "agent.tools",
+                                                                          "agent.planning",
+                                                                          "agent.application",
+                                                                          "agent.orchestration"
+                                                                      ],
+                                        "allowed_dependency_families":  [
+                                                                            "stdlib",
+                                                                            "agent.capabilities",
+                                                                            "agent.resources.contracts",
+                                                                            "agent.runtime.schema_validation (narrow existing pure schema-validation dependency only)"
+                                                                        ],
+                                        "lane":  "A",
+                                        "must_not_own":  [
+                                                             "tool invocation execution",
+                                                             "skill implementation",
+                                                             "planner policy",
+                                                             "approval/authority policy"
+                                                         ],
+                                        "package":  "agent.operation",
+                                        "purpose":  "Shared operation/builtin metadata value contracts and pure metadata normalization used by skills, tools and planning.",
+                                        "runtime_dependency_constraint":  "No other agent.runtime dependency is authorized by this owner declaration; if Lane A can move pure schema-shape validation into agent.operation without behavior change, that is preferred.",
+                                        "target_modules":  [
+                                                               "agent.operation.contracts",
+                                                               "agent.operation.schema",
+                                                               "agent.operation.provenance",
+                                                               "agent.operation.usage_examples",
+                                                               "agent.operation.spec",
+                                                               "agent.operation.catalog",
+                                                               "agent.operation.planning_metadata"
+                                                           ]
+                                    },
+                                    {
+                                        "allowed_consumer_families":  [
+                                                                          "agent.skills",
+                                                                          "agent.tools",
+                                                                          "agent.code",
+                                                                          "agent.application_services",
+                                                                          "agent.engineering"
+                                                                      ],
+                                        "allowed_dependency_families":  [
+                                                                            "stdlib",
+                                                                            "agent.cancellation"
+                                                                        ],
+                                        "lane":  "B",
+                                        "must_not_own":  [
+                                                             "shell allowlist/policy",
+                                                             "Python AST/code policy",
+                                                             "Git authorization/query semantics",
+                                                             "stdio protocol semantics",
+                                                             "Engineering authorization",
+                                                             "validation command policy"
+                                                         ],
+                                        "package":  "agent.process",
+                                        "purpose":  "Shared subprocess lifecycle mechanics only.",
+                                        "target_modules":  [
+                                                               "agent.process.tree",
+                                                               "agent.process.streams",
+                                                               "agent.process.lifecycle"
+                                                           ]
+                                    },
+                                    {
+                                        "allowed_consumer_families":  [
+                                                                          "agent.interaction",
+                                                                          "agent.planning",
+                                                                          "agent.runtime"
+                                                                      ],
+                                        "allowed_dependency_families":  [
+                                                                            "stdlib",
+                                                                            "agent.capabilities",
+                                                                            "agent.resources.contracts"
+                                                                        ],
+                                        "lane":  "D",
+                                        "must_not_own":  [
+                                                             "lexical/semantic parsing",
+                                                             "model calls",
+                                                             "authority admission policy",
+                                                             "target grounding policy",
+                                                             "clarification routing"
+                                                         ],
+                                        "package":  "agent.intent",
+                                        "purpose":  "Shared, authority-neutral intent claim value contracts used by parsing and deterministic admission.",
+                                        "target_modules":  [
+                                                               "agent.intent.claim_types",
+                                                               "agent.intent.claim_contracts"
+                                                           ]
+                                    }
+                                ],
+    "approved_owner_directions":  [
+                                      {
+                                          "destination_owner":  "Platform",
+                                          "source_owner":  "Agent"
+                                      },
+                                      {
+                                          "destination_owner":  "Product",
+                                          "source_owner":  "Agent"
+                                      },
+                                      {
+                                          "destination_owner":  "Application",
+                                          "source_owner":  "Platform"
+                                      },
+                                      {
+                                          "destination_owner":  "Product",
+                                          "source_owner":  "Platform"
+                                      },
+                                      {
+                                          "destination_owner":  "Agent",
+                                          "source_owner":  "Application"
+                                      },
+                                      {
+                                          "destination_owner":  "Platform",
+                                          "source_owner":  "Application"
+                                      },
+                                      {
+                                          "destination_owner":  "Product",
+                                          "source_owner":  "Application"
+                                      },
+                                      {
+                                          "destination_owner":  "Application",
+                                          "source_owner":  "Interfaces"
+                                      },
+                                      {
+                                          "destination_owner":  "Product",
+                                          "source_owner":  "Interfaces"
+                                      },
+                                      {
+                                          "destination_owner":  "Agent",
+                                          "source_owner":  "Product"
+                                      },
+                                      {
+                                          "destination_owner":  "Platform",
+                                          "source_owner":  "Product"
+                                      },
+                                      {
+                                          "destination_owner":  "Application",
+                                          "source_owner":  "Product"
+                                      },
+                                      {
+                                          "destination_owner":  "Interfaces",
+                                          "source_owner":  "Product"
+                                      }
+                                  ],
+    "artifact":  "current-architecture-policy",
+    "bounded_compatibility_edges":  [
+                                        {
+                                            "bridge_id": "W23-P2-WORKSPACE-RECENTS-COMPAT-001",
+                                            "class": "compatibility",
+                                            "constraint": "temporary import shim only; Application owns recents semantics; zero internal consumers",
+                                            "lane": "PHASE_2_WORKSPACE_RECENTS",
+                                            "surface": "interfaces.cli.workspace_recents",
+                                            "target_owner": "application.workspace_recents"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-META-001",
+                                            "class":  "compatibility",
+                                            "constraint":  "source-compatible alias/re-export only; no second editable metadata definition",
+                                            "lane":  "A",
+                                            "surface":  "agent.skills.descriptor.SkillSpec",
+                                            "target_owner":  "agent.operation.spec.SkillSpec"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-META-002",
+                                            "class":  "compatibility",
+                                            "constraint":  "compatibility projection/re-export only; canonical builtin metadata lives in agent.operation",
+                                            "lane":  "A",
+                                            "surface":  "agent.skills.catalog.BUILTIN_SKILL_SPECS",
+                                            "target_owner":  "agent.operation.catalog.BUILTIN_SKILL_SPECS"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-META-003",
+                                            "class":  "compatibility",
+                                            "constraint":  "identity-preserving alias/re-export",
+                                            "lane":  "A",
+                                            "surface":  "agent.tools.contracts.CancellationSafetyMode",
+                                            "target_owner":  "agent.operation.contracts.CancellationSafetyMode"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-META-004",
+                                            "class":  "compatibility",
+                                            "constraint":  "identity-preserving alias/re-export where required",
+                                            "lane":  "A",
+                                            "surface":  "agent.tools.provenance.ArgumentOrigin",
+                                            "target_owner":  "agent.operation.provenance.ArgumentOrigin"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-META-005",
+                                            "class":  "compatibility",
+                                            "constraint":  "projection/alias only; planning must not maintain an independent editable metadata table",
+                                            "lane":  "A",
+                                            "surface":  "agent.planning.tool_metadata.ToolMetadata",
+                                            "target_owner":  "agent.operation.planning_metadata.ToolMetadata"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-PROC-001",
+                                            "class":  "compatibility",
+                                            "constraint":  "bounded compatibility facade only; no canonical production caller may remain on the old owner",
+                                            "lane":  "B",
+                                            "surface":  "agent.tools.process_tree",
+                                            "target_owner":  "agent.process.tree"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-PROC-002",
+                                            "class":  "compatibility",
+                                            "constraint":  "bounded compatibility facade only; no canonical production caller may remain on the old owner",
+                                            "lane":  "B",
+                                            "surface":  "agent.tools.stdio_streams",
+                                            "target_owner":  "agent.process.streams"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-PERSIST-001",
+                                            "class":  "compatibility",
+                                            "constraint":  "retain only at persisted/history compatibility boundaries; agent.contracts is not neutral",
+                                            "lane":  "COORDINATOR",
+                                            "surface":  "agent.contracts legacy result/history persistence shapes",
+                                            "target_owner":  "agent.tools.contracts.ToolResult + explicit result adapters"
+                                        },
+                                        {
+                                            "bridge_id":  "W21-CB-CHECKPOINT-001",
+                                            "class":  "compatibility",
+                                            "constraint":  "no schema change, reader removal, or migration removal in W21",
+                                            "lane":  "COORDINATOR",
+                                            "surface":  "checkpoint v2 / historical readers and migration paths",
+                                            "target_owner":  "existing checkpoint/continuity/storage-migration owners"
+                                        },
+                                        {
+                                            "adapter_id":  "W21-ADAPTER-BUILTIN-TOOLS",
+                                            "destination_package":  "agent.skills",
+                                            "purpose":  "adapt SkillRegistry/SkillDescriptor implementations into ToolDescriptor/ToolAdapter runtime contracts",
+                                            "source_module":  "agent.tools.builtin_adapter"
+                                        },
+                                        {
+                                            "adapter_id":  "W21-ADAPTER-SKILL-TOOL-REGISTRY",
+                                            "destination_package":  "agent.tools",
+                                            "purpose":  "bounded construction adapter retained at the existing public skill-loading surface",
+                                            "source_surface":  "agent.skills.load_tool_registry"
+                                        }
+                                    ],
+    "canonical_checker":  "scripts/check_current_architecture.py",
+    "expected_broker_export_count":  40,
+    "contracted_broker_symbols": [
+        "ExtensionCatalogService",
+        "ExtensionCatalogStorage",
+        "WorkspaceExtensionService",
+        "load_strict_extension_manifest",
+        "validate_extension_id",
+        "TaskContextResolver",
+        "TaskDefinitionError",
+        "TaskDefinitionRepository",
+        "TaskContinuityService",
+        "ExtensionRegistry",
+        "ConfigError",
+        "ConfigNotFound",
+        "CODE_COMMAND_HELP",
+        "CODE_TASK_ACTIONS",
+        "ChangeApprover",
+        "CodeCommandError",
+        "CodeRequest",
+        "CodingApplicationService",
+        "build_code_context",
+        "parse_code_command",
+        "requests_test_execution",
+        "ChangePreview",
+        "ProposalAssessment",
+        "ChatSession",
+        "ModelConnectionError",
+        "ModelTimeoutError",
+        "AgentApplication",
+        "AutoApprove",
+        "RequireExplicitApproval",
+        "OperationalMode",
+        "Orchestrator",
+        "TaskRunDirective",
+        "TaskResult",
+        "RuntimeEvent",
+        "RuntimeEventKind",
+        "bind_worker_output",
+        "emit_worker_output",
+        "logger",
+        "set_debug_level",
+        "ConfigRepository",
+        "resolve_model_profile"
+    ],
+    "worker_text_publication": {
+        "contracted_symbols": ["bind_worker_output", "emit_worker_output"],
+        "broker_symbols_absent": ["bind_worker_output", "emit_worker_output"],
+        "interface_agent_symbols_absent": ["bind_worker_output", "emit_worker_output"],
+        "interactive_operation": "llm_agent.application.interactive_worker.run_interactive_worker",
+        "chat_turn_operation": "llm_agent.application.conversation.ChatTurn.present_stream_text",
+        "interactive_routes_scoped": ["search", "code", "agent submission"],
+        "publication_is_contextual_to_chat_turn": true,
+        "forbidden_public_mechanics": ["ContextVar", "Token", "WorkerOutput", "bind_worker_output", "emit_worker_output"],
+        "separate_from_c12": "TaskActivityUpdate",
+        "forbidden_replacements": ["generic worker text bus", "worker output DTO/event", "C13 compatibility alias"]
+    },
+    "c14_logging_boundary": {
+        "contracted_symbols": ["logger", "set_debug_level"],
+        "canonical_logger_name": "LLM_Agent",
+        "interface_logger_consumers": [
+            "src/llm_agent/interfaces/cli/chat.py",
+            "src/llm_agent/interfaces/cli/streaming.py"
+        ],
+        "diagnostic_operation": "llm_agent.application.session_diagnostics.apply_interactive_diagnostic_mode",
+        "private_setter_alias": "_set_debug_level",
+        "mode_to_setter_argument": {"0": 0, "1": 1, "2": 1},
+        "controller_session_diagnostics": "unchanged",
+        "non_controller_session_diagnostics": {"0": false, "1": true, "2": true},
+        "forbidden_public_types": ["Logger", "Handler", "set_debug_level"]
+    },
+    "classification_semantics":  {
+                                     "baseline":  "Frozen W21 baseline pairs remain historical evidence and never authorize a CURRENT edge.",
+                                     "edge_kinds":  "Every graph edge kind, including runtime registry and reexport edges, is subject to the same CURRENT owner and internal Agent policy.",
+                                     "ordered_classification":  [
+                                                                    "exact rule-local exception",
+                                                                    "exact bounded compatibility or adapter",
+                                                                    "matching forbidden internal rule",
+                                                                    "exact approved owner direction",
+                                                                    "same internal Agent package family",
+                                                                    "declared neutral-owner dependency",
+                                                                    "otherwise no CURRENT authorization"
+                                                                ]
+                                 },
+    "compatibility_semantics":  {
+                                    "compatibility_is_not_canonical_direction":  "A bridge authorizes only its exact bounded surface.",
+                                    "no_cycle_hiding":  "A compatibility re-export cannot be used to hide a target-forbidden dependency.",
+                                    "no_transitive_authority":  "A bridge does not authorize sibling modules or new consumers."
+                                },
+    "dynamic_import_sites":  [
+                                 {
+                                     "authority":  "repository-local literal SkillSpec declarations",
+                                     "completeness_scope":  "built-in production SkillSpec targets only; caller-supplied/custom SkillSpec targets are explicit runtime boundary",
+                                     "function":  "_instantiate",
+                                     "module":  "llm_agent.agent.skills.registry",
+                                     "occurrence_count":  1,
+                                     "schema":  "SkillSpec literal module declarations"
+                                 },
+                                 {
+                                     "authority":  "_EXPORTS literal mapping",
+                                     "completeness_scope":  "all broker exports in the current repository",
+                                     "function":  "__getattr__",
+                                     "module":  "llm_agent.application.agent_boundary",
+                                     "occurrence_count":  1,
+                                     "schema":  "exact literal _EXPORTS: name -\u003e (module, attribute) mapping"
+                                 },
+                                 {
+                                     "authority":  "built-in CLI action binding declarations",
+                                     "completeness_scope":  "built-in default registry only; caller-injected bindings are explicit runtime boundary",
+                                     "function":  "resolve_handler",
+                                     "module":  "llm_agent.interfaces.cli.action_registry",
+                                     "occurrence_count":  1,
+                                     "schema":  "literal handler_owner values in built-in action bindings"
+                                 }
+                             ],
+    "explicit_canonical_directions":  [
+                                          {
+                                              "class":  "canonical",
+                                              "constraint":  "Execution/implementation skills may consume canonical tool runtime contracts; shared metadata exceptions are governed by W21-R-META-005/006.",
+                                              "destination":  "agent.tools",
+                                              "direction_id":  "W21-DIR-SKILLS-TOOLS",
+                                              "source":  "agent.skills"
+                                          },
+                                          {
+                                              "class":  "canonical",
+                                              "constraint":  "Planning may consume tool invocation/result contracts; planning metadata ownership must not live in tools.",
+                                              "destination":  "agent.tools",
+                                              "direction_id":  "W21-DIR-PLANNING-TOOLS",
+                                              "source":  "agent.planning"
+                                          },
+                                          {
+                                              "class":  "canonical",
+                                              "constraint":  "Interaction may call deterministic planning/admission services; reverse planning-to-interaction dependencies are forbidden.",
+                                              "destination":  "agent.planning",
+                                              "direction_id":  "W21-DIR-INTERACTION-PLANNING",
+                                              "source":  "agent.interaction"
+                                          },
+                                          {
+                                              "class":  "adapter",
+                                              "constraint":  "Only the explicit builtin adapter may depend from tools into skills.",
+                                              "destination":  "agent.skills",
+                                              "direction_id":  "W21-DIR-TOOLS-SKILLS-ADAPTER",
+                                              "source":  "agent.tools.builtin_adapter"
+                                          },
+                                          {
+                                              "class":  "adapter",
+                                              "constraint":  "Existing bounded construction surface only; not a generic reverse dependency authorization.",
+                                              "destination":  "agent.tools",
+                                              "direction_id":  "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+                                              "source":  "agent.skills.load_tool_registry"
+                                          }
+                                      ],
+    "forbidden_owner_edges":  [
+                                  {
+                                      "destination_owner":  "Agent",
+                                      "rule_id":  "W22-OWNER-PLATFORM-AGENT-001",
+                                      "source_owner":  "Platform"
+                                  },
+                                  {
+                                      "destination_owner":  "Interfaces",
+                                      "rule_id":  "W22-OWNER-PLATFORM-INTERFACES-001",
+                                      "source_owner":  "Platform"
+                                  },
+                                  {
+                                      "destination_owner":  "Interfaces",
+                                      "rule_id":  "W22-OWNER-AGENT-INTERFACES-001",
+                                      "source_owner":  "Agent"
+                                  },
+                                  {
+                                      "destination_owner":  "Interfaces",
+                                      "rule_id":  "W22-OWNER-APPLICATION-INTERFACES-001",
+                                      "source_owner":  "Application"
+                                  },
+                                  {
+                                      "destination_owner":  "Agent",
+                                      "rule_id":  "W22-OWNER-INTERFACES-AGENT-001",
+                                      "source_owner":  "Interfaces"
+                                  },
+                                  {
+                                      "destination_owner":  "Platform",
+                                      "rule_id":  "W22-OWNER-INTERFACES-PLATFORM-001",
+                                      "source_owner":  "Interfaces"
+                                  },
+                                  {
+                                      "destination_owner":  "Application",
+                                      "rule_id":  "W22-OWNER-AGENT-APPLICATION-001",
+                                      "source_owner":  "Agent"
+                                  }
+                              ],
+    "internal_agent_rules":  [
+                                 {
+                                     "destination":  {
+                                                         "package_prefix":  "agent.planning"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Tool runtime must not depend upward on planning metadata/schema ownership.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-001",
+                                     "source":  {
+                                                    "package_prefix":  "agent.tools"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefix":  "agent.skills"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "exceptions":  [
+                                                        {
+                                                            "destination_package_prefix":  "agent.skills",
+                                                            "edge_class":  "adapter",
+                                                            "reason":  "BuiltinToolAdapter is the explicit skill-to-tool adaptation boundary.",
+                                                            "source_module":  "agent.tools.builtin_adapter"
+                                                        }
+                                                    ],
+                                     "reason":  "Canonical tool contracts cannot import skill-domain contracts; only the explicit builtin adapter may depend on skills.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-002",
+                                     "source":  {
+                                                    "package_prefix":  "agent.tools"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefix":  "agent.skills"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Planning consumes neutral operation metadata/projections rather than skill implementation/catalog ownership.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-003",
+                                     "source":  {
+                                                    "package_prefix":  "agent.planning"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "module":  "agent.planning.schema_safety"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Shared descriptor schema safety moves to neutral operation metadata ownership.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-004",
+                                     "source":  {
+                                                    "module":  "agent.skills.descriptor"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "modules":  [
+                                                                         "agent.tools.contracts",
+                                                                         "agent.tools.provenance"
+                                                                     ]
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Builtin construction metadata must not be authored in terms of tool-runtime metadata contracts.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-005",
+                                     "source":  {
+                                                    "module":  "agent.skills.catalog"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "modules":  [
+                                                                         "agent.tools.contracts",
+                                                                         "agent.tools.provenance",
+                                                                         "agent.tools.usage_examples"
+                                                                     ]
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Metadata primitives shared by skills/tools/planning move to the neutral operation owner.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-META-006",
+                                     "source":  {
+                                                    "module":  "agent.skills.descriptor"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "module":  "agent.tools.process_tree"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Shared process-tree mechanics move to agent.process; old tools path may remain only as an explicit compatibility facade with no canonical production consumers.",
+                                     "remediation_lane":  "B",
+                                     "rule_id":  "W21-R-PROC-001",
+                                     "source":  {
+                                                    "production_module_except":  "agent.tools.process_tree"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "module":  "agent.tools.stdio_streams"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Shared bounded stream/reader mechanics move to agent.process; old tools path may remain only as a compatibility facade.",
+                                     "remediation_lane":  "B",
+                                     "rule_id":  "W21-R-PROC-002",
+                                     "source":  {
+                                                    "production_module_except":  "agent.tools.stdio_streams"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefix":  "agent.interaction.intent_claim"
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "Untrusted intent claim value contracts move to neutral agent.intent; planning/runtime must not import interaction parsing ownership.",
+                                     "remediation_lane":  "D",
+                                     "rule_id":  "W21-R-INTENT-001",
+                                     "source":  {
+                                                    "any_of":  [
+                                                                   {
+                                                                       "package_prefix":  "agent.planning"
+                                                                   },
+                                                                   {
+                                                                       "module":  "agent.runtime.task_directives"
+                                                                   }
+                                                               ]
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefixes":  [
+                                                                                  "agent.skills",
+                                                                                  "agent.tools",
+                                                                                  "agent.planning",
+                                                                                  "agent.interaction",
+                                                                                  "agent.application",
+                                                                                  "agent.orchestration",
+                                                                                  "agent.engineering",
+                                                                                  "agent.code"
+                                                                              ]
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "agent.operation is a neutral metadata/contract owner and cannot depend on consumer domains.",
+                                     "remediation_lane":  "A",
+                                     "rule_id":  "W21-R-NEUTRAL-OP-001",
+                                     "source":  {
+                                                    "package_prefix":  "agent.operation"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefixes":  [
+                                                                                  "agent.skills",
+                                                                                  "agent.tools",
+                                                                                  "agent.planning",
+                                                                                  "agent.interaction",
+                                                                                  "agent.application",
+                                                                                  "agent.application_services",
+                                                                                  "agent.engineering",
+                                                                                  "agent.code",
+                                                                                  "agent.reporting"
+                                                                              ]
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "agent.process owns mechanism only and cannot import caller policy domains.",
+                                     "remediation_lane":  "B",
+                                     "rule_id":  "W21-R-NEUTRAL-PROC-001",
+                                     "source":  {
+                                                    "package_prefix":  "agent.process"
+                                                }
+                                 },
+                                 {
+                                     "destination":  {
+                                                         "package_prefixes":  [
+                                                                                  "agent.interaction",
+                                                                                  "agent.planning",
+                                                                                  "agent.runtime",
+                                                                                  "agent.application",
+                                                                                  "agent.orchestration",
+                                                                                  "agent.llm"
+                                                                              ]
+                                                     },
+                                     "edge_class":  "forbidden",
+                                     "reason":  "agent.intent owns shared intent value contracts only and cannot depend on parser/planner/runtime owners.",
+                                     "remediation_lane":  "D",
+                                     "rule_id":  "W21-R-NEUTRAL-INTENT-001",
+                                     "source":  {
+                                                    "package_prefix":  "agent.intent"
+                                                }
+                                 }
+                             ],
+    "legacy_layer_constraints":  [
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.llm.providers"
+                                                                       ],
+                                         "source_path_prefix":  "agent/code/"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.code",
+                                                                           "agent.planning",
+                                                                           "agent.llm.providers"
+                                                                       ],
+                                         "source_path_prefix":  "agent/runtime/"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.code",
+                                                                           "agent.llm.providers"
+                                                                       ],
+                                         "source_path_prefix":  "agent/evaluation/"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.code",
+                                                                           "agent.planning"
+                                                                       ],
+                                         "source_path_prefix":  "agent/llm/contracts.py"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.code",
+                                                                           "agent.planning"
+                                                                       ],
+                                         "source_path_prefix":  "agent/llm/structured_output.py"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.code",
+                                                                           "agent.planning"
+                                                                       ],
+                                         "source_path_prefix":  "agent/llm/providers/"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.llm.providers"
+                                                                       ],
+                                         "source_path_prefix":  "agent/planning/task_graph.py"
+                                     },
+                                     {
+                                         "forbidden_import_prefixes":  [
+                                                                           "benchmark",
+                                                                           "cli",
+                                                                           "cli_chat",
+                                                                           "cli_streaming",
+                                                                           "command_handlers",
+                                                                           "command_ui",
+                                                                           "commands",
+                                                                           "config",
+                                                                           "config_validation",
+                                                                           "logger",
+                                                                           "paths",
+                                                                           "session",
+                                                                           "agent.interfaces",
+                                                                           "agent.orchestrator",
+                                                                           "agent.skills",
+                                                                           "agent.llm.providers"
+                                                                       ],
+                                         "source_path_prefix":  "agent/planning/task_scheduler.py"
+                                     }
+                                 ],
+    "legacy_layer_exceptions":  [
+                                    {
+                                        "destination":  "agent.planning.progress_receipt",
+                                        "source_path":  "agent/runtime/convergence.py"
+                                    },
+                                    {
+                                        "destination":  "agent.planning.progress_receipt",
+                                        "source_path":  "agent/runtime/convergence_runtime.py"
+                                    },
+                                    {
+                                        "destination":  "agent.planning.task_terminal",
+                                        "source_path":  "agent/runtime/convergence_runtime.py"
+                                    }
+                                ],
+    "module_classification":  {
+                                  "classification":  "exactly one owner by first package below llm_agent; unclassified or multiply classified production module is an error",
+                                  "owners":  [
+                                                 "Agent",
+                                                 "Platform",
+                                                 "Application",
+                                                 "Interfaces",
+                                                 "Product"
+                                             ],
+                                  "root_module_owner":  "Product"
+                              },
+    "neutral_owner_invariants":  [
+                                     "Neutral owners contain data/value contracts or shared mechanics, not application objects.",
+                                     "No neutral owner may accept/store Orchestrator, AgentApplication, generic services: Any, or caller-domain registries.",
+                                     "No neutral owner may add model calls, authority decisions, approval decisions, or caller-specific execution policy."
+                                 ],
+    "neutral_owner_shape_checks":  {
+                                       "forbidden_application_names":  [
+                                                                           "Orchestrator",
+                                                                           "AgentApplication"
+                                                                       ],
+                                       "forbidden_class_names":  [
+                                                                     "RuntimeServices"
+                                                                 ],
+                                       "forbidden_service_annotation":  "Any",
+                                       "scope":  "all modules in the declared neutral_owners"
+                                   },
+    "neutral_owners":  [
+                           {
+                               "allowed_consumer_families":  [
+                                                                 "agent.skills",
+                                                                 "agent.tools",
+                                                                 "agent.planning",
+                                                                 "agent.application",
+                                                                 "agent.orchestration"
+                                                             ],
+                               "allowed_dependency_families":  [
+                                                                   "stdlib",
+                                                                   "agent.capabilities",
+                                                                   "agent.resources.contracts",
+                                                                   "agent.runtime.schema_validation (narrow existing pure schema-validation dependency only)"
+                                                               ],
+                               "package":  "agent.operation",
+                               "physical_package":  "llm_agent.agent.operation",
+                               "target_modules":  [
+                                                      "llm_agent.agent.operation.contracts",
+                                                      "llm_agent.agent.operation.schema",
+                                                      "llm_agent.agent.operation.provenance",
+                                                      "llm_agent.agent.operation.usage_examples",
+                                                      "llm_agent.agent.operation.spec",
+                                                      "llm_agent.agent.operation.catalog",
+                                                      "llm_agent.agent.operation.planning_metadata"
+                                                  ]
+                           },
+                           {
+                               "allowed_consumer_families":  [
+                                                                 "agent.skills",
+                                                                 "agent.tools",
+                                                                 "agent.code",
+                                                                 "agent.application_services",
+                                                                 "agent.engineering"
+                                                             ],
+                               "allowed_dependency_families":  [
+                                                                   "stdlib",
+                                                                   "agent.cancellation"
+                                                               ],
+                               "package":  "agent.process",
+                               "physical_package":  "llm_agent.agent.process",
+                               "target_modules":  [
+                                                      "llm_agent.agent.process.tree",
+                                                      "llm_agent.agent.process.streams",
+                                                      "llm_agent.agent.process.lifecycle"
+                                                  ]
+                           },
+                           {
+                               "allowed_consumer_families":  [
+                                                                 "agent.interaction",
+                                                                 "agent.planning",
+                                                                 "agent.runtime"
+                                                             ],
+                               "allowed_dependency_families":  [
+                                                                   "stdlib",
+                                                                   "agent.capabilities",
+                                                                   "agent.resources.contracts"
+                                                               ],
+                               "package":  "agent.intent",
+                               "physical_package":  "llm_agent.agent.intent",
+                               "target_modules":  [
+                                                      "llm_agent.agent.intent.claim_types",
+                                                      "llm_agent.agent.intent.claim_contracts"
+                                                  ]
+                           }
+                       ],
+    "nonliteral_import_policy":  "Only the exact closed declaration schemas above are allowed for dependency brokerage; any additional non-literal importlib.import_module call fails closed.",
+    "owner_subpackages":  {
+                              "Agent":  [
+                                            "agent"
+                                        ],
+                              "Application":  [
+                                                  "application",
+                                                  "actions",
+                                                  "discovery",
+                                                  "outputs",
+                                                  "health"
+                                              ],
+                              "Interfaces":  [
+                                                 "interfaces"
+                                             ],
+                              "Platform":  [
+                                               "execution",
+                                               "process",
+                                               "filesystem",
+                                               "workspace",
+                                               "storage",
+                                               "extensions",
+                                               "terminal",
+                                               "cancellation"
+                                           ],
+                              "Product":  [
+                                              "_version",
+                                              "resources"
+                                          ]
+                          },
+    "product_namespace":  "llm_agent",
+    "schema_version":  1,
+    "status":  "CURRENT"
+}

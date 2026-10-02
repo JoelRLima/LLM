@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
 from llm_agent.interfaces.cli import commands
 
@@ -32,7 +33,7 @@ class _InteractionApplication:
 
 def test_headless_normal_run_uses_task_interaction_boundary(monkeypatch) -> None:
     application = _InteractionApplication()
-    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: application)
+    monkeypatch.setattr(cli, "_create_application", lambda *_args, **_kwargs: _retain_runtime(application))
     assert cli.main(["run", "--workspace", "workspace", "--json", "/read", "Analyze", "parser.py"]) == 0
     assert application.closed == 1
     assert application.calls == [
@@ -47,7 +48,7 @@ def test_headless_normal_run_uses_task_interaction_boundary(monkeypatch) -> None
 
 def test_agent_command_with_payload_uses_unified_task_boundary() -> None:
     application = _InteractionApplication()
-    context = type("Context", (), {"application": application})()
+    context = type("Context", (), {"task_execution": _retain_runtime(application)})()
     commands.handle_command("/agent /read Analyze parser.py", context)
     assert application.calls == [
         {

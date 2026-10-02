@@ -67,6 +67,45 @@ def test_bookmark_sidecar_does_not_change_trace(tmp_path: Path) -> None:
     assert before.completeness == after.completeness
 
 
+def test_bookmark_and_export_cli_use_application_auxiliary_api(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_home, workspace, correlation = _fixture(tmp_path)
+
+    def reject_interface_inspection_service(_args: object) -> InspectionService:
+        raise AssertionError("bookmark/export CLI must not construct the Agent read service")
+
+    monkeypatch.setattr(inspector_module, "_service", reject_interface_inspection_service)
+    common = ["--home", str(app_home), "--workspace", str(workspace), "--json"]
+
+    assert main(["inspect", "bookmark", "add", *common, "--sequence", "1", "--note", "safe"]) == 0
+    added = json.loads(capsys.readouterr().out)
+    assert added["bookmark"]["run_id"] == correlation.run_id
+
+    assert main(["inspect", "bookmark", "list", *common]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["bookmarks"][0]["sequence"] == 1
+
+    assert main(["inspect", "bookmark", "remove", *common, "--sequence", "1"]) == 0
+    removed = json.loads(capsys.readouterr().out)
+    assert removed == {"removed": True, "run_id": correlation.run_id, "sequence": 1}
+
+    destination = tmp_path / "cli-diagnostic.zip"
+    assert main(
+        [
+            "inspect", "export", *common,
+            "--run-id", correlation.run_id,
+            "--output", str(destination),
+            "--include-bookmarks",
+        ]
+    ) == 0
+    exported = json.loads(capsys.readouterr().out)
+    assert exported["path"] == str(destination.resolve())
+    assert "bookmarks.json" in exported["files"]
+
+
 def test_follow_advances_after_bounded_prefix_without_replaying_old_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app_home = tmp_path / "app-home"
     workspace = tmp_path / "workspace"

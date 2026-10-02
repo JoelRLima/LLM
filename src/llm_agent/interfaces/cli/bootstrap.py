@@ -6,38 +6,37 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from llm_agent.application.agent_boundary import AgentApplication, AutoApprove, OperationalMode, RequireExplicitApproval
 from llm_agent.application.context import AppPaths
+from llm_agent.application.task_execution import (
+    TaskExecutionRuntime,
+    TaskExecutionStart,
+    read_execution_context,
+    start_headless_task,
+    start_interactive_session,
+)
 from llm_agent.interfaces.cli.approval import ConsoleApproval
 
 
 def create_application(
-    args: argparse.Namespace,
-    *,
-    configure_logging: bool,
-) -> AgentApplication:
+    args: argparse.Namespace, *, configure_logging: bool,
+) -> TaskExecutionRuntime:
     command = getattr(args, "command", None) or "chat"
-    if command == "chat":
-        approval_policy: Any = ConsoleApproval()
-    elif bool(getattr(args, "assume_yes", False)):
-        approval_policy = AutoApprove()
-    else:
-        approval_policy = RequireExplicitApproval()
-    return AgentApplication.create(
+    capabilities = getattr(args, "task_authority_capabilities", None)
+    start = TaskExecutionStart(
         workspace=Path(getattr(args, "workspace", Path.cwd())).expanduser(),
-        paths=AppPaths.discover(app_home=getattr(args, "home", None)),
-        config_path=getattr(args, "config", None),
-        profile=getattr(args, "profile", None),
-        approval_policy=approval_policy,
-        task_authority_capabilities=getattr(args, "task_authority_capabilities", None),
+        app_paths=AppPaths.discover(app_home=getattr(args, "home", None)),
+        config_path=getattr(args, "config", None), profile=getattr(args, "profile", None),
+        startup_capabilities=None if capabilities is None else tuple(capabilities),
         observability_mode=getattr(args, "observability_mode", None),
-        operational_mode=(OperationalMode.READ_ONLY if command == "chat" else None),
         configure_logging=configure_logging,
     )
+    if command == "chat":
+        return start_interactive_session(start, ConsoleApproval())
+    return start_headless_task(start, automatic_approval=bool(getattr(args, "assume_yes", False)))
 
 
 def context_from_application(
-    application: AgentApplication,
+    task_execution: TaskExecutionRuntime,
     *,
     config_path: str | Path | None = None,
     shell: Any | None = None,
@@ -53,14 +52,14 @@ def context_from_application(
 
     from llm_agent.interfaces.cli.commands import CommandContext
 
+    context = read_execution_context(task_execution)
     return CommandContext(
-        application.session,
-        application.orchestrator,
-        application.config,
-        application=application,
-        app_paths=application.paths,
-        workspace=application.workspace,
-        workspace_paths=application.workspace_paths,
+        context.conversation,
+        task_execution,
+        context.config,
+        app_paths=context.app_paths,
+        workspace=context.workspace,
+        workspace_paths=context.workspace_paths,
         config_path=config_path,
         shell=shell,
         controller=controller,

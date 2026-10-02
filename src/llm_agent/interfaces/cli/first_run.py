@@ -8,13 +8,21 @@ from pathlib import Path
 from typing import Any
 
 from llm_agent.application.agent_boundary import (
-    ConfigError,
-    ConfigNotFound,
-    ConfigRepository,
     HomeLifecycleLease,
     StorageBootstrap,
 )
-from llm_agent.interfaces.cli import maintenance
+from llm_agent.application.configuration_admin import (
+    configuration_path,
+    initialize_configuration,
+)
+from llm_agent.application.configuration_errors import ConfigurationError
+from llm_agent.application.context import AppPaths
+from llm_agent.application.first_run_configuration import (
+    FirstRunConfigurationView,
+    configuration_ready_for_chat_entry,
+    read_first_run_configuration,
+    update_first_run_configuration,
+)
 
 
 class InteractiveTTYRequiredError(ValueError):
@@ -48,13 +56,17 @@ def actionable_missing_config(args: argparse.Namespace, error: Exception) -> str
     return f"{error}\nPara criar a configuração padrão, execute:\n  {config_init_command(args)}"
 
 
-def _complete_guided_setup(args: argparse.Namespace, repository: Any, console: Any, prompt: Any) -> None:
-    resolved = repository.load(environment={})
-    document = resolved.to_dict()
-    profiles = document.get("model_profiles", {})
-    profile_names = tuple(profiles) if isinstance(profiles, dict) else ()
-    selected_default = str(document.get("default_model_profile", profile_names[0] if profile_names else ""))
-    console.print(f"Profiles disponíveis: {', '.join(profile_names) or '(nenhum)'}")
+def _complete_guided_setup(
+    args: argparse.Namespace,
+    view: FirstRunConfigurationView,
+    app_paths: AppPaths,
+    console: Any,
+    prompt: Any,
+) -> None:
+    profiles = {profile.name: profile for profile in view.profiles}
+    profile_names = tuple(profiles)
+    selected_default = view.default_profile
+    console.print(f"Profiles dispon\u00edveis: {', '.join(profile_names) or '(nenhum)'}")
 
     def ask(message: str, default: str = "") -> str:
         try:
@@ -65,21 +77,13 @@ def _complete_guided_setup(args: argparse.Namespace, repository: Any, console: A
 
     selected = ask(f"Profile [{selected_default}]: ", selected_default) or selected_default
     if selected not in profile_names:
-        raise ConfigError(f"Profile desconhecido: {selected}")
-    raw_profile = profiles.get(selected, {})
-    if not isinstance(raw_profile, dict):
-        raise ConfigError(f"Profile inválido: {selected}")
-    current_model = str(raw_profile.get("model") or document.get("model") or "default")
-    current_endpoint = str(raw_profile.get("base_url") or raw_profile.get("api_url") or document.get("api_url") or "")
-    model = ask(f"Modelo [{current_model}]: ", current_model) or current_model
-    endpoint = ask(f"Endpoint compatível [{current_endpoint}]: ", current_endpoint) or current_endpoint
-    repository.update(
-        {
-            "default_model_profile": selected,
-            "model_profiles": {selected: {"model": model, "base_url": endpoint}},
-        }
-    )
-    repository.load(environment={})
+        raise ConfigurationError(f"Profile desconhecido: {selected}")
+    selected_view = profiles.get(selected)
+    if selected_view is None:
+        raise ConfigurationError(f"Profile inv\u00e1lido: {selected}")
+    model = ask(f"Modelo [{selected_view.model}]: ", selected_view.model) or selected_view.model
+    endpoint = ask(f"Endpoint compat\u00edvel [{selected_view.endpoint}]: ", selected_view.endpoint) or selected_view.endpoint
+    update_first_run_configuration(app_paths, selected, model, endpoint, config_path=None)
     args._first_run_guided = True
 
 
@@ -87,11 +91,11 @@ def recover_first_run_config(
     args: argparse.Namespace,
     *,
     console: Any,
-    app_paths: Any,
+    app_paths: AppPaths,
     prompt: Any | None = None,
 ) -> int:
-    repository = maintenance.config_repository(app_paths, None)
-    console.print(f"[yellow]Configuração do Agent não encontrada:[/yellow]\n{repository.path}")
+    config_file = configuration_path(app_paths, None)
+    console.print(f"[yellow]Configura\u00e7\u00e3o do Agent n\u00e3o encontrada:[/yellow]\n{config_file}")
     console.print("\nParece ser o primeiro uso neste perfil.")
     try:
         if prompt is None:
@@ -106,9 +110,8 @@ def recover_first_run_config(
     if answer.strip().casefold() not in {"", "y", "yes", "s", "sim"}:
         console.print(f"Nenhum arquivo foi criado. Execute quando desejar:\n  {config_init_command(args)}")
         return 0
-    created = maintenance.initialize_config(app_paths, None)
+    created = initialize_configuration(app_paths, None)
     console.print(f"Configuração criada em {created}.")
-    repository = maintenance.config_repository(app_paths, None)
 
     # A test/embedder may project an interactive flag while not providing a
     # real TTY. Keep that compatibility path actionable; the supported TTY
@@ -123,11 +126,12 @@ def recover_first_run_config(
         lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
         try:
             StorageBootstrap().prepare(app_paths)
-            _complete_guided_setup(args, repository, console, prompt)
+            view = read_first_run_configuration(app_paths, None)
+            _complete_guided_setup(args, view, app_paths, console, prompt)
         finally:
             lease.close()
         console.print("Configuração guiada validada. Diagnóstico de conectividade é opcional; entrando no chat.")
-    except (ConfigError, ConfigNotFound, OSError, ValueError) as exc:
+    except (ConfigurationError, OSError, ValueError) as exc:
         console.print(f"[red]Configuração guiada não concluída:[/red] {exc}")
         console.print("Use os comandos avançados de config para corrigir e tente novamente.")
         return 0
@@ -138,7 +142,7 @@ def prepare_chat_workspace(
     args: argparse.Namespace,
     *,
     console: Any,
-    app_paths: Any,
+    app_paths: AppPaths,
     prompt: Any | None = None,
     prompt_path: Any | None = None,
 ) -> bool:
@@ -152,21 +156,16 @@ def prepare_chat_workspace(
         require_task_workspace(args)
         return False
     config_path = getattr(args, "config", None)
-    config_file = Path(config_path).expanduser().resolve() if config_path is not None else app_paths.config_file
-    if not config_file.is_file():
+    if not configuration_ready_for_chat_entry(app_paths, config_path):
         return False
-    try:
-        ConfigRepository(app_paths, config_path=config_path).load()
-    except (ConfigError, ConfigNotFound, OSError, ValueError):
-        return False
+    from llm_agent.application.workspace_recents import list_recent_workspaces
     from llm_agent.interfaces.cli.workspace_entry import choose_workspace, load_last_workspace
-    from llm_agent.interfaces.cli.workspace_recents import load_recent_workspaces
 
     args.workspace = str(
         choose_workspace(
             console=console,
             last_workspace=load_last_workspace(app_paths),
-            recent_workspaces=load_recent_workspaces(app_paths),
+            recent_workspaces=list_recent_workspaces(app_paths),
             prompt=prompt,
             path_prompt=prompt_path,
         )

@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from llm_agent.application.agent_boundary import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 
 MAX_REVIEW_DIFF_CHARS = 24_000
 _REVIEW_IDENTITY_KEYS = (
@@ -206,7 +207,7 @@ class ApprovalBroker:
             self._cancelled = True
             self._condition.notify_all()
 
-    def approve_change(self, preview: Any, assessment: Any) -> bool:
+    def approve_change(self, preview: CodeReviewPreview, assessment: CodeReviewAssessment) -> bool:
         affected = tuple(str(item) for item in getattr(preview, "affected_files", ()) or ())
         proposed_diff = str(getattr(preview, "diff", "") or "")
         proposed_diff_truncated = len(proposed_diff) > MAX_REVIEW_DIFF_CHARS

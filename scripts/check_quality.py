@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import codecs
 import json
 import re
@@ -13,8 +12,10 @@ from typing import Iterable, cast
 from urllib.parse import unquote
 
 try:
+    from scripts.check_current_architecture import check as check_current_architecture
     from scripts.w21_architecture.source import SourceLayout
 except ModuleNotFoundError:  # Direct script execution.
+    from check_current_architecture import check as check_current_architecture  # type: ignore[no-redef]
     from w21_architecture.source import SourceLayout  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +57,10 @@ def _relative(path: Path) -> str:
 def _source_identity(path: Path) -> str:
     """Keep the stable Agent source identity independent of checkout layout."""
 
-    return SOURCE_LAYOUT.w21_relative_path(path)
+    identity = SOURCE_LAYOUT.w21_relative_path(path)
+    if not isinstance(identity, str):
+        raise TypeError("source layout returned a non-string W21 path identity")
+    return identity
 
 
 def _is_ignored(path: Path) -> bool:
@@ -193,120 +197,11 @@ def check_source_visibility() -> tuple[list[str], int]:
     return failures, len(sources)
 
 
-def _resolve_import(current_module: str, is_package: bool, node: ast.ImportFrom) -> str:
-    if node.level == 0:
-        return node.module or ""
-    module_parts = current_module.split(".")
-    package = module_parts if is_package else module_parts[:-1]
-    keep = max(0, len(package) - node.level + 1)
-    prefix = package[:keep]
-    if node.module:
-        prefix.extend(node.module.split("."))
-    return ".".join(prefix)
-
-
-def _stable_import_identity(module: str) -> str:
-    """Project canonical W22 Agent imports onto their frozen W21 identity."""
-
-    return SOURCE_LAYOUT.w21_module_identity(module) or module
-
-
-def _imports(path: Path) -> Iterable[tuple[int, str]]:
-    relative = Path(_source_identity(path)).with_suffix("")
-    parts = list(relative.parts)
-    is_package = parts[-1] == "__init__"
-    if is_package:
-        parts.pop()
-    current_module = ".".join(parts)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                yield node.lineno, _stable_import_identity(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            base = _resolve_import(current_module, is_package, node)
-            for alias in node.names:
-                imported = base if alias.name == "*" else ".".join(part for part in (base, alias.name) if part)
-                yield node.lineno, _stable_import_identity(imported)
-
-
-def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
-    return any(module == prefix or module.startswith(prefix + ".") for prefix in prefixes)
-
-
-_W15_RUNTIME_BRIDGES: dict[str, tuple[str, ...]] = {
-    "agent/runtime/convergence.py": ("agent.planning.progress_receipt",),
-    "agent/runtime/convergence_runtime.py": (
-        "agent.planning.progress_receipt",
-        "agent.planning.task_terminal",
-    ),
-}
-
-
-def _is_allowed_w15_bridge(relative: str, imported: str) -> bool:
-    return _matches_prefix(imported, _W15_RUNTIME_BRIDGES.get(relative, ()))
-
-
-def _forbidden_imports(path: Path) -> tuple[str, ...]:
-    relative = _source_identity(path)
-    root_compatibility = (
-        "benchmark",
-        "cli",
-        "cli_chat",
-        "cli_streaming",
-        "command_handlers",
-        "command_ui",
-        "commands",
-        "config",
-        "config_validation",
-        "logger",
-        "paths",
-        "session",
-    )
-    outer_layers = (
-        "agent.interfaces",
-        "agent.orchestrator",
-        "agent.skills",
-        "cli",
-        "commands",
-        "session",
-    )
-    if relative.startswith("agent/code/"):
-        return root_compatibility + outer_layers + ("agent.llm.providers",)
-    if relative.startswith("agent/runtime/"):
-        return root_compatibility + outer_layers + ("agent.code", "agent.planning", "agent.llm.providers")
-    if relative.startswith("agent/evaluation/"):
-        return root_compatibility + outer_layers + ("agent.code", "agent.llm.providers")
-    stable_llm_core = relative in {
-        "agent/llm/contracts.py",
-        "agent/llm/structured_output.py",
-    } or relative.startswith("agent/llm/providers/")
-    if stable_llm_core:
-        return root_compatibility + outer_layers + ("agent.code", "agent.planning")
-    if relative in {
-        "agent/planning/task_graph.py",
-        "agent/planning/task_scheduler.py",
-    }:
-        return root_compatibility + outer_layers + ("agent.llm.providers",)
-    return root_compatibility
-
-
 def check_architecture() -> tuple[list[str], int]:
-    failures: list[str] = []
-    checked = 0
-    for path in sorted(PRODUCT_SOURCE_ROOT.rglob("*.py")):
-        forbidden = _forbidden_imports(path)
-        if not forbidden:
-            continue
-        checked += 1
-        for line, imported in _imports(path):
-            if _matches_prefix(imported, forbidden) and not _is_allowed_w15_bridge(
-                _source_identity(path), imported
-            ):
-                failures.append(
-                    f"arquitetura: {_source_identity(path)}:{line} importa camada proibida {imported}"
-                )
-    return failures, checked
+    """Delegate the repository architecture gate to the sole CURRENT policy."""
+
+    failures, counts = check_current_architecture(ROOT)
+    return [f"arquitetura: {item}" for item in failures], counts["modules"]
 
 
 def _markdown_files() -> Iterable[Path]:

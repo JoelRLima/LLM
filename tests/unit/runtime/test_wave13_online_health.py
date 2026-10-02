@@ -13,6 +13,7 @@ from llm_agent.agent.llm.contracts import ModelResponse, StructuredOutputMode
 from llm_agent.agent.llm.errors import ModelTimeoutError, UnsupportedModelCapability
 from llm_agent.agent.llm.model_profile import resolve_model_profile
 from llm_agent.agent.runtime.config_repository import ConfigRepository, packaged_config_defaults
+from llm_agent.application.health import HealthDiagnosticsResult
 from llm_agent.interfaces.cli import app as cli
 from llm_agent.interfaces.cli.parser import build_parser
 from llm_agent.workspace.paths import AppPaths
@@ -187,14 +188,19 @@ def test_online_doctor_exit_and_json_preserve_offline_truth(tmp_path: Path, monk
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     monkeypatch.setattr(
-        "llm_agent.application.agent_boundary.run_health_check",
-        lambda **kwargs: {
+        "llm_agent.application.health.run_health_diagnostics",
+        lambda _request: HealthDiagnosticsResult(
+            {
             "readiness": {
                 "offline_ready": True,
                 "online_ready": False,
             },
             "online": {"state": "degraded"},
-        },
+            },
+            "diagnostics",
+            True,
+            False,
+        ),
     )
 
     result = cli.main(

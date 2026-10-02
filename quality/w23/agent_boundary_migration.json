@@ -1,0 +1,2588 @@
+{
+  "broker": "llm_agent.application.agent_boundary",
+  "candidate_api_families": {
+    "approval_authority": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/approval.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/approval.py",
+        "src/llm_agent/interfaces/cli/approval_input.py",
+        "src/llm_agent/interfaces/cli/attention.py",
+        "src/llm_agent/interfaces/cli/bootstrap.py",
+        "src/llm_agent/interfaces/cli/command_handlers.py",
+        "src/llm_agent/interfaces/cli/engineering.py",
+        "src/llm_agent/interfaces/cli/interactive_worker.py",
+        "src/llm_agent/interfaces/cli/ui.py"
+      ],
+      "exports": [
+        "ApprovalDecision",
+        "ApprovalRequest",
+        "ApprovalWaitCancelled",
+        "AutoApprove",
+        "OperationalMode",
+        "RequireExplicitApproval"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    },
+    "configuration_maintenance": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/maintenance.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/app.py",
+        "src/llm_agent/interfaces/cli/discovery_projection.py",
+        "src/llm_agent/interfaces/cli/engineering.py",
+        "src/llm_agent/interfaces/cli/extensions.py",
+        "src/llm_agent/interfaces/cli/first_run.py",
+        "src/llm_agent/interfaces/cli/interactive_commands.py",
+        "src/llm_agent/interfaces/cli/interactive_resources.py",
+        "src/llm_agent/interfaces/cli/interactive_session.py",
+        "src/llm_agent/interfaces/cli/maintenance.py",
+        "src/llm_agent/interfaces/mcp/engineering_server.py"
+      ],
+      "exports": [
+        "ConfigError",
+        "ConfigNotFound",
+        "ConfigRepository",
+        "ExtensionCatalogStorage",
+        "ExtensionRegistry",
+        "HomeLifecycleLease",
+        "StateMigrationError",
+        "StorageBootstrap",
+        "migrate_legacy_state"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": [
+        "tests/unit/engineering/test_wave20b_campaign.py"
+      ]
+    },
+    "engineering": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/engineering.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/app.py",
+        "src/llm_agent/interfaces/cli/engineering.py",
+        "src/llm_agent/interfaces/mcp/engineering_server.py",
+        "src/llm_agent/interfaces/mcp/projection.py"
+      ],
+      "exports": [
+        "EngineeringCaller",
+        "EngineeringErrorV1",
+        "EngineeringExecutionContext",
+        "EngineeringOperationViewV1",
+        "EngineeringPermission",
+        "EngineeringQueryStatus",
+        "EngineeringRegistry",
+        "EngineeringRequest",
+        "EngineeringRunResultV1",
+        "EngineeringRunStore",
+        "EngineeringService",
+        "EngineeringTerminalStatus",
+        "EngineeringWorkspaceContext",
+        "EvaluationBackend",
+        "FaultPlanV1",
+        "FaultPlanV1Error",
+        "HealthBackend",
+        "InspectionBackend",
+        "MODEL_SAFE_TOOL_DESCRIPTORS",
+        "ModelSafeEngineering",
+        "ModelSafeResponse",
+        "ModelSafeStatus",
+        "RepositoryBackend",
+        "SourceRepositoryContext",
+        "build_model_safe_engineering_service",
+        "production_registry"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    },
+    "evaluation_administration": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/evaluation.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/engineering.py"
+      ],
+      "exports": [
+        "candidate_identity",
+        "candidate_identity_string",
+        "compare_practical_profiles",
+        "parse_fault_json"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    },
+    "event_output_projection": {
+      "candidate_surface": [
+        "src/llm_agent/application/outputs/ (typed projection operation)"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/interactive_worker.py",
+        "src/llm_agent/interfaces/cli/streaming.py",
+        "src/llm_agent/interfaces/cli/ui_mailbox.py",
+        "src/llm_agent/interfaces/cli/ui_plane.py"
+      ],
+      "exports": [
+        "RuntimeEvent",
+        "RuntimeEventKind",
+        "bind_worker_output",
+        "emit_worker_output"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    },
+    "inspection_diagnostics": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/inspection.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/app.py",
+        "src/llm_agent/interfaces/cli/command_handlers.py",
+        "src/llm_agent/interfaces/cli/inspector.py",
+        "src/llm_agent/interfaces/cli/inspector_rendering.py",
+        "src/llm_agent/interfaces/cli/maintenance.py"
+      ],
+      "exports": [
+        "BookmarkStore",
+        "DiagnosticExporter",
+        "InspectionQuery",
+        "InspectionService",
+        "InspectorSnapshot",
+        "TraceCorruptError",
+        "TraceUnavailableError",
+        "run_health_check"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": [
+        "tests/unit/interfaces/test_cli_v2.py",
+        "tests/unit/runtime/test_wave13_online_health.py"
+      ]
+    },
+    "model_conversation": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/conversation.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/app.py",
+        "src/llm_agent/interfaces/cli/bootstrap.py",
+        "src/llm_agent/interfaces/cli/chat.py",
+        "src/llm_agent/interfaces/cli/command_handlers.py",
+        "src/llm_agent/interfaces/cli/commands.py",
+        "src/llm_agent/interfaces/cli/interactive_commands.py",
+        "src/llm_agent/interfaces/cli/interactive_worker.py",
+        "src/llm_agent/interfaces/cli/streaming.py",
+        "src/llm_agent/interfaces/cli/task_context.py",
+        "src/llm_agent/interfaces/cli/task_continuity.py",
+        "src/llm_agent/interfaces/cli/ui.py"
+      ],
+      "exports": [
+        "AgentApplication",
+        "CODE_COMMAND_HELP",
+        "ChangeApprover",
+        "ChangePreview",
+        "ChatSession",
+        "CodeCommandError",
+        "CodeRequest",
+        "CodingApplicationService",
+        "ModelConnectionError",
+        "ModelTimeoutError",
+        "Orchestrator",
+        "ProposalAssessment",
+        "TaskContextResolver",
+        "TaskContinuityService",
+        "TaskDefinitionError",
+        "TaskDefinitionRepository",
+        "TaskResult",
+        "TaskRunDirective",
+        "build_code_context",
+        "logger",
+        "parse_code_command",
+        "resolve_model_profile",
+        "set_debug_level"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    },
+    "workspace_extensions": {
+      "candidate_surface": [
+        "src/llm_agent/application/actions/extensions.py"
+      ],
+      "canonical_owner": "Application",
+      "consumer_files": [
+        "src/llm_agent/interfaces/cli/command_handlers.py",
+        "src/llm_agent/interfaces/cli/interactive_worker.py"
+      ],
+      "exports": [
+        "CODE_TASK_ACTIONS",
+        "ExtensionCatalogService",
+        "WorkspaceExtensionService",
+        "load_strict_extension_manifest",
+        "requests_test_execution",
+        "validate_extension_id"
+      ],
+      "migration_rule": "Introduce only explicit typed use-case operations; migrate each listed consumer; no replacement broker or broad service bag.",
+      "test_files": []
+    }
+  },
+  "consumers": [
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/app.py",
+      "symbols": [
+        "ConfigError",
+        "ConfigNotFound",
+        "StateMigrationError",
+        "TaskDefinitionError",
+        "TaskRunDirective",
+        "TraceCorruptError",
+        "TraceUnavailableError",
+        "production_registry"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/approval.py",
+      "symbols": [
+        "ApprovalDecision",
+        "ApprovalRequest"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/approval_input.py",
+      "symbols": [
+        "ApprovalDecision"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/attention.py",
+      "symbols": [
+        "ApprovalDecision",
+        "ApprovalRequest",
+        "ApprovalWaitCancelled"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/bootstrap.py",
+      "symbols": [
+        "AgentApplication",
+        "AutoApprove",
+        "OperationalMode",
+        "RequireExplicitApproval"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/chat.py",
+      "symbols": [
+        "ChatSession",
+        "ModelConnectionError",
+        "ModelTimeoutError",
+        "logger"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/command_handlers.py",
+      "symbols": [
+        "CODE_COMMAND_HELP",
+        "CODE_TASK_ACTIONS",
+        "CodeCommandError",
+        "CodeRequest",
+        "CodingApplicationService",
+        "OperationalMode",
+        "build_code_context",
+        "parse_code_command",
+        "requests_test_execution",
+        "run_health_check",
+        "set_debug_level"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/commands.py",
+      "symbols": [
+        "AgentApplication",
+        "ChatSession",
+        "Orchestrator"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/discovery_projection.py",
+      "symbols": [
+        "ConfigRepository"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/engineering.py",
+      "symbols": [
+        "ApprovalDecision",
+        "EngineeringCaller",
+        "EngineeringErrorV1",
+        "EngineeringExecutionContext",
+        "EngineeringOperationViewV1",
+        "EngineeringPermission",
+        "EngineeringQueryStatus",
+        "EngineeringRegistry",
+        "EngineeringRequest",
+        "EngineeringRunResultV1",
+        "EngineeringRunStore",
+        "EngineeringService",
+        "EngineeringTerminalStatus",
+        "EngineeringWorkspaceContext",
+        "EvaluationBackend",
+        "FaultPlanV1",
+        "FaultPlanV1Error",
+        "HealthBackend",
+        "HomeLifecycleLease",
+        "InspectionBackend",
+        "RepositoryBackend",
+        "SourceRepositoryContext",
+        "StorageBootstrap",
+        "candidate_identity",
+        "candidate_identity_string",
+        "compare_practical_profiles",
+        "parse_fault_json",
+        "production_registry"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/extensions.py",
+      "symbols": [
+        "HomeLifecycleLease",
+        "StorageBootstrap"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/first_run.py",
+      "symbols": [
+        "ConfigError",
+        "ConfigNotFound",
+        "ConfigRepository",
+        "HomeLifecycleLease",
+        "StorageBootstrap"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/inspector.py",
+      "symbols": [
+        "BookmarkStore",
+        "DiagnosticExporter",
+        "InspectionQuery",
+        "InspectionService",
+        "InspectorSnapshot"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/inspector_rendering.py",
+      "symbols": [
+        "InspectorSnapshot"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/interactive_commands.py",
+      "symbols": [
+        "ConfigRepository",
+        "resolve_model_profile"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/interactive_resources.py",
+      "symbols": [
+        "ConfigNotFound"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/interactive_session.py",
+      "symbols": [
+        "ConfigNotFound"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/interactive_worker.py",
+      "symbols": [
+        "CODE_TASK_ACTIONS",
+        "ChangeApprover",
+        "CodeCommandError",
+        "CodeRequest",
+        "CodingApplicationService",
+        "OperationalMode",
+        "bind_worker_output",
+        "build_code_context",
+        "parse_code_command",
+        "requests_test_execution"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/maintenance.py",
+      "symbols": [
+        "ConfigRepository",
+        "ExtensionRegistry",
+        "HomeLifecycleLease",
+        "StorageBootstrap",
+        "migrate_legacy_state",
+        "run_health_check"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/streaming.py",
+      "symbols": [
+        "ChatSession",
+        "emit_worker_output",
+        "logger"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/task_context.py",
+      "symbols": [
+        "TaskContextResolver",
+        "TaskDefinitionRepository"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/task_continuity.py",
+      "symbols": [
+        "TaskContinuityService"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/ui.py",
+      "symbols": [
+        "ApprovalDecision",
+        "ChangePreview",
+        "ProposalAssessment",
+        "TaskResult"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/ui_mailbox.py",
+      "symbols": [
+        "RuntimeEvent",
+        "RuntimeEventKind"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/ui_plane.py",
+      "symbols": [
+        "RuntimeEvent",
+        "RuntimeEventKind"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/cli/workspace_recents.py",
+      "symbols": [
+        "InstanceLock"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/mcp/engineering_server.py",
+      "symbols": [
+        "EngineeringCaller",
+        "EngineeringExecutionContext",
+        "EngineeringWorkspaceContext",
+        "HomeLifecycleLease",
+        "MODEL_SAFE_TOOL_DESCRIPTORS",
+        "ModelSafeEngineering",
+        "ModelSafeResponse",
+        "ModelSafeStatus",
+        "StorageBootstrap",
+        "build_model_safe_engineering_service"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "src/llm_agent/interfaces/mcp/projection.py",
+      "symbols": [
+        "ModelSafeResponse"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "tests/unit/engineering/test_wave20b_campaign.py",
+      "symbols": [
+        "ConfigRepository"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "tests/unit/interfaces/test_cli_v2.py",
+      "symbols": [
+        "run_health_check"
+      ]
+    },
+    {
+      "module_import": true,
+      "path": "tests/unit/runtime/test_wave13_online_health.py",
+      "symbols": [
+        "run_health_check"
+      ]
+    }
+  ],
+  "fresh_export_count": 87,
+  "current_broker_export_count": 40,
+  "current_broker_export_count_source": "C15 independent bounded user evidence PASS and explicit coordinator acceptance reported by user: GREEN/COMPLETE; broker ratchet 42 -> 40 accepted. 40 literal and accepted exports after removing ConfigRepository and resolve_model_profile; all 87 lineage records remain.",
+  "migration_order": [
+    "EXPAND narrow capability use cases under existing Application owner",
+    "MIGRATE listed production consumers and tests, including string monkeypatch references",
+    "CONTRACT exact export only after its consumers reach zero and external support is resolved"
+  ],
+  "per_export_migration_map": [
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/bootstrap.py",
+      "src/llm_agent/interfaces/cli/commands.py"
+    ],
+    "symbol": "AgentApplication",
+    "target_module": "llm_agent.agent.application",
+    "target_symbol": "AgentApplication",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/approval.py",
+      "src/llm_agent/interfaces/cli/approval_input.py",
+      "src/llm_agent/interfaces/cli/attention.py",
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/cli/ui.py"
+    ],
+    "symbol": "ApprovalDecision",
+    "target_module": "llm_agent.agent.approval",
+    "target_symbol": "ApprovalDecision",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/approval.py",
+      "src/llm_agent/interfaces/cli/attention.py"
+    ],
+    "symbol": "ApprovalRequest",
+    "target_module": "llm_agent.agent.approval",
+    "target_symbol": "ApprovalRequest",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/attention.py"
+    ],
+    "symbol": "ApprovalWaitCancelled",
+    "target_module": "llm_agent.agent.approval",
+    "target_symbol": "ApprovalWaitCancelled",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/bootstrap.py"
+    ],
+    "symbol": "AutoApprove",
+    "target_module": "llm_agent.agent.approval",
+    "target_symbol": "AutoApprove",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Bookmark management through finite typed Application operations; Agent storage remains internal.",
+    "candidate_api_family": "inspection_auxiliary_operations",
+    "candidate_application_surface": "src/llm_agent/application/inspection",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "symbol": "BookmarkStore",
+    "target_module": "llm_agent.agent.observability.bookmarks",
+    "target_symbol": "BookmarkStore",
+    "test_consumers": [
+      "tests/unit/test_inspection_auxiliary.py",
+      "tests/unit/runtime/test_wave9_cli.py"
+    ],
+    "source_agent_module": "llm_agent.agent.observability.bookmarks",
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.inspection",
+    "migration_mode": "USE_CASE",
+    "reason": "Bookmark list/add/remove moved to finite Application inspection operations; Agent bookmark storage remains internal.",
+    "completed_lane": "PHASE2_INSPECTION_AUXILIARY_GREEN_COMPLETE",
+    "status": "CONTRACTED",
+    "zero_broker_consumers_proven": true
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py"
+    ],
+    "symbol": "CODE_COMMAND_HELP",
+    "target_module": "llm_agent.agent.code.commands",
+    "target_symbol": "CODE_COMMAND_HELP",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "workspace_extensions",
+    "candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "CODE_TASK_ACTIONS",
+    "target_module": "llm_agent.agent.tools.invocation_semantics",
+    "target_symbol": "CODE_TASK_ACTIONS",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "ChangeApprover",
+    "target_module": "llm_agent.agent.code.policy",
+    "target_symbol": "ChangeApprover",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/ui.py"
+    ],
+    "symbol": "ChangePreview",
+    "target_module": "llm_agent.agent.code.changes",
+    "target_symbol": "ChangePreview",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/chat.py",
+      "src/llm_agent/interfaces/cli/commands.py",
+      "src/llm_agent/interfaces/cli/streaming.py"
+    ],
+    "symbol": "ChatSession",
+    "target_module": "llm_agent.agent.llm.session",
+    "target_symbol": "ChatSession",
+    "test_consumers": [],
+    "migration_mode": "CONTRACTED",
+    "target_application_api": "llm_agent.application.conversation",
+    "completed_lane": "C9",
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "CodeCommandError",
+    "target_module": "llm_agent.agent.code.commands",
+    "target_symbol": "CodeCommandError",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "CodeRequest",
+    "target_module": "llm_agent.agent.code.application",
+    "target_symbol": "CodeRequest",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "CodingApplicationService",
+    "target_module": "llm_agent.agent.code.application",
+    "target_symbol": "CodingApplicationService",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py",
+      "src/llm_agent/interfaces/cli/first_run.py"
+    ],
+    "symbol": "ConfigError",
+    "target_module": "llm_agent.agent.runtime.config_errors",
+    "target_symbol": "ConfigError",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py",
+      "src/llm_agent/interfaces/cli/first_run.py",
+      "src/llm_agent/interfaces/cli/interactive_resources.py",
+      "src/llm_agent/interfaces/cli/interactive_session.py"
+    ],
+    "symbol": "ConfigNotFound",
+    "target_module": "llm_agent.agent.runtime.config_errors",
+    "target_symbol": "ConfigNotFound",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/discovery_projection.py",
+      "src/llm_agent/interfaces/cli/first_run.py",
+      "src/llm_agent/interfaces/cli/interactive_commands.py",
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "symbol": "ConfigRepository",
+    "target_module": "llm_agent.agent.runtime.config_repository",
+    "target_symbol": "ConfigRepository",
+    "target_application_surface": "llm_agent.application.model_profile_selection.select_default_model_profile",
+    "migration_mode": "USE_CASE",
+    "status": "GREEN/COMPLETE",
+    "test_consumers": [
+      "tests/unit/engineering/test_wave20b_campaign.py"
+    ]
+  },
+  {
+    "api_shape": "Diagnostic export through finite typed Application operation; Agent exporter remains internal.",
+    "candidate_api_family": "inspection_auxiliary_operations",
+    "candidate_application_surface": "src/llm_agent/application/inspection",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "symbol": "DiagnosticExporter",
+    "target_module": "llm_agent.agent.observability.export",
+    "target_symbol": "DiagnosticExporter",
+    "test_consumers": [
+      "tests/unit/test_inspection_auxiliary.py",
+      "tests/unit/runtime/test_wave9_cli.py"
+    ],
+    "source_agent_module": "llm_agent.agent.observability.export",
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.inspection",
+    "migration_mode": "USE_CASE",
+    "reason": "Diagnostic export moved to a finite Application inspection operation; Agent exporter remains internal.",
+    "completed_lane": "PHASE2_INSPECTION_AUXILIARY_GREEN_COMPLETE",
+    "status": "CONTRACTED",
+    "zero_broker_consumers_proven": true
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "EngineeringCaller",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringCaller",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringErrorV1",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringErrorV1",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "EngineeringExecutionContext",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringExecutionContext",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringOperationViewV1",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringOperationViewV1",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringPermission",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringPermission",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringQueryStatus",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringQueryStatus",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringRegistry",
+    "target_module": "llm_agent.agent.engineering.registry",
+    "target_symbol": "EngineeringRegistry",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringRequest",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringRequest",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringRunResultV1",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringRunResultV1",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringRunStore",
+    "target_module": "llm_agent.agent.engineering.store",
+    "target_symbol": "EngineeringRunStore",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringService",
+    "target_module": "llm_agent.agent.engineering.service",
+    "target_symbol": "EngineeringService",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EngineeringTerminalStatus",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringTerminalStatus",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "EngineeringWorkspaceContext",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "EngineeringWorkspaceContext",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "EvaluationBackend",
+    "target_module": "llm_agent.agent.engineering.backends.evaluation",
+    "target_symbol": "EvaluationBackend",
+    "test_consumers": []
+  },
+  {
+    "historical_phase0_candidate_api_family": "workspace_extensions",
+    "historical_phase0_candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [],
+    "symbol": "ExtensionCatalogService",
+    "target_module": "llm_agent.extensions.extension_catalog_service",
+    "target_symbol": "ExtensionCatalogService",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.extensions.extension_catalog_service",
+    "interface_consumers": [],
+    "previous_broker_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": null,
+    "migration_mode": "REMOVE",
+    "cohort": "C1",
+    "baseline_presence": true,
+    "reason": "Zero-consumer INTERNAL_REPO_API broker alias; canonical owner remains available; no replacement API applies.",
+    "status": "CONTRACTED"
+  },
+  {
+    "historical_phase0_candidate_api_family": "configuration_maintenance",
+    "historical_phase0_candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [],
+    "symbol": "ExtensionCatalogStorage",
+    "target_module": "llm_agent.extensions.extension_catalog_storage",
+    "target_symbol": "ExtensionCatalogStorage",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.extensions.extension_catalog_storage",
+    "interface_consumers": [],
+    "previous_broker_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": null,
+    "migration_mode": "REMOVE",
+    "cohort": "C1",
+    "baseline_presence": true,
+    "reason": "Zero-consumer INTERNAL_REPO_API broker alias; canonical owner remains available; no replacement API applies.",
+    "status": "CONTRACTED"
+  },
+  {
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "symbol": "ExtensionRegistry",
+    "target_module": "llm_agent.extensions.extension_registry",
+    "target_symbol": "ExtensionRegistry",
+    "test_consumers": [],
+    "api_shape": "C4 finite Application-owned legacy tools operations; Platform ExtensionRegistry remains the canonical owner and is not re-exported.",
+    "candidate_api_family": "legacy_extension_registry",
+    "candidate_application_surface": "src/llm_agent/application/legacy_extension_registry.py",
+    "migration_mode": "USE_CASE",
+    "cohort": "C4",
+    "broker_consumers_after": [],
+    "status": "GREEN/COMPLETE"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "FaultPlanV1",
+    "target_module": "llm_agent.agent.evaluation.practical",
+    "target_symbol": "FaultPlanV1",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "FaultPlanV1Error",
+    "target_module": "llm_agent.agent.evaluation.practical",
+    "target_symbol": "FaultPlanV1Error",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "HealthBackend",
+    "target_module": "llm_agent.agent.engineering.backends.health",
+    "target_symbol": "HealthBackend",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/cli/extensions.py",
+      "src/llm_agent/interfaces/cli/first_run.py",
+      "src/llm_agent/interfaces/cli/maintenance.py",
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "HomeLifecycleLease",
+    "target_module": "llm_agent.agent.runtime.home_lifecycle",
+    "target_symbol": "HomeLifecycleLease",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "InspectionBackend",
+    "target_module": "llm_agent.agent.engineering.backends.inspection",
+    "target_symbol": "InspectionBackend",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "inspection_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/actions/inspection.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "symbol": "InspectionQuery",
+    "target_module": "llm_agent.agent.presentation",
+    "target_symbol": "InspectionQuery",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "inspection_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/actions/inspection.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py"
+    ],
+    "symbol": "InspectionService",
+    "target_module": "llm_agent.agent.presentation",
+    "target_symbol": "InspectionService",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "inspection_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/actions/inspection.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/inspector.py",
+      "src/llm_agent/interfaces/cli/inspector_rendering.py"
+    ],
+    "symbol": "InspectorSnapshot",
+    "target_module": "llm_agent.agent.presentation",
+    "target_symbol": "InspectorSnapshot",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Private mechanism dependency inside the semantic Application owner; never re-export InstanceLock.",
+    "candidate_api_family": "workspace_recents",
+    "candidate_application_surface": "src/llm_agent/application/workspace_recents.py",
+    "production_consumers": [],
+    "symbol": "InstanceLock",
+    "target_module": "llm_agent.agent.runtime.instance_lock",
+    "target_symbol": "InstanceLock",
+    "test_consumers": [],
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/workspace_recents.py"
+    ],
+    "source_agent_module": "llm_agent.agent.runtime.instance_lock",
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.workspace_recents",
+    "migration_mode": "USE_CASE",
+    "reason": "The workspace-recents Application operation owns persistence and uses InstanceLock privately; the Interface no longer imports the lock from the broker.",
+    "completed_lane": "PHASE2_WORKSPACE_RECENTS_GREEN_COMPLETE",
+    "status": "CONTRACTED",
+    "contracted_after_zero_consumer_proof": true
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "MODEL_SAFE_TOOL_DESCRIPTORS",
+    "target_module": "llm_agent.agent.engineering.model_safe",
+    "target_symbol": "MODEL_SAFE_TOOL_DESCRIPTORS",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/chat.py"
+    ],
+    "symbol": "ModelConnectionError",
+    "target_module": "llm_agent.agent.llm.errors",
+    "target_symbol": "ModelConnectionError",
+    "test_consumers": [],
+    "migration_mode": "CONTRACTED",
+    "target_application_api": "llm_agent.application.model_errors",
+    "completed_lane": "C9",
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "ModelSafeEngineering",
+    "target_module": "llm_agent.agent.engineering.model_safe",
+    "target_symbol": "ModelSafeEngineering",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/mcp/engineering_server.py",
+      "src/llm_agent/interfaces/mcp/projection.py"
+    ],
+    "symbol": "ModelSafeResponse",
+    "target_module": "llm_agent.agent.engineering.model_safe",
+    "target_symbol": "ModelSafeResponse",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "ModelSafeStatus",
+    "target_module": "llm_agent.agent.engineering.model_safe",
+    "target_symbol": "ModelSafeStatus",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/chat.py"
+    ],
+    "symbol": "ModelTimeoutError",
+    "target_module": "llm_agent.agent.llm.errors",
+    "target_symbol": "ModelTimeoutError",
+    "test_consumers": [],
+    "migration_mode": "CONTRACTED",
+    "target_application_api": "llm_agent.application.model_errors",
+    "completed_lane": "C9",
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/bootstrap.py",
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "OperationalMode",
+    "target_module": "llm_agent.agent.tools.authority",
+    "target_symbol": "OperationalMode",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/commands.py"
+    ],
+    "symbol": "Orchestrator",
+    "target_module": "llm_agent.agent.orchestrator",
+    "target_symbol": "Orchestrator",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/ui.py"
+    ],
+    "symbol": "ProposalAssessment",
+    "target_module": "llm_agent.agent.code.policy",
+    "target_symbol": "ProposalAssessment",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "RepositoryBackend",
+    "target_module": "llm_agent.agent.engineering.backends.repository",
+    "target_symbol": "RepositoryBackend",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "approval_authority",
+    "candidate_application_surface": "src/llm_agent/application/actions/approval.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/bootstrap.py"
+    ],
+    "symbol": "RequireExplicitApproval",
+    "target_module": "llm_agent.agent.approval",
+    "target_symbol": "RequireExplicitApproval",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Finite immutable TaskActivityUpdate projected by the task_execution Application adapter.",
+    "candidate_api_family": "event_output_projection",
+    "candidate_application_surface": "src/llm_agent/application/task_execution.py",
+    "production_consumers": [],
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/ui_mailbox.py",
+      "src/llm_agent/interfaces/cli/ui_plane.py"
+    ],
+    "symbol": "RuntimeEvent",
+    "target_module": "llm_agent.agent.runtime.events",
+    "target_symbol": "RuntimeEvent",
+    "test_consumers": [],
+    "implemented_lane": "C12",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "application_projection": "TaskActivityUpdate",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Finite immutable TaskActivityUpdate projected by the task_execution Application adapter.",
+    "candidate_api_family": "event_output_projection",
+    "candidate_application_surface": "src/llm_agent/application/task_execution.py",
+    "production_consumers": [],
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/ui_mailbox.py",
+      "src/llm_agent/interfaces/cli/ui_plane.py"
+    ],
+    "symbol": "RuntimeEventKind",
+    "target_module": "llm_agent.agent.runtime.event_kinds",
+    "target_symbol": "RuntimeEventKind",
+    "test_consumers": [],
+    "implemented_lane": "C12",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "application_projection": "TaskActivityUpdate",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "SourceRepositoryContext",
+    "target_module": "llm_agent.agent.engineering.contracts",
+    "target_symbol": "SourceRepositoryContext",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "symbol": "StateMigrationError",
+    "target_module": "llm_agent.agent.runtime.state_migration",
+    "target_symbol": "StateMigrationError",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.agent.runtime.state_migration",
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.state_migration",
+    "migration_mode": "USE_CASE",
+    "reason": "Application state migration owns the bounded error contract and the CLI maps that error without exposing Agent StateMigrationError.",
+    "completed_lane": "PHASE2_STATE_MIGRATION_GREEN_COMPLETE",
+    "status": "CONTRACTED"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py",
+      "src/llm_agent/interfaces/cli/extensions.py",
+      "src/llm_agent/interfaces/cli/first_run.py",
+      "src/llm_agent/interfaces/cli/maintenance.py",
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "StorageBootstrap",
+    "target_module": "llm_agent.agent.runtime.storage_bootstrap",
+    "target_symbol": "StorageBootstrap",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Task context Application use case; never re-export Agent symbol generically.",
+    "candidate_api_family": "task_context",
+    "candidate_application_surface": "src/llm_agent/application/task_context.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/task_context.py"
+    ],
+    "symbol": "TaskContextResolver",
+    "target_module": "llm_agent.agent.task_definition.resolver",
+    "target_symbol": "TaskContextResolver",
+    "test_consumers": [],
+    "migration_mode": "USE_CASE",
+    "target_application_api": "llm_agent.application.task_context",
+    "completed_lane": "C2",
+    "previous_broker_consumers": [
+      "src/llm_agent/interfaces/cli/task_context.py"
+    ],
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Application-owned task continuity query and snapshot projection; resume execution remains Agent-owned.",
+    "candidate_api_family": "task_continuity",
+    "candidate_application_surface": "src/llm_agent/application/task_continuity.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/task_continuity.py"
+    ],
+    "symbol": "TaskContinuityService",
+    "target_module": "llm_agent.agent.continuity",
+    "target_symbol": "TaskContinuityService",
+    "test_consumers": [],
+    "migration_mode": "USE_CASE",
+    "target_application_api": "llm_agent.application.task_continuity",
+    "cohort": "C3",
+    "previous_broker_consumers": [
+      "src/llm_agent/interfaces/cli/task_continuity.py"
+    ],
+    "current_broker_consumers": [],
+    "baseline_presence": true,
+    "reason": "The CLI continuity query moves to Application while the canonical Agent service remains available to Agent internals.",
+    "status": "IMPLEMENTED_PENDING_BOUNDED_USER_EVIDENCE"
+  },
+  {
+    "api_shape": "Task context Application use case; translate only at the Application boundary.",
+    "candidate_api_family": "task_context",
+    "candidate_application_surface": "src/llm_agent/application/task_context.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "symbol": "TaskDefinitionError",
+    "target_module": "llm_agent.agent.task_definition.errors",
+    "target_symbol": "TaskDefinitionError",
+    "test_consumers": [],
+    "migration_mode": "USE_CASE",
+    "target_application_api": "llm_agent.application.task_context",
+    "completed_lane": "C2",
+    "previous_broker_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Task context Application use case; never re-export Agent symbol generically.",
+    "candidate_api_family": "task_context",
+    "candidate_application_surface": "src/llm_agent/application/task_context.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/task_context.py"
+    ],
+    "symbol": "TaskDefinitionRepository",
+    "target_module": "llm_agent.agent.task_definition.repository",
+    "target_symbol": "TaskDefinitionRepository",
+    "test_consumers": [],
+    "migration_mode": "USE_CASE",
+    "target_application_api": "llm_agent.application.task_context",
+    "completed_lane": "C2",
+    "previous_broker_consumers": [
+      "src/llm_agent/interfaces/cli/task_context.py"
+    ],
+    "current_broker_consumers": [],
+    "status": "ACCEPTED_GREEN_COMPLETE"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/ui.py"
+    ],
+    "symbol": "TaskResult",
+    "target_module": "llm_agent.agent.runtime.context_results",
+    "target_symbol": "TaskResult",
+    "test_consumers": [],
+    "implemented_lane": "C11",
+    "implemented_broker_export": false,
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "accepted_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "symbol": "TaskRunDirective",
+    "target_module": "llm_agent.agent.runtime.task_directives",
+    "target_symbol": "TaskRunDirective",
+    "test_consumers": [],
+    "implemented_lane": "C10",
+    "implemented_application_surface": "src/llm_agent/application/task_execution.py",
+    "broker_consumers_after": [],
+    "migration_status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "inspection_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/actions/inspection.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "symbol": "TraceCorruptError",
+    "target_module": "llm_agent.agent.observability.trace_store",
+    "target_symbol": "TraceCorruptError",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "inspection_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/actions/inspection.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py"
+    ],
+    "symbol": "TraceUnavailableError",
+    "target_module": "llm_agent.agent.observability.trace_store",
+    "target_symbol": "TraceUnavailableError",
+    "test_consumers": []
+  },
+  {
+    "historical_phase0_candidate_api_family": "workspace_extensions",
+    "historical_phase0_candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [],
+    "symbol": "WorkspaceExtensionService",
+    "target_module": "llm_agent.extensions.workspace_extensions_service",
+    "target_symbol": "WorkspaceExtensionService",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.extensions.workspace_extensions_service",
+    "interface_consumers": [],
+    "previous_broker_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": null,
+    "migration_mode": "REMOVE",
+    "cohort": "C1",
+    "baseline_presence": true,
+    "reason": "Zero-consumer INTERNAL_REPO_API broker alias; canonical owner remains available; no replacement API applies.",
+    "status": "CONTRACTED"
+  },
+  {
+    "api_shape": "Application operation executes one bounded interactive-worker operation inside canonical scoped text publication.",
+    "candidate_api_family": "interactive_worker_lifecycle",
+    "candidate_application_surface": "src/llm_agent/application/interactive_worker.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "bind_worker_output",
+    "target_module": "llm_agent.agent.runtime.worker_output",
+    "target_symbol": "bind_worker_output",
+    "test_consumers": [],
+    "target_application_api": "llm_agent.application.interactive_worker.run_interactive_worker",
+    "cohort": "C13",
+    "current_broker_consumers": [],
+    "status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "build_code_context",
+    "target_module": "llm_agent.agent.code.application",
+    "target_symbol": "build_code_context",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/mcp/engineering_server.py"
+    ],
+    "symbol": "build_model_safe_engineering_service",
+    "target_module": "llm_agent.agent.engineering.model_safe",
+    "target_symbol": "build_model_safe_engineering_service",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "evaluation_administration",
+    "candidate_application_surface": "src/llm_agent/application/actions/evaluation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "candidate_identity",
+    "target_module": "llm_agent.agent.evaluation.evaluation_identity",
+    "target_symbol": "candidate_identity",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "evaluation_administration",
+    "candidate_application_surface": "src/llm_agent/application/actions/evaluation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "candidate_identity_string",
+    "target_module": "llm_agent.agent.evaluation.evaluation_identity",
+    "target_symbol": "candidate_identity_string",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "evaluation_administration",
+    "candidate_application_surface": "src/llm_agent/application/actions/evaluation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "compare_practical_profiles",
+    "target_module": "llm_agent.agent.evaluation.practical",
+    "target_symbol": "compare_practical_profiles",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "ChatTurn publishes value/end through the canonical emitter using its retained presentation fallback.",
+    "candidate_api_family": "chat_turn_presentation",
+    "candidate_application_surface": "src/llm_agent/application/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/streaming.py"
+    ],
+    "symbol": "emit_worker_output",
+    "target_module": "llm_agent.agent.runtime.worker_output",
+    "target_symbol": "emit_worker_output",
+    "test_consumers": [],
+    "target_application_api": "llm_agent.application.conversation.ChatTurn.present_stream_text",
+    "cohort": "C13",
+    "current_broker_consumers": [],
+    "status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "historical_phase0_candidate_api_family": "workspace_extensions",
+    "historical_phase0_candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [],
+    "symbol": "load_strict_extension_manifest",
+    "target_module": "llm_agent.agent.tools.stdio_adapter",
+    "target_symbol": "load_strict_extension_manifest",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.agent.tools.stdio_adapter",
+    "interface_consumers": [],
+    "previous_broker_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": null,
+    "migration_mode": "REMOVE",
+    "cohort": "C1",
+    "baseline_presence": true,
+    "reason": "Zero-consumer INTERNAL_REPO_API broker alias; canonical owner remains available; no replacement API applies.",
+    "status": "CONTRACTED"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/chat.py",
+      "src/llm_agent/interfaces/cli/streaming.py"
+    ],
+    "symbol": "logger",
+    "target_module": "llm_agent.agent.runtime.logging",
+    "target_symbol": "logger",
+    "test_consumers": [],
+    "cohort": "C14",
+    "replacement_surface": "logging.getLogger('LLM_Agent') in each Interface consumer",
+    "current_broker_consumers": [],
+    "status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "configuration_maintenance",
+    "candidate_application_surface": "src/llm_agent/application/actions/maintenance.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "symbol": "migrate_legacy_state",
+    "target_module": "llm_agent.agent.runtime.state_migration",
+    "target_symbol": "migrate_legacy_state",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.agent.runtime.state_migration",
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.state_migration",
+    "migration_mode": "USE_CASE",
+    "reason": "Application migrate_state owns the guarded migration use case and projects the Agent report; the CLI no longer imports this mechanism from the broker.",
+    "completed_lane": "PHASE2_STATE_MIGRATION_GREEN_COMPLETE",
+    "status": "CONTRACTED"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "parse_code_command",
+    "target_module": "llm_agent.agent.code.commands",
+    "target_symbol": "parse_code_command",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "evaluation_administration",
+    "candidate_application_surface": "src/llm_agent/application/actions/evaluation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "parse_fault_json",
+    "target_module": "llm_agent.agent.evaluation.practical",
+    "target_symbol": "parse_fault_json",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "engineering",
+    "candidate_application_surface": "src/llm_agent/application/actions/engineering.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/app.py",
+      "src/llm_agent/interfaces/cli/engineering.py"
+    ],
+    "symbol": "production_registry",
+    "target_module": "llm_agent.agent.engineering.registry",
+    "target_symbol": "production_registry",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "workspace_extensions",
+    "candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/interactive_worker.py"
+    ],
+    "symbol": "requests_test_execution",
+    "target_module": "llm_agent.agent.tools.mode_enforcement",
+    "target_symbol": "requests_test_execution",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/interactive_commands.py"
+    ],
+    "symbol": "resolve_model_profile",
+    "target_module": "llm_agent.agent.llm.model_profile",
+    "target_symbol": "resolve_model_profile",
+    "target_application_surface": "llm_agent.application.model_profile_selection.select_default_model_profile",
+    "migration_mode": "USE_CASE",
+    "status": "GREEN/COMPLETE",
+    "test_consumers": []
+  },
+  {
+    "api_shape": "HealthDiagnosticsRequest/HealthDiagnosticsResult DTOs and run_health_diagnostics use-case operation; composes the standalone Agent diagnostics and human renderer.",
+    "candidate_api_family": "health_diagnostics",
+    "candidate_application_surface": "src/llm_agent/application/health",
+    "production_consumers": [],
+    "migrated_production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "pre_migration_production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py",
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "symbol": "run_health_check",
+    "target_module": "llm_agent.agent.health_check",
+    "target_symbol": "run_health_check",
+    "source_agent_module": "llm_agent.agent.health_check",
+    "interface_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": "llm_agent.application.health",
+    "migration_mode": "USE_CASE",
+    "reason": "Both doctor consumers need the product/Agent health-diagnostics use case, structured report, human rendering, readiness, optional online probe, and report persistence; the Application operation composes those semantics once.",
+    "completed_lane": "PHASE2_HEALTH_DOCTOR_GREEN_COMPLETE",
+    "test_consumers": [],
+    "migrated_test_consumers": [
+      "tests/unit/interfaces/test_cli_v2.py",
+      "tests/unit/runtime/test_wave13_online_health.py"
+    ],
+    "status": "CONTRACTED"
+  },
+  {
+    "api_shape": "Named typed use-case operation; exact signature to be designed with consumer migration; never re-export Agent symbol generically.",
+    "candidate_api_family": "model_conversation",
+    "candidate_application_surface": "src/llm_agent/application/actions/conversation.py",
+    "production_consumers": [
+      "src/llm_agent/interfaces/cli/command_handlers.py"
+    ],
+    "symbol": "set_debug_level",
+    "target_module": "llm_agent.agent.runtime.logging",
+    "target_symbol": "set_debug_level",
+    "test_consumers": [],
+    "cohort": "C14",
+    "target_application_api": "llm_agent.application.session_diagnostics.apply_interactive_diagnostic_mode",
+    "implemented_application_surface": "src/llm_agent/application/session_diagnostics.py",
+    "current_broker_consumers": [],
+    "status": "GREEN/COMPLETE",
+    "implemented_broker_export": false
+  },
+  {
+    "historical_phase0_candidate_api_family": "workspace_extensions",
+    "historical_phase0_candidate_application_surface": "src/llm_agent/application/actions/extensions.py",
+    "production_consumers": [],
+    "symbol": "validate_extension_id",
+    "target_module": "llm_agent.extensions.extension_state",
+    "target_symbol": "validate_extension_id",
+    "test_consumers": [],
+    "source_agent_module": "llm_agent.extensions.extension_state",
+    "interface_consumers": [],
+    "previous_broker_consumers": [],
+    "current_broker_consumers": [],
+    "target_application_api": null,
+    "migration_mode": "REMOVE",
+    "cohort": "C1",
+    "baseline_presence": true,
+    "reason": "Zero-consumer INTERNAL_REPO_API broker alias; canonical owner remains available; no replacement API applies.",
+    "status": "CONTRACTED"
+  }
+],
+  "production_consumer_count": 28,
+  "retirement_proof": [
+    "zero production broker imports",
+    "zero test/string monkeypatch references",
+    "bounded use-case and consumer evidence green",
+    "external compatibility support resolved"
+  ],
+  "status": "PHASE2_HEALTH_DOCTOR_LANE_GREEN_COMPLETE; PHASE2_INSPECTION_AUXILIARY_LANE_GREEN_COMPLETE; PHASE2_STATE_MIGRATION_LANE_GREEN_COMPLETE; PHASE2_WORKSPACE_RECENTS_LANE_GREEN_COMPLETE; C1_GREEN_COMPLETE; C2_GREEN_COMPLETE; C3_GREEN_COMPLETE; C4_GREEN_COMPLETE; C5_GREEN_COMPLETE; C6_GREEN_COMPLETE; C7_GREEN_COMPLETE; C8_GREEN_COMPLETE; C9_GREEN_COMPLETE; C10_GREEN_COMPLETE; C11_GREEN_COMPLETE; C12_GREEN_COMPLETE; C13_GREEN_COMPLETE; C14_GREEN_COMPLETE; C15_GREEN_COMPLETE; PHASE2_REMAINS_OPEN; WAVE_LOCAL_GREEN_NOT_CLAIMED; PUBLICATION_NOT_AUTHORIZED",
+  "test_consumer_count": 3,
+  "phase1_authority_decision": {
+    "current_application_api": "At Phase 1 close, workspace_query only; Phase 2 lane authorization adds health_diagnostics.",
+    "event_output_projection": "CANDIDATE / NOT_CURRENT; src/llm_agent/application/outputs/ does not exist and no destination is authorized.",
+    "no_inferred_authority": "Candidate families and recorded consumers do not constitute CURRENT API approval."
+  },
+  "phase2_investigation": {
+    "status": "HEALTH_DOCTOR_LANE_GREEN_COMPLETE; INSPECTION_AUXILIARY_LANE_GREEN_COMPLETE; STATE_MIGRATION_LANE_GREEN_COMPLETE; WORKSPACE_RECENTS_LANE_GREEN_COMPLETE",
+    "method": "Three independent read-only subagent reviews: consumer census, API boundary review, adversarial review.",
+    "consumer_census": {
+      "broker_exports": 87,
+      "production_consumer_files": 28,
+      "test_consumer_files": 3,
+      "production_consumers_match_phase0_ledger": true
+    },
+    "current_api_authority": {
+      "historical_phase1_only_current_application_api": "workspace_query at Phase 1 close; health_diagnostics was GREEN/COMPLETE and inspection_auxiliary was pending bounded evidence when this investigation was first recorded",
+      "current_phase2_application_apis": [
+        "workspace_query",
+        "health_diagnostics",
+        "inspection_auxiliary",
+        "state_migration",
+        "workspace_recents"
+      ],
+      "broker_export_overlap": [],
+      "candidate_families_promoted_at_phase1_close": [],
+    "event_output_projection": "CURRENT in llm_agent.application.task_execution as TaskActivityUpdate; private adapter preserves Agent canonical event ownership and projects only interactive activity effects."
+    },
+    "historical_decision": "Health/doctor completed its authorized lane and bounded evidence gate. A subsequent user decision authorized only BookmarkStore and DiagnosticExporter for inspection auxiliary operations; implementation and zero-consumer proof were recorded separately pending that lane's bounded user evidence gate.",
+    "decision": "Health/doctor, Inspection Auxiliary, State Migration, and Workspace Recents lanes are accepted GREEN/COMPLETE at 81 broker exports. C1 implementation reduces the live broker to 76 exports pending bounded user evidence; Phase 2 remains open.",
+    "candidate_findings": {
+      "evaluation_administration": "Four low-level evaluation helpers, one consumer that also imports 26 other broker symbols; a useful API operation and owner are not established.",
+      "inspection_diagnostics": "The broad seven-export proposal was stopped. The authorized auxiliary subcohort migrates only BookmarkStore and DiagnosticExporter; five read/snapshot/follow exports remain untouched.",
+      "event_output_projection": "Mixes event DTOs with worker output binding; proposed Application outputs path absent and explicitly not CURRENT.",
+      "configuration_maintenance": "Combines config, extensions, lifecycle, migration, health, and profile use cases.",
+      "engineering_and_model_conversation": "Broad heterogeneous cohorts with elevated blast radius and proxy-facade risk.",
+      "workspace_extensions": "Two consumers still mix extension operations with tool/runtime and conversation behavior.",
+      "run_health_check": "Authorized health_diagnostics use case; both known consumers and broker export contracted after a fresh zero-consumer source census."
+    },
+    "changes": {
+      "consumers_migrated": 2,
+      "test_consumer_files_migrated": 2,
+      "exports_removed": 1,
+      "broker_exports_remaining": 86
+    },
+    "health_diagnostics_lane": {
+      "fresh_consumer_census": {
+        "production_consumers_before": [
+          "src/llm_agent/interfaces/cli/command_handlers.py",
+          "src/llm_agent/interfaces/cli/maintenance.py"
+        ],
+        "test_consumer_files_before": [
+          "tests/unit/interfaces/test_cli_v2.py",
+          "tests/unit/runtime/test_wave13_online_health.py"
+        ],
+        "additional_consumers_found": [],
+        "remaining_run_health_check_broker_consumers_after": []
+      },
+      "api": "llm_agent.application.health: HealthDiagnosticsRequest, HealthDiagnosticsResult, run_health_diagnostics",
+      "application_agent_dependencies": ["llm_agent.agent.health.standalone"],
+      "readiness_projection": "offline_ready: bool; online_ready: bool | None; offline requests preserve omitted online schema",
+      "human_output": "Application returns rendered report; each Interface consumer presents it.",
+      "report_validation": "Exact known top-level schema, finite path/readiness/persistence fields, <=32 check entries, JSON-safe values; report schema otherwise retained.",
+      "broker_contract": "Removed only run_health_check; other literal exports and fail-closed broker machinery remain.",
+      "broker_exports_before": 87,
+      "broker_exports_after": 86,
+      "status": "GREEN/COMPLETE",
+      "bounded_user_evidence": {
+        "status": "USER_REPORTED_PASS_INTEGRAL",
+        "scope": "Final bounded gate for the first Phase 2 health/doctor lane",
+        "accepted_as_authorized_evidence": true,
+        "phase2_entire_phase_complete": false,
+        "wave_local_green": false
+      }
+    },
+    "gates": "User reported the first lane bounded evidence gate passed integrally; accepted for HEALTH/DOCTOR lane closure. No Phase 2 entire-phase or Wave LOCAL GREEN claim."
+  },
+  "phase2_inspection_auxiliary_lane": {
+    "status": "GREEN/COMPLETE",
+    "authorization": "User decision attached 2026-09-29 authorizes BookmarkStore and DiagnosticExporter only for bookmark list/add/remove and diagnostic export.",
+    "consumer_census": {
+      "production_before": ["src/llm_agent/interfaces/cli/inspector.py"],
+      "test_before": [],
+      "dynamic_or_monkeypatch_before": [],
+      "production_broker_consumers_after": [],
+      "test_broker_consumers_after": [],
+      "dynamic_or_monkeypatch_broker_consumers_after": [],
+      "retained_direct_agent_internal_consumers": ["src/llm_agent/agent/presentation/service.py", "src/llm_agent/agent/engineering/backends/inspection.py", "src/llm_agent/agent/observability/application_adapter.py", "src/llm_agent/agent/observability/export.py"]
+    },
+    "api": {
+      "public_surface": "src/llm_agent/application/inspection/__init__.py",
+      "implementation": "src/llm_agent/application/inspection/operations.py",
+      "exports": ["BookmarkListRequest", "BookmarkListResult", "BookmarkAddRequest", "BookmarkAddResult", "BookmarkRemoveRequest", "BookmarkRemoveResult", "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult", "InspectionAuxiliaryOperations", "InspectionCorruptDataError", "InspectionUnavailableError"],
+      "responsibility": "Workspace-scoped bookmark management and diagnostic export for retained inspection traces.",
+      "live_inspect_read_paths_changed": false
+    },
+    "migration": {
+      "strategy": "EXPAND -> MIGRATE -> PROVE ZERO CONSUMERS -> CONTRACT",
+      "consumers_migrated": 1,
+      "test_files_added_or_adjusted": ["tests/unit/test_inspection_auxiliary.py", "tests/unit/runtime/test_wave9_cli.py", "tests/unit/test_current_architecture.py"],
+      "broker_exports_before": 86,
+      "broker_exports_after_ast_count": 84,
+      "contracted_exports": ["BookmarkStore", "DiagnosticExporter"]
+    },
+    "current_policy": "Added inspection_auxiliary with the narrow authorized responsibility and exact implementation/dependency surface; checker rejects public Agent reexports, untyped or wrong-receiver composition, and Agent types in DTO annotations.",
+    "review": {
+      "runtime_findings": [],
+      "adversarial_p2": ["Earlier checker accepted required call names without proving receivers and did not reject Agent types in DTO annotations; checker enforcement was strengthened in this lane."],
+      "no_p0_p1_reported": true
+    },
+    "excluded_exports_still_brokered": ["InspectionQuery", "InspectionService", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+    "full_inspection": "STOP — BOUNDARY NOT PROVEN; no provider/live-source/composition abstraction authorized.",
+    "bounded_user_evidence": {
+      "status": "USER_REPORTED_PASS_INTEGRAL",
+      "accepted_as_authorized_evidence": true,
+      "scope": "Final bounded user evidence gate for Inspection Auxiliary",
+      "tests_focused": "PASS",
+      "current_architecture": "PASS",
+      "w19_architecture": "PASS",
+      "w20_architecture": "PASS",
+      "ruff": "PASS",
+      "mypy": "PASS",
+      "broker_exports_before": 86,
+      "broker_exports_after": 84,
+      "phase2_complete": false,
+      "wave_local_green": false
+    }
+  },
+  "phase2_state_migration_lane": {
+    "status": "GREEN/COMPLETE",
+    "authorization": "User-authorized State Migration lane design; only migrate_legacy_state and StateMigrationError were contracted from the broker.",
+    "consumer_census": {
+      "production_before": ["src/llm_agent/interfaces/cli/maintenance.py", "src/llm_agent/interfaces/cli/app.py"],
+      "test_broker_consumers_before": [],
+      "broker_consumers_after": [],
+      "direct_agent_runtime_tests_retained": ["tests/unit/runtime/test_state_migration.py"]
+    },
+    "api": {
+      "public_surface": "src/llm_agent/application/state_migration/__init__.py",
+      "implementation": "src/llm_agent/application/state_migration/operations.py",
+      "exports": ["StateMigrationRequest", "StateMigrationResult", "StateMigrationFailedError", "migrate_state"],
+      "direct_dependency_families": ["llm_agent.application.context", "llm_agent.agent.runtime.home_lifecycle", "llm_agent.agent.runtime.storage_bootstrap", "llm_agent.agent.runtime.state_migration"],
+      "responsibility": "Application-owned workspace-scoped legacy state migration orchestration and finite result/error projection."
+    },
+    "migration": {
+      "strategy": "INVESTIGATE -> DEFINE NARROW CAPABILITY -> EXPAND -> MIGRATE -> PROVE ZERO CONSUMERS -> CONTRACT",
+      "broker_exports_before_ast": 84,
+      "broker_exports_after_ast": 82,
+      "contracted_exports": ["migrate_legacy_state", "StateMigrationError"],
+      "compatibility": "Agent migration algorithm unchanged; workspace destination, transient lease/bootstrap order, report tuple order, source preservation, exception chaining, and CLI exit classification preserved."
+    },
+    "review": {
+      "post_implementation_read_only_reviews": ["lifecycle/ordering", "compatibility/algorithm", "CURRENT boundary/adversarial"],
+      "p0_p1_findings": [],
+      "p2_test_gap_closed": "Added assertions that bootstrap receives request.app_paths and transient lease receives request.app_paths.home_dir."
+    },
+    "bounded_user_evidence": {
+      "status": "USER_REPORTED_PASS_INTEGRAL",
+      "accepted_as_authorized_evidence": true,
+      "tests_or_gates_run_by_main": false,
+      "phase2_complete": false,
+      "wave_local_green": false
+    }
+  },
+  "phase2_workspace_recents_lane": {
+      "status": "GREEN_COMPLETE",
+    "authorization": "User-approved Workspace Recents implementation lane; only InstanceLock was contracted from agent_boundary.",
+    "consumer_census": {
+      "production_before": [
+        "src/llm_agent/interfaces/cli/first_run.py",
+        "src/llm_agent/interfaces/cli/interactive_commands.py",
+        "src/llm_agent/interfaces/cli/workspace_entry.py"
+      ],
+      "broker_instance_lock_consumer_before": ["src/llm_agent/interfaces/cli/workspace_recents.py"],
+      "test_semantic_consumers_before": ["tests/unit/engineering/test_wave20b_campaign.py::test_B35_recent_workspaces_are_newest_first_and_skip_stale"],
+      "production_consumers_after": [],
+      "test_consumers_after": [],
+      "dynamic_literal_string_monkeypatch_reexport_consumers_after": []
+    },
+    "api": {
+      "public_surface": "src/llm_agent/application/workspace_recents.py",
+      "exports": ["list_recent_workspaces", "remember_recent_workspace"],
+      "dependency_families": [
+        "llm_agent.application.context",
+        "llm_agent.storage.json_persistence",
+        "llm_agent.agent.runtime.instance_lock"
+      ],
+      "responsibility": "Own the bounded best-effort persistent history of recently opened canonical workspaces.",
+      "public_lock_or_storage_error_types": false
+    },
+    "migration": {
+      "strategy": "EXPAND -> MIGRATE -> PROVE ZERO CONSUMERS -> CONTRACT",
+      "broker_exports_before_ast": 82,
+      "broker_exports_after_ast": 81,
+      "contracted_exports": ["InstanceLock"],
+      "old_interface_module": "COMPAT_TEMPORARY shim; semantic ownership removed",
+      "strict_schema_correction": "Reject bool, float, string, missing and unsupported schema_version values.",
+      "best_effort_corrections": ["JsonObjectReadError", "AtomicWriteError", "InstanceLockError"],
+      "pre_existing_race": "Read/merge occurs before lock; concurrent writers may lose one update. Preserved by authorization."
+    },
+    "current_policy": "Declared application_api_surfaces.workspace_recents with exact context, JSON persistence and InstanceLock dependency families; CURRENT checker enforces finite exports, ownership, compatibility shim shape, internal consumer census and zero InstanceLock broker consumers.",
+    "tests_added_or_migrated": [
+      "tests/unit/test_workspace_recents_application.py",
+      "tests/unit/interfaces/test_workspace_entry.py",
+      "tests/unit/engineering/test_wave20b_campaign.py::test_B35_recent_workspaces_are_newest_first_and_skip_stale",
+      "tests/unit/test_current_architecture.py"
+    ],
+    "review": {
+      "post_implementation_read_only_reviews": ["persistence/best-effort parity", "compatibility/current anti-proxy", "read-before-lock race"],
+      "p0_p1_findings": [],
+      "adversarial_p2_findings_closed": [
+        "CURRENT consumer census resolves literal/composed module and symbol constants, follows chained/destructured/attribute/subscript-held aliases, detects qualified/inline/monkeypatch references, and fails closed on unresolved dynamic imports used for InstanceLock.",
+        "CURRENT compatibility-shim validation now permits only its exact Application imports, literal __all__, and optional docstring.",
+        "Best-effort tests now inject OSError at read, write, and lock boundaries."
+      ],
+      "read_before_lock_preserved": true
+    },
+    "bounded_user_evidence": {
+      "status": "ACCEPTED_GREEN_COMPLETE",
+      "source": "User-accepted final bounded evidence for the Workspace Recents lane; exact per-command output is not reproduced in this ledger.",
+      "tests_or_gates_run_by_main": false,
+      "phase2_complete": false,
+      "wave_local_green": false
+    }
+  },
+  "phase2_c1_zero_consumer_alias_contraction": {
+    "status": "GREEN/COMPLETE",
+    "broker_exports_before_ast": 81,
+    "broker_exports_after_ast": 76,
+    "accepted_broker_export_count_until_gate": 76,
+    "contracted_exports": ["ExtensionCatalogService", "ExtensionCatalogStorage", "WorkspaceExtensionService", "load_strict_extension_manifest", "validate_extension_id"],
+    "pre_contract_broker_consumers": [],
+    "migration_mode": "REMOVE",
+    "new_application_api": null,
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "accepted_broker_export_count_after_gate": 76,
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c2_task_context": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C2",
+    "application_api": "llm_agent.application.task_context",
+    "migration_mode": "USE_CASE",
+    "broker_exports_before_ast": 76,
+    "broker_exports_after_ast": 73,
+    "accepted_broker_export_count_until_gate": 76,
+    "contracted_exports": ["TaskContextResolver", "TaskDefinitionRepository", "TaskDefinitionError"],
+    "broker_consumers_before": {
+      "TaskContextResolver": ["src/llm_agent/interfaces/cli/task_context.py"],
+      "TaskDefinitionRepository": ["src/llm_agent/interfaces/cli/task_context.py"],
+      "TaskDefinitionError": ["src/llm_agent/interfaces/cli/app.py"]
+    },
+    "broker_consumers_after": {
+      "TaskContextResolver": [],
+      "TaskDefinitionRepository": [],
+      "TaskDefinitionError": []
+    },
+    "lineage_records_preserved": 87,
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "accepted_broker_export_count_after_gate": 73,
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c3_task_continuity": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C3",
+    "application_api": "llm_agent.application.task_continuity",
+    "migration_mode": "USE_CASE",
+    "broker_exports_before": 73,
+    "broker_exports_after": 72,
+    "accepted_broker_export_count_until_gate": 73,
+    "accepted_broker_export_count_after_gate": 72,
+    "contracted_exports": ["TaskContinuityService"],
+    "broker_consumers_before": ["src/llm_agent/interfaces/cli/task_continuity.py"],
+    "broker_consumers_after": [],
+    "lineage_records_preserved": 87,
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c4_legacy_extension_registry": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C4",
+    "application_api": "llm_agent.application.legacy_extension_registry",
+    "migration_mode": "USE_CASE",
+    "contracted_exports": ["ExtensionRegistry"],
+    "broker_exports_before": 72,
+    "broker_exports_implemented": 71,
+    "accepted_broker_export_count_until_gate": 72,
+    "accepted_broker_export_count_after_gate": 71,
+    "broker_consumers_before": ["src/llm_agent/interfaces/cli/maintenance.py"],
+    "broker_consumers_after": [],
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71"],
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c5_config_repository": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C5",
+    "application_api": "configuration_admin + first_run_configuration + discovery_configuration",
+    "migration_mode": "USE_CASE",
+    "contracted_exports": [],
+    "broker_exports_before": 71,
+    "broker_exports_implemented": 71,
+    "accepted_broker_export_count_until_gate": 71,
+    "accepted_broker_export_count_after_gate": 71,
+    "broker_consumers_before": ["src/llm_agent/interfaces/cli/discovery_projection.py", "src/llm_agent/interfaces/cli/first_run.py", "src/llm_agent/interfaces/cli/interactive_commands.py", "src/llm_agent/interfaces/cli/maintenance.py"],
+    "broker_consumers_after": ["src/llm_agent/interfaces/cli/interactive_commands.py"],
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71"],
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c6_configuration_errors": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C6",
+    "application_api": "llm_agent.application.configuration_errors",
+    "migration_mode": "USE_CASE",
+    "contracted_exports": ["ConfigError", "ConfigNotFound"],
+    "broker_exports_before": 71,
+    "broker_exports_implemented": 69,
+    "accepted_broker_export_count_until_gate": 71,
+    "accepted_broker_export_count_after_gate": 69,
+    "broker_consumers_after": {"ConfigError": [], "ConfigNotFound": []},
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69"],
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c7_code_commands": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C7",
+    "application_api": "llm_agent.application.code_commands",
+    "migration_mode": "USE_CASE",
+    "contracted_exports": ["CODE_COMMAND_HELP", "CODE_TASK_ACTIONS", "ChangeApprover", "CodeCommandError", "CodeRequest", "CodingApplicationService", "build_code_context", "parse_code_command", "requests_test_execution"],
+    "broker_exports_before": 69,
+    "broker_exports_implemented": 60,
+    "accepted_broker_export_count_until_gate": 69,
+    "accepted_broker_export_count_after_gate": 60,
+    "broker_consumers_after": [],
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60"],
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_c9_conversation": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C9",
+    "application_apis": [
+      "llm_agent.application.conversation",
+      "llm_agent.application.model_errors"
+    ],
+    "contracted_exports": [
+      "ChatSession",
+      "ModelConnectionError",
+      "ModelTimeoutError"
+    ],
+    "broker_exports_before": 58,
+    "broker_exports_implemented": 55,
+    "accepted_broker_export_count_until_gate": 58,
+    "accepted_broker_export_count_after_gate": 55,
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55"
+    ],
+    "broker_consumers_after": {
+      "ChatSession": [],
+      "ModelConnectionError": [],
+      "ModelTimeoutError": []
+    },
+    "bounded_user_evidence": {
+      "status": "ACCEPTED_GREEN_COMPLETE",
+      "changed_untracked_bounded_tests": "494 passed, 1 skipped",
+      "cross_cohort_cli_regressions": "133 passed",
+      "current": "89 passed; checker PASS; 889 modules; 3140 edges",
+      "w17_adversarial": "64/64 PASS",
+      "w19": "projection tests PASS; architecture checker PASS",
+      "w20": "campaign 79/79 PASS; engineering architecture PASS",
+      "structural_proofs": "Application conversation surface; opaque Application-owned ConversationRuntime; distinct Application errors; retired C7 gateway seam; explicit CommandContext conversation and config; zero broker consumers; no Interface direct owner dependency; model error fidelity; Ruff; mypy; production naming hygiene; Python whitespace; git diff --check PASS",
+      "commandcontext_proof_correction": "Constructor annotation resolved directly from signature/module; previous class dataclass/type-hints failure was a bounded-gate proof error and required no production change.",
+      "crlf_warnings": "Informational only."
+    },
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication": "NOT_AUTHORIZED",
+    "identity_design": "Bind once at context composition; retain original AgentApplication.session privately; C7 resolves original session.gateway inside Application.",
+    "c10_seam": "Opaque application bind input remains until C10; no AgentApplication migration."
+  },
+  "phase2_c8_code_review_projection": {
+    "status": "GREEN/COMPLETE",
+    "lane": "C8",
+    "application_api": "llm_agent.application.code_review",
+    "migration_mode": "OWNED_IMMUTABLE_REVIEW_DTOS",
+    "contracted_exports": ["ChangePreview", "ProposalAssessment"],
+    "broker_exports_before": 60,
+    "broker_exports_implemented": 58,
+    "accepted_broker_export_count_until_gate": 60,
+    "accepted_broker_export_count_after_gate": 58,
+    "broker_consumers_after": {"ChangePreview": [], "ProposalAssessment": []},
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58"],
+    "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
+    "phase2_complete": false,
+    "wave_local_green": false
+  },
+  "phase2_next_lane_investigation": {
+    "status": "SUPERSEDED_BY_AUTHORIZED_STATE_MIGRATION_LANE",
+    "baseline_broker_exports_ast": 84,
+    "reviews": ["read-only consumer census", "read-only boundary/adversarial review", "read-only change-locality review"],
+    "candidates": {
+      "configuration": {
+        "broker_symbols": ["ConfigRepository", "ConfigError", "ConfigNotFound", "resolve_model_profile"],
+        "production_consumers": ["src/llm_agent/interfaces/cli/app.py", "src/llm_agent/interfaces/cli/discovery_projection.py", "src/llm_agent/interfaces/cli/first_run.py", "src/llm_agent/interfaces/cli/interactive_commands.py", "src/llm_agent/interfaces/cli/interactive_resources.py", "src/llm_agent/interfaces/cli/interactive_session.py", "src/llm_agent/interfaces/cli/maintenance.py"],
+        "test_consumers": ["tests/unit/engineering/test_wave20b_campaign.py"],
+        "use_cases": ["startup validation/error mapping", "first-run initialization", "profile selection and persistence", "discovery profile resolution", "maintenance config init/validate/migrate"],
+        "owner": "Agent runtime config repository/errors and Agent LLM profile resolver; workflow ownership split across Interfaces/Application startup.",
+        "boundary_assessment": "Whole family is mixed. ConfigRepository exposure is a proxy; ConfigError/ConfigNotFound are taxonomy; resolve_model_profile returns an Agent profile. A profile-selection workflow could merit separate design, but no whole-family lane.",
+        "dependency_direction": "Interfaces currently call Application broker; underlying configuration/profile mechanisms are Agent-owned.",
+        "full_cohort_feasible": false,
+        "expected_reduction_full_cohort": 4,
+        "risk": "Broad migration crosses startup, first-run, interactive session, discovery, config maintenance, and a broker monkeypatch test."
+      },
+      "lifecycle_storage": {
+        "broker_symbols": ["HomeLifecycleLease", "StorageBootstrap", "InstanceLock", "StateMigrationError", "migrate_legacy_state"],
+        "production_consumers": ["src/llm_agent/interfaces/cli/engineering.py", "src/llm_agent/interfaces/cli/extensions.py", "src/llm_agent/interfaces/cli/first_run.py", "src/llm_agent/interfaces/cli/maintenance.py", "src/llm_agent/interfaces/cli/workspace_recents.py", "src/llm_agent/interfaces/mcp/engineering_server.py", "src/llm_agent/interfaces/cli/app.py"],
+        "test_consumers_via_broker": [],
+        "use_cases": ["startup lease/bootstrap", "transient guarded mutations", "workspace recent storage locking", "legacy-state migration"],
+        "boundary_assessment": "Do not migrate the mechanism bundle. The concrete run_state migration workflow is a viable narrow Application operation that can own workspace destination selection, lease/bootstrap, migration, and result/error projection.",
+        "recommended_symbols": ["migrate_legacy_state", "StateMigrationError"],
+        "recommended_owner": "Application owns legacy-state migration workflow; Agent runtime remains owner of low-level validation/copy algorithm.",
+        "recommended_surface_candidate": "llm_agent.application.state_migration (design only; not CURRENT)",
+        "dependency_direction": "Application -> application context/workspace context and Agent runtime migration/lifecycle/storage; Interface -> typed Application operation/result/error.",
+        "zero_consumer_proof_feasibility": "One production workflow and one centralized error mapping; no broker test refs; direct Agent runtime tests remain owner-level evidence.",
+        "expected_reduction_recommended_lane": 2,
+        "blast_radius": "One CLI command, centralized exit/error mapping, and its CLI integration test; W19 lifecycle/storage behavior needs careful preservation.",
+        "risks": ["workspace ID and destination parity", "lease closure on success/failure", "source preservation", "report projection", "error message and exit-code parity"],
+        "modifiability_benefit": "Centralizes the state migration transaction and its safety/lifecycle coordination instead of leaving orchestration split between maintenance adapter and global error mapping."
+      },
+      "engineering": {
+        "broker_symbols": ["EngineeringCaller", "EngineeringErrorV1", "EngineeringExecutionContext", "EngineeringOperationViewV1", "EngineeringPermission", "EngineeringQueryStatus", "EngineeringRequest", "EngineeringRunResultV1", "EngineeringTerminalStatus", "EngineeringWorkspaceContext", "SourceRepositoryContext", "EngineeringRegistry", "EngineeringService", "EngineeringRunStore", "EvaluationBackend", "HealthBackend", "InspectionBackend", "RepositoryBackend", "MODEL_SAFE_TOOL_DESCRIPTORS", "ModelSafeEngineering", "ModelSafeResponse", "ModelSafeStatus", "build_model_safe_engineering_service", "FaultPlanV1", "FaultPlanV1Error", "candidate_identity", "candidate_identity_string", "compare_practical_profiles"],
+        "production_consumers": ["src/llm_agent/interfaces/cli/engineering.py", "src/llm_agent/interfaces/mcp/engineering_server.py", "src/llm_agent/interfaces/mcp/projection.py"],
+        "test_consumers_via_broker": [],
+        "use_cases": ["CLI execution/query/history", "MCP model-safe execution and projection", "practical evaluation helpers"],
+        "boundary_assessment": "No finite single use case established. Moving contracts/services/stores/backends would recreate a broker; helpers are not demonstrated Application workflows.",
+        "full_cohort_feasible": false,
+        "expected_reduction_full_cohort": 28,
+        "blast_radius": "High; distinct CLI and MCP semantics, execution permissions, persistence, backend selection, cancellation, and model-safe projection."
+      },
+      "remaining_inspection_control": {
+        "broker_symbols": ["InspectionQuery", "InspectionService", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+        "production_consumers": ["src/llm_agent/interfaces/cli/app.py", "src/llm_agent/interfaces/cli/inspector.py", "src/llm_agent/interfaces/cli/inspector_rendering.py"],
+        "test_consumers_via_broker": [],
+        "use_case": "Read/query/snapshot/replay/follow/live /inspect composition.",
+        "boundary_assessment": "FULL INSPECTION: STOP — BOUNDARY NOT PROVEN; this control candidate is excluded from next-lane selection.",
+        "expected_reduction_if_all_proven": 5,
+        "risk": "Query validation, trace selection, replay/follow cursor semantics, snapshot projection, error mapping, and Agent-internal inspection consumers."
+      }
+    },
+    "decision": "READY_FOR_DESIGN_AUTHORIZATION",
+    "recommended_lane": {
+      "symbols": ["migrate_legacy_state", "StateMigrationError"],
+      "use_case": "Migrate legacy runtime state into the current workspace-scoped destination with lifecycle preparation and finite outcome/error projection.",
+      "owner": "Application workflow; Agent runtime retains the low-level migration algorithm.",
+      "surface_candidate": "llm_agent.application.state_migration; not yet authorized or CURRENT.",
+      "expected_reduction": "84 -> 82 after zero-consumer proof and contract.",
+      "authorization_required_before_implementation": true
+    },
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "gates_run": false
+  },
+  "phase2_c11_task_result": {
+      "status": "GREEN/COMPLETE",
+      "lane": "C11",
+      "canonical_owner": "llm_agent.agent.runtime.context_results.TaskResult",
+      "contracted_exports": ["TaskResult"],
+      "broker_exports_before_ast": 49,
+      "broker_exports_implemented": 48,
+      "accepted_broker_export_count_until_gate": 49,
+      "accepted_broker_export_count": 48,
+      "accepted_broker_export_count_after_gate": 48,
+      "broker_exports_after_ast": 48,
+      "lineage_records_preserved": 87,
+      "production_broker_consumers_after": [],
+      "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+      "phase2_complete": false,
+      "wave_local_green": false,
+      "publication_authorized": false,
+      "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48"]
+  },
+  "phase2_c13_worker_text_publication": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C13",
+    "contracted_exports": ["bind_worker_output", "emit_worker_output"],
+    "application_surfaces": [
+      "llm_agent.application.interactive_worker.run_interactive_worker",
+      "llm_agent.application.conversation.ChatTurn.present_stream_text"
+    ],
+    "broker_exports_before": 46,
+    "broker_exports_implemented": 44,
+    "accepted_broker_export_count_until_gate": 46,
+    "accepted_broker_export_count": 44,
+    "accepted_broker_export_count_after_gate": 44,
+    "broker_exports_after_ast": 44,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44"],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "global_quality": "FAIL_OUTSIDE_C13",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c14_session_diagnostics": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C14",
+    "contracted_exports": ["logger", "set_debug_level"],
+    "application_surface": "llm_agent.application.session_diagnostics.apply_interactive_diagnostic_mode",
+    "canonical_logger_name": "LLM_Agent",
+    "broker_exports_before": 44,
+    "broker_exports_implemented": 42,
+    "accepted_broker_export_count_until_gate": 44,
+    "accepted_broker_export_count": 42,
+    "accepted_broker_export_count_after_gate": 42,
+    "broker_exports_after_ast": 42,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44", "44 -> 42"],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c15_model_profile_selection": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C15",
+    "contracted_exports": ["ConfigRepository", "resolve_model_profile"],
+    "application_surface": "llm_agent.application.model_profile_selection.select_default_model_profile",
+    "broker_exports_before": 42,
+    "broker_exports_implemented": 40,
+    "accepted_broker_export_count_until_gate": 42,
+    "accepted_broker_export_count": 40,
+    "accepted_broker_export_count_after_gate": 40,
+    "broker_exports_after_ast": 40,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44", "44 -> 42", "42 -> 40"],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "bounded_independent_user_evidence": {
+      "source": "User-reported C15 Gates 1-9 and updated Gate 10",
+      "gates_1_5": "PASS",
+      "gate_6_focused_application_cli_tests": "113 passed",
+      "gate_7_config_profile_regressions": "120 passed",
+      "gate_8_rebootstrap_startup_adjacent": "9 passed",
+      "gate_9_current_architecture": "PASS: 893 modules, 3152 edges",
+      "gate_10_quality_numeric_no_regression": "PASS",
+      "c15_new_quality_findings": 0,
+      "c15_aggravated_quality_findings": 0,
+      "current_finding_count": 36,
+      "configuration_api_errors_complexity_post_c14": 65,
+      "configuration_api_errors_complexity_current": 65
+    },
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c12_runtime_events": {
+    "status": "GREEN/COMPLETE",
+    "contracted_exports": ["RuntimeEvent", "RuntimeEventKind"],
+    "canonical_owners": {
+      "RuntimeEvent": "llm_agent.agent.runtime.events.RuntimeEvent",
+      "RuntimeEventKind": "llm_agent.agent.runtime.event_kinds.RuntimeEventKind"
+    },
+    "application_projection": "llm_agent.application.task_execution.TaskActivityUpdate",
+    "accepted_architecture": "Agent canonical RuntimeEvent -> private Application adapter -> TaskActivityUpdate -> production Interface",
+    "production_interface_canonical_type_references_after": 0,
+    "canonical_agent_fanout_state_checkpoint_trace": "PRESERVED",
+    "broker_exports_before_ast": 48,
+    "broker_exports_implemented": 46,
+    "accepted_broker_export_count_until_gate": 48,
+    "accepted_broker_export_count": 46,
+    "broker_exports_after_ast": 46,
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46"],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "c13_bind_worker_output_preserved": true,
+    "observability_trace_canonical_fanout_preserved": true,
+    "publication_authorized": false
+  },
+  "phase2_c10_task_execution": {
+      "status": "GREEN/COMPLETE",
+      "lane": "C10",
+      "application_api": "llm_agent.application.task_execution",
+      "migration_mode": "USE_CASE",
+      "broker_exports_before_ast": 55,
+      "broker_exports_implemented": 49,
+      "accepted_broker_export_count_until_gate": 55,
+      "contracted_exports": [
+        "AgentApplication",
+        "AutoApprove",
+        "RequireExplicitApproval",
+        "OperationalMode",
+        "Orchestrator",
+        "TaskRunDirective"
+      ],
+      "broker_consumers_after": {
+        "AgentApplication": [],
+        "AutoApprove": [],
+        "RequireExplicitApproval": [],
+        "OperationalMode": [],
+        "Orchestrator": [],
+        "TaskRunDirective": []
+      },
+      "lineage_records_preserved": 87,
+      "bounded_user_evidence": {
+        "status": "ACCEPTED_GREEN_COMPLETE",
+        "source": "Independent bounded evidence formally accepted by the user",
+        "changed_untracked_bounded_tests": "PASS",
+        "explicit_c10_c7_c8_c9_regressions": "PASS",
+        "current_tests": "PASS",
+        "current_checker": "PASS; 890 modules; 3154 edges",
+        "w17_adversarial": "64/64 PASS",
+        "w19_projection": "PASS",
+        "w19_architecture": "PASS",
+        "w20_campaign": "PASS",
+        "w20_architecture": "PASS",
+        "structural_proofs": {
+          "task_execution_public_surface": "PASS",
+          "public_annotation_boundary": "PASS",
+          "CommandContext_boundary": "PASS",
+          "broker_contraction": "PASS",
+          "TaskRunDirective_reexport_removal": "PASS",
+          "zero_broker_consumers": "PASS",
+          "zero_Interface_owner_imports": "PASS",
+          "inspection_C16_C17_public_boundary": "PASS",
+          "no_generic_factory_or_forwarding": "PASS"
+        },
+        "static_validation": {
+          "Ruff": "PASS",
+          "mypy": "PASS",
+          "production_naming_hygiene": "PASS",
+          "changed_untracked_text_whitespace": "PASS",
+          "git_diff_check": "PASS"
+        }
+      },
+      "phase2_complete": false,
+      "wave_local_green": false,
+      "publication_authorized": false,
+      "accepted_broker_export_count": 49,
+      "broker_exports_after_ast": 49,
+      "accepted_broker_export_count_after_gate": 49,
+      "accepted_ratchet_history": [
+        "81 -> 76",
+        "76 -> 73",
+        "73 -> 72",
+        "72 -> 71",
+        "71 -> 69",
+        "69 -> 60",
+        "60 -> 58",
+        "58 -> 55",
+        "55 -> 49"
+      ]
+  }
+}
