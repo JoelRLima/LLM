@@ -10,12 +10,19 @@ from llm_agent.application.inspection.contracts import (
     BookmarkView,
     DiagnosticExportRequest,
     DiagnosticExportResult,
+    InspectionListRequest,
+    InspectionReadRequest,
 )
 from llm_agent.application.inspection.errors import (
     InspectionCorruptDataError,
     InspectionUnavailableError,
 )
 from llm_agent.application.inspection.operations import InspectionAuxiliaryOperations
+from llm_agent.application.inspection.read_operations import (
+    InspectionReadContext,
+    list_inspection_runs,
+    read_inspection,
+)
 
 __all__ = [
     "BookmarkAddRequest",
@@ -30,4 +37,9 @@ __all__ = [
     "InspectionAuxiliaryOperations",
     "InspectionCorruptDataError",
     "InspectionUnavailableError",
+    "InspectionReadRequest",
+    "InspectionListRequest",
+    "list_inspection_runs",
+    "read_inspection",
+    "InspectionReadContext",
 ]

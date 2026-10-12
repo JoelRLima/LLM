@@ -1,0 +1,173 @@
+{
+  "current_tooling": [
+    {
+      "path": "distribution/candidate_manifest.py",
+      "sha256": "9db6fba37ef5474b8e00b9e288424565c53ac4a8cc9fffecf03a9281a0614e7e"
+    },
+    {
+      "path": "distribution/candidate_snapshot.py",
+      "sha256": "6303da6c6708fa83a8bf27787c9c6587616e08a875de6f90b42c56467f84d849"
+    },
+    {
+      "path": "quality/architecture_compatibility.json",
+      "sha256": "ade7fbb13a5a9ea50712717729baf59533df36b4d0a6b1a9a4c2fb182c4015e8"
+    },
+    {
+      "path": "quality/architecture_current_policy.json",
+      "sha256": "3659dc3435ddbd133c2f8d986d76e03827bda7b6aeab469fa045a8d331caf57d"
+    },
+    {
+      "path": "quality/w23/compatibility_retirement.json",
+      "sha256": "e8aec5e4c11404cf2341c80f11126bd5458095647faa2b3701e6e606ca44ed88"
+    },
+    {
+      "path": "quality/w23/disposition_amendments.json",
+      "sha256": "7b78cbc2276463600ff78ca57b8fe5035e6b739abbe76107b3768a72abcd4609"
+    },
+    {
+      "path": "scripts/build_windows_payload.py",
+      "sha256": "480a4002ceb6c1582fb67d5b5cac6cfd0f7fe3dd7b021bfffa34936f4abec29c"
+    },
+    {
+      "path": "scripts/check_current_architecture.py",
+      "sha256": "c662be79326a1400b5abd634328059f0a45dbab26906a39333cab38eabcc60dc"
+    },
+    {
+      "path": "scripts/run_wave18_adversarial.py",
+      "sha256": "9ee798b354ddf158b33da15fadc5f87481a52655e6b7046d0db404e3f77a34cd"
+    },
+    {
+      "path": "scripts/w21_architecture/graph.py",
+      "sha256": "46415fb1fd7363986c625a4ba182fcf52505ca637606cc4c4738abf5ce836ae0"
+    },
+    {
+      "path": "scripts/w21_architecture/imports.py",
+      "sha256": "0313763a97caf81ab55185883a05b383ab2504d90812933b7022b8615d42b99f"
+    },
+    {
+      "path": "scripts/w21_architecture/source.py",
+      "sha256": "7034ca4746d0deb0a1b7dc03f8d103f5d3607a12d8e13a394c0180c044d5239f"
+    },
+    {
+      "path": "scripts/w23_acceptance.py",
+      "sha256": "8f2e727e2601677d1c32123edefcbbf5a8f232eb0d46171d40c81f4bc1b27469"
+    },
+    {
+      "path": "scripts/w23_architecture/evidence.py",
+      "sha256": "d3ffa70892ea12b74c96861b11ef68a415bb9f75a8b6ab8b796bf03f0c5187ff"
+    },
+    {
+      "path": "scripts/w23_architecture/phase0_inventory.py",
+      "sha256": "06c287b08695e0cde22c0dd60d0fed6d18b5bf2bc7f8499db3fbf286df9ffb6d"
+    },
+    {
+      "path": "tests/unit/test_candidate_manifest.py",
+      "sha256": "b17f4b600c3980e13726782353828541b13ff3a252417ecf39e23d35301a0774"
+    },
+    {
+      "path": "tests/unit/test_current_architecture.py",
+      "sha256": "2a7e14b548d60aa5d54d6e1314935df080f73548d0e3adfe597cb25a5cdb355e"
+    },
+    {
+      "path": "tests/unit/test_w23_acceptance.py",
+      "sha256": "278ae5652b8953c995e203f0f7152a380179b13b3c6c30feb6f66e53b663cdeb"
+    },
+    {
+      "path": "tests/unit/test_w23_cycle_policy.py",
+      "sha256": "55b451ac27a738b3a14f578e23679840faff682a0f986a17415a658508527dbe"
+    },
+    {
+      "path": "tests/unit/test_w23_evidence.py",
+      "sha256": "9ca72c06065718b02731cc50b1382afe9d5b16c221495864fde9eeeb3c6c3b94"
+    },
+    {
+      "path": "tests/unit/test_wave18_adversarial.py",
+      "sha256": "c35b161bf5bcfd9fdd56771d0f70a13e398627ba9040267be5d721d743c4bc43"
+    },
+    {
+      "path": "tests/unit/test_wave18_build_driver.py",
+      "sha256": "95760ced4cd9b1c723c48ba5c2b761afb113f15122aac6e9d71d17aa4c8e08a3"
+    }
+  ],
+  "historical_authority_bindings": [
+    {
+      "artifact": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+      },
+      "pointer": "/authority/selector_sha256",
+      "sha256": "3cbe1b46c718abe681b3e9091c91dd46b686e148a85312b8e9a203651bc4bf25"
+    },
+    {
+      "artifact": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+      },
+      "pointer": "/authority/contract/sha256",
+      "sha256": "af8a9a8f09be60261a30120d5fe44bedc518c8e74ebf8d842858ca9bd8953965"
+    },
+    {
+      "artifact": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+      },
+      "pointer": "/authority/contract/self_check_sha256",
+      "sha256": "bc80c9462096faef86f9609af7abe9092d060ce2968c1c03bf42fc27da592db8"
+    },
+    {
+      "artifact": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+      },
+      "pointer": "/authority/spec/sha256",
+      "sha256": "3cd008124d6379362cef3997c76a748a131dedd0b5f3e94b01900bd930746ed7"
+    },
+    {
+      "artifact": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+      },
+      "pointer": "/authority/user_activation_sha256",
+      "sha256": "b86798f0bf79ed2bfd70b20daffd50be7d087048dcebe07a3bdcd2d05271fae4"
+    }
+  ],
+  "historical_tooling_snapshots": [
+    {
+      "original_path": "tests/unit/test_w23_cycle_policy.py",
+      "path": "quality/w23/historical_tooling/test_w23_cycle_policy.pre_k4.txt",
+      "sha256": "d6cc470cff481d50676a00f11fa2189966d2e421dd500f6a79fd3144b1a74d04"
+    }
+  ],
+  "predecessor": {
+    "path": "quality/w23/compatibility_closure_evidence.json",
+    "sha256": "ebb6f9dfc87e4033b3ea66ad907876a95e420507ec27135b2e8e59ea75044f9b"
+  },
+  "production_evidence": {
+    "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+    "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+  },
+  "production_identity": {
+    "edges": 3124,
+    "f1_separated": true,
+    "f2_modules": [
+      "llm_agent.agent.application",
+      "llm_agent.agent.application_wiring",
+      "llm_agent.agent.engineering.backends.evaluation",
+      "llm_agent.agent.engineering.model_safe",
+      "llm_agent.agent.engineering.policy",
+      "llm_agent.agent.engineering.recovery",
+      "llm_agent.agent.engineering.service",
+      "llm_agent.agent.engineering.store",
+      "llm_agent.agent.engineering.transactions",
+      "llm_agent.agent.evaluation.agent_executor",
+      "llm_agent.agent.evaluation.practical"
+    ],
+    "largest_cross_domain_family": 4,
+    "modules": 883,
+    "production_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+    "semantic_graph_sha256": "e13f188a7e1e887918c32fb8de938f93b641eebf21e104d78f3cd4d74b9d6075",
+    "total_cross_domain_family_membership": 4
+  },
+  "schema_version": 1,
+  "unit": "W23_ACCEPTANCE_TOOLING_SUCCESSOR"
+}

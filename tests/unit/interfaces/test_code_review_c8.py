@@ -13,7 +13,7 @@ from llm_agent.agent.code.changes import ChangePreview
 from llm_agent.agent.code.policy import ProposalAssessment
 from llm_agent.agent.code.workflow_application_support import _approval_authority, _preview_sha256
 from llm_agent.application import code_commands, code_review
-from llm_agent.application.agent_boundary import ApprovalDecision, ApprovalRequest
+from llm_agent.application.approval import ApprovalPrompt, ApprovalResponse
 from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview, _project_code_review
 from llm_agent.interfaces.cli import ui
 from llm_agent.interfaces.cli.attention import ApprovalBroker
@@ -141,14 +141,14 @@ def test_broker_request_and_fingerprint_match_pre_c8_sentinel(monkeypatch: pytes
     preview, assessment = _project_code_review(
         ChangePreview("id-\u00e7", paths, diff, True), ProposalAssessment(.8123456789, True, reasons),
     )
-    captured: list[ApprovalRequest] = []
+    captured: list[ApprovalPrompt] = []
     broker = ApprovalBroker()
 
-    def request(value: ApprovalRequest) -> ApprovalDecision:
+    def request(value: ApprovalPrompt) -> ApprovalResponse:
         captured.append(value)
-        return ApprovalDecision.APPROVED
+        return ApprovalResponse.APPROVE
 
-    monkeypatch.setattr(broker, "request", request)
+    monkeypatch.setattr(broker, "present", request)
     assert broker.approve_change(preview, assessment) is True
     actual = captured[0]
     assert actual.action == "code_changeset"
@@ -168,9 +168,9 @@ def test_broker_request_and_fingerprint_match_pre_c8_sentinel(monkeypatch: pytes
 def test_broker_diff_bound_is_strict_and_empty_resource_fallback_survives(
     monkeypatch: pytest.MonkeyPatch, size: int,
 ) -> None:
-    captured: list[ApprovalRequest] = []
+    captured: list[ApprovalPrompt] = []
     broker = ApprovalBroker()
-    monkeypatch.setattr(broker, "request", lambda value: captured.append(value) or ApprovalDecision.REJECTED)
+    monkeypatch.setattr(broker, "present", lambda value: captured.append(value) or ApprovalResponse.DENY)
     diff = "\u00e7" * size
     assert broker.approve_change(CodeReviewPreview("id", (), diff), CodeReviewAssessment(.5)) is False
     request = captured[0]

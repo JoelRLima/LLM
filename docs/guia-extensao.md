@@ -5,9 +5,30 @@
 > [tools](agent/tools.md), [security](agent/security.md) e
 > [runtime](agent/runtime.md).
 
-Use este mapa para colocar uma mudança na camada correta. A regra central é:
-skills e CLI adaptam entradas; domínio implementa comportamento; runtime
-fornece serviços transversais; adapters isolam tecnologias externas.
+Use este mapa para colocar uma mudança na camada correta: Application coordena
+casos de uso, Agent implementa comportamento de domínio, Platform possui
+mecânicas genéricas, e Interfaces adapta entradas e saídas externas. Skills e
+CLI adaptam entradas; adapters isolam tecnologias externas.
+
+## Imports canônicos e compatibilidade histórica
+
+Código novo importa os owners canônicos: paths de workspace em
+`llm_agent.workspace.paths`, segurança de filesystem em
+`llm_agent.filesystem.path_safety`, locks e processos em `llm_agent.process.*`,
+launcher stdio em `llm_agent.extensions.stdio_launcher`, persistência JSON em
+`llm_agent.storage.json_persistence` e mecânicas de extensions em
+`llm_agent.extensions.*`. Composição e adapters próprios do Agent permanecem
+em `llm_agent.agent.tools.extension_bootstrap`,
+`llm_agent.agent.tools.extension_runtime` e adapters específicos do Agent.
+
+Alguns imports históricos permanecem como projeções finitas de compatibilidade,
+incluindo `agent.runtime.paths`, `agent.runtime.workspace_context`,
+`agent.code.path_safety`, `agent.planning.tool_metadata`,
+`agent.interfaces.cli.workspace_recents`, projeções de SkillSpec, catálogo de
+skills, CancellationSafetyMode e os módulos históricos de locks do Agent.
+Essas superfícies não são recomendação para código novo. CURRENT rejeita novos
+consumidores ou crescimento de compatibilidade sem autorização explícita de
+policy. A lista de status está em [legado.md](legado.md).
 
 ## Onde alterar
 
@@ -42,7 +63,7 @@ fornece serviços transversais; adapters isolam tecnologias externas.
 | dependências/multitarefa | [`task_graph.py`](../src/llm_agent/agent/planning/task_graph.py) e [`task_scheduler.py`](../src/llm_agent/agent/planning/task_scheduler.py) | preserve DAG, isolamento, recursos e determinismo |
 | retry/replan legado | [`replan.py`](../src/llm_agent/agent/planning/replan.py) | heurística segura antes de modelo |
 | segurança estática | [`security_patterns.py`](../src/llm_agent/agent/security/security_patterns.py) | mantenha o registro canônico de padrões |
-| caminhos gerados | [`paths.py`](../src/llm_agent/agent/runtime/paths.py) | escolha escopo global ou de workspace; não use literals de `runtime/` |
+| caminhos gerados | [`workspace/paths.py`](../src/llm_agent/workspace/paths.py) | use `AppPaths`/`WorkspacePaths`; `agent.runtime.paths` é projeção histórica limitada, não padrão para novos consumidores |
 | configuração | [`config_repository.py`](../src/llm_agent/agent/runtime/config_repository.py), [`config_schema.py`](../src/llm_agent/agent/runtime/config_schema.py) e [`config_effective.py`](../src/llm_agent/agent/runtime/config_effective.py) | versione, valide, materialize o perfil e mantenha paths internos fora do schema |
 
 ## Adicionar um provider

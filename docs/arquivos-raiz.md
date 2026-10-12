@@ -30,7 +30,12 @@ vizinhos. O módulo canônico implementa configuração do prompt e thinking,
 histórico, modo agente, debug, memória, atalhos de leitura/busca, diagnóstico e
 retomada de checkpoint. `/code` usa parser e camada de aplicação determinísticos,
 sem router/planner, e mostra diff/confiança antes de pedir aprovação quando
-necessário. Operações persistentes usam `agent.runtime.paths`.
+necessário. A propriedade canônica de paths de aplicação e workspace fica em
+`llm_agent.workspace.paths`; código novo deve obter `AppPaths` e
+`WorkspacePaths` por esse owner. `agent.runtime.paths` permanece como projeção
+histórica limitada para consumidores existentes, não como padrão de extensão.
+O suporte a localizações legadas de dados é compatibilidade de dados/runtime e
+não implica suporte geral a imports Python antigos.
 
 ## `session.py` (alias histórico removido)
 
@@ -145,16 +150,20 @@ corrente. Authority, capabilities e grants são verificados separadamente.
 - `task_report`: habilitação e formato; o diretório é definido pelos paths do
   workspace.
 
-## `paths.py` (alias histórico removido) e `agent/runtime/paths.py`
+## `paths.py` (alias histórico removido) e paths canônicos de workspace
 
-O arquivo `paths.py` não existe mais na raiz. `AppPaths` separa configuração, dados, estado,
-cache e logs sem efeitos no construtor. `WorkspacePaths` particiona memória,
+O arquivo `paths.py` não existe mais na raiz. `AppPaths` e `WorkspacePaths`
+pertencem a `llm_agent.workspace.paths`. `AppPaths` separa configuração,
+dados, estado, cache e logs sem efeitos no construtor. `WorkspacePaths` particiona memória,
 checkpoint, métricas, relatórios, artifacts, histórico, benchmark, restore
 points, scratch e `task_definitions` pelo identificador estável do workspace.
 Os corpos imutáveis de Contract/Spec ficam em data; o checkpoint em state
 persiste somente a `TaskDefinitionRef` compacta.
 
-`LLM_AGENT_HOME` fixa uma raiz portátil. Sem ele, Windows usa
+`agent.runtime.paths` é uma projeção histórica de compatibilidade, não o owner
+para novos imports. Os consumidores de produção que ainda dependem dela são
+exceções finitas e não devem ser copiados. `LLM_AGENT_HOME` fixa uma raiz
+portátil. Sem ele, Windows usa
 `APPDATA`/`LOCALAPPDATA` e Unix usa XDG. `AGENT_RUNTIME_DIR` permanece somente
 como compatibilidade. O scratch standalone fica no cache da aplicação;
 `.temp_analysis/` é fallback das skills antigas.

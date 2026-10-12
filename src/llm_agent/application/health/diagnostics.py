@@ -67,6 +67,20 @@ def run_health_diagnostics(
 
 
 def _validate_structured_report(report: dict[str, object], online: bool) -> None:
+    _validate_report_schema(report, online)
+    _validate_readiness(report["readiness"], online)
+    _validate_checks(report["checks"])
+    _validate_persistence(report["persistence"])
+    if online and not isinstance(report["online"], dict):
+        raise ValueError("health diagnostics report has invalid online diagnostics")
+    _validate_json_value(report, depth=0, budget=[20_000])
+    try:
+        dumps(report, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("health diagnostics report is not JSON serializable") from exc
+
+
+def _validate_report_schema(report: dict[str, object], online: bool) -> None:
     required = {
         "schema_version",
         "generated_at",
@@ -101,48 +115,47 @@ def _validate_structured_report(report: dict[str, object], online: bool) -> None
         "home", "config", "global", "workspaces", "cache", "logs"
     } or any(not isinstance(value, str) for value in app_paths.values()):
         raise ValueError("health diagnostics report has invalid application paths")
-    readiness = report["readiness"]
+
+
+def _validate_readiness(value: object, online: bool) -> None:
     readiness_fields = {
         "offline_ready", "workspace_readable", "workspace_writable",
         "operation_mode", "backend_configured", "backend_connectivity",
     }
     if online:
         readiness_fields.add("online_ready")
-    if not isinstance(readiness, dict) or set(readiness) != readiness_fields:
+    if not isinstance(value, dict) or set(value) != readiness_fields:
         raise ValueError("health diagnostics report has invalid readiness fields")
     if any(
-        not isinstance(readiness[field], bool)
+        not isinstance(value[field], bool)
         for field in ("offline_ready", "workspace_readable", "workspace_writable", "backend_configured")
     ):
         raise ValueError("health diagnostics report has invalid readiness values")
-    if online and not isinstance(readiness["online_ready"], bool):
+    if online and not isinstance(value["online_ready"], bool):
         raise ValueError("health diagnostics report has invalid online readiness")
-    checks = report["checks"]
-    if not isinstance(checks, list) or len(checks) > 32:
+
+
+def _validate_checks(value: object) -> None:
+    if not isinstance(value, list) or len(value) > 32:
         raise ValueError("health diagnostics report has invalid checks")
-    for check in checks:
+    for check in value:
         if not isinstance(check, dict) or not {"id", "name", "status", "message", "details"} <= set(check):
             raise ValueError("health diagnostics report has an invalid check entry")
         if any(not isinstance(check[field], str) for field in ("id", "name", "status", "message")):
             raise ValueError("health diagnostics report has invalid check text")
         if not isinstance(check["details"], dict):
             raise ValueError("health diagnostics report has invalid check details")
-    persistence = report["persistence"]
+
+
+def _validate_persistence(value: object) -> None:
     if (
-        not isinstance(persistence, dict)
-        or set(persistence) != {"requested", "written", "path"}
-        or not isinstance(persistence["requested"], bool)
-        or not isinstance(persistence["written"], bool)
-        or not isinstance(persistence["path"], str)
+        not isinstance(value, dict)
+        or set(value) != {"requested", "written", "path"}
+        or not isinstance(value["requested"], bool)
+        or not isinstance(value["written"], bool)
+        or not isinstance(value["path"], str)
     ):
         raise ValueError("health diagnostics report has invalid persistence")
-    if online and not isinstance(report["online"], dict):
-        raise ValueError("health diagnostics report has invalid online diagnostics")
-    _validate_json_value(report, depth=0, budget=[20_000])
-    try:
-        dumps(report, ensure_ascii=False, allow_nan=False)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("health diagnostics report is not JSON serializable") from exc
 
 
 def _validate_json_value(value: object, *, depth: int, budget: list[int]) -> None:
@@ -158,16 +171,24 @@ def _validate_json_value(value: object, *, depth: int, budget: list[int]) -> Non
             raise ValueError("health diagnostics report contains a non-finite number")
         return
     if isinstance(value, dict):
-        if len(value) > 1_024 or any(not isinstance(key, str) for key in value):
-            raise ValueError("health diagnostics report contains an invalid object")
-        for key, item in value.items():
-            _validate_json_value(key, depth=depth + 1, budget=budget)
-            _validate_json_value(item, depth=depth + 1, budget=budget)
+        _validate_json_object(value, depth=depth, budget=budget)
         return
     if isinstance(value, list):
-        if len(value) > 1_024:
-            raise ValueError("health diagnostics report contains an oversized array")
-        for item in value:
-            _validate_json_value(item, depth=depth + 1, budget=budget)
+        _validate_json_array(value, depth=depth, budget=budget)
         return
     raise ValueError("health diagnostics report contains a non-JSON value")
+
+
+def _validate_json_object(value: dict[object, object], *, depth: int, budget: list[int]) -> None:
+    if len(value) > 1_024 or any(not isinstance(key, str) for key in value):
+        raise ValueError("health diagnostics report contains an invalid object")
+    for key, item in value.items():
+        _validate_json_value(key, depth=depth + 1, budget=budget)
+        _validate_json_value(item, depth=depth + 1, budget=budget)
+
+
+def _validate_json_array(value: list[object], *, depth: int, budget: list[int]) -> None:
+    if len(value) > 1_024:
+        raise ValueError("health diagnostics report contains an oversized array")
+    for item in value:
+        _validate_json_value(item, depth=depth + 1, budget=budget)

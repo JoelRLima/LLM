@@ -49,3 +49,13 @@ coverage.xml
 # Operating system metadata
 .DS_Store
 Thumbs.db
+
+# Private local project authority
+/TASK_CONTRACT.md
+/TASK_SPEC.md
+/prm-gate-evidence/
+/prm-v002-final-evidence/
+
+# Generated local artifacts
+/candidate-materialized-check-*/
+/pytest-results.xml

@@ -5,6 +5,19 @@
 
 ## Baseline atual
 
+### Dominios de entrada do Quality
+
+Quality usa dominios de entrada especificos por verificacao. Fontes de producao,
+scripts, testes e fixtures persistentes continuam visiveis nos dominios
+aplicaveis, e a verificacao de visibilidade de fontes continua ativa.
+
+O diretorio raiz `.pytest-c14-evidence-20261001-0953/` e uma excecao aprovada
+e exata para descoberta Ruff e verificacoes gerais de artefatos. Ele guarda
+copias invalidas intencionais de testes negativos, que nao sao divida de
+complexidade de producao. Os bytes permanecem preservados como evidencia. A
+regra nao exclui outros diretorios `.pytest-*`, `tests/fixtures/` ou outros
+artefatos temporarios. Baseline e limites de Quality permanecem inalterados.
+
 Resultados dependem da versão de Python e do sistema operacional. Uma execução
 local isolada não declara a suíte ou a matriz CI universalmente verde; todo
 relato deve registrar comando, host e resultado realmente observado.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 
 from llm_agent.agent.application import AgentApplication
 from llm_agent.agent.runtime.config_errors import ConfigError, ConfigNotFound, ConfigVersionError
+from llm_agent.application import home_operations
 from llm_agent.application.configuration_errors import ConfigurationError, ConfigurationNotFound
 from llm_agent.application.first_run_configuration import FirstRunConfigurationView, FirstRunProfileView
 from llm_agent.interfaces.cli import app as cli
@@ -135,8 +137,7 @@ def test_guided_setup_renders_existing_error_categories(
     monkeypatch.setattr(first_run, "configuration_path", lambda *_args: paths.config_file)
     monkeypatch.setattr(first_run, "initialize_configuration", lambda *_args: paths.config_file)
     monkeypatch.setattr(first_run, "read_first_run_configuration", lambda *_args: (_ for _ in ()).throw(error))
-    monkeypatch.setattr(first_run.HomeLifecycleLease, "begin_transient", lambda *_args: SimpleNamespace(close=lambda: None))
-    monkeypatch.setattr(first_run.StorageBootstrap, "prepare", lambda *_args: None)
+    monkeypatch.setattr(home_operations, "transient_home_operation", lambda _paths: nullcontext())
     result = first_run.recover_first_run_config(
         Namespace(config=None, home=None), console=SimpleNamespace(print=lines.append),
         app_paths=paths, prompt=lambda *_args: "y",

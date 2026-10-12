@@ -275,7 +275,7 @@ def test_c6_a06_resume_symlink_escape_is_denied(tmp_path: Path, monkeypatch: pyt
     import llm_agent.agent.planning.target_grounding_revalidation as revalidation
 
     def escaped(*_args, **_kwargs):
-        from llm_agent.agent.runtime.path_safety import WorkspacePathError
+        from llm_agent.filesystem.path_safety import WorkspacePathError
 
         raise WorkspacePathError("link escape")
 

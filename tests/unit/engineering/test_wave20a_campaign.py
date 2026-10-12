@@ -339,10 +339,11 @@ def test_A37_source_root_derivation() -> None:
 
 
 def test_A38_source_verifier_containment() -> None:
-    source_context = discover_source_repository_context()
-    assert source_context is not None
-    verifier = (source_context.root / "scripts" / "verify_installed_package.py").resolve(strict=True)
-    assert verifier.relative_to(source_context.root).as_posix() == "scripts/verify_installed_package.py"
+    source = discover_source_repository_context()
+    assert source is not None
+    source_root, _identity = source
+    verifier = (source_root / "scripts" / "verify_installed_package.py").resolve(strict=True)
+    assert verifier.relative_to(source_root).as_posix() == "scripts/verify_installed_package.py"
 
 
 def test_A39_candidate_identity_equality() -> None:
@@ -410,7 +411,33 @@ def test_A52_exit_map_surface() -> None:
 
 def test_A53_lifecycle_lease_surface() -> None:
     source = SOURCE_LAYOUT.path_for_w21_relative("agent/engineering/cli.py").read_text(encoding="utf-8")
-    assert "HomeLifecycleLease" in source
+    tree = ast.parse(source)
+    operation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_run_engineering_operation")
+    guard = next(node for node in ast.walk(operation) if isinstance(node, ast.FunctionDef) and node.name == "startup_guard")
+    protected = [
+        node for node in ast.walk(guard) if isinstance(node, ast.With)
+        and any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Name)
+            and item.context_expr.func.id == "startup_home_operation"
+            and len(item.context_expr.args) == 1
+            and isinstance(item.context_expr.args[0], ast.Name)
+            and item.context_expr.args[0].id == "paths"
+            for item in node.items
+        )
+    ]
+    assert len(protected) == 1
+    assert any(
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "execute"
+        for statement in protected[0].body for node in ast.walk(statement)
+    )
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "run_engineering"
+        and any(keyword.arg == "run_guard" and isinstance(keyword.value, ast.Name) and keyword.value.id == "startup_guard" for keyword in node.keywords)
+        for node in ast.walk(operation)
+    )
 
 
 def test_A54_parameter_byte_bound() -> None:

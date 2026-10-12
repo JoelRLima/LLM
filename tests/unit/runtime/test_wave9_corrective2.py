@@ -23,7 +23,6 @@ from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
 from llm_agent.interfaces.cli import inspector as inspector_module
-from llm_agent.interfaces.cli.inspector import _query
 from llm_agent.interfaces.cli.parser import build_parser
 from llm_agent.workspace.paths import WorkspacePaths
 
@@ -87,7 +86,8 @@ def test_stale_active_marker_is_explicit_and_not_selected_as_live(
     monkeypatch.setattr(inspector_module, "_is_tty", lambda: True)
     monkeypatch.setattr(inspector_module.console, "clear", lambda: None)
     monkeypatch.setattr(inspector_module, "render_snapshot", lambda *_args, **_kwargs: None)
-    assert inspector_module._run_follow(service, stale.run_id, args) == 0
+    monkeypatch.setitem(inspector_module.read_inspection.__globals__, "InspectionService", lambda _paths: service)
+    assert inspector_module._run_follow(inspector_module.InspectionReadContext(paths), stale.run_id, args) == 0
     removed = TraceCatalog(paths).apply_retention(
         TraceRetentionPolicy(max_runs=1, max_bytes=1, max_age_seconds=0),
         now=now[0],
@@ -265,25 +265,21 @@ def test_cli_forwards_complete_bounded_filter_surface(tmp_path: Path) -> None:
             "safe",
         ]
     )
-    query = _query(args)
-    assert query.to_dict() == {
-        "sequence_start": 2,
-        "sequence_end": 4,
-        "sources": ["semantic"],
-        "event_kinds": [],
-        "activity_categories": ["tool"],
-        "severities": [],
-        "statuses": ["failed"],
-        "task_id": correlation.task_id,
-        "root_task_id": correlation.root_task_id,
-        "step": 2,
-        "correlation_id": "corr-c2",
-        "invocation_id": "inv-c2",
-        "time_start": "2026-01-01T00:00:01+00:00",
-        "time_end": "2026-01-01T00:00:04+00:00",
-        "search": "safe",
-        "bookmarked_only": True,
-    }
+    request = inspector_module._read_request(args)
+    assert request.sequence_start == 2
+    assert request.sequence_end == 4
+    assert request.sources == ["semantic"]
+    assert request.activity_categories == ["tool"]
+    assert request.statuses == ["failed"]
+    assert request.task_id == correlation.task_id
+    assert request.root_task_id == correlation.root_task_id
+    assert request.step == 2
+    assert request.correlation_id == "corr-c2"
+    assert request.invocation_id == "inv-c2"
+    assert request.time_start == "2026-01-01T00:00:01+00:00"
+    assert request.time_end == "2026-01-01T00:00:04+00:00"
+    assert request.search == "safe"
+    assert request.bookmarked_only is True
 
 
 def test_live_filtered_follow_advances_by_observed_sequence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -329,10 +325,11 @@ def test_live_filtered_follow_advances_by_observed_sequence(tmp_path: Path, monk
     monkeypatch.setattr(
         inspector_module,
         "render_snapshot",
-        lambda value: rendered.append(tuple(item.sequence for item in value.timeline)),
+        lambda value: rendered.append(tuple(item["sequence"] for item in value["timeline"])),
     )
 
-    assert inspector_module._run_follow(service, store.run_id, args) == 0
+    monkeypatch.setitem(inspector_module.read_inspection.__globals__, "InspectionService", lambda _paths: service)
+    assert inspector_module._run_follow(inspector_module.InspectionReadContext(paths), store.run_id, args) == 0
     assert calls == [0, 1, 2]
     assert rendered[:2] == [(), (2,)]
     store.close()

@@ -1,0 +1,1064 @@
+{
+  "authorization": {
+    "acceptance_status": "IMPLEMENTATION_EVIDENCE_PENDING_USER_ACCEPTANCE",
+    "attachment_name": "W23 v007 ACTIVATE FINAL CURRENT COMPATIBILITY ZERO-GROWTH ENFORCEMENT RETAINED PROJECTION FREEZE + COMPATIBILITY CLOSURE EVIDENCE",
+    "decision_source": "USER",
+    "raw_sha256": "8aba18d1715a57bf7e25f14a1d0de85440518af218e8fc8cc33b85f661f0f322"
+  },
+  "current_tooling_sha256": {
+    "quality/architecture_compatibility.json": "ade7fbb13a5a9ea50712717729baf59533df36b4d0a6b1a9a4c2fb182c4015e8",
+    "quality/architecture_current_policy.json": "3659dc3435ddbd133c2f8d986d76e03827bda7b6aeab469fa045a8d331caf57d",
+    "quality/w23/compatibility_retirement.json": "e8aec5e4c11404cf2341c80f11126bd5458095647faa2b3701e6e606ca44ed88",
+    "quality/w23/disposition_amendments.json": "7b78cbc2276463600ff78ca57b8fe5035e6b739abbe76107b3768a72abcd4609",
+    "scripts/check_current_architecture.py": "c662be79326a1400b5abd634328059f0a45dbab26906a39333cab38eabcc60dc",
+    "scripts/w21_architecture/graph.py": "46415fb1fd7363986c625a4ba182fcf52505ca637606cc4c4738abf5ce836ae0",
+    "scripts/w21_architecture/imports.py": "0313763a97caf81ab55185883a05b383ab2504d90812933b7022b8615d42b99f",
+    "scripts/w21_architecture/source.py": "7034ca4746d0deb0a1b7dc03f8d103f5d3607a12d8e13a394c0180c044d5239f",
+    "scripts/w23_architecture/phase0_inventory.py": "06c287b08695e0cde22c0dd60d0fed6d18b5bf2bc7f8499db3fbf286df9ffb6d",
+    "tests/unit/test_current_architecture.py": "2a7e14b548d60aa5d54d6e1314935df080f73548d0e3adfe597cb25a5cdb355e",
+    "tests/unit/test_w23_cycle_policy.py": "d6cc470cff481d50676a00f11fa2189966d2e421dd500f6a79fd3144b1a74d04"
+  },
+  "enforcement_results": {
+    "exact_production_consumer_census": "PASS",
+    "negative_and_positive_CURRENT_tests": "PASS",
+    "policy_schema": "PASS",
+    "production_identity_continuity": "PASS",
+    "retained_projection_structure": "PASS",
+    "retired_module_absence_and_reference_rejection": "PASS",
+    "static_canonical_binding_identity": "PASS"
+  },
+  "graph_engine_disposition": {
+    "decision": "GRAPH_ENGINE_RETENTION_JUSTIFIED",
+    "maintenance_boundary": [
+      "Shared source/import/graph mechanics remain under scripts/w21_architecture.",
+      "Historical policy is non-CURRENT.",
+      "CURRENT semantics live in CURRENT-owned policy/checker/tests.",
+      "Future CURRENT product grammar belongs in CURRENT augmentation.",
+      "No graph-engine code move occurred."
+    ],
+    "production_or_engine_move_required": false,
+    "status": "FORMALLY_ACCEPTED_BY_USER"
+  },
+  "predecessor_artifacts": [
+    {
+      "path": "quality/w23/cycle_report_after.json",
+      "role": "accepted immutable cycle predecessor",
+      "sha256": "e8f5236fd9ba8c5d20e5e384eef6bbce60b2b8009369890b13e7e39f7731485f"
+    },
+    {
+      "path": "quality/w23/cycle_report_after_lock_ownership.json",
+      "role": "accepted immutable lock successor",
+      "sha256": "baba1da510914f2e8d355a4a983e97a7d3afccc66da341a479cb6783ec1e5389"
+    },
+    {
+      "path": "quality/w23/planning_structural_disposition.json",
+      "role": "accepted planning retention evidence",
+      "sha256": "f501b053ec98cbdec25f75160f7cca2761a750cc455ef66b1c5abbd34a7f9034"
+    },
+    {
+      "path": "quality/w23/compatibility_retirement.json",
+      "role": "authenticated immutable historical Phase-0 inventory"
+    }
+  ],
+  "production_identity": {
+    "cycle": {
+      "largest_family_count": 4,
+      "total_cross_domain_family_membership": 4
+    },
+    "edges": 3124,
+    "f1": "separated",
+    "f2": "exact frozen accepted 11-member component",
+    "modules": 883,
+    "production_delta": {
+      "added": 0,
+      "modified": 0,
+      "removed": 26
+    },
+    "production_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+    "semantic_graph_sha256": "e13f188a7e1e887918c32fb8de938f93b641eebf21e104d78f3cd4d74b9d6075"
+  },
+  "schema_version": 1,
+  "selected_production_evidence": {
+    "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+    "role": "accepted immutable production identity predecessor",
+    "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1"
+  },
+  "support_dispositions": [
+    {
+      "authenticated_record_ids": [
+        "W21-CB-META-001"
+      ],
+      "canonical_owner": "llm_agent.agent.operation.spec.SkillSpec",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-SKILLS-DESCRIPTOR-SKILLSPEC",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.skills.descriptor",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded symbol projection",
+      "production_consumers": [],
+      "reason": "Preserve the accepted source compatibility name while preventing facade growth.",
+      "retirement_condition": "Separate bounded support decision and exact consumer proof.",
+      "support_basis": "Accepted bounded compatibility decision; direct identity alias only.",
+      "symbols": [
+        "SkillSpec"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-META-002"
+      ],
+      "canonical_owner": "llm_agent.agent.operation.catalog",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-SKILLS-CATALOG",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.skills.catalog",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Preserve the accepted import surface with finite exports.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted finite builtin catalog compatibility projection.",
+      "symbols": [
+        "BUILTIN_SKILL_SPECS",
+        "BUILTIN_SPEC_BY_NAME"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-META-003"
+      ],
+      "canonical_owner": "llm_agent.agent.operation.contracts.CancellationSafetyMode",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-TOOLS-CANCELLATION-SAFETY-MODE",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.contracts",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded symbol projection in mixed implementation module",
+      "production_consumers": [],
+      "reason": "Constrain the projected symbol while leaving neighboring Tool contracts genuine.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted identity-preserving adapter compatibility name.",
+      "symbols": [
+        "CancellationSafetyMode"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-META-005"
+      ],
+      "canonical_owner": "llm_agent.agent.operation.planning_metadata",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-PLANNING-TOOL-METADATA",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.planning.tool_metadata",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Retain the exact planning metadata names as direct imports.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted compatibility projection; no independent metadata definition.",
+      "symbols": [
+        "TOOL_METADATA",
+        "ToolMetadata",
+        "build_metadata_dict",
+        "estimate_step_cost",
+        "get_tool_metadata"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-PATH-001"
+      ],
+      "canonical_owner": "llm_agent.workspace.paths",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": {
+        "llm_agent.agent.health.core": [
+          "legacy_memory_paths",
+          "legacy_restore_points_dir",
+          "legacy_log_file",
+          "legacy_metrics_file",
+          "legacy_health_report_file"
+        ],
+        "llm_agent.agent.memory.memory": [
+          "legacy_memory_paths"
+        ],
+        "llm_agent.agent.reporting.task_report": [
+          "legacy_reports_dir"
+        ],
+        "llm_agent.agent.runtime.config": [
+          "legacy_config_path_defaults"
+        ],
+        "llm_agent.agent.runtime.logging": [
+          "legacy_log_file"
+        ]
+      },
+      "forbidden_new_consumers": true,
+      "id": "C-RUNTIME-PATHS",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.paths",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained 27-export bounded module projection",
+      "production_consumers": [
+        "llm_agent.agent.health.core",
+        "llm_agent.agent.memory.memory",
+        "llm_agent.agent.reporting.task_report",
+        "llm_agent.agent.runtime.config",
+        "llm_agent.agent.runtime.logging"
+      ],
+      "reason": "Retain required current consumers during bounded compatibility window.",
+      "retirement_condition": "Migrate the five exact consumers in a separately authorized unit.",
+      "support_basis": "Accepted exact legacy path consumer disposition; five consumers and symbols are frozen.",
+      "symbols": [
+        "APP_DIRECTORY_NAME",
+        "BENCHMARK_RESULTS_FILE",
+        "CHECKPOINT_FILE",
+        "CHAT_HISTORY_FILE",
+        "HEALTH_REPORT_FILE",
+        "LOG_FILE",
+        "MEMORY_BACKUP_DIR",
+        "MEMORY_DB_FILE",
+        "MEMORY_FILE",
+        "METRICS_FILE",
+        "REPORTS_DIR",
+        "RESTORE_POINTS_DIR",
+        "RUNTIME_DIR",
+        "TASK_TRACKER_JSON",
+        "TASK_TRACKER_MD",
+        "AppHomeOrigin",
+        "AppPaths",
+        "WorkspacePaths",
+        "ensure_runtime_dir",
+        "legacy_checkpoint_file",
+        "legacy_config_path_defaults",
+        "legacy_health_report_file",
+        "legacy_log_file",
+        "legacy_memory_paths",
+        "legacy_metrics_file",
+        "legacy_reports_dir",
+        "legacy_restore_points_dir"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.workspace.context.WorkspaceContext",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-RUNTIME-WORKSPACE-CONTEXT",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.workspace_context",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep existing compatibility path mechanically finite.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted retained projection freeze.",
+      "symbols": [
+        "WorkspaceContext"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.filesystem.path_safety",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-CODE-PATH-SAFETY",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.code.path_safety",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Preserve the explicitly retained code path-safety compatibility surface.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted compatibility freeze with supported-window coverage.",
+      "symbols": [
+        "WorkspacePathError",
+        "is_link_like",
+        "resolve_workspace_path",
+        "workspace_command_argument",
+        "workspace_relative_path"
+      ],
+      "test_consumers": [
+        "tests/unit/runtime/test_app_paths.py"
+      ]
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.application.workspace_recents",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-WORKSPACE-RECENTS",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.interfaces.cli.workspace_recents",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Retain the old import names as finite direct aliases.",
+      "retirement_condition": "Separate bounded support decision after consumer migration.",
+      "support_basis": "Accepted temporary compatibility projection; stronger anti-proxy check remains active.",
+      "symbols": [
+        "load_recent_workspaces",
+        "remember_recent_workspace"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.process.file_lock",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-LOCK-FILE",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.file_lock",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep exact historical lock exports for the accepted bounded window.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted historical lock projection freeze.",
+      "symbols": [
+        "OPEN_BINARY",
+        "lock_descriptor",
+        "read_descriptor",
+        "try_lock_descriptor",
+        "unlock_descriptor"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.process.instance_lock",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-LOCK-INSTANCE",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.instance_lock",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep exact historical lock exports for the accepted bounded window.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted historical lock projection freeze.",
+      "symbols": [
+        "InstanceLock",
+        "InstanceLockError"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.process.lock_record",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-LOCK-RECORD",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.lock_record",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep exact historical lock exports for the accepted bounded window.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted historical lock projection freeze.",
+      "symbols": [
+        "InvalidLockRecord",
+        "LockRecord",
+        "read_lock_record"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.process.process_identity",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-LOCK-PROCESS-IDENTITY",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.process_identity",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep exact historical lock exports for the accepted bounded window.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted historical lock projection freeze.",
+      "symbols": [
+        "OwnerLiveness",
+        "OwnerStatus",
+        "ProcessOwnerLiveness",
+        "current_process_start_id",
+        "process_start_id"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.filesystem.lock_filesystem",
+      "classification": "TEMPORARY_BOUNDED_PROJECTION_RETAIN",
+      "exact_consumer": [],
+      "forbidden_new_consumers": true,
+      "id": "C-LOCK-FILESYSTEM",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.lock_filesystem",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained bounded module projection",
+      "production_consumers": [],
+      "reason": "Keep exact historical lock exports for the accepted bounded window.",
+      "retirement_condition": "Separate bounded support decision.",
+      "support_basis": "Accepted historical lock projection freeze.",
+      "symbols": [
+        "UnsafeLockPathError",
+        "descriptor_matches_path",
+        "is_safe_regular",
+        "open_verified",
+        "sync_parent_directory",
+        "unlink_if_observed",
+        "unlink_if_same_stat",
+        "validate_final_entry"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.storage.json_persistence",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-memory-json-persistence",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.memory.json_persistence",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical JSON persistence behavior remains available.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.filesystem.path_safety",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-memory-path-safety",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.memory.path_safety",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; path-safety behavior remains canonical.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.filesystem.primitives",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-runtime-filesystem-primitives",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.filesystem_primitives",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical filesystem primitives remain.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.workspace.legacy_paths",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-runtime-legacy-paths",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.legacy_paths",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical legacy path behavior remains.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.filesystem.path_safety",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-runtime-path-safety",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.path_safety",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; the distinct agent.code.path_safety projection is retained.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.workspace.trace_paths",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-runtime-workspace-trace-paths",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.runtime.workspace_trace_paths",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical trace path owner remains.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.agent.operation.provenance",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-tools-provenance",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.provenance",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical provenance implementation remains.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.process.tree",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-tools-process-tree",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.process_tree",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; historical tests did not establish import-path support.",
+      "symbols": [],
+      "test_consumers": [
+        "tests/unit/tools/test_process_tree.py (migrated to canonical owner)"
+      ]
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.process.streams",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-tools-stdio-streams",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.stdio_streams",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; genuine STDIO adapter/process/cleanup remain.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.stdio_launcher",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-tools-stdio-launcher",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.stdio_launcher",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted retirement; canonical launcher remains.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_codec",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-codec",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_codec",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_document",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-document",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_document",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_errors",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-errors",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_errors",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_lock",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-lock",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_lock",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_migration",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-migration",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_migration",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_service",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-service",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_service",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_storage",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-storage",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_storage",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_catalog_validation",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-catalog-validation",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_catalog_validation",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_manifest_parser",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-manifest-parser",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_manifest_parser",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_path",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-path",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_path",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_registry",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-registry",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_registry",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.extension_state",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-extension-state",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_state",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.workspace_extensions_codec",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-workspace-extensions-codec",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.workspace_extensions_codec",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.workspace_extensions_resolver",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-workspace-extensions-resolver",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.workspace_extensions_resolver",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.workspace_extensions_service",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-workspace-extensions-service",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.workspace_extensions_service",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W23-V007-COMPATIBILITY-RETIREMENT-001"
+      ],
+      "canonical_owner": "llm_agent.extensions.workspace_extensions_storage",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "id": "D-workspace-extensions-storage",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.workspace_extensions_storage",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted unsupported wildcard facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-PERSIST-001"
+      ],
+      "canonical_owner": "llm_agent.agent.tools.contracts and explicit result adapters",
+      "classification": "DURABLE_COMPATIBILITY_RETAIN",
+      "id": "A-DURABLE-RESULT-HISTORY",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.contracts",
+      "package_reexports": [],
+      "persisted_identity_requirement": true,
+      "presence": "retained",
+      "production_consumers": [],
+      "support_basis": "Accepted persisted/history compatibility obligation.",
+      "symbols": [
+        "LegacyToolResult",
+        "SerializedToolHistoryEntry",
+        "legacy result/history serialization"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-CHECKPOINT-001"
+      ],
+      "canonical_owner": "Existing checkpoint, continuity, and storage-migration owners",
+      "classification": "DURABLE_COMPATIBILITY_RETAIN",
+      "id": "A-DURABLE-CHECKPOINT",
+      "installed_probe_consumers": [],
+      "module": "checkpoint schema v2 and historical reader/restoration/migration paths",
+      "package_reexports": [],
+      "persisted_identity_requirement": true,
+      "presence": "retained",
+      "production_consumers": [],
+      "support_basis": "Accepted durable checkpoint/history compatibility decision.",
+      "symbols": [
+        "checkpoint schema v2",
+        "historical readers",
+        "restoration",
+        "supported migrations"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-CB-PATH-001"
+      ],
+      "canonical_owner": "llm_agent.workspace.paths",
+      "classification": "DURABLE_COMPATIBILITY_RETAIN",
+      "id": "A-DURABLE-LEGACY-PATH-BEHAVIOR",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.workspace.paths",
+      "package_reexports": [],
+      "persisted_identity_requirement": true,
+      "presence": "retained canonical behavior",
+      "production_consumers": [],
+      "support_basis": "Accepted data-location compatibility obligation.",
+      "symbols": [
+        "supported legacy data-location behavior"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-ADAPTER-BUILTIN-TOOLS"
+      ],
+      "canonical_owner": "Agent tool/skill adaptation",
+      "classification": "FUNCTIONAL_ADAPTER_RETAIN",
+      "id": "B-BUILTIN-TOOL-ADAPTER",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.builtin_adapter",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained functional implementation",
+      "production_consumers": [],
+      "support_basis": "Accepted functional adapter disposition.",
+      "symbols": [
+        "BuiltinToolAdapter"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [
+        "W21-ADAPTER-SKILL-TOOL-REGISTRY"
+      ],
+      "canonical_owner": "Agent skill loading and tool adapter construction",
+      "classification": "FUNCTIONAL_ADAPTER_RETAIN",
+      "id": "B-SKILL-TOOL-REGISTRY",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.skills",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained functional implementation",
+      "production_consumers": [],
+      "support_basis": "Accepted public skill-loading construction adapter disposition.",
+      "symbols": [
+        "load_tool_registry"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "llm_agent.extensions and Agent extension integration",
+      "classification": "FUNCTIONAL_ADAPTER_RETAIN",
+      "id": "B-EXTENSION-RUNTIME",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.extension_bootstrap and extension_runtime",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained functional implementation",
+      "production_consumers": [],
+      "support_basis": "Accepted genuine extension runtime exclusion.",
+      "symbols": [
+        "genuine extension bootstrap/runtime"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "Canonical process and extension owners",
+      "classification": "FUNCTIONAL_ADAPTER_RETAIN",
+      "id": "B-STDIO-RUNTIME",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.agent.tools.stdio_adapter, stdio_process, stdio_cleanup",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained functional implementation",
+      "production_consumers": [],
+      "support_basis": "Accepted genuine STDIO runtime exclusion.",
+      "symbols": [
+        "stdio adapter",
+        "process handling",
+        "cleanup"
+      ],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "Narrow Application use-case modules",
+      "classification": "RETIRED_ALREADY",
+      "id": "E-APPLICATION-AGENT-BOUNDARY",
+      "installed_probe_consumers": [],
+      "module": "llm_agent.application.agent_boundary",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "absent",
+      "production_consumers": [],
+      "support_basis": "Accepted broker contraction; CURRENT absence remains enforced.",
+      "symbols": [],
+      "test_consumers": []
+    },
+    {
+      "authenticated_record_ids": [],
+      "canonical_owner": "Canonical implementations",
+      "classification": "CANONICAL_IMPLEMENTATION_NOT_COMPATIBILITY",
+      "id": "F-CANONICAL-IMPLEMENTATIONS",
+      "installed_probe_consumers": [],
+      "module": "Canonical llm_agent Platform, operation, ToolDescriptor/ToolResult/history, and checkpoint/history implementation modules",
+      "package_reexports": [],
+      "persisted_identity_requirement": false,
+      "presence": "retained",
+      "production_consumers": [],
+      "support_basis": "Canonical behavior and implementations are outside compatibility-facade retirement.",
+      "symbols": [],
+      "test_consumers": []
+    }
+  ],
+  "unit": "W23_V007_FINAL_CURRENT_COMPATIBILITY_ZERO_GROWTH_ENFORCEMENT"
+}

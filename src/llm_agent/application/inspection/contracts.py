@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,40 @@ class DiagnosticExportRequest:
     output: str | Path | None = None
     force: bool = False
     include_bookmarks: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class InspectionReadRequest:
+    """Transport inputs for one standalone inspection read."""
+
+    run_id: str | None = None
+    mode: str = "snapshot"
+    limit: int = 100
+    after_sequence: int = 0
+    selected_sequence: int | None = None
+    sequence_start: int | None = None
+    sequence_end: int | None = None
+    sources: Iterable[str] | None = None
+    event_kinds: Iterable[str] | None = None
+    activity_categories: Iterable[str] | None = None
+    severities: Iterable[str] | None = None
+    statuses: Iterable[str] | None = None
+    task_id: str | None = None
+    root_task_id: str | None = None
+    step: int | None = None
+    correlation_id: str | None = None
+    invocation_id: str | None = None
+    time_start: str | None = None
+    time_end: str | None = None
+    search: str | None = None
+    bookmarked_only: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class InspectionListRequest:
+    """Inputs for listing retained runs."""
+
+    limit: int = 100
 
 
 @dataclass(frozen=True, slots=True)

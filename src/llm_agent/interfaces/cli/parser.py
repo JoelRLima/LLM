@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     engineering_run = engineering_commands.add_parser("run", parents=[common])
     engineering_run.add_argument("operation_id", nargs="?")
     engineering_run.add_argument("--params-json")
-    engineering_run.add_argument("--fault-json", help="plano FaultPlanV1 JSON autorizado para a execução determinística")
+    engineering_run.add_argument("--fault-json", help="plano de falhas JSON autorizado para a execução determinística")
     engineering_run.add_argument("--allow-external", action="store_true")
     engineering_run.add_argument("--allow-network", action="store_true")
     engineering_run.add_argument("--no-input", action="store_true")

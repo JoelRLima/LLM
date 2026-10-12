@@ -72,34 +72,40 @@ def strongly_connected(nodes: set[str], edges: list[dict[str, Any]]) -> list[lis
     lowlinks: dict[str, int] = {}
     result: list[list[str]] = []
 
-    def visit(node: str) -> None:
-        nonlocal index
-        indices[node] = lowlinks[node] = index
-        index += 1
-        stack.append(node)
-        on_stack.add(node)
-        for target in sorted(adjacency[node]):
-            if target not in indices:
-                visit(target)
-                lowlinks[node] = min(lowlinks[node], lowlinks[target])
-            elif target in on_stack:
-                lowlinks[node] = min(lowlinks[node], indices[target])
-        if lowlinks[node] != indices[node]:
-            return
-        component: list[str] = []
-        while True:
-            member = stack.pop()
-            on_stack.remove(member)
-            component.append(member)
-            if member == node:
-                break
-        if len(component) > 1 or node in adjacency[node]:
-            result.append(sorted(component))
-
+    state: dict[str, Any] = {"index": index, "stack": stack, "on_stack": on_stack, "indices": indices,
+             "lowlinks": lowlinks, "result": result, "adjacency": adjacency}
     for node in sorted(nodes):
-        if node not in indices:
-            visit(node)
+        if node not in state["indices"]:
+            _visit_component(node, state)
     return sorted(result, key=lambda members: (len(members), members))
+
+
+def _visit_component(node: str, state: dict[str, Any]) -> None:
+    indices = state["indices"]
+    lowlinks = state["lowlinks"]
+    indices[node] = lowlinks[node] = state["index"]
+    state["index"] += 1
+    stack = state["stack"]
+    on_stack = state["on_stack"]
+    stack.append(node)
+    on_stack.add(node)
+    for target in sorted(state["adjacency"][node]):
+        if target not in indices:
+            _visit_component(target, state)
+            lowlinks[node] = min(lowlinks[node], lowlinks[target])
+        elif target in on_stack:
+            lowlinks[node] = min(lowlinks[node], indices[target])
+    if lowlinks[node] != indices[node]:
+        return
+    component: list[str] = []
+    while True:
+        member = stack.pop()
+        on_stack.remove(member)
+        component.append(member)
+        if member == node:
+            break
+    if len(component) > 1 or node in state["adjacency"][node]:
+        state["result"].append(sorted(component))
 
 
 def domain_family(module: str, owner: str) -> str:
@@ -124,36 +130,31 @@ def test_consumers(root: Path, modules: set[str]) -> dict[str, list[str]]:
         except (OSError, SyntaxError, UnicodeError):
             continue
         for node in ast.walk(tree):
-            candidates: list[str] = []
-            if isinstance(node, ast.Import):
-                candidates.extend(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                base = node.module or ""
-                candidates.extend([base, *(f"{base}.{alias.name}" for alias in node.names if alias.name != "*")])
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module" and node.args:
-                try:
-                    value = ast.literal_eval(node.args[0])
-                except (ValueError, TypeError):
-                    value = None
-                if isinstance(value, str):
-                    candidates.append(value)
-            for candidate in candidates:
+            for candidate in _test_import_candidates(node):
                 module = nearest_module(candidate, modules)
                 if module:
                     consumers[module].add(relative)
     return {module: sorted(paths) for module, paths in sorted(consumers.items())}
 
 
+def _test_import_candidates(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom) and node.level == 0:
+        base = node.module or ""
+        return [base, *(f"{base}.{alias.name}" for alias in node.names if alias.name != "*")]
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module" and node.args:
+        try:
+            value = ast.literal_eval(node.args[0])
+        except (ValueError, TypeError):
+            return []
+        return [value] if isinstance(value, str) else []
+    return []
+
+
 def boundary_inventory(root: Path, modules: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     boundary = "llm_agent.application.agent_boundary"
-    boundary_path = root / "src/llm_agent/application/agent_boundary.py"
-    tree = ast.parse(boundary_path.read_text(encoding="utf-8"), filename="src/llm_agent/application/agent_boundary.py")
-    mapping_node = next((node.value for node in tree.body if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "_EXPORTS"), None)
-    if mapping_node is None:
-        raise ValueError("agent_boundary._EXPORTS literal mapping is missing")
-    exports = ast.literal_eval(mapping_node)
-    if not isinstance(exports, dict):
-        raise ValueError("agent_boundary._EXPORTS is not a literal mapping")
+    exports = _boundary_exports(root)
     consumers: dict[str, dict[str, set[str]]] = defaultdict(lambda: {"symbols": set(), "module_import": set()})
     paths = sorted((root / "src").rglob("*.py")) + sorted((root / "tests").rglob("*.py"))
     for path in paths:
@@ -162,71 +163,14 @@ def boundary_inventory(root: Path, modules: set[str]) -> tuple[list[dict[str, An
             parsed = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
         except (OSError, SyntaxError, UnicodeError):
             continue
-        aliases: set[str] = set()
-        component_aliases: set[str] = set()
-        imported_symbols: dict[str, str] = {}
-        found: set[str] = set()
-        for node in ast.walk(parsed):
-            if isinstance(node, ast.ImportFrom) and node.module in {boundary, "llm_agent.application"}:
-                for alias in node.names:
-                    if node.module == boundary and alias.name in exports:
-                        found.add(alias.name)
-                        imported_symbols[alias.asname or alias.name] = alias.name
-                    elif node.module == boundary and alias.name == "*":
-                        found.update(exports)
-                    elif node.module == "llm_agent.application" and alias.name == "agent_boundary":
-                        component_aliases.add(alias.asname or alias.name)
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == boundary:
-                        aliases.add(alias.asname or "llm_agent")
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module" and node.args:
-                try:
-                    value = ast.literal_eval(node.args[0])
-                except (ValueError, TypeError):
-                    value = None
-                if value == boundary:
-                    found.update(exports)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                prefix = boundary + "."
-                if node.value.startswith(prefix):
-                    symbol = node.value[len(prefix):].split(".", 1)[0]
-                    if symbol in exports:
-                        found.add(symbol)
-        for node in ast.walk(parsed):
-            if not isinstance(node, ast.Attribute) or node.attr not in exports:
-                continue
-            if isinstance(node.value, ast.Name) and node.value.id in component_aliases | aliases:
-                found.add(node.attr)
-            if isinstance(node.value, ast.Name) and node.value.id in imported_symbols:
-                found.add(imported_symbols[node.value.id])
-            parts: list[str] = []
-            current: ast.AST = node
-            while isinstance(current, ast.Attribute):
-                parts.append(current.attr)
-                current = current.value
-            if isinstance(current, ast.Name):
-                parts.append(current.id)
-                parts.reverse()
-                if ".".join(parts[:-1]) == boundary:
-                    found.add(node.attr)
-                elif parts[0] in aliases and len(parts) > 1:
-                    found.add(node.attr)
+        aliases, component_aliases, imported_symbols, found = _boundary_file_symbols(parsed, boundary, exports)
         if not found and not (aliases or component_aliases):
             continue
         consumers[relative]["symbols"].update(found)
         if aliases or component_aliases or found:
             consumers[relative]["module_import"].add(boundary)
 
-    export_rows: list[dict[str, Any]] = []
-    registry_edges: list[dict[str, Any]] = []
-    for symbol, pair in sorted(exports.items()):
-        target_module, target_symbol = pair
-        production = sorted(path for path, row in consumers.items() if path.startswith("src/") and symbol in row["symbols"])
-        tests = sorted(path for path, row in consumers.items() if path.startswith("tests/") and symbol in row["symbols"])
-        export_rows.append({"symbol": symbol, "target_module": target_module, "target_symbol": target_symbol, "production_consumers": production, "test_consumers": tests})
-        if target_module in modules:
-            registry_edges.append({"source_module": boundary, "destination_module": target_module, "edge_kinds": ["symbol_registry"], "evidence": [f"src/llm_agent/application/agent_boundary.py:_EXPORTS:{symbol}"]})
+    export_rows, registry_edges = _boundary_export_rows(boundary, exports, consumers, modules)
     consumer_rows = [
         {"path": path, "symbols": sorted(row["symbols"]), "module_import": bool(row["module_import"])}
         for path, row in sorted(consumers.items())
@@ -234,126 +178,103 @@ def boundary_inventory(root: Path, modules: set[str]) -> tuple[list[dict[str, An
     return export_rows, consumer_rows, registry_edges
 
 
+def _boundary_exports(root: Path) -> dict[str, tuple[str, str]]:
+    relative = "src/llm_agent/application/agent_boundary.py"
+    path = root / relative
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+    mapping = next((node.value for node in tree.body if isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name) and node.target.id == "_EXPORTS"), None)
+    if mapping is None:
+        raise ValueError("agent_boundary._EXPORTS literal mapping is missing")
+    exports = ast.literal_eval(mapping)
+    if not isinstance(exports, dict):
+        raise ValueError("agent_boundary._EXPORTS is not a literal mapping")
+    return exports
+
+
+def _boundary_file_symbols(tree: ast.Module, boundary: str, exports: dict[str, Any]) -> tuple[set[str], set[str], dict[str, str], set[str]]:
+    aliases: set[str] = set()
+    component_aliases: set[str] = set()
+    imported_symbols: dict[str, str] = {}
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        _collect_boundary_import(node, boundary, exports, aliases, component_aliases, imported_symbols, found)
+        _collect_boundary_string(node, boundary, exports, found)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in exports:
+            _collect_boundary_attribute(node, boundary, aliases, component_aliases, imported_symbols, found)
+    return aliases, component_aliases, imported_symbols, found
+
+
+def _collect_boundary_import(node: ast.AST, boundary: str, exports: dict[str, Any], aliases: set[str], component_aliases: set[str], imported: dict[str, str], found: set[str]) -> None:
+    if isinstance(node, ast.ImportFrom) and node.module in {boundary, "llm_agent.application"}:
+        for alias in node.names:
+            if node.module == boundary and alias.name in exports:
+                found.add(alias.name)
+                imported[alias.asname or alias.name] = alias.name
+            elif node.module == boundary and alias.name == "*":
+                found.update(exports)
+            elif node.module == "llm_agent.application" and alias.name == "agent_boundary":
+                component_aliases.add(alias.asname or alias.name)
+    elif isinstance(node, ast.Import):
+        aliases.update(alias.asname or "llm_agent" for alias in node.names if alias.name == boundary)
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module" and node.args:
+        try:
+            imported_module = ast.literal_eval(node.args[0])
+        except (ValueError, TypeError):
+            return
+        if imported_module == boundary:
+            found.update(exports)
+
+
+def _collect_boundary_string(node: ast.AST, boundary: str, exports: dict[str, Any], found: set[str]) -> None:
+    if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+        return
+    prefix = boundary + "."
+    if node.value.startswith(prefix):
+        symbol = node.value[len(prefix):].split(".", 1)[0]
+        if symbol in exports:
+            found.add(symbol)
+
+
+def _collect_boundary_attribute(node: ast.Attribute, boundary: str, aliases: set[str], component_aliases: set[str], imported: dict[str, str], found: set[str]) -> None:
+    if isinstance(node.value, ast.Name) and node.value.id in component_aliases | aliases:
+        found.add(node.attr)
+    if isinstance(node.value, ast.Name) and node.value.id in imported:
+        found.add(imported[node.value.id])
+    parts: list[str] = []
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+        parts.reverse()
+        if ".".join(parts[:-1]) == boundary or (parts[0] in aliases and len(parts) > 1):
+            found.add(node.attr)
+
+
+def _boundary_export_rows(boundary: str, exports: dict[str, Any], consumers: dict[str, dict[str, set[str]]], modules: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    for symbol, pair in sorted(exports.items()):
+        target_module, target_symbol = pair
+        production = sorted(path for path, row in consumers.items() if path.startswith("src/") and symbol in row["symbols"])
+        tests = sorted(path for path, row in consumers.items() if path.startswith("tests/") and symbol in row["symbols"])
+        rows.append({"symbol": symbol, "target_module": target_module, "target_symbol": target_symbol, "production_consumers": production, "test_consumers": tests})
+        if target_module in modules:
+            edges.append({"source_module": boundary, "destination_module": target_module, "edge_kinds": ["symbol_registry"], "evidence": [f"src/llm_agent/application/agent_boundary.py:_EXPORTS:{symbol}"]})
+    return rows, edges
+
+
 def build_inventory(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     root = root.resolve()
-    head = _git(root, "rev-parse", "HEAD")
-    baseline_tree = _git(root, "rev-parse", "HEAD^{tree}")
-    if head != AUTHORITY_COMMIT or baseline_tree != AUTHORITY_TREE:
-        raise ValueError(f"Phase-0 authority mismatch: HEAD={head} tree={baseline_tree}")
-    tracked_sources = {
-        path for path in _git(root, "ls-tree", "-r", "--name-only", "HEAD", "--", "src/llm_agent").splitlines()
-        if path.endswith(".py")
-    }
-    worktree_sources = {path.relative_to(root).as_posix() for path in (root / "src/llm_agent").rglob("*.py")}
-    if tracked_sources != worktree_sources:
-        raise ValueError("Phase-0 production source paths differ from the authority tree")
-    if _git(root, "status", "--porcelain=v1", "--", "src/llm_agent", "scripts/w21_architecture", "quality/architecture_policy.json", "quality/architecture_compatibility.json", "quality/architecture_w22_policy.json"):
-        raise ValueError("Phase-0 graph inputs have tracked or untracked worktree changes")
-    sys.path.insert(0, str(root))
-    from scripts.w21_architecture import RepositorySource, build_graph
-    from scripts.w21_architecture.policy import w22_owner_for_module
-
-    source = RepositorySource(root, "final-w22")
-    graph = build_graph(source)
-    policy = json.loads((root / "quality/architecture_w22_policy.json").read_text(encoding="utf-8"))
-    module_names = {str(row["module"]) for row in graph.modules}
-    paths = sorted((root / "src/llm_agent").rglob("*.py"))
-    if len(paths) != len(module_names):
-        raise ValueError(f"source/graph count mismatch: {len(paths)} source files vs {len(module_names)} modules")
-    owners: dict[str, str] = {}
-    families: dict[str, str] = {}
-    module_rows: list[dict[str, Any]] = []
-    for row in graph.modules:
-        module = str(row["module"])
-        owner = w22_owner_for_module(module, source.layout, policy)
-        if owner is None:
-            raise ValueError(f"unclassified module owner: {module}")
-        path = root / "src" / str(row["path"])
-        owners[module] = owner
-        families[module] = domain_family(module, owner)
-        module_rows.append({
-            "module": module,
-            "path": path.relative_to(root).as_posix(),
-            "owner": owner,
-            "domain_family": families[module],
-            "package_family": ".".join(module.split(".")[:2]),
-            "loc": len(path.read_text(encoding="utf-8").splitlines()),
-        })
-    top_package_counts: dict[str, int] = defaultdict(int)
-    agent_package_counts: dict[str, int] = defaultdict(int)
-    for module in module_names:
-        parts = module.split(".")
-        if len(parts) > 1:
-            top_package_counts[parts[1]] += 1
-        if len(parts) > 2 and parts[1] == "agent":
-            agent_package_counts[parts[2]] += 1
-    prefix_records: dict[str, dict[str, list[str]]] = {}
-    for family, prefixes in PREFIX_FAMILIES.items():
-        prefix_records[family] = {}
-        for prefix in prefixes:
-            matches = []
-            for module in module_names:
-                parts = module.split(".")
-                if family == "agent_root":
-                    in_scope = len(parts) == 3 and parts[1] == "agent"
-                else:
-                    package = "llm_agent.agent." + family
-                    in_scope = module.startswith(package + ".")
-                leaf = parts[-1]
-                if in_scope and leaf.startswith(prefix):
-                    matches.append(module)
-            prefix_records[family][prefix] = sorted(matches)
-    edges: list[dict[str, Any]] = []
-    for edge in graph.architecture_union_edges:
-        source_module, destination = str(edge["source_module"]), str(edge["destination_module"])
-        edges.append({
-            "source_module": source_module,
-            "destination_module": destination,
-            "edge_kinds": sorted(str(kind) for kind in edge.get("edge_kinds", [])),
-            "evidence": sorted(str(item) for item in edge.get("evidence", [])),
-            "source_owner": owners.get(source_module, "UNKNOWN"),
-            "destination_owner": owners.get(destination, "UNKNOWN"),
-            "source_family": families.get(source_module, "UNKNOWN"),
-            "destination_family": families.get(destination, "UNKNOWN"),
-        })
-    exports, broker_consumers, broker_edges = boundary_inventory(root, module_names)
-    edges.extend({
-        **edge,
-        "source_owner": owners.get(edge["source_module"], "UNKNOWN"),
-        "destination_owner": owners.get(edge["destination_module"], "UNKNOWN"),
-        "source_family": families.get(edge["source_module"], "UNKNOWN"),
-        "destination_family": families.get(edge["destination_module"], "UNKNOWN"),
-    } for edge in broker_edges)
-    edges.sort(key=lambda edge: (edge["source_module"], edge["destination_module"], edge["edge_kinds"], edge["evidence"]))
-
-    dynamic_calls: list[dict[str, Any]] = []
-    for row in graph.modules:
-        module = str(row["module"])
-        path = root / "src" / str(row["path"])
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.relative_to(root).as_posix())
-        except (OSError, SyntaxError, UnicodeError):
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            call = ast.unparse(node.func)
-            if not (call.endswith("import_module") or call == "__import__"):
-                continue
-            try:
-                literal = ast.literal_eval(node.args[0]) if node.args else None
-            except (ValueError, TypeError):
-                literal = None
-            dynamic_calls.append({
-                "source_module": module,
-                "path": path.relative_to(root).as_posix(),
-                "line": node.lineno,
-                "call": call,
-                "literal_target": literal if isinstance(literal, str) else None,
-                "resolved_target": nearest_module(literal, module_names) if isinstance(literal, str) else None,
-            })
-    dynamic_calls.sort(key=lambda item: (item["path"], item["line"], item["call"]))
-
+    head, baseline_tree, source, graph, policy, module_names, paths = _phase0_authority_inputs(root)
+    owners, families, module_rows, top_package_counts, agent_package_counts, prefix_records = _phase0_module_inventory(
+        root, source, graph, policy, module_names
+    )
+    edges, exports, broker_consumers = _phase0_edges(root, module_names, graph, owners, families)
+    dynamic_calls = _phase0_dynamic_calls(root, graph, module_names)
     module_sccs = strongly_connected(module_names, edges)
     cross_domain_sccs = [component for component in module_sccs if len({families[name] for name in component}) > 1]
     family_edges = [
@@ -383,7 +304,155 @@ def build_inventory(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     raw_bytes = canonical_bytes(raw)
     cross_memberships = [len({families[name] for name in component}) for component in cross_domain_sccs]
     largest_families = max(cross_memberships, default=0)
-    summary = {
+    summary = _phase0_summary(
+        root, head, baseline_tree, raw_bytes, module_rows, edges, owners, top_package_counts,
+        agent_package_counts, exports, broker_consumers, dynamic_calls, module_sccs,
+        cross_domain_sccs, largest_families, cross_memberships, package_sccs, forbidden,
+        forbidden_counts, prefix_records, families,
+    )
+    return raw, summary
+
+
+def _phase0_authority_inputs(root: Path) -> tuple[str, str, Any, Any, dict[str, Any], set[str], list[Path]]:
+    head = _git(root, "rev-parse", "HEAD")
+    baseline_tree = _git(root, "rev-parse", "HEAD^{tree}")
+    if head != AUTHORITY_COMMIT or baseline_tree != AUTHORITY_TREE:
+        raise ValueError(f"Phase-0 authority mismatch: HEAD={head} tree={baseline_tree}")
+    tracked_sources = {
+        path for path in _git(root, "ls-tree", "-r", "--name-only", "HEAD", "--", "src/llm_agent").splitlines()
+        if path.endswith(".py")
+    }
+    worktree_sources = {path.relative_to(root).as_posix() for path in (root / "src/llm_agent").rglob("*.py")}
+    if tracked_sources != worktree_sources:
+        raise ValueError("Phase-0 production source paths differ from the authority tree")
+    if _git(root, "status", "--porcelain=v1", "--", "src/llm_agent", "scripts/w21_architecture", "quality/architecture_policy.json", "quality/architecture_compatibility.json", "quality/architecture_w22_policy.json"):
+        raise ValueError("Phase-0 graph inputs have tracked or untracked worktree changes")
+    sys.path.insert(0, str(root))
+    from scripts.w21_architecture import RepositorySource, build_graph
+    source = RepositorySource(root, "final-w22")
+    graph = build_graph(source)
+    policy = json.loads((root / "quality/architecture_w22_policy.json").read_text(encoding="utf-8"))
+    module_names = {str(row["module"]) for row in graph.modules}
+    paths = sorted((root / "src/llm_agent").rglob("*.py"))
+    if len(paths) != len(module_names):
+        raise ValueError(f"source/graph count mismatch: {len(paths)} source files vs {len(module_names)} modules")
+    return head, baseline_tree, source, graph, policy, module_names, paths
+
+
+def _phase0_module_inventory(root: Path, source: Any, graph: Any, policy: dict[str, Any], module_names: set[str]) -> tuple[dict[str, str], dict[str, str], list[dict[str, Any]], dict[str, int], dict[str, int], dict[str, dict[str, list[str]]]]:
+    from scripts.w21_architecture.policy import w22_owner_for_module
+    owners: dict[str, str] = {}
+    families: dict[str, str] = {}
+    module_rows: list[dict[str, Any]] = []
+    for row in graph.modules:
+        module = str(row["module"])
+        owner = w22_owner_for_module(module, source.layout, policy)
+        if owner is None:
+            raise ValueError(f"unclassified module owner: {module}")
+        path = root / "src" / str(row["path"])
+        owners[module] = owner
+        families[module] = domain_family(module, owner)
+        module_rows.append({
+            "module": module,
+            "path": path.relative_to(root).as_posix(),
+            "owner": owner,
+            "domain_family": families[module],
+            "package_family": ".".join(module.split(".")[:2]),
+            "loc": len(path.read_text(encoding="utf-8").splitlines()),
+        })
+    top_package_counts, agent_package_counts = _phase0_package_counts(module_names)
+    prefix_records: dict[str, dict[str, list[str]]] = {}
+    for family, prefixes in PREFIX_FAMILIES.items():
+        prefix_records[family] = {}
+        for prefix in prefixes:
+            matches = []
+            for module in module_names:
+                parts = module.split(".")
+                if family == "agent_root":
+                    in_scope = len(parts) == 3 and parts[1] == "agent"
+                else:
+                    package = "llm_agent.agent." + family
+                    in_scope = module.startswith(package + ".")
+                leaf = parts[-1]
+                if in_scope and leaf.startswith(prefix):
+                    matches.append(module)
+            prefix_records[family][prefix] = sorted(matches)
+    return owners, families, module_rows, dict(top_package_counts), dict(agent_package_counts), prefix_records
+
+
+def _phase0_package_counts(module_names: set[str]) -> tuple[dict[str, int], dict[str, int]]:
+    top_package_counts: dict[str, int] = defaultdict(int)
+    agent_package_counts: dict[str, int] = defaultdict(int)
+    for module in module_names:
+        parts = module.split(".")
+        if len(parts) > 1:
+            top_package_counts[parts[1]] += 1
+        if len(parts) > 2 and parts[1] == "agent":
+            agent_package_counts[parts[2]] += 1
+    return dict(top_package_counts), dict(agent_package_counts)
+
+
+def _phase0_edges(root: Path, module_names: set[str], graph: Any, owners: dict[str, str], families: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    edges: list[dict[str, Any]] = []
+    for edge in graph.architecture_union_edges:
+        source_module, destination = str(edge["source_module"]), str(edge["destination_module"])
+        edges.append({
+            "source_module": source_module,
+            "destination_module": destination,
+            "edge_kinds": sorted(str(kind) for kind in edge.get("edge_kinds", [])),
+            "evidence": sorted(str(item) for item in edge.get("evidence", [])),
+            "source_owner": owners.get(source_module, "UNKNOWN"),
+            "destination_owner": owners.get(destination, "UNKNOWN"),
+            "source_family": families.get(source_module, "UNKNOWN"),
+            "destination_family": families.get(destination, "UNKNOWN"),
+        })
+    exports, broker_consumers, broker_edges = boundary_inventory(root, module_names)
+    edges.extend({
+        **edge,
+        "source_owner": owners.get(edge["source_module"], "UNKNOWN"),
+        "destination_owner": owners.get(edge["destination_module"], "UNKNOWN"),
+        "source_family": families.get(edge["source_module"], "UNKNOWN"),
+        "destination_family": families.get(edge["destination_module"], "UNKNOWN"),
+    } for edge in broker_edges)
+    edges.sort(key=lambda edge: (edge["source_module"], edge["destination_module"], edge["edge_kinds"], edge["evidence"]))
+
+    return edges, exports, broker_consumers
+
+
+def _phase0_dynamic_calls(root: Path, graph: Any, module_names: set[str]) -> list[dict[str, Any]]:
+    dynamic_calls: list[dict[str, Any]] = []
+    for row in graph.modules:
+        module = str(row["module"])
+        path = root / "src" / str(row["path"])
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.relative_to(root).as_posix())
+        except (OSError, SyntaxError, UnicodeError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call = ast.unparse(node.func)
+            if not (call.endswith("import_module") or call == "__import__"):
+                continue
+            try:
+                literal = ast.literal_eval(node.args[0]) if node.args else None
+            except (ValueError, TypeError):
+                literal = None
+            dynamic_calls.append({
+                "source_module": module,
+                "path": path.relative_to(root).as_posix(),
+                "line": node.lineno,
+                "call": call,
+                "literal_target": literal if isinstance(literal, str) else None,
+                "resolved_target": nearest_module(literal, module_names) if isinstance(literal, str) else None,
+            })
+    dynamic_calls.sort(key=lambda item: (item["path"], item["line"], item["call"]))
+
+    return dynamic_calls
+
+
+def _phase0_summary(root: Path, head: str, baseline_tree: str, raw_bytes: bytes, module_rows: list[dict[str, Any]], edges: list[dict[str, Any]], owners: dict[str, str], top_package_counts: dict[str, int], agent_package_counts: dict[str, int], exports: list[dict[str, Any]], broker_consumers: list[dict[str, Any]], dynamic_calls: list[dict[str, Any]], module_sccs: list[list[str]], cross_domain_sccs: list[list[str]], largest_families: int, cross_memberships: list[int], package_sccs: list[list[str]], forbidden: list[dict[str, Any]], forbidden_counts: dict[str, int], prefix_records: dict[str, dict[str, list[str]]], families: dict[str, str]) -> dict[str, Any]:
+    return {
         "schema_version": SCHEMA_VERSION,
         "generator": {"id": GENERATOR_ID, "graph_engine": "scripts/w21_architecture.graph/imports@authority-tree", "schema_version": SCHEMA_VERSION},
         "owner_classification_source": "quality/architecture_w22_policy.json; observed placement map pending W23 CURRENT disposition",
@@ -419,7 +488,6 @@ def build_inventory(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "prefix_family_classification": prefix_records,
         "loc_class_boundaries": {"small_max": 100, "medium_max": 300, "large_min": 301},
     }
-    return raw, summary
 
 
 def main() -> int:

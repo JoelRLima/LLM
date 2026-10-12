@@ -12,16 +12,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ntpath
 import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass
+from os.path import samefile as _samefile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -2119,6 +2122,25 @@ def _v3_write_user_path_snapshot(snapshot: RegistryPathSnapshot) -> None:
             pass
 
 
+def _v3_restore_and_verify_user_path(snapshot: RegistryPathSnapshot) -> None:
+    """Restore the exact HKCU PATH snapshot and prove it by reading it back."""
+
+    try:
+        _v3_write_user_path_snapshot(snapshot)
+    except Exception as exc:
+        raise ProductVerificationError(
+            f"User PATH restoration failed ({type(exc).__name__})"
+        ) from exc
+    try:
+        observed = _registry_path_snapshot()
+    except Exception as exc:
+        raise ProductVerificationError(
+            f"User PATH restoration read-back failed ({type(exc).__name__})"
+        ) from exc
+    if observed != snapshot:
+        raise ProductVerificationError("User PATH restoration read-back did not match the original registry snapshot")
+
+
 def _v3_assert_receipt_failure_preserved(
     context: ProductContext,
     *,
@@ -2257,6 +2279,9 @@ def _v3_verify_conpty_layer_matrix(
         write_conpty_layer_matrix,
     )
 
+    raw_capture_path = output.with_suffix(".raw.json")
+    _v3_assert_fresh_conpty_paths(output)
+
     candidate_root = context.install_root / "versions" / facts.candidate_id
     probe_home = context.working / "conpty-layer-probe-home"
     first_run_home = context.working / "conpty-layer5-first-run-home"
@@ -2267,7 +2292,15 @@ def _v3_verify_conpty_layer_matrix(
     )
     environment = _v3_clean_child_environment(persistent_path, probe_home)
     _v3_assert_no_checkout(tuple(environment.values()), "ConPTY layer matrix environment")
+    staged_output: Path | None = None
+    staged_raw_capture: Path | None = None
     try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        raw_fd, raw_stage_name = tempfile.mkstemp(
+            prefix=f".{raw_capture_path.name}.", suffix=".tmp", dir=output.parent
+        )
+        os.close(raw_fd)
+        staged_raw_capture = Path(raw_stage_name)
         matrix = build_conpty_layer_matrix(
             candidate_id=facts.candidate_id,
             candidate_root=candidate_root,
@@ -2277,11 +2310,36 @@ def _v3_verify_conpty_layer_matrix(
             application_home=probe_home,
             first_run_home=first_run_home,
             evidence_identity=context.report["evidence_identity"],
-            raw_capture_path=output.with_suffix(".raw.json"),
+            # Keep both evidence files private until the producer has completed.
+            # The raw-capture writer itself uses write_text(), so it must never
+            # receive the caller's final evidence path.
+            raw_capture_path=staged_raw_capture,
         )
-        write_conpty_layer_matrix(matrix, output)
+        if not isinstance(matrix, dict):
+            raise ProductVerificationError("ConPTY layer matrix producer did not return a JSON object")
+        if not staged_raw_capture.is_file():
+            raise ProductVerificationError("ConPTY layer matrix producer did not create raw-capture evidence")
+        descriptor, staged_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
+        os.close(descriptor)
+        staged_output = Path(staged_name)
+        write_conpty_layer_matrix(matrix, staged_output)
+        # Same-volume rename is atomic for each individual evidence file and
+        # fails if a destination appeared after preflight (Windows semantics).
+        os.rename(staged_raw_capture, raw_capture_path)
+        staged_raw_capture = None
+        os.rename(staged_output, output)
+        staged_output = None
     except ConPtyLayerMatrixError as exc:
         raise ProductVerificationError(f"ConPTY layer matrix production failed: {exc}") from exc
+    except Exception as exc:
+        raise ProductVerificationError(
+            f"ConPTY layer matrix production failed ({type(exc).__name__})"
+        ) from exc
+    finally:
+        if staged_output is not None:
+            staged_output.unlink(missing_ok=True)
+        if staged_raw_capture is not None:
+            staged_raw_capture.unlink(missing_ok=True)
     context.report["scenarios"]["conpty_layer_matrix"] = {
         "status": "passed",
         "evidence": "conpty-layer-matrix.json",
@@ -2298,12 +2356,15 @@ def _v3_verify_installed_product(
 ) -> dict[str, Any]:
     if conpty_layer_matrix_json is None:
         raise ProductVerificationError("--conpty-layer-matrix-json is required for the complete W18 verifier")
+    _v3_assert_fresh_conpty_paths(conpty_layer_matrix_json)
     context = _v3_prepare_context(bundle_root)
     application_home = context.application_home
-    if application_home is None:
-        raise ProductVerificationError("v003 context has no application home")
     installed = False
+    primary_error: Exception | None = None
+    finalization_errors: list[str] = []
     try:
+        if application_home is None:
+            raise ProductVerificationError("v003 context has no application home")
         hostile = _v3_hostile_environment(context)
         facts = _v3_clean_install(context, hostile)
         installed = True
@@ -2334,28 +2395,91 @@ def _v3_verify_installed_product(
         context.report["w17_installed_interactive"] = _v3_verify_w17_interactive(context, facts)
         _v3_verify_lifecycle(context, hostile)
         installed = False
-        context.report["status"] = "passed"
-        return context.report
+    except Exception as exc:
+        primary_error = exc
     finally:
-        if installed and not keep:
-            try:
-                cleanup = _v3_clean_child_environment(
-                    reconstructed_persistent_path(_machine_path(), _registry_path_snapshot().semantic(), os.environ),
-                    application_home,
-                )
-                _run_ps_file(context.uninstall_script, (), cwd=context.outside, environment=cleanup)
-            except Exception as exc:
-                context.report["cleanup_error"] = str(exc)
-        if context.original_user is not None:
-            try:
-                _v3_write_user_path_snapshot(context.original_user)
-            except Exception as exc:
-                context.report["path_restore_error"] = str(exc)
-        if not keep:
-            shutil.rmtree(context.working, ignore_errors=True)
-        if context.real_user_config is None:
-            raise ProductVerificationError("real default Windows config guard was not initialized")
+        finalization_errors.extend(
+            _v3_finalize_context(context, installed=installed, keep=keep, application_home=application_home)
+        )
+
+    if primary_error is not None or finalization_errors:
+        context.report["status"] = "failed"
+        diagnostics: list[str] = []
+        if primary_error is not None:
+            diagnostics.append(f"primary acceptance failed ({type(primary_error).__name__}): {primary_error}")
+        diagnostics.extend(finalization_errors)
+        message = "; ".join(diagnostics)
+        if primary_error is not None:
+            raise ProductVerificationError(message) from primary_error
+        raise ProductVerificationError(message)
+    context.report["status"] = "passed"
+    return context.report
+
+
+def _v3_cleanup_installed_state(
+    context: ProductContext, *, installed: bool, keep: bool, application_home: Path | None
+) -> list[str]:
+    if not installed or keep:
+        return []
+    try:
+        if application_home is None:
+            raise ProductVerificationError("v003 context has no application home for cleanup")
+        cleanup = _v3_clean_child_environment(
+            reconstructed_persistent_path(_machine_path(), _registry_path_snapshot().semantic(), os.environ),
+            application_home,
+        )
+        result = _run_ps_file(context.uninstall_script, (), cwd=context.outside, environment=cleanup)
+        _require_success(result, "final cleanup uninstall")
+        if context.install_root.exists():
+            raise ProductVerificationError("final cleanup left the W18 installation root present")
+    except Exception as exc:
+        context.report["cleanup_error"] = type(exc).__name__
+        return [f"installation cleanup failed ({type(exc).__name__})"]
+    return []
+
+
+def _v3_restore_original_user_path(context: ProductContext) -> list[str]:
+    if context.original_user is None:
+        return ["original User PATH snapshot was unavailable"]
+    try:
+        _v3_restore_and_verify_user_path(context.original_user)
+    except Exception as exc:
+        context.report["path_restore_error"] = type(exc).__name__
+        return [f"User PATH restoration failed ({type(exc).__name__})"]
+    return []
+
+
+def _v3_cleanup_verifier_workspace(context: ProductContext, *, keep: bool) -> list[str]:
+    if keep:
+        return []
+    try:
+        shutil.rmtree(context.working)
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        return [f"temporary workspace cleanup failed ({type(exc).__name__})"]
+    return []
+
+
+def _v3_check_final_config_guard(context: ProductContext) -> list[str]:
+    if context.real_user_config is None:
+        return ["real default Windows config guard was not initialized"]
+    try:
         _assert_file_snapshot_unchanged(context.real_user_config, "real default Windows config")
+    except Exception as exc:
+        return [f"final default-config integrity guard failed ({type(exc).__name__})"]
+    return []
+
+
+def _v3_finalize_context(
+    context: ProductContext, *, installed: bool, keep: bool, application_home: Path | None
+) -> list[str]:
+    errors: list[str] = []
+    errors.extend(_v3_cleanup_installed_state(context, installed=installed, keep=keep, application_home=application_home))
+    errors.extend(_v3_restore_original_user_path(context))
+    errors.extend(_v3_cleanup_verifier_workspace(context, keep=keep))
+    errors.extend(_v3_check_final_config_guard(context))
+    return errors
 
 
 _V3_PRIVATE_EVIDENCE_KEYS = frozenset(
@@ -2437,21 +2561,99 @@ def _v3_write_json(path: Path | None, payload: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _v3_assert_distinct_output_paths(args: argparse.Namespace) -> None:
+    outputs: list[tuple[str, Path]] = [
+        (name, getattr(args, name))
+        for name in ("summary_json", "w17_summary_json", "conpty_layer_matrix_json")
+        if getattr(args, name) is not None
+    ]
+    if args.conpty_layer_matrix_json is not None:
+        outputs.append(("ConPTY raw-capture", args.conpty_layer_matrix_json.with_suffix(".raw.json")))
+
+    identities = [(name, path, _v3_output_path_identity(name, path)) for name, path in outputs]
+    for index, (name, path, identity) in enumerate(identities):
+        for other_name, other_path, other_identity in identities[index + 1 :]:
+            _v3_assert_output_pair_distinct(name, path, identity, other_name, other_path, other_identity)
+
+
+def _v3_output_path_identity(name: str, path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ProductVerificationError(f"cannot normalize {name} output path ({type(exc).__name__})") from exc
+    if _v3_has_reparse_component(path):
+        raise ProductVerificationError(f"refusing reparse-point evidence destination: {name}")
+    if path.exists() and path.is_dir():
+        raise ProductVerificationError(f"evidence output destination is a directory: {name}")
+    return ntpath.normcase(str(resolved)) if os.name == "nt" else os.path.normcase(str(resolved))
+
+
+def _v3_assert_output_pair_distinct(
+    name: str,
+    path: Path,
+    identity: str,
+    other_name: str,
+    other_path: Path,
+    other_identity: str,
+) -> None:
+    aliases = identity == other_identity
+    if not aliases and path.exists() and other_path.exists():
+        try:
+            aliases = _samefile(path, other_path)
+        except OSError:
+            pass
+    if aliases:
+        raise ProductVerificationError(
+            f"acceptance evidence output paths must be distinct ({name} aliases {other_name})"
+        )
+
+
+def _v3_assert_fresh_conpty_paths(matrix_path: Path) -> None:
+    raw_path = matrix_path.with_suffix(".raw.json")
+    for label, path in (("matrix", matrix_path), ("raw-capture", raw_path)):
+        if _v3_has_reparse_component(path):
+            raise ProductVerificationError(f"refusing reparse-point ConPTY {label} output")
+        if path.exists():
+            raise ProductVerificationError(
+                f"refusing to reuse existing ConPTY {label} output; choose fresh paths"
+            )
+
+
+def _v3_has_reparse_component(path: Path) -> bool:
+    components = [*reversed(path.parents), path]
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    for component in components:
+        try:
+            metadata = component.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ProductVerificationError(
+                f"cannot inspect evidence path component ({type(exc).__name__})"
+            ) from exc
+        if stat.S_ISLNK(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & reparse_flag:
+            return True
+    return False
+
+
 def _v3_write_failure_outputs(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    _v3_assert_distinct_output_paths(args)
     bounded = _v3_bounded_report(result)
-    for name in ("summary_json", "w17_summary_json", "conpty_layer_matrix_json"):
-        _v3_write_json(getattr(args, name), bounded)
+    _v3_write_json(args.summary_json, bounded)
 
 
 def _v3_write_success_outputs(args: argparse.Namespace, result: dict[str, Any]) -> None:
+    _v3_assert_distinct_output_paths(args)
     bounded = _v3_bounded_report(result)
-    _v3_write_json(args.summary_json, bounded)
     w17_path = args.w17_summary_json
     if w17_path is not None:
         w17_evidence = bounded.get("w17_installed_interactive")
         if not isinstance(w17_evidence, dict):
             raise ProductVerificationError("W17 interactive evidence was not produced")
         _v3_write_json(w17_path, w17_evidence)
+    # Write the overall PASS summary last so an earlier evidence-write failure
+    # cannot leave a persisted success record for an incomplete output set.
+    _v3_write_json(args.summary_json, bounded)
 
 
 def _v3_main(argv: Sequence[str] | None = None) -> int:
@@ -2470,6 +2672,13 @@ def _v3_main(argv: Sequence[str] | None = None) -> int:
         help="write the separately-bindable native-ConPTY layer matrix while installed",
     )
     args = parser.parse_args(argv)
+    try:
+        _v3_assert_distinct_output_paths(args)
+        if args.conpty_layer_matrix_json is not None:
+            _v3_assert_fresh_conpty_paths(args.conpty_layer_matrix_json)
+    except ProductVerificationError as exc:
+        print(f"W18 installed-product verification failed: {exc}", file=sys.stderr)
+        return 2
     if os.name != "nt":
         result = {"schema_version": 3, "status": "skipped", "reason": "W18 installed-product acceptance is Windows-only"}
         _v3_write_failure_outputs(args, result)

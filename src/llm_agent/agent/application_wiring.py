@@ -11,7 +11,6 @@ from llm_agent.agent.approval import ApprovalPort
 from llm_agent.agent.llm.session import ChatSession
 from llm_agent.agent.orchestrator import Orchestrator
 from llm_agent.agent.runtime.config_repository import ConfigRepository
-from llm_agent.agent.runtime.instance_lock import InstanceLock
 from llm_agent.agent.tools.authority import (
     ApplicationAuthoritySnapshot,
     TaskAuthoritySnapshot,
@@ -19,6 +18,7 @@ from llm_agent.agent.tools.authority import (
 )
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.process.instance_lock import InstanceLock
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.workspace.paths import AppPaths, WorkspacePaths
 

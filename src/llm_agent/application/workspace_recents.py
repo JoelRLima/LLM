@@ -6,8 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
 from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
 from llm_agent.storage.json_persistence import (
     AtomicWriteError,
     JsonObjectReadError,

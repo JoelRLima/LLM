@@ -6,10 +6,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from llm_agent.application.task_execution import TaskSettlement, observe_task_settlement, read_execution_capabilities
-from llm_agent.interfaces.cli import turn_rendering
 from llm_agent.interfaces.cli.interactive_shell import prompt_from
 from llm_agent.interfaces.cli.output_projection import render_publication
 from llm_agent.interfaces.cli.query_rendering import query_arguments, render_query_result, submit_query
+from llm_agent.interfaces.cli.startup_rendering import diagnostic_label as diagnostic_label
+from llm_agent.interfaces.cli.startup_rendering import diagnostic_prompt_token as diagnostic_prompt_token
+from llm_agent.interfaces.cli.startup_rendering import render_startup_status as render_startup_status
+from llm_agent.interfaces.cli.startup_rendering import thinking_label as thinking_label
 from llm_agent.interfaces.cli.ui import console
 from llm_agent.outputs.models import (
     OutputContentPolicy,
@@ -31,10 +34,9 @@ __all__ = [
     "submit_query",
 ]
 
-
 def prompt(ctx: Any) -> str | None:
     mode = read_execution_capabilities(ctx.task_execution).label
-    diagnostic = turn_rendering.diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
+    diagnostic = diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
     shell = getattr(ctx, "shell", None)
     draft = str(getattr(ctx, "draft_text", "") or "")
     set_draft = getattr(shell, "set_draft", None)

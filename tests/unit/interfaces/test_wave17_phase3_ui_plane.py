@@ -3,12 +3,15 @@ from __future__ import annotations
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
-from llm_agent.application.task_execution import _project_task_activity_update
+from llm_agent.application._task_activity import _project_task_activity_update
+from llm_agent.application.task_execution import TaskActivityUpdate
 from llm_agent.interfaces.cli.ui_plane import RunViewModel, TaskActivityUISink, UIEventMailbox
 
 
 def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object):
-    return _project_task_activity_update(RuntimeEvent.from_fields(kind, correlation, data))
+    return _project_task_activity_update(
+        RuntimeEvent.from_fields(kind, correlation, data), make_update=TaskActivityUpdate,
+    )
 
 
 def test_sink_is_presentation_only_and_mailbox_is_bounded_under_flood() -> None:

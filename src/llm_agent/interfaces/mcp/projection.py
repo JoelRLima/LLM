@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from llm_agent.application.agent_boundary import ModelSafeResponse
 
-
-def response_document(response: ModelSafeResponse) -> dict[str, Any]:
+def response_document(response: Any) -> dict[str, Any]:
     return cast(dict[str, Any], response.to_dict())
 
 

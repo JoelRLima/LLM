@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Protocol, cast
 
-from llm_agent.agent.runtime.instance_lock import InstanceLock
+from llm_agent.process.instance_lock import InstanceLock
 from llm_agent.storage.json_persistence import read_json_object, write_text_atomic
 
 MAX_DISCOVERY_FRECENCY_ENTRIES = 256

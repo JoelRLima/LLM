@@ -1,7 +1,67 @@
 # Compatibilidade e retirada de legado
 
-> **STATUS: CURRENT — WAVE 8 INVENTORY.** Este arquivo é a fotografia viva das
-> compatibilidades que permanecem. Não é diário de Wave nem changelog.
+> **STATUS: CURRENT.** Esta seção resume o estado atual de compatibilidade.
+> Os ledgers Wave 7–19 abaixo preservam decisões históricas e não substituem
+> esta classificação vigente.
+
+## Estado atual
+
+### Imports históricos retirados
+
+Os 26 facades internos de Agent sem suporte durável foram retirados. Entre eles
+estão `application.agent_boundary`, aliases antigos de persistência e paths,
+facades internas de processo/stdio/extensions e facades de provenance.
+Código novo deve usar os owners canônicos descritos neste documento e em
+[guia-extensao.md](guia-extensao.md). Menções detalhadas em registros de época
+abaixo são históricas, não instruções de import atuais.
+
+### Projeções finitas temporariamente retidas
+
+As superfícies abaixo preservam compatibilidade limitada; não devem ganhar
+novos consumidores de produção sem mudança explícita de policy CURRENT.
+
+| Projeção histórica | Owner canônico para código novo |
+| --- | --- |
+| `SkillSpec`, catálogo de skills e `CancellationSafetyMode` | `agent.operation.*` |
+| `planning.tool_metadata` | `agent.operation.planning_metadata` |
+| `runtime.paths` | `llm_agent.workspace.paths` |
+| `runtime.workspace_context` | `llm_agent.workspace.context` |
+| `code.path_safety` | `llm_agent.filesystem.path_safety` |
+| `interfaces.cli.workspace_recents` | owner de workspace/application correspondente |
+| cinco módulos históricos de lock do Agent | `llm_agent.process.*` e `llm_agent.filesystem.lock_filesystem` |
+
+Os consumidores históricos autorizados são limitados e não formam um padrão
+para novas dependências. Em particular, `runtime.paths` não está retirado, mas
+é apenas projeção de compatibilidade; os cinco consumidores de produção
+existentes são exceções delimitadas.
+
+### Compatibilidade durável de dados e schema
+
+Compatibilidade de dados não equivale a compatibilidade de import Python.
+Continuam suportados, nas fronteiras próprias, resultados e histórico legados,
+checkpoint schema v2, readers/restauração, migração de storage e comportamento
+suportado de localização de dados legados. Essas formas persistidas não tornam
+os antigos módulos Python owners canônicos.
+
+### Adapters genuínos e broker retirado
+
+Adapters de Agent que implementam composição ou runtime continuam válidos e
+não são facades removidas, incluindo `agent.tools.extension_bootstrap`,
+`agent.tools.extension_runtime`, `agent.tools.stdio_adapter`,
+`agent.tools.stdio_process` e `agent.tools.stdio_cleanup`. Mecânicas genéricas
+pertencem a `llm_agent.extensions.*`, `llm_agent.process.*` e
+`llm_agent.filesystem.*`. `application.agent_boundary` está retirado; não há um
+broker substituto genérico.
+
+### Autoridade CURRENT
+
+`quality/architecture_current_policy.json` e
+`scripts/check_current_architecture.py` definem a semântica arquitetural
+vigente; `tests/unit/test_current_architecture.py` a valida. `scripts/w21_architecture`
+mantém mecânicas compartilhadas/frozen e suporte histórico, não a policy
+semântica CURRENT.
+
+## Registro histórico Wave 7–19 (não é orientação CURRENT)
 
 O caminho instalado e suportado é `llm-agent`, apontando para
 `agent.interfaces.cli.app`. Código novo usa as portas tipadas canônicas. As

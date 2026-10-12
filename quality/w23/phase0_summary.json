@@ -396,14 +396,23 @@
     "unclassified_modules": 0,
     "unresolved_dynamic_import_calls": 3
   },
-  "status": "PHASE 0 GREEN/COMPLETE; PHASE 1 GREEN/COMPLETE; PHASE 2 HEALTH-DOCTOR, INSPECTION AUXILIARY, STATE MIGRATION, WORKSPACE RECENTS, AND C1-C15 LANES GREEN/COMPLETE; PHASE 2 REMAINS OPEN; WAVE LOCAL GREEN NOT CLAIMED; PUBLICATION NOT AUTHORIZED.",
-  "phase2_current_broker_export_count": 40,
-  "phase2_accepted_broker_export_count": 40,
+  "status": "PHASE 0 GREEN/COMPLETE; PHASE 1 GREEN/COMPLETE; PHASE 2 GREEN/COMPLETE THROUGH C23; C20 RESERVED/EMPTY; WAVE LOCAL GREEN NOT CLAIMED; PUBLICATION NOT AUTHORIZED.",
+  "phase2_current_broker_export_count": 0,
+  "phase2_c23_status": "GREEN/COMPLETE",
+  "phase2_c23_accepted_broker_export_count": 0,
+  "phase2_c23_lineage_count": 87,
+  "phase2_accepted_broker_export_count": 0,
   "phase2_c1_zero_consumer_alias_contraction": {
     "status": "GREEN/COMPLETE",
     "broker_exports_before_ast": 81,
     "broker_exports_after_ast": 76,
-    "contracted_exports": ["ExtensionCatalogService", "ExtensionCatalogStorage", "WorkspaceExtensionService", "load_strict_extension_manifest", "validate_extension_id"],
+    "contracted_exports": [
+      "ExtensionCatalogService",
+      "ExtensionCatalogStorage",
+      "WorkspaceExtensionService",
+      "load_strict_extension_manifest",
+      "validate_extension_id"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "accepted_broker_export_count_after_gate": 76,
     "phase2_complete": false,
@@ -417,11 +426,21 @@
     "broker_exports_before_ast": 76,
     "broker_exports_after_ast": 73,
     "accepted_broker_export_count_until_gate": 76,
-    "contracted_exports": ["TaskContextResolver", "TaskDefinitionRepository", "TaskDefinitionError"],
+    "contracted_exports": [
+      "TaskContextResolver",
+      "TaskDefinitionRepository",
+      "TaskDefinitionError"
+    ],
     "broker_consumers_before": {
-      "TaskContextResolver": ["src/llm_agent/interfaces/cli/task_context.py"],
-      "TaskDefinitionRepository": ["src/llm_agent/interfaces/cli/task_context.py"],
-      "TaskDefinitionError": ["src/llm_agent/interfaces/cli/app.py"]
+      "TaskContextResolver": [
+        "src/llm_agent/interfaces/cli/task_context.py"
+      ],
+      "TaskDefinitionRepository": [
+        "src/llm_agent/interfaces/cli/task_context.py"
+      ],
+      "TaskDefinitionError": [
+        "src/llm_agent/interfaces/cli/app.py"
+      ]
     },
     "broker_consumers_after": {
       "TaskContextResolver": [],
@@ -443,8 +462,12 @@
     "broker_exports_implemented": 72,
     "accepted_broker_export_count_until_gate": 73,
     "accepted_broker_export_count_after_gate": 72,
-    "contracted_exports": ["TaskContinuityService"],
-    "broker_consumers_before": ["src/llm_agent/interfaces/cli/task_continuity.py"],
+    "contracted_exports": [
+      "TaskContinuityService"
+    ],
+    "broker_consumers_before": [
+      "src/llm_agent/interfaces/cli/task_continuity.py"
+    ],
     "broker_consumers_after": [],
     "lineage_records_preserved": 87,
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
@@ -456,15 +479,24 @@
     "lane": "C4",
     "application_api": "llm_agent.application.legacy_extension_registry",
     "migration_mode": "USE_CASE",
-    "contracted_exports": ["ExtensionRegistry"],
+    "contracted_exports": [
+      "ExtensionRegistry"
+    ],
     "broker_exports_before": 72,
     "broker_exports_implemented": 71,
     "accepted_broker_export_count_until_gate": 72,
     "accepted_broker_export_count_after_gate": 71,
-    "broker_consumers_before": ["src/llm_agent/interfaces/cli/maintenance.py"],
+    "broker_consumers_before": [
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
     "broker_consumers_after": [],
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "phase2_complete": false,
     "wave_local_green": false
@@ -479,10 +511,22 @@
     "broker_exports_implemented": 71,
     "accepted_broker_export_count_until_gate": 71,
     "accepted_broker_export_count_after_gate": 71,
-    "broker_consumers_before": ["src/llm_agent/interfaces/cli/discovery_projection.py", "src/llm_agent/interfaces/cli/first_run.py", "src/llm_agent/interfaces/cli/interactive_commands.py", "src/llm_agent/interfaces/cli/maintenance.py"],
-    "broker_consumers_after": ["src/llm_agent/interfaces/cli/interactive_commands.py"],
+    "broker_consumers_before": [
+      "src/llm_agent/interfaces/cli/discovery_projection.py",
+      "src/llm_agent/interfaces/cli/first_run.py",
+      "src/llm_agent/interfaces/cli/interactive_commands.py",
+      "src/llm_agent/interfaces/cli/maintenance.py"
+    ],
+    "broker_consumers_after": [
+      "src/llm_agent/interfaces/cli/interactive_commands.py"
+    ],
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "phase2_complete": false,
     "wave_local_green": false
@@ -491,14 +535,26 @@
     "status": "GREEN/COMPLETE",
     "lane": "C6",
     "application_api": "llm_agent.application.configuration_errors",
-    "contracted_exports": ["ConfigError", "ConfigNotFound"],
+    "contracted_exports": [
+      "ConfigError",
+      "ConfigNotFound"
+    ],
     "broker_exports_before": 71,
     "broker_exports_implemented": 69,
     "accepted_broker_export_count_until_gate": 71,
     "accepted_broker_export_count_after_gate": 69,
-    "broker_consumers_after": {"ConfigError": [], "ConfigNotFound": []},
+    "broker_consumers_after": {
+      "ConfigError": [],
+      "ConfigNotFound": []
+    },
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "phase2_complete": false,
     "wave_local_green": false
@@ -508,14 +564,31 @@
     "lane": "C7",
     "application_api": "llm_agent.application.code_commands",
     "migration_mode": "USE_CASE",
-    "contracted_exports": ["CODE_COMMAND_HELP", "CODE_TASK_ACTIONS", "ChangeApprover", "CodeCommandError", "CodeRequest", "CodingApplicationService", "build_code_context", "parse_code_command", "requests_test_execution"],
+    "contracted_exports": [
+      "CODE_COMMAND_HELP",
+      "CODE_TASK_ACTIONS",
+      "ChangeApprover",
+      "CodeCommandError",
+      "CodeRequest",
+      "CodingApplicationService",
+      "build_code_context",
+      "parse_code_command",
+      "requests_test_execution"
+    ],
     "broker_exports_before": 69,
     "broker_exports_implemented": 60,
     "accepted_broker_export_count_until_gate": 69,
     "accepted_broker_export_count_after_gate": 60,
     "broker_consumers_after": [],
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "phase2_complete": false,
     "wave_local_green": false
@@ -575,14 +648,28 @@
     "lane": "C8",
     "application_api": "llm_agent.application.code_review",
     "migration_mode": "OWNED_IMMUTABLE_REVIEW_DTOS",
-    "contracted_exports": ["ChangePreview", "ProposalAssessment"],
+    "contracted_exports": [
+      "ChangePreview",
+      "ProposalAssessment"
+    ],
     "broker_exports_before": 60,
     "broker_exports_implemented": 58,
     "accepted_broker_export_count_until_gate": 60,
     "accepted_broker_export_count_after_gate": 58,
-    "broker_consumers_after": {"ChangePreview": [], "ProposalAssessment": []},
+    "broker_consumers_after": {
+      "ChangePreview": [],
+      "ProposalAssessment": []
+    },
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58"
+    ],
     "bounded_user_evidence": "ACCEPTED_GREEN_COMPLETE",
     "phase2_complete": false,
     "wave_local_green": false
@@ -662,7 +749,9 @@
         "run_health_diagnostics"
       ],
       "canonical_owner": "Application",
-      "agent_dependencies": ["llm_agent.agent.health.standalone"],
+      "agent_dependencies": [
+        "llm_agent.agent.health.standalone"
+      ],
       "responsibility": "Execute health diagnostics and return the structured report, human rendering, and readiness projection."
     },
     "migration": {
@@ -693,7 +782,9 @@
     "status": "GREEN/COMPLETE",
     "authorization": "User decision attached 2026-09-29 authorizes BookmarkStore and DiagnosticExporter only for bookmark list/add/remove and diagnostic export.",
     "fresh_consumer_census": {
-      "production_before": ["src/llm_agent/interfaces/cli/inspector.py"],
+      "production_before": [
+        "src/llm_agent/interfaces/cli/inspector.py"
+      ],
       "test_before": [],
       "dynamic_or_monkeypatch_before": [],
       "production_broker_consumers_after": [],
@@ -703,23 +794,51 @@
     "api": {
       "public_surface": "src/llm_agent/application/inspection/__init__.py",
       "implementation": "src/llm_agent/application/inspection/operations.py",
-      "exports": ["BookmarkListRequest", "BookmarkListResult", "BookmarkAddRequest", "BookmarkAddResult", "BookmarkRemoveRequest", "BookmarkRemoveResult", "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult", "InspectionAuxiliaryOperations", "InspectionCorruptDataError", "InspectionUnavailableError"],
+      "exports": [
+        "BookmarkListRequest",
+        "BookmarkListResult",
+        "BookmarkAddRequest",
+        "BookmarkAddResult",
+        "BookmarkRemoveRequest",
+        "BookmarkRemoveResult",
+        "BookmarkView",
+        "DiagnosticExportRequest",
+        "DiagnosticExportResult",
+        "InspectionAuxiliaryOperations",
+        "InspectionCorruptDataError",
+        "InspectionUnavailableError"
+      ],
       "responsibility": "Workspace-scoped bookmark management and diagnostic export for retained inspection traces.",
       "live_inspect_read_paths_changed": false
     },
     "migration": {
       "strategy": "EXPAND -> MIGRATE -> PROVE ZERO CONSUMERS -> CONTRACT",
       "consumers_migrated": 1,
-      "test_files_added_or_adjusted": ["tests/unit/test_inspection_auxiliary.py", "tests/unit/runtime/test_wave9_cli.py", "tests/unit/test_current_architecture.py"],
+      "test_files_added_or_adjusted": [
+        "tests/unit/test_inspection_auxiliary.py",
+        "tests/unit/runtime/test_wave9_cli.py",
+        "tests/unit/test_current_architecture.py"
+      ],
       "broker_exports_before": 86,
       "broker_exports_after_ast_count": 84,
-      "contracted_exports": ["BookmarkStore", "DiagnosticExporter"]
+      "contracted_exports": [
+        "BookmarkStore",
+        "DiagnosticExporter"
+      ]
     },
-    "excluded_exports_still_brokered": ["InspectionQuery", "InspectionService", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+    "excluded_exports_still_brokered": [
+      "InspectionQuery",
+      "InspectionService",
+      "InspectorSnapshot",
+      "TraceCorruptError",
+      "TraceUnavailableError"
+    ],
     "full_inspection": "STOP — BOUNDARY NOT PROVEN; no provider/live-source/composition abstraction authorized.",
     "review": {
       "runtime_findings": [],
-      "adversarial_p2": ["Checker receiver-binding and DTO Agent-type enforcement was strengthened after read-only review."],
+      "adversarial_p2": [
+        "Checker receiver-binding and DTO Agent-type enforcement was strengthened after read-only review."
+      ],
       "no_p0_p1_reported": true
     },
     "bounded_user_evidence": {
@@ -742,9 +861,17 @@
     "status": "GREEN/COMPLETE",
     "baseline_broker_exports_ast": 84,
     "broker_exports_after_ast": 82,
-    "contracted_exports": ["migrate_legacy_state", "StateMigrationError"],
+    "contracted_exports": [
+      "migrate_legacy_state",
+      "StateMigrationError"
+    ],
     "application_surface": "llm_agent.application.state_migration",
-    "application_exports": ["StateMigrationRequest", "StateMigrationResult", "StateMigrationFailedError", "migrate_state"],
+    "application_exports": [
+      "StateMigrationRequest",
+      "StateMigrationResult",
+      "StateMigrationFailedError",
+      "migrate_state"
+    ],
     "fresh_zero_broker_consumers": true,
     "bounded_user_evidence": {
       "status": "USER_REPORTED_PASS_INTEGRAL",
@@ -764,11 +891,16 @@
     "status": "GREEN_COMPLETE",
     "authorization": "User-approved Workspace Recents lane; only InstanceLock is contracted after zero-consumer proof.",
     "application_owner": "llm_agent.application.workspace_recents",
-    "exports": ["list_recent_workspaces", "remember_recent_workspace"],
+    "exports": [
+      "list_recent_workspaces",
+      "remember_recent_workspace"
+    ],
     "compatibility": "interfaces.cli.workspace_recents is a COMPAT_TEMPORARY shim; external support UNKNOWN; internal consumers zero; retire when external compatibility is resolved and historical W20 shape is projected or retired.",
     "broker_exports_before_ast": 82,
     "broker_exports_after_ast": 81,
-    "contracted_exports": ["InstanceLock"],
+    "contracted_exports": [
+      "InstanceLock"
+    ],
     "pre_existing_race": "Read/merge occurs before lock; concurrent writers may lose one update. Preserved by authorization.",
     "bounded_user_evidence": "ACCEPTED GREEN/COMPLETE by user; no gates run by MAIN; exact per-command output not reproduced in this ledger.",
     "phase2_complete": false,
@@ -777,63 +909,139 @@
   "phase2_next_lane_investigation": {
     "status": "SUPERSEDED_BY_AUTHORIZED_STATE_MIGRATION_LANE",
     "baseline_broker_exports_ast": 84,
-    "read_only_reviews": ["consumer census", "boundary/adversarial review", "change-locality review"],
+    "read_only_reviews": [
+      "consumer census",
+      "boundary/adversarial review",
+      "change-locality review"
+    ],
     "candidate_summary": {
       "configuration": {
-        "symbols": ["ConfigRepository", "ConfigError", "ConfigNotFound", "resolve_model_profile"],
+        "symbols": [
+          "ConfigRepository",
+          "ConfigError",
+          "ConfigNotFound",
+          "resolve_model_profile"
+        ],
         "consumer_spread": "7 production files and 1 test file; independent startup, initialization, profile, discovery, and maintenance use cases.",
         "finding": "Whole cohort is mixed and a repository/profile-object facade would be proxy."
       },
       "lifecycle_storage": {
-        "symbols": ["HomeLifecycleLease", "StorageBootstrap", "InstanceLock", "StateMigrationError", "migrate_legacy_state"],
+        "symbols": [
+          "HomeLifecycleLease",
+          "StorageBootstrap",
+          "InstanceLock",
+          "StateMigrationError",
+          "migrate_legacy_state"
+        ],
         "finding": "Mechanism bundle not suitable. The existing run_state transaction is one closable use case."
       },
       "engineering": {
-        "symbols": ["EngineeringCaller", "EngineeringErrorV1", "EngineeringExecutionContext", "EngineeringOperationViewV1", "EngineeringPermission", "EngineeringQueryStatus", "EngineeringRequest", "EngineeringRunResultV1", "EngineeringTerminalStatus", "EngineeringWorkspaceContext", "SourceRepositoryContext", "EngineeringRegistry", "EngineeringService", "EngineeringRunStore", "EvaluationBackend", "HealthBackend", "InspectionBackend", "RepositoryBackend", "MODEL_SAFE_TOOL_DESCRIPTORS", "ModelSafeEngineering", "ModelSafeResponse", "ModelSafeStatus", "build_model_safe_engineering_service", "FaultPlanV1", "FaultPlanV1Error", "candidate_identity", "candidate_identity_string", "compare_practical_profiles"],
+        "symbols": [
+          "EngineeringCaller",
+          "EngineeringErrorV1",
+          "EngineeringExecutionContext",
+          "EngineeringOperationViewV1",
+          "EngineeringPermission",
+          "EngineeringQueryStatus",
+          "EngineeringRequest",
+          "EngineeringRunResultV1",
+          "EngineeringTerminalStatus",
+          "EngineeringWorkspaceContext",
+          "SourceRepositoryContext",
+          "EngineeringRegistry",
+          "EngineeringService",
+          "EngineeringRunStore",
+          "EvaluationBackend",
+          "HealthBackend",
+          "InspectionBackend",
+          "RepositoryBackend",
+          "MODEL_SAFE_TOOL_DESCRIPTORS",
+          "ModelSafeEngineering",
+          "ModelSafeResponse",
+          "ModelSafeStatus",
+          "build_model_safe_engineering_service",
+          "FaultPlanV1",
+          "FaultPlanV1Error",
+          "candidate_identity",
+          "candidate_identity_string",
+          "compare_practical_profiles"
+        ],
         "finding": "CLI execution/query and MCP model-safe use cases differ; no finite low-risk subcohort proven."
       },
       "remaining_inspection": {
-        "symbols": ["InspectionQuery", "InspectionService", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+        "symbols": [
+          "InspectionQuery",
+          "InspectionService",
+          "InspectorSnapshot",
+          "TraceCorruptError",
+          "TraceUnavailableError"
+        ],
         "finding": "Control only; FULL INSPECTION remains STOP — BOUNDARY NOT PROVEN and explicitly excluded."
       }
     },
     "recommended_lane": {
       "decision": "READY_FOR_DESIGN_AUTHORIZATION",
-      "symbols": ["migrate_legacy_state", "StateMigrationError"],
+      "symbols": [
+        "migrate_legacy_state",
+        "StateMigrationError"
+      ],
       "use_case": "Application-owned legacy runtime state migration into the current workspace destination, including lifecycle preparation and finite result/error projection.",
       "consumer_scope": "maintenance.run_state and centralized app.py error mapping; no broker test references.",
       "owner": "Application owns orchestration; Agent runtime keeps the low-level migration algorithm.",
       "surface_candidate": "llm_agent.application.state_migration (candidate only; not CURRENT)",
       "expected_broker_reduction": "84 -> 82 after proof and contract",
       "authorization_required_before_implementation": true,
-      "risks": ["destination parity", "lease cleanup", "source preservation", "finite report projection", "error and exit-code parity", "W19 lifecycle/storage regression"],
+      "risks": [
+        "destination parity",
+        "lease cleanup",
+        "source preservation",
+        "finite report projection",
+        "error and exit-code parity",
+        "W19 lifecycle/storage regression"
+      ],
       "phase2_complete": false,
       "wave_local_green": false,
       "gates_run": false
     }
   },
   "phase2_c11_task_result": {
-      "status": "GREEN/COMPLETE",
-      "lane": "C11",
-      "canonical_owner": "llm_agent.agent.runtime.context_results.TaskResult",
-      "contracted_exports": ["TaskResult"],
-      "broker_exports_before_ast": 49,
-      "broker_exports_implemented": 48,
-      "accepted_broker_export_count_until_gate": 49,
-      "accepted_broker_export_count": 48,
-      "accepted_broker_export_count_after_gate": 48,
-      "broker_exports_after_ast": 48,
-      "lineage_records_preserved": 87,
-      "production_broker_consumers_after": [],
-      "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
-      "phase2_complete": false,
-      "wave_local_green": false,
-      "publication_authorized": false,
-      "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48"]
+    "status": "GREEN/COMPLETE",
+    "lane": "C11",
+    "canonical_owner": "llm_agent.agent.runtime.context_results.TaskResult",
+    "contracted_exports": [
+      "TaskResult"
+    ],
+    "broker_exports_before_ast": 49,
+    "broker_exports_implemented": 48,
+    "accepted_broker_export_count_until_gate": 49,
+    "accepted_broker_export_count": 48,
+    "accepted_broker_export_count_after_gate": 48,
+    "broker_exports_after_ast": 48,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48"
+    ]
   },
   "phase2_c13_worker_text_publication": {
     "status": "GREEN/COMPLETE",
-    "contracted_exports": ["bind_worker_output", "emit_worker_output"],
+    "contracted_exports": [
+      "bind_worker_output",
+      "emit_worker_output"
+    ],
     "broker_exports_before": 46,
     "broker_exports_implemented": 44,
     "accepted_broker_export_count_until_gate": 46,
@@ -842,7 +1050,20 @@
     "broker_exports_after_ast": 44,
     "lineage_records_preserved": 87,
     "production_broker_consumers_after": [],
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44"
+    ],
     "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
     "global_quality": "FAIL_OUTSIDE_C13",
     "known_outside_c13_findings": 36,
@@ -855,7 +1076,10 @@
   "phase2_c14_session_diagnostics": {
     "status": "GREEN/COMPLETE",
     "cohort": "C14",
-    "contracted_exports": ["logger", "set_debug_level"],
+    "contracted_exports": [
+      "logger",
+      "set_debug_level"
+    ],
     "application_surface": "llm_agent.application.session_diagnostics.apply_interactive_diagnostic_mode",
     "canonical_logger_name": "LLM_Agent",
     "broker_exports_before": 44,
@@ -866,7 +1090,21 @@
     "broker_exports_after_ast": 42,
     "lineage_records_preserved": 87,
     "production_broker_consumers_after": [],
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44", "44 -> 42"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42"
+    ],
     "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
     "global_quality": "FAIL_KNOWN_WAVE_DEBT",
     "known_outside_c13_findings": 36,
@@ -879,7 +1117,10 @@
   "phase2_c15_model_profile_selection": {
     "status": "GREEN/COMPLETE",
     "cohort": "C15",
-    "contracted_exports": ["ConfigRepository", "resolve_model_profile"],
+    "contracted_exports": [
+      "ConfigRepository",
+      "resolve_model_profile"
+    ],
     "application_surface": "llm_agent.application.model_profile_selection.select_default_model_profile",
     "broker_exports_before": 42,
     "broker_exports_implemented": 40,
@@ -889,7 +1130,22 @@
     "broker_exports_after_ast": 40,
     "lineage_records_preserved": 87,
     "production_broker_consumers_after": [],
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46", "46 -> 44", "44 -> 42", "42 -> 40"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40"
+    ],
     "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
     "bounded_independent_user_evidence": {
       "source": "User-reported C15 Gates 1-9 and updated Gate 10",
@@ -915,7 +1171,10 @@
   },
   "phase2_c12_runtime_events": {
     "status": "GREEN/COMPLETE",
-    "contracted_exports": ["RuntimeEvent", "RuntimeEventKind"],
+    "contracted_exports": [
+      "RuntimeEvent",
+      "RuntimeEventKind"
+    ],
     "canonical_owners": {
       "RuntimeEvent": "llm_agent.agent.runtime.events.RuntimeEvent",
       "RuntimeEventKind": "llm_agent.agent.runtime.event_kinds.RuntimeEventKind"
@@ -930,84 +1189,400 @@
     "accepted_broker_export_count": 46,
     "broker_exports_after_ast": 46,
     "lineage_records_preserved": 87,
-    "accepted_ratchet_history": ["81 -> 76", "76 -> 73", "73 -> 72", "72 -> 71", "71 -> 69", "69 -> 60", "60 -> 58", "58 -> 55", "55 -> 49", "49 -> 48", "48 -> 46"],
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46"
+    ],
     "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
     "c13_bind_worker_output_preserved": true,
     "observability_trace_canonical_fanout_preserved": true,
     "publication_authorized": false
   },
   "phase2_c10_task_execution": {
-      "status": "GREEN/COMPLETE",
-      "lane": "C10",
-      "application_api": "llm_agent.application.task_execution",
-      "migration_mode": "USE_CASE",
-      "broker_exports_before_ast": 55,
-      "broker_exports_implemented": 49,
-      "accepted_broker_export_count_until_gate": 55,
-      "contracted_exports": [
-        "AgentApplication",
-        "AutoApprove",
-        "RequireExplicitApproval",
-        "OperationalMode",
-        "Orchestrator",
-        "TaskRunDirective"
-      ],
-      "broker_consumers_after": {
-        "AgentApplication": [],
-        "AutoApprove": [],
-        "RequireExplicitApproval": [],
-        "OperationalMode": [],
-        "Orchestrator": [],
-        "TaskRunDirective": []
+    "status": "GREEN/COMPLETE",
+    "lane": "C10",
+    "application_api": "llm_agent.application.task_execution",
+    "migration_mode": "USE_CASE",
+    "broker_exports_before_ast": 55,
+    "broker_exports_implemented": 49,
+    "accepted_broker_export_count_until_gate": 55,
+    "contracted_exports": [
+      "AgentApplication",
+      "AutoApprove",
+      "RequireExplicitApproval",
+      "OperationalMode",
+      "Orchestrator",
+      "TaskRunDirective"
+    ],
+    "broker_consumers_after": {
+      "AgentApplication": [],
+      "AutoApprove": [],
+      "RequireExplicitApproval": [],
+      "OperationalMode": [],
+      "Orchestrator": [],
+      "TaskRunDirective": []
+    },
+    "lineage_records_preserved": 87,
+    "bounded_user_evidence": {
+      "status": "ACCEPTED_GREEN_COMPLETE",
+      "source": "Independent bounded evidence formally accepted by the user",
+      "changed_untracked_bounded_tests": "PASS",
+      "explicit_c10_c7_c8_c9_regressions": "PASS",
+      "current_tests": "PASS",
+      "current_checker": "PASS; 890 modules; 3154 edges",
+      "w17_adversarial": "64/64 PASS",
+      "w19_projection": "PASS",
+      "w19_architecture": "PASS",
+      "w20_campaign": "PASS",
+      "w20_architecture": "PASS",
+      "structural_proofs": {
+        "task_execution_public_surface": "PASS",
+        "public_annotation_boundary": "PASS",
+        "CommandContext_boundary": "PASS",
+        "broker_contraction": "PASS",
+        "TaskRunDirective_reexport_removal": "PASS",
+        "zero_broker_consumers": "PASS",
+        "zero_Interface_owner_imports": "PASS",
+        "inspection_C16_C17_public_boundary": "PASS",
+        "no_generic_factory_or_forwarding": "PASS"
       },
-      "lineage_records_preserved": 87,
-      "bounded_user_evidence": {
-        "status": "ACCEPTED_GREEN_COMPLETE",
-        "source": "Independent bounded evidence formally accepted by the user",
-        "changed_untracked_bounded_tests": "PASS",
-        "explicit_c10_c7_c8_c9_regressions": "PASS",
-        "current_tests": "PASS",
-        "current_checker": "PASS; 890 modules; 3154 edges",
-        "w17_adversarial": "64/64 PASS",
-        "w19_projection": "PASS",
-        "w19_architecture": "PASS",
-        "w20_campaign": "PASS",
-        "w20_architecture": "PASS",
-        "structural_proofs": {
-          "task_execution_public_surface": "PASS",
-          "public_annotation_boundary": "PASS",
-          "CommandContext_boundary": "PASS",
-          "broker_contraction": "PASS",
-          "TaskRunDirective_reexport_removal": "PASS",
-          "zero_broker_consumers": "PASS",
-          "zero_Interface_owner_imports": "PASS",
-          "inspection_C16_C17_public_boundary": "PASS",
-          "no_generic_factory_or_forwarding": "PASS"
-        },
-        "static_validation": {
-          "Ruff": "PASS",
-          "mypy": "PASS",
-          "production_naming_hygiene": "PASS",
-          "changed_untracked_text_whitespace": "PASS",
-          "git_diff_check": "PASS"
-        }
-      },
-      "phase2_complete": false,
-      "wave_local_green": false,
-      "publication_authorized": false,
-      "accepted_broker_export_count": 49,
-      "broker_exports_after_ast": 49,
-      "accepted_broker_export_count_after_gate": 49,
-      "accepted_ratchet_history": [
-        "81 -> 76",
-        "76 -> 73",
-        "73 -> 72",
-        "72 -> 71",
-        "71 -> 69",
-        "69 -> 60",
-        "60 -> 58",
-        "58 -> 55",
-        "55 -> 49"
-      ]
+      "static_validation": {
+        "Ruff": "PASS",
+        "mypy": "PASS",
+        "production_naming_hygiene": "PASS",
+        "changed_untracked_text_whitespace": "PASS",
+        "git_diff_check": "PASS"
+      }
+    },
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false,
+    "accepted_broker_export_count": 49,
+    "broker_exports_after_ast": 49,
+    "accepted_broker_export_count_after_gate": 49,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49"
+    ]
+  },
+  "phase2_c16_inspection_read": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C16",
+    "contracted_exports": [
+      "InspectionQuery",
+      "InspectorSnapshot"
+    ],
+    "application_surface": "llm_agent.application.inspection.read_inspection",
+    "broker_exports_before": 40,
+    "broker_exports_implemented": 38,
+    "accepted_broker_export_count_until_gate": 40,
+    "accepted_broker_export_count": 38,
+    "accepted_broker_export_count_after_gate": 38,
+    "broker_exports_after_ast": 38,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "preserved_c17_exports": [
+      "InspectionService",
+      "TraceCorruptError",
+      "TraceUnavailableError"
+    ],
+    "preserved_c18_c23_exports": true,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40",
+      "40 -> 38"
+    ],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "bounded_independent_user_evidence": {
+      "source": "User-reported C16 bounded independent evidence, formally accepted",
+      "inspection_query": "GREEN/COMPLETE",
+      "inspector_snapshot": "GREEN/COMPLETE",
+      "new_quality_findings": 0,
+      "aggravated_quality_findings": 0,
+      "current_finding_count": 36
+    },
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c17_inspection_service_and_trace_errors": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C17",
+    "contracted_exports": [
+      "InspectionService",
+      "TraceCorruptError",
+      "TraceUnavailableError"
+    ],
+    "application_surface": "llm_agent.application.inspection",
+    "broker_exports_implemented": 35,
+    "accepted_broker_export_count_until_gate": 38,
+    "accepted_broker_export_count": 35,
+    "broker_exports_after_ast": 35,
+    "lineage_records_preserved": 87,
+    "production_broker_consumers_after": [],
+    "preserved_c18_c23_exports": true,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40",
+      "40 -> 38",
+      "38 -> 35"
+    ],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false,
+    "accepted_broker_export_count_after_gate": 35,
+    "bounded_independent_user_evidence": {
+      "source": "Authoritative user-reported C17 bounded independent evidence, formally accepted",
+      "new_quality_findings": 0,
+      "aggravated_quality_findings": 0,
+      "current_finding_count": 36
+    },
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false
+  },
+  "phase2_c18_model_safe_mcp_application_boundary": {
+    "status": "GREEN/COMPLETE",
+    "cohort": "C18",
+    "contracted_exports": [
+      "MODEL_SAFE_TOOL_DESCRIPTORS",
+      "ModelSafeEngineering",
+      "ModelSafeResponse",
+      "ModelSafeStatus",
+      "build_model_safe_engineering_service"
+    ],
+    "application_surface": "llm_agent.application.model_safe_mcp",
+    "broker_exports_before": 35,
+    "broker_exports_implemented": 30,
+    "accepted_broker_export_count_until_gate": 35,
+    "accepted_broker_export_count": 30,
+    "accepted_broker_export_count_after_gate": 30,
+    "broker_exports_after_ast": 30,
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40",
+      "40 -> 38",
+      "38 -> 35",
+      "35 -> 30"
+    ],
+    "acceptance": "FORMALLY_ACCEPTED_BY_USER_AFTER_INDEPENDENT_BOUNDED_EVIDENCE",
+    "bounded_independent_user_evidence": {
+      "source": "Authoritative user-reported C18 final acceptance reconciliation",
+      "new_quality_findings": 0,
+      "aggravated_quality_findings": 0,
+      "current_finding_count": 36
+    },
+    "historical_w20_arbitration": {
+      "historical_checker_modified": false,
+      "historical_checker_used_as_c18_gate": false,
+      "semantic_descriptor_ownership": "PRESERVED",
+      "current_semantic_replacement": "PASS"
+    },
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "known_outside_c13_findings": 36,
+    "outside_c13_findings_accepted": false,
+    "outside_c13_findings_added_to_baseline": false,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c19_evaluation_administration": {
+    "cohort": "C19",
+    "status": "GREEN/COMPLETE",
+    "contracted_exports": [
+      "FaultPlanV1",
+      "FaultPlanV1Error",
+      "candidate_identity",
+      "candidate_identity_string",
+      "compare_practical_profiles",
+      "parse_fault_json"
+    ],
+    "application_surface": "llm_agent.application.actions.evaluation",
+    "implemented_symbols": [
+      "EngineeringFaultInputError",
+      "PreparedEngineeringFault",
+      "PracticalComparisonOutcome",
+      "prepare_engineering_fault",
+      "resolve_source_candidate_identity",
+      "compare_practical_evaluation"
+    ],
+    "c19_symbol_acceptance": "GREEN/COMPLETE",
+    "test_files": [
+      "tests/unit/engineering/test_c19_application.py"
+    ],
+    "implemented": 24,
+    "accepted": 24,
+    "broker_exports_after_ast": 24,
+    "lineage_records_preserved": 87,
+    "accepted_ratchet_recorded": true,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40",
+      "40 -> 38",
+      "38 -> 35",
+      "35 -> 30",
+      "30 -> 24"
+    ],
+    "new_quality_findings": 0,
+    "aggravated_quality_findings": 0,
+    "application_surface_errors": 78,
+    "current_quality_findings": 36,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "phase2_c21_finite_application_engineering_actions": {
+    "cohort": "C21",
+    "status": "GREEN/COMPLETE",
+    "contracted_exports": [
+      "EngineeringCaller",
+      "EngineeringErrorV1",
+      "EngineeringExecutionContext",
+      "EngineeringOperationViewV1",
+      "EngineeringPermission",
+      "EngineeringQueryStatus",
+      "EngineeringRegistry",
+      "EngineeringRequest",
+      "EngineeringRunResultV1",
+      "EngineeringRunStore",
+      "EngineeringService",
+      "EngineeringTerminalStatus",
+      "EngineeringWorkspaceContext",
+      "EvaluationBackend",
+      "HealthBackend",
+      "InspectionBackend",
+      "RepositoryBackend",
+      "SourceRepositoryContext",
+      "production_registry"
+    ],
+    "application_surface": "llm_agent.application.actions.engineering",
+    "implemented": 5,
+    "accepted": 5,
+    "_EXPORTS": 5,
+    "broker_exports_after_ast": 5,
+    "lineage": 87,
+    "lineage_records_preserved": 87,
+    "c21_symbol_acceptance": "GREEN/COMPLETE",
+    "accepted_ratchet_recorded": true,
+    "accepted_ratchet_history": [
+      "81 -> 76",
+      "76 -> 73",
+      "73 -> 72",
+      "72 -> 71",
+      "71 -> 69",
+      "69 -> 60",
+      "60 -> 58",
+      "58 -> 55",
+      "55 -> 49",
+      "49 -> 48",
+      "48 -> 46",
+      "46 -> 44",
+      "44 -> 42",
+      "42 -> 40",
+      "40 -> 38",
+      "38 -> 35",
+      "35 -> 30",
+      "30 -> 24",
+      "24 -> 5"
+    ],
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "new_quality_findings": 0,
+    "aggravated_quality_findings": 0,
+    "current_quality_findings": 36,
+    "application_surface_errors": 78,
+    "accepted_broker_export_count_until_gate": 24,
+    "phase2_complete": false,
+    "wave_local_green": false,
+    "publication_authorized": false
+  },
+  "current_phase2_implementation": {
+    "cohort": "C23",
+    "status": "GREEN/COMPLETE",
+    "application_surface": "llm_agent.application.home_operations",
+    "implemented": 0,
+    "accepted": 0,
+    "broker_exports": 0,
+    "remaining_exports": [],
+    "lineage": 87,
+    "accepted_ratchet_recorded": true,
+    "new_quality_findings": 0,
+    "aggravated_quality_findings": 0,
+    "current_quality_findings": 36,
+    "application_surface_errors": 78,
+    "global_quality": "FAIL_KNOWN_WAVE_DEBT",
+    "phase2_complete": true,
+    "wave_local_green": false,
+    "publication_authorized": false
   }
 }

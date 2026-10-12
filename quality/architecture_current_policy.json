@@ -4,17 +4,21 @@
     "canonical_owner": "Application",
     "public_surface": "src/llm_agent/application/task_execution.py",
     "implementation_modules": [
-        "src/llm_agent/application/task_execution.py"
+        "src/llm_agent/application/task_execution.py",
+        "src/llm_agent/application/_task_activity.py",
+        "src/llm_agent/application/_task_observation.py",
+        "src/llm_agent/application/_task_commands.py",
+        "src/llm_agent/application/_task_submission.py"
     ],
     "allowed_consumer_owners": [
         "Interfaces",
         "Application"
     ],
     "allowed_dependency_families": [
-          "llm_agent.agent.observability.trace_store",
-          "llm_agent.agent.runtime.events",
-          "llm_agent.agent.runtime.event_kinds",
-          "llm_agent.application.inspection.errors",
+        "llm_agent.agent.observability.trace_store",
+        "llm_agent.agent.runtime.events",
+        "llm_agent.agent.runtime.event_kinds",
+        "llm_agent.application.inspection.errors",
         "llm_agent.agent.application",
         "llm_agent.agent.approval",
         "llm_agent.agent.interaction.task_directives",
@@ -22,7 +26,8 @@
         "llm_agent.agent.tools.authority",
         "llm_agent.application.configuration_errors",
         "llm_agent.application.context",
-        "llm_agent.application.conversation"
+        "llm_agent.application.conversation",
+        "llm_agent.application.approval"
     ],
     "exports": [
         "TaskExecutionRuntime",
@@ -129,6 +134,28 @@
             "set_session_diagnostics",
             "read_runtime_inspection",
             "close_task_execution"
+        ],
+        "src/llm_agent/application/_task_activity.py": [
+            "_project_task_activity_update",
+            "_TaskActivityAdapter",
+            "_bind_task_activity"
+        ],
+        "src/llm_agent/application/_task_observation.py": [
+            "_primitive",
+            "_receipt",
+            "_observe_task_settlement",
+            "_read_runtime_inspection"
+        ],
+        "src/llm_agent/application/_task_commands.py": [
+            "_prepare_workspace_command",
+            "_execute_workspace_command",
+            "_execute_memory_command",
+            "_set_session_diagnostics"
+        ],
+        "src/llm_agent/application/_task_submission.py": [
+            "_execute_submission",
+            "_execute_early_resume",
+            "_execute_headless_run"
         ]
     }
 },
@@ -356,12 +383,14 @@
                                          "implementation_modules": [
                                              "src/llm_agent/application/inspection/contracts.py",
                                              "src/llm_agent/application/inspection/errors.py",
-                                             "src/llm_agent/application/inspection/operations.py"
+                                             "src/llm_agent/application/inspection/operations.py",
+                                             "src/llm_agent/application/inspection/read_operations.py"
                                          ],
                                          "allowed_consumer_owners": ["Interfaces"],
                                          "allowed_dependency_families": [
                                              "llm_agent.application.context",
                                              "llm_agent.agent.presentation.service",
+                                             "llm_agent.agent.presentation.query",
                                              "llm_agent.agent.observability.bookmarks",
                                              "llm_agent.agent.observability.export",
                                              "llm_agent.agent.observability.trace_store"
@@ -376,20 +405,27 @@
                                              "BookmarkView",
                                              "DiagnosticExportRequest",
                                              "DiagnosticExportResult",
+                                             "InspectionReadRequest",
+                                             "InspectionListRequest",
+                                             "InspectionReadContext",
                                              "InspectionAuxiliaryOperations",
+                                             "read_inspection",
+                                             "list_inspection_runs",
                                              "InspectionCorruptDataError",
                                              "InspectionUnavailableError"
                                          ],
                                          "export_categories": [
-                                             {"category": "dto", "names": ["BookmarkAddRequest", "BookmarkAddResult", "BookmarkListRequest", "BookmarkListResult", "BookmarkRemoveRequest", "BookmarkRemoveResult", "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult"]},
+                                             {"category": "dto", "names": ["BookmarkAddRequest", "BookmarkAddResult", "BookmarkListRequest", "BookmarkListResult", "BookmarkRemoveRequest", "BookmarkRemoveResult", "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult", "InspectionReadRequest", "InspectionListRequest"]},
                                              {"category": "error", "names": ["InspectionCorruptDataError", "InspectionUnavailableError"]},
-                                             {"category": "operation", "names": ["InspectionAuxiliaryOperations"]}
+                                             {"category": "operation", "names": ["InspectionReadContext", "InspectionAuxiliaryOperations", "read_inspection", "list_inspection_runs"]}
                                          ],
                                          "consumer_files": [
-                                             "src/llm_agent/interfaces/cli/inspector.py"
+                                             "src/llm_agent/interfaces/cli/app.py",
+                                             "src/llm_agent/interfaces/cli/inspector.py",
+                                             "src/llm_agent/interfaces/cli/inspector_rendering.py"
                                          ],
-                                         "migration_rule": "EXPAND -> migrate bookmark list/add/remove and diagnostic export -> prove zero broker consumers for both Agent mechanisms -> CONTRACT only BookmarkStore and DiagnosticExporter.",
-                                         "responsibility": "Workspace-scoped auxiliary inspection operations over retained traces: bookmark management and diagnostic export.",
+                                         "migration_rule": "C16 migrates retained-trace reads and contracts InspectionQuery/InspectorSnapshot; C17 adds a primitive run-list use case and Application trace-error translation, migrates CLI inspection consumers, then contracts InspectionService and Trace* with zero broker/Interface consumers. Preserve the existing bookmark/export migration boundary.",
+                                         "responsibility": "Workspace-scoped retained-trace reads, bookmark management, and diagnostic export.",
                                          "implementation_responsibilities": {
                                              "src/llm_agent/application/inspection/contracts.py": [
                                                  "BookmarkAddRequest",
@@ -400,7 +436,9 @@
                                                  "BookmarkRemoveResult",
                                                  "BookmarkView",
                                                  "DiagnosticExportRequest",
-                                                 "DiagnosticExportResult"
+                                                 "DiagnosticExportResult",
+                                                 "InspectionReadRequest",
+                                                 "InspectionListRequest"
                                              ],
                                              "src/llm_agent/application/inspection/errors.py": [
                                                  "InspectionCorruptDataError",
@@ -408,12 +446,26 @@
                                              ],
                                              "src/llm_agent/application/inspection/operations.py": [
                                                  "InspectionAuxiliaryOperations"
+                                             ],
+                                             "src/llm_agent/application/inspection/read_operations.py": [
+                                                 "InspectionReadContext",
+                                                 "read_inspection",
+                                                 "list_inspection_runs"
                                              ]
                                          },
                                          "anti_proxy_contract": {
                                              "operation_type": "InspectionAuxiliaryOperations",
                                              "private_mechanisms": ["InspectionService", "BookmarkStore", "DiagnosticExporter"],
                                              "forbidden_agent_types": ["Bookmark", "BookmarkStore", "DiagnosticExporter", "ExportReceipt", "InspectionService", "InspectionQuery", "InspectorSnapshot", "TraceCorruptError", "TraceUnavailableError"],
+                                             "read_operation": {
+                                                 "context_type": "InspectionReadContext",
+                                                 "request_type": "InspectionReadRequest",
+                                                 "operation": "read_inspection",
+                                                 "required_calls": ["InspectionQuery.build", "InspectionService", "select", "replay", "snapshot", "to_dict"],
+                                                 "public_result": "Mapping[str, Any]",
+                                                 "private_agent_dependencies": ["InspectionQuery", "InspectorSnapshot", "InspectionService"],
+                                                 "forbidden_public_types": ["InspectionQuery", "InspectorSnapshot", "InspectionService"]
+                                             },
                                              "operations": {
                                                  "list_bookmarks": {"request_type": "BookmarkListRequest", "result_type": "BookmarkListResult", "required_calls": ["_selected_bookmark_run", "list", "BookmarkListResult"]},
                                                  "add_bookmark": {"request_type": "BookmarkAddRequest", "result_type": "BookmarkAddResult", "required_calls": ["_selected_bookmark_run", "add", "BookmarkAddResult"]},
@@ -489,7 +541,7 @@
                                          "allowed_dependency_families": [
                                              "llm_agent.application.context",
                                              "llm_agent.storage.json_persistence",
-                                             "llm_agent.agent.runtime.instance_lock"
+                                             "llm_agent.process.instance_lock"
                                          ],
                                          "exports": [
                                              "list_recent_workspaces",
@@ -530,7 +582,7 @@
                                                  "AtomicWriteError"
                                              ],
                                              "persistence_owner": "llm_agent.storage.json_persistence",
-                                             "lock_owner": "llm_agent.agent.runtime.instance_lock",
+                                             "lock_owner": "llm_agent.process.instance_lock",
                                              "compatibility_module": "src/llm_agent/interfaces/cli/workspace_recents.py",
                                              "compatibility_exports": ["load_recent_workspaces", "remember_recent_workspace"]
                                          }
@@ -956,7 +1008,34 @@
                                                                                                                                                              "execute_diff"
                                                                                                                                                          ]
                                                                                                  }
-                                                         }
+                                                         },
+        "model_safe_mcp": {
+            "canonical_owner": "Application",
+            "public_surface": "src/llm_agent/application/model_safe_mcp.py",
+            "implementation_modules": ["src/llm_agent/application/model_safe_mcp.py"],
+            "allowed_consumer_owners": ["Interfaces"],
+            "allowed_dependency_families": ["llm_agent.agent.engineering.contracts", "llm_agent.agent.engineering.model_safe"],
+            "exports": ["ModelSafeContext", "ModelSafeInvocationResult", "ModelSafeToolView", "build_model_safe_context", "invoke_model_safe_tool", "list_model_safe_tools", "model_safe_adapter_failure"],
+            "export_categories": [
+                {"category": "dto", "names": ["ModelSafeContext", "ModelSafeInvocationResult", "ModelSafeToolView"]},
+                {"category": "operation", "names": ["build_model_safe_context", "invoke_model_safe_tool", "list_model_safe_tools", "model_safe_adapter_failure"]}
+            ],
+            "consumer_files": ["src/llm_agent/interfaces/mcp/engineering_server.py"],
+            "responsibility": "Bounded Application projection from canonical ModelSafe descriptors, responses, and one bound ModelSafe owner.",
+            "implementation_responsibilities": {
+                "src/llm_agent/application/model_safe_mcp.py": ["ModelSafeContext", "ModelSafeInvocationResult", "ModelSafeToolView", "build_model_safe_context", "invoke_model_safe_tool", "list_model_safe_tools", "model_safe_adapter_failure"]
+            },
+            "anti_proxy_contract": {
+                "canonical_descriptor_module": "llm_agent.agent.engineering.model_safe",
+                "canonical_descriptor": "MODEL_SAFE_TOOL_DESCRIPTORS",
+                "projection_operation": "list_model_safe_tools",
+                "context_operation": "build_model_safe_context",
+                "invoke_operation": "invoke_model_safe_tool",
+                "response_document_authority": "ModelSafeResponse.to_dict",
+                "status_authority": "ModelSafeStatus.AVAILABLE",
+                "mcp_zero_reference_symbols": ["MODEL_SAFE_TOOL_DESCRIPTORS", "ModelSafeEngineering", "ModelSafeResponse", "ModelSafeStatus", "build_model_safe_engineering_service"]
+            }
+        }
                                  },
     "approved_neutral_owners":  [
                                     {
@@ -1138,36 +1217,12 @@
                                             "target_owner":  "agent.operation.contracts.CancellationSafetyMode"
                                         },
                                         {
-                                            "bridge_id":  "W21-CB-META-004",
-                                            "class":  "compatibility",
-                                            "constraint":  "identity-preserving alias/re-export where required",
-                                            "lane":  "A",
-                                            "surface":  "agent.tools.provenance.ArgumentOrigin",
-                                            "target_owner":  "agent.operation.provenance.ArgumentOrigin"
-                                        },
-                                        {
                                             "bridge_id":  "W21-CB-META-005",
                                             "class":  "compatibility",
                                             "constraint":  "projection/alias only; planning must not maintain an independent editable metadata table",
                                             "lane":  "A",
                                             "surface":  "agent.planning.tool_metadata.ToolMetadata",
                                             "target_owner":  "agent.operation.planning_metadata.ToolMetadata"
-                                        },
-                                        {
-                                            "bridge_id":  "W21-CB-PROC-001",
-                                            "class":  "compatibility",
-                                            "constraint":  "bounded compatibility facade only; no canonical production caller may remain on the old owner",
-                                            "lane":  "B",
-                                            "surface":  "agent.tools.process_tree",
-                                            "target_owner":  "agent.process.tree"
-                                        },
-                                        {
-                                            "bridge_id":  "W21-CB-PROC-002",
-                                            "class":  "compatibility",
-                                            "constraint":  "bounded compatibility facade only; no canonical production caller may remain on the old owner",
-                                            "lane":  "B",
-                                            "surface":  "agent.tools.stdio_streams",
-                                            "target_owner":  "agent.process.streams"
                                         },
                                         {
                                             "bridge_id":  "W21-CB-PERSIST-001",
@@ -1199,8 +1254,21 @@
                                         }
                                     ],
     "canonical_checker":  "scripts/check_current_architecture.py",
-    "expected_broker_export_count":  40,
+    "expected_broker_export_count":  0,
+    "home_operation_ratchet": {
+      "pre_c23_exports": 2,
+      "exact_symbols": ["HomeLifecycleLease", "StorageBootstrap"],
+      "post_c23_exports": 0,
+      "broker_retired": true,
+      "broker_module_expected_absent": true,
+      "current_broker_consumer_count": 0,
+      "interface_canonical_references": 0,
+      "public_application_canonical_leakage": 0
+    },
     "contracted_broker_symbols": [
+        "ApprovalDecision",
+        "ApprovalRequest",
+        "ApprovalWaitCancelled",
         "ExtensionCatalogService",
         "ExtensionCatalogStorage",
         "WorkspaceExtensionService",
@@ -1241,8 +1309,107 @@
         "logger",
         "set_debug_level",
         "ConfigRepository",
-        "resolve_model_profile"
+        "resolve_model_profile",
+        "InspectionQuery",
+        "InspectorSnapshot",
+        "InspectionService",
+        "TraceCorruptError",
+        "TraceUnavailableError",
+        "MODEL_SAFE_TOOL_DESCRIPTORS",
+        "ModelSafeEngineering",
+        "ModelSafeResponse",
+        "ModelSafeStatus",
+        "build_model_safe_engineering_service",
+        "FaultPlanV1",
+        "FaultPlanV1Error",
+        "candidate_identity",
+        "candidate_identity_string",
+        "compare_practical_profiles",
+        "parse_fault_json",
+        "EngineeringCaller",
+        "EngineeringErrorV1",
+        "EngineeringExecutionContext",
+        "EngineeringOperationViewV1",
+        "EngineeringPermission",
+        "EngineeringQueryStatus",
+        "EngineeringRegistry",
+        "EngineeringRequest",
+        "EngineeringRunResultV1",
+        "EngineeringRunStore",
+        "EngineeringService",
+        "EngineeringTerminalStatus",
+        "EngineeringWorkspaceContext",
+        "EvaluationBackend",
+        "HealthBackend",
+        "InspectionBackend",
+        "RepositoryBackend",
+        "SourceRepositoryContext",
+        "production_registry"
     ],
+    "c21_engineering_boundary": {
+        "broker_exports_absent": [
+            "EngineeringCaller", "EngineeringErrorV1", "EngineeringExecutionContext",
+            "EngineeringOperationViewV1", "EngineeringPermission", "EngineeringQueryStatus",
+            "EngineeringRegistry", "EngineeringRequest", "EngineeringRunResultV1",
+            "EngineeringRunStore", "EngineeringService", "EngineeringTerminalStatus",
+            "EngineeringWorkspaceContext", "EvaluationBackend", "HealthBackend",
+            "InspectionBackend", "RepositoryBackend", "SourceRepositoryContext", "production_registry"
+        ],
+        "expected_post_c21_exports": [
+            "ApprovalDecision", "ApprovalRequest", "ApprovalWaitCancelled",
+            "HomeLifecycleLease", "StorageBootstrap"
+        ],
+        "broker_export_count": 5,
+        "application_module": "src/llm_agent/application/actions/engineering.py",
+        "public_exports": [
+            "EngineeringActionOutcome", "engineering_operation_ids", "list_engineering_operations",
+            "describe_engineering_operation", "query_engineering_history", "query_engineering_result",
+            "run_engineering"
+        ]
+    },
+    "c22_approval_boundary": {
+        "exact_symbols": ["ApprovalDecision", "ApprovalRequest", "ApprovalWaitCancelled"],
+        "expected_post_c22_exports": ["HomeLifecycleLease", "StorageBootstrap"],
+        "broker_export_count": 2,
+        "approval_module": "src/llm_agent/application/approval.py",
+        "canonical_agent_owner": "llm_agent.agent.approval"
+    },
+    "c19_evaluation_boundary": {
+        "broker_exports_absent": [
+            "FaultPlanV1",
+            "FaultPlanV1Error",
+            "candidate_identity",
+            "candidate_identity_string",
+            "compare_practical_profiles",
+            "parse_fault_json"
+        ],
+        "broker_export_count": 24,
+        "application_module": "src/llm_agent/application/actions/evaluation.py",
+        "interface_consumer": "src/llm_agent/interfaces/cli/engineering.py",
+        "public_exports": [
+            "EngineeringFaultInputError",
+            "PreparedEngineeringFault",
+            "PracticalComparisonOutcome",
+            "compare_practical_evaluation",
+            "prepare_engineering_fault",
+            "resolve_source_candidate_identity"
+        ],
+        "canonical_dependencies": [
+            "llm_agent.agent.evaluation.contracts",
+            "llm_agent.agent.evaluation.evaluation_identity",
+            "llm_agent.agent.evaluation.practical"
+        ],
+        "expected_post_c19_exports": [
+            "ApprovalDecision", "ApprovalRequest", "ApprovalWaitCancelled",
+            "EngineeringCaller", "EngineeringErrorV1", "EngineeringExecutionContext",
+            "EngineeringOperationViewV1", "EngineeringPermission", "EngineeringQueryStatus",
+            "EngineeringRegistry", "EngineeringRequest", "EngineeringRunResultV1",
+            "EngineeringRunStore", "EngineeringService", "EngineeringTerminalStatus",
+            "EngineeringWorkspaceContext", "EvaluationBackend", "HealthBackend",
+            "HomeLifecycleLease", "InspectionBackend", "RepositoryBackend",
+            "SourceRepositoryContext", "StorageBootstrap", "production_registry"
+        ]
+    },
     "worker_text_publication": {
         "contracted_symbols": ["bind_worker_output", "emit_worker_output"],
         "broker_symbols_absent": ["bind_worker_output", "emit_worker_output"],
@@ -1295,14 +1462,6 @@
                                      "module":  "llm_agent.agent.skills.registry",
                                      "occurrence_count":  1,
                                      "schema":  "SkillSpec literal module declarations"
-                                 },
-                                 {
-                                     "authority":  "_EXPORTS literal mapping",
-                                     "completeness_scope":  "all broker exports in the current repository",
-                                     "function":  "__getattr__",
-                                     "module":  "llm_agent.application.agent_boundary",
-                                     "occurrence_count":  1,
-                                     "schema":  "exact literal _EXPORTS: name -\u003e (module, attribute) mapping"
                                  },
                                  {
                                      "authority":  "built-in CLI action binding declarations",
@@ -1895,6 +2054,54 @@
                                           ]
                           },
     "product_namespace":  "llm_agent",
+    "retired_compatibility_modules": [
+        "llm_agent.agent.memory.json_persistence",
+        "llm_agent.agent.memory.path_safety",
+        "llm_agent.agent.runtime.filesystem_primitives",
+        "llm_agent.agent.runtime.legacy_paths",
+        "llm_agent.agent.runtime.path_safety",
+        "llm_agent.agent.runtime.workspace_trace_paths",
+        "llm_agent.agent.tools.provenance",
+        "llm_agent.agent.tools.process_tree",
+        "llm_agent.agent.tools.stdio_streams",
+        "llm_agent.agent.tools.stdio_launcher",
+        "llm_agent.agent.tools.extension_catalog_codec",
+        "llm_agent.agent.tools.extension_catalog_document",
+        "llm_agent.agent.tools.extension_catalog_errors",
+        "llm_agent.agent.tools.extension_catalog_lock",
+        "llm_agent.agent.tools.extension_catalog_migration",
+        "llm_agent.agent.tools.extension_catalog_service",
+        "llm_agent.agent.tools.extension_catalog_storage",
+        "llm_agent.agent.tools.extension_catalog_validation",
+        "llm_agent.agent.tools.extension_manifest_parser",
+        "llm_agent.agent.tools.extension_path",
+        "llm_agent.agent.tools.extension_registry",
+        "llm_agent.agent.tools.extension_state",
+        "llm_agent.agent.tools.workspace_extensions_codec",
+        "llm_agent.agent.tools.workspace_extensions_resolver",
+        "llm_agent.agent.tools.workspace_extensions_service",
+        "llm_agent.agent.tools.workspace_extensions_storage"
+    ],
+    "compatibility_projections": {
+        "schema_version": 1,
+        "surfaces": [
+            {"id":"skills-descriptor-skill-spec","mode":"SYMBOL_REEXPORT","module":"llm_agent.agent.skills.descriptor","canonical_module":"llm_agent.agent.operation.spec","exports":[{"name":"SkillSpec","canonical_name":"SkillSpec"}],"allowed_production_consumers":{}},
+            {"id":"skills-catalog","mode":"MODULE_REEXPORT","module":"llm_agent.agent.skills.catalog","canonical_module":"llm_agent.agent.operation.catalog","exports":[{"name":"BUILTIN_SKILL_SPECS","canonical_name":"BUILTIN_SKILL_SPECS"},{"name":"BUILTIN_SPEC_BY_NAME","canonical_name":"BUILTIN_SPEC_BY_NAME"}],"allowed_production_consumers":{}},
+            {"id":"tools-contracts-cancellation-safety-mode","mode":"SYMBOL_REEXPORT","module":"llm_agent.agent.tools.contracts","canonical_module":"llm_agent.agent.operation.contracts","exports":[{"name":"CancellationSafetyMode","canonical_name":"CancellationSafetyMode"}],"allowed_production_consumers":{}},
+            {"id":"planning-tool-metadata","mode":"MODULE_REEXPORT","module":"llm_agent.agent.planning.tool_metadata","canonical_module":"llm_agent.agent.operation.planning_metadata","exports":[{"name":"TOOL_METADATA","canonical_name":"TOOL_METADATA"},{"name":"ToolMetadata","canonical_name":"ToolMetadata"},{"name":"build_metadata_dict","canonical_name":"build_metadata_dict"},{"name":"estimate_step_cost","canonical_name":"estimate_step_cost"},{"name":"get_tool_metadata","canonical_name":"get_tool_metadata"}],"allowed_production_consumers":{}},
+            {"id":"runtime-paths","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.paths","canonical_module":"llm_agent.workspace.paths","exports":[{"name":"APP_DIRECTORY_NAME","canonical_name":"APP_DIRECTORY_NAME"},{"name":"BENCHMARK_RESULTS_FILE","canonical_name":"BENCHMARK_RESULTS_FILE"},{"name":"CHECKPOINT_FILE","canonical_name":"CHECKPOINT_FILE"},{"name":"CHAT_HISTORY_FILE","canonical_name":"CHAT_HISTORY_FILE"},{"name":"HEALTH_REPORT_FILE","canonical_name":"HEALTH_REPORT_FILE"},{"name":"LOG_FILE","canonical_name":"LOG_FILE"},{"name":"MEMORY_BACKUP_DIR","canonical_name":"MEMORY_BACKUP_DIR"},{"name":"MEMORY_DB_FILE","canonical_name":"MEMORY_DB_FILE"},{"name":"MEMORY_FILE","canonical_name":"MEMORY_FILE"},{"name":"METRICS_FILE","canonical_name":"METRICS_FILE"},{"name":"REPORTS_DIR","canonical_name":"REPORTS_DIR"},{"name":"RESTORE_POINTS_DIR","canonical_name":"RESTORE_POINTS_DIR"},{"name":"RUNTIME_DIR","canonical_name":"RUNTIME_DIR"},{"name":"TASK_TRACKER_JSON","canonical_name":"TASK_TRACKER_JSON"},{"name":"TASK_TRACKER_MD","canonical_name":"TASK_TRACKER_MD"},{"name":"AppHomeOrigin","canonical_name":"AppHomeOrigin"},{"name":"AppPaths","canonical_name":"AppPaths"},{"name":"WorkspacePaths","canonical_name":"WorkspacePaths"},{"name":"ensure_runtime_dir","canonical_name":"ensure_runtime_dir"},{"name":"legacy_checkpoint_file","canonical_name":"legacy_checkpoint_file"},{"name":"legacy_config_path_defaults","canonical_name":"legacy_config_path_defaults"},{"name":"legacy_health_report_file","canonical_name":"legacy_health_report_file"},{"name":"legacy_log_file","canonical_name":"legacy_log_file"},{"name":"legacy_memory_paths","canonical_name":"legacy_memory_paths"},{"name":"legacy_metrics_file","canonical_name":"legacy_metrics_file"},{"name":"legacy_reports_dir","canonical_name":"legacy_reports_dir"},{"name":"legacy_restore_points_dir","canonical_name":"legacy_restore_points_dir"}],"allowed_production_consumers":{"llm_agent.agent.health.core":["legacy_memory_paths","legacy_restore_points_dir","legacy_log_file","legacy_metrics_file","legacy_health_report_file"],"llm_agent.agent.memory.memory":["legacy_memory_paths"],"llm_agent.agent.reporting.task_report":["legacy_reports_dir"],"llm_agent.agent.runtime.config":["legacy_config_path_defaults"],"llm_agent.agent.runtime.logging":["legacy_log_file"]}},
+            {"id":"runtime-workspace-context","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.workspace_context","canonical_module":"llm_agent.workspace.context","exports":[{"name":"WorkspaceContext","canonical_name":"WorkspaceContext"}],"allowed_production_consumers":{}},
+            {"id":"code-path-safety","mode":"MODULE_REEXPORT","module":"llm_agent.agent.code.path_safety","canonical_module":"llm_agent.filesystem.path_safety","exports":[{"name":"WorkspacePathError","canonical_name":"WorkspacePathError"},{"name":"is_link_like","canonical_name":"is_link_like"},{"name":"resolve_workspace_path","canonical_name":"resolve_workspace_path"},{"name":"workspace_command_argument","canonical_name":"workspace_command_argument"},{"name":"workspace_relative_path","canonical_name":"workspace_relative_path"}],"allowed_production_consumers":{}},
+            {"id":"workspace-recents","mode":"MODULE_REEXPORT","module":"llm_agent.interfaces.cli.workspace_recents","canonical_module":"llm_agent.application.workspace_recents","exports":[{"name":"load_recent_workspaces","canonical_name":"list_recent_workspaces"},{"name":"remember_recent_workspace","canonical_name":"remember_recent_workspace"}],"allowed_production_consumers":{}},
+            {"id":"lock-file-lock","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.file_lock","canonical_module":"llm_agent.process.file_lock","exports":[{"name":"OPEN_BINARY","canonical_name":"OPEN_BINARY"},{"name":"lock_descriptor","canonical_name":"lock_descriptor"},{"name":"read_descriptor","canonical_name":"read_descriptor"},{"name":"try_lock_descriptor","canonical_name":"try_lock_descriptor"},{"name":"unlock_descriptor","canonical_name":"unlock_descriptor"}],"allowed_production_consumers":{}},
+            {"id":"lock-instance-lock","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.instance_lock","canonical_module":"llm_agent.process.instance_lock","exports":[{"name":"InstanceLock","canonical_name":"InstanceLock"},{"name":"InstanceLockError","canonical_name":"InstanceLockError"}],"allowed_production_consumers":{}},
+            {"id":"lock-record","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.lock_record","canonical_module":"llm_agent.process.lock_record","exports":[{"name":"InvalidLockRecord","canonical_name":"InvalidLockRecord"},{"name":"LockRecord","canonical_name":"LockRecord"},{"name":"read_lock_record","canonical_name":"read_lock_record"}],"allowed_production_consumers":{}},
+            {"id":"lock-process-identity","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.process_identity","canonical_module":"llm_agent.process.process_identity","exports":[{"name":"OwnerLiveness","canonical_name":"OwnerLiveness"},{"name":"OwnerStatus","canonical_name":"OwnerStatus"},{"name":"ProcessOwnerLiveness","canonical_name":"ProcessOwnerLiveness"},{"name":"current_process_start_id","canonical_name":"current_process_start_id"},{"name":"process_start_id","canonical_name":"process_start_id"}],"allowed_production_consumers":{}},
+            {"id":"lock-filesystem","mode":"MODULE_REEXPORT","module":"llm_agent.agent.runtime.lock_filesystem","canonical_module":"llm_agent.filesystem.lock_filesystem","exports":[{"name":"UnsafeLockPathError","canonical_name":"UnsafeLockPathError"},{"name":"descriptor_matches_path","canonical_name":"descriptor_matches_path"},{"name":"is_safe_regular","canonical_name":"is_safe_regular"},{"name":"open_verified","canonical_name":"open_verified"},{"name":"sync_parent_directory","canonical_name":"sync_parent_directory"},{"name":"unlink_if_observed","canonical_name":"unlink_if_observed"},{"name":"unlink_if_same_stat","canonical_name":"unlink_if_same_stat"},{"name":"validate_final_entry","canonical_name":"validate_final_entry"}],"allowed_production_consumers":{}}
+        ],
+        "retired_modules": ["llm_agent.agent.memory.json_persistence","llm_agent.agent.memory.path_safety","llm_agent.agent.runtime.filesystem_primitives","llm_agent.agent.runtime.legacy_paths","llm_agent.agent.runtime.path_safety","llm_agent.agent.runtime.workspace_trace_paths","llm_agent.agent.tools.provenance","llm_agent.agent.tools.process_tree","llm_agent.agent.tools.stdio_streams","llm_agent.agent.tools.stdio_launcher","llm_agent.agent.tools.extension_catalog_codec","llm_agent.agent.tools.extension_catalog_document","llm_agent.agent.tools.extension_catalog_errors","llm_agent.agent.tools.extension_catalog_lock","llm_agent.agent.tools.extension_catalog_migration","llm_agent.agent.tools.extension_catalog_service","llm_agent.agent.tools.extension_catalog_storage","llm_agent.agent.tools.extension_catalog_validation","llm_agent.agent.tools.extension_manifest_parser","llm_agent.agent.tools.extension_path","llm_agent.agent.tools.extension_registry","llm_agent.agent.tools.extension_state","llm_agent.agent.tools.workspace_extensions_codec","llm_agent.agent.tools.workspace_extensions_resolver","llm_agent.agent.tools.workspace_extensions_service","llm_agent.agent.tools.workspace_extensions_storage"],
+        "retired_symbol_bridge_ids": ["W21-CB-META-004"]
+    },
     "schema_version":  1,
     "status":  "CURRENT"
 }

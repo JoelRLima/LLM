@@ -7,10 +7,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from llm_agent.application.agent_boundary import (
-    HomeLifecycleLease,
-    StorageBootstrap,
-)
 from llm_agent.application.configuration_admin import (
     configuration_path,
     initialize_configuration,
@@ -123,13 +119,11 @@ def recover_first_run_config(
         return 0
 
     try:
-        lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
-        try:
-            StorageBootstrap().prepare(app_paths)
+        from llm_agent.application.home_operations import transient_home_operation
+
+        with transient_home_operation(app_paths):
             view = read_first_run_configuration(app_paths, None)
             _complete_guided_setup(args, view, app_paths, console, prompt)
-        finally:
-            lease.close()
         console.print("Configuração guiada validada. Diagnóstico de conectividade é opcional; entrando no chat.")
     except (ConfigurationError, OSError, ValueError) as exc:
         console.print(f"[red]Configuração guiada não concluída:[/red] {exc}")

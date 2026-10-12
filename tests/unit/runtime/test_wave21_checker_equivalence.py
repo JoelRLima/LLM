@@ -82,6 +82,47 @@ def test_w19_positive_fixture_accepts_typed_path_surface(tmp_path: Path) -> None
     assert wave19.check_architecture(fixture) == []
 
 
+def test_w19_lifecycle_checker_rejects_owner_bypasses_and_lost_cleanup(tmp_path: Path) -> None:
+    fixture = tmp_path / "w19-lifecycle-negatives"
+    _copy_repository(ROOT, fixture)
+    extensions = _final_path(fixture, "agent/interfaces/cli/extensions.py")
+    application = fixture / "src/llm_agent/application/home_operations.py"
+    extensions_source = extensions.read_text(encoding="utf-8")
+    application_source = application.read_text(encoding="utf-8")
+    cases = (
+        (
+            extensions,
+            extensions_source.replace(
+                "    with transient_home_operation(app_paths):\n        return _run_extensions(args, app_paths=app_paths, workspace=workspace)",
+                "    return _run_extensions(args, app_paths=app_paths, workspace=workspace)",
+            ),
+        ),
+        (
+            extensions,
+            extensions_source.replace(
+                "from __future__ import annotations\n",
+                "from __future__ import annotations\nfrom llm_agent.agent.runtime.home_lifecycle import HomeLifecycleLease\n",
+                1,
+            ),
+        ),
+        (
+            extensions,
+            extensions_source.replace("with transient_home_operation(app_paths):", "with startup_home_operation(app_paths):", 1),
+        ),
+        (
+            application,
+            application_source.replace("    finally:\n        lease.close()\n", "    finally:\n        pass\n", 1),
+        ),
+    )
+    for index, (path, altered) in enumerate(cases):
+        assert altered != (extensions_source if path == extensions else application_source)
+        baseline = extensions_source if path == extensions else application_source
+        path.write_text(altered, encoding="utf-8")
+        findings = wave19._check_interface_home_lifecycle(fixture)
+        path.write_text(baseline, encoding="utf-8")
+        assert any(item.rule_id == "W19-S05-009" for item in findings), f"lifecycle negative case {index} was accepted"
+
+
 def test_w20_positive_and_negative_boundary_fixtures(tmp_path: Path) -> None:
     positive = tmp_path / "w20-positive"
     (positive / "agent/engineering").mkdir(parents=True)

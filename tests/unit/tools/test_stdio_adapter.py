@@ -94,10 +94,16 @@ def _cleanup_windows_process_handle(kernel32: Any, handle: Any) -> None:
     try:
         state = _wait_for_windows_handle(kernel32, handle, 0)
         if state == _WAIT_TIMEOUT:
-            assert kernel32.TerminateProcess(handle, 1), (
-                f"TerminateProcess falhou: {ctypes_get_last_error()}"
-            )
-            assert _wait_for_windows_handle(kernel32, handle, 5000) == _WAIT_OBJECT_0
+            terminated = bool(kernel32.TerminateProcess(handle, 1))
+            if not terminated:
+                error = ctypes_get_last_error()
+                assert error == 5, f"TerminateProcess falhou: {error}"
+                assert _wait_for_windows_handle(kernel32, handle, 0) == _WAIT_OBJECT_0, (
+                    "TerminateProcess falhou: 5; "
+                    "o mesmo handle permanece nao sinalizado"
+                )
+            else:
+                assert _wait_for_windows_handle(kernel32, handle, 5000) == _WAIT_OBJECT_0
     finally:
         assert kernel32.CloseHandle(handle), f"CloseHandle falhou: {ctypes_get_last_error()}"
 
@@ -148,41 +154,72 @@ def test_windows_handle_wait_reports_wait_failed() -> None:
 
 
 @pytest.mark.parametrize(
-    ("terminate_ok", "close_ok"),
-    [(True, True), (False, True), (True, False)],
+    ("wait_results", "terminate_ok", "last_error", "close_ok", "error_match"),
+    [
+        pytest.param((_WAIT_OBJECT_0,), False, 0, True, None, id="already-signaled"),
+        pytest.param((_WAIT_TIMEOUT, _WAIT_OBJECT_0), True, 0, True, None, id="termination-success"),
+        pytest.param((_WAIT_TIMEOUT, _WAIT_OBJECT_0), False, 5, True, None, id="error-5-signaled"),
+        pytest.param(
+            (_WAIT_TIMEOUT, _WAIT_TIMEOUT), False, 5, True,
+            "o mesmo handle permanece nao sinalizado", id="error-5-unsignaled",
+        ),
+        pytest.param((_WAIT_TIMEOUT,), False, 87, True, "TerminateProcess falhou: 87", id="other-error"),
+        pytest.param((_WAIT_TIMEOUT, _WAIT_TIMEOUT), True, 0, True, r".*", id="termination-unconfirmed"),
+        pytest.param(
+            (_WAIT_TIMEOUT, _WAIT_OBJECT_0), True, 87, False,
+            "CloseHandle falhou: 87", id="close-failure",
+        ),
+    ],
 )
 def test_windows_handle_cleanup_validates_termination_and_close(
-    terminate_ok: bool, close_ok: bool
+    wait_results: tuple[int, ...],
+    terminate_ok: bool,
+    last_error: int,
+    close_ok: bool,
+    error_match: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    handle = object()
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(sys.modules[__name__], "ctypes_get_last_error", lambda: last_error)
+
     class Kernel32:
         def __init__(self) -> None:
-            self.wait_calls = 0
-            self.closed = False
+            self.waits = iter(wait_results)
 
-        def WaitForSingleObject(self, _handle: object, _timeout: int) -> int:
-            self.wait_calls += 1
-            return _WAIT_TIMEOUT if self.wait_calls == 1 else _WAIT_OBJECT_0
+        def WaitForSingleObject(self, actual_handle: object, timeout: int) -> int:
+            assert actual_handle is handle
+            calls.append(("wait", actual_handle, timeout))
+            return next(self.waits)
 
         @staticmethod
-        def TerminateProcess(_handle: object, _code: int) -> bool:
+        def TerminateProcess(actual_handle: object, code: int) -> bool:
+            assert actual_handle is handle
+            calls.append(("terminate", actual_handle, code))
             return terminate_ok
 
-        def CloseHandle(self, _handle: object) -> bool:
-            self.closed = True
+        def CloseHandle(self, actual_handle: object) -> bool:
+            assert actual_handle is handle
+            calls.append(("close", actual_handle))
             return close_ok
 
     kernel32 = Kernel32()
-    if terminate_ok and close_ok:
-        _cleanup_windows_process_handle(kernel32, object())
-        assert kernel32.closed
-    elif not terminate_ok:
-        with pytest.raises(AssertionError, match="TerminateProcess"):
-            _cleanup_windows_process_handle(kernel32, object())
-        assert kernel32.closed
+    if error_match is None:
+        _cleanup_windows_process_handle(kernel32, handle)
     else:
-        with pytest.raises(AssertionError, match="CloseHandle"):
-            _cleanup_windows_process_handle(kernel32, object())
-        assert kernel32.closed
+        with pytest.raises(AssertionError, match=error_match):
+            _cleanup_windows_process_handle(kernel32, handle)
+
+    expected_calls: list[tuple[Any, ...]] = [("wait", handle, 0)]
+    if wait_results[0] == _WAIT_TIMEOUT:
+        expected_calls.append(("terminate", handle, 1))
+        if terminate_ok:
+            expected_calls.append(("wait", handle, 5000))
+        elif last_error == 5:
+            expected_calls.append(("wait", handle, 0))
+    expected_calls.append(("close", handle))
+    assert calls == expected_calls
+    assert list(kernel32.waits) == []
 
 
 def test_pidfd_cleanup_closes_descriptor_after_emergency_signal(

@@ -6,9 +6,11 @@ import json
 import os
 import subprocess
 import zipfile
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import pytest
+from test_candidate_manifest import _repo as _synthetic_candidate
 
 from distribution.release_identity import UV_ASSET_URL, UV_SIGNATURE, UV_VERSION
 from scripts import build_windows_payload as builder
@@ -69,6 +71,56 @@ def test_windows_powershell_probe_does_not_inherit_powershell_core_module_path(t
     assert isolated["PSModulePath"] == str(expected_module_path)
     assert inherited["PSModulePath"].startswith(r"C:\Program Files\PowerShell")
     assert isolated["PATH"] == "safe"
+
+
+def test_explicit_candidate_materialization_is_pinned_after_worktree_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "fixture"
+    workspace.mkdir()
+    root, _encoded, digest = _synthetic_candidate(workspace)
+    monkeypatch.setattr(builder, "ROOT", root)
+    selection = workspace / "candidate.json"
+    resolved = builder._select_build_candidate(ExitStack(), selection, digest, tmp_path / "materialized")
+    expected = (resolved.materialized_root / "src/app.py").read_bytes()
+    (root / "src/app.py").write_bytes(b"changed after selection")
+
+    assert (resolved.materialized_root / "src/app.py").read_bytes() == expected
+    assert resolved.source_tree == resolved.manifest["source_tree"]
+
+
+def test_invalid_explicit_candidate_does_not_enter_historical_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "fixture"
+    workspace.mkdir()
+    root, _encoded, digest = _synthetic_candidate(workspace)
+    monkeypatch.setattr(builder, "ROOT", root)
+
+    def forbidden_fallback(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("W20 fallback was reached")
+
+    monkeypatch.setattr(builder, "isolated_candidate_tree", forbidden_fallback)
+    with pytest.raises(builder.BuildError, match="explicit candidate selection is invalid"):
+        builder._select_build_candidate(ExitStack(), workspace / "candidate.json", "0" * 64, tmp_path / "bad")
+
+
+def test_no_selection_retains_the_historical_w20_candidate_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    @contextmanager
+    def legacy_candidate(*args: object, **kwargs: object):
+        observed["args"] = args
+        observed["kwargs"] = kwargs
+        yield "historical-candidate"
+
+    monkeypatch.setattr(builder, "isolated_candidate_tree", legacy_candidate)
+    with ExitStack() as stack:
+        candidate = builder._select_build_candidate(stack, None, None, tmp_path / "unused")
+    assert candidate == "historical-candidate"
+    assert observed["kwargs"]["allowed_paths"] == builder.W20_CANDIDATE_PATH_SURFACE
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell probe is Windows-only")

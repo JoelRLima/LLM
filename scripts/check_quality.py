@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 PRODUCT_SOURCE_ROOT = SOURCE_LAYOUT.package_directory
 BASELINE_PATH = ROOT / "quality" / "baseline.json"
+QUALITY_EVIDENCE_ROOT = ".pytest-c14-evidence-20261001-0953"
 IGNORED_PARTS = {
     ".git",
     ".mypy_cache",
@@ -68,6 +69,7 @@ def _is_ignored(path: Path) -> bool:
     ignored_at_root = bool(parts) and parts[0] in IGNORED_ROOT_PARTS
     return (
         ignored_at_root
+        or (bool(parts) and parts[0] == QUALITY_EVIDENCE_ROOT)
         or bool(IGNORED_PARTS.intersection(parts))
         or any(part.endswith(".egg-info") for part in parts)
     )

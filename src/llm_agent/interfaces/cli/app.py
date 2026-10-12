@@ -200,10 +200,10 @@ def _run_commands(args: argparse.Namespace) -> int:
             print(f"{index}. {entry['preferred_invocation']} - {entry['description']}{suffix}")
     return 0
 def _run_completion(args: argparse.Namespace) -> int:
-    from llm_agent.application.agent_boundary import production_registry
+    from llm_agent.application.actions.engineering import engineering_operation_ids
     from llm_agent.interfaces.cli.completion import powershell_completion_script
     if getattr(args, "completion_command", None) == "powershell":
-        operation_ids = tuple(item.operation_id for item in production_registry().descriptors())
+        operation_ids = engineering_operation_ids()
         print(powershell_completion_script(engineering_operation_ids=operation_ids))
         return 0
     raise ValueError("completion command is required")
@@ -252,10 +252,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_error("Operação cancelada pelo usuário.", json_output=json_output)
         return 1
     except Exception as exc:
-        from llm_agent.application.agent_boundary import (
-            TraceCorruptError,
-            TraceUnavailableError,
-        )
         from llm_agent.application.inspection import (
             InspectionCorruptDataError,
             InspectionUnavailableError,
@@ -273,8 +269,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             (
                 InspectionUnavailableError,
                 InspectionCorruptDataError,
-                TraceUnavailableError,
-                TraceCorruptError,
             ),
         ):
             _emit_error(str(exc), json_output=json_output)

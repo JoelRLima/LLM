@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from llm_agent.application.agent_boundary import HomeLifecycleLease, StorageBootstrap
 from llm_agent.application.context import AppPaths, WorkspaceContext
 from llm_agent.application.extensions import (
     ExtensionCatalogService,
@@ -15,6 +14,7 @@ from llm_agent.application.extensions import (
     WorkspaceExtensionService,
     validate_extension_id,
 )
+from llm_agent.application.home_operations import transient_home_operation
 
 
 def _modern_extension_services(
@@ -231,12 +231,8 @@ def run_extensions(
     mutating = command in {"register", "enable", "disable", "grant", "revoke"}
     if not mutating:
         return _run_extensions(args, app_paths=app_paths, workspace=workspace)
-    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
-    try:
-        StorageBootstrap().prepare(app_paths)
+    with transient_home_operation(app_paths):
         return _run_extensions(args, app_paths=app_paths, workspace=workspace)
-    finally:
-        lease.close()
 
 
 __all__ = ["run_extensions"]

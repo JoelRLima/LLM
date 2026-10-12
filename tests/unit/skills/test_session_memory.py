@@ -17,12 +17,13 @@ class DummyOrchestrator:
         self.agent_state.memory.forget(key)
 
 
-def test_session_memory_set_get_delete_keys(tmp_path: Path, monkeypatch):
-    from llm_agent.agent.memory import memory as memory_module
-
-    monkeypatch.setattr(memory_module.paths, "MEMORY_DB_FILE", str(tmp_path / "agent_memory.db"))
+def test_session_memory_set_get_delete_keys(tmp_path: Path):
     orch = DummyOrchestrator()
-    orch.agent_state.memory = memory_module.AgentMemory()
+    orch.agent_state.memory = AgentMemory(
+        db_path=tmp_path / "agent_memory.db",
+        default_file=tmp_path / "agent_memory.json",
+        backup_dir=tmp_path / "backups",
+    )
     skill = SessionMemorySkill(orchestrator=orch)
 
     result = skill.execute({"action": "set", "key": "x", "value": "1"})
@@ -42,12 +43,13 @@ def test_session_memory_set_get_delete_keys(tmp_path: Path, monkeypatch):
     assert "x" not in orch.agent_state.memory.state["key_findings"]
 
 
-def test_session_memory_keys_empty(tmp_path: Path, monkeypatch):
-    from llm_agent.agent.memory import memory as memory_module
-
-    monkeypatch.setattr(memory_module.paths, "MEMORY_DB_FILE", str(tmp_path / "agent_memory.db"))
+def test_session_memory_keys_empty(tmp_path: Path):
     orch = DummyOrchestrator()
-    orch.agent_state.memory = memory_module.AgentMemory()
+    orch.agent_state.memory = AgentMemory(
+        db_path=tmp_path / "agent_memory.db",
+        default_file=tmp_path / "agent_memory.json",
+        backup_dir=tmp_path / "backups",
+    )
     skill = SessionMemorySkill(orchestrator=orch)
 
     result = skill.execute({"action": "keys"})

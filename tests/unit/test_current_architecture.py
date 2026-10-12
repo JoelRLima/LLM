@@ -4,37 +4,56 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from scripts.check_current_architecture import (
+    _TASK_EXECUTION_PATHS,
     ROOT,
     _application_agent_reexport_errors,
+    _application_dependency_errors,
+    _application_implementation_file_errors,
+    _application_public_export_errors,
+    _application_public_import_errors,
     _application_surface_errors,
     _begin_chat_turn_retains_presentation_fallback,
     _c14_logging_boundary_errors,
+    _c19_evaluation_errors,
+    _c21_engineering_errors,
+    _c22_boundary_errors,
+    _c23_home_operation_errors,
     _code_commands_boundary_errors,
     _code_review_boundary_errors,
+    _compatibility_consumer_errors,
+    _compatibility_facade_errors,
+    _compatibility_policy_errors,
+    _compatibility_projection_errors,
     _configuration_api_errors,
     _configuration_error_boundary_errors,
     _conversation_boundary_errors,
     _dynamic_errors,
     _dynamic_import_calls,
     _exports_mutation_errors,
+    _inspection_c17_interface_errors,
+    _inspection_list_contract_errors,
     _interactive_worker_publication_errors,
     _legacy_extension_registry_errors,
     _legacy_layer_errors,
-    _literal_exports,
     _load_policy,
     _owner,
     _owner_edge_errors,
     _policy_errors,
+    _retired_compatibility_reference_errors,
     _state_migration_operation_errors,
     _task_context_cli_errors,
     _task_context_operation_errors,
     _task_continuity_cli_errors,
     _task_continuity_operation_errors,
     _task_execution_boundary_errors,
+    _task_execution_dispatch_errors,
+    _task_execution_family_graph_errors,
+    _task_execution_headless_validation,
     _workspace_recents_compatibility_errors,
     _workspace_recents_consumer_errors,
     _workspace_recents_operation_errors,
@@ -60,6 +79,243 @@ def _remove_line_containing(source: str, needle: str) -> str:
             del lines[index]
             return "".join(lines)
     raise AssertionError(f"missing mutation target: {needle}")
+
+
+def test_application_public_export_scan_keeps_malformed_and_repeated_all_semantics() -> None:
+    malformed = ast.parse("__all__ = exports\n")
+    declared, errors = _application_public_export_errors("sample", {"exports": ["first"]}, malformed)
+    assert declared == set()
+    assert errors == ["CURRENT Application API sample __all__ differs from its finite authorized exports"]
+
+    repeated = ast.parse("__all__ = ['first']\n__all__ = ['second']\n")
+    declared, errors = _application_public_export_errors(
+        "sample", {"exports": ["first", "second"]}, repeated
+    )
+    assert declared == {"first", "second"}
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    (
+        "import llm_agent.agent.tools.process_tree\n",
+        "def run():\n    import llm_agent.agent.tools.process_tree\n",
+        "from llm_agent.agent.tools.process_tree import terminate_process\n",
+        "import llm_agent.agent.tools.process_tree as process_tree\n",
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import llm_agent.agent.tools.process_tree\n",
+        "import importlib\nimportlib.import_module('llm_agent.agent.tools.process_tree')\n",
+    ),
+)
+def test_current_rejects_references_to_retired_modules(tmp_path: Path, source_text: str) -> None:
+    package = tmp_path / "src" / "llm_agent" / "agent"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "consumer.py").write_text(source_text, encoding="utf-8")
+    source = RepositorySource(tmp_path, "final-w22")
+    policy = {"retired_compatibility_modules": ["llm_agent.agent.tools.process_tree"]}
+    errors = _retired_compatibility_reference_errors(source, policy)
+    assert any("reference to retired compatibility module" in error for error in errors)
+
+
+def test_current_rejects_reexport_of_retired_module(tmp_path: Path) -> None:
+    package = tmp_path / "src" / "llm_agent" / "agent" / "tools"
+    package.mkdir(parents=True)
+    (package.parent / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text(
+        "from llm_agent.agent.tools.process_tree import terminate_process\n",
+        encoding="utf-8",
+    )
+    source = RepositorySource(tmp_path, "final-w22")
+    policy = {"retired_compatibility_modules": ["llm_agent.agent.tools.process_tree"]}
+    errors = _retired_compatibility_reference_errors(source, policy)
+    assert any("reference to retired compatibility module" in error for error in errors)
+
+
+def test_current_rejects_reintroduced_retired_module(tmp_path: Path) -> None:
+    package = tmp_path / "src" / "llm_agent" / "agent" / "tools"
+    package.mkdir(parents=True)
+    (package / "process_tree.py").write_text("", encoding="utf-8")
+    source = RepositorySource(tmp_path, "final-w22")
+    policy = {"retired_compatibility_modules": ["llm_agent.agent.tools.process_tree"]}
+    errors = _retired_compatibility_reference_errors(source, policy)
+    assert any("remains present" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "source_text",
+    (
+        "import llm_agent.agent.memory.json_persistence\n",
+        "def run():\n    import llm_agent.agent.memory.json_persistence\n",
+        "from llm_agent.agent.memory.json_persistence import read_json_object as hypothetical_growth\n",
+        "import llm_agent.agent.memory.json_persistence as persistence\npersistence.read_json_object\n",
+        "import llm_agent.agent.memory as memory\nmemory.json_persistence.read_json_object\n",
+        "from llm_agent.agent import memory as legacy_memory\nlegacy_memory.json_persistence.read_json_object\n",
+        "from llm_agent.agent.memory import json_persistence as persistence\npersistence.read_json_object\n",
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    import llm_agent.agent.memory.json_persistence\n",
+        "import importlib\nimportlib.import_module('llm_agent.agent.memory.json_persistence')\n",
+    ),
+)
+def test_current_rejects_demonstrated_retired_memory_json_growth(tmp_path: Path, source_text: str) -> None:
+    package = tmp_path / "src" / "llm_agent" / "agent"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "consumer.py").write_text(source_text, encoding="utf-8")
+    source = RepositorySource(tmp_path, "final-w22")
+    errors = _retired_compatibility_reference_errors(source, _load_policy())
+    assert any("reference to retired compatibility module" in error for error in errors)
+
+
+def _compat_item(module: str) -> dict[str, Any]:
+    section = _load_policy()["compatibility_projections"]
+    return next(item for item in section["surfaces"] if item["module"] == module)
+
+
+@pytest.mark.parametrize(
+    ("module", "source_text", "diagnostic"),
+    (
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.catalog import *\n__all__ = ['BUILTIN_SKILL_SPECS', 'BUILTIN_SPEC_BY_NAME']\n", "bindings differ"),
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.catalog import BUILTIN_SKILL_SPECS, BUILTIN_SPEC_BY_NAME\n__all__ = canonical.__all__\n", "__all__"),
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.catalog import BUILTIN_SKILL_SPECS, BUILTIN_SPEC_BY_NAME\ndef new_surface():\n    return BUILTIN_SKILL_SPECS\n__all__ = ['BUILTIN_SKILL_SPECS', 'BUILTIN_SPEC_BY_NAME']\n", "implementation logic"),
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.schema import BUILTIN_SKILL_SPECS, BUILTIN_SPEC_BY_NAME\n__all__ = ['BUILTIN_SKILL_SPECS', 'BUILTIN_SPEC_BY_NAME']\n", "bindings differ"),
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.catalog import BUILTIN_SKILL_SPECS, BUILTIN_SPEC_BY_NAME\nBUILTIN_SKILL_SPECS = ()\n__all__ = ['BUILTIN_SKILL_SPECS', 'BUILTIN_SPEC_BY_NAME']\n", "implementation logic"),
+        ("llm_agent.agent.skills.catalog", "from llm_agent.agent.operation.catalog import BUILTIN_SKILL_SPECS, BUILTIN_SPEC_BY_NAME\nEXTRA = 1\n__all__ = ['BUILTIN_SKILL_SPECS', 'BUILTIN_SPEC_BY_NAME']\n", "implementation logic"),
+    ),
+)
+def test_current_rejects_compatibility_facade_growth(tmp_path: Path, module: str, source_text: str, diagnostic: str) -> None:
+    relative = Path("src") / Path(*module.split("."))
+    path = tmp_path / relative.with_suffix(".py")
+    path.parent.mkdir(parents=True)
+    path.write_text(source_text, encoding="utf-8")
+    source = RepositorySource(tmp_path, "final-w22")
+    errors = _compatibility_facade_errors(source, _compat_item(module))
+    assert any(diagnostic in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda section: section["surfaces"].append(dict(section["surfaces"][0])),
+        lambda section: section["surfaces"][0].update(mode="FAMILY_REEXPORT"),
+        lambda section: section["surfaces"][0]["exports"].append({"name": "NewName", "canonical_name": "NewName"}),
+        lambda section: section.update(retired_modules=[]),
+        lambda section: section["retired_modules"].append("llm_agent.agent.skills.catalog"),
+        lambda section: section.update(retired_symbol_bridge_ids=[]),
+        lambda section: section.update(unknown_field=True),
+    ),
+)
+def test_current_rejects_malformed_compatibility_policy(mutation) -> None:
+    import copy
+
+    policy = copy.deepcopy(_load_policy())
+    mutation(policy["compatibility_projections"])
+    assert _compatibility_policy_errors(policy)
+
+
+def test_current_accepts_exact_retained_projection_inventory() -> None:
+    policy = _load_policy()
+    assert not _compatibility_policy_errors(policy)
+    assert not _compatibility_projection_errors(
+        RepositorySource(ROOT, SourceLayout.for_profile(ROOT, "final-w22")), policy
+    )
+
+
+@pytest.mark.parametrize(
+    ("consumer_path", "consumer_text"),
+    (
+        ("src/llm_agent/agent/runtime/unexpected.py", "from llm_agent.agent.runtime import paths\nvalue = paths.LOG_FILE\n"),
+        ("src/llm_agent/agent/health/core.py", "from llm_agent.agent.runtime import paths\nvalue = paths.CHECKPOINT_FILE\n"),
+        ("src/llm_agent/agent/health/core.py", "from llm_agent.agent.runtime import paths\ndef forward(value):\n    return value\nforward(paths)\n"),
+    ),
+)
+def test_current_rejects_unauthorized_runtime_paths_consumers(tmp_path: Path, consumer_path: str, consumer_text: str) -> None:
+    path = tmp_path / consumer_path
+    path.parent.mkdir(parents=True)
+    path.write_text(consumer_text, encoding="utf-8")
+    item = _compat_item("llm_agent.agent.runtime.paths")
+    assert _compatibility_consumer_errors(RepositorySource(tmp_path, "final-w22"), [item])
+
+
+def test_current_rejects_unauthorized_mixed_symbol_consumer(tmp_path: Path) -> None:
+    path = tmp_path / "src/llm_agent/agent/skills/consumer.py"
+    path.parent.mkdir(parents=True)
+    path.write_text("from llm_agent.agent.skills.descriptor import SkillSpec\n", encoding="utf-8")
+    item = _compat_item("llm_agent.agent.skills.descriptor")
+    assert _compatibility_consumer_errors(RepositorySource(tmp_path, "final-w22"), [item])
+
+
+@pytest.mark.parametrize(
+    "code, implementation_modules, owns_public, expected",
+    [
+        (
+            "from llm_agent.application.impl import *\n",
+            {"llm_agent.application.impl"},
+            False,
+            ("wildcard symbol brokerage", "not direct finite symbol imports"),
+        ),
+        (
+            "from .impl import Thing\n",
+            {"llm_agent.application.impl"},
+            False,
+            ("relative or ambiguous broker import", "outside its authorized implementation family"),
+        ),
+        (
+            "import llm_agent.application.impl\n",
+            {"llm_agent.application.impl"},
+            False,
+            ("exposes module brokerage", "not direct finite symbol imports"),
+        ),
+        (
+            "def __getattr__(name):\n    return object()\n",
+            set(),
+            False,
+            ("defines symbol brokerage", "not direct finite symbol imports"),
+        ),
+        (
+            "import llm_agent.agent.core\n",
+            set(),
+            True,
+            (),
+        ),
+    ],
+)
+def test_application_public_import_scan_preserves_brokerage_recognition(
+    code: str, implementation_modules: set[str], owns_public: bool, expected: tuple[str, ...]
+) -> None:
+    errors = _application_public_import_errors(
+        "sample", ast.parse(code), {"Thing"}, implementation_modules, owns_public
+    )
+    for expected_fragment in expected:
+        assert any(expected_fragment in error for error in errors)
+    assert len(errors) == len(expected)
+
+
+def test_application_implementation_scan_keeps_responsibility_service_and_dynamic_checks() -> None:
+    tree = ast.parse(
+        "from typing import Any\n"
+        "import importlib\n"
+        "def operation(services: Any):\n    return importlib.import_module('plugin')\n"
+    )
+    definitions, agent_imports, errors = _application_implementation_file_errors(
+        "sample", "impl.py", "llm_agent.application.impl", tree, {"impl.py": ["missing_operation"]}
+    )
+    assert definitions == {"operation"}
+    assert agent_imports == set()
+    assert any("missing substantive responsibility" in error for error in errors)
+    assert any("generic service bag parameter services" in error for error in errors)
+    assert any("dynamic module brokerage" in error for error in errors)
+
+
+def test_application_dependency_scan_keeps_forbidden_graph_families() -> None:
+    errors = _application_dependency_errors(
+        "sample",
+        [{"source_module": "llm_agent.application.sample", "destination_module": "llm_agent.agent.private"}],
+        {"llm_agent.application.sample"},
+        ["llm_agent.domain"],
+    )
+    assert errors == [
+        "CURRENT Application API sample depends outside declared families: "
+        "llm_agent.application.sample -> llm_agent.agent.private"
+    ]
 
 
 def test_c9_conversation_boundary_is_owned_and_opaque() -> None:
@@ -163,11 +419,9 @@ def test_nonliteral_runtime_imports_have_finite_registry_classifications() -> No
 
     assert set(sites) == {
         "llm_agent.agent.skills.registry",
-        "llm_agent.application.agent_boundary",
         "llm_agent.interfaces.cli.action_registry",
     }
     assert "custom SkillSpec" in sites["llm_agent.agent.skills.registry"]["completeness_scope"]
-    assert "_EXPORTS" in sites["llm_agent.application.agent_boundary"]["schema"]
     assert "caller-injected" in sites["llm_agent.interfaces.cli.action_registry"]["completeness_scope"]
     assert (ROOT / policy["canonical_checker"]).is_file()
 
@@ -218,6 +472,7 @@ def test_current_application_api_catalog_has_only_authorized_surfaces() -> None:
         "interactive_worker",
         "session_diagnostics",
         "model_profile_selection",
+        "model_safe_mcp",
     }
     assert policy["application_api_surfaces"]["configuration_admin"]["exports"] == [
         "configuration_path", "validate_configuration", "initialize_configuration", "migrate_configuration"
@@ -238,7 +493,7 @@ def test_current_application_api_catalog_has_only_authorized_surfaces() -> None:
     assert policy["application_api_surfaces"]["model_profile_selection"]["exports"] == [
         "select_default_model_profile"
     ]
-    assert policy["expected_broker_export_count"] == 40
+    assert policy["expected_broker_export_count"] == 0
     assert policy["worker_text_publication"]["separate_from_c12"] == "TaskActivityUpdate"
     assert policy["c14_logging_boundary"]["contracted_symbols"] == ["logger", "set_debug_level"]
     workspace = policy["application_api_surfaces"]["workspace_query"]
@@ -261,19 +516,19 @@ def test_current_application_api_catalog_has_only_authorized_surfaces() -> None:
     assert inspection["canonical_owner"] == "Application"
     assert inspection["public_surface"] == "src/llm_agent/application/inspection/__init__.py"
     assert inspection["responsibility"] == (
-        "Workspace-scoped auxiliary inspection operations over retained traces: "
-        "bookmark management and diagnostic export."
+        "Workspace-scoped retained-trace reads, bookmark management, and diagnostic export."
     )
     assert set(inspection["exports"]) == {
         "BookmarkAddRequest", "BookmarkAddResult", "BookmarkListRequest",
         "BookmarkListResult", "BookmarkRemoveRequest", "BookmarkRemoveResult",
         "BookmarkView", "DiagnosticExportRequest", "DiagnosticExportResult",
-        "InspectionAuxiliaryOperations", "InspectionCorruptDataError",
+        "InspectionReadRequest", "InspectionListRequest", "InspectionReadContext", "InspectionAuxiliaryOperations", "read_inspection", "list_inspection_runs", "InspectionCorruptDataError",
         "InspectionUnavailableError",
     }
     assert inspection["allowed_dependency_families"] == [
         "llm_agent.application.context",
         "llm_agent.agent.presentation.service",
+        "llm_agent.agent.presentation.query",
         "llm_agent.agent.observability.bookmarks",
         "llm_agent.agent.observability.export",
         "llm_agent.agent.observability.trace_store",
@@ -298,7 +553,7 @@ def test_current_application_api_catalog_has_only_authorized_surfaces() -> None:
     assert recents["allowed_dependency_families"] == [
         "llm_agent.application.context",
         "llm_agent.storage.json_persistence",
-        "llm_agent.agent.runtime.instance_lock",
+        "llm_agent.process.instance_lock",
     ]
 
     task_context = policy["application_api_surfaces"]["task_context"]
@@ -514,6 +769,55 @@ def test_current_task_context_boundary_proves_composition_and_cli_migration() ->
             set(),
         )
         assert adversarial_errors
+
+
+def test_task_context_typing_failure_does_not_skip_provenance_checks() -> None:
+    contract = _load_policy()["application_api_surfaces"]["task_context"]["anti_proxy_contract"]
+    tree = ast.parse((ROOT / "src/llm_agent/application/task_context.py").read_text(encoding="utf-8"))
+    operation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "read_task_context")
+    request = next(argument for argument in operation.args.args if argument.arg == "request")
+    request.annotation = ast.Name(id="str", ctx=ast.Load())
+    for node in ast.walk(operation):
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == "WorkspaceContext.create":
+            node.args[0] = ast.Constant(value="unrelated")
+            break
+
+    errors = _task_context_operation_errors({"task_context.py": tree}, contract, set())
+
+    assert "CURRENT task_context operation lacks its finite request/result typing" in errors
+    assert "CURRENT task_context does not perform the declared workspace/repository/resolver sequence" in errors
+
+
+def test_task_continuity_typing_failure_returns_before_provenance_checks() -> None:
+    contract = _load_policy()["application_api_surfaces"]["task_continuity"]["anti_proxy_contract"]
+    tree = ast.parse((ROOT / "src/llm_agent/application/task_continuity.py").read_text(encoding="utf-8"))
+    operation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "read_task_continuity")
+    operation.returns = ast.Name(id="str", ctx=ast.Load())
+
+    errors = _task_continuity_operation_errors({"task_continuity.py": tree}, contract, {"TaskContinuityService"})
+
+    assert errors == ["CURRENT task_continuity operation lacks finite request/result typing"]
+
+
+def test_state_migration_keeps_duplicate_setup_diagnostics() -> None:
+    contract = _load_policy()["application_api_surfaces"]["state_migration"]["anti_proxy_contract"]
+    tree = ast.parse((ROOT / "src/llm_agent/application/state_migration/operations.py").read_text(encoding="utf-8"))
+    operation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "migrate_state")
+    operation.body = [operation.body[0], ast.Pass(), ast.Pass()]
+
+    errors = _state_migration_operation_errors(operation, contract, {"operations.py": tree}, set())
+
+    assert errors.count("CURRENT state_migration workspace and lease setup is not the declared sequence") == 2
+
+
+def test_policy_invalid_owner_short_circuits_surface_family_checks() -> None:
+    policy = _load_policy()
+    policy["application_api_surfaces"]["health_diagnostics"]["canonical_owner"] = "Agent"
+
+    errors = _policy_errors(policy)
+
+    assert errors.count("CURRENT Application API surface has invalid owner: health_diagnostics") == 1
+    assert "CURRENT health_diagnostics anti-proxy contract changed without authority" not in errors
 
 
 def test_current_task_continuity_boundary_proves_composition_and_cli_migration() -> None:
@@ -761,6 +1065,25 @@ def test_current_inspection_api_checker_rejects_proxy_composition() -> None:
     )
 
 
+def test_c17_inspection_list_contract_and_interface_boundary_are_enforced(tmp_path: Path) -> None:
+    policy = _load_policy()["application_api_surfaces"]["inspection_auxiliary"]
+    tree = ast.parse((ROOT / "src/llm_agent/application/inspection/read_operations.py").read_text(encoding="utf-8"))
+    assert _inspection_list_contract_errors(policy, [tree]) == []
+
+    interface = tmp_path / "inspector.py"
+    interface.write_text(
+        "from llm_agent.agent.presentation import InspectionService\n"
+        "import llm_agent.agent.presentation as agent_api\n"
+        "value = agent_api.TraceCorruptError\n",
+        encoding="utf-8",
+    )
+    errors = _inspection_c17_interface_errors(tmp_path, ["inspector.py"])
+    assert errors == [
+        "CURRENT Interface imports a contracted C17 inspection symbol: inspector.py:1",
+        "CURRENT Interface references a contracted C17 inspection symbol: inspector.py:3",
+    ]
+
+
 def test_current_health_api_checker_rejects_agent_symbol_reexport() -> None:
     errors = _application_agent_reexport_errors(
         "health_diagnostics",
@@ -790,85 +1113,43 @@ def test_health_lane_does_not_add_interface_to_agent_import_edges() -> None:
     ]
 
 
-def test_literal_agent_boundary_registry_is_complete_in_current_graph() -> None:
+def test_c23_final_broker_retirement_contract() -> None:
+    policy = _load_policy()
+    assert policy["expected_broker_export_count"] == 0
+    assert policy["home_operation_ratchet"] == {
+        "pre_c23_exports": 2,
+        "exact_symbols": ["HomeLifecycleLease", "StorageBootstrap"],
+        "post_c23_exports": 0,
+        "broker_retired": True,
+        "broker_module_expected_absent": True,
+        "current_broker_consumer_count": 0,
+        "interface_canonical_references": 0,
+        "public_application_canonical_leakage": 0,
+    }
+    assert _c23_home_operation_errors(ROOT, policy) == []
+    assert not (ROOT / "src/llm_agent/application/agent_boundary.py").exists()
     source = RepositorySource(ROOT, SourceLayout.for_profile(ROOT, "final-w22"))
     graph = build_graph(source)
-
-    exports = _literal_exports(source, "llm_agent.application.agent_boundary")
-    errors = _dynamic_errors(source, graph, _load_policy())
-
-    assert exports
-    assert "run_health_check" not in exports
-    assert "BookmarkStore" not in exports
-    assert "DiagnosticExporter" not in exports
-    assert "InstanceLock" not in exports
-    assert not errors
+    assert "llm_agent.application.agent_boundary" not in source.module_paths()
+    assert not _dynamic_errors(source, graph, policy)
+    interface_agent_edges = [
+        edge for edge in graph.architecture_union_edges
+        if _owner(str(edge["source_module"]), policy) == "Interfaces"
+        and _owner(str(edge["destination_module"]), policy) == "Agent"
+    ]
+    assert interface_agent_edges == []
 
 
-def test_contracted_broker_aliases_are_absent_and_unresolvable() -> None:
-    from llm_agent.application import agent_boundary as broker
+def test_c19_evaluation_boundary_is_current_and_finite() -> None:
+    assert _c19_evaluation_errors(ROOT, _load_policy()) == []
 
-    source = RepositorySource(ROOT, SourceLayout.for_profile(ROOT, "final-w22"))
-    exports = _literal_exports(source, "llm_agent.application.agent_boundary")
-    contracted = frozenset(_load_policy()["contracted_broker_symbols"])
 
-    assert len(exports) == 40
-    assert contracted == {
-        "ExtensionCatalogService",
-        "ExtensionCatalogStorage",
-        "WorkspaceExtensionService",
-        "load_strict_extension_manifest",
-        "validate_extension_id",
-        "TaskContextResolver",
-        "TaskDefinitionError",
-        "TaskDefinitionRepository",
-        "TaskContinuityService",
-        "ExtensionRegistry",
-        "ConfigError",
-        "ConfigNotFound",
-        "CODE_COMMAND_HELP",
-        "CODE_TASK_ACTIONS",
-        "ChangeApprover",
-        "CodeCommandError",
-        "CodeRequest",
-        "CodingApplicationService",
-        "build_code_context",
-        "parse_code_command",
-        "requests_test_execution",
-        "ChangePreview",
-        "ProposalAssessment",
-        "ChatSession",
-        "ModelConnectionError",
-        "ModelTimeoutError",
-        "AgentApplication",
-        "AutoApprove",
-        "RequireExplicitApproval",
-        "OperationalMode",
-        "Orchestrator",
-        "TaskRunDirective",
-        "TaskResult",
-        "RuntimeEvent",
-        "RuntimeEventKind",
-        "bind_worker_output",
-        "emit_worker_output",
-        "logger",
-        "set_debug_level",
-        "ConfigRepository",
-        "resolve_model_profile",
-    }
-    assert contracted.isdisjoint(exports)
-    assert contracted.isdisjoint(broker.__all__)
-    assert any(
-        "contracted broker aliases" in error
-        for error in _policy_errors({**_load_policy(), "contracted_broker_symbols": []})
-    )
-    for symbol in contracted:
-        try:
-            getattr(broker, symbol)
-        except AttributeError:
-            pass
-        else:
-            raise AssertionError(f"contracted broker alias still resolves: {symbol}")
+def test_c21_engineering_boundary_is_current_and_finite() -> None:
+    assert _c21_engineering_errors(ROOT, _load_policy()) == []
+
+
+def test_c22_approval_boundary_is_current_and_finite() -> None:
+    assert _c22_boundary_errors(ROOT, _load_policy()) == []
 
 
 def test_current_c13_worker_publication_contract_is_semantic_and_finite() -> None:
@@ -916,10 +1197,16 @@ def test_current_c13_checker_rejects_unbound_fallback_forms(constructor_call: st
 def test_c12_interface_and_task_activity_dto_have_no_canonical_event_leak() -> None:
     errors, counts = check()
     assert not errors
-    assert counts["broker_exports"] == 40
+    assert counts["broker_exports"] == 0
     tree = ast.parse((ROOT / "src/llm_agent/application/task_execution.py").read_text(encoding="utf-8"))
     dto = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "TaskActivityUpdate")
-    assert [node.target.id for node in dto.body if isinstance(node, ast.AnnAssign)] == [
+    field_names: list[str] = []
+    for node in dto.body:
+        if not isinstance(node, ast.AnnAssign):
+            continue
+        assert isinstance(node.target, ast.Name)
+        field_names.append(node.target.id)
+    assert field_names == [
         "run_id", "timestamp", "coalescing_key", "delivery", "activity", "advances_activity",
         "model_active", "tool_transition", "tool_name", "invocation_id", "step_label", "warning",
         "terminal_outcome",
@@ -930,6 +1217,7 @@ def test_c12_interface_and_task_activity_dto_have_no_canonical_event_leak() -> N
     )
     binding = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "bind_interactive_services")
     callback = next(argument for argument in binding.args.args if argument.arg == "event_sink")
+    assert callback.annotation is not None
     assert ast.unparse(callback.annotation) == "Callable[[TaskActivityUpdate], None]"
 
 
@@ -1150,89 +1438,97 @@ def test_workspace_recents_consumer_scan_rejects_builtin_import_alias(
 def test_inspection_auxiliary_symbols_have_no_broker_consumers() -> None:
     broker = "llm_agent.application.agent_boundary"
     removed_symbols = {"BookmarkStore", "DiagnosticExporter"}
-    test_file = Path(__file__).resolve()
-    findings: list[str] = []
-
-    for scope in (ROOT / "src", ROOT / "tests"):
-        for path in scope.rglob("*.py"):
-            if path.resolve() == test_file:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            aliases: set[str] = set()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module == broker:
-                    for imported in node.names:
-                        if imported.name in removed_symbols:
-                            findings.append(f"{path}:{node.lineno}:{imported.name}")
-                elif isinstance(node, ast.Import):
-                    for imported in node.names:
-                        if imported.name == broker:
-                            aliases.add(imported.asname or "agent_boundary")
-                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    if broker in node.value and any(symbol in node.value for symbol in removed_symbols):
-                        findings.append(f"{path}:{node.lineno}:broker string reference")
-            for node in ast.walk(tree):
-                if (
-                    isinstance(node, ast.Attribute)
-                    and isinstance(node.value, ast.Name)
-                    and node.value.id in aliases
-                    and node.attr in removed_symbols
-                ):
-                    findings.append(f"{path}:{node.lineno}:{node.attr}")
-
-    assert not findings
+    assert not _inspection_broker_consumers(broker, removed_symbols)
 
 
 def test_state_migration_symbols_have_no_broker_consumers_after_contract() -> None:
     broker = "llm_agent.application.agent_boundary"
     removed_symbols = {"migrate_legacy_state", "StateMigrationError"}
     source = RepositorySource(ROOT, SourceLayout.for_profile(ROOT, "final-w22"))
-    exports = _literal_exports(source, broker)
-    assert not (removed_symbols & set(exports))
+    assert broker not in source.module_paths()
 
+    assert not _state_migration_broker_consumers(broker, removed_symbols)
+
+
+def _broker_consumer_source_files() -> list[Path]:
     test_file = Path(__file__).resolve()
+    return [
+        path
+        for scope in (ROOT / "src", ROOT / "tests")
+        for path in scope.rglob("*.py")
+        if path.resolve() != test_file
+    ]
+
+
+def _inspection_broker_consumers(broker: str, symbols: set[str]) -> list[str]:
     findings: list[str] = []
-    for scope in (ROOT / "src", ROOT / "tests"):
-        for path in scope.rglob("*.py"):
-            if path.resolve() == test_file:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            module_aliases: set[str] = set()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module == broker:
-                    findings.extend(
-                        f"{path}:{node.lineno}:{item.name}"
-                        for item in node.names
-                        if item.name in removed_symbols
-                    )
-                elif isinstance(node, ast.Import):
-                    module_aliases.update(
-                        item.asname or item.name.split(".")[-1]
-                        for item in node.names
-                        if item.name == broker
-                    )
-                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    if broker in node.value and any(symbol in node.value for symbol in removed_symbols):
-                        findings.append(f"{path}:{node.lineno}:dynamic-or-monkeypatch-reference")
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Attribute) and node.attr in removed_symbols:
-                    current = node.value
-                    while isinstance(current, ast.Attribute):
-                        current = current.value
-                    if isinstance(current, ast.Name) and current.id in module_aliases:
-                        findings.append(f"{path}:{node.lineno}:{node.attr}")
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "getattr"
-                    and len(node.args) >= 2
-                    and isinstance(node.args[0], ast.Name)
-                    and node.args[0].id in module_aliases
-                    and isinstance(node.args[1], ast.Constant)
-                    and node.args[1].value in removed_symbols
-                ):
-                    findings.append(f"{path}:{node.lineno}:dynamic-attribute-reference")
-    assert not findings
+    for path in _broker_consumer_source_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        aliases = _inspection_broker_file_findings(path, tree, broker, symbols, findings)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in aliases and node.attr in symbols:
+                findings.append(f"{path}:{node.lineno}:{node.attr}")
+    return findings
+
+
+def _inspection_broker_file_findings(path: Path, tree: ast.Module, broker: str, symbols: set[str], findings: list[str]) -> set[str]:
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == broker:
+            for item in node.names:
+                if item.name in symbols:
+                    findings.append(f"{path}:{node.lineno}:{item.name}")
+        elif isinstance(node, ast.Import):
+            aliases.update(item.asname or "agent_boundary" for item in node.names if item.name == broker)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and broker in node.value and any(symbol in node.value for symbol in symbols):
+            findings.append(f"{path}:{node.lineno}:broker string reference")
+    return aliases
+
+
+def _state_migration_broker_consumers(broker: str, symbols: set[str]) -> list[str]:
+    findings: list[str] = []
+    for path in _broker_consumer_source_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        aliases = _state_migration_broker_file_findings(path, tree, broker, symbols, findings)
+        findings.extend(_state_migration_alias_findings(path, tree, aliases, symbols))
+    return findings
+
+
+def _state_migration_broker_file_findings(path: Path, tree: ast.Module, broker: str, symbols: set[str], findings: list[str]) -> set[str]:
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == broker:
+            findings.extend(f"{path}:{node.lineno}:{item.name}" for item in node.names if item.name in symbols)
+        elif isinstance(node, ast.Import):
+            aliases.update(item.asname or item.name.split(".")[-1] for item in node.names if item.name == broker)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and broker in node.value and any(symbol in node.value for symbol in symbols):
+            findings.append(f"{path}:{node.lineno}:dynamic-or-monkeypatch-reference")
+    return aliases
+
+
+def _state_migration_alias_findings(path: Path, tree: ast.Module, aliases: set[str], symbols: set[str]) -> list[str]:
+    findings: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in symbols and _attribute_root_name(node) in aliases:
+            findings.append(f"{path}:{node.lineno}:{node.attr}")
+        if _is_literal_getattr_of_alias(node, aliases, symbols):
+            findings.append(f"{path}:{getattr(node, 'lineno', 0)}:dynamic-attribute-reference")
+    return findings
+
+
+def _attribute_root_name(node: ast.Attribute) -> str | None:
+    current: ast.AST = node.value
+    while isinstance(current, ast.Attribute):
+        current = current.value
+    return current.id if isinstance(current, ast.Name) else None
+
+
+def _is_literal_getattr_of_alias(node: ast.AST, aliases: set[str], symbols: set[str]) -> bool:
+    return (
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"
+        and len(node.args) >= 2 and isinstance(node.args[0], ast.Name) and node.args[0].id in aliases
+        and isinstance(node.args[1], ast.Constant) and node.args[1].value in symbols
+    )
 
 
 def test_current_checker_enforces_the_complete_repository_graph() -> None:
@@ -1240,7 +1536,7 @@ def test_current_checker_enforces_the_complete_repository_graph() -> None:
 
     assert counts["modules"] > 0
     assert counts["edges"] > 0
-    assert counts["broker_exports"] == 40
+    assert counts["broker_exports"] == 0
     assert not errors
 
 
@@ -1346,25 +1642,144 @@ def test_c6_checker_rejects_alias_reexport_and_interface_agent_import(tmp_path: 
     assert any("Interface imports Agent configuration errors" in error for error in _configuration_error_boundary_errors(tmp_path))
 
 
+def _copy_task_execution_family(root: Path) -> Path:
+    for relative in _TASK_EXECUTION_PATHS:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((ROOT / relative).read_text(encoding="utf-8"), encoding="utf-8")
+    assert not _task_execution_boundary_errors(root)
+    return root / "src/llm_agent/application/task_execution.py"
+
+
 @pytest.mark.parametrize("mutation", [
     "AgentApplication = _AgentApplication\n",
     "def create_agent(**kwargs):\n    return _AgentApplication.create(**kwargs)\n",
     "def __getattr__(name):\n    return getattr(_AgentApplication, name)\n",
 ])
 def test_c10_rejects_public_alias_factory_and_arbitrary_dispatch(tmp_path: Path, mutation: str) -> None:
-    target = tmp_path / "src/llm_agent/application/task_execution.py"
-    target.parent.mkdir(parents=True)
-    target.write_text((ROOT / "src/llm_agent/application/task_execution.py").read_text(encoding="utf-8") + mutation,
-                      encoding="utf-8")
-    assert _task_execution_boundary_errors(tmp_path)
+    target = _copy_task_execution_family(tmp_path)
+    target.write_text(target.read_text(encoding="utf-8") + mutation, encoding="utf-8")
+    expected = "aliases a public owner" if mutation.startswith("AgentApplication =") else "generic factory/forwarding"
+    assert any(expected in error for error in _task_execution_boundary_errors(tmp_path))
 
 
 @pytest.mark.parametrize("field", ["application", "orchestrator", "session", "_owner", "_request", "_value"])
 def test_c10_rejects_interface_raw_runtime_access(tmp_path: Path, field: str) -> None:
-    target = tmp_path / "src/llm_agent/application/task_execution.py"
-    target.parent.mkdir(parents=True)
-    target.write_text((ROOT / "src/llm_agent/application/task_execution.py").read_text(encoding="utf-8"), encoding="utf-8")
+    _copy_task_execution_family(tmp_path)
     interface = tmp_path / "src/llm_agent/interfaces/cli/probe.py"
     interface.parent.mkdir(parents=True)
     interface.write_text(f"def probe(ctx):\n    return ctx.{field}\n", encoding="utf-8")
     assert any("raw owner access" in error for error in _task_execution_boundary_errors(tmp_path))
+
+
+@pytest.mark.parametrize("owner", ["_task_activity", "_task_observation", "_task_commands", "_task_submission"])
+@pytest.mark.parametrize("mutation,diagnostic", [
+    ("from llm_agent.agent.application import AgentApplication\n", "Agent dependencies must be private"),
+    ("from llm_agent.agent.application import AgentApplication as _Agent\nAgent = _Agent\n", "aliases a public owner"),
+    ("from llm_agent.agent.interaction.types import TaskResult as _TaskResult\n", "C11 result contract"),
+    ("def create_agent():\n    return None\n", "generic factory/forwarding"),
+    ("def _probe(owner, name):\n    return getattr(owner, name)\n", "arbitrary owner dispatch"),
+    ("class PublicDTO:\n    pass\n", "private responsibilities differ"),
+    ("__all__ = ['public']\n", "private owner exports"),
+])
+def test_c10_projects_private_owner_negative_rules(tmp_path: Path, owner: str, mutation: str, diagnostic: str) -> None:
+    _copy_task_execution_family(tmp_path)
+    target = tmp_path / f"src/llm_agent/application/{owner}.py"
+    target.write_text(target.read_text(encoding="utf-8") + mutation, encoding="utf-8")
+    assert any(diagnostic in error for error in _task_execution_boundary_errors(tmp_path))
+
+
+@pytest.mark.parametrize("relative", _TASK_EXECUTION_PATHS[1:])
+def test_c10_requires_every_private_owner(tmp_path: Path, relative: str) -> None:
+    _copy_task_execution_family(tmp_path)
+    (tmp_path / relative).unlink()
+    assert any("required task implementation is missing" in error for error in _task_execution_boundary_errors(tmp_path))
+
+
+@pytest.mark.parametrize("owner,before,after,diagnostic", [
+    ("_task_observation", "_primitive(item)", "item", "deep public-value validation"),
+    ("_task_observation", "_primitive(value.to_dict())", "value.to_dict()", "headless settlement path lacks recursive"),
+    ("_task_observation", "_primitive(result)", "result", "headless settlement path lacks recursive"),
+    ("_task_commands", "primitive(gateway.run", "str(gateway.run", "workspace output lacks recursive"),
+    ("task_execution", "primitive=_task_observation._primitive", "primitive=str", "facade delegation/identity"),
+    ("task_execution", "make_update=TaskActivityUpdate", "make_update=dict", "facade delegation/identity"),
+    ("task_execution", "settle=_settle", "settle=str", "facade delegation/identity"),
+    ("_task_activity", "return make_update(", "return dict(", "activity constructor/subscription"),
+    ("_task_activity", "dispatcher.remove_sink(adapter)", "dispatcher.remove_sink(object())", "activity constructor/subscription"),
+])
+def test_c10_rejects_broken_projection_and_identity_wiring(
+    tmp_path: Path, owner: str, before: str, after: str, diagnostic: str,
+) -> None:
+    _copy_task_execution_family(tmp_path)
+    target = tmp_path / f"src/llm_agent/application/{owner}.py"
+    source = target.read_text(encoding="utf-8")
+    assert before in source
+    target.write_text(source.replace(before, after), encoding="utf-8")
+    assert any(diagnostic in error for error in _task_execution_boundary_errors(tmp_path))
+
+
+def test_c10_rejects_public_definition_migration(tmp_path: Path) -> None:
+    target = _copy_task_execution_family(tmp_path)
+    source = target.read_text(encoding="utf-8")
+    source = source.replace("class TaskActivityUpdate:", "class _MovedActivityUpdate:")
+    target.write_text(source + "\nfrom llm_agent.application._task_activity import TaskActivityUpdate\n", encoding="utf-8")
+    assert any("authorized finite surface" in error for error in _task_execution_boundary_errors(tmp_path))
+
+
+def test_c10_policy_rejects_extra_implementation_membership() -> None:
+    policy = _load_policy()
+    policy["application_api_surfaces"]["task_execution"]["implementation_modules"].append(
+        "src/llm_agent/application/_task_extra.py"
+    )
+    assert any("implementation family changed without authority: task_execution" in error for error in _policy_errors(policy))
+
+
+@pytest.mark.parametrize("source,destination", [
+    ("llm_agent.interfaces.cli.rogue", "llm_agent.application._task_activity"),
+    ("llm_agent.application.rogue", "llm_agent.application._task_commands"),
+    ("llm_agent.application._task_activity", "llm_agent.application.task_execution"),
+    ("llm_agent.application._task_commands", "llm_agent.application._task_observation"),
+])
+@pytest.mark.parametrize("kind", ["import", "type_checking", "reexport", "runtime"])
+def test_c10_private_direction_applies_to_every_union_edge(source: str, destination: str, kind: str) -> None:
+    edges = [{"source_module": source, "destination_module": destination, "kind": kind}]
+    assert _task_execution_family_graph_errors(edges)
+    assert not _task_execution_family_graph_errors([
+        {"source_module": "llm_agent.application.task_execution", "destination_module": "llm_agent.application._task_activity", "kind": kind}
+    ])
+
+
+@pytest.mark.parametrize("source", [
+    "import llm_agent.application._task_activity\n",
+    "from llm_agent.application import _task_activity\n",
+    "from llm_agent.application._task_activity import _bind_task_activity\n",
+    "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from llm_agent.application import _task_activity\n",
+    "from . import _task_activity\n",
+])
+def test_c10_graph_resolves_private_import_forms(tmp_path: Path, source: str) -> None:
+    _copy_task_execution_family(tmp_path)
+    target = tmp_path / "src/llm_agent/application/rogue.py"
+    target.write_text(source, encoding="utf-8")
+    repository = RepositorySource(tmp_path, SourceLayout.for_profile(tmp_path, "final-w22"))
+    graph = build_graph(repository)
+    assert any("private implementation import direction" in error for error in _task_execution_family_graph_errors(list(graph.architecture_union_edges)))
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("def finite():\n    for name in ('a', 'b'):\n        getattr(owner, name)\ndef arbitrary():\n    getattr(owner, name)\n", True),
+    ("def finite():\n    for name in ('a', 'b'):\n        getattr(owner, name)\n", False),
+    ("def finite():\n    for key in ('a', 'b'):\n        getattr(owner, key)\n", False),
+])
+def test_c10_finite_dispatch_names_are_function_scoped(source: str, expected: bool) -> None:
+    tree = ast.parse(source)
+    assert bool(_task_execution_dispatch_errors(tree)) is expected
+
+
+def test_c10_current_settlement_has_separately_validated_headless_and_interactive_returns() -> None:
+    tree = ast.parse((ROOT / "src/llm_agent/application/_task_observation.py").read_text(encoding="utf-8"))
+    operation = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_observe_task_settlement")
+    assert _task_execution_headless_validation(operation)
+    headless = ast.unparse(operation).replace("_primitive(value.to_dict())", "value.to_dict()")
+    assert not _task_execution_headless_validation(ast.parse(headless).body[0])
+    interactive = ast.unparse(operation).replace("_primitive(result)", "result")
+    assert not _task_execution_headless_validation(ast.parse(interactive).body[0])

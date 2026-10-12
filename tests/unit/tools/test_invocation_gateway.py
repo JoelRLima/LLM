@@ -22,6 +22,7 @@ from llm_agent.agent.tools.contracts import (
 )
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.application.approval import _bind_approval_presenter
 from llm_agent.cancellation import CancellationToken
 from llm_agent.interfaces.cli.approval import ConsoleApproval
 
@@ -382,7 +383,7 @@ def test_console_approval_presents_concrete_operation(monkeypatch) -> None:
 
     registry = ToolRegistry()
     registry.register_adapter(WriterAdapter())
-    result = ToolInvocationGateway(registry, approval_port=ConsoleApproval()).run(
+    result = ToolInvocationGateway(registry, approval_port=_bind_approval_presenter(ConsoleApproval())).run(
         "writer", {"file_path": "controle.txt", "content": "modificado"}
     )
 

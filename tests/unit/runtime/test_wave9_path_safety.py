@@ -10,7 +10,7 @@ from llm_agent.agent.observability import TraceCorruptError, TraceStore, TraceSt
 from llm_agent.agent.observability.bookmarks import BookmarkStore
 from llm_agent.agent.observability.export import DiagnosticExporter
 from llm_agent.agent.presentation import InspectionService
-from llm_agent.agent.runtime.path_safety import WorkspacePathError, assert_owned_path
+from llm_agent.filesystem.path_safety import WorkspacePathError, assert_owned_path
 from llm_agent.workspace.paths import WorkspacePaths
 
 

@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -10,6 +11,7 @@ from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
 from llm_agent.agent.tools.authority import OperationalMode
+from llm_agent.application import _task_observation
 from llm_agent.application import task_execution as api
 from llm_agent.application.context import AppPaths
 from llm_agent.application.conversation import _resolve_gateway, bind_conversation
@@ -42,7 +44,7 @@ def test_startup_one_owner_and_exact_inputs(monkeypatch, tmp_path, interactive, 
         "observability_mode": "normal", "operational_mode": mode, "configure_logging": False,
     }
     if interactive:
-        assert arguments["approval_policy"] is approval
+        assert arguments["approval_policy"]._presenter is approval
     else:
         assert type(arguments["approval_policy"]) is policy
         assert arguments["approval_policy"].request(object()) is (
@@ -100,6 +102,146 @@ def test_dispatch_preserves_prefix_profile_and_subject(directive, profile, fallb
     assert api.observe_task_settlement(settlement, channel="interactive")["answer"] == "ok"
 
 
+@pytest.mark.parametrize("has_resume", [True, False])
+def test_headless_resume_uses_resume_or_explicit_resume_fallback(has_resume: bool) -> None:
+    calls: list[Any] = []
+    owner = SimpleNamespace(run=lambda *args, **kwargs: calls.append(("run", args, kwargs)))
+    if has_resume:
+        owner.resume = lambda: calls.append(("resume", (), {}))
+
+    settlement = api.execute_submission(api._retain_runtime(owner), "", entry="headless-resume")
+
+    if has_resume:
+        assert calls == [("resume", (), {})]
+    else:
+        assert calls == [("run", (None,), {"explicit_resume": True})]
+    assert isinstance(settlement, api.TaskSettlement)
+    assert settlement._value is None
+    assert settlement._legacy is False
+
+
+@pytest.mark.parametrize("has_resume", [True, False])
+def test_streamed_retry_prefers_resume_and_otherwise_continues_interaction(has_resume: bool) -> None:
+    calls: list[Any] = []
+
+    def callback(_chunk: str) -> None:
+        return None
+
+    result = object()
+
+    def interact(*args: Any, **kwargs: Any) -> object:
+        calls.append(("interact", args, kwargs))
+        return result
+
+    owner = SimpleNamespace(interact=interact)
+    if has_resume:
+
+        def resume(**kwargs: Any) -> object:
+            calls.append(("resume", (), kwargs))
+            return result
+
+        owner.resume = resume
+
+    settlement = api.execute_submission(
+        api._retain_runtime(owner), "/continue", entry="retry", visible_text="/retry", stream_callback=callback,
+    )
+
+    if has_resume:
+        assert calls == [("resume", (), {"stream_callback": callback})]
+    else:
+        assert calls == [("interact", ("/continue",), {
+            "boundary": "task", "visible_user_text": "/retry", "task_payload": "/continue",
+            "stream_callback": callback,
+        })]
+    assert settlement._value is result
+    assert settlement._legacy is False
+
+
+@pytest.mark.parametrize("bad_request", ["continue", "missing_directive", "missing_subject"])
+def test_headless_run_rejects_invalid_request_before_execution(bad_request: str) -> None:
+    if bad_request == "continue":
+        dispatch = api.prepare_task_dispatch("/continue")
+    else:
+        request = SimpleNamespace(
+            action=SimpleNamespace(value="run"),
+            directive=None if bad_request == "missing_directive" else object(),
+            subject=None if bad_request == "missing_subject" else "subject",
+        )
+        dispatch = object.__new__(api.TaskDispatch)
+        dispatch._request = request
+    calls: list[Any] = []
+    owner = SimpleNamespace(interact=lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    with pytest.raises(ValueError, match="RUN requires a TaskRunDirective"):
+        api.execute_submission(api._retain_runtime(owner), "subject", entry="headless-run", dispatch=dispatch)
+    assert calls == []
+
+
+def test_unsupported_task_entry_is_rejected_without_owner_call() -> None:
+    calls: list[Any] = []
+    owner = SimpleNamespace(run=lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    with pytest.raises(ValueError, match="unsupported task entry"):
+        api.execute_submission(api._retain_runtime(owner), "subject", entry=cast(api._Entry, "unsupported"))
+    assert calls == []
+
+
+@pytest.mark.parametrize("entry", ["natural", "agent", "retry"])
+@pytest.mark.parametrize("modern", [True, False])
+def test_submission_routes_preserve_modern_payloads_and_legacy_calls(entry: api._Entry, modern: bool) -> None:
+    calls: list[Any] = []
+
+    def callback(_chunk: str) -> None:
+        return None
+
+    result = object()
+    owner = SimpleNamespace()
+    if modern:
+        def interact(*args: Any, **kwargs: Any) -> object:
+            calls.append(("interact", args, kwargs))
+            return result
+
+        owner.interact = interact
+    else:
+        def run(*args: Any, **kwargs: Any) -> object:
+            calls.append(("run", args, kwargs))
+            return result
+
+        def resume() -> object:
+            calls.append(("resume", (), {}))
+            return result
+
+        owner.run = run
+        owner.resume = resume
+    text = "inspect source" if entry != "retry" else "/continue"
+    visible = "original visible text"
+    kwargs: dict[str, Any] = {"visible_text": visible}
+    if modern or entry != "retry":
+        kwargs["stream_callback"] = callback
+
+    settlement = api.execute_submission(api._retain_runtime(owner), text, entry=entry, **kwargs)
+
+    if modern:
+        payload = "/continue" if entry == "retry" else text
+        assert calls == [("interact", (payload,), {
+            "boundary": "natural" if entry == "natural" else "task",
+            "visible_user_text": visible, "task_payload": payload, "stream_callback": callback,
+        })]
+        assert settlement._legacy is False
+    elif entry == "natural":
+        assert calls == [("run", (text,), {})]
+        assert settlement._legacy is True
+    elif entry == "retry":
+        assert calls == [("resume", (), {})]
+        assert settlement._legacy is True
+    else:
+        assert len(calls) == 1 and calls[0][0] == "run"
+        assert calls[0][1] == ("inspect source",)
+        assert calls[0][2]["task_run_directive"].subject == "inspect source"
+        assert settlement._legacy is True
+    assert settlement._value is result
+
+
 def test_binding_same_gateway_dispatcher_and_cleanup_identity():
     order = []
     gateway = SimpleNamespace(approval_port=None)
@@ -110,7 +252,8 @@ def test_binding_same_gateway_dispatcher_and_cleanup_identity():
     runtime = api._retain_runtime(owner)
     approval, updates = object(), []
     detach = api.bind_interactive_services(runtime, approval, updates.append)
-    assert owner.approval_policy is gateway.approval_port is approval
+    assert owner.approval_policy is gateway.approval_port
+    assert owner.approval_policy._presenter is approval
     assert owner.tool_invocation_gateway is gateway
     adapter = order[0][1]
     assert callable(adapter.emit)
@@ -145,7 +288,10 @@ def test_interactive_binding_projects_canonical_event_and_detaches_same_adapter(
 
 
 def test_activity_projector_covers_every_canonical_kind_and_preserves_special_effects():
-    from llm_agent.application.task_execution import _project_task_activity_update
+    from llm_agent.application._task_activity import _project_task_activity_update as project_activity
+
+    def _project_task_activity_update(event: RuntimeEvent) -> api.TaskActivityUpdate:
+        return project_activity(event, make_update=api.TaskActivityUpdate)
 
     correlation = RunCorrelation.fresh()
     updates = {
@@ -319,8 +465,8 @@ def test_inspection_observation_has_rendering_parity_and_no_hidden_fields():
 
 
 @pytest.mark.parametrize("private_error,public_error", [
-    (api._TraceCorruptError, api.InspectionCorruptDataError),
-    (api._TraceUnavailableError, api.InspectionUnavailableError),
+    (_task_observation._TraceCorruptError, _task_observation.InspectionCorruptDataError),
+    (_task_observation._TraceUnavailableError, _task_observation.InspectionUnavailableError),
 ])
 def test_inspection_errors_cross_only_existing_application_boundary(private_error, public_error):
     def fail(**kwargs):
@@ -360,3 +506,15 @@ def test_close_drain_failure_keeps_original_owner_retryable(monkeypatch):
     assert owner._closed
     api.close_task_execution(runtime)
     assert events == ["drain", "finish", "drain", "finish", "release"]
+
+
+
+def test_workspace_command_preserves_unavailable_gateway_message() -> None:
+    owner = SimpleNamespace(orchestrator=SimpleNamespace(tool_invocation_gateway=None))
+    runtime = api._retain_runtime(owner)
+
+    assert api.execute_workspace_command(runtime, "read", "source") == {
+        "status": "unavailable",
+        "error": "file_reader indispon\u00c3\u00advel",
+        "data": None,
+    }

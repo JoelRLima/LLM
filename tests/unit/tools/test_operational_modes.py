@@ -19,6 +19,7 @@ from llm_agent.agent.tools.authority import OperationalMode, operational_mode_ca
 from llm_agent.agent.tools.contracts import ToolDescriptor, ToolInvocation, ToolResult, ToolStatus
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
+from llm_agent.application.approval import ApprovalPrompt, ApprovalResponse
 from llm_agent.application.conversation import bind_conversation
 from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
@@ -270,10 +271,10 @@ def test_console_approval_accepts_explicit_yes_aliases_and_denies_other_input(mo
     monkeypatch.setattr("llm_agent.interfaces.cli.approval.console", output)
     approval = ConsoleApproval()
 
-    decisions = [approval.request(SimpleNamespace(prompt="Autorizar?")) for _ in range(8)]
+    decisions = [approval.present(ApprovalPrompt("write", "workspace", "Autorizar?", {})) for _ in range(8)]
 
-    assert decisions[:4] == [ApprovalDecision.APPROVED] * 4
-    assert decisions[4:] == [ApprovalDecision.REJECTED] * 4
+    assert decisions[:4] == [ApprovalResponse.APPROVE] * 4
+    assert decisions[4:] == [ApprovalResponse.DENY] * 4
 
 
 def test_direct_code_edit_respects_read_only_then_editor_approval(tmp_path: Path, monkeypatch) -> None:

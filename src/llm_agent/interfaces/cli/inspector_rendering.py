@@ -11,8 +11,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from llm_agent.application.agent_boundary import InspectorSnapshot
-
 
 def _literal(value: Any) -> Text:
     """Represent public dynamic content without Rich markup interpretation."""
@@ -31,7 +29,7 @@ def liveness_label(value: Any) -> str:
     return state
 
 
-def render_snapshot(snapshot: InspectorSnapshot, console: Console, *, limit: int | None = None) -> None:
+def render_snapshot(snapshot: Mapping[str, Any], console: Console, *, limit: int | None = None) -> None:
     """Render a structured snapshot; all values originate from redacted models."""
 
     run = _field(snapshot, "run")
@@ -115,18 +113,22 @@ def render_runs(runs: tuple[Any, ...], console: Console) -> None:
     for column in ("Run ID", "Start", "End", "Liveness", "Completeness", "Mode", "Outcome"):
         table.add_column(column)
     for run in runs:
-        outcome = run.final_outcome or {}
+        outcome = _run_value(run, "final_outcome") or {}
         outcome_text = outcome.get("status", "unavailable") if isinstance(outcome, Mapping) else "unavailable"
         table.add_row(
-            run.run_id,
-            run.start_time,
-            run.end_time or "",
-            liveness_label(run.liveness),
-            run.completeness,
-            run.mode,
+            str(_run_value(run, "run_id")),
+            str(_run_value(run, "start_time")),
+            str(_run_value(run, "end_time") or ""),
+            liveness_label(_run_value(run, "liveness")),
+            str(_run_value(run, "completeness")),
+            str(_run_value(run, "mode")),
             str(outcome_text),
         )
     console.print(table)
+
+
+def _run_value(run: Any, name: str) -> Any:
+    return run.get(name) if isinstance(run, Mapping) else getattr(run, name)
 
 
 __all__ = ["liveness_label", "render_runs", "render_snapshot"]

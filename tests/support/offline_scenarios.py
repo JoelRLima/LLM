@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, Iterator, Sequence
 
 from rich.console import Console
@@ -19,6 +20,8 @@ from llm_agent.agent.llm.contracts import (
 )
 from llm_agent.agent.llm.session import ChatSession
 from llm_agent.agent.skills import load_skill_registry
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli.chat import run_chat_turn
 from tests.support.task_definition import task_definition_response
 
@@ -123,7 +126,9 @@ class OfflineScenarioExecutor:
             gateway=gateway,
         )
         output = io.StringIO()
-        run_chat_turn(Console(file=output, force_terminal=False), session, objective, 0)
+        task_execution = _retain_runtime(SimpleNamespace(session=session))
+        conversation = bind_conversation(task_execution)
+        run_chat_turn(Console(file=output, force_terminal=False), conversation, objective, 0)
         answer = session.messages[-1]["content"] if session.messages[-1]["role"] == "assistant" else ""
         return ExecutionObservation(
             success=bool(answer),

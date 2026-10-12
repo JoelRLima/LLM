@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
-from llm_agent.application.agent_boundary import ApprovalDecision
+from llm_agent.application.approval import ApprovalResponse
 from llm_agent.application.code_commands import CodeCommandOutcome
 from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 from llm_agent.interfaces.cli.approval_input import parse_console_approval
@@ -35,7 +35,7 @@ class ConsoleChangeApprover:
             console.print(Syntax(preview.diff or "(diff vazio)", "diff", word_wrap=True))
             message = "[bold cyan]Aplicar este ChangeSet? [s/sim/y/yes = sim; Enter/n/nao/não/no = não]:[/bold cyan] "
             answer = self.prompt(message) if self.prompt is not None else prompt_from(console, message)
-            return parse_console_approval(str(answer or "")) is ApprovalDecision.APPROVED
+            return parse_console_approval(str(answer or "")) is ApprovalResponse.APPROVE
 
 
 def render_code_result(result: CodeCommandOutcome) -> None:

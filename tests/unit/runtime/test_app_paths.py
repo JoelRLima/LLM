@@ -66,7 +66,7 @@ def test_workspace_resolution_expands_user_shorthand_before_confinement(
 
 def test_code_path_compatibility_facade_projects_runtime_owner() -> None:
     from llm_agent.agent.code import path_safety as legacy
-    from llm_agent.agent.runtime import path_safety as canonical
+    from llm_agent.filesystem import path_safety as canonical
 
     assert legacy.resolve_workspace_path is canonical.resolve_workspace_path
     assert legacy.workspace_relative_path is canonical.workspace_relative_path

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import stat
@@ -12,15 +13,27 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_agent.agent.runtime import instance_lock as instance_lock_module
-from llm_agent.agent.runtime import lock_filesystem
-from llm_agent.agent.runtime.file_lock import OPEN_BINARY
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
-from llm_agent.agent.runtime.process_identity import (
+from llm_agent.filesystem import lock_filesystem
+from llm_agent.process import instance_lock as instance_lock_module
+from llm_agent.process.file_lock import OPEN_BINARY
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.process.process_identity import (
     OwnerStatus,
     ProcessOwnerLiveness,
     current_process_start_id,
 )
+
+REPO_SRC = Path(__file__).resolve().parents[3] / "src"
+
+
+def _current_lock_import() -> str:
+    return (
+        "import sys; from pathlib import Path; "
+        "source = Path(sys.argv[2]).resolve(); sys.path.insert(0, str(source)); "
+        "import llm_agent.process.instance_lock as module; "
+        "assert Path(module.__file__).resolve() == "
+        "(source / 'llm_agent' / 'process' / 'instance_lock.py').resolve(); "
+    )
 
 
 @dataclass
@@ -229,11 +242,11 @@ def test_pid_reuse_identity_mismatch_is_treated_as_dead() -> None:
 def test_owner_death_without_release_is_recoverable(tmp_path: Path) -> None:
     path = tmp_path / "application.lock"
     script = (
-        "import os, sys; "
-        "from agent.runtime.instance_lock import InstanceLock; "
+        _current_lock_import()
+        + "import os; from llm_agent.process.instance_lock import InstanceLock; "
         "lock = InstanceLock.create(sys.argv[1]); lock.acquire(); os._exit(0)"
     )
-    child = subprocess.Popen([sys.executable, "-c", script, str(path)])
+    child = subprocess.Popen([sys.executable, "-c", script, str(path), str(REPO_SRC)])
     assert child.wait(timeout=10) == 0
     assert path.exists()
 
@@ -319,12 +332,14 @@ def test_reparse_marked_regular_entry_is_not_safe() -> None:
 def test_crash_after_guard_before_publication_is_recoverable(tmp_path: Path) -> None:
     path = tmp_path / "application.lock"
     script = (
-        "import os, sys; "
-        "from agent.runtime.instance_lock import InstanceLock; "
+        _current_lock_import()
+        + "import os; from llm_agent.process.instance_lock import InstanceLock; "
         "InstanceLock._create_private_descriptor = lambda self, path: os._exit(0); "
         "InstanceLock.create(sys.argv[1]).acquire()"
     )
-    child = subprocess.run([sys.executable, "-c", script, str(path)], check=False, timeout=10)
+    child = subprocess.run(
+        [sys.executable, "-c", script, str(path), str(REPO_SRC)], check=False, timeout=10
+    )
     assert child.returncode == 0
     assert not path.exists()
 
@@ -337,8 +352,9 @@ def test_crash_after_guard_before_publication_is_recoverable(tmp_path: Path) -> 
 def test_crash_after_private_record_before_publication_is_recoverable(tmp_path: Path) -> None:
     path = tmp_path / "application.lock"
     script = (
-        "import os, sys\n"
-        "from agent.runtime.instance_lock import InstanceLock\n"
+        _current_lock_import()
+        + "import os\n"
+        "from llm_agent.process.instance_lock import InstanceLock\n"
         "write = InstanceLock._write_payload\n"
         "def crash(self, descriptor, payload):\n"
         "    write(self, descriptor, payload)\n"
@@ -346,7 +362,9 @@ def test_crash_after_private_record_before_publication_is_recoverable(tmp_path: 
         "InstanceLock._write_payload = crash\n"
         "InstanceLock.create(sys.argv[1]).acquire()\n"
     )
-    child = subprocess.run([sys.executable, "-c", script, str(path)], check=False, timeout=10)
+    child = subprocess.run(
+        [sys.executable, "-c", script, str(path), str(REPO_SRC)], check=False, timeout=10
+    )
     assert child.returncode == 0
     assert not path.exists()
     assert list(path.parent.glob(f".{path.name}.*.tmp"))
@@ -360,8 +378,9 @@ def test_crash_after_private_record_before_publication_is_recoverable(tmp_path: 
 def test_crash_after_publication_before_acquire_return_recovers(tmp_path: Path) -> None:
     path = tmp_path / "application.lock"
     script = (
-        "import os, sys\n"
-        "import agent.runtime.instance_lock as module\n"
+        _current_lock_import()
+        + "import os\n"
+        "import llm_agent.process.instance_lock as module\n"
         "link = module.os.link\n"
         "def publish(source, destination):\n"
         "    link(source, destination)\n"
@@ -369,7 +388,9 @@ def test_crash_after_publication_before_acquire_return_recovers(tmp_path: Path) 
         "module.os.link = publish\n"
         "module.InstanceLock.create(sys.argv[1]).acquire()\n"
     )
-    child = subprocess.run([sys.executable, "-c", script, str(path)], check=False, timeout=10)
+    child = subprocess.run(
+        [sys.executable, "-c", script, str(path), str(REPO_SRC)], check=False, timeout=10
+    )
     assert child.returncode == 0
     assert path.exists()
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -426,3 +447,118 @@ def test_hard_link_publication_is_create_only(tmp_path: Path) -> None:
     with pytest.raises(FileExistsError):
         os.link(source, destination)
     assert destination.read_bytes() == b"existing owner"
+
+
+@pytest.mark.parametrize(
+    "historical_module,canonical_module",
+    (
+        ("llm_agent.agent.runtime.instance_lock", "llm_agent.process.instance_lock"),
+        ("llm_agent.agent.runtime.file_lock", "llm_agent.process.file_lock"),
+        ("llm_agent.agent.runtime.lock_record", "llm_agent.process.lock_record"),
+        ("llm_agent.agent.runtime.process_identity", "llm_agent.process.process_identity"),
+        ("llm_agent.agent.runtime.lock_filesystem", "llm_agent.filesystem.lock_filesystem"),
+    ),
+)
+def test_historical_lock_exports_are_direct_identity_preserving_reexports(
+    historical_module: str,
+    canonical_module: str,
+) -> None:
+    historical = importlib.import_module(historical_module)
+    canonical = importlib.import_module(canonical_module)
+
+    assert historical.__all__ == canonical.__all__
+    for symbol in historical.__all__:
+        assert getattr(historical, symbol) is getattr(canonical, symbol)
+
+
+def test_release_is_idempotent_and_lock_can_be_reacquired(tmp_path: Path) -> None:
+    path = tmp_path / "application.lock"
+    lock = InstanceLock.create(path)
+
+    lock.release()
+    lock.acquire()
+    lock.release()
+    lock.release()
+    assert not path.exists()
+
+    replacement = InstanceLock.create(path)
+    replacement.acquire()
+    replacement.release()
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("failure_point", ("write", "link", "private_open"))
+def test_failed_acquisition_cleans_publication_and_releases_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    path = tmp_path / "application.lock"
+    lock = InstanceLock.create(path)
+
+    with monkeypatch.context() as patch:
+        if failure_point == "write":
+            def fail_write(self: InstanceLock, descriptor: int, payload: dict[str, object]) -> None:
+                raise OSError("write failed")
+
+            patch.setattr(InstanceLock, "_write_payload", fail_write)
+        elif failure_point == "link":
+            def fail_link(source: Path, destination: Path) -> None:
+                raise OSError("link failed")
+
+            patch.setattr(instance_lock_module.os, "link", fail_link)
+        else:
+            open_verified = instance_lock_module.open_verified
+
+            def fail_private_open(candidate: Path, flags: int, mode: int = 0o600) -> int:
+                if candidate.name.endswith(".tmp"):
+                    raise OSError("private open failed")
+                return open_verified(candidate, flags, mode)
+
+            patch.setattr(instance_lock_module, "open_verified", fail_private_open)
+
+        with pytest.raises(InstanceLockError):
+            lock.acquire()
+
+    assert lock._guard_descriptor is None
+    assert lock._descriptor is None
+    assert not path.exists()
+    assert not tuple(tmp_path.glob(f".{path.name}.*.tmp"))
+
+    retry = InstanceLock.create(path)
+    retry.acquire()
+    retry.release()
+
+
+def test_recovery_stops_after_exactly_eight_unproductive_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock = InstanceLock.create(tmp_path / "application.lock")
+    attempts = 0
+
+    def no_publication() -> None:
+        nonlocal attempts
+        attempts += 1
+        return None
+
+    monkeypatch.setattr(lock, "_try_publish_new_acquisition", no_publication)
+    monkeypatch.setattr(lock, "_inspect_existing_lock", lambda: False)
+
+    with pytest.raises(InstanceLockError, match="convergiu"):
+        lock.acquire()
+
+    assert attempts == 8
+    assert not lock._acquired
+    assert lock._guard_descriptor is None
+
+
+def test_oversized_lock_record_fails_closed_without_deletion(tmp_path: Path) -> None:
+    path = tmp_path / "application.lock"
+    original = b"x" * (16_384 + 1)
+    path.write_bytes(original)
+
+    with pytest.raises(InstanceLockError, match="seguran"):
+        InstanceLock.create(path, owner_liveness=_FakeLiveness()).acquire()
+
+    assert path.read_bytes() == original

@@ -12,8 +12,9 @@ from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
 from llm_agent.agent.runtime.worker_output import emit_worker_output
+from llm_agent.application._task_activity import _project_task_activity_update
 from llm_agent.application.conversation import bind_conversation
-from llm_agent.application.task_execution import _project_task_activity_update, _retain_runtime
+from llm_agent.application.task_execution import TaskActivityUpdate, _retain_runtime
 from llm_agent.interfaces.cli import command_handlers, interactive_rendering
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
@@ -35,6 +36,10 @@ def _fixture_context(**kwargs):
         kwargs["conversation"] = bind_conversation(runtime)
     return SimpleNamespace(**kwargs)
 
+
+def _project_activity(event: RuntimeEvent) -> TaskActivityUpdate:
+    return _project_task_activity_update(event, make_update=TaskActivityUpdate)
+
 def test_debug_level_in_interactive_context_never_enables_worker_verbose_prints(monkeypatch) -> None:
     output: list[str] = []
     monkeypatch.setattr(command_handlers, "console", SimpleNamespace(print=lambda value, **_: output.append(str(value))))
@@ -53,12 +58,12 @@ def test_view_remains_bounded_and_heartbeat_does_not_refresh_semantic_activity()
     view.begin_run(1, owner="owner")
     start = RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": "step-1"}, timestamp="2026-01-01T00:00:00+00:00")
     heartbeat = RuntimeEvent.from_fields(RuntimeEventKind.CONTEXT_REFRESH, correlation, {"heartbeat": True}, timestamp="2026-01-01T00:00:10+00:00")
-    view.apply(_project_task_activity_update(start))
+    view.apply(_project_activity(start))
     assert view.snapshot().last_activity_at == "2026-01-01T00:00:00+00:00"
-    view.apply(_project_task_activity_update(heartbeat))
+    view.apply(_project_activity(heartbeat))
     assert view.snapshot().last_activity_at == "2026-01-01T00:00:00+00:00"
     for index in range(2000):
-        view.apply(_project_task_activity_update(RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": f"s{index}"})))
+        view.apply(_project_activity(RuntimeEvent.from_fields(RuntimeEventKind.STEP_COMPLETED, correlation, {"step_id": f"s{index}"})))
     snapshot = view.snapshot()
     assert len(snapshot.milestones) <= 8
     assert len(command_handlers._view_snapshot(SimpleNamespace(view_model=view)).milestones) <= 8
@@ -138,7 +143,7 @@ def test_worker_error_terminalizes_view_projection_and_clears_live_fields() -> N
     view = RunViewModel()
     correlation = RunCorrelation.fresh()
     view.begin_run(3, owner="worker")
-    view.apply(_project_task_activity_update(RuntimeEvent.from_fields(RuntimeEventKind.TOOL_START, correlation, {"tool": "reader", "invocation_id": "inv"})))
+    view.apply(_project_activity(RuntimeEvent.from_fields(RuntimeEventKind.TOOL_START, correlation, {"tool": "reader", "invocation_id": "inv"})))
     view.set_attention(True)
     output: list[str] = []
     context = SimpleNamespace(

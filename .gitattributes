@@ -9,3 +9,11 @@
 *.jpeg binary
 *.png binary
 *.webp binary
+
+# Exact-byte W23 evidence bindings: preserve authenticated bytes.
+/quality/architecture_current_policy.json -text
+/quality/w23/compatibility_retirement.json -text
+/scripts/check_current_architecture.py -text
+/tests/unit/test_current_architecture.py -text
+/quality/w23/cycle_report_after_lock_ownership.json -text
+/quality/w23/cycle_report_before.json -text

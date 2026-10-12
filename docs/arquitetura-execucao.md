@@ -79,3 +79,37 @@ watchdog/sem progresso → recovery; guards de invocation podem ter contratos
 distintos. Restore points de workspace, checkpoint e backup de memória não são
 equivalentes. Não há transação distribuída nem sandbox universal.
 Processos/stdout/stderr/plataformas: [runtime](agent/runtime.md).
+
+## Ownership das camadas
+
+- **Application** coordena casos de uso e composição da aplicação.
+- **Agent** possui comportamento de domínio, planning e execução de tarefas.
+- **Platform** fornece mecânicas genéricas: paths em
+  `llm_agent.workspace.paths`, segurança de filesystem em
+  `llm_agent.filesystem.*`, processos e locks em `llm_agent.process.*`, storage
+  em `llm_agent.storage.*` e mecânicas de extensions em
+  `llm_agent.extensions.*`.
+- **Interfaces** possui fronteiras de CLI, MCP e demais entradas/saídas externas.
+
+Não há broker `application.agent_boundary`. Composição específica de Agent,
+como bootstrap e runtime de extensions, continua em `agent.tools`; ela usa as
+mecânicas Platform sem transferir a elas decisões de domínio. Facades históricas
+retidas são projeções de compatibilidade limitadas, não dependências canônicas
+para código novo.
+
+## Manutenção da arquitetura
+
+A policy semântica CURRENT está em
+`quality/architecture_current_policy.json`, aplicada por
+`scripts/check_current_architecture.py` e validada em
+`tests/unit/test_current_architecture.py`. `scripts/w21_architecture` conserva
+mecânicas compartilhadas de fonte, imports e grafo, além de suporte à policy
+histórica congelada; não é a autoridade semântica CURRENT. Regras duráveis
+específicas de CURRENT pertencem à policy e ao checker CURRENT. CURRENT trata
+ownership, dependências e crescimento de compatibilidade; Quality trata
+tamanho, complexidade e ratchets relacionados.
+
+A organização física de `llm_agent.agent.planning` permanece deliberadamente
+plana por decisão de retenção aceita. Os clusters de responsabilidade são
+analíticos, não diretórios. O fechamento estrutural W23 foi formalmente
+aceito; isso não declara gates finais concluídos.

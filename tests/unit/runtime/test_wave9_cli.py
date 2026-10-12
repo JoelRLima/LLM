@@ -8,10 +8,12 @@ import pytest
 
 from llm_agent.agent.observability import TraceStore
 from llm_agent.agent.observability.bookmarks import BookmarkStore
+from llm_agent.agent.observability.trace_store import TraceCorruptError, TraceUnavailableError
 from llm_agent.agent.presentation import InspectionService
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.application.inspection.errors import InspectionCorruptDataError, InspectionUnavailableError
 from llm_agent.interfaces.cli import inspector as inspector_module
 from llm_agent.interfaces.cli.app import main
 from llm_agent.workspace.context import WorkspaceContext
@@ -45,12 +47,68 @@ def test_inspect_list_and_show_emit_one_json_document(tmp_path: Path, capsys) ->
     assert shown["run"]["run_id"] == correlation.run_id
     assert shown["run"]["completeness"] == "complete"
 
+    assert main(
+        ["inspect", "show", "--json", "--home", str(app_home), "--workspace", str(workspace),
+         "--run-id", correlation.run_id, "--sequence", "1"]
+    ) == 0
+    detailed = json.loads(capsys.readouterr().out)
+    assert detailed["selected_detail"]["sequence"] == 1
+
+    assert main(["inspect", "show", "--home", str(app_home), "--workspace", str(workspace),
+                 "--run-id", correlation.run_id]) == 0
+    assert "Inspector" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("trace_error", "application_error"),
+    [
+        (TraceUnavailableError, InspectionUnavailableError),
+        (TraceCorruptError, InspectionCorruptDataError),
+    ],
+)
+@pytest.mark.parametrize("json_output", [False, True])
+def test_inspection_list_cli_error_shape_is_preserved(
+    tmp_path: Path,
+    trace_error: type[Exception],
+    application_error: type[Exception],
+    json_output: bool,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = trace_error("trace problem")
+
+    def fail_list(_context: object, _request: object) -> object:
+        raise application_error(str(original)) from original
+
+    monkeypatch.setattr(inspector_module, "list_inspection_runs", fail_list)
+    app_home, workspace, _ = _fixture(tmp_path)
+    arguments = ["inspect", "list", "--home", str(app_home), "--workspace", str(workspace)]
+    if json_output:
+        arguments.append("--json")
+
+    assert main(arguments) == 2
+    captured = capsys.readouterr()
+    if json_output:
+        assert json.loads(captured.out) == {
+            "error": "trace problem",
+            "status": "failed",
+            "success": False,
+        }
+        assert captured.err == ""
+    else:
+        assert captured.err.strip().endswith("trace problem")
+        assert captured.out == ""
+
 
 def test_inspect_replay_is_bounded_and_follow_rejects_non_tty(tmp_path: Path, capsys) -> None:
     app_home, workspace, correlation = _fixture(tmp_path)
     assert main(["inspect", "replay", "--json", "--limit", "1", "--home", str(app_home), "--workspace", str(workspace), "--run-id", correlation.run_id]) == 0
     replay = json.loads(capsys.readouterr().out)
     assert len(replay["activities"]) == 1
+
+    assert main(["inspect", "replay", "--limit", "1", "--home", str(app_home), "--workspace", str(workspace),
+                 "--run-id", correlation.run_id]) == 0
+    assert "#1" in capsys.readouterr().out
 
     assert main(["inspect", "--follow", "--home", str(app_home), "--workspace", str(workspace), "--run-id", correlation.run_id]) == 2
     assert "follow" in capsys.readouterr().err
@@ -70,14 +128,8 @@ def test_bookmark_sidecar_does_not_change_trace(tmp_path: Path) -> None:
 def test_bookmark_and_export_cli_use_application_auxiliary_api(
     tmp_path: Path,
     capsys,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app_home, workspace, correlation = _fixture(tmp_path)
-
-    def reject_interface_inspection_service(_args: object) -> InspectionService:
-        raise AssertionError("bookmark/export CLI must not construct the Agent read service")
-
-    monkeypatch.setattr(inspector_module, "_service", reject_interface_inspection_service)
     common = ["--home", str(app_home), "--workspace", str(workspace), "--json"]
 
     assert main(["inspect", "bookmark", "add", *common, "--sequence", "1", "--note", "safe"]) == 0
@@ -140,11 +192,14 @@ def test_follow_advances_after_bounded_prefix_without_replaying_old_records(tmp_
         return value
 
     monkeypatch.setattr(service, "snapshot", snapshot)
+    monkeypatch.setitem(inspector_module.read_inspection.__globals__, "InspectionService", lambda _paths: service)
     monkeypatch.setattr(inspector_module, "_is_tty", lambda: True)
     monkeypatch.setattr(inspector_module.console, "clear", lambda: None)
-    monkeypatch.setattr(inspector_module, "render_snapshot", lambda value: rendered.append(tuple(item.sequence for item in value.timeline)))
+    monkeypatch.setattr(inspector_module, "render_snapshot", lambda value: rendered.append(tuple(item["sequence"] for item in value["timeline"])))
 
-    assert inspector_module._run_follow(service, correlation.run_id, args) == 0
+    monkeypatch.setattr(inspector_module, "_workspace_paths", lambda _args: paths)
+    read_context = inspector_module.InspectionReadContext(paths)
+    assert inspector_module._run_follow(read_context, correlation.run_id, args) == 0
     assert calls == [0, 1, 2]
     assert rendered[:2] == [(1,), (2,)]
     assert [item.sequence for item in TraceStore.open(paths, correlation.run_id).read()] == [1, 2]

@@ -12,7 +12,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
 from llm_agent.workspace.paths import WorkspacePaths
 
 

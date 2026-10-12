@@ -25,12 +25,14 @@ SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled  # noqa: E402
+from llm_agent.agent.approval import ApprovalDecision, ApprovalWaitCancelled  # noqa: E402
 from llm_agent.agent.runtime.config_errors import ConfigNotFound  # noqa: E402
 from llm_agent.agent.runtime.config_repository import ConfigRepository  # noqa: E402
 from llm_agent.agent.runtime.correlation import RunCorrelation  # noqa: E402
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind  # noqa: E402
 from llm_agent.agent.runtime.events import RuntimeEvent  # noqa: E402
+from llm_agent.application._task_activity import _project_task_activity_update  # noqa: E402
+from llm_agent.application.approval import ApprovalPrompt, ApprovalResponse  # noqa: E402
 from llm_agent.application.code_commands import CodeCommandOutcome  # noqa: E402
 from llm_agent.application.conversation import bind_conversation  # noqa: E402
 from llm_agent.application.services.queries import (  # noqa: E402
@@ -40,7 +42,7 @@ from llm_agent.application.services.queries import (  # noqa: E402
     WorkspaceQueryResult,
     WorkspaceQueryStatus,
 )
-from llm_agent.application.task_execution import _project_task_activity_update, _retain_runtime  # noqa: E402
+from llm_agent.application.task_execution import TaskActivityUpdate, _retain_runtime  # noqa: E402
 from llm_agent.interfaces.cli import app, command_handlers, first_run, interactive_admission, ui  # noqa: E402
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY  # noqa: E402
 from llm_agent.interfaces.cli.attention import ApprovalBroker  # noqa: E402
@@ -78,8 +80,10 @@ class _Console:
         return next(self.answers)
 
 
-def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object):
-    return _project_task_activity_update(RuntimeEvent.from_fields(kind, correlation, data))
+def _event(kind: RuntimeEventKind, correlation: RunCorrelation, **data: object) -> TaskActivityUpdate:
+    return _project_task_activity_update(
+        RuntimeEvent.from_fields(kind, correlation, data), make_update=TaskActivityUpdate,
+    )
 
 
 def _envelope(text: str, *, command_id: str = "natural_text") -> SubmissionEnvelope:
@@ -137,11 +141,20 @@ def _assert_required_git_tokens(source: str, tokens: tuple[str, ...]) -> None:
 
 def _approval_thread(broker: ApprovalBroker) -> tuple[Thread, list[object]]:
     values: list[object] = []
-    request = ApprovalRequest("write", "workspace/file.txt", "apply", {"invocation_id": "inv-1"})
+    request = ApprovalPrompt("write", "workspace/file.txt", "apply", {"invocation_id": "inv-1"})
 
     def wait() -> None:
         try:
-            values.append(broker.request(request))
+            response = broker.present(request)
+            if response is ApprovalResponse.CANCELLED:
+                raise ApprovalWaitCancelled("approval wait cancelled")
+            values.append(
+                {
+                    ApprovalResponse.APPROVE: ApprovalDecision.APPROVED,
+                    ApprovalResponse.DENY: ApprovalDecision.REJECTED,
+                    ApprovalResponse.UNAVAILABLE: ApprovalDecision.REQUIRED,
+                }[response]
+            )
         except BaseException as exc:
             values.append(exc)
 
@@ -152,6 +165,17 @@ def _approval_thread(broker: ApprovalBroker) -> tuple[Thread, list[object]]:
             break
         Event().wait(0.01)
     return thread, values
+
+
+def _resolve_approval(
+    broker: ApprovalBroker, attention_id: int, decision: ApprovalDecision,
+) -> str:
+    response = {
+        ApprovalDecision.APPROVED: ApprovalResponse.APPROVE,
+        ApprovalDecision.REJECTED: ApprovalResponse.DENY,
+        ApprovalDecision.REQUIRED: ApprovalResponse.UNAVAILABLE,
+    }[decision]
+    return broker.resolve(attention_id, response)
 
 
 def _scenario_group_01(root: Path) -> tuple[Callable[[], None], ...]:
@@ -203,7 +227,7 @@ def _scenario_group_02(root: Path) -> tuple[Callable[[], None], ...]:
         draft = "multi\nline draft"
         current = broker.current()
         assert current is not None and draft
-        broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED)
+        _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.REJECTED)
         thread.join(2)
         assert values == [ApprovalDecision.REJECTED]
 
@@ -223,7 +247,7 @@ def _scenario_group_02(root: Path) -> tuple[Callable[[], None], ...]:
             command_handlers.console = old
         current = broker.current()
         assert current is not None
-        broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED)
+        _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.REJECTED)
         thread.join(2)
         assert values == [ApprovalDecision.REJECTED]
 
@@ -542,8 +566,8 @@ def _scenario_group_08(root: Path) -> tuple[Callable[[], None], ...]:
         thread, values = _approval_thread(broker)
         current = broker.current()
         assert current is not None
-        assert broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED) == "RESOLVED"
-        assert broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED) == "IGNORED_DUPLICATE"
+        assert _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.REJECTED) == "RESOLVED"
+        assert _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.REJECTED) == "IGNORED_DUPLICATE"
         thread.join(2)
         assert values == [ApprovalDecision.REJECTED]
 
@@ -776,8 +800,8 @@ def _scenario_group_13(root: Path) -> tuple[Callable[[], None], ...]:
         thread, values = _approval_thread(broker)
         current = broker.current()
         assert current is not None
-        assert broker.resolve(current.identity.attention_id + 1, ApprovalDecision.APPROVED) == "IGNORED_STALE"
-        broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED)
+        assert _resolve_approval(broker, current.identity.attention_id + 1, ApprovalDecision.APPROVED) == "IGNORED_STALE"
+        _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.REJECTED)
         thread.join(2)
         assert values == [ApprovalDecision.REJECTED]
 
@@ -791,7 +815,7 @@ def _scenario_group_13(root: Path) -> tuple[Callable[[], None], ...]:
         current = broker.current()
         assert current is not None
         broker.bind_generation(2)
-        assert broker.resolve(current.identity.attention_id, ApprovalDecision.APPROVED) == "IGNORED_STALE"
+        assert _resolve_approval(broker, current.identity.attention_id, ApprovalDecision.APPROVED) == "IGNORED_STALE"
         thread.join(2)
         assert values and isinstance(values[0], ApprovalWaitCancelled)
 

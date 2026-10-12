@@ -39,10 +39,10 @@ from llm_agent.agent.engineering.summary import (
     validate_transition,
 )
 from llm_agent.agent.runtime.correlation import new_runtime_id
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
-from llm_agent.agent.runtime.lock_filesystem import sync_parent_directory, unlink_if_observed
-from llm_agent.agent.runtime.process_identity import OwnerLiveness
+from llm_agent.filesystem.lock_filesystem import sync_parent_directory, unlink_if_observed
 from llm_agent.filesystem.primitives import inspect_final_path
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.process.process_identity import OwnerLiveness
 from llm_agent.storage.json_persistence import AtomicWriteError, write_text_atomic
 
 _RUN_FILE = re.compile(r"^(engr-[0-9a-f]{32})\.json$")

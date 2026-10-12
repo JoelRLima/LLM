@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 from scripts.w21_architecture.source import SourceLayout  # noqa: E402
 
 SOURCE_LAYOUT = SourceLayout.for_profile(ROOT, "final-w22")
+from distribution.candidate_snapshot import verify_materialized, verify_workspace  # noqa: E402
 from distribution.provenance import (  # noqa: E402
     W20_CANDIDATE_PATH_SURFACE,
     ProvenanceError,
@@ -769,6 +770,7 @@ def _prepare_installed_evidence(
     conpty_authority_evidence: Path | None,
     installed_interactive_evidence: Path | None,
     conpty_layer_matrix: Path | None,
+    selected_source_tree: str | None = None,
 ) -> tuple[dict[str, Any], bytes, dict[str, str], bytes | None]:
     try:
         evidence_bytes = installed_evidence.read_bytes()
@@ -795,7 +797,7 @@ def _prepare_installed_evidence(
         or re.fullmatch(r"w18-[0-9a-f]{32}", candidate) is None
         or not isinstance(source_tree, str)
         or re.fullmatch(r"[0-9a-f]{40}", source_tree) is None
-        or source_tree != _current_canonical_source_tree()
+        or source_tree != (selected_source_tree or _current_canonical_source_tree())
         or not isinstance(release_manifest_sha256, str)
         or re.fullmatch(r"[0-9a-f]{64}", release_manifest_sha256) is None
         or fixture_a != candidate
@@ -904,6 +906,9 @@ def run_campaign(
     conpty_authority_evidence: Path | None = None,
     installed_interactive_evidence: Path | None = None,
     conpty_layer_matrix: Path | None = None,
+    candidate_manifest: Path | None = None,
+    candidate_manifest_sha256: str | None = None,
+    candidate_root: Path | None = None,
 ) -> dict[str, Any]:
     """Run structural checks and optionally classify canonical evidence.
 
@@ -917,6 +922,21 @@ def run_campaign(
     _BEHAVIORAL_EVIDENCE = None
     _UV_BUILD_EVIDENCE = None
     evidence_identity: dict[str, str] | None = None
+    if (candidate_manifest is None) != (candidate_manifest_sha256 is None):
+        raise ScenarioFailure("candidate manifest and expected SHA-256 must be supplied together")
+    selected_source_tree: str | None = None
+    if candidate_manifest is not None and candidate_manifest_sha256 is not None:
+        try:
+            manifest_bytes = candidate_manifest.read_bytes()
+            with tempfile.TemporaryDirectory(prefix="w18-candidate-") as raw:
+                if candidate_root is None or (candidate_root / ".git").exists():
+                    workspace = ROOT if candidate_root is None else candidate_root
+                    snapshot = verify_workspace(workspace, manifest_bytes, candidate_manifest_sha256, Path(raw) / "source")
+                else:
+                    snapshot = verify_materialized(candidate_root, manifest_bytes, candidate_manifest_sha256)
+                selected_source_tree = snapshot.source_tree
+        except (OSError, ValueError) as exc:
+            raise ScenarioFailure(f"explicit candidate selection is invalid: {exc}") from exc
     evidence_bytes: bytes | None = None
     authority_bytes: bytes | None = None
     uv_evidence_bytes: bytes | None = None
@@ -926,6 +946,7 @@ def run_campaign(
             conpty_authority_evidence=conpty_authority_evidence,
             installed_interactive_evidence=installed_interactive_evidence,
             conpty_layer_matrix=conpty_layer_matrix,
+            selected_source_tree=selected_source_tree,
         )
         _BEHAVIORAL_EVIDENCE = loaded
     _UV_BUILD_EVIDENCE, uv_evidence_bytes = _prepare_uv_campaign_evidence(
@@ -973,6 +994,9 @@ def _v3_main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="exact ConPTY layer-matrix JSON bound by the ConPTY authority",
     )
+    parser.add_argument("--candidate-manifest", type=Path, help="explicit exact-byte candidate manifest")
+    parser.add_argument("--candidate-manifest-sha256", help="caller-pinned manifest digest")
+    parser.add_argument("--candidate-root", type=Path, help="verified materialized source root (otherwise verify current workspace)")
     args = parser.parse_args(argv)
     try:
         report = run_campaign(
@@ -981,6 +1005,9 @@ def _v3_main(argv: Sequence[str] | None = None) -> int:
             conpty_authority_evidence=args.conpty_authority_evidence,
             installed_interactive_evidence=args.installed_interactive_evidence,
             conpty_layer_matrix=args.conpty_layer_matrix,
+            candidate_manifest=args.candidate_manifest,
+            candidate_manifest_sha256=args.candidate_manifest_sha256,
+            candidate_root=args.candidate_root,
         )
     except ScenarioFailure as exc:
         report = {

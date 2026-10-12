@@ -240,8 +240,8 @@
       "authority_files_in_wheel": false
     },
     "space_root": {
-      "root": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-space-20260914",
-      "outside_cwd": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-space-20260914\\outside-cwd",
+      "root": "%USERPROFILE%\\AppData\\Local\\Temp\\wave18-phase0-space-20260914",
+      "outside_cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\wave18-phase0-space-20260914\\outside-cwd",
       "private_uv": true,
       "private_cache": true,
       "private_python": true,
@@ -262,8 +262,8 @@
       }
     },
     "unicode_space_root": {
-      "root": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914",
-      "outside_cwd": "C:\\Users\\JoelR\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914\\outside-cwd",
+      "root": "%USERPROFILE%\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914",
+      "outside_cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\wave18-phase0-Jos\u00e9-Teste-20260914\\outside-cwd",
       "private_uv": true,
       "private_cache": true,
       "private_python": true,

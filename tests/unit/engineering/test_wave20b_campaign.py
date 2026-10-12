@@ -35,7 +35,13 @@ from llm_agent.agent.evaluation.comparison import (
     EvaluationComparisonError,
     compare_receipt_groups,
 )
-from llm_agent.agent.evaluation.contracts import ExecutionObservation, ScenarioReport
+from llm_agent.agent.evaluation.contracts import (
+    ExecutionObservation,
+    FaultPlanV1,
+    FaultPlanV1Error,
+    ScenarioReport,
+    parse_fault_json,
+)
 from llm_agent.agent.evaluation.evaluation_identity import fake_model_identity
 from llm_agent.agent.evaluation.experiment import evaluation_context
 from llm_agent.agent.evaluation.practical import (
@@ -43,10 +49,7 @@ from llm_agent.agent.evaluation.practical import (
     FaultController,
     FaultEffect,
     FaultingEvaluationGateway,
-    FaultPlanV1,
-    FaultPlanV1Error,
     FaultStepV1,
-    parse_fault_json,
     run_practical_scripted,
 )
 from llm_agent.agent.evaluation.receipt import build_evaluation_receipt

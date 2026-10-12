@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from llm_agent.agent.memory import memory as memory_module
-from llm_agent.agent.memory import path_safety
 from llm_agent.agent.memory.memory import AgentMemory, MemoryDatabaseError, MemoryLoadError
+from llm_agent.filesystem import path_safety
 from llm_agent.storage.json_persistence import AtomicJsonWriteError
 
 

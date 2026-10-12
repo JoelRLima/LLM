@@ -130,9 +130,11 @@ function Write-AtomicBytes {
     )
 
     $parent = Split-Path -Parent $Path
+    Assert-InstallPathAncestrySafe $Path
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
+    Assert-InstallPathAncestrySafe $Path
     $temporary = "$Path.$([Guid]::NewGuid().ToString('N')).tmp"
     $stream = [IO.File]::Open(
         $temporary,
@@ -148,6 +150,7 @@ function Write-AtomicBytes {
         $stream.Dispose()
     }
     try {
+        Assert-InstallPathAncestrySafe $Path
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
             $backup = "$Path.$([Guid]::NewGuid().ToString('N')).replace.bak"
             [System.IO.File]::Replace($temporary, $Path, $backup, $true)
@@ -286,11 +289,106 @@ function Assert-BundleRelativePath {
 function Test-ReparsePoint {
     param([string]$Path)
 
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $false
-    }
-    $item = Get-Item -LiteralPath $Path -Force
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return $false }
     return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+
+function Assert-InstallPathAncestrySafe {
+    param(
+        [string]$Path,
+        [switch]$RequireDirectory
+    )
+
+    if ([string]::IsNullOrEmpty($env:LOCALAPPDATA)) {
+        throw "LOCALAPPDATA indisponível para validar ancestry do install root"
+    }
+    $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA)
+    $volumeRoot = [IO.Path]::GetPathRoot($localRoot)
+    if ([string]::IsNullOrEmpty($volumeRoot)) {
+        throw "LOCALAPPDATA has no canonical volume root: $localRoot"
+    }
+    if (-not $localRoot.Equals($volumeRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $localRoot = $localRoot.TrimEnd('\')
+    }
+    $installRoot = [IO.Path]::GetFullPath((Join-Path $localRoot "local-llm-agent\install")).TrimEnd('\')
+    $pathFull = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $installPrefix = $installRoot + '\'
+    if (-not $pathFull.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase) -and
+        -not $pathFull.StartsWith($installPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    # Walk from the volume root, including LOCALAPPDATA itself. A junction at
+    # AppData or an earlier profile component would redirect the same path.
+    $current = $volumeRoot
+    $components = New-Object System.Collections.Generic.List[string]
+    [void]$components.Add($current)
+    $localRelative = $localRoot.Substring($volumeRoot.Length).TrimStart('\')
+    foreach ($part in $localRelative.Split('\')) {
+        if (-not [string]::IsNullOrEmpty($part)) {
+            $current = Join-Path $current $part
+            [void]$components.Add($current)
+        }
+    }
+    $localBoundaryIndex = $components.Count - 1
+    $localPrefix = if ($localRoot.Equals($volumeRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $localRoot
+    }
+    else {
+        $localRoot + '\'
+    }
+    if (-not $pathFull.Equals($localRoot, [StringComparison]::OrdinalIgnoreCase) -and
+        -not $pathFull.StartsWith($localPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "install path is not beneath LOCALAPPDATA: $Path"
+    }
+    if (-not $pathFull.Equals($localRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $relative = $pathFull.Substring($localRoot.Length).TrimStart('\')
+        foreach ($part in $relative.Split('\')) {
+            if (-not [string]::IsNullOrEmpty($part)) {
+                $current = Join-Path $current $part
+                [void]$components.Add($current)
+            }
+        }
+    }
+
+    for ($index = 0; $index -lt $components.Count; $index++) {
+        $component = $components[$index]
+        $item = $null
+        try {
+            $item = Get-Item -LiteralPath $component -Force -ErrorAction Stop
+        }
+        catch {
+            $genuineMissingPath =
+                ($_.Exception -is [System.Management.Automation.ItemNotFoundException]) -and
+                ([string]$_.FullyQualifiedErrorId -like "PathNotFound,Microsoft.PowerShell.Commands.GetItemCommand*")
+            if ($genuineMissingPath) {
+                if ($index -le $localBoundaryIndex) {
+                    throw "required LOCALAPPDATA ancestry does not exist: $component"
+                }
+                # Missing descendants are safe to create only after all existing
+                # components through LOCALAPPDATA have been authenticated.
+                break
+            }
+            throw "install path ancestry could not be inspected: $component ($($_.Exception.GetType().FullName))"
+        }
+        if ($null -eq $item) {
+            if ($index -le $localBoundaryIndex) {
+                throw "required LOCALAPPDATA ancestry could not be inspected: $component"
+            }
+            break
+        }
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "install path ancestry contains an unexpected reparse point: $component"
+        }
+        $isFinal = $index -eq ($components.Count - 1)
+        if (($index -lt $components.Count - 1) -and -not $item.PSIsContainer) {
+            throw "install path ancestry component is not a directory: $component"
+        }
+        if ($isFinal -and $RequireDirectory -and -not $item.PSIsContainer) {
+            throw "install path component is not a directory: $component"
+        }
+    }
 }
 
 function Assert-ContainedPath {
@@ -308,11 +406,13 @@ function Assert-ContainedPath {
     if (-not $pathFull.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) {
         throw "caminho fora da raiz W18: $Path"
     }
+    Assert-InstallPathAncestrySafe $pathFull
 }
 
 function Assert-DirectorySafe {
     param([string]$Path)
 
+    Assert-InstallPathAncestrySafe $Path -RequireDirectory
     if (Test-Path -LiteralPath $Path) {
         if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
             throw "esperava diretório: $Path"
@@ -322,7 +422,9 @@ function Assert-DirectorySafe {
         }
     }
     else {
+        Assert-InstallPathAncestrySafe $Path -RequireDirectory
         New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        Assert-InstallPathAncestrySafe $Path -RequireDirectory
     }
 }
 
@@ -331,6 +433,7 @@ function Get-InstallPaths {
         throw "LOCALAPPDATA não está disponível; instalação por usuário não pode continuar"
     }
     $installRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "local-llm-agent\install"))
+    Assert-InstallPathAncestrySafe $installRoot -RequireDirectory
     return [pscustomobject]@{
         InstallRoot = $installRoot
         VersionsRoot = Join-Path $installRoot "versions"
@@ -969,6 +1072,8 @@ function Set-UserPathValue {
         [string]$Value
     )
 
+    $paths = Get-InstallPaths
+    Assert-InstallPathAncestrySafe $paths.InstallRoot -RequireDirectory
     $base = [Microsoft.Win32.Registry]::CurrentUser
     $key = $null
     try {
@@ -990,6 +1095,8 @@ function Set-UserPathValue {
 function Remove-UserPathValue {
     param([switch]$RemoveEmptyEnvironmentKey)
 
+    $paths = Get-InstallPaths
+    Assert-InstallPathAncestrySafe $paths.InstallRoot -RequireDirectory
     $key = $null
     $removeKey = $false
     try {
@@ -1912,6 +2019,7 @@ function Set-JournalState {
 function Read-CurrentJournal {
     param([object]$Paths)
 
+    Assert-InstallPathAncestrySafe $Paths.JournalPath
     if (-not (Test-Path -LiteralPath $Paths.JournalPath -PathType Leaf)) { return $null }
     if (Test-ReparsePoint $Paths.JournalPath) { throw "journal link-like recusado; recuperação abortada" }
     return (Read-JsonDocument $Paths.JournalPath)
@@ -1920,6 +2028,7 @@ function Read-CurrentJournal {
 function Get-OptionalReceipt {
     param([object]$Paths)
 
+    Assert-InstallPathAncestrySafe $Paths.ReceiptPath
     if (-not (Test-Path -LiteralPath $Paths.ReceiptPath -PathType Leaf)) { return $null }
     if (Test-ReparsePoint $Paths.ReceiptPath) { throw "receipt link-like recusado; operação abortada" }
     $receipt = Read-JsonDocument $Paths.ReceiptPath
@@ -2130,6 +2239,7 @@ function Remove-OwnedTree {
     if (-not (Test-Path -LiteralPath $Path)) { return }
     Assert-ContainedPath $Root $Path
     if (Test-ReparsePoint $Path) { throw "remoção recusada para caminho link-like: $Path" }
+    Assert-InstallPathAncestrySafe $Path -RequireDirectory
     Remove-Item -LiteralPath $Path -Recurse -Force
 }
 
@@ -2263,6 +2373,7 @@ function Remove-CreatedInstallScaffolding {
             Write-Warning "cleanup do scaffolding W18 preservou conteudo surgido durante a verificacao: $($Paths.InstallRoot)"
             return
         }
+        Assert-InstallPathAncestrySafe $Paths.InstallRoot -RequireDirectory
         Remove-Item -LiteralPath $Paths.InstallRoot -Force
     }
     catch {
@@ -2321,10 +2432,12 @@ function Invoke-RollbackTransaction {
                 $backupBin = Join-Path $backupRoot "bin"
                 if (Test-Path -LiteralPath $backupVersions) {
                     if (Test-Path -LiteralPath $Paths.VersionsRoot) { Remove-OwnedTree $Paths.InstallRoot $Paths.VersionsRoot }
+                    Assert-ContainedPath $Paths.InstallRoot $Paths.VersionsRoot
                     Move-Item -LiteralPath $backupVersions -Destination $Paths.VersionsRoot
                 }
                 if (Test-Path -LiteralPath $backupBin) {
                     if (Test-Path -LiteralPath $Paths.BinRoot) { Remove-OwnedTree $Paths.InstallRoot $Paths.BinRoot }
+                    Assert-ContainedPath $Paths.InstallRoot $Paths.BinRoot
                     Move-Item -LiteralPath $backupBin -Destination $Paths.BinRoot
                 }
             }
@@ -2476,6 +2589,7 @@ function Remove-InstallRootAfterUninstall {
     if (Test-Path -LiteralPath $Paths.InstallRoot -PathType Container) {
         $remaining = @(Get-ChildItem -LiteralPath $Paths.InstallRoot -Force)
         if ($remaining.Count -eq 0) {
+            Assert-InstallPathAncestrySafe $Paths.InstallRoot -RequireDirectory
             Remove-Item -LiteralPath $Paths.InstallRoot -Force
         }
     }
@@ -2696,19 +2810,25 @@ function Invoke-Uninstall {
             # interruption or access-denied result.
             $journal.launcher_promoted = $true
             Write-Journal $paths $journal
+            Assert-InstallPathAncestrySafe $paths.StableLauncher
             Remove-Item -LiteralPath $paths.StableLauncher -Force
             Write-Journal $paths $journal
             Set-JournalState $paths $journal "LAUNCHER_PROMOTED"
         }
         if (Test-Path -LiteralPath $paths.VersionsRoot) {
             Assert-ContainedPath $paths.InstallRoot $paths.VersionsRoot
-            Move-Item -LiteralPath $paths.VersionsRoot -Destination (Join-Path $backupRoot "versions")
+            $versionsBackup = Join-Path $backupRoot "versions"
+            Assert-ContainedPath $paths.InstallRoot $versionsBackup
+            Move-Item -LiteralPath $paths.VersionsRoot -Destination $versionsBackup
         }
         if (Test-Path -LiteralPath $paths.BinRoot) {
             Assert-ContainedPath $paths.InstallRoot $paths.BinRoot
-            Move-Item -LiteralPath $paths.BinRoot -Destination (Join-Path $backupRoot "bin")
+            $binBackup = Join-Path $backupRoot "bin"
+            Assert-ContainedPath $paths.InstallRoot $binBackup
+            Move-Item -LiteralPath $paths.BinRoot -Destination $binBackup
         }
         Set-JournalState $paths $journal "STAGED"
+        Assert-InstallPathAncestrySafe $paths.ReceiptPath
         Remove-Item -LiteralPath $paths.ReceiptPath -Force
         $afterPersistent = Get-PersistentPath (Read-RegistryPathSnapshot)
         Test-FreshShell $paths $afterPersistent -ExpectAbsent | Out-Null

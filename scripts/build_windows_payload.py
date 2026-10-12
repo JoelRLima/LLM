@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import contextlib
 import csv
 import io
 import json
@@ -30,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from distribution.candidate_snapshot import CandidateSnapshot, verify_workspace  # noqa: E402
 from distribution.lockfiles import LockSummary, validate_bootstrap_lock, validate_runtime_lock  # noqa: E402
 from distribution.payload import (  # noqa: E402
     PayloadValidationError,
@@ -1426,6 +1428,26 @@ def _write_release_zip(stage: Path, destination: Path, epoch: CanonicalReleaseEp
     write_canonical_zip(destination, ((name, (stage / name).read_bytes()) for name in names), epoch)
 
 
+def _materialize_explicit_candidate(
+    manifest_path: Path, expected_digest: str, destination: Path
+) -> CandidateSnapshot:
+    """Resolve an explicit selection; malformed selections never enter W20 code."""
+    try:
+        return verify_workspace(ROOT, manifest_path.read_bytes(), expected_digest, destination)
+    except (OSError, ValueError) as exc:
+        raise BuildError(f"explicit candidate selection is invalid: {exc}") from exc
+
+
+def _select_build_candidate(
+    stack: contextlib.ExitStack, manifest_path: Path | None, expected_digest: str | None, destination: Path,
+) -> CandidateTree | CandidateSnapshot:
+    if (manifest_path is None) != (expected_digest is None):
+        raise BuildError("candidate manifest path and expected SHA-256 must be supplied together")
+    if manifest_path is not None and expected_digest is not None:
+        return _materialize_explicit_candidate(manifest_path, expected_digest, destination)
+    return stack.enter_context(isolated_candidate_tree(ROOT, allowed_paths=W20_CANDIDATE_PATH_SURFACE))
+
+
 def build_release(
     output_dir: Path,
     python_executable: Path = Path(sys.executable),
@@ -1433,6 +1455,8 @@ def build_release(
     python_artifact: Path | None = None,
     wheelhouse: Path | None = None,
     uv_artifact: Path | None = None,
+    candidate_manifest: Path | None = None,
+    candidate_manifest_sha256: str | None = None,
 ) -> BuildResult:
     """Build a candidate-bound wheel, payload, and v003 release bundle."""
 
@@ -1450,14 +1474,18 @@ def build_release(
     uv_verification = _verify_uv_artifact(Path(uv_artifact_value))
     python_executable = python_executable.resolve()
     _verify_build_driver(python_executable)
-    with isolated_candidate_tree(ROOT, allowed_paths=W20_CANDIDATE_PATH_SURFACE) as candidate:
-        release_epoch = derive_release_epoch(ROOT, candidate.base_commit)
+    with contextlib.ExitStack() as stack:
         with tempfile.TemporaryDirectory(prefix="candidate-build-") as raw:
             scratch = Path(raw)
             source_snapshot = scratch / "source"
             wheel_dir = scratch / "wheel"
             payload_root = scratch / "payload"
-            _materialize_source_snapshot(candidate, source_snapshot)
+            candidate = _select_build_candidate(
+                stack, candidate_manifest, candidate_manifest_sha256, source_snapshot
+            )
+            if not isinstance(candidate, CandidateSnapshot):
+                _materialize_source_snapshot(candidate, source_snapshot)
+            release_epoch = derive_release_epoch(ROOT, candidate.base_commit)
             try:
                 normalize_tree_mtimes(source_snapshot, release_epoch)
             except ReproducibilityError as exc:
@@ -1628,6 +1656,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--python-artifact", type=Path, required=False)
     parser.add_argument("--wheelhouse", type=Path, required=False)
     parser.add_argument("--uv-artifact", type=Path, required=False)
+    parser.add_argument("--candidate-manifest", type=Path, required=False)
+    parser.add_argument("--candidate-manifest-sha256", type=str, required=False)
     args = parser.parse_args(argv)
     try:
         result = build_release(
@@ -1636,6 +1666,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             python_artifact=args.python_artifact,
             wheelhouse=args.wheelhouse,
             uv_artifact=args.uv_artifact,
+            candidate_manifest=args.candidate_manifest,
+            candidate_manifest_sha256=args.candidate_manifest_sha256,
         )
     except (BuildError, ValueError) as exc:
         print(f"W18 v003 release build failed: {exc}", file=sys.stderr)

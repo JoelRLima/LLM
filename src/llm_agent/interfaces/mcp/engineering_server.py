@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import sys
-import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,20 +12,17 @@ import mcp_types as types
 from mcp.server.lowlevel.server import Server
 from mcp.server.stdio import stdio_server
 
-from llm_agent.application.agent_boundary import (
-    MODEL_SAFE_TOOL_DESCRIPTORS,
-    EngineeringCaller,
-    EngineeringExecutionContext,
-    EngineeringWorkspaceContext,
-    HomeLifecycleLease,
-    ModelSafeEngineering,
-    ModelSafeResponse,
-    ModelSafeStatus,
-    StorageBootstrap,
-    build_model_safe_engineering_service,
-)
 from llm_agent.application.context import AppPaths, WorkspaceContext
-from llm_agent.interfaces.mcp.projection import response_document
+from llm_agent.application.home_operations import startup_home_operation
+from llm_agent.application.model_safe_mcp import (
+    ModelSafeContext,
+    ModelSafeInvocationResult,
+    ModelSafeToolView,
+    build_model_safe_context,
+    invoke_model_safe_tool,
+    list_model_safe_tools,
+    model_safe_adapter_failure,
+)
 
 MCP_ABANDON_ON_CANCEL = False
 
@@ -44,57 +38,46 @@ class MCPWorkspaceBinding:
         return cls(context.root, context.workspace_id)
 
 
-def _context(binding: MCPWorkspaceBinding, paths: AppPaths) -> EngineeringExecutionContext:
-    return EngineeringExecutionContext(
-        caller=EngineeringCaller.MCP,
-        app_paths=paths,
-        workspace=EngineeringWorkspaceContext(binding.workspace_id, binding.root),
-        source_repository=None,
-        permissions=frozenset(),
-        utc_now=lambda: datetime.now(timezone.utc),
-        monotonic_now=time.monotonic,
-        deadline_monotonic=None,
-        cancellation_token=None,
-    )
+def _default_adapter(binding: MCPWorkspaceBinding, paths: AppPaths) -> ModelSafeContext:
+    return build_model_safe_context(app_paths=paths, workspace=binding)
 
 
-def _default_adapter(binding: MCPWorkspaceBinding, paths: AppPaths) -> ModelSafeEngineering:
-    return build_model_safe_engineering_service(
-        app_paths=paths,
-        workspace=binding,
-    )
+def _tool(descriptor: ModelSafeToolView) -> types.Tool:
+    return types.Tool(name=descriptor.name, description=descriptor.description, input_schema=descriptor.input_schema)
 
 
-def _tool(descriptor: Any) -> types.Tool:
-    return types.Tool(name=descriptor.name, description=descriptor.description, input_schema=descriptor.schema)
+def _list_tools(context: ModelSafeContext) -> types.ListToolsResult:
+    return types.ListToolsResult(tools=[_tool(item) for item in list_model_safe_tools(context)])
 
 
-def _result(response: ModelSafeResponse) -> types.CallToolResult:
-    document = response_document(response)
+def _result(response: ModelSafeInvocationResult) -> types.CallToolResult:
+    import json
+
+    document = dict(response.document)
     text = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return types.CallToolResult(content=[types.TextContent(text=text)], structured_content=document, is_error=response.status is not ModelSafeStatus.AVAILABLE)
+    return types.CallToolResult(content=[types.TextContent(text=text)], structured_content=document, is_error=response.is_error)
 
 
-def _safe_adapter_failure(operation: str, exc: BaseException) -> ModelSafeResponse:
+def _safe_adapter_failure(operation: str, exc: BaseException) -> ModelSafeInvocationResult:
     """Keep unexpected adapter details on stderr and the wire generic."""
 
     print(f"MCP adapter failure: {type(exc).__name__}", file=sys.stderr)
-    return ModelSafeResponse(operation, ModelSafeStatus.DEGRADED, reason_code="MCP_ADAPTER_ERROR")
+    return model_safe_adapter_failure(operation, exc)
 
 
-def create_server(binding: MCPWorkspaceBinding, adapter: ModelSafeEngineering, paths: AppPaths) -> Server[Any]:
+def create_server(binding: MCPWorkspaceBinding, adapter: ModelSafeContext, paths: AppPaths) -> Server[Any]:
     """Create a low-level Server with only the canonical tools handlers."""
 
     async def list_tools(_ctx: Any, _params: Any) -> types.ListToolsResult:
-        return types.ListToolsResult(tools=[_tool(item) for item in MODEL_SAFE_TOOL_DESCRIPTORS])
+        return _list_tools(adapter)
 
     async def call_tool(_ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
         try:
             response = await anyio.to_thread.run_sync(
-                adapter.invoke,
+                invoke_model_safe_tool,
+                adapter,
                 params.name,
                 params.arguments or {},
-                _context(binding, paths),
                 abandon_on_cancel=MCP_ABANDON_ON_CANCEL,
             )
             return _result(response)
@@ -104,7 +87,7 @@ def create_server(binding: MCPWorkspaceBinding, adapter: ModelSafeEngineering, p
     return Server("local-llm-agent-engineering", version="20c", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
-async def _serve(binding: MCPWorkspaceBinding, paths: AppPaths, adapter: ModelSafeEngineering) -> None:
+async def _serve(binding: MCPWorkspaceBinding, paths: AppPaths, adapter: ModelSafeContext) -> None:
     server = create_server(binding, adapter, paths)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
@@ -113,13 +96,8 @@ async def _serve(binding: MCPWorkspaceBinding, paths: AppPaths, adapter: ModelSa
 def serve_engineering_stdio(workspace: str | Path, *, home: str | Path | None = None) -> int:
     binding = MCPWorkspaceBinding.from_path(workspace)
     paths = AppPaths.discover(app_home=home)
-    lease = HomeLifecycleLease.begin_startup(paths.home_dir)
-    try:
-        StorageBootstrap().prepare(paths)
-        lease.activate()
+    with startup_home_operation(paths):
         anyio.run(_serve, binding, paths, _default_adapter(binding, paths))
-    finally:
-        lease.close()
     return 0
 
 

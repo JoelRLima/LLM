@@ -7,9 +7,9 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
 from llm_agent.filesystem.path_safety import LinkLikePathError, reject_link_like
 from llm_agent.filesystem.primitives import write_bytes_atomic
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
 
 FEEDBACK_SCHEMA_VERSION = 1
 MAX_FEEDBACK_COMMENT_CHARS = 2_000
