@@ -10,7 +10,10 @@ mkdir -p "$evidence"
 ulimit -c 0
 ulimit -f 1048576
 if [ "$gate" = pytest ]; then
-  command=("$python" -B -m pytest -q --tb=short --basetemp "$work/pytest" --junitxml="$evidence/pytest.xml")
+  command=("$python" -B -m pytest -v --tb=short --durations=30 -o faulthandler_timeout=120 --basetemp "$work/pytest" --junitxml="$evidence/pytest.xml")
+elif [ "$gate" = regressions ]; then
+  mapfile -t targets < quality/w23/acceptance_focus.txt
+  command=("$python" -B -m pytest -v --tb=short --basetemp "$work/pytest" --junitxml="$evidence/regressions.xml" "${targets[@]}")
 elif [ "$gate" = lifecycle ]; then
   command=("$python" -B -m pytest -q --basetemp "$work/pytest"
     'tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[timeout-timed_out]'

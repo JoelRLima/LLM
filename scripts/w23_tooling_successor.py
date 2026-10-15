@@ -24,11 +24,16 @@ from scripts.w23_architecture.evidence import (  # noqa: E402
 WITNESS = "quality/w23/acceptance_tooling_witness_v001.json"
 WITNESS_SHA256 = "89354369cf111fbc5d1b4d4d4c1d7d76899bba50d2abf77af52daa0144ca586b"
 ARCHIVE = "quality/w23/historical_tooling/checkpoint_e3c1b615"
-RECORD = "quality/w23/tooling_corrections_20261015.json"
+RECORD = "quality/w23/tooling_corrections_20261015_v002.json"
 CLEANUP_PATH = "src/llm_agent/execution/cleanup.py"
 CLEANUP_BEFORE = "3e87791607dc8d0f20ddaa47f0d5c3020fcc6d7e5b02a04b377a04f7113fa973"
-CLEANUP_AFTER = "7cbf3ec292f48433b4191932eadecf6ced408a8bf8619376969751d79fa97495"
+CLEANUP_AFTER = "1e037e92bc12bd500297da98461618a307d0dd9c98810e9cec6bd4bfcea32b42"
 CLEANUP_ARCHIVE = "quality/w23/tooling_corrections_20261015/src/llm_agent/execution/cleanup.py.blob"
+REVIEWED_CORRECTIONS: dict[str, tuple[str, str, str]] = {
+    CLEANUP_PATH: (CLEANUP_ARCHIVE, CLEANUP_BEFORE, CLEANUP_AFTER),
+    'src/llm_agent/agent/skills/shell_process.py': ('quality/w23/tooling_corrections_20261015_v002/src/llm_agent/agent/skills/shell_process.py.blob', '7a0219436da418c53da92ef5dac59a0941c9a209b535a60f5fa026f6a9ad54e4', '80aa4e7aa2e2561c84bab4100dab8e2ce171198f1576ae15a78be3050d540abf'),
+    'src/llm_agent/execution/command.py': ('quality/w23/tooling_corrections_20261015_v002/src/llm_agent/execution/command.py.blob', '1c093c3c60f12991339619c25159743a8983a866fea3a0ee43df46c055ea6853', 'd8e70e784f53f077668efd22da1edabe944e0bf27aa21c7c78646a5868d655ad'),
+}
 BASE_COMMIT = "e3c1b6151e53082485d255a6ed80df403bf65426"
 BASE_TREE = "57da004b57bf46bd161fb9f0dde7eabcef87e51e"
 COMMANDS = "src/llm_agent/application/_task_commands.py"
@@ -143,6 +148,16 @@ def inventory_sha256(inventory: list[list[str]]) -> str:
     return _sha(json.dumps(inventory, separators=(",", ":")).encode("utf-8"))
 
 
+def _reviewed_predecessors(root: Path) -> dict[str, str]:
+    result = {}
+    for path, (archive, before, after) in REVIEWED_CORRECTIONS.items():
+        _authenticated(root, {"path": archive, "sha256": before})
+        if _sha(_read(root, path)) != after:
+            raise EvidenceError("reviewed production correction differs: " + path)
+        result[path] = before
+    return result
+
+
 def project_historical_production(root: Path, current: list[list[str]]) -> list[list[str]]:
     """Invert only the exact archived presentation and reviewed orphan-cleanup corrections."""
     if current != production_inventory(root):
@@ -152,10 +167,7 @@ def project_historical_production(root: Path, current: list[list[str]]) -> list[
     expected = old.replace(before, "indisponível".encode()).replace(b"\r\n", b"\n")
     if old.count(before) != 1 or _read(root, COMMANDS) != expected:
         raise EvidenceError("production delta is not the exact presentation correction")
-    _authenticated(root, {"path": CLEANUP_ARCHIVE, "sha256": CLEANUP_BEFORE})
-    if _sha(_read(root, CLEANUP_PATH)) != CLEANUP_AFTER:
-        raise EvidenceError("orphan-cleanup correction differs from reviewed bytes")
-    predecessors = {COMMANDS: COMMANDS_SHA256, CLEANUP_PATH: CLEANUP_BEFORE}
+    predecessors = {COMMANDS: COMMANDS_SHA256, **_reviewed_predecessors(root)}
     projected = [[path, predecessors.get(path, digest)] for path, digest in current]
     if inventory_sha256(projected) != PREDECESSOR_PRODUCTION:
         raise EvidenceError("historical production projection differs from the predecessor")
@@ -244,6 +256,10 @@ def verify_successor(root: Path, record_bytes: bytes, expected_sha256: str) -> d
     additional = _rows(root, record["additional_files"])
     expected_additional = {
         CLEANUP_ARCHIVE, "quality/w23/tooling_corrections_20261015/.gitattributes",
+        "quality/w23/tooling_corrections_20261015_v002/.gitattributes",
+        'quality/w23/tooling_corrections_20261015_v002/src/llm_agent/agent/skills/shell_process.py.blob',
+        'quality/w23/tooling_corrections_20261015_v002/src/llm_agent/execution/command.py.blob',
+
         COMMANDS, "scripts/w23_tooling_successor.py", "tests/unit/test_candidate_manifest_regressions.py",
         "tests/unit/test_w23_tooling_successor.py", f"{ARCHIVE}/.gitattributes",
         "tests/unit/test_task_execution_application.py",

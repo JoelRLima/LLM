@@ -67,8 +67,6 @@ def _command(args: argparse.Namespace) -> list[str]:
 
 
 def _approved_root(local_appdata: Path) -> Path:
-    if os.environ.get("GITHUB_ACTIONS") == "true":
-        return (Path(os.environ["RUNNER_TEMP"]) / "w23-private").resolve(strict=True)
     return (local_appdata / "W23_CAND03_S5_TEMP_20261014").resolve(strict=True)
 
 

@@ -30,7 +30,7 @@ def test_query_failure_does_not_skip_any_cleanup(monkeypatch: pytest.MonkeyPatch
     events = []
     for name in ["_terminate_tree", "_settle_readers", "_close_process_pipes"]:
         monkeypatch.setattr(cleanup, name, lambda *args, name=name: events.append(name))
-    context = SimpleNamespace(process=SimpleNamespace(poll=lambda: 0), process_group=43210, windows_job=None)
+    context = SimpleNamespace(process=SimpleNamespace(poll=lambda: 0), process_group=43210, windows_job=None, fail_on_orphaned_group=True)
     error = cleanup.cleanup_command(context, terminate_tree=True)
     assert error is not None and "could not confirm" in error
     assert events == ["_terminate_tree", "_settle_readers", "_close_process_pipes"]

@@ -19,14 +19,15 @@ PROJECT_ROOT = Path(__file__).parents[3]
 def _subprocess_environment() -> dict[str, str]:
     environment = dict(os.environ)
     current = environment.get("PYTHONPATH")
+    source_root = PROJECT_ROOT / "src"
     environment["PYTHONPATH"] = (
-        f"{PROJECT_ROOT}{os.pathsep}{current}" if current else str(PROJECT_ROOT)
+        f"{source_root}{os.pathsep}{current}" if current else str(source_root)
     )
     return environment
 
 
 def test_importing_logging_does_not_create_runtime_files(tmp_path: Path) -> None:
-    script = "import agent.runtime.logging; print('ok')"
+    script = "import llm_agent.agent.runtime.logging; print('ok')"
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=tmp_path,
@@ -58,7 +59,7 @@ def test_explicit_logging_uses_requested_file_and_stderr(tmp_path: Path, capsys)
 def test_importing_cli_in_clean_directory_has_no_side_effects(tmp_path: Path) -> None:
     script = (
         "import json, pathlib; "
-        "import agent.interfaces.cli; "
+        "import llm_agent.interfaces.cli; "
         "print(json.dumps([p.name for p in pathlib.Path('.').iterdir()]))"
     )
     result = subprocess.run(

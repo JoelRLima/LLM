@@ -563,4 +563,4 @@ def test_output_path_reparse_ancestor_fails_closed_when_symlink_creation_is_avai
     assert not summary.exists()
     assert not matrix.exists()
     assert not matrix.with_suffix(".raw.json").exists()
-    alias.rmdir()
+    alias.unlink()

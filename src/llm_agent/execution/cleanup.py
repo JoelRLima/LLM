@@ -24,6 +24,7 @@ class CommandContext:
     stderr: StreamCapture
     stop_readers: Any
     reader_errors: list[str]
+    fail_on_orphaned_group: bool = False
 
 
 def _join_readers(context: CommandContext, timeout_seconds: float = 1.0) -> str | None:
@@ -110,7 +111,8 @@ def cleanup_command(context: CommandContext | None, *, terminate_tree: bool) -> 
         return None
     errors: list[str] = []
     if terminate_tree:
-        _record_orphaned_group(context, errors)
+        if getattr(context, "fail_on_orphaned_group", False):
+            _record_orphaned_group(context, errors)
         _terminate_tree(context, errors)
     _settle_readers(context, errors)
     _close_process_pipes(context, errors)

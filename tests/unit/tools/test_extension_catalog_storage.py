@@ -89,7 +89,7 @@ def test_failure_before_replace_preserves_previous_destination(tmp_path: Path, m
     path.write_bytes(b"previous")
     storage = ExtensionCatalogStorage(path)
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.os.replace",
+        "llm_agent.extensions.extension_catalog_storage.os.replace",
         lambda source, destination: (_ for _ in ()).throw(OSError("replace failed")),
     )
 
@@ -133,7 +133,7 @@ def test_mkstemp_failure_is_typed_and_preserves_destination(
     path = tmp_path / "catalog.json"
     path.write_bytes(b"previous")
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.tempfile.mkstemp",
+        "llm_agent.extensions.extension_catalog_storage.tempfile.mkstemp",
         Mock(side_effect=OSError("mkstemp failed")),
     )
 
@@ -158,12 +158,12 @@ def test_setup_failure_closes_descriptor_and_removes_tempfile(
     monkeypatch.setattr("llm_agent.extensions.extension_catalog_storage.os.close", track_close)
     if failure == "chmod":
         monkeypatch.setattr(
-            "agent.tools.extension_catalog_storage.os.chmod",
+            "llm_agent.extensions.extension_catalog_storage.os.chmod",
             Mock(side_effect=OSError("chmod failed")),
         )
     else:
         monkeypatch.setattr(
-            "agent.tools.extension_catalog_storage.os.fdopen",
+            "llm_agent.extensions.extension_catalog_storage.os.fdopen",
             Mock(side_effect=OSError("fdopen failed")),
         )
 
@@ -211,12 +211,12 @@ def test_write_flush_and_fsync_failures_preserve_destination(
     path = tmp_path / "catalog.json"
     path.write_bytes(b"previous")
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.os.fdopen",
+        "llm_agent.extensions.extension_catalog_storage.os.fdopen",
         lambda descriptor, *_args, **_kwargs: _FailingHandle(descriptor, stage),
     )
     if stage == "fsync":
         monkeypatch.setattr(
-            "agent.tools.extension_catalog_storage.os.fsync",
+            "llm_agent.extensions.extension_catalog_storage.os.fsync",
             Mock(side_effect=OSError("fsync failed")),
         )
 
@@ -233,14 +233,14 @@ def test_primary_payload_failure_survives_close_failure(
     path = tmp_path / "catalog.json"
     path.write_bytes(b"previous")
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.os.fdopen",
+        "llm_agent.extensions.extension_catalog_storage.os.fdopen",
         lambda descriptor, *_args, **_kwargs: _FailingHandle(
             descriptor, stage, close_fails=True
         ),
     )
     if stage == "fsync":
         monkeypatch.setattr(
-            "agent.tools.extension_catalog_storage.os.fsync",
+            "llm_agent.extensions.extension_catalog_storage.os.fsync",
             lambda _fd: (_ for _ in ()).throw(OSError("fsync failed")),
         )
 
@@ -261,7 +261,7 @@ def test_isolated_close_failure_is_the_primary_error(
     path = tmp_path / "catalog.json"
     path.write_bytes(b"previous")
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.os.fdopen",
+        "llm_agent.extensions.extension_catalog_storage.os.fdopen",
         lambda descriptor, *_args, **_kwargs: _FailingHandle(
             descriptor, "close", close_fails=True
         ),
@@ -292,7 +292,7 @@ def test_cleanup_failure_does_not_mask_primary_error(
 
     monkeypatch.setattr(Path, "unlink", fail_temp_unlink)
     monkeypatch.setattr(
-        "agent.tools.extension_catalog_storage.os.replace",
+        "llm_agent.extensions.extension_catalog_storage.os.replace",
         Mock(side_effect=OSError("replace failed")),
     )
 
@@ -307,7 +307,7 @@ def test_cleanup_failure_does_not_mask_primary_error(
         )
     else:
         assert any(
-            record.name == "agent.tools.extension_catalog_storage"
+            record.name == "llm_agent.extensions.extension_catalog_storage"
             and "Falha secundaria durante cleanup do catalogo: cleanup failed" in record.getMessage()
             for record in caplog.records
         )

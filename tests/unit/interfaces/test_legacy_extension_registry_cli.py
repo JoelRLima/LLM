@@ -61,8 +61,8 @@ def test_legacy_tools_cli_renders_list_add_enable_disable_and_doctor(
         workspace=tmp_path,
     ) == 0
     assert capsys.readouterr().out.splitlines() == [
-        "one [enabled] -> C:\\extensions\\one.json",
-        "two [disabled] -> C:\\extensions\\two.json",
+        f"one [enabled] -> {Path('C:/extensions/one.json')}",
+        f"two [disabled] -> {Path('C:/extensions/two.json')}",
     ]
     assert maintenance.run_tools(
         argparse.Namespace(tools_command="add", state=None, id="new", manifest="manifest.json", disabled=True),

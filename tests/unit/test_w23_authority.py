@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from scripts import w23_authority as authority
+from scripts.w23_authority_transaction import SELECTOR
 
 
 def encoded(value: Any) -> bytes:
@@ -99,7 +100,7 @@ def test_prospective_mutations_fail_closed(proposal: tuple[Path, Path, dict[str,
     elif mutation == "simulated_gate":
         p["gates"]["full_pytest"]["state"] = "SIMULATED"
     elif mutation == "binding_escape":
-        p["bindings"][0]["destination"] = ".agent-local/AUTHORITY_MANIFEST.json"
+        p["bindings"][0]["destination"] = SELECTOR
     elif mutation == "duplicate_binding":
         p["bindings"].append(copy.deepcopy(p["bindings"][0]))
     elif mutation == "missing_binding":
@@ -134,9 +135,9 @@ def make_install_fixture(tmp_path: Path, bundle: Path) -> Path:
 
     root = tmp_path / "installation-fixture"
     root.mkdir(mode=0o700)
-    (root / ".agent-local").mkdir()
+    (root / Path(SELECTOR).parent).mkdir()
     (root / ".w23-disposable-authority").write_bytes(MARKER)
-    (root / ".agent-local/AUTHORITY_MANIFEST.json").write_bytes((bundle / "predecessor.json").read_bytes())
+    (root / SELECTOR).write_bytes((bundle / "predecessor.json").read_bytes())
     return root
 
 
@@ -150,7 +151,7 @@ def test_transaction_rehearsal_is_inactive_and_selector_last(proposal: tuple[Pat
     assert result["state"] == "SIMULATED"
     assert result["selector_operation"] == "LAST"
     assert result["activation_authorized"] is False
-    assert (root / ".agent-local/AUTHORITY_MANIFEST.json").read_bytes() == raw
+    assert (root / SELECTOR).read_bytes() == raw
 
 
 @pytest.mark.parametrize("failure_index", range(5))
@@ -161,7 +162,7 @@ def test_intermediate_failure_rolls_back_owned_files_only(
 
     _, bundle, p = proposal
     root = make_install_fixture(tmp_path, bundle)
-    old = (root / ".agent-local/AUTHORITY_MANIFEST.json").read_bytes()
+    old = (root / SELECTOR).read_bytes()
     unrelated = root / "unrelated.txt"
     unrelated.write_bytes(b"preserve\n")
     def fail(path: Path, index: int) -> None:
@@ -169,7 +170,7 @@ def test_intermediate_failure_rolls_back_owned_files_only(
             raise RuntimeError("injected write failure")
     with pytest.raises(RuntimeError, match="injected"):
         rehearse(root, bundle, encoded(p), authority.digest(encoded(p)), after_write=fail)
-    assert (root / ".agent-local/AUTHORITY_MANIFEST.json").read_bytes() == old
+    assert (root / SELECTOR).read_bytes() == old
     assert unrelated.read_bytes() == b"preserve\n"
     assert all(not (root / row["destination"]).exists() for row in p["bindings"])
 
@@ -187,7 +188,7 @@ def test_tampered_installed_artifact_is_retained_and_rollback_unconfirmed(
     with pytest.raises(authority.AuthorityError, match="ROLLBACK_UNCONFIRMED"):
         rehearse(root, bundle, encoded(p), authority.digest(encoded(p)), after_write=tamper)
     assert (root / p["bindings"][0]["destination"]).read_bytes() == b"foreign bytes\n"
-    assert (root / ".agent-local/AUTHORITY_MANIFEST.json").read_bytes() == (bundle / "predecessor.json").read_bytes()
+    assert (root / SELECTOR).read_bytes() == (bundle / "predecessor.json").read_bytes()
 
 
 @pytest.mark.parametrize("mutation", ["missing_source", "existing_target", "git_worktree", "changed_selector"])
@@ -209,11 +210,11 @@ def test_transaction_preconditions_fail_closed(
         (root / ".git").mkdir()
     else:
         def callback(path: Path, index: int) -> None:
-            (root / ".agent-local/AUTHORITY_MANIFEST.json").write_bytes(b"concurrent selector\n")
+            (root / SELECTOR).write_bytes(b"concurrent selector\n")
     with pytest.raises((authority.AuthorityError, FileNotFoundError)):
         rehearse(root, bundle, encoded(p), authority.digest(encoded(p)), after_write=callback)
     if mutation == "changed_selector":
-        assert (root / ".agent-local/AUTHORITY_MANIFEST.json").read_bytes() == b"concurrent selector\n"
+        assert (root / SELECTOR).read_bytes() == b"concurrent selector\n"
     elif mutation == "existing_target":
         assert target.read_bytes() == b"preexisting\n"
 
@@ -255,7 +256,7 @@ def test_future_approval_verification_does_not_install_or_activate(
     result = authority.verify_owner_approval(source, bundle, raw, authority.digest(raw), approval, authority.digest(approval))
     assert result["canonical_acceptance"] == "OWNER_APPROVED_BYTES_AND_GATES_VERIFIED"
     assert result["activation_authorized"] is False and result["green"] is False
-    assert not (source / ".agent-local/AUTHORITY_MANIFEST.json").exists()
+    assert not (source / SELECTOR).exists()
 
 
 def test_bound_runner_does_not_export_bytecode_outside_pip_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

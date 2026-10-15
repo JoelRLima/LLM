@@ -22,6 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -32,6 +34,7 @@ jobs:
         run: python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
 
       - name: Authenticate tracked source before acceptance
+        id: source_preflight
         run: python -B scripts/w23_ci_identity.py before
 
       - name: Installed entry point smoke test
@@ -52,6 +55,15 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/w23_ci_linux.sh lifecycle
 
+      - name: Focused acceptance regressions Linux
+        if: runner.os == 'Linux'
+        run: bash scripts/w23_ci_linux.sh regressions
+
+      - name: Focused acceptance regressions Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/w23_ci_windows.ps1 -Gate regressions
+
       - name: Full Pytest Linux
         if: runner.os == 'Linux'
         run: bash scripts/w23_ci_linux.sh pytest
@@ -66,11 +78,11 @@ jobs:
         run: python scripts/report_pytest_failures.py "${{ runner.temp }}/w23-evidence/pytest.xml"
 
       - name: Installed wheel acceptance Linux
-        if: runner.os == 'Linux'
+        if: always() && steps.source_preflight.outcome == 'success' && runner.os == 'Linux'
         run: bash scripts/w23_ci_linux.sh installed
 
       - name: Installed wheel acceptance Windows
-        if: runner.os == 'Windows'
+        if: always() && steps.source_preflight.outcome == 'success' && runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/w23_ci_windows.ps1 -Gate installed
 
