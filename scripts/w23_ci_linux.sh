@@ -39,7 +39,11 @@ sudo systemd-run --scope --quiet --unit="$unit" \
   runuser -u "$(id -un)" -- env PATH="$PATH" HOME="$HOME" \
   TEMP="$work" TMP="$work" TMPDIR="$work" PYTHONDONTWRITEBYTECODE=1 \
   GIT_OPTIONAL_LOCKS=0 AGENT_RUNTIME_DIR="$work/runtime" \
-  timeout --signal=TERM --kill-after=10s 1800s "${command[@]}" > "$evidence/$gate.log" 2>&1
+  bash -c 'set -eu; ulimit -c 0; ulimit -f 1048576; uname -a; findmnt -T "$TMPDIR" -o SOURCE,FSTYPE,TARGET;
+    group=$(cut -d: -f3 /proc/self/cgroup); cat /proc/self/cgroup;
+    printf "effective_memory_max="; cat "/sys/fs/cgroup$group/memory.max";
+    printf "effective_pids_max="; cat "/sys/fs/cgroup$group/pids.max";
+    exec timeout --signal=TERM --kill-after=10s 1800s "$@"' bounded "${command[@]}" > "$evidence/$gate.log" 2>&1
 result=$?
 set -e
 printf '{"return_code":%s,"memory_limit_bytes":4294967296,"process_limit":128,"timeout_seconds":1800}\n' "$result" > "$evidence/$gate.json"

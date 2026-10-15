@@ -13,7 +13,7 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from distribution.candidate_manifest import parse_manifest, validate_repo_path
+from distribution.candidate_manifest import manifest_references, parse_manifest, validate_repo_path
 from scripts.w23_tooling_successor import verify_successor
 
 PREDECESSOR_SHA256 = "418e0ccac42c9532ff9519f72631045dce82a3b370f6455a08f42fdecfba94e4"
@@ -140,6 +140,17 @@ def _candidate(source: Path, manifest: dict[str, Any]) -> None:
         raise AuthorityError("candidate source tree differs")
 
 
+def _required_artifacts(bundle: Path, proposal: dict[str, Any]) -> set[str]:
+    expected = {proposal[key]["path"] for key in ("predecessor", "candidate", "contract", "spec", "tooling_record")}
+    manifest = json.loads(_reference(bundle, proposal["candidate"]))
+    expected.update(row["path"] for row in manifest_references(manifest, workspace=True))
+    for row in proposal["gates"].values():
+        expected.add(row["evidence"]["path"])
+        observation = json.loads(_reference(bundle, row["evidence"]))
+        expected.update(ref["path"] for ref in observation.get("evidence_refs", []))
+    return expected
+
+
 def _bindings(bundle: Path, proposal: dict[str, Any]) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -152,8 +163,8 @@ def _bindings(bundle: Path, proposal: dict[str, Any]) -> list[dict[str, str]]:
         seen.add(destination)
         _reference(bundle, {"path": row["source"], "sha256": row["sha256"]})
         result.append(dict(row))
-    expected = {proposal[key]["path"] for key in ("predecessor", "candidate", "contract", "spec", "tooling_record")}
-    if {row["source"] for row in result} != expected:
+    expected = _required_artifacts(bundle, proposal)
+    if {row["source"] for row in result} != expected or len(result) != len(expected):
         raise AuthorityError("binding membership is incomplete")
     return result
 
@@ -201,6 +212,10 @@ def verify_prospective(source: Path, bundle: Path, proposal_bytes: bytes, expect
     _reference(source, verifier)
     raw = _reference(bundle, proposal["candidate"])
     manifest = parse_manifest(raw, proposal["candidate"]["sha256"])
+    if manifest["lineage"]["authority_predecessor"] != proposal["predecessor"]:
+        raise AuthorityError("candidate lineage does not recognize the exact predecessor")
+    for reference in manifest_references(manifest, workspace=True):
+        _reference(bundle, reference)
     _candidate(source, manifest)
     record = _reference(bundle, proposal["tooling_record"])
     tooling = verify_successor(source, record, proposal["tooling_record"]["sha256"])

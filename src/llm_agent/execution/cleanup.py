@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -85,6 +86,23 @@ def _close_job(windows_job: Any, errors: list[str]) -> None:
         errors.append(f"close Job raised {type(exc).__name__}: {exc}")
 
 
+def _record_orphaned_group(context: CommandContext, errors: list[str]) -> None:
+    """Do not turn mandatory cleanup of an abandoned POSIX tree into success."""
+    try:
+        if os.name == "nt" or context.process.poll() is None or context.process_group is None:
+            return
+        killpg = getattr(os, "killpg", None)
+        if killpg is None:
+            raise OSError("POSIX process-group query unavailable")
+        killpg(context.process_group, 0)
+    except ProcessLookupError:
+        return
+    except Exception as exc:
+        errors.append(f"could not confirm exited parent's process group: {exc}")
+    else:
+        errors.append("parent exited while its owned process group still contained descendants")
+
+
 def cleanup_command(context: CommandContext | None, *, terminate_tree: bool) -> str | None:
     """Settle every acquired command resource in its established order."""
 
@@ -92,6 +110,7 @@ def cleanup_command(context: CommandContext | None, *, terminate_tree: bool) -> 
         return None
     errors: list[str] = []
     if terminate_tree:
+        _record_orphaned_group(context, errors)
         _terminate_tree(context, errors)
     _settle_readers(context, errors)
     _close_process_pipes(context, errors)

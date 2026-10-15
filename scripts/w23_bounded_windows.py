@@ -39,13 +39,13 @@ def _save(path: Path, record: dict[str, Any]) -> None:
 def _environment(scratch: Path) -> dict[str, str]:
     env = os.environ.copy()
     temp = scratch / "temp"
-    for directory in (temp, scratch / "pycache", scratch / "ruff-cache", scratch / "mypy-cache"):
+    for directory in (temp, scratch / "ruff-cache", scratch / "mypy-cache"):
         directory.mkdir(parents=True, exist_ok=True)
+    env.pop("PYTHONPYCACHEPREFIX", None)
     env.update({
         "TEMP": str(temp),
         "TMP": str(temp),
         "TMPDIR": str(temp),
-        "PYTHONPYCACHEPREFIX": str(scratch / "pycache"),
         "PYTHONDONTWRITEBYTECODE": "1",
         "RUFF_CACHE_DIR": str(scratch / "ruff-cache"),
         "MYPY_CACHE_DIR": str(scratch / "mypy-cache"),

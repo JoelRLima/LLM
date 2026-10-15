@@ -5,7 +5,10 @@ import argparse
 import hashlib
 import json
 import os
+import platform
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +40,13 @@ def main() -> None:
     args = parser.parse_args()
     evidence = Path(os.environ["RUNNER_TEMP"]) / "w23-evidence"
     evidence.mkdir(exist_ok=True)
+    environment = {"system": platform.system(), "kernel": platform.release(), "python": sys.version,
+                   "disk": dict(zip(("total", "used", "free"), shutil.disk_usage(Path.cwd()), strict=True))}
+    if os.name != "nt":
+        environment["filesystem"] = subprocess.check_output(
+            ["findmnt", "-T", os.environ["RUNNER_TEMP"], "-o", "SOURCE,FSTYPE,TARGET"], text=True)
+    (evidence / ("environment_" + args.phase + ".json")).write_text(
+        json.dumps(environment, indent=2) + "\n", encoding="utf-8")
     data = capture(Path.cwd())
     (evidence / ("source_" + args.phase + ".json")).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     if args.phase == "after" and json.loads((evidence / "source_before.json").read_bytes()) != data:

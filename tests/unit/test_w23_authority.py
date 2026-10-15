@@ -33,6 +33,9 @@ def proposal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     monkeypatch.setattr(authority, "parse_manifest", lambda raw, expected: json.loads(raw))
     monkeypatch.setattr(authority, "verify_successor", lambda *args: {
         "historical_integrity": "SIMULATED", "current_identity": "SIMULATED"})
+    manifest["lineage"] = {"authority_predecessor": {"path": "predecessor.json", "sha256": authority.digest(predecessor)},
+        "inherited_observation": {"path": "SPEC.md", "sha256": authority.digest(b"spec\n")}, "acceptance_records": []}
+    manifest["selected_evidence"] = []
     files = {"predecessor.json": predecessor, "manifest.json": encoded(manifest), "CONTRACT.md": b"contract\n",
              "SPEC.md": b"spec\n", "tooling.json": b"{}\n"}
     for name in authority.REQUIRED_GATES:
@@ -49,7 +52,7 @@ def proposal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
         "historical_index": {"pin": authority.HISTORICAL_INDEX_PIN, "state": "UNVERIFIED_HISTORICAL_DIVERGENCE",
             "policy": "prospective_identity_does_not_repair_historical_raw_pin"},
         "bindings": [{"source": name, "destination": "quality/w23/authority/v010-cand03/" + name,
-                      "sha256": authority.digest(value)} for name, value in files.items() if not name.startswith("gate-")],
+                      "sha256": authority.digest(value)} for name, value in files.items()],
         "gates": {name: {"state": "UNKNOWN", "source_tree": tree, "evidence": ref("gate-" + name + ".json")}
                   for name in authority.REQUIRED_GATES}}
     return source, bundle, p
@@ -253,3 +256,27 @@ def test_future_approval_verification_does_not_install_or_activate(
     assert result["canonical_acceptance"] == "OWNER_APPROVED_BYTES_AND_GATES_VERIFIED"
     assert result["activation_authorized"] is False and result["green"] is False
     assert not (source / ".agent-local/AUTHORITY_MANIFEST.json").exists()
+
+
+def test_bound_runner_does_not_export_bytecode_outside_pip_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from scripts.w23_bounded_windows import _environment
+
+    monkeypatch.setenv("PYTHONPYCACHEPREFIX", str(tmp_path / "inherited-prefix"))
+    environment = _environment(tmp_path / "scratch")
+    assert "PYTHONPYCACHEPREFIX" not in environment
+    assert environment["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert Path(environment["TEMP"]).is_relative_to(tmp_path / "scratch")
+
+
+def test_manifest_cannot_claim_a_different_historical_predecessor(proposal: tuple[Path, Path, dict[str, Any]]) -> None:
+    _, bundle, p = proposal
+    manifest = json.loads((bundle / "manifest.json").read_bytes())
+    manifest["lineage"]["authority_predecessor"]["sha256"] = "0" * 64
+    raw = encoded(manifest)
+    (bundle / "manifest.json").write_bytes(raw)
+    p["candidate"]["sha256"] = authority.digest(raw)
+    for row in p["bindings"]:
+        if row["source"] == "manifest.json":
+            row["sha256"] = authority.digest(raw)
+    with pytest.raises(authority.AuthorityError, match="lineage"):
+        verify(proposal)

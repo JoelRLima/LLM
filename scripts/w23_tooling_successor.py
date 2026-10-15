@@ -24,7 +24,11 @@ from scripts.w23_architecture.evidence import (  # noqa: E402
 WITNESS = "quality/w23/acceptance_tooling_witness_v001.json"
 WITNESS_SHA256 = "89354369cf111fbc5d1b4d4d4c1d7d76899bba50d2abf77af52daa0144ca586b"
 ARCHIVE = "quality/w23/historical_tooling/checkpoint_e3c1b615"
-RECORD = "quality/w23/tooling_corrections_20261014.json"
+RECORD = "quality/w23/tooling_corrections_20261015.json"
+CLEANUP_PATH = "src/llm_agent/execution/cleanup.py"
+CLEANUP_BEFORE = "3e87791607dc8d0f20ddaa47f0d5c3020fcc6d7e5b02a04b377a04f7113fa973"
+CLEANUP_AFTER = "7cbf3ec292f48433b4191932eadecf6ced408a8bf8619376969751d79fa97495"
+CLEANUP_ARCHIVE = "quality/w23/tooling_corrections_20261015/src/llm_agent/execution/cleanup.py.blob"
 BASE_COMMIT = "e3c1b6151e53082485d255a6ed80df403bf65426"
 BASE_TREE = "57da004b57bf46bd161fb9f0dde7eabcef87e51e"
 COMMANDS = "src/llm_agent/application/_task_commands.py"
@@ -140,7 +144,7 @@ def inventory_sha256(inventory: list[list[str]]) -> str:
 
 
 def project_historical_production(root: Path, current: list[list[str]]) -> list[list[str]]:
-    """Invert the exact presentation correction and canonical LF transport only."""
+    """Invert only the exact archived presentation and reviewed orphan-cleanup corrections."""
     if current != production_inventory(root):
         raise EvidenceError("supplied current inventory is stale or incomplete")
     old = _authenticated(root, {"path": f"{ARCHIVE}/{COMMANDS}.blob", "sha256": COMMANDS_SHA256})
@@ -148,7 +152,11 @@ def project_historical_production(root: Path, current: list[list[str]]) -> list[
     expected = old.replace(before, "indisponível".encode()).replace(b"\r\n", b"\n")
     if old.count(before) != 1 or _read(root, COMMANDS) != expected:
         raise EvidenceError("production delta is not the exact presentation correction")
-    projected = [[path, COMMANDS_SHA256 if path == COMMANDS else digest] for path, digest in current]
+    _authenticated(root, {"path": CLEANUP_ARCHIVE, "sha256": CLEANUP_BEFORE})
+    if _sha(_read(root, CLEANUP_PATH)) != CLEANUP_AFTER:
+        raise EvidenceError("orphan-cleanup correction differs from reviewed bytes")
+    predecessors = {COMMANDS: COMMANDS_SHA256, CLEANUP_PATH: CLEANUP_BEFORE}
+    projected = [[path, predecessors.get(path, digest)] for path, digest in current]
     if inventory_sha256(projected) != PREDECESSOR_PRODUCTION:
         raise EvidenceError("historical production projection differs from the predecessor")
     return projected
@@ -235,6 +243,7 @@ def verify_successor(root: Path, record_bytes: bytes, expected_sha256: str) -> d
         raise EvidenceError("successor tooling membership differs")
     additional = _rows(root, record["additional_files"])
     expected_additional = {
+        CLEANUP_ARCHIVE, "quality/w23/tooling_corrections_20261015/.gitattributes",
         COMMANDS, "scripts/w23_tooling_successor.py", "tests/unit/test_candidate_manifest_regressions.py",
         "tests/unit/test_w23_tooling_successor.py", f"{ARCHIVE}/.gitattributes",
         "tests/unit/test_task_execution_application.py",
