@@ -4,11 +4,16 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feat/wave23-structural-consolidation"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   quality:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +31,9 @@ jobs:
       - name: Install core and development dependencies
         run: python -m pip install --constraint requirements-ci.lock -r requirements-dev.txt
 
+      - name: Authenticate tracked source before acceptance
+        run: python -B scripts/w23_ci_identity.py before
+
       - name: Installed entry point smoke test
         run: python -c "from llm_agent.interfaces.cli import main; assert callable(main)"
 
@@ -40,22 +48,40 @@ jobs:
           mypy --platform linux
           mypy --platform win32
 
-      - name: POSIX shell lifecycle
+      - name: POSIX shell lifecycle in bounded disposable scope
         if: runner.os == 'Linux'
-        run: >
-          pytest -q
-          "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[timeout-timed_out]"
-          "tests/unit/skills/test_shell.py::test_posix_shell_process_terminates_parent_and_descendant[cancel-cancelled]"
-          tests/unit/skills/test_shell.py::test_posix_shell_parent_exit_terminates_descendant_with_inherited_pipes
+        run: bash scripts/w23_ci_linux.sh lifecycle
 
-      - name: Pytest
-        env:
-          AGENT_RUNTIME_DIR: ${{ runner.temp }}/llm-agent-runtime
-        run: pytest -q --junitxml=pytest-results.xml
+      - name: Full Pytest Linux
+        if: runner.os == 'Linux'
+        run: bash scripts/w23_ci_linux.sh pytest
+
+      - name: Full Pytest Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/w23_ci_windows.ps1 -Gate pytest
 
       - name: Diagnose Pytest failures
         if: failure()
-        run: python scripts/report_pytest_failures.py pytest-results.xml
+        run: python scripts/report_pytest_failures.py "${{ runner.temp }}/w23-evidence/pytest.xml"
 
-      - name: Installed wheel acceptance gate
-        run: python scripts/verify_installed_package.py
+      - name: Installed wheel acceptance Linux
+        if: runner.os == 'Linux'
+        run: bash scripts/w23_ci_linux.sh installed
+
+      - name: Installed wheel acceptance Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/w23_ci_windows.ps1 -Gate installed
+
+      - name: Verify tracked source after acceptance
+        if: always()
+        run: python -B scripts/w23_ci_identity.py after
+
+      - name: Preserve bounded acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-acceptance-${{ matrix.os }}-python-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/w23-evidence/
+          if-no-files-found: error

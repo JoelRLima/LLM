@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "amendments": [
+    {
+      "id": "W23-P2-BROKER-IMPORT-COMPAT-001",
+      "surface": "llm_agent.application.agent_boundary",
+      "previous_disposition": "COMPAT_TEMPORARY broad facade while external import support remained UNKNOWN",
+      "proposed_disposition": "INTERNAL_REPO_API import path; REMOVE the broad broker after all repository consumers migrate; no narrow compatibility facade for this path",
+      "triggering_evidence": [
+        "Sol/user architectural review authorizes this controlled compatibility decision for planning and ledger reconciliation.",
+        "The llm_agent package root and llm_agent.application package do not export agent_boundary in their __all__ surfaces.",
+        "Installed acceptance, user and extension documentation use canonical owners rather than promising the agent_boundary import path.",
+        "No persisted Python-path identity for llm_agent.application.agent_boundary was found.",
+        "Unknown third-party imports of an internal path do not establish a supported compatibility promise."
+      ],
+      "owner_or_dependency_delta": "No canonical owner or dependency direction changes in this administrative amendment; only the broad broker import-compatibility decision changes.",
+      "scope_delta": "CROSS_LANE",
+      "required_revalidation": [
+        "Prove zero repository consumers before deleting the broker.",
+        "Project historical architecture invariants and replace CURRENT checks that require the live broker.",
+        "Run the bounded user evidence for each authorized contraction lane."
+      ],
+      "review_status": "SOL_USER_REVIEWED_AUTHORIZED_FOR_PLANNING_AND_LEDGER_RECORD",
+      "production_contraction_authorized": false
+    },
+    {
+      "id": "W23-V007-PLANNING-STRUCTURAL-DISPOSITION-001",
+      "surface": "llm_agent.agent.planning",
+      "previous_disposition": "Phase-0 proposed four planning subpackages; final planning structural disposition unresolved.",
+      "proposed_disposition": "RETAIN_CURRENT_FLAT_LAYOUT; RETENTION_JUSTIFIED; FORMALLY_ACCEPTED_BY_USER; production reshape NOT_REQUIRED.",
+      "triggering_evidence": [
+        "USER instruction: W23 v007 — RECORD ACCEPTED PLANNING RETENTION DISPOSITION.",
+        "quality/w23/planning_structural_disposition.json records complete inventory, exact responsibility/proposal memberships, measured cohesion, compatibility, SCC and test evidence.",
+        "The four reviewed aggregate proposals combine distinct contracts, mix construction with execution/recovery, split dependency components, or fail to improve dependency direction.",
+        "The accepted 909-module/3150-edge graph and cycle vector 4/4 remain unchanged.",
+        "Current module-size and C901 debt remains governed by the existing baseline; no allowance or waiver is granted."
+      ],
+      "disposition_evidence": "quality/w23/planning_structural_disposition.json",
+      "disposition_evidence_sha256": "f501b053ec98cbdec25f75160f7cca2761a750cc455ef66b1c5abbd34a7f9034",
+      "owner_or_dependency_delta": "None. All planning modules remain Agent-owned; no production module or import changes.",
+      "scope_delta": "PLANNING_STRUCTURAL_DISPOSITION",
+      "required_revalidation": [
+        "No production move is required for W23.",
+        "Revisit retention only if new evidence demonstrates ownership, dependency, compatibility, or change-locality problems and a controlled disposition amendment is accepted.",
+        "Keep existing Quality debt under the unchanged baseline and ratchet."
+      ],
+      "user_decision": "RETENTION_JUSTIFIED",
+      "review_status": "FORMALLY_ACCEPTED_BY_USER",
+      "production_move_authorized": false,
+      "quality_debt_waived": false
+    },
+    {
+      "id": "W23-V007-COMPATIBILITY-CLOSURE-ENFORCEMENT-001",
+      "surface": "Final CURRENT zero-growth enforcement and normalized compatibility closure",
+      "previous_disposition": "Retained temporary projections, durable compatibility, functional adapters, retired internal facades, and canonical implementations were classified by accepted W23 v007 decisions.",
+      "proposed_disposition": "Enforce the exact retained C projections in CURRENT, preserve the accepted 26 D retirements and all A/B/F surfaces, and record a fresh tooling witness without rewriting historical production evidence.",
+      "classification": "FINAL_COMPATIBILITY_CLOSURE_ENFORCEMENT",
+      "user_activation": {
+        "attachment_name": "W23 v007 ACTIVATE FINAL CURRENT COMPATIBILITY ZERO-GROWTH ENFORCEMENT RETAINED PROJECTION FREEZE + COMPATIBILITY CLOSURE EVIDENCE",
+        "decision_source": "USER",
+        "raw_sha256": "8aba18d1715a57bf7e25f14a1d0de85440518af218e8fc8cc33b85f661f0f322"
+      },
+      "accepted_predecessor": {
+        "path": "quality/w23/cycle_report_after_compatibility_retirement.json",
+        "sha256": "ac8242d1d3cbbf065c7e9b041df05aa3b26cac86a0aeb86834126cb281f89ae1",
+        "production_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+        "semantic_graph_sha256": "e13f188a7e1e887918c32fb8de938f93b641eebf21e104d78f3cd4d74b9d6075",
+        "modules": 883,
+        "edges": 3124
+      },
+      "retained_temporary_projections": [
+        "agent.skills.descriptor.SkillSpec", "agent.skills.catalog", "agent.tools.contracts.CancellationSafetyMode",
+        "agent.planning.tool_metadata", "agent.runtime.paths", "agent.runtime.workspace_context",
+        "agent.code.path_safety", "interfaces.cli.workspace_recents", "agent.runtime.file_lock",
+        "agent.runtime.instance_lock", "agent.runtime.lock_record", "agent.runtime.process_identity",
+        "agent.runtime.lock_filesystem"
+      ],
+      "retired_internal_historical_surfaces": "Exact 26 surfaces preserved from W23-V007-COMPATIBILITY-RETIREMENT-001.",
+      "durable_compatibility_surfaces": ["LegacyToolResult", "SerializedToolHistoryEntry", "legacy result/history serialization", "checkpoint schema v2", "historical readers/restoration/migrations", "supported legacy data-location behavior"],
+      "functional_adapter_surfaces": ["BuiltinToolAdapter", "skills.load_tool_registry", "extension bootstrap/runtime", "stdio adapter/process/cleanup"],
+      "canonical_implementation_surfaces": ["llm_agent Platform filesystem/workspace/extensions/process/storage", "ToolDescriptor/ToolResult/history implementations", "durable checkpoint/history implementations"],
+      "graph_engine_disposition": {
+        "decision": "GRAPH_ENGINE_RETENTION_JUSTIFIED",
+        "status": "FORMALLY_ACCEPTED_BY_USER",
+        "production_or_engine_move_required": false,
+        "maintenance_boundary": [
+          "Shared source/import/graph mechanics remain under scripts/w21_architecture.",
+          "Historical policy remains non-CURRENT.",
+          "CURRENT semantics live in CURRENT-owned policy/checker/tests.",
+          "Future CURRENT product grammar belongs in CURRENT augmentation.",
+          "No graph-engine code move occurred."
+        ]
+      },
+      "implementation_evidence": "quality/w23/compatibility_closure_evidence.json",
+      "review_status": "IMPLEMENTATION_EVIDENCE_PENDING_USER_ACCEPTANCE",
+      "production_changes_authorized": false
+    }
+    ,{
+      "id": "W23-V007-COMPATIBILITY-RETIREMENT-001",
+      "surface": "26 unsupported historical Agent facade modules",
+      "previous_disposition": "INTERNAL_HISTORICAL_REMOVE proposed by final read-only support review; no production retirement performed",
+      "proposed_disposition": "INTERNAL_HISTORICAL_REMOVE; delete exactly the authenticated 26 modules while preserving canonical owners and all durable, functional, and accepted projections",
+      "classification": "INTERNAL_HISTORICAL_REMOVE",
+      "user_activation": {
+        "attachment_name": "W23 v007 — ACTIVATE BOUNDED PRODUCTION COMPATIBILITY RETIREMENT 26 HISTORICAL FACADES + PRODUCTION SUCCESSOR EVIDENCE",
+        "decision_source": "USER",
+        "raw_sha256": "f7ce1f2a97aca6b740c55c501d6747739bf4730efd6a49b6c3b69867d7c7d1da",
+        "normalized_sha256": "b86798f0bf79ed2bfd70b20daffd50be7d087048dcebe07a3bdcd2d05271fae4"
+      },
+      "normalized_surfaces": [
+        {"module":"agent.memory.json_persistence","path":"src/llm_agent/agent/memory/json_persistence.py","canonical_owner":"llm_agent.storage.json_persistence","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.memory.path_safety","path":"src/llm_agent/agent/memory/path_safety.py","canonical_owner":"llm_agent.filesystem.path_safety","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.runtime.filesystem_primitives","path":"src/llm_agent/agent/runtime/filesystem_primitives.py","canonical_owner":"llm_agent.filesystem.primitives","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.runtime.legacy_paths","path":"src/llm_agent/agent/runtime/legacy_paths.py","canonical_owner":"llm_agent.workspace.legacy_paths","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.runtime.path_safety","path":"src/llm_agent/agent/runtime/path_safety.py","canonical_owner":"llm_agent.filesystem.path_safety","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.runtime.workspace_trace_paths","path":"src/llm_agent/agent/runtime/workspace_trace_paths.py","canonical_owner":"llm_agent.workspace.trace_paths","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.provenance","path":"src/llm_agent/agent/tools/provenance.py","canonical_owner":"llm_agent.agent.operation.provenance","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.process_tree","path":"src/llm_agent/agent/tools/process_tree.py","canonical_owner":"llm_agent.process.tree","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.stdio_streams","path":"src/llm_agent/agent/tools/stdio_streams.py","canonical_owner":"llm_agent.process.streams","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.stdio_launcher","path":"src/llm_agent/agent/tools/stdio_launcher.py","canonical_owner":"llm_agent.extensions.stdio_launcher","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_codec","path":"src/llm_agent/agent/tools/extension_catalog_codec.py","canonical_owner":"llm_agent.extensions.extension_catalog_codec","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_document","path":"src/llm_agent/agent/tools/extension_catalog_document.py","canonical_owner":"llm_agent.extensions.extension_catalog_document","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_errors","path":"src/llm_agent/agent/tools/extension_catalog_errors.py","canonical_owner":"llm_agent.extensions.extension_catalog_errors","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_lock","path":"src/llm_agent/agent/tools/extension_catalog_lock.py","canonical_owner":"llm_agent.extensions.extension_catalog_lock","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_migration","path":"src/llm_agent/agent/tools/extension_catalog_migration.py","canonical_owner":"llm_agent.extensions.extension_catalog_migration","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_service","path":"src/llm_agent/agent/tools/extension_catalog_service.py","canonical_owner":"llm_agent.extensions.extension_catalog_service","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_storage","path":"src/llm_agent/agent/tools/extension_catalog_storage.py","canonical_owner":"llm_agent.extensions.extension_catalog_storage","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_catalog_validation","path":"src/llm_agent/agent/tools/extension_catalog_validation.py","canonical_owner":"llm_agent.extensions.extension_catalog_validation","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_manifest_parser","path":"src/llm_agent/agent/tools/extension_manifest_parser.py","canonical_owner":"llm_agent.extensions.extension_manifest_parser","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_path","path":"src/llm_agent/agent/tools/extension_path.py","canonical_owner":"llm_agent.extensions.extension_path","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_registry","path":"src/llm_agent/agent/tools/extension_registry.py","canonical_owner":"llm_agent.extensions.extension_registry","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.extension_state","path":"src/llm_agent/agent/tools/extension_state.py","canonical_owner":"llm_agent.extensions.extension_state","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.workspace_extensions_codec","path":"src/llm_agent/agent/tools/workspace_extensions_codec.py","canonical_owner":"llm_agent.extensions.workspace_extensions_codec","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.workspace_extensions_resolver","path":"src/llm_agent/agent/tools/workspace_extensions_resolver.py","canonical_owner":"llm_agent.extensions.workspace_extensions_resolver","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.workspace_extensions_service","path":"src/llm_agent/agent/tools/workspace_extensions_service.py","canonical_owner":"llm_agent.extensions.workspace_extensions_service","classification":"INTERNAL_HISTORICAL_REMOVE"},
+        {"module":"agent.tools.workspace_extensions_storage","path":"src/llm_agent/agent/tools/workspace_extensions_storage.py","canonical_owner":"llm_agent.extensions.workspace_extensions_storage","classification":"INTERNAL_HISTORICAL_REMOVE"}
+      ],
+      "predeletion_proof": {
+        "production_graph": "909 modules / 3150 edges",
+        "incoming_production_edges_to_deletion_set": 0,
+        "live_source_imports": [],
+        "package_root_reexports": [],
+        "installed_or_probe_source_references": [],
+        "persisted_python_import_path_identity": false,
+        "supported_extension_or_product_import_path_promise": false,
+        "all_files_match_expected_HEAD_bytes": true
+      },
+      "support_basis_resolution": [
+        "Current authority distinguishes supported public, extension, and persisted contracts from internal historical Python paths.",
+        "No supported import-path identity or package-root exposure is established for these 26 modules.",
+        "Historical tests and wildcard __all__ projections do not establish API support.",
+        "Persisted checkpoint/history/data-location behavior remains under canonical owners.",
+        "Documented and accepted temporary projections, locks, runtime.paths, adapters, and canonical owners are excluded."
+      ],
+      "deletion_set": [
+        "src/llm_agent/agent/memory/json_persistence.py", "src/llm_agent/agent/memory/path_safety.py",
+        "src/llm_agent/agent/runtime/filesystem_primitives.py", "src/llm_agent/agent/runtime/legacy_paths.py",
+        "src/llm_agent/agent/runtime/path_safety.py", "src/llm_agent/agent/runtime/workspace_trace_paths.py",
+        "src/llm_agent/agent/tools/provenance.py", "src/llm_agent/agent/tools/process_tree.py",
+        "src/llm_agent/agent/tools/stdio_streams.py", "src/llm_agent/agent/tools/stdio_launcher.py",
+        "src/llm_agent/agent/tools/extension_catalog_codec.py", "src/llm_agent/agent/tools/extension_catalog_document.py",
+        "src/llm_agent/agent/tools/extension_catalog_errors.py", "src/llm_agent/agent/tools/extension_catalog_lock.py",
+        "src/llm_agent/agent/tools/extension_catalog_migration.py", "src/llm_agent/agent/tools/extension_catalog_service.py",
+        "src/llm_agent/agent/tools/extension_catalog_storage.py", "src/llm_agent/agent/tools/extension_catalog_validation.py",
+        "src/llm_agent/agent/tools/extension_manifest_parser.py", "src/llm_agent/agent/tools/extension_path.py",
+        "src/llm_agent/agent/tools/extension_registry.py", "src/llm_agent/agent/tools/extension_state.py",
+        "src/llm_agent/agent/tools/workspace_extensions_codec.py", "src/llm_agent/agent/tools/workspace_extensions_resolver.py",
+        "src/llm_agent/agent/tools/workspace_extensions_service.py", "src/llm_agent/agent/tools/workspace_extensions_storage.py"
+      ],
+      "test_migrations": [
+        "tests/unit/tools/test_process_tree.py", "tests/unit/runtime/test_app_paths.py",
+        "tests/unit/runtime/test_wave14_c6.py", "tests/unit/runtime/test_wave9_path_safety.py",
+        "tests/unit/runtime/test_wave9_s11_path_owner.py", "tests/unit/runtime/test_memory_link_safety.py"
+      ],
+      "historical_provenance": {
+        "compatibility_retirement": "quality/w23/compatibility_retirement.json remains byte-identical",
+        "accepted_cycle_reports": ["quality/w23/cycle_report_after.json", "quality/w23/cycle_report_after_lock_ownership.json"],
+        "planning_disposition": "quality/w23/planning_structural_disposition.json remains byte-identical",
+        "w21_historical_bridge_record": "W21-CB-META-004 remains in quality/architecture_compatibility.json; final-candidate projection is activation-bound"
+      },
+      "retired_w21_symbol_bridges": ["W21-CB-META-004"],
+      "successor_evidence": "quality/w23/cycle_report_after_compatibility_retirement.json",
+      "expected_successor": {
+        "modules": 883,
+        "edges": 3124,
+        "production_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+        "semantic_graph_sha256": "e13f188a7e1e887918c32fb8de938f93b641eebf21e104d78f3cd4d74b9d6075",
+        "largest_family_count": 4,
+        "total_cross_domain_family_membership": 4,
+        "f1_separated": true,
+        "f2_exact": true,
+        "production_removed_count": 26,
+        "production_added": [],
+        "production_modified": []
+      },
+      "owner_or_dependency_delta": "Only the exact 26 unsupported Agent facade files are removed; canonical owners and runtime behavior do not change.",
+      "scope_delta": "BOUNDED_PRODUCTION_COMPATIBILITY_RETIREMENT",
+      "required_revalidation": [
+        "Run six authorized test migrations and focused canonical behavior tests.",
+        "Run CURRENT and W21 checks for exact retired references and the authorized META-004 projection.",
+        "Recompute the explicit additive production successor and validate 883/3124, cycle 4/4, F1, and F2.",
+        "Run authorized scoped static gates; preserve baseline, authority, predecessor reports, and retained evidence."
+      ],
+      "review_status": "USER_ACTIVATED_IMPLEMENTATION_EVIDENCE_PENDING",
+      "production_contraction_authorized": true
+    }
+  ]
+}

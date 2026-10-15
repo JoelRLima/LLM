@@ -5,6 +5,10 @@ on:
   push:
     branches: ["**"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   installed-product:
     name: Windows x64 installed product
@@ -30,6 +34,9 @@ jobs:
             throw "W18 host bootstrap did not provide setuptools==81.0.0 with setuptools.build_meta: $setuptoolsVersion"
           }
           Write-Host "W18 host bootstrap: setuptools $setuptoolsVersion with setuptools.build_meta available"
+
+      - name: Authenticate W23 source before installed lifecycle
+        run: python -B scripts/w23_ci_identity.py before
 
       - name: Assert clean W18 host before product lifecycle
         shell: pwsh
@@ -68,7 +75,7 @@ jobs:
           if ((Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() -ne "e90c1b6419da3bd812dd73bb3de40287a21abf153438147639ec5e20375ea93f") { throw "CPython artifact SHA-256 mismatch" }
           Invoke-WebRequest -Uri "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip" -OutFile $uv
           if ((Get-FileHash -LiteralPath $uv -Algorithm SHA256).Hash.ToLowerInvariant() -ne "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2") { throw "uv artifact SHA-256 mismatch" }
-          python scripts/build_release_artifacts.py --output-dir $output --python (Get-Command python).Source --python-artifact $artifact --uv-artifact $uv
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_build -ChildArguments @("scripts/build_release_artifacts.py", "--output-dir", $output, "--python", (Get-Command python).Source, "--python-artifact", $artifact, "--uv-artifact", $uv)
 
       - name: Run W18 architecture checker
         shell: pwsh
@@ -81,7 +88,7 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
           $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
-          python scripts/verify_installed_product.py --bundle-dir $bundle --summary-json $summary --w17-summary-json $w17 --conpty-layer-matrix-json $matrix
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_lifecycle -ChildArguments @("scripts/verify_installed_product.py", "--bundle-dir", $bundle, "--summary-json", $summary, "--w17-summary-json", $w17, "--conpty-layer-matrix-json", $matrix)
 
       - name: Build W18 ConPTY authority evidence
         shell: pwsh
@@ -102,7 +109,7 @@ jobs:
           $authority = Join-Path $env:RUNNER_TEMP "w18-conpty-authority-evidence.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
           $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
-          python scripts/run_wave18_adversarial.py --installed-evidence $summary --uv-build-evidence $uv --conpty-authority-evidence $authority --installed-interactive-evidence $w17 --conpty-layer-matrix $matrix --json $output
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_adversarial -ChildArguments @("scripts/run_wave18_adversarial.py", "--installed-evidence", $summary, "--uv-build-evidence", $uv, "--conpty-authority-evidence", $authority, "--installed-interactive-evidence", $w17, "--conpty-layer-matrix", $matrix, "--json", $output)
 
       - name: Verify bounded W18 evidence before upload
         id: verify_bounded_evidence
@@ -149,3 +156,15 @@ jobs:
         run: |
           $raw = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.raw.json"
           Remove-Item -LiteralPath $raw -Force -ErrorAction SilentlyContinue
+
+      - name: Verify tracked source after W18
+        if: always()
+        run: python -B scripts/w23_ci_identity.py after
+
+      - name: Preserve bounded W18 process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-w18-bounded-process-evidence
+          path: ${{ runner.temp }}/w23-evidence/
+          if-no-files-found: error

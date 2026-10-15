@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import zipfile
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -14,6 +15,27 @@ from test_candidate_manifest import _repo as _synthetic_candidate
 
 from distribution.release_identity import UV_ASSET_URL, UV_SIGNATURE, UV_VERSION
 from scripts import build_windows_payload as builder
+
+
+def test_builder_imports_source_in_clean_interpreter_without_build(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    code = f"""
+import importlib.util
+import runpy
+import sys
+assert importlib.util.find_spec('llm_agent') is None
+direct = runpy.run_path({str(root / 'scripts/build_windows_payload.py')!r}, run_name='import_only')
+runpy.run_path({str(root / 'scripts/build_release_artifacts.py')!r}, run_name='compatibility_import_only')
+from llm_agent._version import VERSION
+assert direct['RELEASE_VERSION'] == VERSION
+assert sorted(name for name in sys.modules if name.startswith('llm_agent')) == ['llm_agent', 'llm_agent._version']
+print('import-only smoke passed')
+"""
+    # Only one import-only child; no main/build, network, launcher or lifecycle.
+    result = subprocess.run([sys.executable, "-I", "-S", "-c", code], cwd=tmp_path,
+                            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "import-only smoke passed"
 
 
 @pytest.mark.parametrize(
