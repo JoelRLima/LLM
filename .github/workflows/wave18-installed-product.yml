@@ -90,7 +90,7 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
           $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
-          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_lifecycle -ChildArguments @("-m", "scripts.verify_installed_product", "--bundle-dir", $bundle, "--summary-json", $summary, "--w17-summary-json", $w17, "--conpty-layer-matrix-json", $matrix)
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_lifecycle -ChildArguments @("scripts/verify_installed_product.py", "--bundle-dir", $bundle, "--summary-json", $summary, "--w17-summary-json", $w17, "--conpty-layer-matrix-json", $matrix)
 
       - name: Build W18 ConPTY authority evidence
         shell: pwsh

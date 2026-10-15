@@ -24,7 +24,7 @@ from scripts.w23_architecture.evidence import (  # noqa: E402
 WITNESS = "quality/w23/acceptance_tooling_witness_v001.json"
 WITNESS_SHA256 = "89354369cf111fbc5d1b4d4d4c1d7d76899bba50d2abf77af52daa0144ca586b"
 ARCHIVE = "quality/w23/historical_tooling/checkpoint_e3c1b615"
-RECORD = "quality/w23/tooling_corrections_20261015_v002.json"
+RECORD = "quality/w23/tooling_corrections_20261015_f01_f02.json"
 CLEANUP_PATH = "src/llm_agent/execution/cleanup.py"
 CLEANUP_BEFORE = "3e87791607dc8d0f20ddaa47f0d5c3020fcc6d7e5b02a04b377a04f7113fa973"
 CLEANUP_AFTER = "1e037e92bc12bd500297da98461618a307d0dd9c98810e9cec6bd4bfcea32b42"

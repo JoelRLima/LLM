@@ -341,34 +341,49 @@ def _windows_local_free(kernel: Any, pointer: ctypes.c_void_p) -> None:
         raise CandidateSnapshotError("cannot release a Windows security descriptor")
 
 
-def _windows_current_owner_sid(advapi: Any, kernel: Any) -> bytes:
+def _windows_token_identity_sid(advapi: Any, kernel: Any, information_class: int) -> bytes:
     from ctypes import wintypes
 
-    class TokenOwner(ctypes.Structure):
-        _fields_ = [("Owner", ctypes.c_void_p)]
+    if information_class not in (1, 4):
+        raise CandidateSnapshotError("unsupported Windows token identity class")
 
+    class SidAndAttributes(ctypes.Structure):
+        _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
+    minimum = ctypes.sizeof(SidAndAttributes) if information_class == 1 else ctypes.sizeof(ctypes.c_void_p)
+    identity = "user" if information_class == 1 else "owner"
+    error = f"cannot inspect the Windows process {identity}"
     token = wintypes.HANDLE()
     if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
-        raise CandidateSnapshotError("cannot inspect the Windows process owner")
+        raise CandidateSnapshotError(error)
     try:
         needed = wintypes.DWORD()
-        advapi.GetTokenInformation(token, 4, None, 0, ctypes.byref(needed))
-        if needed.value < ctypes.sizeof(TokenOwner):
-            raise CandidateSnapshotError("cannot inspect the Windows process owner")
+        advapi.GetTokenInformation(token, information_class, None, 0, ctypes.byref(needed))
+        if needed.value < minimum:
+            raise CandidateSnapshotError(error)
         buffer = ctypes.create_string_buffer(needed.value)
         if not advapi.GetTokenInformation(
-            token, 4, ctypes.cast(buffer, ctypes.c_void_p), needed.value, ctypes.byref(needed),
+            token, information_class, ctypes.cast(buffer, ctypes.c_void_p), needed.value, ctypes.byref(needed),
         ):
-            raise CandidateSnapshotError("cannot inspect the Windows process owner")
-        owner = ctypes.cast(buffer, ctypes.POINTER(TokenOwner)).contents.Owner
-        if not owner:
-            raise CandidateSnapshotError("cannot inspect the Windows process owner")
-        length = advapi.GetLengthSid(owner)
+            raise CandidateSnapshotError(error)
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p)).contents.value
+        if not sid:
+            raise CandidateSnapshotError(error)
+        length = advapi.GetLengthSid(ctypes.c_void_p(sid))
         if not length:
-            raise CandidateSnapshotError("cannot inspect the Windows process owner")
-        return ctypes.string_at(owner, length)
+            raise CandidateSnapshotError(error)
+        return ctypes.string_at(sid, length)
     finally:
         _windows_close_handle(kernel, token)
+
+
+def _windows_current_owner_sid(advapi: Any, kernel: Any) -> bytes:
+    return _windows_token_identity_sid(advapi, kernel, 4)  # TokenOwner: default object owner.
+
+
+def _windows_current_user_sid(advapi: Any, kernel: Any) -> bytes:
+    return _windows_token_identity_sid(advapi, kernel, 1)  # TokenUser: exact process principal.
+
 
 def _windows_file_identity_attributes(
     handle: int, kernel: Any,
@@ -409,7 +424,9 @@ def _windows_identity(handle: int, kernel: Any) -> tuple[int, ...]:
     return identity
 
 def _windows_trusted_sids(advapi: Any, kernel: Any) -> set[bytes]:
-    trusted_sids = {_windows_current_owner_sid(advapi, kernel)}
+    # TokenOwner may be an owner-eligible group, distinct from the process user.
+    # Trust that exact principal, never arbitrary enabled or owner-eligible groups.
+    trusted_sids = {_windows_current_owner_sid(advapi, kernel), _windows_current_user_sid(advapi, kernel)}
     for text_sid in (
         "S-1-5-18", "S-1-5-32-544", "S-1-3-4",
         "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",

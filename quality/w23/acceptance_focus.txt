@@ -13,3 +13,4 @@ tests/unit/test_wave18_installed_product_completion.py::test_output_path_reparse
 tests/unit/tools/test_extension_catalog_lock.py
 tests/unit/tools/test_extension_catalog_storage.py
 tests/unit/tools/test_stdio_adapter.py::test_stdio_adapter_success_terminates_detached_descendant
+tests/unit/test_w23_f01_f02.py
