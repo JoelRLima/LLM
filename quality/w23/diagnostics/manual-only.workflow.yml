@@ -1,0 +1,114 @@
+name: W23 manual diagnostics fallback
+on:
+  workflow_dispatch:
+    inputs:
+      diagnostic_mode:
+        type: choice
+        options: [r01, r02]
+        default: r02
+        required: true
+        description: "Run one focal diagnostic"
+      diagnostic_unit_tests:
+        description: "Owner opt-in: run the new deterministic diagnostic regressions before the selected probe"
+        type: boolean
+        default: false
+      diagnostic_revision:
+        type: string
+        required: true
+        description: "Reviewed implementation SHA from JoelRLima/LLM"
+jobs:
+  manual-diagnostic:
+    name: Manual W23 diagnostic (${{ inputs.diagnostic_mode }})
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && inputs.diagnostic_mode != 'normal' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      W23_DIAG_MODE: ${{ inputs.diagnostic_mode }}
+      W23_RUN_DIAGNOSTIC_TESTS: ${{ inputs.diagnostic_unit_tests }}
+      W23_EXPECTED_TOOLING_SHA: ${{ inputs.diagnostic_revision }}
+      W23_DIAG_WORK: ${{ runner.temp }}/w23-manual-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Require the explicitly reviewed workflow revision
+        shell: pwsh
+        run: |
+          if ($env:W23_EXPECTED_TOOLING_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Supply diagnostic_revision as the reviewed 40-character commit SHA' }
+
+      - uses: actions/checkout@v4
+        timeout-minutes: 2
+        with:
+          repository: JoelRLima/LLM
+          ref: ${{ inputs.diagnostic_revision }}
+          token: ${{ secrets.SOURCE_READ_TOKEN || github.token }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        timeout-minutes: 5
+        with:
+          python-version: ${{ inputs.diagnostic_mode == 'r02' && '3.10.11' || '3.12.10' }}
+          architecture: x64
+
+      - name: Initialize UNKNOWN evidence in a new protected profile root
+        timeout-minutes: 1
+        working-directory: tooling
+        shell: pwsh
+        run: ./scripts/w23_diagnostics/secure-work.ps1
+
+      - name: Execute only the selected focal diagnostic
+        id: execute
+        timeout-minutes: 32
+        working-directory: tooling
+        shell: pwsh
+        run: |
+          python -B -u -m scripts.w23_diagnostics run --work $env:W23_DIAG_WORK --mode $env:W23_DIAG_MODE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Finalize bounded public evidence even after failure
+        if: always()
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          W23_RUN_OUTCOME: ${{ steps.execute.outcome }}
+        run: |
+          $upload = Join-Path $env:W23_DIAG_WORK 'upload'
+          $tooling = Join-Path $env:GITHUB_WORKSPACE 'tooling'
+          $exportCode = 1
+          try {
+            if (Test-Path -LiteralPath (Join-Path $tooling 'scripts/w23_diagnostics/entry.py')) {
+              Push-Location -LiteralPath $tooling
+              try {
+                python -B -m scripts.w23_diagnostics export --work $env:W23_DIAG_WORK --mode $env:W23_DIAG_MODE --run-outcome $env:W23_RUN_OUTCOME
+                $exportCode = $LASTEXITCODE
+              } finally { Pop-Location }
+            }
+          } catch { $exportCode = 1 }
+          if (-not (Test-Path -LiteralPath (Join-Path $upload 'SHA256.json'))) {
+            # An early setup/checkout failure still gets explicit UNKNOWN evidence.
+            # Never upload a partially exported directory.
+            $upload = Join-Path $env:W23_DIAG_WORK 'fallback-upload'
+            New-Item -ItemType Directory -Path $upload -Force | Out-Null
+            $summary = @{status='UNKNOWN'; completed=$false; mode=$env:W23_DIAG_MODE; reason='Diagnostic/export did not complete'; w23='BLOCKED'}
+            $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'summary.json') -Encoding utf8
+            $hash = (Get-FileHash -LiteralPath (Join-Path $upload 'summary.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+            @{'summary.json'=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'SHA256.json') -Encoding utf8
+          }
+          "W23_DIAG_UPLOAD=$upload" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $final = Get-Content -LiteralPath (Join-Path $upload 'summary.json') -Raw | ConvertFrom-Json
+          "## W23 diagnostic: $($final.status)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "W23 remains BLOCKED; this run does not authorize acceptance or authority activation." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          if ($exportCode -ne 0) { exit 1 }
+
+      - name: Upload only redacted diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-${{ inputs.diagnostic_mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.W23_DIAG_UPLOAD }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+          compression-level: 6
