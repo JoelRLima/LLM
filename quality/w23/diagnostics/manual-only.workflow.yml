@@ -29,7 +29,6 @@ jobs:
       W23_DIAG_MODE: ${{ inputs.diagnostic_mode }}
       W23_RUN_DIAGNOSTIC_TESTS: ${{ inputs.diagnostic_unit_tests }}
       W23_EXPECTED_TOOLING_SHA: ${{ inputs.diagnostic_revision }}
-      W23_DIAG_WORK: ${{ runner.temp }}/w23-manual-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Require the explicitly reviewed workflow revision
         shell: pwsh
@@ -68,46 +67,105 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Finalize bounded public evidence even after failure
+        id: finalize
         if: always()
         timeout-minutes: 2
         shell: pwsh
         env:
           W23_RUN_OUTCOME: ${{ steps.execute.outcome }}
         run: |
-          $upload = Join-Path $env:W23_DIAG_WORK 'upload'
-          $tooling = Join-Path $env:GITHUB_WORKSPACE 'tooling'
+          $ErrorActionPreference = 'Stop'
+          function Assert-RealDirectory([string]$path) {
+            if ([string]::IsNullOrWhiteSpace($path) -or -not [IO.Path]::IsPathRooted($path)) { throw 'Expected an absolute directory' }
+            $item = Get-Item -LiteralPath $path -Force
+            if (-not $item.PSIsContainer) { throw 'Expected a directory' }
+            while ($null -ne $item) {
+              if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path rejected' }
+              $item = $item.Parent
+            }
+          }
+          function Confirm-Export([string]$path) {
+            Assert-RealDirectory $path
+            $pending = [Collections.Generic.Stack[string]]::new()
+            $pending.Push($path)
+            $files = @{}
+            $total = 0L
+            while ($pending.Count) {
+              foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse evidence rejected' }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName); continue }
+                if ($item.Length -gt 4MB -or $item.Extension -notin @('.json','.jsonl','.log','.txt')) { throw 'Invalid evidence member' }
+                $name = $item.FullName.Substring($path.Length + 1).Replace('\','/')
+                $files[$name] = $item.FullName
+                $total += $item.Length
+                if ($files.Count -gt 257 -or $total -gt 128MB) { throw 'Evidence limit exceeded' }
+              }
+            }
+            if (-not $files.ContainsKey('summary.json') -or -not $files.ContainsKey('SHA256.json')) { throw 'Incomplete export' }
+            $hashes = Get-Content -LiteralPath $files['SHA256.json'] -Raw | ConvertFrom-Json
+            $names = @($hashes.PSObject.Properties.Name)
+            if ($names.Count -ne $files.Count - 1) { throw 'Incomplete checksum inventory' }
+            foreach ($name in $files.Keys) {
+              if ($name -ceq 'SHA256.json') { continue }
+              if ($names -cnotcontains $name -or $hashes.$name -isnot [string] -or $hashes.$name -cnotmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $files[$name] -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes.$name) { throw 'Checksum mismatch' }
+            }
+            $summary = Get-Content -LiteralPath $files['summary.json'] -Raw | ConvertFrom-Json
+            if ($summary.status -notin @('PASS','FAIL','TIMEOUT','UNKNOWN')) { throw 'Invalid terminal status' }
+            if ($summary.status -eq 'PASS' -and ($summary.completed -isnot [bool] -or $summary.completed -ne $true -or $env:W23_RUN_OUTCOME -ne 'success')) { throw 'Unproven success' }
+            return $summary
+          }
+          $upload = $null
           $exportCode = 1
           try {
-            if (Test-Path -LiteralPath (Join-Path $tooling 'scripts/w23_diagnostics/entry.py')) {
+            if (-not [string]::IsNullOrWhiteSpace($env:W23_DIAG_WORK)) {
+              $expected = Join-Path $env:LOCALAPPDATA ("w23-manual-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT")
+              if ([IO.Path]::GetFullPath($env:W23_DIAG_WORK) -ine $expected) { throw 'Unexpected work root' }
+              Assert-RealDirectory $expected
+              $candidate = Join-Path $expected 'upload'
+              if (Test-Path -LiteralPath $candidate) { throw 'Refusing to reuse export' }
+              $tooling = Join-Path $env:GITHUB_WORKSPACE 'tooling'
+              if (-not (Test-Path -LiteralPath (Join-Path $tooling 'scripts/w23_diagnostics/entry.py') -PathType Leaf)) { throw 'Exporter unavailable' }
               Push-Location -LiteralPath $tooling
               try {
-                python -B -m scripts.w23_diagnostics export --work $env:W23_DIAG_WORK --mode $env:W23_DIAG_MODE --run-outcome $env:W23_RUN_OUTCOME
+                python -B -m scripts.w23_diagnostics export --work $expected --mode $env:W23_DIAG_MODE --run-outcome $env:W23_RUN_OUTCOME
                 $exportCode = $LASTEXITCODE
               } finally { Pop-Location }
+              if ($exportCode -notin @(0,1)) { throw 'Exporter did not finish' }
+              $final = Confirm-Export $candidate
+              if ($final.status -eq 'PASS' -and $exportCode -ne 0) { throw 'Exporter did not confirm success' }
+              $upload = $candidate
             }
-          } catch { $exportCode = 1 }
-          if (-not (Test-Path -LiteralPath (Join-Path $upload 'SHA256.json'))) {
-            # An early setup/checkout failure still gets explicit UNKNOWN evidence.
-            # Never upload a partially exported directory.
-            $upload = Join-Path $env:W23_DIAG_WORK 'fallback-upload'
-            New-Item -ItemType Directory -Path $upload -Force | Out-Null
-            $summary = @{status='UNKNOWN'; completed=$false; mode=$env:W23_DIAG_MODE; reason='Diagnostic/export did not complete'; w23='BLOCKED'}
+          } catch { $exportCode = 1; $upload = $null }
+          if ($null -eq $upload) {
+            Assert-RealDirectory $env:RUNNER_TEMP
+            $temp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+            $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\')
+            if ($temp -ieq [IO.Path]::GetPathRoot($temp).TrimEnd('\') -or $temp -ieq $workspace -or $temp.StartsWith($workspace + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fallback parent' }
+            if ($env:GITHUB_RUN_ID -notmatch '^[0-9]+$' -or $env:GITHUB_RUN_ATTEMPT -notmatch '^[1-9][0-9]*$') { throw 'Invalid run identity' }
+            $upload = Join-Path $env:RUNNER_TEMP ("w23-fallback-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $upload -ErrorAction Stop | Out-Null
+            Assert-RealDirectory $upload
+            $mode = if ($env:W23_DIAG_MODE -in @('r01','r02')) { $env:W23_DIAG_MODE } else { 'UNKNOWN' }
+            $summary = @{status='UNKNOWN'; completed=$false; mode=$mode; reason='Diagnostic/export did not complete'; w23='BLOCKED'}
             $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'summary.json') -Encoding utf8
             $hash = (Get-FileHash -LiteralPath (Join-Path $upload 'summary.json') -Algorithm SHA256).Hash.ToLowerInvariant()
             @{'summary.json'=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'SHA256.json') -Encoding utf8
+            $final = Confirm-Export $upload
+            $exportCode = 1
           }
-          "W23_DIAG_UPLOAD=$upload" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $final = Get-Content -LiteralPath (Join-Path $upload 'summary.json') -Raw | ConvertFrom-Json
           "## W23 diagnostic: $($final.status)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "W23 remains BLOCKED; this run does not authorize acceptance or authority activation." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "upload=$upload" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "ready=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           if ($exportCode -ne 0) { exit 1 }
 
+
       - name: Upload only redacted diagnostic evidence
-        if: always()
+        if: always() && steps.finalize.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: w23-${{ inputs.diagnostic_mode }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.W23_DIAG_UPLOAD }}
+          path: ${{ steps.finalize.outputs.upload }}
           if-no-files-found: error
           retention-days: 7
           include-hidden-files: false
