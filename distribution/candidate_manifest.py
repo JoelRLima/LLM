@@ -55,7 +55,7 @@ def validate_repo_path(value: Any) -> str:
         if part.casefold() == ".git":
             raise CandidateManifestError("Git administration paths cannot be candidate files")
         stem = part.split(".", 1)[0].upper()
-        if stem in _WINDOWS_RESERVED or stem.rstrip("¹²³") in _WINDOWS_RESERVED:
+        if stem in _WINDOWS_RESERVED or stem in {f"{prefix}{digit}" for prefix in ("COM", "LPT") for digit in "¹²³"}:
             raise CandidateManifestError("path contains a reserved Windows name")
     return value
 
@@ -90,6 +90,20 @@ def _sorted_unique_paths(rows: Any, label: str, row_validator: Any) -> list[dict
     if paths != sorted(paths) or len(paths) != len(set(paths)):
         raise CandidateManifestError(f"{label} paths must be strictly sorted and unique")
     return result
+
+
+def _validate_file_namespace(files: list[dict[str, Any]]) -> None:
+    spellings: dict[str, str] = {}
+    leaf_paths = {row["path"].casefold() for row in files}
+    for row in files:
+        components = row["path"].split("/")
+        for length in range(1, len(components) + 1):
+            prefix = "/".join(components[:length])
+            folded = prefix.casefold()
+            if spellings.setdefault(folded, prefix) != prefix:
+                raise CandidateManifestError("case-folded directory spelling collision")
+            if length < len(components) and folded in leaf_paths:
+                raise CandidateManifestError("candidate file conflicts with a parent directory")
 
 
 def _file(value: Any) -> dict[str, Any]:
@@ -195,7 +209,7 @@ def _selected(value: Any, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
     evidence = value
     if not isinstance(evidence, list):
         raise CandidateManifestError("selected_evidence must be a list")
-    checked_selected: list[dict[str, str]] = []
+    checked_selected: list[dict[str, Any]] = []
     roles: list[str] = []
     for entry in evidence:
         item = _object(entry, {"role", "artifact"}, "selected evidence")
@@ -311,6 +325,7 @@ def validate_manifest(value: Any) -> dict[str, Any]:
     row = _object(value, keys, "manifest")
     unit, object_format, base, tree = _validate_header(row)
     files = _sorted_unique_paths(row["files"], "files", _file)
+    _validate_file_namespace(files)
     overlay = _sorted_unique_paths(row["overlay"], "overlay", lambda item: _overlay(item, object_format))
     lineage = _lineage(row["lineage"])
     selected = _selected(row["selected_evidence"], files)

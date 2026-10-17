@@ -44,7 +44,7 @@ def _execute_workspace_command(
 ) -> dict[str, Any]:
     gateway = getattr(orchestrator, "tool_invocation_gateway", None)
     if gateway is None:
-        return {"status": "unavailable", "error": f"{name} indisponÃ­vel", "data": None}
+        return {"status": "unavailable", "error": f"{name} indisponível", "data": None}
     kwargs: dict[str, Any] = {"active_skills": None,
                               "allowed_capabilities": getattr(orchestrator, "allowed_capabilities", None)}
     if cancellation_event is not None:

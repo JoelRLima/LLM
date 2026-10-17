@@ -2,16 +2,38 @@ name: WAVE 18 Installed Product
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic_mode:
+        description: "normal preserves W18; r01 runs only clean-install; r02 compares the native 3.10 checker"
+        type: choice
+        options: [normal, r01, r02]
+        default: normal
+        required: true
+      diagnostic_unit_tests:
+        description: "Owner opt-in: run the new deterministic diagnostic regressions before the selected probe"
+        type: boolean
+        default: false
+      diagnostic_revision:
+        description: "Reviewed implementation commit SHA; mandatory only for r01/r02"
+        type: string
+        default: ""
   push:
     branches: ["**"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && inputs.diagnostic_mode != 'normal' && format('-diagnostic-{0}', github.run_id) || '' }}
+  cancel-in-progress: true
+
 jobs:
   installed-product:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_mode == '' || inputs.diagnostic_mode == 'normal' }}
     name: Windows x64 installed product
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -30,6 +52,9 @@ jobs:
             throw "W18 host bootstrap did not provide setuptools==81.0.0 with setuptools.build_meta: $setuptoolsVersion"
           }
           Write-Host "W18 host bootstrap: setuptools $setuptoolsVersion with setuptools.build_meta available"
+
+      - name: Authenticate W23 source before installed lifecycle
+        run: python -B scripts/w23_ci_identity.py before
 
       - name: Assert clean W18 host before product lifecycle
         shell: pwsh
@@ -68,7 +93,7 @@ jobs:
           if ((Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() -ne "e90c1b6419da3bd812dd73bb3de40287a21abf153438147639ec5e20375ea93f") { throw "CPython artifact SHA-256 mismatch" }
           Invoke-WebRequest -Uri "https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-pc-windows-msvc.zip" -OutFile $uv
           if ((Get-FileHash -LiteralPath $uv -Algorithm SHA256).Hash.ToLowerInvariant() -ne "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2") { throw "uv artifact SHA-256 mismatch" }
-          python scripts/build_release_artifacts.py --output-dir $output --python (Get-Command python).Source --python-artifact $artifact --uv-artifact $uv
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_build -ChildArguments @("scripts/build_release_artifacts.py", "--output-dir", $output, "--python", (Get-Command python).Source, "--python-artifact", $artifact, "--uv-artifact", $uv)
 
       - name: Run W18 architecture checker
         shell: pwsh
@@ -81,7 +106,7 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "w18-installed-product.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
           $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
-          python scripts/verify_installed_product.py --bundle-dir $bundle --summary-json $summary --w17-summary-json $w17 --conpty-layer-matrix-json $matrix
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_lifecycle -ChildArguments @("scripts/verify_installed_product.py", "--bundle-dir", $bundle, "--summary-json", $summary, "--w17-summary-json", $w17, "--conpty-layer-matrix-json", $matrix)
 
       - name: Build W18 ConPTY authority evidence
         shell: pwsh
@@ -102,7 +127,7 @@ jobs:
           $authority = Join-Path $env:RUNNER_TEMP "w18-conpty-authority-evidence.json"
           $w17 = Join-Path $env:RUNNER_TEMP "w18-w17-installed-interactive.json"
           $matrix = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.json"
-          python scripts/run_wave18_adversarial.py --installed-evidence $summary --uv-build-evidence $uv --conpty-authority-evidence $authority --installed-interactive-evidence $w17 --conpty-layer-matrix $matrix --json $output
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w18_adversarial -ChildArguments @("scripts/run_wave18_adversarial.py", "--installed-evidence", $summary, "--uv-build-evidence", $uv, "--conpty-authority-evidence", $authority, "--installed-interactive-evidence", $w17, "--conpty-layer-matrix", $matrix, "--json", $output)
 
       - name: Verify bounded W18 evidence before upload
         id: verify_bounded_evidence
@@ -149,3 +174,168 @@ jobs:
         run: |
           $raw = Join-Path $env:RUNNER_TEMP "w18-conpty-layer-matrix.raw.json"
           Remove-Item -LiteralPath $raw -Force -ErrorAction SilentlyContinue
+
+      - name: Verify tracked source after W18
+        if: always()
+        run: python -B scripts/w23_ci_identity.py after
+
+      - name: Preserve bounded W18 process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-w18-bounded-process-evidence
+          path: ${{ runner.temp }}/w23-evidence/
+          if-no-files-found: error
+
+  manual-diagnostic:
+    name: Manual W23 diagnostic (${{ inputs.diagnostic_mode }})
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && inputs.diagnostic_mode != 'normal' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      W23_DIAG_MODE: ${{ inputs.diagnostic_mode }}
+      W23_RUN_DIAGNOSTIC_TESTS: ${{ inputs.diagnostic_unit_tests }}
+      W23_EXPECTED_TOOLING_SHA: ${{ inputs.diagnostic_revision }}
+    steps:
+      - name: Require the explicitly reviewed workflow revision
+        shell: pwsh
+        run: |
+          if ($env:W23_EXPECTED_TOOLING_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Supply diagnostic_revision as the reviewed 40-character commit SHA' }
+          if ($env:W23_EXPECTED_TOOLING_SHA -cne $env:GITHUB_SHA) { throw 'Selected branch moved or does not match the reviewed diagnostic revision' }
+
+      - uses: actions/checkout@v4
+        timeout-minutes: 2
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        timeout-minutes: 5
+        with:
+          python-version: ${{ inputs.diagnostic_mode == 'r02' && '3.10.11' || '3.12.10' }}
+          architecture: x64
+
+      - name: Initialize UNKNOWN evidence in a new protected profile root
+        timeout-minutes: 1
+        working-directory: tooling
+        shell: pwsh
+        run: ./scripts/w23_diagnostics/secure-work.ps1
+
+      - name: Execute only the selected focal diagnostic
+        id: execute
+        timeout-minutes: 32
+        working-directory: tooling
+        shell: pwsh
+        run: |
+          python -B -u -m scripts.w23_diagnostics run --work $env:W23_DIAG_WORK --mode $env:W23_DIAG_MODE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Finalize bounded public evidence even after failure
+        id: finalize
+        if: always()
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          W23_RUN_OUTCOME: ${{ steps.execute.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Assert-RealDirectory([string]$path) {
+            if ([string]::IsNullOrWhiteSpace($path) -or -not [IO.Path]::IsPathRooted($path)) { throw 'Expected an absolute directory' }
+            $item = Get-Item -LiteralPath $path -Force
+            if (-not $item.PSIsContainer) { throw 'Expected a directory' }
+            while ($null -ne $item) {
+              if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse path rejected' }
+              $item = $item.Parent
+            }
+          }
+          function Confirm-Export([string]$path) {
+            Assert-RealDirectory $path
+            $pending = [Collections.Generic.Stack[string]]::new()
+            $pending.Push($path)
+            $files = @{}
+            $total = 0L
+            while ($pending.Count) {
+              foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse evidence rejected' }
+                if ($item.PSIsContainer) { $pending.Push($item.FullName); continue }
+                if ($item.Length -gt 4MB -or $item.Extension -notin @('.json','.jsonl','.log','.txt')) { throw 'Invalid evidence member' }
+                $name = $item.FullName.Substring($path.Length + 1).Replace('\','/')
+                $files[$name] = $item.FullName
+                $total += $item.Length
+                if ($files.Count -gt 257 -or $total -gt 128MB) { throw 'Evidence limit exceeded' }
+              }
+            }
+            if (-not $files.ContainsKey('summary.json') -or -not $files.ContainsKey('SHA256.json')) { throw 'Incomplete export' }
+            $hashes = Get-Content -LiteralPath $files['SHA256.json'] -Raw | ConvertFrom-Json
+            $names = @($hashes.PSObject.Properties.Name)
+            if ($names.Count -ne $files.Count - 1) { throw 'Incomplete checksum inventory' }
+            foreach ($name in $files.Keys) {
+              if ($name -ceq 'SHA256.json') { continue }
+              if ($names -cnotcontains $name -or $hashes.$name -isnot [string] -or $hashes.$name -cnotmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $files[$name] -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes.$name) { throw 'Checksum mismatch' }
+            }
+            $summary = Get-Content -LiteralPath $files['summary.json'] -Raw | ConvertFrom-Json
+            if ($summary.status -notin @('PASS','FAIL','TIMEOUT','UNKNOWN')) { throw 'Invalid terminal status' }
+            if ($summary.status -eq 'PASS' -and ($summary.completed -isnot [bool] -or $summary.completed -ne $true -or $env:W23_RUN_OUTCOME -ne 'success')) { throw 'Unproven success' }
+            return $summary
+          }
+          $upload = $null
+          $exportCode = 1
+          try {
+            if (-not [string]::IsNullOrWhiteSpace($env:W23_DIAG_WORK)) {
+              $expected = Join-Path $env:LOCALAPPDATA ("w23-manual-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT")
+              if ([IO.Path]::GetFullPath($env:W23_DIAG_WORK) -ine $expected) { throw 'Unexpected work root' }
+              Assert-RealDirectory $expected
+              $candidate = Join-Path $expected 'upload'
+              if (Test-Path -LiteralPath $candidate) { throw 'Refusing to reuse export' }
+              $tooling = Join-Path $env:GITHUB_WORKSPACE 'tooling'
+              if (-not (Test-Path -LiteralPath (Join-Path $tooling 'scripts/w23_diagnostics/entry.py') -PathType Leaf)) { throw 'Exporter unavailable' }
+              Push-Location -LiteralPath $tooling
+              try {
+                python -B -m scripts.w23_diagnostics export --work $expected --mode $env:W23_DIAG_MODE --run-outcome $env:W23_RUN_OUTCOME
+                $exportCode = $LASTEXITCODE
+              } finally { Pop-Location }
+              if ($exportCode -notin @(0,1)) { throw 'Exporter did not finish' }
+              $final = Confirm-Export $candidate
+              if ($final.status -eq 'PASS' -and $exportCode -ne 0) { throw 'Exporter did not confirm success' }
+              $upload = $candidate
+            }
+          } catch { $exportCode = 1; $upload = $null }
+          if ($null -eq $upload) {
+            Assert-RealDirectory $env:RUNNER_TEMP
+            $temp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+            $workspace = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\')
+            if ($temp -ieq [IO.Path]::GetPathRoot($temp).TrimEnd('\') -or $temp -ieq $workspace -or $temp.StartsWith($workspace + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected fallback parent' }
+            if ($env:GITHUB_RUN_ID -notmatch '^[0-9]+$' -or $env:GITHUB_RUN_ATTEMPT -notmatch '^[1-9][0-9]*$') { throw 'Invalid run identity' }
+            $upload = Join-Path $env:RUNNER_TEMP ("w23-fallback-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $upload -ErrorAction Stop | Out-Null
+            Assert-RealDirectory $upload
+            $mode = if ($env:W23_DIAG_MODE -in @('r01','r02')) { $env:W23_DIAG_MODE } else { 'UNKNOWN' }
+            $summary = @{status='UNKNOWN'; completed=$false; mode=$mode; reason='Diagnostic/export did not complete'; w23='BLOCKED'}
+            $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'summary.json') -Encoding utf8
+            $hash = (Get-FileHash -LiteralPath (Join-Path $upload 'summary.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+            @{'summary.json'=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $upload 'SHA256.json') -Encoding utf8
+            $final = Confirm-Export $upload
+            $exportCode = 1
+          }
+          "## W23 diagnostic: $($final.status)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "W23 remains BLOCKED; this run does not authorize acceptance or authority activation." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "upload=$upload" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "ready=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if ($exportCode -ne 0) { exit 1 }
+
+
+      - name: Upload only redacted diagnostic evidence
+        if: always() && steps.finalize.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-${{ inputs.diagnostic_mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.finalize.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+          compression-level: 6

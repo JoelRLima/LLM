@@ -1,0 +1,97 @@
+diff --git a/scripts/check_current_architecture.py b/scripts/check_current_architecture.py
+index b54bde3..4eca37d 100644
+--- a/scripts/check_current_architecture.py
++++ b/scripts/check_current_architecture.py
+@@ -433,6 +433,7 @@ def _compatibility_all_names(node: ast.stmt) -> list[str] | None:
+ def _compatibility_consumer_errors(source: RepositorySource, items: list[dict[str, Any]], graph: Any | None = None) -> list[str]:
+     errors: list[str] = []
+     modules = source.module_paths()
++    dynamic_calls_by_tree: dict[ast.Module, set[int]] = {}
+     for item in items:
+         module = item["module"]
+         projected = {row["name"] for row in item["exports"]}
+@@ -443,7 +444,8 @@ def _compatibility_consumer_errors(source: RepositorySource, items: list[dict[st
+             tree = source.tree_for_path(path)
+             if tree is None:
+                 continue
+-            names, file_errors = _compatibility_consumer_file(consumer, path, tree, module, projected)
++            dynamic_calls = _compatibility_cached_dynamic_calls(tree, dynamic_calls_by_tree)
++            names, file_errors = _compatibility_consumer_file(consumer, path, tree, module, projected, dynamic_calls)
+             errors.extend(file_errors)
+             if names:
+                 observed[consumer] = names
+@@ -465,11 +467,19 @@ def _compatibility_consumer_errors(source: RepositorySource, items: list[dict[st
+     return errors
+ 
+ 
+-def _compatibility_consumer_file(consumer: str, path: Path, tree: ast.Module, module: str, projected: set[str]) -> tuple[set[str], list[str]]:
++def _compatibility_cached_dynamic_calls(tree: ast.Module, cache: dict[ast.Module, set[int]]) -> set[int]:
++    # Invocation-local: do not retain mutable fixture ASTs between checks.
++    if tree not in cache:
++        cache[tree] = {id(call) for call, _kind in _dynamic_import_calls(tree)}
++    return cache[tree]
++
++
++def _compatibility_consumer_file(consumer: str, path: Path, tree: ast.Module, module: str, projected: set[str], dynamic_calls: set[int] | None = None) -> tuple[set[str], list[str]]:
+     names: set[str] = set()
+     aliases: dict[str, str] = {}
+     errors: list[str] = []
+-    dynamic_calls = {id(call) for call, _kind in _dynamic_import_calls(tree)}
++    if dynamic_calls is None:
++        dynamic_calls = {id(call) for call, _kind in _dynamic_import_calls(tree)}
+     for node in ast.walk(tree):
+         if isinstance(node, ast.ImportFrom):
+             names.update(_compatibility_from_import(consumer, path, node, module, aliases))
+diff --git a/tests/unit/test_current_architecture_performance.py b/tests/unit/test_current_architecture_performance.py
+new file mode 100644
+index 0000000..34ab235
+--- /dev/null
++++ b/tests/unit/test_current_architecture_performance.py
+@@ -0,0 +1,47 @@
++"""Focal equivalence/performance guards; no lifecycle or external processes."""
++from __future__ import annotations
++
++import ast
++from pathlib import Path
++from typing import Any
++
++from scripts import check_current_architecture as checker
++
++
++class Source:
++    def __init__(self, code: str) -> None:
++        self.trees = {Path(f"/fixture/consumer{i}.py"): ast.parse(code) for i in range(4)}
++    def module_paths(self) -> dict[str, Path]:
++        return {f"fixture.consumer{i}": path for i,path in enumerate(self.trees)}
++    def tree_for_path(self, path: Path) -> ast.Module:
++        return self.trees[path]
++
++def items() -> list[dict[str, Any]]:
++    return [dict(module=f"fixture.legacy{i}", exports=[dict(name="Thing")],
++                 allowed_production_consumers={},mode="SYMBOL_REEXPORT") for i in range(3)]
++
++def test_compatibility_dynamic_analysis_once_per_ast_per_invocation(monkeypatch: Any) -> None:
++    source=Source("import importlib\nvalue = importlib.import_module('fixture.legacy0')\n")
++    original=checker._dynamic_import_calls
++    calls=[]
++    def counted(tree: ast.Module) -> list[tuple[ast.Call, str]]:
++        calls.append(tree)
++        return original(tree)
++    monkeypatch.setattr(checker,"_dynamic_import_calls",counted)
++    errors=checker._compatibility_consumer_errors(source,items())
++    assert errors and "unauthorized consumers" in errors[0]
++    assert len(calls)==4
++    checker._compatibility_consumer_errors(source,items())
++    assert len(calls)==8
++
++def test_compatibility_cache_does_not_hide_mutated_fixture(monkeypatch: Any) -> None:
++    source=Source("pass\n")
++    assert not checker._compatibility_consumer_errors(source,items())
++    tree=next(iter(source.trees.values()))
++    tree.body[:]=ast.parse("import importlib\nvalue = importlib.import_module('fixture.legacy0')\n").body
++    assert checker._compatibility_consumer_errors(source,items())
++
++def test_compatibility_direct_helper_remains_supported() -> None:
++    tree=ast.parse("import importlib\nx=importlib.import_module('fixture.legacy0')\n")
++    result=checker._compatibility_consumer_file("fixture.consumer",Path("/fixture/consumer.py"),tree,"fixture.legacy0",{"Thing"})
++    assert result==({"Thing"},[])

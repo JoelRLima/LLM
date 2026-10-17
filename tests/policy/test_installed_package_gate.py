@@ -87,20 +87,20 @@ def test_gate_accepts_only_clean_non_empty_json_objects() -> None:
 
 
 def test_ci_runs_installed_wheel_gate_after_pytest() -> None:
-    workflow = (
-        Path(__file__).parents[2] / ".github" / "workflows" / "ci.yml"
-    ).read_text(encoding="utf-8")
-
-    assert workflow.index("- name: Pytest") < workflow.index(
-        "python scripts/verify_installed_package.py"
-    )
-    gate_lines = [
-        line.strip()
-        for line in workflow.splitlines()
-        if "scripts/verify_installed_package.py" in line
-    ]
-
-    assert gate_lines == ["run: python scripts/verify_installed_package.py"]
+    root = Path(__file__).parents[2]
+    workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    for platform in ("Linux", "Windows"):
+        assert workflow.index("- name: Full Pytest " + platform) < workflow.index(
+            "- name: Installed wheel acceptance " + platform)
+    assert "bash scripts/w23_ci_linux.sh installed" in workflow
+    assert "./scripts/w23_ci_windows.ps1 -Gate installed" in workflow
+    linux = (root / "scripts/w23_ci_linux.sh").read_text(encoding="utf-8")
+    windows = (root / "scripts/w23_ci_windows.ps1").read_text(encoding="utf-8")
+    assert 'scripts/verify_installed_package.py --summary-json' in linux
+    assert "'scripts/verify_installed_package.py','--summary-json'" in windows
+    assert "--offline-diagnostic" not in linux + windows
+    assert "--pytest-command" in windows
+    assert "fetch-depth: 0" in workflow
 
 
 def test_clean_acceptance_is_default_and_offline_mode_is_explicitly_weaker() -> None:

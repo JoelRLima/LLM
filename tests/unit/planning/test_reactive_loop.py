@@ -188,7 +188,7 @@ def test_reactive_cost_limit_establishes_blocked_terminal_truth(monkeypatch):
 def test_reactive_watchdog_timeout_preserves_timeout_status(monkeypatch):
     monkeypatch.setattr("llm_agent.agent.planning.reactive_loop.CostGuard.check_limits", lambda *args: False)
     monkeypatch.setattr(
-        "agent.planning.reactive_loop.Watchdog.check_all",
+        "llm_agent.agent.planning.reactive_loop.Watchdog.check_all",
         lambda *args: "Timeout global da tarefa atingido.",
     )
     orchestrator = _Orchestrator()

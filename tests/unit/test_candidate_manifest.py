@@ -41,10 +41,10 @@ def _file(path: str, content: bytes, mode: str = "100644") -> dict[str, Any]:
     return {"path": path, "mode": mode, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
 
 
-def _repo(tmp_path: Path, *, payload: bytes = b"line one\r\nline two\r\n") -> tuple[Path, bytes, str]:
+def _repo(tmp_path: Path, *, payload: bytes = b"line one\r\nline two\r\n", object_format: str = "sha1", executable: bool = False) -> tuple[Path, bytes, str]:
     root = tmp_path / "repo"
     root.mkdir()
-    _git(root, "init", "-q")
+    _git(root, "init", "-q", f"--object-format={object_format}")
     _git(root, "config", "user.email", "candidate@example.invalid")
     _git(root, "config", "user.name", "Candidate Test")
     source_files = {
@@ -57,7 +57,11 @@ def _repo(tmp_path: Path, *, payload: bytes = b"line one\r\nline two\r\n") -> tu
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    if executable and os.name != "nt":
+        (root / "tools/check.py").chmod(0o755)
     _git(root, "add", "--all")
+    if executable:
+        _git(root, "update-index", "--chmod=+x", "tools/check.py")
     _git(root, "commit", "-qm", "base")
     head = _git(root, "rev-parse", "HEAD")
     tree = _git(root, "rev-parse", "HEAD^{tree}")
@@ -76,7 +80,7 @@ def _repo(tmp_path: Path, *, payload: bytes = b"line one\r\nline two\r\n") -> tu
         "base": {"head": head, "tree": tree},
         "source_tree": tree,
         "files": sorted((_file("docs/guide.md", b"guide\n"), _file("src/app.py", payload),
-                         _file("tests/test_app.py", b"assert True\n"), _file("tools/check.py", b"print('ok')\n")),
+                         _file("tests/test_app.py", b"assert True\n"), _file("tools/check.py", b"print('ok')\n", "100755" if executable else "100644")),
                         key=lambda item: item["path"]),
         "overlay": [],
         "lineage": {
@@ -388,7 +392,8 @@ def test_symlink_metadata_is_rejected_without_os_specific_link_creation(
         _safe_file(root, "link.py")
 
 
-def test_reparse_metadata_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_simulated_reparse_metadata_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Injected metadata only; no native reparse point is created or validated."""
     root, _, _ = _repo(tmp_path)
 
     class ReparseInfo:
