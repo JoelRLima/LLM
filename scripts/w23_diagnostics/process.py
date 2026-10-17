@@ -10,6 +10,7 @@ from typing import Any
 from scripts.w23_diagnostics.capture import Capture
 from scripts.w23_diagnostics.evidence import Events, Redactor, write_json
 from scripts.w23_diagnostics.native import NativeChild, OwnedJob
+from scripts.w23_diagnostics.observation import INTERVAL, Observation
 
 SAFE_ENV = frozenset({
     "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATH", "PATHEXT", "LOCALAPPDATA", "APPDATA", "USERPROFILE",
@@ -48,7 +49,8 @@ class Commands:
         self.sequence = 0
         self.deadline = time.monotonic() + 1800
 
-    def run(self, label: str, command: list[str], cwd: Path, env: dict[str, str], seconds: int) -> Result:
+    def run(self, label: str, command: list[str], cwd: Path, env: dict[str, str], seconds: int,
+            *, observation: Observation | None = None) -> Result:
         self.sequence += 1
         name = f"{self.sequence:03d}-{label}"
         seconds = min(seconds, max(0, int(self.deadline - time.monotonic())))
@@ -58,7 +60,7 @@ class Commands:
         write_json(path, record)
         started = time.monotonic()
         try:
-            result = self._contained(name, command, cwd, env, seconds, record) if seconds else Result("TIMEOUT", None)
+            result = self._contained(name, command, cwd, env, seconds, record, observation) if seconds else Result("TIMEOUT", None)
         except BaseException as exc:
             result = Result("UNKNOWN", None)
             record["exception_type"] = type(exc).__name__
@@ -67,7 +69,7 @@ class Commands:
         return result
 
     def _contained(self, name: str, command: list[str], cwd: Path, env: dict[str, str],
-                   seconds: int, record: dict[str, Any]) -> Result:
+                   seconds: int, record: dict[str, Any], observation: Observation | None = None) -> Result:
         job = OwnedJob()
         child: NativeChild | None = None
         captures: list[Capture] = []
@@ -76,7 +78,7 @@ class Commands:
                 child, captures = self._start(job, name, command, cwd, env, stdin)
             record.update(pid=child.pid, primary_thread_id=child.tid, ownership="assigned-before-resume",
                           job_memory_mb=4096, process_memory_mb=3072, max_processes=48)
-            state, code = self._wait(child, job, captures, seconds)
+            state, code = self._wait(child, job, captures, seconds, observation)
             record["root_cpu"] = child.cpu()
             remaining = job.pids()
             if remaining:
@@ -96,6 +98,10 @@ class Commands:
                         capture.thread.join(timeout=5)
         complete = all(not capture.thread.is_alive() and not capture.error for capture in captures)
         record["capture_complete"] = complete
+        if observation is not None:
+            record["observation"] = observation.summary()
+            if observation.failed or not observation.count:
+                state = "UNKNOWN" if state != "TIMEOUT" else state
         if not complete or any(capture.limited for capture in captures):
             state = "UNKNOWN" if state != "TIMEOUT" else state
         return Result(state, code, captures[0].text(), captures[1].text())
@@ -120,8 +126,11 @@ class Commands:
         return child, captures
 
     def _wait(self, child: NativeChild, job: OwnedJob, captures: list[Capture],
-              seconds: int) -> tuple[str, int | None]:
+              seconds: int, observation: Observation | None = None) -> tuple[str, int | None]:
         start, next_snapshot = time.monotonic(), 0.0
+        if observation is not None:
+            observation.sample(job, child)
+            next_snapshot = INTERVAL
         while True:
             code = child.poll()
             if code is not None:
@@ -133,7 +142,9 @@ class Commands:
                 return "TIMEOUT", None
             if elapsed >= next_snapshot:
                 self.events.emit("owned_job_snapshot", pids=job.pids(), root_cpu=child.cpu())
-                next_snapshot = elapsed + 15
+                if observation is not None:
+                    observation.sample(job, child)
+                next_snapshot = elapsed + (INTERVAL if observation is not None else 15)
             if any(capture.error or capture.limited for capture in captures):
                 job.terminate(125)
                 return "UNKNOWN", None

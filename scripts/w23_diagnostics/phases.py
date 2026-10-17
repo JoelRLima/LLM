@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -88,10 +89,11 @@ def _r01_stages(work: Path, source: Path, commands: Commands) -> dict[str, Any]:
                "expected": contract()["release_manifest_sha256"]})
     if actual != contract()["release_manifest_sha256"]:
         raise StageError("FAIL")
+    r01_budget(work, commands)
     output = work / "publish/r01"
     result = commands.run("r01-clean-install", [sys.executable, "-B", "-u", "-m", "scripts.w23_diagnostics.r01",
                           "--source", str(source), "--bundle", str(build / "bundle"), "--output", str(output),
-                          "--private", str(work / "private/r01"), "--seconds", "180"], TOOL_ROOT, env_tools, 360)
+                          "--private", str(work / "private/r01"), "--seconds", "300"], TOOL_ROOT, env_tools, 480)
     if result.status == "TIMEOUT" or result.code == 124:
         return {"status": "TIMEOUT", "restoration": "UNKNOWN", "scenario": "clean-install"}
     if result.status == "UNKNOWN" or not (output / "result.json").is_file():
@@ -102,6 +104,16 @@ def _r01_stages(work: Path, source: Path, commands: Commands) -> dict[str, Any]:
     if raw.get("status") == "PASS" and result.status != "PASS":
         raw["status"] = "UNKNOWN"
     return dict(raw)
+
+
+def r01_budget(work: Path, commands: Commands) -> None:
+    # Additional 120 s observation beyond the measured ~180 s timeout.
+    # 300 s scenario + 120 s restoration + 60 s outer margin; CI limits unchanged.
+    remaining = commands.deadline - time.monotonic()
+    write_json(work / "publish/r01b-budget.json", {"scenario_seconds": 300, "restoration_seconds": 120,
+               "outer_seconds": 480, "global_remaining_seconds": remaining, "minimum_start_budget": 510})
+    if remaining < 510:
+        raise StageError("UNKNOWN")
 
 
 def junit(path: Path, expected_count: int) -> dict[str, Any]:

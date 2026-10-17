@@ -12,11 +12,16 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from scripts.w23_diagnostics.evidence import Events, Redactor, write_json
+from scripts.w23_diagnostics.evidence import Events, Redactor, digest, write_json
+from scripts.w23_diagnostics.inputs import contract
+from scripts.w23_diagnostics.milestones import Milestones
+from scripts.w23_diagnostics.observation import Observation
 from scripts.w23_diagnostics.process import Commands, StageError
 
 
 def load_verifier(source: Path) -> Any:
+    if digest(source / "scripts/verify_installed_product.py") != contract()["files"]["scripts/verify_installed_product.py"]:
+        raise ValueError("Verifier hash differs from authenticated source")
     sys.path[:0] = [str(source), str(source / "src")]
     spec = importlib.util.spec_from_file_location("w23_authenticated_verifier", source / "scripts/verify_installed_product.py")
     if spec is None or spec.loader is None:
@@ -42,6 +47,8 @@ class Scenario:
         self.lock = threading.RLock()
         self.deadline = time.monotonic() + seconds
         self.result: dict[str, Any] = {"status": "UNKNOWN", "scenario": "clean-install", "restoration": "UNKNOWN"}
+        self.observation: Observation | None = None
+        self.context: Any = None
         self.save()
 
     def save(self) -> None:
@@ -51,12 +58,14 @@ class Scenario:
     def fatal(self, status: str, code: int) -> None:
         with self.lock:
             self.result.update(status=status, restoration="UNKNOWN", fatal=True, active=list(self.active))
+            if self.observation is not None:
+                self.result["observation"] = self.observation.summary()
             self.save()
         self.events.emit("fatal", status=status, active=list(self.active))
         os._exit(code)  # OS closes our job handles; outer job also owns this driver.
 
     def watchdog(self) -> None:
-        next_stack, dumps = 0.0, 0
+        next_stack, next_heartbeat, dumps = 0.0, 0.0, 0
         try:
             while not self.finished.wait(0.5):
                 now = time.monotonic()
@@ -64,8 +73,10 @@ class Scenario:
                     self.fatal("TIMEOUT", 124)
                 if now >= next_stack and dumps < 8:
                     self.stack(dumps)
-                    self.events.emit("heartbeat", active=list(self.active), seconds_left=self.deadline - now)
                     next_stack, dumps = now + 20, dumps + 1
+                if now >= next_heartbeat:
+                    self.events.emit("heartbeat", active=list(self.active), seconds_left=self.deadline - now)
+                    next_heartbeat = now + 15
         except BaseException:
             self.fatal("UNKNOWN", 125)
 
@@ -98,7 +109,20 @@ class Scenario:
 
     def command(self, command: Any, *, cwd: Path, environment: Any) -> Any:
         remaining = max(1, int(self.deadline - time.monotonic()))
-        result = self.commands.run("verifier-child", list(command), cwd, dict(environment), remaining)
+        observation = None
+        if self.context is not None and str(self.context.install_script) in command:
+            expected = [self.module._powershell_path(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                        str(self.context.install_script)]
+            if list(command) != expected:
+                raise ValueError("Unexpected R01B installer invocation")
+            if self.observation is not None:
+                raise ValueError("R01B observes one clean installer only")
+            authorized = Path(os.environ["LOCALAPPDATA"]).resolve() / "local-llm-agent/install"
+            if self.context.install_root.exists():
+                raise ValueError("R01B requires an absent clean install root")
+            observation = Observation(self.output, self.redactor, Milestones(self.context.install_root, authorized))
+            self.observation = observation
+        result = self.commands.run("verifier-child", list(command), cwd, dict(environment), remaining, observation=observation)
         if result.status in {"TIMEOUT", "UNKNOWN"}:
             raise StageError(result.status)
         return self.module.CommandResult(tuple(command), result.code, result.stdout, result.stderr)
@@ -116,6 +140,8 @@ class Scenario:
         return "PASS" if restored else "FAIL"
 
     def run(self, bundle: Path) -> int:
+        identities = self.bundle_identity(bundle)
+        write_json(self.output / "bundle-before.json", identities)
         self.install_instrumentation()
         watcher = threading.Thread(target=self.watchdog, daemon=True)
         watcher.start()
@@ -123,6 +149,7 @@ class Scenario:
         try:
             self.events.emit("scenario_start", scenario="clean-install")
             context = self.module._v3_prepare_context(bundle)
+            self.context = context
             hostile = self.module._v3_hostile_environment(context)
             self.module._v3_clean_install(context, hostile)
             installed, status = True, "PASS"
@@ -134,6 +161,13 @@ class Scenario:
             status = "FAIL"
         finally:
             status = self._finish(context, installed, status)
+            status = self.finish_identity(bundle, identities, status)
+            if self.observation is not None:
+                self.result["observation"] = self.observation.summary()
+                if self.observation.failed and status == "PASS":
+                    status = "UNKNOWN"
+            elif status == "PASS":
+                status = "UNKNOWN"  # A claimed clean install must have actually reached the observed installer.
             self.finished.set()
             watcher.join(timeout=5)
             if watcher.is_alive():
@@ -141,6 +175,24 @@ class Scenario:
             self.result["status"] = status
             self.save()
         return 0 if status == "PASS" else 124 if status == "TIMEOUT" else 1
+
+    def finish_identity(self, bundle: Path, identities: dict[str, str], status: str) -> str:
+        try:
+            after = self.bundle_identity(bundle)
+            write_json(self.output / "bundle-after.json", after)
+            return status if after == identities else "FAIL"
+        except Exception as exc:
+            self.events.emit("bundle_identity_failure", exception_type=type(exc).__name__)
+            return "FAIL"
+
+    def bundle_identity(self, bundle: Path) -> dict[str, str]:
+        values = {"release-manifest.json": digest(bundle / "release-manifest.json"),
+                  "install.ps1": digest(bundle / "install.ps1")}
+        spec = contract()
+        if (values["release-manifest.json"] != spec["release_manifest_sha256"]
+                or values["install.ps1"] != spec["files"]["installer/install.ps1"]):
+            raise ValueError("R01B refuses unauthenticated installer/bundle")
+        return values
 
     def _finish(self, context: Any, installed: bool, status: str) -> str:
         if context is None:
