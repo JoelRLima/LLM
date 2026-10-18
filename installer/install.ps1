@@ -899,7 +899,6 @@ function Extract-Payload {
             $target = Join-Path $Destination ([string]$relative -replace '/', '\')
             Assert-ContainedPath $Destination $target
             $parent = Split-Path -Parent $target
-            Assert-DirectorySafe $parent
             if (Test-Path -LiteralPath $target) {
                 throw "destino de extração já existe: $relative"
             }
