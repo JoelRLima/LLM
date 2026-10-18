@@ -53,9 +53,14 @@ if ($Gate -eq 'pytest' -or $Gate -eq 'regressions') {
     $tail = @('scripts/verify_installed_package.py','--summary-json',(Join-Path $evidence 'installed-wheel.json'))
 } else { $tail = $ChildArguments }
 if ($tail.Count -eq 0) { throw 'missing child command' }
+$timeoutSeconds = 1800
+if ($Gate -eq 'command') {
+    $timeoutSeconds = $CommandTimeoutSeconds
+    if ($Name -eq 'w18_lifecycle') { $timeoutSeconds = 7200 }
+}
 $arguments = @('--working-directory',$repo,'--evidence-directory',$evidence,'--scratch-root',$root,
     '--scratch-directory',$run,'--pytest-basetemp',(Join-Path $run 'pytest'),
-    '--stdout-log',($Name+'.log'),'--result-json',($Name+'.json'),'--timeout-seconds',([string]$CommandTimeoutSeconds),
+    '--stdout-log',($Name+'.log'),'--result-json',($Name+'.json'),'--timeout-seconds',([string]$timeoutSeconds),
     '--job-memory-mb','4096','--process-memory-mb','3072','--max-processes','128') + $pytestFlag
 & $python -B (Join-Path $repo 'scripts/w23_bounded_windows.py') @arguments -- $python -B @tail
 $code = $LASTEXITCODE
