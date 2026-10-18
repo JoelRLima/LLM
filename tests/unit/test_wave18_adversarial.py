@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -33,6 +36,27 @@ CRITICAL_IDENTITIES = {
     "W18-A36": "journal PATH_MUTATED recovery",
     "W18-A60": "no public release side effect",
 }
+
+
+def test_campaign_cli_bootstraps_source_imports_in_isolated_python(tmp_path: Path) -> None:
+    script = Path(campaign.__file__).resolve()
+    child_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.casefold() != "pythonpath"
+    }
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", str(script), "--help"],
+        cwd=tmp_path,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout.lower()
 
 
 def test_lightweight_campaign_reports_installed_scenarios_as_not_run() -> None:
