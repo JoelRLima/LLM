@@ -22,8 +22,11 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from os.path import samefile as _samefile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -61,6 +64,45 @@ from llm_agent.workspace.paths import AppPaths  # noqa: E402
 
 class ProductVerificationError(RuntimeError):
     """Raised when installed-product acceptance cannot prove a contract."""
+
+
+@contextmanager
+def _v3_progress_scope(operation: str):
+    started_ns = time.monotonic_ns()
+    print(
+        f"W18_PROGRESS monotonic_ns={started_ns} operation={operation} event=start",
+        flush=True,
+    )
+    exception_type = "none"
+    try:
+        yield
+    except BaseException as exc:
+        exception_type = type(exc).__name__
+        raise
+    finally:
+        finished_ns = time.monotonic_ns()
+        print(
+            f"W18_PROGRESS monotonic_ns={finished_ns} operation={operation} "
+            f"event=end elapsed_ns={finished_ns - started_ns} exception={exception_type}",
+            flush=True,
+        )
+
+
+def _v3_progress_operation(operation: str):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            with _v3_progress_scope(operation):
+                return function(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
+
+
+def _v3_progress_call(operation: str, function, *args, **kwargs):
+    with _v3_progress_scope(operation):
+        return function(*args, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -1146,8 +1188,9 @@ def _v3_hostile_environment(context: ProductContext) -> dict[str, str]:
 def _v3_run_installer(
     context: ProductContext, script: Path, environment: Mapping[str, str], label: str
 ) -> CommandResult:
-    result = _run_ps_file(script, (), cwd=context.outside, environment=environment)
-    return _require_success(result, label)
+    with _v3_progress_scope("installer.invocation"):
+        result = _run_ps_file(script, (), cwd=context.outside, environment=environment)
+        return _require_success(result, label)
 
 
 def _v3_run_w17_interactive(
@@ -2350,6 +2393,7 @@ def _v3_verify_conpty_layer_matrix(
     return matrix
 
 
+@_v3_progress_operation("verifier")
 def _v3_verify_installed_product(
     bundle_root: Path,
     *,
@@ -2368,16 +2412,25 @@ def _v3_verify_installed_product(
         if application_home is None:
             raise ProductVerificationError("v003 context has no application home")
         hostile = _v3_hostile_environment(context)
-        facts = _v3_clean_install(context, hostile)
+        facts = _v3_progress_call("scenario.clean_install", _v3_clean_install, context, hostile)
         installed = True
-        _v3_verify_corrupt_journal_no_mutation(context, hostile, facts)
-        _write_preservation_state(context.config, context.sentinels)
-        context.report["scenarios"]["preservation_state_created"] = {
-            "status": "passed",
-            "application_home": str(application_home),
-            "sentinels": [str(path) for path in context.sentinels],
-        }
-        context.report["scenarios"]["fresh_shell"] = _v3_fresh_shell(
+        _v3_progress_call(
+            "scenario.corrupt_journal_no_mutation",
+            _v3_verify_corrupt_journal_no_mutation,
+            context,
+            hostile,
+            facts,
+        )
+        with _v3_progress_scope("scenario.preservation_state"):
+            _write_preservation_state(context.config, context.sentinels)
+            context.report["scenarios"]["preservation_state_created"] = {
+                "status": "passed",
+                "application_home": str(application_home),
+                "sentinels": [str(path) for path in context.sentinels],
+            }
+        context.report["scenarios"]["fresh_shell"] = _v3_progress_call(
+            "scenario.fresh_shell",
+            _v3_fresh_shell,
             stable=facts.stable,
             candidate=context.install_root / "versions" / facts.candidate_id,
             machine_path=context.before_machine,
@@ -2385,24 +2438,53 @@ def _v3_verify_installed_product(
             cwd=context.outside,
             application_home=application_home,
         )
-        receipt_before, path_before = _v3_verify_same_candidate(context, hostile)
-        _v3_verify_invalid_upgrade(context, hostile, receipt_before, path_before)
-        _v3_verify_corrective_lifecycle(context, hostile, facts, path_before)
-        _v3_verify_receipt_fail_closed(context, hostile)
-        _v3_verify_active_candidate_uninstall(context, hostile)
-        _v3_verify_conpty_layer_matrix(context, facts, conpty_layer_matrix_json)
+        receipt_before, path_before = _v3_progress_call(
+            "scenario.same_candidate", _v3_verify_same_candidate, context, hostile
+        )
+        _v3_progress_call(
+            "scenario.invalid_upgrade",
+            _v3_verify_invalid_upgrade,
+            context,
+            hostile,
+            receipt_before,
+            path_before,
+        )
+        _v3_progress_call(
+            "scenario.corrective_lifecycle",
+            _v3_verify_corrective_lifecycle,
+            context,
+            hostile,
+            facts,
+            path_before,
+        )
+        _v3_progress_call(
+            "scenario.receipt_fail_closed", _v3_verify_receipt_fail_closed, context, hostile
+        )
+        _v3_progress_call(
+            "scenario.active_candidate_uninstall", _v3_verify_active_candidate_uninstall, context, hostile
+        )
+        _v3_progress_call(
+            "scenario.conpty_layer_matrix",
+            _v3_verify_conpty_layer_matrix,
+            context,
+            facts,
+            conpty_layer_matrix_json,
+        )
         # Keep the independent native ConPTY authority check after the C2
         # lifecycle controls so a host-side ConPTY blocker cannot suppress
         # the installed lease/uninstall evidence in the same run.
-        context.report["w17_installed_interactive"] = _v3_verify_w17_interactive(context, facts)
-        _v3_verify_lifecycle(context, hostile)
+        context.report["w17_installed_interactive"] = _v3_progress_call(
+            "scenario.w17_installed_interactive", _v3_verify_w17_interactive, context, facts
+        )
+        _v3_progress_call("scenario.lifecycle", _v3_verify_lifecycle, context, hostile)
         installed = False
     except Exception as exc:
         primary_error = exc
     finally:
-        finalization_errors.extend(
-            _v3_finalize_context(context, installed=installed, keep=keep, application_home=application_home)
-        )
+        with _v3_progress_scope("scenario.finalization"):
+            finalization_errors.extend(
+                _v3_finalize_context(context, installed=installed, keep=keep, application_home=application_home)
+            )
 
     if primary_error is not None or finalization_errors:
         context.report["status"] = "failed"
