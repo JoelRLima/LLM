@@ -122,7 +122,7 @@ def test_context_preserves_body_error_when_release_also_fails(
         )
     else:
         assert any(
-            record.name == "agent.tools.extension_catalog_lock"
+            record.name == "llm_agent.extensions.extension_catalog_lock"
             and "Falha ao liberar lock apos erro da operacao: release" in record.getMessage()
             for record in caplog.records
         )

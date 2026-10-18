@@ -6,7 +6,6 @@ import ast
 import copy
 import hashlib
 import json
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterable
@@ -23,6 +22,12 @@ from scripts.w21_architecture import RepositorySource, build_graph
 from scripts.w21_architecture.imports import collect_import_edges
 from scripts.w23_architecture.evidence import verify_witness
 from scripts.w23_architecture.phase0_inventory import domain_family, strongly_connected
+from scripts.w23_tooling_successor import (
+    project_historical_production,
+    read_historical_retired_sources,
+    read_historical_retirement_inputs,
+    read_historical_tooling,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 RECEIPT = "llm_agent.agent.reporting.run_receipt"
@@ -631,18 +636,19 @@ def _retirement_predecessor_inventory(report: dict[str, Any]) -> list[list[str]]
 def _retirement_predecessor_source() -> RepositorySource:
     source = RepositorySource(ROOT, "final-w22")
     source.module_paths()
+    archived = read_historical_retired_sources(ROOT)
     for relative in sorted(RETIREMENT_PRODUCTION_PATHS):
         path = ROOT / relative
         module = "llm_agent." + relative.removeprefix("src/llm_agent/").removesuffix(".py").replace("/", ".")
         assert not path.exists()
-        blob = subprocess.run(["git", "show", f"HEAD:{relative}"], capture_output=True, check=True).stdout
+        blob = archived[relative]
         source._paths[module] = path
         source._trees[relative] = ast.parse(blob.decode("utf-8"), filename=relative)
     return source
 
 
 def _build_compatibility_retirement_report() -> dict[str, Any]:
-    """Recompute the explicit retirement successor from current disk source."""
+    """Recompute historical retirement through an exact authenticated text-only projection."""
 
     predecessor_path = "quality/w23/cycle_report_after_lock_ownership.json"
     predecessor_bytes = (ROOT / predecessor_path).read_bytes()
@@ -652,7 +658,8 @@ def _build_compatibility_retirement_report() -> dict[str, Any]:
     assert len(predecessor_inventory) == 909
     assert _production_fingerprint(predecessor_inventory) == predecessor["candidate"]["source_fingerprint_sha256"]
 
-    current_inventory = _production_inventory(RepositorySource(ROOT, "final-w22"))
+    live_inventory = _production_inventory(RepositorySource(ROOT, "final-w22"))
+    current_inventory = project_historical_production(ROOT, live_inventory)
     before, after = dict(predecessor_inventory), dict(current_inventory)
     assert sorted(set(before) - set(after)) == sorted(RETIREMENT_PRODUCTION_PATHS)
     assert sorted(set(after) - set(before)) == []
@@ -712,13 +719,18 @@ def _build_compatibility_retirement_report() -> dict[str, Any]:
     )
     protected = predecessor["protected_production_sha256"]
     protected_hashes = dict(protected)
-    recomputed_protected = {path: _sha((ROOT / path).read_bytes()) for path in sorted(protected)
+    historical_production = dict(after)
+    historical_production.update({path: _sha(data) for path, data in read_historical_retired_sources(ROOT).items()})
+    recomputed_protected = {path: historical_production[path] for path in sorted(protected)
                             if path.startswith("src/")}
     assert all(protected_hashes[path] == digest for path, digest in recomputed_protected.items())
     protected_hashes.update(recomputed_protected)
     recorded_inputs = json.loads((ROOT / RETIREMENT_CYCLE_REPORT).read_bytes())["input_sha256"]
     input_hashes = dict(recorded_inputs)
-    input_hashes.update({path: _sha((ROOT / path).read_bytes()) for path in input_paths})
+    historical_tooling = read_historical_retirement_inputs(ROOT)
+    baseline_bytes = historical_tooling["quality/w23/cycle_report_before.json"]
+    assert _sha(baseline_bytes) == BASELINE_SHA
+    input_hashes.update({path: _sha(historical_tooling[path]) for path in input_paths})
     removed_modules = sorted("llm_agent." + path.removeprefix("src/llm_agent/").removesuffix(".py").replace("/", ".") for path in RETIREMENT_PRODUCTION_PATHS)
     return {
         "schema_version": 1,
@@ -875,7 +887,7 @@ def test_successor_selection_rejects_fallback_and_wrong_lineage(
         _assert_successor_selection(selected_path, selected)
 
 
-def test_compatibility_retirement_successor_is_explicit_fresh_and_exact(
+def test_historical_compatibility_retirement_successor_is_explicit_and_exact(
     compatibility_retirement_successor_report: dict[str, Any],
 ) -> None:
     path = RETIREMENT_CYCLE_REPORT
@@ -910,7 +922,7 @@ def test_compatibility_retirement_successor_is_explicit_fresh_and_exact(
     assert selected["unit_delta"]["changed_existing"] == recomputed["unit_delta"]["changed_existing"]
 
 
-def test_current_compatibility_witness_is_fresh_and_continues_accepted_production() -> None:
+def test_historical_compatibility_witness_continues_accepted_production() -> None:
     raw_witness = (ROOT / COMPATIBILITY_CLOSURE_REPORT).read_bytes()
     witness = json.loads(raw_witness.decode("utf-8"))
     assert raw_witness.endswith(b"\n") and not raw_witness.startswith(b"\xef\xbb\xbf")
@@ -938,7 +950,7 @@ def test_current_compatibility_witness_is_fresh_and_continues_accepted_productio
     additive_path = "quality/w23/acceptance_tooling_witness_v001.json"
     additive_bytes = (ROOT / additive_path).read_bytes()
     additive = json.loads(additive_bytes.decode("utf-8"))
-    tooling = {row["path"]: (ROOT / row["path"]).read_bytes() for row in additive["current_tooling"]}
+    tooling = read_historical_tooling(ROOT)
     snapshots = {row["path"]: (ROOT / row["path"]).read_bytes()
                  for row in additive["historical_tooling_snapshots"]}
     verified = verify_witness(

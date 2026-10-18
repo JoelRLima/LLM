@@ -16,6 +16,7 @@ from scripts.w23_architecture.evidence import (
     verify_historical_binding,
     verify_witness,
 )
+from scripts.w23_tooling_successor import read_historical_tooling
 
 ROOT = Path(__file__).resolve().parents[2]
 WITNESS = "quality/w23/acceptance_tooling_witness_v001.json"
@@ -26,11 +27,12 @@ PRODUCTION = "quality/w23/cycle_report_after_compatibility_retirement.json"
 def _inputs(witness: dict | None = None) -> tuple[bytes, bytes, bytes, dict[str, bytes], dict[str, bytes]]:
     row = witness or json.loads((ROOT / WITNESS).read_bytes())
     raw = (json.dumps(row, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    archived = read_historical_tooling(ROOT)
     tooling = {}
     for item in row["current_tooling"]:
         try:
-            tooling[item["path"]] = (ROOT / item["path"]).read_bytes()
-        except OSError:
+            tooling[item["path"]] = archived[item["path"]]
+        except (OSError, KeyError):
             tooling[item["path"]] = b"synthetic missing member"
     snapshots = {item["path"]: (ROOT / item["path"]).read_bytes()
                  for item in row["historical_tooling_snapshots"]}

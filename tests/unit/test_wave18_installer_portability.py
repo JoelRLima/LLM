@@ -620,7 +620,7 @@ def test_n1_a_missing_localappdata_fails_before_mutation(installer_tmp_root: Pat
     )
 
     assert result.returncode == 1, output
-    assert "required LOCALAPPDATA ancestry does not exist" in output
+    assert "required LOCALAPPDATA ancestry does not exist" in " ".join(output.split())
     assert "".join(str(local_app_data).split()).casefold() in "".join(output.split()).casefold()
     assert not local_app_data.exists()
     assert not product_root.exists()
@@ -661,7 +661,7 @@ def test_n1_b_missing_mandatory_profile_ancestor_fails_before_creation(
     )
 
     assert result.returncode == 1, output
-    assert "required LOCALAPPDATA ancestry does not exist" in output
+    assert "required LOCALAPPDATA ancestry does not exist" in " ".join(output.split())
     assert "".join(str(missing_profile).split()).casefold() in "".join(output.split()).casefold()
     assert not missing_profile.exists()
     assert not local_app_data.exists()

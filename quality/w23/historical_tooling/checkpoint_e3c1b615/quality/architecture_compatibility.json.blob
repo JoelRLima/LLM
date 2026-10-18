@@ -1,0 +1,111 @@
+{
+  "bridges": [
+    {
+      "bridge_id": "W21-CB-META-001",
+      "class": "compatibility",
+      "surface": "agent.skills.descriptor.SkillSpec",
+      "target_owner": "agent.operation.spec.SkillSpec",
+      "lane": "A",
+      "constraint": "source-compatible alias/re-export only; no second editable metadata definition"
+    },
+    {
+      "bridge_id": "W21-CB-META-002",
+      "class": "compatibility",
+      "surface": "agent.skills.catalog.BUILTIN_SKILL_SPECS",
+      "target_owner": "agent.operation.catalog.BUILTIN_SKILL_SPECS",
+      "lane": "A",
+      "constraint": "compatibility projection/re-export only; canonical builtin metadata lives in agent.operation"
+    },
+    {
+      "bridge_id": "W21-CB-META-003",
+      "class": "compatibility",
+      "surface": "agent.tools.contracts.CancellationSafetyMode",
+      "target_owner": "agent.operation.contracts.CancellationSafetyMode",
+      "lane": "A",
+      "constraint": "identity-preserving alias/re-export"
+    },
+    {
+      "bridge_id": "W21-CB-META-004",
+      "class": "compatibility",
+      "surface": "agent.tools.provenance.ArgumentOrigin",
+      "target_owner": "agent.operation.provenance.ArgumentOrigin",
+      "lane": "A",
+      "constraint": "identity-preserving alias/re-export where required"
+    },
+    {
+      "bridge_id": "W21-CB-META-005",
+      "class": "compatibility",
+      "surface": "agent.planning.tool_metadata.ToolMetadata",
+      "target_owner": "agent.operation.planning_metadata.ToolMetadata",
+      "lane": "A",
+      "constraint": "projection/alias only; planning must not maintain an independent editable metadata table"
+    },
+    {
+      "bridge_id": "W21-CB-PROC-001",
+      "class": "compatibility",
+      "surface": "agent.tools.process_tree",
+      "target_owner": "agent.process.tree",
+      "lane": "B",
+      "constraint": "bounded compatibility facade only; no canonical production caller may remain on the old owner"
+    },
+    {
+      "bridge_id": "W21-CB-PROC-002",
+      "class": "compatibility",
+      "surface": "agent.tools.stdio_streams",
+      "target_owner": "agent.process.streams",
+      "lane": "B",
+      "constraint": "bounded compatibility facade only; no canonical production caller may remain on the old owner"
+    },
+    {
+      "bridge_id": "W21-CB-PERSIST-001",
+      "class": "compatibility",
+      "surface": "agent.contracts legacy result/history persistence shapes",
+      "target_owner": "agent.tools.contracts.ToolResult + explicit result adapters",
+      "lane": "COORDINATOR",
+      "constraint": "retain only at persisted/history compatibility boundaries; agent.contracts is not neutral"
+    },
+    {
+      "bridge_id": "W21-CB-PATH-001",
+      "class": "compatibility",
+      "surface": "agent.runtime.paths module-level legacy path globals",
+      "target_owner": "agent.runtime.paths AppPaths/WorkspacePaths",
+      "lane": "E",
+      "constraint": "definitions may remain for compatibility; no new consumer; exact existing consumer disposition is frozen by CHAR-PATH-001 before edit execution",
+      "phase3_state": "SURFACE_REGISTERED_DISPOSITIONS_PENDING_CHAR_PATH_001",
+      "freeze_requirement": "Exact existing-consumer dispositions must be filled before Phase 5 architecture/behavior freeze."
+    },
+    {
+      "bridge_id": "W21-CB-CHECKPOINT-001",
+      "class": "compatibility",
+      "surface": "checkpoint v2 / historical readers and migration paths",
+      "target_owner": "existing checkpoint/continuity/storage-migration owners",
+      "lane": "COORDINATOR",
+      "constraint": "no schema change, reader removal, or migration removal in W21"
+    }
+  ],
+  "adapter_edges": [
+    {
+      "adapter_id": "W21-ADAPTER-BUILTIN-TOOLS",
+      "source_module": "agent.tools.builtin_adapter",
+      "destination_package": "agent.skills",
+      "purpose": "adapt SkillRegistry/SkillDescriptor implementations into ToolDescriptor/ToolAdapter runtime contracts"
+    },
+    {
+      "adapter_id": "W21-ADAPTER-SKILL-TOOL-REGISTRY",
+      "source_surface": "agent.skills.load_tool_registry",
+      "destination_package": "agent.tools",
+      "purpose": "bounded construction adapter retained at the existing public skill-loading surface"
+    }
+  ],
+  "bridge_semantics": {
+    "compatibility_is_not_canonical_direction": "A bridge authorizes only its exact bounded surface.",
+    "no_transitive_authority": "A bridge does not authorize sibling modules or new consumers.",
+    "no_cycle_hiding": "A compatibility re-export cannot be used to hide a target-forbidden dependency."
+  },
+  "forbidden_compatibility_expansion": [
+    "new Wave-number-specific production branches",
+    "new generic legacy service bags",
+    "new module-level legacy path consumers",
+    "using a compatibility facade to hide a forbidden canonical dependency"
+  ]
+}

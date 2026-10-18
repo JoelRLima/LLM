@@ -515,6 +515,6 @@ def test_workspace_command_preserves_unavailable_gateway_message() -> None:
 
     assert api.execute_workspace_command(runtime, "read", "source") == {
         "status": "unavailable",
-        "error": "file_reader indispon\u00c3\u00advel",
+        "error": "file_reader indisponível",
         "data": None,
     }
