@@ -1866,7 +1866,18 @@ def _v3_faulted_install(
         seam,
         hard_stop=True,
     ).replace(instrumented_root / "install.ps1")
-    result = _run_ps_file(instrumented_root / "install.ps1", (), cwd=context.outside, environment=environment)
+    operation = {
+        "A47": "installer.faulted_install.A47",
+        "A48": "installer.faulted_install.A48",
+    }.get(seam.upper(), "installer.faulted_install.other")
+    result = _v3_progress_call(
+        operation,
+        _run_ps_file,
+        instrumented_root / "install.ps1",
+        (),
+        cwd=context.outside,
+        environment=environment,
+    )
     return _v3_validate_fault_result(result, seam, label)
 
 
@@ -1906,7 +1917,18 @@ def _v3_observe_recovery(
     instrument_installer(observer / "install.ps1", observer / "install.ps1.tmp", "RECOVERY", hard_stop=True).replace(
         observer / "install.ps1"
     )
-    result = _run_ps_file(observer / "install.ps1", (), cwd=context.outside, environment=environment)
+    operation = {
+        "A47": "installer.observe_recovery.A47",
+        "A48": "installer.observe_recovery.A48",
+    }.get(label.upper(), "installer.observe_recovery.other")
+    result = _v3_progress_call(
+        operation,
+        _run_ps_file,
+        observer / "install.ps1",
+        (),
+        cwd=context.outside,
+        environment=environment,
+    )
     if result.returncode == 0:
         raise ProductVerificationError(f"{label} recovery observer did not stop after recovery")
     receipt = _load_json(context.install_root / "current-install.json", "recovered receipt")
