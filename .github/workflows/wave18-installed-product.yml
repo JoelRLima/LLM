@@ -39,7 +39,6 @@ jobs:
         with:
           python-version: "3.12"
           architecture: x64
-          cache: pip
 
       - name: Install build and verification dependencies
         shell: pwsh
