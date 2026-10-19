@@ -16,6 +16,10 @@ TEMPLATE = ROOT / "quality/w23/diagnostics/manual-only.workflow.yml"
 POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 
 
+def _windows_powershell_child_environment(env: dict[str, str]) -> dict[str, str]:
+    return {key: value for key, value in env.items() if key.casefold() != "psmodulepath"}
+
+
 def finalizer(path: Path) -> str:
     block = path.read_text(encoding="utf-8").split(
         "      - name: Finalize bounded public evidence even after failure\n", 1
@@ -47,6 +51,41 @@ def test_job_selection_is_exclusive(event: str, mode: str) -> None:
     manual = event == "workflow_dispatch" and mode not in ("", "normal")
     assert normal != manual
     assert manual == (event == "workflow_dispatch" and mode in ("r01", "r02"))
+
+
+@pytest.mark.parametrize("key", ["PSModulePath", "psmodulepath", "pSmOdUlEpAtH"])
+def test_child_environment_removes_only_psmodulepath_case_insensitively(key: str) -> None:
+    parent_before = dict(os.environ)
+    source = {key: "inherited-module-path", "UNRELATED_W23_VALUE": "preserve-me", "Path": "keep-path"}
+    source_before = dict(source)
+
+    child = _windows_powershell_child_environment(source)
+
+    assert child == {"UNRELATED_W23_VALUE": "preserve-me", "Path": "keep-path"}
+    assert source == source_before
+    assert dict(os.environ) == parent_before
+
+
+@pytest.mark.skipif(os.name != "nt" or not POWERSHELL.is_file(), reason="Native Windows PowerShell fixture required")
+def test_sanitized_child_environment_has_native_get_file_hash() -> None:
+    env = _windows_powershell_child_environment(dict(os.environ))
+    command = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$cmd = Get-Command Get-FileHash -ErrorAction Stop; "
+        "if ($cmd.Source -ne 'Microsoft.PowerShell.Utility' -or "
+        "$cmd.ModuleName -ne 'Microsoft.PowerShell.Utility') { throw 'Unexpected Get-FileHash source' }; "
+        "$hash = (Get-FileHash -LiteralPath (Join-Path $PSHOME 'powershell.exe') -Algorithm SHA256).Hash; "
+        "if ($hash -notmatch '^[0-9A-Fa-f]{64}$') { throw 'Invalid SHA-256 result' }; "
+        "'GET_FILE_HASH_AVAILABLE:' + $hash.ToLowerInvariant()"
+    )
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", command],
+        env=env, cwd=ROOT, capture_output=True, text=True, timeout=20, check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = hashlib.sha256(POWERSHELL.read_bytes()).hexdigest()
+    assert f"GET_FILE_HASH_AVAILABLE:{expected}" in result.stdout
 
 
 # This function replaces command resolution for python in the PowerShell child.
@@ -163,7 +202,8 @@ def test_exact_finalizer_in_native_shell(
     script.write_text(prefix + EXPORT_STUB + finalizer(MAIN), encoding="utf-8")
     result = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", script.read_text(encoding="utf-8")],
-        env=env, cwd=tmp_path, capture_output=True, text=True, timeout=20, check=False,
+        env=_windows_powershell_child_environment(env),
+        cwd=tmp_path, capture_output=True, text=True, timeout=20, check=False,
     )
     assert result.returncode == code, result.stdout + result.stderr
     assert sentinel.read_bytes() == before
