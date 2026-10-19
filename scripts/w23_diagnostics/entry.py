@@ -14,6 +14,32 @@ from scripts.w23_diagnostics.evidence import Redactor, digest, inventory, write_
 from scripts.w23_diagnostics.inputs import TOOL_ROOT, authenticate, contract
 from scripts.w23_diagnostics.process import Commands, StageError, environment, require
 
+_WORKFLOW_DIRECTORY = ".github/workflows/"
+_INSTALLED_WORKFLOW_SUFFIX = "-installed-product.yml"
+
+
+def _installed_workflow_path(files: dict[str, str]) -> str:
+    candidates = [
+        name
+        for name in files
+        if name.startswith(_WORKFLOW_DIRECTORY)
+        and "/" not in name[len(_WORKFLOW_DIRECTORY):]
+        and name.endswith(_INSTALLED_WORKFLOW_SUFFIX)
+    ]
+    if len(candidates) != 1:
+        raise StageError("FAIL")
+    return candidates[0]
+
+
+def _require_only_installed_workflow_change(expected: dict[str, str], actual: dict[str, str]) -> None:
+    allowed = _installed_workflow_path(expected)
+    changed = sorted(
+        [name for name, value in expected.items() if actual.get(name) != value]
+        + [name for name in actual if name not in expected]
+    )
+    if changed != [allowed]:
+        raise StageError("FAIL")
+
 
 def guard(work: Path) -> None:
     if os.name != "nt" or os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted":
@@ -47,9 +73,7 @@ def initialize(work: Path, mode: str) -> None:
 def tool_identity(work: Path, commands: Commands) -> dict[str, str]:
     expected = contract()["files"]
     actual = inventory(TOOL_ROOT)
-    changed = [name for name, value in expected.items() if actual.get(name) != value]
-    if changed != [".github/workflows/wave18-installed-product.yml"]:
-        raise StageError("FAIL")  # Other base bytes must stay frozen in the tooling checkout.
+    _require_only_installed_workflow_change(expected, actual)
     env = environment(work / "private/temp-git", TOOL_ROOT)
     result = commands.run("implementation-identity", ["git", "rev-parse", "HEAD"], TOOL_ROOT, env, 30)
     require(result)
