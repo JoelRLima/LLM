@@ -130,6 +130,54 @@ def test_bytes_cannot_be_relabelled(proposal: tuple[Path, Path, dict[str, Any]],
         verify(proposal)
 
 
+def test_candidate_mode_is_part_of_the_authenticated_git_tree(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    _source, bundle, p = proposal
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][0]["mode"] = "100755"
+    raw = encoded(manifest)
+    manifest_path.write_bytes(raw)
+    digest = authority.digest(raw)
+    p["candidate"]["sha256"] = digest
+    for binding in p["bindings"]:
+        if binding["source"] == "manifest.json":
+            binding["sha256"] = digest
+
+    with pytest.raises(authority.AuthorityError):
+        verify(proposal)
+
+
+def test_gate_evidence_from_another_tree_is_rejected(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    _source, bundle, p = proposal
+    row = p["gates"]["full_pytest"]["evidence"]
+    path = row["path"]
+    evidence_path = bundle / path
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    evidence["source_tree"] = "0" * 40
+    raw = encoded(evidence)
+    evidence_path.write_bytes(raw)
+    digest = authority.digest(raw)
+    row["sha256"] = digest
+    for binding in p["bindings"]:
+        if binding["source"] == path:
+            binding["sha256"] = digest
+
+    with pytest.raises(authority.AuthorityError, match="gate observation"):
+        verify(proposal)
+
+
+def test_prospective_verification_requires_external_digest_anchor(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    source, bundle, p = proposal
+    with pytest.raises(authority.AuthorityError, match="independently expected digest"):
+        authority.verify_prospective(source, bundle, encoded(p), "")
+
+
 def make_install_fixture(tmp_path: Path, bundle: Path) -> Path:
     from scripts.w23_authority_transaction import MARKER
 

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -71,19 +73,43 @@ def initialize(work: Path, mode: str) -> None:
 
 
 def tool_identity(work: Path, commands: Commands) -> dict[str, str]:
-    expected = contract()["files"]
-    actual = inventory(TOOL_ROOT)
-    _require_only_installed_workflow_change(expected, actual)
+    historical = contract()
     env = environment(work / "private/temp-git", TOOL_ROOT)
-    result = commands.run("implementation-identity", ["git", "rev-parse", "HEAD"], TOOL_ROOT, env, 30)
-    require(result)
     selected = os.environ["W23_EXPECTED_TOOLING_SHA"]
-    if result.stdout.strip() != selected:
+    if re.fullmatch(r"[a-f0-9]{40}", selected) is None:
         raise StageError("FAIL")
+    identity = commands.run("implementation-identity", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
+                            TOOL_ROOT, env, 30)
+    require(identity)
+    commit, tree, *extra = identity.stdout.split()
+    if extra or commit != selected or re.fullmatch(r"[a-f0-9]{40}", tree) is None:
+        raise StageError("FAIL")
+    lineage = commands.run("implementation-lineage", ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+                           TOOL_ROOT, env, 30)
+    require(lineage)
+    lineage_ids = lineage.stdout.split()
+    if (not lineage_ids or lineage_ids[0] != commit
+            or any(re.fullmatch(r"[a-f0-9]{40}", value) is None for value in lineage_ids)):
+        raise StageError("FAIL")
+    actual = inventory(TOOL_ROOT)
+    status = commands.run("implementation-worktree", ["git", "status", "--porcelain=v1",
+                            "--untracked-files=all", "--ignored=matching"], TOOL_ROOT, env, 30)
+    require(status)
+    if status.stdout:
+        raise StageError("FAIL")
+    final_identity = commands.run("implementation-identity-after", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
+                                  TOOL_ROOT, env, 30)
+    require(final_identity)
+    if final_identity.stdout.split() != [commit, tree]:
+        raise StageError("FAIL")
+    inventory_bytes = json.dumps(actual, sort_keys=True, separators=(",", ":")).encode("utf-8")
     write_json(work / "publish/tooling-before.json", actual)
-    write_json(work / "publish/selection.json", {"implementation_sha": selected, "base_commit": contract()["commit"],
-               "base_tree": contract()["tree"], "input_contract_sha256": digest(TOOL_ROOT / "quality/w23/diagnostics/inputs.json"),
-               "patch_sha256": contract()["patch_sha256"]})
+    write_json(work / "publish/selection.json", {"implementation_sha": commit, "implementation_tree": tree,
+               "implementation_parents": lineage_ids[1:],
+               "identity_scope": "EXECUTION_PIN_ONLY_NO_AUTHORITY", "inventory_sha256": hashlib.sha256(inventory_bytes).hexdigest(),
+               "inventory_file_count": len(actual), "base_commit": historical["commit"],
+               "base_tree": historical["tree"], "input_contract_sha256": digest(TOOL_ROOT / "quality/w23/diagnostics/inputs.json"),
+               "patch_sha256": historical["patch_sha256"]})
     return actual
 
 

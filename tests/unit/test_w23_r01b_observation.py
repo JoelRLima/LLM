@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import ctypes
+import io
 import json
 import os
 import statistics
 import subprocess
 import sys
+import tarfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Any
 
@@ -35,6 +37,8 @@ while time.monotonic() - started < seconds:
     time.sleep(0.02)
 sys.exit(3 if mode == 'error' else 0)
 """
+H_COMMIT = "5acccd7409071a8a6223f0f1899b63946b36bdb9"
+H_TREE = "6075e843d836145b05774edc7f70cb4bc6aa0b82"
 
 
 def sampler_fake(value: Any = None, error: Exception | None = None) -> Any:
@@ -45,11 +49,90 @@ def sampler_fake(value: Any = None, error: Exception | None = None) -> Any:
     return SimpleNamespace(sample=sample)
 
 
-def test_base_and_contract_remain_frozen() -> None:
+def _materialize_historical_h(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     spec = inputs.contract()
-    changed = [name for name, expected in spec["files"].items() if digest(ROOT / name) != expected]
+    assert spec["commit"] == H_COMMIT
+    assert spec["tree"] == H_TREE
     assert len(spec["files"]) == 1635
-    assert changed == [".github/workflows/wave18-installed-product.yml"]
+
+    def git(*arguments: str) -> bytes:
+        result = subprocess.run(["git", "-C", str(ROOT), *arguments], check=True, capture_output=True)
+        return result.stdout
+
+    assert git("rev-parse", f"{H_COMMIT}^{{commit}}").decode().strip() == H_COMMIT
+    assert git("rev-parse", f"{H_COMMIT}^{{tree}}").decode().strip() == H_TREE
+    tree_rows: dict[str, tuple[str, str]] = {}
+    for raw in git("ls-tree", "-r", "-z", H_COMMIT).split(b"\0"):
+        if not raw:
+            continue
+        header, separator, path_bytes = raw.partition(b"\t")
+        assert separator
+        mode, kind, object_id = header.decode("ascii").split()
+        path = path_bytes.decode("utf-8")
+        assert kind == "blob" and mode in {"100644", "100755"}
+        tree_rows[path] = (mode, object_id)
+    assert set(tree_rows) == set(spec["files"])
+
+    archive = git("archive", "--format=tar", H_COMMIT)
+    root = tmp_path / "historical-H"
+    root.mkdir()
+    files_seen: set[str] = set()
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as stream:
+        for member in stream.getmembers():
+            name = member.name.rstrip("/")
+            path = PurePosixPath(name)
+            assert name and not path.is_absolute() and "\\" not in name
+            assert all(part not in {"", ".", ".."} and ":" not in part for part in path.parts)
+            destination = root.joinpath(*path.parts)
+            if member.isdir():
+                assert any(filename.startswith(name + "/") for filename in tree_rows)
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+            assert member.isfile() and name in tree_rows and name not in files_seen
+            expected_mode = tree_rows[name][0]
+            assert bool(member.mode & 0o111) == (expected_mode == "100755")
+            source = stream.extractfile(member)
+            assert source is not None
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with source, destination.open("xb") as output:
+                output.write(source.read())
+            files_seen.add(name)
+    assert files_seen == set(spec["files"])
+    inventory = inputs.authenticate(root, tmp_path / "historical-H-inventory.json")
+    return root, inventory
+
+
+def test_base_and_contract_remain_frozen(tmp_path: Path) -> None:
+    root, inventory = _materialize_historical_h(tmp_path)
+    assert len(inventory) == 1635
+    assert inventory == inputs.contract()["files"]
+    with pytest.raises(StageError, match="FAIL"):
+        inputs.authenticate(ROOT, tmp_path / "successor-as-H-inventory.json")
+
+
+def test_historical_h_authentication_rejects_real_tree_mutations(tmp_path: Path) -> None:
+    root, inventory = _materialize_historical_h(tmp_path)
+    first_path = sorted(inventory)[0]
+    target = root / first_path
+    original = target.read_bytes()
+
+    target.write_bytes(original + b"tamper")
+    with pytest.raises(StageError, match="FAIL"):
+        inputs.authenticate(root, tmp_path / "changed-byte.json")
+    target.write_bytes(original)
+
+    extra = root / "uncontracted-extra.txt"
+    extra.write_bytes(b"extra")
+    with pytest.raises(StageError, match="FAIL"):
+        inputs.authenticate(root, tmp_path / "extra-file.json")
+    extra.unlink()
+
+    target.unlink()
+    with pytest.raises(StageError, match="FAIL"):
+        inputs.authenticate(root, tmp_path / "missing-file.json")
+    target.write_bytes(original)
+
+    assert inputs.authenticate(root, tmp_path / "restored-H.json") == inventory
 
 
 def test_paths_and_journal_export_only_enum(tmp_path: Path) -> None:
