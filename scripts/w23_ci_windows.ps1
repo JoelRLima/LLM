@@ -1,9 +1,11 @@
 param(
     [Parameter(Mandatory=$true)][ValidateSet('pytest','regressions','installed','command')][string]$Gate,
     [string]$Name = '',
+    [ValidateRange(1,1800)][int]$CommandTimeoutSeconds = 1800,
     [string[]]$ChildArguments = @()
 )
 $ErrorActionPreference = 'Stop'
+if ($Gate -ne 'command' -and $CommandTimeoutSeconds -ne 1800) { throw 'CommandTimeoutSeconds is only valid with Gate=command' }
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Lifecycle runner requires a disposable GitHub-hosted runner' }
 $repo = $env:GITHUB_WORKSPACE
 $root = Join-Path $env:LOCALAPPDATA 'W23_CAND03_S5_TEMP_20261014'
@@ -53,7 +55,7 @@ if ($Gate -eq 'pytest' -or $Gate -eq 'regressions') {
 if ($tail.Count -eq 0) { throw 'missing child command' }
 $arguments = @('--working-directory',$repo,'--evidence-directory',$evidence,'--scratch-root',$root,
     '--scratch-directory',$run,'--pytest-basetemp',(Join-Path $run 'pytest'),
-    '--stdout-log',($Name+'.log'),'--result-json',($Name+'.json'),'--timeout-seconds','1800',
+    '--stdout-log',($Name+'.log'),'--result-json',($Name+'.json'),'--timeout-seconds',([string]$CommandTimeoutSeconds),
     '--job-memory-mb','4096','--process-memory-mb','3072','--max-processes','128') + $pytestFlag
 & $python -B (Join-Path $repo 'scripts/w23_bounded_windows.py') @arguments -- $python -B @tail
 $code = $LASTEXITCODE

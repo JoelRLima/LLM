@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       diagnostic_mode:
-        description: "normal preserves W18; r01 runs only clean-install; r02 compares the native 3.10 checker"
+        description: "normal preserves W18; r01/r02 run existing diagnostics; focused runs short identity/finalizer/graph gates only"
         type: choice
-        options: [normal, r01, r02]
+        options: [normal, r01, r02, focused]
         default: normal
         required: true
       diagnostic_unit_tests:
@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       diagnostic_revision:
-        description: "Reviewed implementation commit SHA; mandatory only for r01/r02"
+        description: "Reviewed implementation commit SHA; mandatory for r01/r02/focused"
         type: string
         default: ""
   push:
@@ -189,7 +189,7 @@ jobs:
 
   manual-diagnostic:
     name: Manual W23 diagnostic (${{ inputs.diagnostic_mode }})
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && inputs.diagnostic_mode != 'normal' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.diagnostic_mode == 'r01' || inputs.diagnostic_mode == 'r02') }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -335,6 +335,445 @@ jobs:
         with:
           name: w23-${{ inputs.diagnostic_mode }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.finalize.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+          compression-level: 6
+
+  # Dispatch mode isolation: normal -> W18, r01/r02 -> existing W23 diagnostics,
+  # focused -> this job only. Push events can never start the focused job.
+  focused-validation:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && (inputs.diagnostic_mode == 'focused' || (inputs.diagnostic_mode != 'normal' && inputs.diagnostic_mode != 'r01' && inputs.diagnostic_mode != 'r02')) }}
+    name: W23 focused validation (${{ matrix.scope }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: '3.10.11'
+            scope: py310
+          - python-version: '3.12.10'
+            scope: py312
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      W23_FOCUSED_MODE: ${{ inputs.diagnostic_mode }}
+      W23_FOCUSED_REVIEWED_SHA: ${{ inputs.diagnostic_revision }}
+      W23_FOCUSED_SCOPE: ${{ matrix.scope }}
+      W23_FOCUSED_PYTHON: ${{ matrix.python-version }}
+      W23_FOCUSED_EVENT_INPUTS: ${{ toJSON(github.event.inputs) }}
+    steps:
+      - name: Reject unexpected dispatch parameters before checkout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') { throw 'focused validation is dispatch-only' }
+          if ($env:W23_FOCUSED_MODE -cne 'focused') { throw 'unexpected diagnostic mode' }
+          if ($env:GITHUB_REF -cne 'refs/heads/diagnostic/w23-r4-focused-postflight') { throw 'unexpected diagnostic ref' }
+          if ($env:W23_FOCUSED_REVIEWED_SHA -cnotmatch '^[a-f0-9]{40}$' -or $env:W23_FOCUSED_REVIEWED_SHA -cne $env:GITHUB_SHA) { throw 'reviewed SHA must exactly match GITHUB_SHA' }
+          $eventInputs = $env:W23_FOCUSED_EVENT_INPUTS | ConvertFrom-Json
+          $allowed = @('diagnostic_mode', 'diagnostic_revision', 'diagnostic_unit_tests')
+          $unexpected = @($eventInputs.PSObject.Properties.Name | Where-Object { $_ -notin $allowed })
+          if ($unexpected.Count -gt 0) { throw 'unexpected workflow_dispatch input names' }
+          if ($eventInputs.diagnostic_mode -cne 'focused') { throw 'event payload mode mismatch' }
+          if ($eventInputs.diagnostic_revision -cne $env:GITHUB_SHA) { throw 'event payload SHA mismatch' }
+          if ($eventInputs.diagnostic_unit_tests -in @($true, 'true', 'True')) { throw 'optional broad diagnostic tests are forbidden in focused mode' }
+
+      - name: Checkout the exact reviewed ref
+        uses: actions/checkout@v4
+        timeout-minutes: 2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up the exact Python cell without pip cache
+        id: setup_python
+        uses: actions/setup-python@v5
+        timeout-minutes: 5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Verify immutable source identity and clean checkout before tests
+        id: preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GIT_NO_REPLACE_OBJECTS = '1'
+          $env:GIT_OPTIONAL_LOCKS = '0'
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:W23_FOCUSED_REVIEWED_SHA) { throw 'checkout commit differs from reviewed SHA' }
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          if ($LASTEXITCODE -ne 0 -or $tree -cnotmatch '^[a-f0-9]{40}$') { throw 'invalid checkout tree' }
+          $parents = @(git rev-list --parents -n 1 HEAD)
+          if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 1 -or $parents[0].Split(' ')[0] -cne $head) { throw 'invalid checkout lineage' }
+          $parentParts = $parents[0].Split(' ')
+          [string[]]$parentIds = @()
+          if ($parentParts.Count -gt 1) { $parentIds = [string[]]($parentParts | Select-Object -Skip 1) }
+          $dirty = @(git status --porcelain=v1 --untracked-files=all --ignored=matching --ignore-submodules=none)
+          if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw 'checkout is not clean, including ignored paths' }
+          git fsck --full --no-reflogs --no-progress | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Git object validation failed' }
+          python -B scripts/w23_ci_identity.py before
+          if ($LASTEXITCODE -ne 0) { throw 'tracked source identity preflight failed' }
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Path (Join-Path $out 'raw') -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $out 'sanitized') -ErrorAction Stop | Out-Null
+          $identity = [ordered]@{commit=$head; tree=$tree; parents=$parentIds; python=$env:W23_FOCUSED_PYTHON; scope=$env:W23_FOCUSED_SCOPE}
+          $identity | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $out 'identity-before.json') -Encoding utf8
+          "W23_FOCUSED_OUTPUT=$out" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
+      - name: Install hash-pinned test dependencies in bounded scratch
+        id: dependencies
+        if: ${{ always() && steps.setup_python.outcome == 'success' && steps.preflight.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-bootstrap-pip -CommandTimeoutSeconds 120 -ChildArguments @('-m','pip','install','--isolated','--no-input','--disable-pip-version-check','--no-cache-dir','--require-hashes','--only-binary=:all:','--no-deps','--requirement','distribution/bootstrap-pip.lock')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-requirements -CommandTimeoutSeconds 180 -ChildArguments @('-m','pip','install','--isolated','--no-input','--disable-pip-version-check','--no-cache-dir','--require-hashes','--only-binary=:all:','--requirement','requirements-ci.lock')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Python 3.10 naming hygiene scanner
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py310' }}
+        shell: pwsh
+        run: |
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-naming -CommandTimeoutSeconds 45 -ChildArguments @('scripts/check_production_naming_hygiene.py')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Python 3.10 naming, postflight, and historical H tests
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py310' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py310-entry-h.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py310-entry-h -CommandTimeoutSeconds 150 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_w23_diagnostics_entry.py','tests/unit/test_w23_r01b_observation.py::test_base_and_contract_remain_frozen','tests/unit/test_w23_r01b_observation.py::test_historical_h_authentication_rejects_real_tree_mutations','tests/unit/scripts/test_production_naming_hygiene.py')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'a required Python 3.10 test was skipped' }
+
+      - name: Python 3.10 native Windows PowerShell finalizer suite
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py310' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py310-finalizer.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py310-finalizer -CommandTimeoutSeconds 180 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_w23_workflow_finalization.py')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'a required finalizer case was skipped' }
+
+      - name: Python 3.10 native junction negative test
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py310' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py310-junction.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py310-junction -CommandTimeoutSeconds 90 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_candidate_manifest_regressions.py::test_windows_native_junction_parent_is_rejected')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'the native junction test was skipped' }
+
+      - name: Python 3.12 identity, postflight, and historical H tests
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py312-entry-h.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py312-entry-h -CommandTimeoutSeconds 150 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_w23_diagnostics_entry.py','tests/unit/test_w23_r01b_observation.py::test_base_and_contract_remain_frozen','tests/unit/test_w23_r01b_observation.py::test_historical_h_authentication_rejects_real_tree_mutations')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'a required Python 3.12 identity/H test was skipped' }
+
+      - name: Record Python 3.12 graph node start
+        id: py312_graph_start
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-graph.timing.json'
+          @{node='test_current_checker_enforces_the_complete_repository_graph'; started_utc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Python 3.12 complete current architecture graph
+        id: py312_graph
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py312-graph.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py312-graph -CommandTimeoutSeconds 240 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_current_architecture.py::test_current_checker_enforces_the_complete_repository_graph')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'the complete graph test was skipped' }
+
+      - name: Record Python 3.12 graph node start/end
+        if: always() && matrix.scope == 'py312'
+        shell: pwsh
+        env:
+          W23_NODE_OUTCOME: ${{ steps.py312_graph.outcome }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-graph.timing.json'
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_current_checker_enforces_the_complete_repository_graph'; started_utc=$null} }
+          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing.step_outcome = $env:W23_NODE_OUTCOME
+          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Record Python 3.12 projection node start
+        id: py312_projection_start
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-projection.timing.json'
+          @{node='test_current_accepts_exact_retained_projection_inventory'; started_utc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Python 3.12 retained projection inventory
+        id: py312_projection
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py312-projection.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py312-projection -CommandTimeoutSeconds 150 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_current_architecture.py::test_current_accepts_exact_retained_projection_inventory')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'the retained projection test was skipped' }
+
+      - name: Record Python 3.12 projection node start/end
+        id: py312_projection_end
+        if: always() && matrix.scope == 'py312'
+        shell: pwsh
+        env:
+          W23_NODE_OUTCOME: ${{ steps.py312_projection.outcome }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-projection.timing.json'
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_current_accepts_exact_retained_projection_inventory'; started_utc=$null} }
+          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing.step_outcome = $env:W23_NODE_OUTCOME
+          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Record Python 3.12 Phase 0 node start
+        id: py312_phase0_start
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-phase0.timing.json'
+          @{node='test_phase0_inventory_matches_authority_and_exposes_broker_edges'; started_utc=[DateTimeOffset]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Python 3.12 Phase 0 authority and broker-edge inventory
+        id: py312_phase0
+        if: ${{ always() && steps.dependencies.outcome == 'success' && steps.preflight.outcome == 'success' && matrix.scope == 'py312' }}
+        shell: pwsh
+        run: |
+          $junit = Join-Path (Join-Path $env:W23_FOCUSED_OUTPUT 'raw') 'py312-phase0.xml'
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-py312-phase0 -CommandTimeoutSeconds 90 -ChildArguments @('-m','pytest','-vv','-ra','--durations=0','-p','no:cacheprovider',("--junitxml=$junit"),'tests/unit/test_w23_phase0_inventory.py::test_phase0_inventory_matches_authority_and_exposes_broker_edges')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [xml]$report = Get-Content -LiteralPath $junit -Raw
+          if ($report.SelectNodes('//testcase/skipped').Count -gt 0) { throw 'the Phase 0 inventory test was skipped' }
+
+      - name: Record Python 3.12 Phase 0 node start/end
+        id: py312_phase0_end
+        if: always() && matrix.scope == 'py312'
+        shell: pwsh
+        env:
+          W23_NODE_OUTCOME: ${{ steps.py312_phase0.outcome }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
+          $path = Join-Path $out 'raw/py312-phase0.timing.json'
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_phase0_inventory_matches_authority_and_exposes_broker_edges'; started_utc=$null} }
+          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing.step_outcome = $env:W23_NODE_OUTCOME
+          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
+
+      - name: Verify source identity and repository state after all tests
+        id: postflight
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $status = 'UNKNOWN'
+          $after = [ordered]@{status='UNKNOWN'; commit=''; tree=''; parents=@(); clean=$false; objects='UNKNOWN'; tracked_source='UNKNOWN'}
+          try {
+            $beforePath = Join-Path $out 'identity-before.json'
+            if (-not (Test-Path -LiteralPath $beforePath -PathType Leaf)) { throw 'preflight identity unavailable' }
+            $before = Get-Content -LiteralPath $beforePath -Raw | ConvertFrom-Json
+            $env:GIT_NO_REPLACE_OBJECTS = '1'
+            $env:GIT_OPTIONAL_LOCKS = '0'
+            $after.commit = (git rev-parse HEAD).Trim()
+            if ($LASTEXITCODE -ne 0) { $status='FAIL'; throw 'HEAD query failed' }
+            $after.tree = (git rev-parse 'HEAD^{tree}').Trim()
+            if ($LASTEXITCODE -ne 0) { $status='FAIL'; throw 'tree query failed' }
+            $line = @(git rev-list --parents -n 1 HEAD)
+            if ($LASTEXITCODE -ne 0 -or $line.Count -ne 1) { $status='FAIL'; throw 'lineage query failed' }
+            $parts = $line[0].Split(' ')
+            if ($parts[0] -cne $after.commit) { $status='FAIL'; throw 'lineage HEAD mismatch' }
+            [string[]]$parentIds = @()
+            if ($parts.Count -gt 1) { $parentIds = [string[]]($parts | Select-Object -Skip 1) }
+            $after.parents = $parentIds
+            $dirty = @(git status --porcelain=v1 --untracked-files=all --ignored=matching --ignore-submodules=none)
+            if ($LASTEXITCODE -ne 0) { $status='FAIL'; throw 'worktree query failed' }
+            $after.clean = $dirty.Count -eq 0
+            git fsck --full --no-reflogs --no-progress | Out-Null
+            $after.objects = if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }
+            if ($after.objects -ne 'PASS') { $status='FAIL'; throw 'Git object validation failed' }
+            python -B scripts/w23_ci_identity.py after
+            $after.tracked_source = if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }
+            if ($after.tracked_source -ne 'PASS') { $status='FAIL'; throw 'tracked source postflight failed' }
+            if (-not $after.clean -or $after.commit -cne $before.commit -or $after.tree -cne $before.tree -or (($after.parents -join ',') -cne (@($before.parents) -join ','))) { $status='FAIL'; throw 'Git identity or repository state changed' }
+            $status = 'PASS'
+          } catch {
+            if ($status -ne 'FAIL') { $status = 'UNKNOWN' }
+            $after.failure_type = $_.Exception.GetType().Name
+          }
+          $after.status = $status
+          $after | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $out 'identity-after.json') -Encoding utf8
+          if ($status -ne 'PASS') { exit 1 }
+
+      - name: Create sanitized test, timing, and identity evidence
+        id: sanitize
+        if: always()
+        shell: pwsh
+        env:
+          W23_JOB_OUTCOME: ${{ job.status }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
+          $safeRoot = Join-Path $out 'sanitized'
+          New-Item -ItemType Directory -Force -Path $safeRoot | Out-Null
+          if ($env:W23_FOCUSED_SCOPE -eq 'py310') {
+            $planData = @(
+              [ordered]@{name='w23-focused-naming'; targets=@('scripts/check_production_naming_hygiene.py'); timeout_seconds=45}
+              [ordered]@{name='w23-focused-py310-entry-h'; targets=@('tests/unit/test_w23_diagnostics_entry.py','tests/unit/test_w23_r01b_observation.py::test_base_and_contract_remain_frozen','tests/unit/test_w23_r01b_observation.py::test_historical_h_authentication_rejects_real_tree_mutations','tests/unit/scripts/test_production_naming_hygiene.py'); timeout_seconds=150}
+              [ordered]@{name='w23-focused-py310-finalizer'; targets=@('tests/unit/test_w23_workflow_finalization.py'); timeout_seconds=180}
+              [ordered]@{name='w23-focused-py310-junction'; targets=@('tests/unit/test_candidate_manifest_regressions.py::test_windows_native_junction_parent_is_rejected'); timeout_seconds=90}
+            )
+          } else {
+            $planData = @(
+              [ordered]@{name='w23-focused-py312-entry-h'; targets=@('tests/unit/test_w23_diagnostics_entry.py','tests/unit/test_w23_r01b_observation.py::test_base_and_contract_remain_frozen','tests/unit/test_w23_r01b_observation.py::test_historical_h_authentication_rejects_real_tree_mutations'); timeout_seconds=150}
+              [ordered]@{name='w23-focused-py312-graph'; targets=@('tests/unit/test_current_architecture.py::test_current_checker_enforces_the_complete_repository_graph'); timeout_seconds=240}
+              [ordered]@{name='w23-focused-py312-projection'; targets=@('tests/unit/test_current_architecture.py::test_current_accepts_exact_retained_projection_inventory'); timeout_seconds=150}
+              [ordered]@{name='w23-focused-py312-phase0'; targets=@('tests/unit/test_w23_phase0_inventory.py::test_phase0_inventory_matches_authority_and_exposes_broker_edges'); timeout_seconds=90}
+            )
+          }
+          $planned = @($planData | ForEach-Object { $_.name })
+          $invocations = @()
+          $allTests = @()
+          foreach ($name in $planned) {
+            $runnerResult = Join-Path (Join-Path $env:RUNNER_TEMP 'w23-evidence') ($name + '.json')
+            if (Test-Path -LiteralPath $runnerResult -PathType Leaf) {
+              $record = Get-Content -LiteralPath $runnerResult -Raw | ConvertFrom-Json
+              $gateState = switch ($record.status) {
+                'OBSERVED PASS' { 'PASS' }
+                'TIMEOUT' { 'TIMEOUT' }
+                'OBSERVED FAIL' { 'FAIL' }
+                default { 'UNKNOWN' }
+              }
+              $wall = if ($record.PSObject.Properties.Name -contains 'wall_seconds') { [double]$record.wall_seconds } else { $null }
+              $code = $record.return_code
+            } else { $gateState='UNKNOWN'; $wall=$null; $code=$null }
+            $invocation = [ordered]@{name=$name; status=$gateState; wall_seconds=$wall; return_code=$code}
+            $timingPath = Join-Path (Join-Path $out 'raw') ($name.Replace('w23-focused-py312-graph','py312-graph').Replace('w23-focused-py312-projection','py312-projection').Replace('w23-focused-py312-phase0','py312-phase0') + '.timing.json')
+            if (Test-Path -LiteralPath $timingPath -PathType Leaf) {
+              $timing = Get-Content -LiteralPath $timingPath -Raw | ConvertFrom-Json
+              $invocation.started_utc = $timing.started_utc
+              $invocation.finished_utc = $timing.finished_utc
+              $invocation.wall_seconds = $timing.wall_seconds
+            }
+            $invocations += $invocation
+
+            $rawJunit = Join-Path (Join-Path $out 'raw') ($name.Replace('w23-focused-py310-entry-h','py310-entry-h').Replace('w23-focused-py310-finalizer','py310-finalizer').Replace('w23-focused-py310-junction','py310-junction').Replace('w23-focused-py312-entry-h','py312-entry-h').Replace('w23-focused-py312-graph','py312-graph').Replace('w23-focused-py312-projection','py312-projection').Replace('w23-focused-py312-phase0','py312-phase0') + '.xml')
+            if (Test-Path -LiteralPath $rawJunit -PathType Leaf) {
+              [xml]$raw = Get-Content -LiteralPath $rawJunit -Raw
+              $rawSuite = $raw.SelectSingleNode('//testsuite')
+              if ($rawSuite) {
+                $suiteDuration = 0.0
+                [void][double]::TryParse($rawSuite.GetAttribute('time'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$suiteDuration)
+                $invocations[-1].pytest_duration_seconds = $suiteDuration
+              }
+              $safe = New-Object System.Xml.XmlDocument
+              $suite = $safe.CreateElement('testsuite')
+              $suite.SetAttribute('name', $name)
+              $suite.SetAttribute('tests', '0')
+              $suite.SetAttribute('failures', '0')
+              $suite.SetAttribute('errors', '0')
+              $suite.SetAttribute('skipped', '0')
+              $suiteSeconds = 0.0
+              $cases = @($raw.SelectNodes('//testcase'))
+              $counts = @{tests=0; failures=0; errors=0; skipped=0}
+              $index = 0
+              foreach ($case in $cases) {
+                $index++
+                $testName = $case.GetAttribute('name')
+                if ($testName -match '(?i)([A-Z]:\\|\\\\|/Users/|/home/)') { $testName = "testcase-$index" }
+                else { $testName = [regex]::Replace($testName, '[^A-Za-z0-9_.:\-\[\]]', '_') }
+                if ($testName.Length -gt 240 -or [string]::IsNullOrWhiteSpace($testName)) { $testName = "testcase-$index" }
+                $seconds = 0.0
+                [void][double]::TryParse($case.GetAttribute('time'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$seconds)
+                if ($seconds -lt 0 -or $seconds -gt 1200) { $seconds = 0.0 }
+                $suiteSeconds += $seconds
+                $test = $safe.CreateElement('testcase')
+                $test.SetAttribute('name', $testName)
+                $test.SetAttribute('time', $seconds.ToString('0.000000', [Globalization.CultureInfo]::InvariantCulture))
+                $caseState = 'PASS'
+                foreach ($tag in @('failure','error','skipped')) {
+                  if ($case.SelectSingleNode($tag)) {
+                    $node = $safe.CreateElement($tag)
+                    $node.SetAttribute('message', $tag)
+                    [void]$test.AppendChild($node)
+                    $caseState = if ($tag -eq 'failure') { 'FAIL' } elseif ($tag -eq 'error') { 'ERROR' } else { 'SKIP' }
+                    $countName = if ($tag -eq 'failure') { 'failures' } elseif ($tag -eq 'error') { 'errors' } else { 'skipped' }
+                    $counts[$countName]++
+                  }
+                }
+                $counts.tests++
+                [void]$suite.AppendChild($test)
+                $allTests += [ordered]@{invocation=$name; name=$testName; status=$caseState; duration_seconds=$seconds}
+              }
+              $suite.SetAttribute('tests', [string]$counts.tests)
+              $suite.SetAttribute('failures', [string]$counts.failures)
+              $suite.SetAttribute('errors', [string]$counts.errors)
+              $suite.SetAttribute('skipped', [string]$counts.skipped)
+              $suite.SetAttribute('time', $suiteSeconds.ToString('0.000000', [Globalization.CultureInfo]::InvariantCulture))
+              [void]$safe.AppendChild($suite)
+              $junitName = $name + '.xml'
+              $safe.Save((Join-Path $safeRoot $junitName))
+              if ($cases.Count -eq 0 -and $gateState -eq 'PASS') { $invocations[-1].status = 'UNKNOWN' }
+            } elseif ($name -ne 'w23-focused-naming') {
+              $allTests += [ordered]@{invocation=$name; name='test report unavailable'; status=$gateState; duration_seconds=$wall}
+              if ($gateState -eq 'PASS') { $invocations[-1].status = 'UNKNOWN' }
+            }
+          }
+          $beforePath = Join-Path $out 'identity-before.json'
+          $afterPath = Join-Path $out 'identity-after.json'
+          $before = if (Test-Path -LiteralPath $beforePath) { Get-Content -LiteralPath $beforePath -Raw | ConvertFrom-Json } else { $null }
+          $after = if (Test-Path -LiteralPath $afterPath) { Get-Content -LiteralPath $afterPath -Raw | ConvertFrom-Json } else { [ordered]@{status='UNKNOWN'} }
+          $states = @($invocations | ForEach-Object { $_.status }) + @($allTests | ForEach-Object { $_.status }) + @($after.status)
+          if ($states -contains 'TIMEOUT') { $overall='TIMEOUT' }
+          elseif ($states -contains 'FAIL' -or $states -contains 'ERROR') { $overall='FAIL' }
+          elseif ($states -contains 'SKIP') { $overall='SKIP' }
+          elseif ($states -contains 'UNKNOWN' -or $env:W23_JOB_OUTCOME -ne 'success') { $overall='UNKNOWN' }
+          else { $overall='PASS' }
+          $summary = [ordered]@{status=$overall; w23='BLOCKED'; authority='NONE'; scope=$env:W23_FOCUSED_SCOPE; python=$env:W23_FOCUSED_PYTHON; reviewed_sha=$env:W23_FOCUSED_REVIEWED_SHA; job_outcome=$env:W23_JOB_OUTCOME; preflight=$before; postflight=$after; planned_invocations=$planData; invocations=$invocations; tests=$allTests}
+          $summary | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $safeRoot 'summary.json') -Encoding utf8
+          "W23 focused validation: $overall; authority remains NONE." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Upload only sanitized focused evidence
+        if: always() && steps.sanitize.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: w23-focused-${{ matrix.scope }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/w23-focused/sanitized/
           if-no-files-found: error
           retention-days: 7
           include-hidden-files: false
