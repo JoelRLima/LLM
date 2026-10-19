@@ -159,3 +159,102 @@ def test_tool_identity_rejects_unpinned_or_dirty_execution_tree(
 
     with pytest.raises(StageError, match="FAIL"):
         entry.tool_identity(tmp_path / "evidence", _RealGitCommands())  # type: ignore[arg-type]
+
+
+def _captured_postflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, Path, entry._ExecutionIdentity, _RealGitCommands]:
+    root, commit, _tree, _parent = _execution_repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("W23_EXPECTED_TOOLING_SHA", commit)
+    work = tmp_path / "evidence"
+    _inventory, expected = entry._capture_tool_identity(work, _RealGitCommands())  # type: ignore[arg-type]
+    return root, work, expected, _RealGitCommands()
+
+
+def _git(root: Path, *arguments: str, input_bytes: bytes | None = None) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(root), *arguments],
+        input=input_bytes,
+        check=True,
+        capture_output=True,
+        text=input_bytes is None,
+    )
+    return result.stdout.decode().strip() if isinstance(result.stdout, bytes) else result.stdout.strip()
+
+
+def test_final_integrity_accepts_unchanged_git_and_full_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _root, work, expected, commands = _captured_postflight(tmp_path, monkeypatch)
+
+    result = entry.final_integrity(work, expected, commands)  # type: ignore[arg-type]
+
+    assert result["status"] == "PASS"
+    assert result["tooling_unchanged"] is True
+    assert result["git_identity_unchanged"] is True
+    assert result["selection_unchanged"] is True
+    assert result["before_evidence_unchanged"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["empty_commit", "index_only", "ignored_extra", "untracked_extra", "tracked_change"],
+)
+def test_final_integrity_rejects_git_or_inventory_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    root, work, expected, commands = _captured_postflight(tmp_path, monkeypatch)
+    if mutation == "empty_commit":
+        _git(root, "commit", "--quiet", "--allow-empty", "-m", "same tree, different HEAD")
+    elif mutation == "index_only":
+        blob = _git(root, "hash-object", "-w", "--stdin", input_bytes=b"index-only replacement\n")
+        _git(root, "update-index", "--cacheinfo", f"100644,{blob},candidate-only.py")
+    elif mutation == "ignored_extra":
+        (root / ".git/info/exclude").write_text("ignored-extra.bin\n", encoding="utf-8")
+        (root / "ignored-extra.bin").write_bytes(b"ignored but present\n")
+    elif mutation == "untracked_extra":
+        (root / "untracked-extra.bin").write_bytes(b"untracked\n")
+    else:
+        (root / "candidate-only.py").write_bytes(b"tracked content changed\n")
+
+    result = entry.final_integrity(work, expected, commands)  # type: ignore[arg-type]
+
+    assert result["status"] == "FAIL"
+    assert result["git_identity_unchanged"] is False
+    assert result["selection_unchanged"] is True
+
+
+def test_final_integrity_does_not_trust_modified_selection_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, work, expected, commands = _captured_postflight(tmp_path, monkeypatch)
+    _git(root, "commit", "--quiet", "--allow-empty", "-m", "new HEAD with the same files")
+    selection_path = work / "publish/selection.json"
+    selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    selection["implementation_sha"] = _git(root, "rev-parse", "HEAD")
+    selection_path.write_text(json.dumps(selection, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    result = entry.final_integrity(work, expected, commands)  # type: ignore[arg-type]
+
+    assert result["status"] == "FAIL"
+    assert result["git_identity_unchanged"] is False
+    assert result["selection_unchanged"] is False
+
+
+@pytest.mark.parametrize("command_status", ["FAIL", "UNKNOWN"])
+def test_final_integrity_rejects_failed_git_queries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command_status: str,
+) -> None:
+    root, work, expected, _commands = _captured_postflight(tmp_path, monkeypatch)
+
+    class FailingPostflight(_RealGitCommands):
+        def run(self, label: str, command: list[str], cwd: Path, env: dict[str, str], seconds: int) -> SimpleNamespace:
+            if label == "postflight-identity":
+                return SimpleNamespace(status=command_status, stdout="")
+            return super().run(label, command, cwd, env, seconds)
+
+    result = entry.final_integrity(work, expected, FailingPostflight())  # type: ignore[arg-type]
+
+    assert result["status"] == command_status
+    assert result["git_identity_unchanged"] is False
+    assert (root / "candidate-only.py").is_file()

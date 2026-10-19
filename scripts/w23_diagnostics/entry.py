@@ -7,7 +7,9 @@ import json
 import os
 import platform
 import re
+import stat
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,69 @@ from scripts.w23_diagnostics.process import Commands, StageError, environment, r
 
 _WORKFLOW_DIRECTORY = ".github/workflows/"
 _INSTALLED_WORKFLOW_SUFFIX = "-installed-product.yml"
+
+
+@dataclass(frozen=True)
+class _ExecutionIdentity:
+    commit: str
+    tree: str
+    parents: tuple[str, ...]
+    inventory: tuple[tuple[str, str], ...]
+    selection_sha256: str
+    before_evidence_sha256: str
+
+
+def _repository_state(
+    commands: Commands, env: dict[str, str], label: str, *, verify_objects: bool = True,
+) -> tuple[str, str, tuple[str, ...]]:
+    identity = commands.run(label + "-identity", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
+                            TOOL_ROOT, env, 30)
+    require(identity)
+    commit, tree, *extra = identity.stdout.split()
+    if (extra or re.fullmatch(r"[a-f0-9]{40}", commit) is None
+            or re.fullmatch(r"[a-f0-9]{40}", tree) is None):
+        raise StageError("FAIL")
+
+    lineage = commands.run(label + "-lineage", ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+                           TOOL_ROOT, env, 30)
+    require(lineage)
+    lineage_ids = lineage.stdout.split()
+    if (not lineage_ids or lineage_ids[0] != commit
+            or any(re.fullmatch(r"[a-f0-9]{40}", value) is None for value in lineage_ids)):
+        raise StageError("FAIL")
+
+    status = commands.run(label + "-worktree", ["git", "status", "--porcelain=v1",
+                            "--untracked-files=all", "--ignored=matching", "--ignore-submodules=none"],
+                          TOOL_ROOT, env, 30)
+    require(status)
+    if status.stdout:
+        raise StageError("FAIL")
+
+    if verify_objects:
+        objects = commands.run(label + "-objects", ["git", "fsck", "--full", "--no-reflogs", "--no-progress"],
+                               TOOL_ROOT, env, 60)
+        require(objects)
+    return commit, tree, tuple(lineage_ids[1:])
+
+
+def _evidence_digest(work: Path, relative: str) -> str:
+    path = work / relative
+    root_metadata = work.lstat()
+    if (work.is_symlink() or getattr(root_metadata, "st_file_attributes", 0) & 0x400
+            or not stat.S_ISDIR(root_metadata.st_mode)):
+        raise ValueError("invalid evidence root")
+    current = work
+    for part in Path(relative).parts:
+        current = current / part
+        metadata = current.lstat()
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        if current.is_symlink() or attributes & 0x400:
+            raise ValueError("reparse evidence path")
+        if current != path and not stat.S_ISDIR(metadata.st_mode):
+            raise ValueError("invalid evidence parent")
+    if not stat.S_ISREG(path.lstat().st_mode):
+        raise ValueError("invalid evidence file")
+    return digest(path)
 
 
 def _installed_workflow_path(files: dict[str, str]) -> str:
@@ -72,63 +137,119 @@ def initialize(work: Path, mode: str) -> None:
                "attempt": runner_identity["attempt"], "workflow_sha": os.environ.get("GITHUB_SHA")})
 
 
-def tool_identity(work: Path, commands: Commands) -> dict[str, str]:
+def _capture_tool_identity(work: Path, commands: Commands) -> tuple[dict[str, str], _ExecutionIdentity]:
     historical = contract()
     env = environment(work / "private/temp-git", TOOL_ROOT)
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
     selected = os.environ["W23_EXPECTED_TOOLING_SHA"]
     if re.fullmatch(r"[a-f0-9]{40}", selected) is None:
         raise StageError("FAIL")
-    identity = commands.run("implementation-identity", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
-                            TOOL_ROOT, env, 30)
-    require(identity)
-    commit, tree, *extra = identity.stdout.split()
-    if extra or commit != selected or re.fullmatch(r"[a-f0-9]{40}", tree) is None:
-        raise StageError("FAIL")
-    lineage = commands.run("implementation-lineage", ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
-                           TOOL_ROOT, env, 30)
-    require(lineage)
-    lineage_ids = lineage.stdout.split()
-    if (not lineage_ids or lineage_ids[0] != commit
-            or any(re.fullmatch(r"[a-f0-9]{40}", value) is None for value in lineage_ids)):
+    commit, tree, parents = _repository_state(commands, env, "implementation")
+    if commit != selected:
         raise StageError("FAIL")
     actual = inventory(TOOL_ROOT)
-    status = commands.run("implementation-worktree", ["git", "status", "--porcelain=v1",
-                            "--untracked-files=all", "--ignored=matching"], TOOL_ROOT, env, 30)
-    require(status)
-    if status.stdout:
-        raise StageError("FAIL")
-    final_identity = commands.run("implementation-identity-after", ["git", "rev-parse", "HEAD", "HEAD^{tree}"],
-                                  TOOL_ROOT, env, 30)
-    require(final_identity)
-    if final_identity.stdout.split() != [commit, tree]:
+    final_state = _repository_state(commands, env, "implementation-after", verify_objects=False)
+    if final_state != (commit, tree, parents):
         raise StageError("FAIL")
     inventory_bytes = json.dumps(actual, sort_keys=True, separators=(",", ":")).encode("utf-8")
     write_json(work / "publish/tooling-before.json", actual)
     write_json(work / "publish/selection.json", {"implementation_sha": commit, "implementation_tree": tree,
-               "implementation_parents": lineage_ids[1:],
+               "implementation_parents": list(parents),
                "identity_scope": "EXECUTION_PIN_ONLY_NO_AUTHORITY", "inventory_sha256": hashlib.sha256(inventory_bytes).hexdigest(),
                "inventory_file_count": len(actual), "base_commit": historical["commit"],
                "base_tree": historical["tree"], "input_contract_sha256": digest(TOOL_ROOT / "quality/w23/diagnostics/inputs.json"),
                "patch_sha256": historical["patch_sha256"]})
+    expected = _ExecutionIdentity(
+        commit=commit,
+        tree=tree,
+        parents=parents,
+        inventory=tuple(sorted(actual.items())),
+        selection_sha256=_evidence_digest(work, "publish/selection.json"),
+        before_evidence_sha256=_evidence_digest(work, "publish/tooling-before.json"),
+    )
+    return actual, expected
+
+
+def tool_identity(work: Path, commands: Commands) -> dict[str, str]:
+    actual, _expected = _capture_tool_identity(work, commands)
     return actual
 
 
-def final_integrity(work: Path, before: dict[str, str] | None) -> dict[str, Any]:
-    result: dict[str, Any] = {"status": "PASS"}
+def final_integrity(work: Path, expected: _ExecutionIdentity | None, commands: Commands) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "status": "PASS",
+        "tooling_unchanged": False,
+        "git_identity_unchanged": False,
+        "selection_unchanged": False,
+        "before_evidence_unchanged": False,
+    }
+
+    def record(state: str) -> None:
+        result["status"] = phases.aggregate([result["status"], state])
+
     try:
         after = inventory(TOOL_ROOT)
         write_json(work / "publish/tooling-after.json", after)
-        result["tooling_unchanged"] = before is not None and before == after
-        if before is None or before != after:
-            result["status"] = "UNKNOWN" if before is None else "FAIL"
-        for name in ("source-base", "original", "patched"):
-            root = work / "private" / name
-            if root.exists():
-                authenticate(root, work / "publish" / f"terminal-{name}.json", patched=name == "patched")
-    except StageError:
-        result["status"] = "FAIL"
+        result["tooling_unchanged"] = expected is not None and tuple(sorted(after.items())) == expected.inventory
+        if expected is None:
+            record("UNKNOWN")
+        elif not result["tooling_unchanged"]:
+            record("FAIL")
     except BaseException as exc:
-        result.update(status="UNKNOWN", integrity_exception_type=type(exc).__name__)
+        record("UNKNOWN")
+        result["inventory_exception_type"] = type(exc).__name__
+
+    if expected is None:
+        record("UNKNOWN")
+    else:
+        try:
+            env = environment(work / "private/temp-git-postflight", TOOL_ROOT)
+            env["GIT_NO_REPLACE_OBJECTS"] = "1"
+            current = _repository_state(commands, env, "postflight")
+            result["git_identity_unchanged"] = current == (expected.commit, expected.tree, expected.parents)
+            if not result["git_identity_unchanged"]:
+                record("FAIL")
+        except StageError as exc:
+            record(exc.status)
+        except BaseException as exc:
+            record("UNKNOWN")
+            result["git_exception_type"] = type(exc).__name__
+
+        for field, relative in (
+            ("selection_unchanged", "publish/selection.json"),
+            ("before_evidence_unchanged", "publish/tooling-before.json"),
+        ):
+            try:
+                expected_digest = (expected.selection_sha256 if field == "selection_unchanged"
+                                   else expected.before_evidence_sha256)
+                unchanged = _evidence_digest(work, relative) == expected_digest
+                result[field] = unchanged
+                if not unchanged:
+                    record("FAIL")
+            except FileNotFoundError:
+                record("UNKNOWN")
+                result[field + "_exception_type"] = "FileNotFoundError"
+            except BaseException as exc:
+                record("UNKNOWN")
+                result[field + "_exception_type"] = type(exc).__name__
+
+    for name in ("source-base", "original", "patched"):
+        root = work / "private" / name
+        try:
+            root.lstat()
+        except FileNotFoundError:
+            continue
+        except BaseException as exc:
+            record("UNKNOWN")
+            result[f"terminal_{name}_exception_type"] = type(exc).__name__
+            continue
+        try:
+            authenticate(root, work / "publish" / f"terminal-{name}.json", patched=name == "patched")
+        except StageError as exc:
+            record(exc.status)
+        except BaseException as exc:
+            record("UNKNOWN")
+            result[f"terminal_{name}_exception_type"] = type(exc).__name__
     return result
 
 
@@ -140,12 +261,12 @@ def execute(work: Path, mode: str) -> int:
     redactor = Redactor([work, TOOL_ROOT])
     commands = Commands(work / "publish/commands", redactor)
     result: dict[str, Any] = {"status": "UNKNOWN", "mode": mode, "completed": False, "w23": "BLOCKED"}
-    before: dict[str, str] | None = None
+    expected_identity: _ExecutionIdentity | None = None
     try:
         expected = (3, 10, 11) if mode == "r02" else (3, 12, 10)
         if sys.version_info[:3] != expected or sys.maxsize <= 2**32:
             raise StageError("UNKNOWN")  # Never silently substitute a microversion.
-        before = tool_identity(work, commands)
+        _before, expected_identity = _capture_tool_identity(work, commands)
         result.update(phases.r01(work, commands) if mode == "r01" else phases.r02(work, commands))
         result["completed"] = True
     except StageError as exc:
@@ -153,7 +274,7 @@ def execute(work: Path, mode: str) -> int:
     except BaseException as exc:
         result.update(status="UNKNOWN", exception_type=type(exc).__name__)
     finally:
-        integrity = final_integrity(work, before)
+        integrity = final_integrity(work, expected_identity, commands)
         result["integrity"] = integrity
         result["status"] = phases.aggregate([result["status"], integrity["status"]])
         result = redactor.value(result)
