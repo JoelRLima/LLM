@@ -379,7 +379,20 @@ jobs:
           if ($unexpected.Count -gt 0) { throw 'unexpected workflow_dispatch input names' }
           if ($eventInputs.diagnostic_mode -cne 'focused') { throw 'event payload mode mismatch' }
           if ($eventInputs.diagnostic_revision -cne $env:GITHUB_SHA) { throw 'event payload SHA mismatch' }
-          if ($eventInputs.diagnostic_unit_tests -in @($true, 'true', 'True')) { throw 'optional broad diagnostic tests are forbidden in focused mode' }
+          $unitTestsProperty = $eventInputs.PSObject.Properties['diagnostic_unit_tests']
+          if ($null -eq $unitTestsProperty) {
+            throw 'diagnostic_unit_tests input is missing'
+          }
+
+          $unitTestsValue = $unitTestsProperty.Value
+          $disabled = (
+            ($unitTestsValue -is [bool] -and $unitTestsValue -eq $false) -or
+            ($unitTestsValue -is [string] -and $unitTestsValue -ceq 'false')
+          )
+
+          if (-not $disabled) {
+            throw 'optional broad diagnostic tests are forbidden in focused mode'
+          }
 
       - name: Checkout the exact reviewed ref
         uses: actions/checkout@v4
