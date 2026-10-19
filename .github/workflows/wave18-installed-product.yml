@@ -447,7 +447,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-bootstrap-pip -CommandTimeoutSeconds 120 -ChildArguments @('-m','pip','install','--isolated','--no-input','--disable-pip-version-check','--no-cache-dir','--require-hashes','--only-binary=:all:','--no-deps','--requirement','distribution/bootstrap-pip.lock')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-requirements -CommandTimeoutSeconds 180 -ChildArguments @('-m','pip','install','--isolated','--no-input','--disable-pip-version-check','--no-cache-dir','--require-hashes','--only-binary=:all:','--requirement','requirements-ci.lock')
+          ./scripts/w23_ci_windows.ps1 -Gate command -Name w23-focused-requirements -CommandTimeoutSeconds 180 -ChildArguments @('-m','pip','install','--isolated','--no-input','--disable-pip-version-check','--no-cache-dir','--only-binary=:all:','--requirement','requirements-ci.lock')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Python 3.10 naming hygiene scanner
