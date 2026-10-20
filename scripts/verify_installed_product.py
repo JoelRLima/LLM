@@ -24,12 +24,16 @@ import tempfile
 import threading
 import time
 import zipfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from os.path import samefile as _samefile
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, ParamSpec, Sequence, TypeVar
+
+_V3ProgressParams = ParamSpec("_V3ProgressParams")
+_V3ProgressReturn = TypeVar("_V3ProgressReturn")
 
 if os.name == "nt":
     import winreg as _winreg
@@ -67,7 +71,7 @@ class ProductVerificationError(RuntimeError):
 
 
 @contextmanager
-def _v3_progress_scope(operation: str):
+def _v3_progress_scope(operation: str) -> Iterator[None]:
     started_ns = time.monotonic_ns()
     print(
         f"W18_PROGRESS monotonic_ns={started_ns} operation={operation} event=start",
@@ -88,10 +92,20 @@ def _v3_progress_scope(operation: str):
         )
 
 
-def _v3_progress_operation(operation: str):
-    def decorate(function):
+def _v3_progress_operation(
+    operation: str,
+) -> Callable[
+    [Callable[_V3ProgressParams, _V3ProgressReturn]],
+    Callable[_V3ProgressParams, _V3ProgressReturn],
+]:
+    def decorate(
+        function: Callable[_V3ProgressParams, _V3ProgressReturn],
+    ) -> Callable[_V3ProgressParams, _V3ProgressReturn]:
         @wraps(function)
-        def wrapped(*args, **kwargs):
+        def wrapped(
+            *args: _V3ProgressParams.args,
+            **kwargs: _V3ProgressParams.kwargs,
+        ) -> _V3ProgressReturn:
             with _v3_progress_scope(operation):
                 return function(*args, **kwargs)
 
@@ -100,7 +114,12 @@ def _v3_progress_operation(operation: str):
     return decorate
 
 
-def _v3_progress_call(operation: str, function, *args, **kwargs):
+def _v3_progress_call(
+    operation: str,
+    function: Callable[_V3ProgressParams, _V3ProgressReturn],
+    *args: _V3ProgressParams.args,
+    **kwargs: _V3ProgressParams.kwargs,
+) -> _V3ProgressReturn:
     with _v3_progress_scope(operation):
         return function(*args, **kwargs)
 

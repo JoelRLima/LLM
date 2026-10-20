@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import uuid
 from collections.abc import Iterator
@@ -403,7 +404,27 @@ def test_successful_cli_preserves_matrix_and_writes_pass_only_after_final_guards
     )
 
     assert exit_code == 0
-    assert capsys.readouterr().out.strip() == "W18_INSTALLED_PRODUCT=PASS"
+    stdout_lines = capsys.readouterr().out.splitlines()
+    progress_start = re.compile(
+        r"W18_PROGRESS monotonic_ns=\d+ operation=[a-z][a-z0-9_.]* event=start"
+    )
+    progress_end = re.compile(
+        r"W18_PROGRESS monotonic_ns=\d+ operation=[a-z][a-z0-9_.]* "
+        r"event=end elapsed_ns=\d+ exception=(?:none|[A-Za-z_][A-Za-z0-9_]*)"
+    )
+    marker = "W18_INSTALLED_PRODUCT=PASS"
+    assert stdout_lines.count(marker) == 1
+    assert stdout_lines[-1] == marker
+    progress_lines = stdout_lines[:-1]
+    assert progress_lines
+    assert all(
+        progress_start.fullmatch(line) or progress_end.fullmatch(line)
+        for line in progress_lines
+    )
+    assert progress_start.fullmatch(progress_lines[0])
+    assert progress_lines[0].split()[2] == "operation=verifier"
+    assert progress_end.fullmatch(progress_lines[-1])
+    assert progress_lines[-1].split()[2] == "operation=verifier"
     assert json.loads(summary.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(w17.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(matrix.read_text(encoding="utf-8")) == {"schema_version": 1, "status": "diagnosed"}
