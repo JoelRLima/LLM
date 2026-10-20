@@ -527,10 +527,15 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
           New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
           $path = Join-Path $out 'raw/py312-graph.timing.json'
-          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_current_checker_enforces_the_complete_repository_graph'; started_utc=$null} }
-          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
-          $timing.step_outcome = $env:W23_NODE_OUTCOME
-          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{node='test_current_checker_enforces_the_complete_repository_graph'; started_utc=$null} }
+          if ($timing -isnot [pscustomobject]) { throw 'timing record must be a JSON object' }
+          $finishedUtc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing | Add-Member -NotePropertyName 'finished_utc' -NotePropertyValue $finishedUtc -Force
+          $timing | Add-Member -NotePropertyName 'step_outcome' -NotePropertyValue $env:W23_NODE_OUTCOME -Force
+          if ($timing.started_utc) {
+            $wallSeconds = ([DateTimeOffset]$finishedUtc - [DateTimeOffset]$timing.started_utc).TotalSeconds
+            $timing | Add-Member -NotePropertyName 'wall_seconds' -NotePropertyValue $wallSeconds -Force
+          }
           $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
 
       - name: Record Python 3.12 projection node start
@@ -564,10 +569,15 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
           New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
           $path = Join-Path $out 'raw/py312-projection.timing.json'
-          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_current_accepts_exact_retained_projection_inventory'; started_utc=$null} }
-          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
-          $timing.step_outcome = $env:W23_NODE_OUTCOME
-          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{node='test_current_accepts_exact_retained_projection_inventory'; started_utc=$null} }
+          if ($timing -isnot [pscustomobject]) { throw 'timing record must be a JSON object' }
+          $finishedUtc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing | Add-Member -NotePropertyName 'finished_utc' -NotePropertyValue $finishedUtc -Force
+          $timing | Add-Member -NotePropertyName 'step_outcome' -NotePropertyValue $env:W23_NODE_OUTCOME -Force
+          if ($timing.started_utc) {
+            $wallSeconds = ([DateTimeOffset]$finishedUtc - [DateTimeOffset]$timing.started_utc).TotalSeconds
+            $timing | Add-Member -NotePropertyName 'wall_seconds' -NotePropertyValue $wallSeconds -Force
+          }
           $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
 
       - name: Record Python 3.12 Phase 0 node start
@@ -601,10 +611,15 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'w23-focused'
           New-Item -ItemType Directory -Force -Path (Join-Path $out 'raw') | Out-Null
           $path = Join-Path $out 'raw/py312-phase0.timing.json'
-          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [ordered]@{node='test_phase0_inventory_matches_authority_and_exposes_broker_edges'; started_utc=$null} }
-          $timing.finished_utc = [DateTimeOffset]::UtcNow.ToString('o')
-          $timing.step_outcome = $env:W23_NODE_OUTCOME
-          if ($timing.started_utc) { $timing.wall_seconds = ([DateTimeOffset]$timing.finished_utc - [DateTimeOffset]$timing.started_utc).TotalSeconds }
+          $timing = if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json } else { [pscustomobject]@{node='test_phase0_inventory_matches_authority_and_exposes_broker_edges'; started_utc=$null} }
+          if ($timing -isnot [pscustomobject]) { throw 'timing record must be a JSON object' }
+          $finishedUtc = [DateTimeOffset]::UtcNow.ToString('o')
+          $timing | Add-Member -NotePropertyName 'finished_utc' -NotePropertyValue $finishedUtc -Force
+          $timing | Add-Member -NotePropertyName 'step_outcome' -NotePropertyValue $env:W23_NODE_OUTCOME -Force
+          if ($timing.started_utc) {
+            $wallSeconds = ([DateTimeOffset]$finishedUtc - [DateTimeOffset]$timing.started_utc).TotalSeconds
+            $timing | Add-Member -NotePropertyName 'wall_seconds' -NotePropertyValue $wallSeconds -Force
+          }
           $timing | ConvertTo-Json | Set-Content -LiteralPath $path -Encoding utf8
 
       - name: Verify source identity and repository state after all tests
