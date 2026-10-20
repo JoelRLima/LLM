@@ -11,7 +11,7 @@ import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from scripts.w23_diagnostics import phases
 from scripts.w23_diagnostics.evidence import Redactor, digest, inventory, write_json
@@ -175,30 +175,10 @@ def tool_identity(work: Path, commands: Commands) -> dict[str, str]:
     return actual
 
 
-def final_integrity(work: Path, expected: _ExecutionIdentity | None, commands: Commands) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "status": "PASS",
-        "tooling_unchanged": False,
-        "git_identity_unchanged": False,
-        "selection_unchanged": False,
-        "before_evidence_unchanged": False,
-    }
-
-    def record(state: str) -> None:
-        result["status"] = phases.aggregate([result["status"], state])
-
-    try:
-        after = inventory(TOOL_ROOT)
-        write_json(work / "publish/tooling-after.json", after)
-        result["tooling_unchanged"] = expected is not None and tuple(sorted(after.items())) == expected.inventory
-        if expected is None:
-            record("UNKNOWN")
-        elif not result["tooling_unchanged"]:
-            record("FAIL")
-    except BaseException as exc:
-        record("UNKNOWN")
-        result["inventory_exception_type"] = type(exc).__name__
-
+def _check_git_and_evidence_integrity(
+    work: Path, expected: _ExecutionIdentity | None, commands: Commands,
+    result: dict[str, Any], record: Callable[[str], None],
+) -> None:
     if expected is None:
         record("UNKNOWN")
     else:
@@ -232,6 +212,33 @@ def final_integrity(work: Path, expected: _ExecutionIdentity | None, commands: C
             except BaseException as exc:
                 record("UNKNOWN")
                 result[field + "_exception_type"] = type(exc).__name__
+
+
+def final_integrity(work: Path, expected: _ExecutionIdentity | None, commands: Commands) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "status": "PASS",
+        "tooling_unchanged": False,
+        "git_identity_unchanged": False,
+        "selection_unchanged": False,
+        "before_evidence_unchanged": False,
+    }
+
+    def record(state: str) -> None:
+        result["status"] = phases.aggregate([result["status"], state])
+
+    try:
+        after = inventory(TOOL_ROOT)
+        write_json(work / "publish/tooling-after.json", after)
+        result["tooling_unchanged"] = expected is not None and tuple(sorted(after.items())) == expected.inventory
+        if expected is None:
+            record("UNKNOWN")
+        elif not result["tooling_unchanged"]:
+            record("FAIL")
+    except BaseException as exc:
+        record("UNKNOWN")
+        result["inventory_exception_type"] = type(exc).__name__
+
+    _check_git_and_evidence_integrity(work, expected, commands, result, record)
 
     for name in ("source-base", "original", "patched"):
         root = work / "private" / name
