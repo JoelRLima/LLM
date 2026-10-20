@@ -27,6 +27,13 @@ def finalizer(path: Path) -> str:
     return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip() + "\n"
 
 
+def focused_dispatch_guard(path: Path = MAIN) -> str:
+    block = path.read_text(encoding="utf-8").split(
+        "      - name: Reject unexpected dispatch parameters before checkout\n", 1
+    )[1].split("      - name: Checkout the exact reviewed ref\n", 1)[0]
+    return textwrap.dedent(block.split("        run: |\n", 1)[1]).strip() + "\n"
+
+
 def test_finalizers_match_and_upload_requires_validation() -> None:
     assert finalizer(MAIN) == finalizer(TEMPLATE)
     for path in (MAIN, TEMPLATE):
@@ -51,6 +58,88 @@ def test_job_selection_is_exclusive(event: str, mode: str) -> None:
     manual = event == "workflow_dispatch" and mode not in ("", "normal")
     assert normal != manual
     assert manual == (event == "workflow_dispatch" and mode in ("r01", "r02"))
+
+
+@pytest.mark.skipif(os.name != "nt" or not POWERSHELL.is_file(), reason="Native Windows PowerShell fixture required")
+@pytest.mark.parametrize(
+    ("event", "mode", "ref", "reviewed_matches", "payload_matches", "extra_input", "unit_tests", "accepted", "error"),
+    [
+        ("workflow_dispatch", "focused", "refs/heads/diagnostic/w23-r4-focused-postflight", True, True, False, False, True, ""),
+        ("workflow_dispatch", "focused", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, True, ""),
+        ("workflow_dispatch", "focused", "refs/heads/main", True, True, False, False, False, "unexpected diagnostic ref"),
+        ("workflow_dispatch", "focused", "refs/heads/other", True, True, False, False, False, "unexpected diagnostic ref"),
+        ("workflow_dispatch", "focused", "refs/heads/Integration/w23-r4-w18-20261019", True, True, False, False, False, "unexpected diagnostic ref"),
+        ("push", "focused", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, False, "focused validation is dispatch-only"),
+        ("workflow_dispatch", "normal", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, False, "unexpected diagnostic mode"),
+        ("workflow_dispatch", "r01", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, False, "unexpected diagnostic mode"),
+        ("workflow_dispatch", "r02", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, False, "unexpected diagnostic mode"),
+        ("workflow_dispatch", "unexpected", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, False, False, "unexpected diagnostic mode"),
+        ("workflow_dispatch", "focused", "refs/heads/integration/w23-r4-w18-20261019", False, True, False, False, False, "reviewed SHA must exactly match GITHUB_SHA"),
+        ("workflow_dispatch", "focused", "refs/heads/integration/w23-r4-w18-20261019", True, False, False, False, False, "event payload SHA mismatch"),
+        ("workflow_dispatch", "focused", "refs/heads/integration/w23-r4-w18-20261019", True, True, True, False, False, "unexpected workflow_dispatch input names"),
+        ("workflow_dispatch", "focused", "refs/heads/integration/w23-r4-w18-20261019", True, True, False, True, False, "optional broad diagnostic tests are forbidden in focused mode"),
+    ],
+)
+def test_extracted_focused_dispatch_guard(
+    tmp_path: Path,
+    event: str,
+    mode: str,
+    ref: str,
+    reviewed_matches: bool,
+    payload_matches: bool,
+    extra_input: bool,
+    unit_tests: bool,
+    accepted: bool,
+    error: str,
+) -> None:
+    sha = "a" * 40
+    payload_sha = sha if payload_matches else "b" * 40
+    event_inputs = {
+        "diagnostic_mode": mode,
+        "diagnostic_revision": payload_sha,
+        "diagnostic_unit_tests": unit_tests,
+    }
+    if extra_input:
+        event_inputs["unexpected"] = "not-allowed"
+    env = _windows_powershell_child_environment(dict(os.environ))
+    env.update(
+        GITHUB_EVENT_NAME=event,
+        GITHUB_REF=ref,
+        GITHUB_SHA=sha,
+        W23_FOCUSED_MODE=mode,
+        W23_FOCUSED_REVIEWED_SHA=sha if reviewed_matches else "c" * 40,
+        W23_FOCUSED_EVENT_INPUTS=json.dumps(event_inputs),
+    )
+    script = tmp_path / "focused-dispatch-guard.ps1"
+    script.write_text(focused_dispatch_guard(), encoding="utf-8")
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-File", str(script)],
+        env=env, cwd=tmp_path, capture_output=True, text=True, timeout=20, check=False,
+    )
+    if accepted:
+        assert result.returncode == 0, result.stdout + result.stderr
+    else:
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert error in result.stderr, result.stdout + result.stderr
+
+
+def test_focused_job_selector_is_dispatch_only_and_excludes_existing_modes() -> None:
+    source = MAIN.read_text(encoding="utf-8")
+    selector = (
+        "if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && "
+        "(inputs.diagnostic_mode == 'focused' || (inputs.diagnostic_mode != 'normal' && "
+        "inputs.diagnostic_mode != 'r01' && inputs.diagnostic_mode != 'r02')) }}"
+    )
+    assert selector in source
+    for event, mode, expected in (
+        ("push", "focused", False),
+        ("workflow_dispatch", "normal", False),
+        ("workflow_dispatch", "r01", False),
+        ("workflow_dispatch", "r02", False),
+        ("workflow_dispatch", "focused", True),
+    ):
+        selected = event == "workflow_dispatch" and mode == "focused"
+        assert selected is expected
 
 
 @pytest.mark.parametrize("key", ["PSModulePath", "psmodulepath", "pSmOdUlEpAtH"])

@@ -370,7 +370,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') { throw 'focused validation is dispatch-only' }
           if ($env:W23_FOCUSED_MODE -cne 'focused') { throw 'unexpected diagnostic mode' }
-          if ($env:GITHUB_REF -cne 'refs/heads/diagnostic/w23-r4-focused-postflight') { throw 'unexpected diagnostic ref' }
+          $allowedRefs = @(
+            'refs/heads/diagnostic/w23-r4-focused-postflight',
+            'refs/heads/integration/w23-r4-w18-20261019'
+          )
+          if ($env:GITHUB_REF -cnotin $allowedRefs) { throw 'unexpected diagnostic ref' }
           if ($env:W23_FOCUSED_REVIEWED_SHA -cnotmatch '^[a-f0-9]{40}$' -or $env:W23_FOCUSED_REVIEWED_SHA -cne $env:GITHUB_SHA) { throw 'reviewed SHA must exactly match GITHUB_SHA' }
           $eventInputs = $env:W23_FOCUSED_EVENT_INPUTS | ConvertFrom-Json
           $allowed = @('diagnostic_mode', 'diagnostic_revision', 'diagnostic_unit_tests')
