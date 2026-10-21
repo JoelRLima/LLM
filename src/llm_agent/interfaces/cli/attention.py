@@ -9,9 +9,15 @@ from threading import Condition, Lock
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
-from llm_agent.application.agent_boundary import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
+from llm_agent.application.approval import ApprovalPrompt, ApprovalResponse
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 
 MAX_REVIEW_DIFF_CHARS = 24_000
+_RESPONSE_ALIASES = {
+    "approved": ApprovalResponse.APPROVE,
+    "rejected": ApprovalResponse.DENY,
+    "required": ApprovalResponse.UNAVAILABLE,
+}
 _REVIEW_IDENTITY_KEYS = (
     "task_id",
     "invocation_id",
@@ -21,6 +27,16 @@ _REVIEW_IDENTITY_KEYS = (
     "proposed_diff_truncated",
     "proposed_diff_sha256",
 )
+
+
+def _approval_response(value: ApprovalResponse | str) -> ApprovalResponse | None:
+    if isinstance(value, ApprovalResponse):
+        return value
+    try:
+        text = str(value).casefold()
+        return _RESPONSE_ALIASES[text] if text in _RESPONSE_ALIASES else ApprovalResponse(text)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -34,7 +50,7 @@ class AttentionIdentity:
 @dataclass(frozen=True)
 class AttentionSnapshot:
     identity: AttentionIdentity
-    request: ApprovalRequest
+    request: ApprovalPrompt
 
 
 class ApprovalBroker:
@@ -46,14 +62,14 @@ class ApprovalBroker:
         self._next_attention_id = 1
         self._generation: int | None = None
         self._active: AttentionSnapshot | None = None
-        self._decision: ApprovalDecision | None = None
+        self._decision: ApprovalResponse | None = None
         self._cancelled = False
         self._shutdown = False
         self._on_attention: Callable[[AttentionSnapshot], None] | None = None
         self._on_cleared: Callable[[AttentionIdentity], None] | None = None
 
     @staticmethod
-    def fingerprint(request: ApprovalRequest) -> str:
+    def fingerprint(request: ApprovalPrompt) -> str:
         material = json.dumps(
             {
                 "action": request.action,
@@ -89,10 +105,10 @@ class ApprovalBroker:
 
     def _prepare_request_locked(
         self,
-        request: ApprovalRequest,
+        request: ApprovalPrompt,
     ) -> tuple[AttentionSnapshot, Callable[[AttentionSnapshot], None] | None]:
         if self._shutdown:
-            raise ApprovalWaitCancelled("approval broker is shut down")
+            raise RuntimeError("shutdown checked before request publication")
         if self._generation is None:
             raise RuntimeError("approval broker generation is not bound")
         if self._active is not None:
@@ -114,7 +130,7 @@ class ApprovalBroker:
         self._cancelled = False
         return snapshot, self._on_attention
 
-    def _await_decision_locked(self) -> ApprovalDecision:
+    def _await_decision_locked(self) -> ApprovalResponse:
         while self._decision is None and not self._cancelled and not self._shutdown:
             self._condition.wait()
         snapshot = self._active
@@ -130,13 +146,15 @@ class ApprovalBroker:
             except Exception:
                 pass
         if cancelled:
-            raise ApprovalWaitCancelled("approval wait cancelled")
+            return ApprovalResponse.CANCELLED
         if decision is None:
-            raise ApprovalWaitCancelled("approval wait closed without decision")
+            return ApprovalResponse.CANCELLED
         return decision
 
-    def request(self, request: ApprovalRequest) -> ApprovalDecision:
+    def present(self, request: ApprovalPrompt) -> ApprovalResponse:
         with self._condition:
+            if self._shutdown:
+                return ApprovalResponse.CANCELLED
             snapshot, callback = self._prepare_request_locked(request)
         if callback is not None:
             try:
@@ -151,14 +169,13 @@ class ApprovalBroker:
     def resolve(
         self,
         attention_id: int,
-        decision: ApprovalDecision | str,
+        decision: ApprovalResponse | str,
         *,
         run_generation: int | None = None,
         request_fingerprint: str | None = None,
     ) -> str:
-        try:
-            selected = decision if isinstance(decision, ApprovalDecision) else ApprovalDecision(str(decision))
-        except (TypeError, ValueError):
+        selected = _approval_response(decision)
+        if selected is None:
             return "REJECTED_INVALID_DECISION"
         with self._condition:
             active = self._active
@@ -206,7 +223,7 @@ class ApprovalBroker:
             self._cancelled = True
             self._condition.notify_all()
 
-    def approve_change(self, preview: Any, assessment: Any) -> bool:
+    def approve_change(self, preview: CodeReviewPreview, assessment: CodeReviewAssessment) -> bool:
         affected = tuple(str(item) for item in getattr(preview, "affected_files", ()) or ())
         proposed_diff = str(getattr(preview, "diff", "") or "")
         proposed_diff_truncated = len(proposed_diff) > MAX_REVIEW_DIFF_CHARS
@@ -222,7 +239,7 @@ class ApprovalBroker:
                 "proposed_diff_sha256": hashlib.sha256(proposed_diff.encode("utf-8")).hexdigest(),
             }
         )
-        request = ApprovalRequest(
+        request = ApprovalPrompt(
             action="code_changeset",
             resource=", ".join(affected[:16]) or "workspace",
             prompt=(
@@ -231,7 +248,7 @@ class ApprovalBroker:
             ),
             metadata=review_metadata,
         )
-        return self.request(request) is ApprovalDecision.APPROVED
+        return self.present(request) is ApprovalResponse.APPROVE
 
 
 __all__ = ["ApprovalBroker", "AttentionIdentity", "AttentionSnapshot", "MAX_REVIEW_DIFF_CHARS"]

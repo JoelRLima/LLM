@@ -106,6 +106,24 @@ permanece aceito salvo sua ordem total de guards, parcialmente substituída pelo
 [ADR 0015](adr/0015-stdio-requer-process.md) registra a exigência de `process`
 para transportes stdio.
 
+## Ownership e autoridade CURRENT
+
+Application coordena casos de uso; Agent mantém comportamento de domínio;
+Platform fornece mecânicas genéricas de processo, filesystem, storage e
+extensions; Interfaces adapta fronteiras de usuário e integrações. Não existe
+um broker `application.agent_boundary`. Use os owners canônicos descritos em
+[arquitetura de execução](arquitetura-execucao.md); aliases históricos
+delimitados não são imports para código novo.
+
+A semântica arquitetural CURRENT é definida por
+`quality/architecture_current_policy.json` e
+`scripts/check_current_architecture.py`, validada por
+`tests/unit/test_current_architecture.py`. `scripts/w21_architecture` mantém
+mecânicas compartilhadas e suporte a tooling histórico, não a policy CURRENT.
+CURRENT governa ownership, dependências e crescimento estrutural; Quality
+governa tamanho, complexidade e ratchets relacionados. O fechamento estrutural
+W23 foi formalmente aceito; isso não declara gates finais concluídos.
+
 ## Registros históricos
 
 Estes arquivos preservam evidência e planos de fases anteriores; consulte os

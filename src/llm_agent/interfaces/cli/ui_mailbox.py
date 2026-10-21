@@ -6,36 +6,13 @@ from collections import deque
 from dataclasses import dataclass, replace
 from threading import Lock
 
-from llm_agent.application.agent_boundary import RuntimeEvent, RuntimeEventKind
-
-_MILESTONE_KINDS = frozenset(
-    {
-        RuntimeEventKind.PLAN_CREATED,
-        RuntimeEventKind.PLAN_EXTENDED,
-        RuntimeEventKind.PLAN_PREVIEW_READY,
-        RuntimeEventKind.STEP_COMPLETED,
-        RuntimeEventKind.STEP_FAILED,
-        RuntimeEventKind.STEP_BLOCKED,
-        RuntimeEventKind.STEP_CANCELLED,
-        RuntimeEventKind.STEP_SKIPPED,
-        RuntimeEventKind.STEP_UNVERIFIED,
-        RuntimeEventKind.REPLAN,
-        RuntimeEventKind.REPLAN_BLOCKED,
-        RuntimeEventKind.CONVERGENCE_REPLAN_REQUESTED,
-        RuntimeEventKind.CONVERGENCE_REPLAN_DENIED,
-        RuntimeEventKind.VALIDATION_REPAIR,
-        RuntimeEventKind.TASK_RESUMED,
-        RuntimeEventKind.EXECUTION_FRONTIER_PROJECTED,
-        RuntimeEventKind.PROGRESS_RECEIPT_ADVANCED,
-    }
-)
-_TERMINAL_KINDS = frozenset({RuntimeEventKind.TASK_OUTCOME, RuntimeEventKind.FINAL})
+from llm_agent.application.task_execution import TaskActivityUpdate
 
 
 @dataclass(frozen=True)
 class UIEventEnvelope:
     ingestion_sequence: int
-    event: RuntimeEvent
+    update: TaskActivityUpdate
 
 
 @dataclass(frozen=True)
@@ -67,7 +44,7 @@ class UIEventMailbox:
         self._latest_error = envelope
 
     def _emit_terminal_locked(self, envelope: UIEventEnvelope) -> None:
-        self._terminals[envelope.event.run_id] = envelope
+        self._terminals[envelope.update.run_id] = envelope
         if len(self._terminals) > self.latest_capacity:
             oldest = min(self._terminals, key=lambda run_id: self._terminals[run_id].ingestion_sequence)
             self._terminals.pop(oldest, None)
@@ -79,7 +56,7 @@ class UIEventMailbox:
         self._milestones.append(envelope)
 
     def _emit_latest_locked(self, envelope: UIEventEnvelope) -> None:
-        key = (envelope.event.run_id, envelope.event.kind.value)
+        key = (envelope.update.run_id, envelope.update.coalescing_key)
         if key in self._latest:
             self._stats = replace(self._stats, coalesced_updates=self._stats.coalesced_updates + 1)
         elif len(self._latest) >= self.latest_capacity:
@@ -90,22 +67,21 @@ class UIEventMailbox:
         if key not in self._latest_order:
             self._latest_order.append(key)
 
-    def emit(self, event: RuntimeEvent) -> None:
-        """Enqueue immutable event and return without waiting for a consumer."""
+    def emit(self, update: TaskActivityUpdate) -> None:
+        """Enqueue finite activity effects and return without waiting for a consumer."""
 
-        if not isinstance(event, RuntimeEvent):
+        if not isinstance(update, TaskActivityUpdate):
             return
         with self._lock:
-            envelope = UIEventEnvelope(self._next_sequence, event)
+            envelope = UIEventEnvelope(self._next_sequence, update)
             self._next_sequence += 1
-            kind = event.kind
-            if kind is RuntimeEventKind.ERROR:
+            if update.delivery == "error":
                 self._emit_error_locked(envelope)
                 return
-            if kind in _TERMINAL_KINDS:
+            if update.delivery == "terminal":
                 self._emit_terminal_locked(envelope)
                 return
-            if kind in _MILESTONE_KINDS:
+            if update.delivery == "milestone":
                 self._emit_milestone_locked(envelope)
                 return
             self._emit_latest_locked(envelope)
@@ -155,17 +131,17 @@ class UIEventMailbox:
             return len(self._milestones) + len(self._latest) + len(self._terminals) + (1 if self._latest_error else 0)
 
 
-class RuntimeEventUISink:
-    """Presentation-only sink; it never renders or changes canonical state."""
+class TaskActivityUISink:
+    """Presentation-only sink; it receives projected activity effects."""
 
     def __init__(self, mailbox: UIEventMailbox) -> None:
         self.mailbox = mailbox
 
-    def emit(self, event: RuntimeEvent) -> None:
+    def emit(self, update: TaskActivityUpdate) -> None:
         try:
-            self.mailbox.emit(event)
+            self.mailbox.emit(update)
         except Exception:
             return
 
 
-__all__ = ["MailboxStats", "RuntimeEventUISink", "UIEventEnvelope", "UIEventMailbox"]
+__all__ = ["MailboxStats", "TaskActivityUISink", "UIEventEnvelope", "UIEventMailbox"]

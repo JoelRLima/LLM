@@ -16,8 +16,8 @@ from typing import Any, Dict, Optional, cast
 
 from llm_agent.agent.checkpoint_types import CHECKPOINT_SCHEMA_VERSION, CheckpointLoadError
 from llm_agent.agent.checkpoint_validation import validate_document
-from llm_agent.agent.runtime.lock_filesystem import open_verified
 from llm_agent.agent.runtime.logging import logger
+from llm_agent.filesystem.lock_filesystem import open_verified
 from llm_agent.filesystem.path_safety import LinkLikePathError, inspect_final_path, reject_link_like
 from llm_agent.filesystem.primitives import sync_parent_directory
 from llm_agent.storage.json_persistence import write_json_atomic

@@ -51,11 +51,13 @@ def test_source_context_derives_from_running_package_not_cwd(monkeypatch: pytest
     context = discover_source_repository_context()
     expected_root = Path(llm_agent.__file__).resolve().parents[2]
     assert context is not None
-    assert context.root != tmp_path
-    assert context.root == expected_root
-    assert (context.root / "pyproject.toml").is_file()
-    assert (context.root / "src" / "llm_agent").is_dir()
-    assert (context.root / "scripts" / "verify_installed_package.py").is_file()
+    root, identity = context
+    assert root != tmp_path
+    assert root == expected_root
+    assert len(identity) == 170
+    assert (root / "pyproject.toml").is_file()
+    assert (root / "src" / "llm_agent").is_dir()
+    assert (root / "scripts" / "verify_installed_package.py").is_file()
 
 
 def test_exact_safe_projector_strips_untrusted_detail() -> None:

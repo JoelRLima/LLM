@@ -6,8 +6,11 @@ import io
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from rich.console import Console
 
+from llm_agent.application.conversation import bind_conversation
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app, chat, inspector_rendering, turn_rendering
 from llm_agent.interfaces.cli.commands import handle_command
 
@@ -22,12 +25,7 @@ def _console_with_stream(*, width: int = 120) -> tuple[Console, io.StringIO]:
 
 
 def _context(*, diagnostic: int = 0) -> SimpleNamespace:
-    return SimpleNamespace(
-        workspace=SimpleNamespace(root="/tmp/project"),
-        orchestrator=SimpleNamespace(operational_mode_label="READ ONLY"),
-        session=SimpleNamespace(thinking_budget=2048),
-        modo_diagnostico=diagnostic,
-    )
+    return SimpleNamespace(workspace=SimpleNamespace(root='/tmp/project'), conversation=bind_conversation(_retain_runtime(SimpleNamespace(session=SimpleNamespace(thinking_budget=2048, get_effective_system_prompt=lambda: '', model_profile=SimpleNamespace(model='m', provider='p'))))), modo_diagnostico=diagnostic, task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(operational_mode_label='READ ONLY'))))
 
 
 def _result(
@@ -77,11 +75,35 @@ def test_ux_t01_compact_startup() -> None:
     assert "Comandos Disponíveis" not in output
 
 
-def test_ux_t02_help_is_explicit_and_t03_chat_does_not_auto_help(monkeypatch) -> None:
+def test_startup_reexports_preserve_exact_output_and_label_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    from llm_agent.interfaces.cli import interactive_rendering, startup_rendering
+
+    for symbol in ("render_startup_status", "thinking_label", "diagnostic_label", "diagnostic_prompt_token"):
+        assert getattr(turn_rendering, symbol) is getattr(interactive_rendering, symbol)
+        assert getattr(interactive_rendering, symbol) is getattr(startup_rendering, symbol)
+    for level, label, token in ((-1, "OFF", ""), (0, "OFF", ""), (1, "DIAG", " [DIAG]"),
+                                (2, "VERBOSE", " [VERBOSE]"), (3, "OFF", "")):
+        assert turn_rendering.diagnostic_label(level) == label
+        assert turn_rendering.diagnostic_prompt_token(level) == token
+    for budget, label in ((-1, "OFF"), (0, "OFF"), (2048, "ALTO"), (17, "17")):
+        monkeypatch.setattr(startup_rendering, "read_conversation", lambda _value, budget=budget: SimpleNamespace(thinking_budget=budget))
+        assert turn_rendering.thinking_label(_context().conversation) == label
+    monkeypatch.setattr(startup_rendering, "read_conversation", lambda _value: SimpleNamespace(thinking_budget=2048))
+    console = _console()
+    turn_rendering.render_startup_status(console, _context())
+    assert console.export_text() == (
+        "LLM Agent\nWorkspace: /tmp/project\nREAD ONLY · Think ALTO · Diag OFF\nDigite /help para comandos.\n"
+    )
+
+
+def test_ux_t02_help_is_explicit_and_t03_chat_does_not_auto_help(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[bool] = []
     from llm_agent.interfaces.cli import commands
 
-    monkeypatch.setattr(commands, "exibir_menu", lambda: calls.append(True))
+    def record_help() -> None:
+        calls.append(True)
+
+    monkeypatch.setattr(commands, "exibir_menu", record_help)
     handled, should_exit = handle_command("/help", SimpleNamespace())
     assert handled is True and should_exit is False and calls == [True]
 
@@ -92,9 +114,14 @@ def test_ux_t02_help_is_explicit_and_t03_chat_does_not_auto_help(monkeypatch) ->
     assert calls == [True]
 
 
-def test_ux_t04_prompt_is_compact_and_mode_aware(monkeypatch) -> None:
+def test_ux_t04_prompt_is_compact_and_mode_aware(monkeypatch: pytest.MonkeyPatch) -> None:
     prompts: list[str] = []
-    monkeypatch.setattr(app, "console", SimpleNamespace(input=lambda prompt: prompts.append(prompt) or ""))
+
+    def record_prompt(prompt: str) -> str:
+        prompts.append(prompt)
+        return ""
+
+    monkeypatch.setattr(app, "console", SimpleNamespace(input=record_prompt))
     app._prompt(_context(diagnostic=1))
     assert prompts and "Você [READ ONLY] [DIAG] >" in prompts[0]
     assert "Pensar" not in prompts[0]
@@ -104,7 +131,7 @@ def test_ux_t05_natural_boundary_and_ux_t06_streamed_answer_once() -> None:
     result = _result(answer="abcdef")
     application = _Application(result, ("abc", "def"))
     console, stream = _console_with_stream()
-    ctx = SimpleNamespace(application=application, modo_diagnostico=0)
+    ctx = SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(application))
 
     chat.run_agent_turn(console, ctx, "oi")
     output = stream.getvalue()
@@ -119,7 +146,7 @@ def test_ux_t07_empty_chunks_and_t08_non_stream_answer_once() -> None:
     for chunks in (("", ""), ()):
         result = _result(answer="fallback")
         console, stream = _console_with_stream()
-        chat.run_agent_turn(console, SimpleNamespace(application=_Application(result, chunks), modo_diagnostico=0), "oi")
+        chat.run_agent_turn(console, SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(result, chunks))), "oi")
         assert stream.getvalue().count("fallback") == 1
 
 
@@ -214,7 +241,7 @@ def test_corrective_streamed_answer_is_literal_and_not_rich_wrapped() -> None:
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(_result(answer=answer), (answer,)), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(_result(answer=answer), (answer,)))),
         "oi",
     )
 
@@ -230,7 +257,7 @@ def test_corrective_fallback_answer_is_literal_once_with_only_cli_newline() -> N
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(_result(answer=answer)), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(_result(answer=answer)))),
         "oi",
     )
 
@@ -333,7 +360,7 @@ def test_ux_t27_failed_interaction_is_visible_once_without_fake_facts() -> None:
 
     chat.run_agent_turn(
         console,
-        SimpleNamespace(application=_Application(failure), modo_diagnostico=0),
+        SimpleNamespace(modo_diagnostico=0, task_execution=_fixture_runtime(_Application(failure))),
         "oi",
     )
 
@@ -346,7 +373,7 @@ def test_ux_t27_failed_interaction_is_visible_once_without_fake_facts() -> None:
     assert "validação" not in output
 
 
-def test_ux_t28_prompt_preserves_eof_and_keyboard_interrupt_shutdown(monkeypatch) -> None:
+def test_ux_t28_prompt_preserves_eof_and_keyboard_interrupt_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
     for interruption in (EOFError, KeyboardInterrupt):
         stream = io.StringIO()
         rendered = Console(file=stream, record=True, width=120, color_system=None)
@@ -358,3 +385,9 @@ def test_ux_t28_prompt_preserves_eof_and_keyboard_interrupt_shutdown(monkeypatch
 
         assert app._prompt(_context()) is None
         assert "Encerrando..." in stream.getvalue()
+
+
+def _fixture_runtime(owner: Any, orchestrator: Any = None) -> Any:
+    if orchestrator is not None:
+        owner.orchestrator = orchestrator
+    return _retain_runtime(owner)

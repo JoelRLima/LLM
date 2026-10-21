@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -22,6 +23,7 @@ _W22_LOGICAL_PREFIXES = (
 )
 _W22_EXACT_PATHS = {
     "agent/engineering/cli.py": "interfaces/cli/engineering.py",
+    "application/discovery_configuration.py": "application/discovery_configuration.py",
 }
 
 
@@ -32,7 +34,7 @@ def _repository_path(relative: str) -> Path:
         if relative == logical_prefix or relative.startswith(logical_prefix + "/"):
             suffix = relative[len(logical_prefix) :].lstrip("/")
             return ROOT / "src" / "llm_agent" / physical_suffix / suffix
-    return SOURCE_LAYOUT.path_for_w21_relative(relative)
+    return cast(Path, SOURCE_LAYOUT.path_for_w21_relative(relative))
 
 
 def _logical_relative(path: Path) -> str:
@@ -47,7 +49,7 @@ def _logical_relative(path: Path) -> str:
         except ValueError:
             continue
         return logical_prefix if suffix == "." else f"{logical_prefix}/{suffix}"
-    return SOURCE_LAYOUT.w21_relative_path(path)
+    return cast(str, SOURCE_LAYOUT.w21_relative_path(path))
 
 ENGINEERING = _repository_path("agent/engineering")
 FORBIDDEN_CORE_PREFIXES = (
@@ -623,34 +625,98 @@ def _semantic_cli_profile_path_is_canonical() -> bool:
 
     projection = _tree("agent/interfaces/cli/discovery_projection.py")
     app = _tree("agent/interfaces/cli/app.py")
+    application = _tree("application/discovery_configuration.py")
     resolver = _named_function(projection, "_resolve_semantic_gateway_config")
     build_service = _named_function(projection, "build_service")
+    operation = _named_function(application, "resolve_semantic_discovery_profile")
     run_commands = _named_function(app, "_run_commands")
-    if resolver is None or build_service is None or run_commands is None:
+    if resolver is None or build_service is None or operation is None or run_commands is None:
         return False
 
     resolver_imports = {
         node.module
-        for node in ast.walk(resolver)
+        for node in ast.walk(application)
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
-    has_repository_import = "llm_agent.application.agent_boundary" in resolver_imports
+    has_repository_import = "llm_agent.agent.runtime.config_repository" in resolver_imports
+    has_application_context_import = "llm_agent.application.context" in resolver_imports
     has_paths_import = "llm_agent.application.context" in resolver_imports
     has_repository_load = any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "load"
-        for node in ast.walk(resolver)
+        for node in ast.walk(operation)
     )
     has_model_profile_projection = any(
         isinstance(node, ast.Attribute) and node.attr == "model_profile"
-        for node in ast.walk(resolver)
+        for node in ast.walk(operation)
     )
     has_repository_construction = any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "ConfigRepository"
+        and any(
+            keyword.arg == "config_path"
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "config_path"
+            for keyword in node.keywords
+        )
+        for node in ast.walk(operation)
+    )
+    has_application_delegation = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "llm_agent.application.discovery_configuration"
+        and any(alias.name == "resolve_semantic_discovery_profile" for alias in node.names)
         for node in ast.walk(resolver)
+    ) and any(
+        isinstance(node, ast.Return)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "resolve_semantic_discovery_profile"
+        and {item.arg for item in node.value.keywords} >= {"app_paths", "config_path", "profile", "home"}
+        for node in ast.walk(resolver)
+    )
+    has_canonical_profile_return = any(
+        isinstance(node, ast.Return)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "model_profile"
+        and isinstance(node.value.value, ast.Call)
+        and isinstance(node.value.value.func, ast.Attribute)
+        and node.value.value.func.attr == "load"
+        for node in ast.walk(operation)
+    )
+    has_optional_error_collapse = any(
+        isinstance(node, ast.ExceptHandler)
+        and isinstance(node.type, ast.Name)
+        and node.type.id == "Exception"
+        and any(
+            isinstance(child, ast.Return)
+            and isinstance(child.value, ast.Constant)
+            and child.value.value is None
+            for child in node.body
+        )
+        for node in ast.walk(operation)
+    )
+    has_profile_override = any(
+        isinstance(node, ast.Dict)
+        and any(isinstance(key, ast.Constant) and key.value == "default_model_profile" for key in node.keys)
+        and any(isinstance(value, ast.Name) and value.id == "profile" for value in node.values)
+        for node in ast.walk(operation)
+    )
+    has_home_discovery = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "discover"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "AppPaths"
+        and any(keyword.arg == "app_home" and isinstance(keyword.value, ast.Name) and keyword.value.id == "home" for keyword in node.keywords)
+        for node in ast.walk(operation)
+    )
+    forbidden = {"HomeLifecycleLease", "StorageBootstrap", "AgentApplication"}
+    has_no_heavy_lifecycle = not any(
+        (isinstance(node, ast.Name) and node.id in forbidden)
+        or (isinstance(node, ast.Attribute) and node.attr in forbidden)
+        for node in ast.walk(operation)
     )
     has_resolution_call = any(
         isinstance(node, ast.Call)
@@ -658,6 +724,17 @@ def _semantic_cli_profile_path_is_canonical() -> bool:
         and node.func.id == "_resolve_semantic_gateway_config"
         and {item.arg for item in node.keywords}
         >= {"app_paths", "config_path", "profile", "home"}
+        for node in ast.walk(build_service)
+    )
+    has_semantic_guard = any(
+        isinstance(node, ast.If)
+        and any(isinstance(test, ast.Name) and test.id == "semantic" for test in ast.walk(node.test))
+        and any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Name)
+            and child.func.id == "_resolve_semantic_gateway_config"
+            for statement in node.body for child in ast.walk(statement)
+        )
         for node in ast.walk(build_service)
     )
     has_semantic_config_binding = any(
@@ -684,10 +761,18 @@ def _semantic_cli_profile_path_is_canonical() -> bool:
     return all(
         (
             has_repository_import,
+            has_application_context_import,
             has_paths_import,
             has_repository_construction,
             has_repository_load,
             has_model_profile_projection,
+            has_application_delegation,
+            has_canonical_profile_return,
+            has_optional_error_collapse,
+            has_profile_override,
+            has_home_discovery,
+            has_no_heavy_lifecycle,
+            has_semantic_guard,
             has_resolution_call,
             has_semantic_config_binding,
             has_cli_propagation,

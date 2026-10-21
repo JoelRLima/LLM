@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
+from llm_agent.interfaces.cli import task_continuity
 from llm_agent.interfaces.cli.parser import build_parser
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.workspace.paths import AppPaths
@@ -67,12 +71,97 @@ def test_task_resume_without_workspace_fails_before_continuity_or_application(
         "_create_application",
         lambda *_args, **_kwargs: pytest.fail("missing workspace must fail before bootstrap"),
     )
+    monkeypatch.setattr(
+        task_continuity,
+        "_snapshot",
+        lambda *_args: pytest.fail("missing workspace must fail before continuity read"),
+    )
 
     assert cli.main(["task", "resume", "--json"]) == 2
 
     document = json.loads(capsys.readouterr().out)
     assert document["reason_code"] == "TASK_WORKSPACE_REQUIRED"
     assert document["status"] == "failed"
+
+
+def test_task_status_without_workspace_uses_current_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+
+    assert cli.main(["task", "status", "--home", str(tmp_path / "home"), "--json"]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["status"] == "absent"
+    assert document["workspace_id"] == WorkspaceContext.create(workspace).workspace_id
+
+
+@pytest.mark.parametrize("has_resume", [True, False])
+def test_resumable_preflight_preserves_execution_boundary_and_close(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    has_resume: bool,
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    checkpoint = _checkpoint(AppPaths.discover(home, env={}), workspace)
+    before = checkpoint.read_bytes()
+    events: list[str] = []
+    real_read = task_continuity.read_task_continuity
+    result = SimpleNamespace(
+        success=True,
+        answer="retomada concluída",
+        to_dict=lambda: {"status": "completed", "success": True, "answer": "retomada concluída"},
+    )
+
+    def read(request: object) -> object:
+        events.append("preflight")
+        assert isinstance(request, task_continuity.TaskContinuityRequest)
+        assert request.workspace == workspace
+        assert request.app_paths.home_dir == home.resolve()
+        return real_read(request)
+
+    def create(args: Namespace, *, configure_logging: bool) -> object:
+        events.append("bootstrap")
+        assert args.workspace == str(workspace)
+        assert configure_logging is False
+
+        def resume() -> object:
+            events.append("resume")
+            return result
+
+        def run(objective: object, *, explicit_resume: bool) -> object:
+            events.append("explicit_resume_fallback")
+            assert objective is None
+            assert explicit_resume is True
+            return result
+
+        def close() -> None:
+            events.append("close")
+
+        application = SimpleNamespace(run=run, close=close)
+        if has_resume:
+            application.resume = resume
+        return _retain_runtime(application)
+
+    monkeypatch.setattr(task_continuity, "read_task_continuity", read)
+    monkeypatch.setattr(task_continuity, "_create_application", create)
+
+    assert cli.main(
+        ["task", "resume", "--home", str(home), "--workspace", str(workspace), "--json"]
+    ) == 0
+
+    assert json.loads(capsys.readouterr().out) == result.to_dict()
+    assert events == [
+        "preflight", "bootstrap", "resume" if has_resume else "explicit_resume_fallback", "close"
+    ]
+    assert checkpoint.read_bytes() == before
 
 
 def test_task_status_is_model_free_bounded_and_read_only(

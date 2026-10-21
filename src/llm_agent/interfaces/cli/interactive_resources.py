@@ -6,14 +6,20 @@ import argparse
 from dataclasses import dataclass
 from typing import Any, Callable, cast
 
-from llm_agent.application.agent_boundary import ConfigNotFound
+from llm_agent.application.configuration_errors import ConfigurationNotFound
 from llm_agent.application.services.composition import build_application_services
+from llm_agent.application.task_execution import (
+    bind_interactive_services,
+    close_task_execution,
+    read_execution_capabilities,
+    read_execution_context,
+)
 from llm_agent.interfaces.cli import first_run, interactive_rendering, workspace_entry
 from llm_agent.interfaces.cli.attention import ApprovalBroker
 from llm_agent.interfaces.cli.controller import InteractiveExecutionController, WorkerSettlementTimeout
 from llm_agent.interfaces.cli.query_executor import BoundedQueryExecutor
 from llm_agent.interfaces.cli.ui import console
-from llm_agent.interfaces.cli.ui_plane import RuntimeEventUISink, RunViewModel, UIEventMailbox
+from llm_agent.interfaces.cli.ui_plane import RunViewModel, TaskActivityUISink, UIEventMailbox
 
 
 @dataclass
@@ -26,7 +32,7 @@ class _SessionResources:
     output_service: Any | None = None
     query_executor: Any | None = None
     event_sink: Any | None = None
-    event_dispatcher: Any | None = None
+    detach_runtime: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +66,7 @@ def get_shell(
             if view is not None:
                 return str(view.render_toolbar(
                     width=120,
-                    mode=getattr(getattr(application_holder.get("application"), "orchestrator", None), "operational_mode_label", "FULL"),
+                    mode=read_execution_capabilities(application_holder["task_execution"]).label if application_holder.get("task_execution") is not None else "FULL",
                 ))
             controller = controller_holder["controller"]
             return f"state={controller.state.value}" if controller is not None else "state=STARTING"
@@ -94,7 +100,7 @@ def prompt_path(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., st
 
 
 def recover_missing_config(
-    error: ConfigNotFound,
+    error: ConfigurationNotFound,
     args: argparse.Namespace,
     *,
     value: Callable[..., Any],
@@ -137,23 +143,20 @@ def configure(
 ) -> tuple[Any, _SessionResources]:
     resources = _SessionResources(controller=InteractiveExecutionController() if interactive else None)
     controller_holder["controller"] = resources.controller
-    application_holder["application"] = application
-    services = build_application_services(application.workspace, application.workspace_paths)
+    application_holder["task_execution"] = application
+    execution_context = read_execution_context(application)
+    services = build_application_services(execution_context.workspace, execution_context.workspace_paths)
     resources.output_service = services.output_service
     if interactive:
         resources.approval_broker = ApprovalBroker()
-        application.approval_policy = resources.approval_broker
-        gateway = getattr(application, "tool_invocation_gateway", None)
-        if gateway is not None:
-            gateway.approval_port = resources.approval_broker
         resources.event_mailbox = UIEventMailbox()
         resources.view_model = RunViewModel()
         resources.query_service = services.query_service
-        resources.query_executor = BoundedQueryExecutor(workspace_id=str(getattr(application.workspace, "workspace_id", "workspace")))
-        resources.event_sink = RuntimeEventUISink(resources.event_mailbox)
-        resources.event_dispatcher = getattr(application.orchestrator, "event_dispatcher", None)
-        if resources.event_dispatcher is not None:
-            resources.event_dispatcher.add_sink(resources.event_sink)
+        resources.query_executor = BoundedQueryExecutor(workspace_id=str(getattr(execution_context.workspace, "workspace_id", "workspace")))
+        resources.event_sink = TaskActivityUISink(resources.event_mailbox)
+        resources.detach_runtime = bind_interactive_services(
+            application, resources.approval_broker, resources.event_sink.emit
+        )
         view_holder["view"] = resources.view_model
     context = context_from_application(
         application,
@@ -168,7 +171,7 @@ def configure(
         output_service=resources.output_service,
     )
     if interactive:
-        workspace_entry.remember_workspace(application.paths, context.workspace.root)
+        workspace_entry.remember_workspace(execution_context.app_paths, context.workspace.root)
     return context, resources
 
 
@@ -225,12 +228,12 @@ def _close_settled_resources(
     # discarded any result from a stale workspace generation.  Keep the UI
     # sink attached until that barrier so late canonical events remain
     # observable; detach it immediately before application teardown.
-    if resources.event_dispatcher is not None and resources.event_sink is not None:
-        resources.event_dispatcher.remove_sink(resources.event_sink)
+    if resources.detach_runtime is not None:
+        resources.detach_runtime()
 
     # The canonical application owns the runtime lock.  Close it before
     # releasing the prompt resources, and only after worker/query settlement.
-    application.close()
+    close_task_execution(application)
     if active_shell is not None:
         active_shell.close()
 

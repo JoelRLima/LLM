@@ -17,7 +17,7 @@ from llm_agent.agent.engineering.contracts import (
 )
 from llm_agent.agent.engineering.policy import EngineeringPreflight, owner_status, resource_fingerprint
 from llm_agent.agent.engineering.summary import _summary_from_record, active_from_transition, result_from_terminal
-from llm_agent.agent.runtime.process_identity import OwnerLiveness, OwnerStatus
+from llm_agent.process.process_identity import OwnerLiveness, OwnerStatus
 
 
 class RecoveryStore(Protocol):

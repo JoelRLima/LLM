@@ -133,7 +133,7 @@ def engineering_entries(
     entries: list[DiscoveryEntryV1] = []
     availability: dict[str, DiscoveryAvailability] = {}
     for view in views:
-        operation_id = getattr(view, "operation_id", None)
+        operation_id = view.get("operation_id") if isinstance(view, Mapping) else getattr(view, "operation_id", None)
         if not isinstance(operation_id, str):
             raise TypeError("engineering projection contains an invalid operation")
         entry_id = _entry_id("engineering", operation_id)
@@ -148,8 +148,8 @@ def engineering_entries(
             examples=(f"llm-agent test describe {operation_id}",),
         )
         entries.append(entry)
-        available = getattr(view, "available", False)
-        reason = getattr(view, "unavailable_reason", None)
+        available = view.get("available", False) if isinstance(view, Mapping) else getattr(view, "available", False)
+        reason = view.get("unavailable_reason") if isinstance(view, Mapping) else getattr(view, "unavailable_reason", None)
         availability[entry_id] = DiscoveryAvailability(bool(available), reason if isinstance(reason, str) else None)
     return tuple(entries), availability
 

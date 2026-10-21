@@ -92,8 +92,8 @@ The private `python-bin` roots remained empty. No system Python was used as the 
 
 Two roots outside the repository were used:
 
-1. `C:\Users\JoelR\AppData\Local\Temp\wave18-phase0-space-20260914`
-2. `C:\Users\JoelR\AppData\Local\Temp\wave18-phase0-José-Teste-20260914`
+1. `%USERPROFILE%\AppData\Local\Temp\wave18-phase0-space-20260914`
+2. `%USERPROFILE%\AppData\Local\Temp\wave18-phase0-José-Teste-20260914`
 
 For each root the proof used private uv/cache/Python/venv paths, disabled Python-bin exposure, created an ordinary no-seed venv, and installed pip only through the venv interpreter using the exact contract hash:
 

@@ -11,8 +11,20 @@ from typing import Any
 
 from rich.console import Console
 
-from llm_agent.application.agent_boundary import InspectionQuery, InspectionService, InspectorSnapshot
 from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.application.inspection import (
+    BookmarkAddRequest,
+    BookmarkListRequest,
+    BookmarkRemoveRequest,
+    DiagnosticExportRequest,
+    InspectionAuxiliaryOperations,
+    InspectionListRequest,
+    InspectionReadContext,
+    InspectionReadRequest,
+    list_inspection_runs,
+    read_inspection,
+)
+from llm_agent.application.task_execution import read_runtime_inspection
 from llm_agent.interfaces.cli.inspector_rendering import (
     render_runs as _render_runs_to_console,
 )
@@ -32,15 +44,22 @@ def _workspace_paths(args: Any) -> Any:
     return AppPaths.discover(app_home=_value(args, "home")).for_workspace(workspace.workspace_id)
 
 
-def _service(args: Any) -> InspectionService:
-    return InspectionService(_workspace_paths(args))
-
-
-def _query(args: Any) -> InspectionQuery:
+def _read_request(
+    args: Any,
+    *,
+    mode: str = "snapshot",
+    after_sequence: int | None = None,
+    run_id: str | None = None,
+) -> InspectionReadRequest:
     sequence_end = _value(args, "inspect_sequence_end")
     if sequence_end is None:
         sequence_end = _value(args, "inspect_sequence")
-    return InspectionQuery.build(
+    return InspectionReadRequest(
+        run_id=run_id if run_id is not None else _value(args, "inspect_run_id"),
+        mode=mode,
+        limit=_value(args, "limit", 100),
+        after_sequence=_after(args) if after_sequence is None else after_sequence,
+        selected_sequence=_value(args, "inspect_sequence"),
         sequence_start=_value(args, "inspect_sequence_start"),
         sequence_end=sequence_end,
         sources=_value(args, "inspect_sources"),
@@ -79,7 +98,7 @@ def _is_tty() -> bool:
     return bool(getattr(sys.stdout, "isatty", lambda: False)() and getattr(sys.stdin, "isatty", lambda: False)())
 
 
-def render_snapshot(snapshot: InspectorSnapshot, *, limit: int | None = None) -> None:
+def render_snapshot(snapshot: Mapping[str, Any], *, limit: int | None = None) -> None:
     _render_snapshot_to_console(snapshot, console, limit=limit)
 
 
@@ -91,7 +110,7 @@ def _print_json(document: Any) -> None:
     print(json.dumps(document, ensure_ascii=False, sort_keys=True))
 
 
-def _run_follow(service: InspectionService, run_id: str | None, args: Any) -> int:
+def _run_follow(read_context: InspectionReadContext, run_id: str | None, args: Any) -> int:
     if _value(args, "json_output", False):
         raise ValueError("--json não pode ser combinado com follow sem limite temporal")
     if not _is_tty():
@@ -99,19 +118,13 @@ def _run_follow(service: InspectionService, run_id: str | None, args: Any) -> in
     after = _after(args)
     try:
         while True:
-            snapshot = service.snapshot(
-                run_id,
-                query=_query(args),
-                limit=_value(args, "limit", 100),
-                selected_sequence=_value(args, "inspect_sequence"),
-                after_sequence=after,
-            )
+            snapshot = read_inspection(read_context, _read_request(args, after_sequence=after, run_id=run_id))
             console.clear()
             render_snapshot(snapshot)
-            if snapshot.timeline:
-                after = max(after, snapshot.timeline[-1].sequence)
-            after = max(after, snapshot.run.highest_sequence)
-            liveness = snapshot.run.liveness
+            if snapshot["timeline"]:
+                after = max(after, snapshot["timeline"][-1]["sequence"])
+            after = max(after, snapshot["run"]["highest_sequence"])
+            liveness = snapshot["run"]["liveness"]
             if isinstance(liveness, Mapping) and liveness.get("state") in {"closed", "stale"}:
                 return 0
             time.sleep(0.25)
@@ -120,14 +133,14 @@ def _run_follow(service: InspectionService, run_id: str | None, args: Any) -> in
         return 0
 
 
-def _run_export(args: Any, service: InspectionService) -> int:
-    from llm_agent.application.agent_boundary import DiagnosticExporter
-
-    receipt = DiagnosticExporter(service).export(
-        _value(args, "inspect_run_id"),
-        output=_value(args, "output"),
-        force=bool(_value(args, "force", False)),
-        include_bookmarks=bool(_value(args, "include_bookmarks", False)),
+def _run_export(args: Any, operations: InspectionAuxiliaryOperations) -> int:
+    receipt = operations.export_diagnostics(
+        DiagnosticExportRequest(
+            run_id=_value(args, "inspect_run_id"),
+            output=_value(args, "output"),
+            force=bool(_value(args, "force", False)),
+            include_bookmarks=bool(_value(args, "include_bookmarks", False)),
+        )
     )
     if _value(args, "json_output", False):
         _print_json(receipt.to_dict())
@@ -136,27 +149,29 @@ def _run_export(args: Any, service: InspectionService) -> int:
     return 0
 
 
-def _run_bookmark(args: Any, service: InspectionService) -> int:
-    from llm_agent.application.agent_boundary import BookmarkStore
-
-    store = BookmarkStore(_workspace_paths(args))
+def _run_bookmark(args: Any, operations: InspectionAuxiliaryOperations) -> int:
     run_id = _value(args, "inspect_run_id")
-    if not run_id:
-        run_id = service.select().metadata.run_id
     command = _value(args, "bookmark_command")
     if command == "add":
-        sequence = _value(args, "inspect_sequence")
-        if sequence is None:
-            raise ValueError("bookmark add requer --sequence")
-        bookmark = store.add(run_id, sequence, _value(args, "note"))
-        document: Any = {"bookmark": bookmark.to_dict()}
+        add_result = operations.add_bookmark(
+            BookmarkAddRequest(
+                run_id=run_id,
+                sequence=_value(args, "inspect_sequence"),
+                note=_value(args, "note"),
+            )
+        )
+        document: Any = add_result.to_dict()
     elif command == "remove":
-        sequence = _value(args, "inspect_sequence")
-        if sequence is None:
-            raise ValueError("bookmark remove requer --sequence")
-        document = {"removed": store.remove(run_id, sequence), "run_id": run_id, "sequence": sequence}
+        remove_result = operations.remove_bookmark(
+            BookmarkRemoveRequest(
+                run_id=run_id,
+                sequence=_value(args, "inspect_sequence"),
+            )
+        )
+        document = remove_result.to_dict()
     else:
-        document = {"bookmarks": [item.to_dict() for item in store.list(run_id)]}
+        list_result = operations.list_bookmarks(BookmarkListRequest(run_id=run_id))
+        document = list_result.to_dict()
     if _value(args, "json_output", False):
         _print_json(document)
     else:
@@ -164,49 +179,32 @@ def _run_bookmark(args: Any, service: InspectionService) -> int:
     return 0
 
 
-def _run_list(args: Any, service: InspectionService) -> int:
-    runs = service.list_runs(limit=_value(args, "limit", 100))
+def _run_list(args: Any, context: InspectionReadContext) -> int:
+    runs = list_inspection_runs(context, InspectionListRequest(limit=_value(args, "limit", 100)))
     if _value(args, "json_output", False):
-        _print_json({"runs": [item.to_dict() for item in runs]})
+        _print_json({"runs": list(runs)})
     else:
         _render_runs(runs)
     return 0
 
 
-def _run_replay(args: Any, service: InspectionService, run_id: str | None) -> int:
-    query = _query(args)
-    selected = service.select(run_id)
-    activities = service.replay(
-        selected.metadata.run_id,
-        query=query,
-        limit=_value(args, "limit", 100),
-        after_sequence=_after(args),
-    )
-    document = {
-        "run": selected.metadata.to_dict(),
-        "completeness": selected.read_result.completeness.value,
-        "issues": list(selected.read_result.issues),
-        "activities": [item.to_dict() for item in activities],
-    }
+def _run_replay(args: Any) -> int:
+    context = InspectionReadContext(_workspace_paths(args))
+    document = read_inspection(context, _read_request(args, mode="replay"))
     if _value(args, "json_output", False):
         _print_json(document)
     else:
-        for item in activities:
-            print(f"#{item.sequence} {item.title}: {item.summary}")
+        for item in document["activities"]:
+            print(f"#{item['sequence']} {item['title']}: {item['summary']}")
         print(f"completeness={document['completeness']}")
     return 0
 
 
-def _run_snapshot(args: Any, service: InspectionService, run_id: str | None) -> int:
-    snapshot = service.snapshot(
-        run_id,
-        query=_query(args),
-        limit=_value(args, "limit", 100),
-        selected_sequence=_value(args, "inspect_sequence"),
-        after_sequence=_after(args),
-    )
+def _run_snapshot(args: Any) -> int:
+    context = InspectionReadContext(_workspace_paths(args))
+    snapshot = read_inspection(context, _read_request(args))
     if _value(args, "json_output", False):
-        _print_json(snapshot.to_dict())
+        _print_json(snapshot)
     else:
         render_snapshot(snapshot)
     return 0
@@ -215,31 +213,31 @@ def _run_snapshot(args: Any, service: InspectionService, run_id: str | None) -> 
 def run_inspect(args: Any) -> int:
     """Dispatch the installed inspect surface without constructing AgentApplication."""
 
-    service = _service(args)
     command = _value(args, "inspect_command")
     run_id = _value(args, "inspect_run_id")
     if command == "list":
-        return _run_list(args, service)
+        context = InspectionReadContext(_workspace_paths(args))
+        return _run_list(args, context)
     if command == "bookmark":
-        return _run_bookmark(args, service)
+        operations = InspectionAuxiliaryOperations(_workspace_paths(args))
+        return _run_bookmark(args, operations)
     if command == "export":
-        return _run_export(args, service)
+        operations = InspectionAuxiliaryOperations(_workspace_paths(args))
+        return _run_export(args, operations)
+    read_context = InspectionReadContext(_workspace_paths(args))
     if _value(args, "follow", False):
-        return _run_follow(service, run_id, args)
+        return _run_follow(read_context, run_id, args)
     if command is None and _is_tty() and not _value(args, "json_output", False):
-        return _run_follow(service, run_id, args)
+        return _run_follow(read_context, run_id, args)
     if command == "replay":
-        return _run_replay(args, service, run_id)
-    return _run_snapshot(args, service, run_id)
+        return _run_replay(args)
+    return _run_snapshot(args)
 
 
 def render_context_inspect(context: Any) -> None:
     """Render `/inspect` through the application's already-created service."""
 
-    application = getattr(context, "application", None)
-    service_factory = getattr(application, "inspection_service", None)
-    service = service_factory() if callable(service_factory) else InspectionService(context.workspace_paths)
-    render_snapshot(service.snapshot(limit=100))
+    render_snapshot(read_runtime_inspection(context.task_execution), limit=None)
 
 
 __all__ = ["render_context_inspect", "run_inspect", "render_snapshot"]

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+from test_candidate_manifest import _repo as _synthetic_candidate
 
 from distribution.release_identity import UV_ASSET_URL, UV_SHA256, UV_VERSION
+from scripts import run_wave18_adversarial as campaign
 from scripts.run_wave18_adversarial import (
     PERMANENT_SCENARIOS,
     ScenarioFailure,
-    _current_canonical_source_tree,
     run_campaign,
 )
 from scripts.uv_build_evidence import UV_EVIDENCE_SCHEMA, UV_REQUIRED_CASES
@@ -32,6 +36,27 @@ CRITICAL_IDENTITIES = {
     "W18-A36": "journal PATH_MUTATED recovery",
     "W18-A60": "no public release side effect",
 }
+
+
+def test_campaign_cli_bootstraps_source_imports_in_isolated_python(tmp_path: Path) -> None:
+    script = Path(campaign.__file__).resolve()
+    child_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.casefold() != "pythonpath"
+    }
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", str(script), "--help"],
+        cwd=tmp_path,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout.lower()
 
 
 def test_lightweight_campaign_reports_installed_scenarios_as_not_run() -> None:
@@ -62,6 +87,8 @@ def test_permanent_semantic_identities_cannot_shift() -> None:
 
 
 def test_behavioral_scenarios_require_canonical_verifier_evidence(tmp_path: Path) -> None:
+    selection = _selection_kwargs(tmp_path)
+    selected_manifest = json.loads(selection["candidate_manifest"].read_bytes())
     scenarios = {
         "A45_valid_A_to_B": {"status": "passed"},
         "A46_invalid_pre_promotion": {"status": "passed"},
@@ -86,7 +113,7 @@ def test_behavioral_scenarios_require_canonical_verifier_evidence(tmp_path: Path
                 "status": "passed",
                 "evidence_identity": {
                     "candidate_id": candidate,
-                    "source_tree": _current_canonical_source_tree(),
+                    "source_tree": selected_manifest["source_tree"],
                     "release_manifest_sha256": "c" * 64,
                 },
                 "valid_candidate_fixtures": {"A": candidate},
@@ -96,7 +123,7 @@ def test_behavioral_scenarios_require_canonical_verifier_evidence(tmp_path: Path
         encoding="utf-8",
     )
     uv_evidence = _uv_evidence_for(evidence, tmp_path / "uv-build-evidence.json")
-    report = run_campaign(evidence, uv_build_evidence=uv_evidence)
+    report = run_campaign(evidence, uv_build_evidence=uv_evidence, **selection)
     assert report["status"] == "passed"
     assert report["failed"] == 0
     assert report["not_run"] == 0
@@ -134,6 +161,8 @@ def _uv_evidence_for(installed: Path, target: Path) -> Path:
 
 
 def _installed_evidence(tmp_path: Path, *, source_tree: str | None = None) -> Path:
+    selection = _selection_kwargs(tmp_path)
+    selected_manifest = json.loads(selection["candidate_manifest"].read_bytes())
     candidate = "w18-" + "a" * 32
     scenarios = {
         key: {"status": "passed"}
@@ -160,7 +189,7 @@ def _installed_evidence(tmp_path: Path, *, source_tree: str | None = None) -> Pa
                 "status": "passed",
                 "evidence_identity": {
                     "candidate_id": candidate,
-                    "source_tree": source_tree or _current_canonical_source_tree(),
+                    "source_tree": source_tree or selected_manifest["source_tree"],
                     "release_manifest_sha256": "d" * 64,
                 },
                 "valid_candidate_fixtures": {"A": candidate},
@@ -175,11 +204,61 @@ def _installed_evidence(tmp_path: Path, *, source_tree: str | None = None) -> Pa
     return path
 
 
+def _selection_kwargs(tmp_path: Path) -> dict[str, object]:
+    fixture = tmp_path / "synthetic"
+    fixture.mkdir(exist_ok=True)
+    manifest_path = fixture / "candidate.json"
+    if manifest_path.exists():
+        encoded = manifest_path.read_bytes()
+        digest = hashlib.sha256(encoded).hexdigest()
+    else:
+        root, encoded, digest = _synthetic_candidate(fixture)
+    return {
+        "candidate_manifest": manifest_path,
+        "candidate_manifest_sha256": digest,
+        "candidate_root": root if not manifest_path.exists() else fixture / "repo",
+    }
+
+
+def test_invalid_explicit_campaign_selection_never_uses_w20_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selection = _selection_kwargs(tmp_path)
+
+    def forbidden_fallback() -> str:
+        raise AssertionError("historical W20 fallback was reached")
+
+    monkeypatch.setattr(campaign, "_current_canonical_source_tree", forbidden_fallback)
+    with pytest.raises(ScenarioFailure, match="explicit candidate selection is invalid"):
+        run_campaign(
+            candidate_manifest=selection["candidate_manifest"],
+            candidate_manifest_sha256="0" * 64,
+            candidate_root=selection["candidate_root"],
+        )
+
+
+def test_no_selection_keeps_historical_campaign_provenance_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = _installed_evidence(tmp_path)
+    tree = json.loads(evidence.read_text(encoding="utf-8"))["evidence_identity"]["source_tree"]
+    calls: list[bool] = []
+
+    def historical_identity() -> str:
+        calls.append(True)
+        return tree
+
+    monkeypatch.setattr(campaign, "_current_canonical_source_tree", historical_identity)
+    report = run_campaign(evidence)
+    assert calls == [True]
+    assert report["installed_evidence"]["source_tree"] == tree
+
+
 def test_installed_evidence_from_different_valid_source_tree_is_rejected(tmp_path: Path) -> None:
     evidence = _installed_evidence(tmp_path, source_tree="b" * 40)
 
     with pytest.raises(ScenarioFailure, match="source identity"):
-        run_campaign(evidence)
+        run_campaign(evidence, **_selection_kwargs(tmp_path))
 
 
 def test_installed_evidence_requires_canonical_release_manifest_hash(tmp_path: Path) -> None:
@@ -189,7 +268,7 @@ def test_installed_evidence_requires_canonical_release_manifest_hash(tmp_path: P
     evidence.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(ScenarioFailure, match="source identity"):
-        run_campaign(evidence)
+        run_campaign(evidence, **_selection_kwargs(tmp_path))
 
 
 def test_installed_evidence_rejects_non_hex_release_manifest_hash(tmp_path: Path) -> None:
@@ -199,20 +278,21 @@ def test_installed_evidence_rejects_non_hex_release_manifest_hash(tmp_path: Path
     evidence.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(ScenarioFailure, match="source identity"):
-        run_campaign(evidence)
+        run_campaign(evidence, **_selection_kwargs(tmp_path))
 
 
 def test_modified_installed_evidence_changes_adversarial_binding_hash(tmp_path: Path) -> None:
     evidence = _installed_evidence(tmp_path)
-    first = run_campaign(evidence)
+    selection = _selection_kwargs(tmp_path)
+    first = run_campaign(evidence, **selection)
     evidence.write_bytes(evidence.read_bytes() + b"\n")
-    second = run_campaign(evidence)
+    second = run_campaign(evidence, **selection)
 
     assert first["installed_evidence"]["sha256"] != second["installed_evidence"]["sha256"]
 
 
 def test_a11_is_not_run_without_uv_build_evidence(tmp_path: Path) -> None:
-    report = run_campaign(_installed_evidence(tmp_path))
+    report = run_campaign(_installed_evidence(tmp_path), **_selection_kwargs(tmp_path))
     a11 = next(item for item in report["results"] if item["id"] == "W18-A11")
 
     assert a11["status"] == "not_run"
@@ -223,7 +303,7 @@ def test_a11_consumes_exact_uv_build_evidence_hash(tmp_path: Path) -> None:
     installed = _installed_evidence(tmp_path)
     uv_evidence = _uv_evidence_for(installed, tmp_path / "uv.json")
 
-    report = run_campaign(installed, uv_build_evidence=uv_evidence)
+    report = run_campaign(installed, uv_build_evidence=uv_evidence, **_selection_kwargs(tmp_path))
     a11 = next(item for item in report["results"] if item["id"] == "W18-A11")
 
     assert a11["status"] == "passed"
@@ -240,7 +320,7 @@ def test_a11_rejects_stale_or_mismatched_identity(tmp_path: Path, field: str) ->
     uv_evidence.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(ScenarioFailure, match="uv build evidence is invalid"):
-        run_campaign(installed, uv_build_evidence=uv_evidence)
+        run_campaign(installed, uv_build_evidence=uv_evidence, **_selection_kwargs(tmp_path))
 
 
 def test_a11_rejects_required_negative_case_not_passed(tmp_path: Path) -> None:
@@ -251,4 +331,4 @@ def test_a11_rejects_required_negative_case_not_passed(tmp_path: Path) -> None:
     uv_evidence.write_text(json.dumps(document), encoding="utf-8")
 
     with pytest.raises(ScenarioFailure, match="authenticode"):
-        run_campaign(installed, uv_build_evidence=uv_evidence)
+        run_campaign(installed, uv_build_evidence=uv_evidence, **_selection_kwargs(tmp_path))

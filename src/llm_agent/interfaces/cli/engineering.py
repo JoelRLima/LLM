@@ -5,71 +5,51 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import llm_agent
-from llm_agent.application.agent_boundary import (
-    ApprovalDecision,
-    EngineeringCaller,
-    EngineeringErrorV1,
-    EngineeringExecutionContext,
-    EngineeringOperationViewV1,
-    EngineeringPermission,
-    EngineeringQueryStatus,
-    EngineeringRegistry,
-    EngineeringRequest,
-    EngineeringRunResultV1,
-    EngineeringRunStore,
-    EngineeringService,
-    EngineeringTerminalStatus,
-    EngineeringWorkspaceContext,
-    EvaluationBackend,
-    FaultPlanV1,
-    FaultPlanV1Error,
-    HealthBackend,
-    HomeLifecycleLease,
-    InspectionBackend,
-    RepositoryBackend,
-    SourceRepositoryContext,
-    StorageBootstrap,
-    candidate_identity,
-    candidate_identity_string,
-    compare_practical_profiles,
-    parse_fault_json,
-    production_registry,
+from llm_agent.application.actions import (
+    compare_practical_evaluation,
+    prepare_engineering_fault,
+    resolve_source_candidate_identity,
 )
+from llm_agent.application.actions.engineering import (
+    EngineeringActionOutcome,
+    describe_engineering_operation,
+    engineering_operation_ids,
+    list_engineering_operations,
+    query_engineering_history,
+    query_engineering_result,
+    run_engineering,
+)
+from llm_agent.application.approval import ApprovalResponse
 from llm_agent.application.context import AppPaths, WorkspaceContext
+from llm_agent.application.home_operations import startup_home_operation
 from llm_agent.application.pathing import inspect_final_path, resolve_workspace_path
 from llm_agent.interfaces.cli.approval_input import parse_console_approval
 from llm_agent.interfaces.cli.interactive_shell import prompt_from
 from llm_agent.interfaces.cli.ui import console
 
-ENGINEERING_CLI_DEFAULT_RUN_TIMEOUT_SECONDS = 1800
 
-
-def discover_source_repository_context() -> SourceRepositoryContext | None:
+def discover_source_repository() -> tuple[Path, str] | None:
     try:
         package_file = Path(llm_agent.__file__).resolve(strict=True)
         candidate_root = package_file.parent.parent
         if candidate_root.name == "src":
             candidate_root = candidate_root.parent
         candidate_root = candidate_root.resolve(strict=True)
-        relative_verifier = Path("scripts/verify_installed_package.py")
-        verifier = resolve_workspace_path(
-            candidate_root,
-            relative_verifier,
-            require_file=True,
-        )
-        inspection = inspect_final_path(verifier)
-        if inspection.is_link_like:
+        verifier = resolve_workspace_path(candidate_root, Path("scripts/verify_installed_package.py"), require_file=True)
+        if inspect_final_path(verifier).is_link_like:
             return None
-        identity = candidate_identity_string(candidate_identity(candidate_root))
-        return SourceRepositoryContext(candidate_root, identity)
+        return candidate_root, resolve_source_candidate_identity(candidate_root)
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+def discover_source_repository_context() -> tuple[Path, str] | None:
+    """Keep the CLI discovery seam while returning only neutral source data."""
+    return discover_source_repository()
 
 
 def _duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -95,139 +75,132 @@ def _parameters(raw: str | None) -> dict[str, Any]:
     return value
 
 
-def _context(
-    args: argparse.Namespace,
-    paths: AppPaths,
-    permissions: frozenset[EngineeringPermission],
-    *,
-    fault_plan: FaultPlanV1 | None = None,
-) -> EngineeringExecutionContext:
-    interactive = bool(
+def _interactive(args: argparse.Namespace) -> bool:
+    return bool(
         sys.stdin.isatty()
         and sys.stdout.isatty()
         and not getattr(args, "json_output", False)
         and not getattr(args, "no_input", False)
     )
-    return EngineeringExecutionContext(
-        EngineeringCaller.HUMAN_INTERACTIVE if interactive else EngineeringCaller.AUTOMATION_HEADLESS,
+
+
+def discovery_operation_views(paths: AppPaths, workspace: WorkspaceContext | None = None) -> tuple[dict[str, Any], ...]:
+    """Return neutral discovery projections without starting storage lifecycle."""
+    source = discover_source_repository_context()
+    outcome = list_engineering_operations(
         paths,
-        None,
-        discover_source_repository_context(),
-        permissions,
-        lambda: datetime.now(timezone.utc),
-        time.monotonic,
-        time.monotonic() + ENGINEERING_CLI_DEFAULT_RUN_TIMEOUT_SECONDS,
-        fault_plan=fault_plan,
+        interactive=True,
+        workspace_id=workspace.workspace_id if workspace is not None else None,
+        workspace_root=workspace.root if workspace is not None else None,
+        source_root=source[0] if source is not None else None,
+        source_identity=source[1] if source is not None else None,
     )
+    return tuple(outcome.payload["operations"])
 
 
-def discovery_operation_views(paths: AppPaths, workspace: WorkspaceContext | None = None) -> tuple[EngineeringOperationViewV1, ...]:
-    """Project the trusted CLI Engineering context without starting an application."""
-    bound = EngineeringWorkspaceContext(workspace.workspace_id, workspace.root) if workspace is not None else None
-    context = EngineeringExecutionContext(
-        EngineeringCaller.HUMAN_INTERACTIVE,
+def _run_engineering_operation(
+    args: argparse.Namespace,
+    paths: AppPaths,
+    source: tuple[Path, str] | None,
+    interactive: bool,
+    print_json: Callable[[Any], None],
+) -> int:
+    if getattr(args, "workspace", None):
+        raise ValueError("--workspace is not valid for a source_repository Engineering operation")
+    operation_id = _operation_id(args, interactive)
+    parameters = _parameters(getattr(args, "params_json", None))
+    fault_input = prepare_engineering_fault(getattr(args, "fault_json", None), parameters)
+    if fault_input.fault is not None:
+        parameters["fault"] = fault_input.fault
+
+    allow_external = bool(getattr(args, "allow_external", False))
+    allow_network = bool(getattr(args, "allow_network", False))
+    allow_external, allow_network, denied = _collect_interactive_permissions(
+        operation_id,
         paths,
-        bound,
-        discover_source_repository_context(),
-        frozenset(),
-        lambda: datetime.now(timezone.utc),
-        time.monotonic,
+        interactive,
+        source,
+        allow_external,
+        allow_network,
     )
-    registry = production_registry()
-    return tuple(registry.view(descriptor, context) for descriptor in registry.descriptors())
+    if denied == "external":
+        allow_external = False
+    elif denied == "network":
+        allow_network = False
 
+    def startup_guard(execute: Callable[[], EngineeringActionOutcome]) -> EngineeringActionOutcome:
+        with startup_home_operation(paths):
+            return execute()
 
-def _exit_for(value: EngineeringRunResultV1 | EngineeringErrorV1) -> int:
-    if isinstance(value, EngineeringErrorV1):
-        return 2 if value.query_status is EngineeringQueryStatus.BLOCKED else 1
-    return 0 if value.status is EngineeringTerminalStatus.SUCCEEDED else 1
+    result = run_engineering(
+        operation_id,
+        parameters,
+        paths,
+        interactive=interactive,
+        allow_external=allow_external,
+        allow_network=allow_network,
+        allow_fault_injection=fault_input.requires_inject_fault_permission,
+        source_root=source[0] if source is not None else None,
+        source_identity=source[1] if source is not None else None,
+        denied_permission=denied,
+        run_guard=startup_guard,
+    )
+    return _emit(result.payload, args, print_json, result.exit_code)
 
 
 def run_engineering_cli(args: argparse.Namespace, *, print_json: Callable[[Any], None]) -> int:
     paths = AppPaths.discover(app_home=getattr(args, "home", None))
-    store = EngineeringRunStore()
-    registry = production_registry()
-    backend = RepositoryBackend()
-    service = EngineeringService(
-        registry,
-        {
-            "acceptance.installed-package": backend,
-            "evaluation.practical-v1": EvaluationBackend(),
-            "health.offline": HealthBackend(),
-            "inspection.completed-run": InspectionBackend(),
-        },
-        store,
-    )
-    context = _context(args, paths, frozenset())
-    query_result = _run_query(args, print_json, service, store, context)
-    if query_result is not None:
-        return query_result
-    if getattr(args, "workspace", None):
-        raise ValueError("--workspace is not valid for a source_repository Engineering operation")
-    operation_id = _operation_id(args, context, registry)
-    parameters = _parameters(getattr(args, "params_json", None))
-    fault_plan = _fault_plan(args, parameters)
-    if fault_plan is not None:
-        parameters["fault"] = fault_plan.to_dict()
-    permissions = _permissions(args, fault_plan=fault_plan)
-    denied = _collect_interactive_permissions(operation_id, context, registry, permissions)
-    if denied is not None:
-        return _emit(denied.to_dict(), args, print_json, 2)
-    context = _context(args, paths, frozenset(permissions), fault_plan=fault_plan)
-    request = EngineeringRequest(operation_id, parameters)
-    first = service.preflight(request, context)
-    if isinstance(first, EngineeringErrorV1):
-        return _emit(first.to_dict(), args, print_json, _exit_for(first))
-    lease = HomeLifecycleLease.begin_startup(paths.home_dir)
-    try:
-        StorageBootstrap().prepare(paths)
-        lease.activate()
-        execution = service.run(request, context)
-    finally:
-        lease.close()
-    return _emit(execution.to_dict(), args, print_json, _exit_for(execution))
-
-
-def _run_query(args: argparse.Namespace, print_json: Callable[[Any], None], service: EngineeringService, store: EngineeringRunStore, context: EngineeringExecutionContext) -> int | None:
+    source = discover_source_repository_context()
+    interactive = _interactive(args)
     command = args.test_command
+
     if command == "compare":
-        if context.source_repository is None:
-            return _emit(
-                EngineeringErrorV1(
-                    EngineeringQueryStatus.BLOCKED,
-                    "ENGINEERING_SOURCE_REPOSITORY_REQUIRED",
-                ).to_dict(),
-                args,
-                print_json,
-                1,
-            )
-        comparison = compare_practical_profiles(context.source_repository.root)
-        return _emit(comparison, args, print_json, 0 if comparison.get("status") == "comparable" else 1)
+        outcome = compare_practical_evaluation(source[0] if source is not None else None)
+        return _emit(outcome.document, args, print_json, outcome.exit_code)
     if command == "list":
-        payload = {"schema_version": 1, "operations": [item.to_dict() for item in service.list_operations(context)]}
-        return _emit(payload, args, print_json, 0)
+        result = list_engineering_operations(
+            paths,
+            interactive=interactive,
+            source_root=source[0] if source is not None else None,
+            source_identity=source[1] if source is not None else None,
+        )
+        return _emit(result.payload, args, print_json, result.exit_code)
     if command == "describe":
-        described = service.describe(args.operation_id, context)
-        code = _exit_for(described) if isinstance(described, EngineeringErrorV1) else 0
-        return _emit(described.to_dict(), args, print_json, code)
+        result = describe_engineering_operation(
+            args.operation_id,
+            paths,
+            interactive=interactive,
+            source_root=source[0] if source is not None else None,
+            source_identity=source[1] if source is not None else None,
+        )
+        return _emit(result.payload, args, print_json, result.exit_code)
     if command == "history":
-        history = store.history(context)
-        if isinstance(history, EngineeringErrorV1):
-            return _emit(history.to_dict(), args, print_json, _exit_for(history))
-        return _emit({"schema_version": 1, "runs": [item.to_dict() for item in history]}, args, print_json, 0)
+        result = query_engineering_history(
+            paths,
+            interactive=interactive,
+            source_root=source[0] if source is not None else None,
+            source_identity=source[1] if source is not None else None,
+        )
+        return _emit(result.payload, args, print_json, result.exit_code)
     if command == "result":
-        result = store.result(args.run_id, context)
-        return _emit(result.to_dict(), args, print_json, _exit_for(result))
-    return None
+        result = query_engineering_result(
+            args.run_id,
+            paths,
+            interactive=interactive,
+            source_root=source[0] if source is not None else None,
+            source_identity=source[1] if source is not None else None,
+        )
+        return _emit(result.payload, args, print_json, result.exit_code)
+    return _run_engineering_operation(args, paths, source, interactive, print_json)
 
 
-def _operation_id(args: argparse.Namespace, context: EngineeringExecutionContext, registry: EngineeringRegistry) -> str:
+def _operation_id(args: argparse.Namespace, interactive: bool) -> str:
     operation_id = getattr(args, "operation_id", None)
     if operation_id is not None:
         return str(operation_id)
-    if context.caller is not EngineeringCaller.HUMAN_INTERACTIVE:
+    if not interactive:
         raise ValueError("operation_id is required in headless mode")
-    operations: list[str] = [str(item.operation_id) for item in registry.descriptors()]
+    operations: tuple[str, ...] = engineering_operation_ids()
     if not operations:
         raise ValueError("no Engineering operations are available")
     for index, item in enumerate(operations, 1):
@@ -240,51 +213,45 @@ def _operation_id(args: argparse.Namespace, context: EngineeringExecutionContext
     return operations[int(answer) - 1]
 
 
-def _permissions(args: argparse.Namespace, *, fault_plan: FaultPlanV1 | None = None) -> set[EngineeringPermission]:
-    values: set[EngineeringPermission] = set()
-    if getattr(args, "allow_external", False):
-        values.add(EngineeringPermission.RUN_EXTERNAL)
-    if getattr(args, "allow_network", False):
-        values.add(EngineeringPermission.USE_NETWORK)
-    if fault_plan is not None and fault_plan.steps:
-        values.add(EngineeringPermission.INJECT_FAULT)
-    return values
+def _collect_interactive_permissions(
+    operation_id: str,
+    paths: AppPaths,
+    interactive: bool,
+    source: tuple[Path, str] | None,
+    allow_external: bool,
+    allow_network: bool,
+) -> tuple[bool, bool, str | None]:
+    if not interactive:
+        return allow_external, allow_network, None
+    view = describe_engineering_operation(
+        operation_id,
+        paths,
+        interactive=interactive,
+        source_root=source[0] if source is not None else None,
+        source_identity=source[1] if source is not None else None,
+    ).payload
+    effects = view.get("effects")
+    if not isinstance(effects, Mapping):
+        return allow_external, allow_network, None
+    required = [
+        (effects.get("managed_external_process") is True, allow_external, "external", "Allow external process execution? [yes/no]: "),
+        (effects.get("network") is True, allow_network, "network", "Allow network use? [yes/no]: "),
+    ]
+    grants = [allow_external, allow_network]
+    for index, (needed, already_allowed, kind, label) in enumerate(required):
+        if needed and not already_allowed and parse_console_approval(str(prompt_from(console, label) or "")) is not ApprovalResponse.APPROVE:
+            return grants[0], grants[1], kind
+        if needed:
+            grants[index] = True
+    return grants[0], grants[1], None
 
 
-def _fault_plan(args: argparse.Namespace, parameters: dict[str, Any]) -> FaultPlanV1 | None:
-    raw = getattr(args, "fault_json", None)
-    if raw is not None:
-        return parse_fault_json(raw)
-    value = parameters.get("fault")
-    if value is None:
-        return None
-    try:
-        return FaultPlanV1.from_dict(value)
-    except (FaultPlanV1Error, TypeError, ValueError) as exc:
-        raise ValueError("invalid Engineering fault plan") from exc
-
-
-def _collect_interactive_permissions(operation_id: str, context: EngineeringExecutionContext, registry: EngineeringRegistry, permissions: set[EngineeringPermission]) -> EngineeringErrorV1 | None:
-    descriptor = registry.get(operation_id)
-    if context.caller is not EngineeringCaller.HUMAN_INTERACTIVE or descriptor is None:
-        return None
-    required = (
-        (descriptor.effects.managed_external_process, EngineeringPermission.RUN_EXTERNAL, "Allow external process execution? [yes/no]: "),
-        (descriptor.effects.network, EngineeringPermission.USE_NETWORK, "Allow network use? [yes/no]: "),
-    )
-    for needed, permission, label in required:
-        if needed and permission not in permissions:
-            answer = prompt_from(console, label)
-            if parse_console_approval(str(answer or "")) is not ApprovalDecision.APPROVED:
-                code = "ENGINEERING_EXTERNAL_NOT_AUTHORIZED" if permission is EngineeringPermission.RUN_EXTERNAL else "ENGINEERING_NETWORK_NOT_AUTHORIZED"
-                return EngineeringErrorV1(EngineeringQueryStatus.BLOCKED, code)
-            permissions.add(permission)
-    return None
-
-
-def _emit(payload: dict[str, Any], args: argparse.Namespace, print_json: Callable[[Any], None], code: int) -> int:
+def _emit(payload: Mapping[str, Any], args: argparse.Namespace, print_json: Callable[[Any], None], code: int) -> int:
     if getattr(args, "json_output", False):
-        print_json(payload)
+        print_json(dict(payload))
     else:
-        console.print_json(data=payload)
+        console.print_json(data=dict(payload))
     return code
+
+
+__all__ = ["discovery_operation_views", "discover_source_repository", "run_engineering_cli"]

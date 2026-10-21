@@ -5,7 +5,9 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
-from llm_agent.application.agent_boundary import ApprovalDecision, ChangePreview, ProposalAssessment, TaskResult
+from llm_agent.application.approval import ApprovalResponse
+from llm_agent.application.code_commands import CodeCommandOutcome
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 from llm_agent.interfaces.cli.approval_input import parse_console_approval
 from llm_agent.interfaces.cli.interactive_shell import prompt_from
 
@@ -23,7 +25,7 @@ class ConsoleChangeApprover:
         self.prompt = prompt
         self._lock = Lock()
 
-    def approve(self, preview: ChangePreview, assessment: ProposalAssessment) -> bool:
+    def approve(self, preview: CodeReviewPreview, assessment: CodeReviewAssessment) -> bool:
         if self.assume_yes:
             return True
         with self._lock:
@@ -33,26 +35,21 @@ class ConsoleChangeApprover:
             console.print(Syntax(preview.diff or "(diff vazio)", "diff", word_wrap=True))
             message = "[bold cyan]Aplicar este ChangeSet? [s/sim/y/yes = sim; Enter/n/nao/não/no = não]:[/bold cyan] "
             answer = self.prompt(message) if self.prompt is not None else prompt_from(console, message)
-            return parse_console_approval(str(answer or "")) is ApprovalDecision.APPROVED
+            return parse_console_approval(str(answer or "")) is ApprovalResponse.APPROVE
 
 
-def render_code_result(result: TaskResult) -> None:
-    summary = result.summary or result.error or result.status.value
-    console.print(f"{result.status.value.upper()}: {summary}", markup=False)
-    for artifact in result.artifacts:
-        if artifact.content:
-            lexer = "diff" if artifact.kind == "changeset" else "json"
-            content = artifact.content[:20_000]
-            if len(artifact.content) > len(content):
-                content += "\n... saída truncada pela CLI ..."
+def render_code_result(result: CodeCommandOutcome) -> None:
+    summary = result.summary or result.error or result.status
+    console.print(f"{result.status.upper()}: {summary}", markup=False)
+    for kind, artifact_content in result.artifacts:
+        if artifact_content:
+            lexer = "diff" if kind == "changeset" else "json"
+            content = artifact_content[:20_000]
+            if len(artifact_content) > len(content):
+                content += "\n... sa\u00edda truncada pela CLI ..."
             console.print(Syntax(content, lexer, word_wrap=True))
-    for diagnostic in result.diagnostics:
-        console.print(
-            f"{diagnostic.get('code', 'diagnostic')} "
-            f"{diagnostic.get('file_path', '')}:{diagnostic.get('line', '')} "
-            f"{diagnostic.get('message', '')}",
-            markup=False,
-        )
+    for code, file_path, line, message in result.diagnostics:
+        console.print(f"{code} {file_path}:{line} {message}", markup=False)
 
 
 def exibir_menu() -> None:

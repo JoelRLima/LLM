@@ -5,7 +5,6 @@ import re
 import subprocess
 from io import StringIO
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Iterator
 
 import pytest
@@ -30,9 +29,11 @@ from llm_agent.agent.llm.contracts import (
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.runtime.config_repository import ConfigRepository
 from llm_agent.agent.tools.authority import TaskAuthoritySnapshot
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.extensions.extension_catalog_service import ExtensionCatalogService
 from llm_agent.extensions.extension_catalog_storage import ExtensionCatalogStorage
 from llm_agent.extensions.workspace_extensions_service import WorkspaceExtensionService
+from llm_agent.interfaces.cli.bootstrap import context_from_application
 from llm_agent.interfaces.cli.chat import run_agent_turn
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.workspace.paths import AppPaths
@@ -429,11 +430,8 @@ def test_reused_application_failed_then_successful_run_has_isolated_outcomes(tmp
 
 def _interactive_turn(application: AgentApplication, objective: str) -> Any:
     console = Console(file=StringIO(), force_terminal=False)
-    context = SimpleNamespace(
-        application=application,
-        orchestrator=application.orchestrator,
-        session=application.session,
-    )
+    task_execution = _retain_runtime(application)
+    context = context_from_application(task_execution)
     return run_agent_turn(console, context, objective)
 
 
@@ -453,29 +451,29 @@ def test_interactive_admission_keeps_response_and_task_boundaries_separate(tmp_p
         direct_messages = list(application.session.messages)
         gateway.objective = read_objective
         read = _interactive_turn(application, read_objective)
-        assert read.run_result is not None
-        read_report = json.loads(Path(read.run_result.report_path).read_text(encoding="utf-8"))
+        assert read["report_path"] is not None
+        read_report = json.loads(Path(read["report_path"]).read_text(encoding="utf-8"))
 
-    assert direct.success is True
-    assert direct.answer == "A capital da França é Paris."
-    assert direct.resolution is not None and direct.resolution.action.value == "respond"
-    assert direct.run_result is None
+    assert direct["success"] is True
+    assert direct["answer"] == "A capital da França é Paris."
+    assert direct["resolution"]["action"] == "respond"
+    assert direct.get("report_path") is None
     assert direct_messages[-2:] == [
         {"role": "user", "content": direct_objective},
         {"role": "assistant", "content": "A capital da França é Paris."},
     ]
-    assert read.resolution is not None and read.resolution.action.value == "run"
-    assert read.resolution.directive is not None and read.resolution.directive.value == "read"
-    assert read.run_result is not None and read.run_result.success is True
+    assert read["resolution"]["action"] == "run"
+    assert read["resolution"]["directive"] == "read"
+    assert read["success"] is True
     assert read_report["planner_outcome"] == "use_tools"
-    assert read_report["report_path"] == str(read.run_result.report_path)
+    assert read_report["report_path"] == read["report_path"]
     step = read_report["steps"][0]
     assert step["tool"] == "file_reader"
     assert step["args"] == {"file_path": "notes.txt"}
     assert step["invocation_id"]
     assert step["result"]["executed"] is True
-    assert read.run_result.receipt["tools"][0]["invocation_id"] == step["invocation_id"]
-    assert read.run_result.receipt["tools"][0]["executed"] is True
+    assert read["receipt"]["tools"][0]["invocation_id"] == step["invocation_id"]
+    assert read["receipt"]["tools"][0]["executed"] is True
     assert read_report["metrics"]["run_calls"] == 1
 
 
@@ -491,16 +489,15 @@ def test_interactive_denial_is_bounded_and_survives_a_later_run(tmp_path: Path) 
         configure_logging=False,
     ) as application:
         denied = _interactive_turn(application, denial_objective)
-        assert denied.run_result is not None
-        denied_path = Path(denied.run_result.report_path)
+        assert denied["report_path"] is not None
+        denied_path = Path(denied["report_path"])
         gateway.objective = "DIRECT_CAPITAL"
         _interactive_turn(application, "DIRECT_CAPITAL: Qual e a capital da Franca?")
         report = json.loads(denied_path.read_text(encoding="utf-8"))
 
-    assert denied.success is False
-    assert denied.run_result is not None
-    assert denied.run_result.receipt["tools"] == []
-    assert denied.run_result.receipt["executed"] is None
+    assert denied["success"] is False
+    assert denied["receipt"]["tools"] == []
+    assert denied["receipt"].get("executed") is None
     assert report["steps"] == []
     assert report["planner_outcome"] is None
     assert report["status"] == "blocked"
@@ -519,14 +516,14 @@ def test_interactive_provider_failure_is_canonically_finalized(tmp_path: Path) -
         before = list(application.session.messages)
         result = _interactive_turn(application, "leia notes.txt")
 
-    assert result.status == "failed"
-    assert result.resolution is None
-    assert result.reason_code == "INTERACTION_INTERNAL_FAILED"
-    assert result.error is not None
-    assert result.answer == ""
+    assert result["status"] == "failed"
+    assert result.get("resolution") is None
+    assert result["reason_code"] == "INTERACTION_INTERNAL_FAILED"
+    assert result["error"]
+    assert result["answer"] == ""
     assert application.session.messages == before
     for secret in ("TOPSECRET", "Authorization: Bearer", "api_key=", "token=", "password="):
-        assert secret not in repr(result.to_dict())
+        assert secret not in repr(result)
 
 
 def test_application_receipt_projects_modify_validation_and_rollback(tmp_path: Path) -> None:

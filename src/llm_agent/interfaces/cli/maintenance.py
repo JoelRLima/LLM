@@ -5,11 +5,21 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
-from llm_agent.application.agent_boundary import ExtensionRegistry, HomeLifecycleLease, StorageBootstrap
+from llm_agent.application.configuration_admin import (
+    configuration_path,
+    initialize_configuration,
+    migrate_configuration,
+    validate_configuration,
+)
 from llm_agent.application.context import AppPaths
-from llm_agent.application.extensions import load_strict_extension_manifest
+from llm_agent.application.legacy_extension_registry import (
+    add_legacy_extension,
+    doctor_legacy_extensions,
+    list_legacy_extensions,
+    set_legacy_extension_enabled,
+)
 
 
 def run_doctor(
@@ -22,57 +32,38 @@ def run_doctor(
     write_report: bool,
     online: bool = False,
 ) -> int:
-    from llm_agent.application.agent_boundary import run_health_check
+    from llm_agent.application.health import (
+        HealthDiagnosticsRequest,
+        run_health_diagnostics,
+    )
 
-    report = run_health_check(
-        write_report=write_report,
-        verbose=not json_output,
-        app_paths=app_paths,
-        workspace=workspace,
-        config_path=config_path,
-        profile=profile,
-        online=online,
+    result = run_health_diagnostics(
+        HealthDiagnosticsRequest(
+            app_paths=app_paths,
+            workspace=workspace,
+            config_path=config_path,
+            profile=profile,
+            write_report=write_report,
+            online=online,
+        )
     )
     if json_output:
-        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
-    readiness = report.get("readiness", {})
-    if not isinstance(readiness, dict) or readiness.get("offline_ready") is not True:
+        print(json.dumps(result.structured_report, ensure_ascii=False, sort_keys=True))
+    else:
+        print(result.rendered_report)
+    if not result.offline_ready:
         return 1
-    if online and readiness.get("online_ready") is not True:
+    if online and result.online_ready is not True:
         return 1
     return 0
-
-
-def config_repository(
-    app_paths: AppPaths,
-    config_path: str | Path | None,
-) -> Any:
-    from llm_agent.application.agent_boundary import ConfigRepository
-
-    return ConfigRepository(app_paths, config_path=config_path)
 
 
 def initialize_config(
     app_paths: AppPaths,
     config_path: str | Path | None,
 ) -> Path:
-    """Initialize config through the same domain used by `config init`."""
-    repository = config_repository(app_paths, config_path)
-    target = repository.path.resolve()
-    home = app_paths.home_dir.resolve()
-    try:
-        target.relative_to(home)
-        canonical_write = True
-    except ValueError:
-        canonical_write = False
-    if not canonical_write:
-        return cast(Path, repository.initialize())
-    lease = HomeLifecycleLease.begin_transient(home)
-    try:
-        StorageBootstrap().prepare(app_paths)
-        return cast(Path, repository.initialize())
-    finally:
-        lease.close()
+    """Compatibility entry point delegating initialization to Application."""
+    return cast(Path, initialize_configuration(app_paths, config_path))
 
 
 def run_config(
@@ -82,37 +73,15 @@ def run_config(
     config_path: str | Path | None,
     profile: str | None,
 ) -> int:
-    repository = config_repository(app_paths, config_path)
     if args.config_command == "path":
-        print(repository.path)
+        print(configuration_path(app_paths, config_path))
     elif args.config_command == "init":
-        print(initialize_config(app_paths, config_path))
+        print(initialize_configuration(app_paths, config_path))
     elif args.config_command == "validate":
-        repository.load(
-            overrides=(
-                {"default_model_profile": profile}
-                if profile is not None
-                else None
-            )
-        )
-        print(f"Configuração válida: {repository.path}")
+        path = validate_configuration(app_paths, config_path, profile)
+        print(f"Configura\u00e7\u00e3o v\u00e1lida: {path}")
     elif args.config_command == "migrate":
-        target = repository.path.resolve()
-        try:
-            target.relative_to(app_paths.home_dir.resolve())
-            canonical_write = True
-        except ValueError:
-            canonical_write = False
-        if canonical_write:
-            lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
-            try:
-                StorageBootstrap().prepare(app_paths)
-                migrated = repository.migrate(args.source)
-            finally:
-                lease.close()
-        else:
-            migrated = repository.migrate(args.source)
-        print(migrated)
+        print(migrate_configuration(app_paths, args.source, config_path=config_path))
     else:  # pragma: no cover - argparse enforces the command set.
         raise ValueError(f"Comando de configuração desconhecido: {args.config_command}")
     return 0
@@ -124,75 +93,22 @@ def run_state(
     app_paths: AppPaths,
     workspace: Path,
 ) -> int:
-    from llm_agent.application.agent_boundary import migrate_legacy_state
-    from llm_agent.application.context import WorkspaceContext
+    from llm_agent.application.state_migration import StateMigrationRequest, migrate_state
 
     if args.state_command != "migrate":  # pragma: no cover - argparse enforces it.
         raise ValueError(f"Comando de estado desconhecido: {args.state_command}")
-    workspace_context = WorkspaceContext.create(workspace)
-    destination = app_paths.for_workspace(workspace_context.workspace_id)
-    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
-    try:
-        StorageBootstrap().prepare(app_paths)
-        report = migrate_legacy_state(args.source, destination)
-    finally:
-        lease.close()
+    result = migrate_state(
+        StateMigrationRequest(
+            source=args.source,
+            workspace=workspace,
+            app_paths=app_paths,
+        )
+    )
     print(
-        f"Migração concluída: {len(report.copied)} copiado(s), "
-        f"{len(report.skipped)} preservado(s). Origem mantida em {report.source}."
+        f"Migração concluída: {result.copied_count} copiado(s), "
+        f"{result.skipped_count} preservado(s). Origem mantida em {result.source}."
     )
     return 0
-
-
-def _registry_path(args: argparse.Namespace, app_paths: AppPaths) -> Path:
-    state_path = getattr(args, "state", None)
-    if state_path:
-        return Path(str(state_path)).expanduser().resolve()
-    return cast(Path, app_paths.extensions_dir / "registry.json")
-
-
-def _run_tools(
-    args: argparse.Namespace,
-    *,
-    app_paths: AppPaths,
-    workspace: Path,
-) -> int:
-    del workspace
-    registry = ExtensionRegistry(_registry_path(args, app_paths))
-
-    if args.tools_command == "list":
-        for entry in registry.list():
-            status = "enabled" if entry.enabled else "disabled"
-            print(f"{entry.id} [{status}] -> {entry.manifest_path}")
-        return 0
-
-    if args.tools_command == "add":
-        registry.add(id=args.id, manifest_path=args.manifest, enabled=not args.disabled)
-        print(f"Extensão registrada: {args.id}")
-        return 0
-
-    if args.tools_command == "enable":
-        registry.set_enabled(args.id, True)
-        print(f"Extensão habilitada: {args.id}")
-        return 0
-
-    if args.tools_command == "disable":
-        registry.set_enabled(args.id, False)
-        print(f"Extensão desabilitada: {args.id}")
-        return 0
-
-    if args.tools_command == "doctor":
-        for entry in registry.list():
-            manifest_path = entry.manifest_path
-            exists = manifest_path.exists()
-            if exists:
-                manifest = load_strict_extension_manifest(manifest_path)
-                print(f"{entry.id}: OK ({manifest.id}@{manifest.version})")
-            else:
-                print(f"{entry.id}: MISSING MANIFEST")
-        return 0
-
-    raise ValueError(f"Comando de ferramentas desconhecido: {args.tools_command}")
 
 
 def run_tools(
@@ -201,28 +117,50 @@ def run_tools(
     app_paths: AppPaths,
     workspace: Path,
 ) -> int:
-    """Run legacy extension administration with guarded canonical writes."""
+    del workspace
+    state_path = getattr(args, "state", None)
 
-    command = args.tools_command
-    mutating = command in {"add", "enable", "disable"}
-    target = _registry_path(args, app_paths)
-    try:
-        target.relative_to(app_paths.home_dir.resolve())
-        canonical_write = True
-    except ValueError:
-        canonical_write = False
-    if not mutating or not canonical_write:
-        return _run_tools(args, app_paths=app_paths, workspace=workspace)
-    lease = HomeLifecycleLease.begin_transient(app_paths.home_dir)
-    try:
-        StorageBootstrap().prepare(app_paths)
-        return _run_tools(args, app_paths=app_paths, workspace=workspace)
-    finally:
-        lease.close()
+    if args.tools_command == "list":
+        for entry in list_legacy_extensions(app_paths, state_path):
+            status = "enabled" if entry.enabled else "disabled"
+            print(f"{entry.id} [{status}] -> {entry.manifest_path}")
+        return 0
+
+    if args.tools_command == "add":
+        add_legacy_extension(
+            app_paths,
+            extension_id=args.id,
+            manifest_path=args.manifest,
+            enabled=not args.disabled,
+            state_path=state_path,
+        )
+        print(f"Extensão registrada: {args.id}")
+        return 0
+
+    if args.tools_command == "enable":
+        set_legacy_extension_enabled(app_paths, args.id, True, state_path)
+        print(f"Extensão habilitada: {args.id}")
+        return 0
+
+    if args.tools_command == "disable":
+        set_legacy_extension_enabled(app_paths, args.id, False, state_path)
+        print(f"Extensão desabilitada: {args.id}")
+        return 0
+
+    if args.tools_command == "doctor":
+        for entry in doctor_legacy_extensions(app_paths, state_path):
+            if entry.manifest_status == "ok":
+                print(f"{entry.id}: OK ({entry.manifest_id}@{entry.manifest_version})")
+            elif entry.manifest_status == "missing":
+                print(f"{entry.id}: MISSING MANIFEST")
+            else:  # pragma: no cover - Application returns only doctor projections.
+                raise RuntimeError("Diagnóstico de extensão sem status de manifesto")
+        return 0
+
+    raise ValueError(f"Comando de ferramentas desconhecido: {args.tools_command}")
 
 
 __all__ = [
-    "config_repository",
     "initialize_config",
     "run_config",
     "run_doctor",

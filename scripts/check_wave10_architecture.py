@@ -72,7 +72,14 @@ def _has_explicit_resume_route(function: ast.FunctionDef) -> bool:
         isinstance(node, ast.Attribute) and node.attr == "resume"
         for node in ast.walk(function)
     )
-    return has_application and (has_explicit_flag or has_resume_method)
+    has_application_operation = any(
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "execute_submission"
+        and any(keyword.arg == "entry" and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "headless-resume" for keyword in node.keywords)
+        for node in ast.walk(function)
+    )
+    return has_application and (has_explicit_flag or has_resume_method or has_application_operation)
 
 
 def _check_cli_imports(tree: ast.Module, relative: str) -> list[ArchitectureViolation]:

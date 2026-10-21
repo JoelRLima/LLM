@@ -210,8 +210,10 @@ def _materialize_result(state: _CommandExecutionState, started: float) -> Comman
 class CommandExecutor:
     """Execute one bounded command with deterministic cleanup."""
 
-    def __init__(self, *, popen: Callable[..., subprocess.Popen[Any]] | None = None) -> None:
+    def __init__(self, *, popen: Callable[..., subprocess.Popen[Any]] | None = None,
+                 fail_on_orphaned_group: bool = False) -> None:
         self._popen = popen or subprocess.Popen
+        self._fail_on_orphaned_group = fail_on_orphaned_group
 
     def _start_process(self, request: CommandRequest, state: _CommandExecutionState) -> None:
         if os.name == "nt":
@@ -230,6 +232,7 @@ class CommandExecutor:
             StreamCapture(request.stderr_limit),
             Event(),
             [],
+            fail_on_orphaned_group=self._fail_on_orphaned_group,
         )
         if os.name == "nt" and not assign_windows_job(state.windows_job, process):
             raise CommandExecutionError(
@@ -250,6 +253,7 @@ class CommandExecutor:
             stderr=stderr,
             stop_readers=stop_readers,
             reader_errors=reader_errors,
+            fail_on_orphaned_group=self._fail_on_orphaned_group,
         )
 
     @staticmethod

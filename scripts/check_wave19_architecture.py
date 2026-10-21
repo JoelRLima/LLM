@@ -8,7 +8,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -129,11 +129,13 @@ def _layout_for_root(root: Path) -> SourceLayout:
 
 
 def _relative(path: Path, root: Path = ROOT) -> str:
-    return _layout_for_root(root).w21_relative_path(path)
+    relative = _layout_for_root(root).w21_relative_path(path)
+    return cast(str, relative)
 
 
 def _repository_path(root: Path, relative: str) -> Path:
-    return _layout_for_root(root).path_for_w21_relative(relative)
+    repository_path = _layout_for_root(root).path_for_w21_relative(relative)
+    return cast(Path, repository_path)
 
 
 def _read(root: Path, relative: str) -> str:
@@ -226,6 +228,275 @@ def _check_no_workspace_reconstruction(root: Path) -> list[ArchitectureViolation
                     )
                 )
                 break
+    return findings
+
+
+def _check_configuration_writers(root: Path) -> list[ArchitectureViolation]:
+    """Prove config init/migrate guards remain on the canonical destination only."""
+    relative = "src/llm_agent/application/configuration_admin.py"
+    tree = _tree(root, relative)
+    if tree is None:
+        return [_violation("W19-S05-009", relative, "configuration admin owner cannot be parsed")]
+    functions = {
+        node.name: node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    findings: list[ArchitectureViolation] = []
+    for function_name, owner_method in (
+        ("initialize_configuration", "initialize"),
+        ("migrate_configuration", "migrate"),
+    ):
+        operation = functions.get(function_name)
+        if operation is None:
+            findings.append(_violation("W19-S05-009", relative, f"guarded config writer {function_name} is missing"))
+            continue
+        calls = [node for node in ast.walk(operation) if isinstance(node, ast.Call)]
+        lease_calls = [node for node in calls if _call_parts(node.func)[-1:] == ("begin_transient",)]
+        bootstrap_calls = [node for node in calls if _call_parts(node.func)[-1:] == ("prepare",)]
+        writer_calls = [node for node in calls if _call_parts(node.func)[-1:] == (owner_method,)]
+        external_return = any(
+            isinstance(handler, ast.ExceptHandler)
+            and isinstance(handler.type, ast.Name)
+            and handler.type.id == "ValueError"
+            and any(
+                isinstance(statement, ast.Return)
+                and isinstance(statement.value, ast.Call)
+                and _call_parts(statement.value.func)[-1:] == (owner_method,)
+                for statement in handler.body
+            )
+            for handler in ast.walk(operation)
+        )
+        external_classification = [
+            node for node in ast.walk(operation)
+            if isinstance(node, ast.Try)
+            and any(
+                isinstance(handler, ast.ExceptHandler)
+                and isinstance(handler.type, ast.Name)
+                and handler.type.id == "ValueError"
+                and any(
+                    isinstance(statement, ast.Return)
+                    and isinstance(statement.value, ast.Call)
+                    and _call_parts(statement.value.func)[-1:] == (owner_method,)
+                    for statement in handler.body
+                )
+                for handler in node.handlers
+            )
+            and any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "relative_to"
+                for statement in node.body for call in ast.walk(statement)
+            )
+        ]
+        guarded_tries = [
+            node for node in ast.walk(operation)
+            if isinstance(node, ast.Try)
+            and any(
+                isinstance(child, ast.Call) and _call_parts(child.func)[-1:] == ("close",)
+                and isinstance(child.func, ast.Attribute)
+                and isinstance(child.func.value, ast.Name)
+                and child.func.value.id == "lease"
+                for statement in node.finalbody for child in ast.walk(statement)
+            )
+        ]
+        guarded_calls = [
+            child for node in guarded_tries for child in ast.walk(node)
+            if isinstance(child, ast.Call)
+        ]
+        guarded_writer = [node for node in guarded_calls if _call_parts(node.func)[-1:] == (owner_method,)]
+        guarded_bootstrap = [node for node in guarded_calls if _call_parts(node.func)[-1:] == ("prepare",)]
+        lease_assignment = any(
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "lease"
+            and isinstance(node.value, ast.Call)
+            and _call_parts(node.value.func)[-1:] == ("begin_transient",)
+            for node in ast.walk(operation)
+        )
+        target_assignment = any(
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "target"
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Attribute)
+            and _call_parts(node.value.func)[-1:] == ("resolve",)
+            and _call_parts(node.value.func.value)[-1:] == ("path",)
+            and isinstance(node.value.func.value.value, ast.Name)
+            and node.value.func.value.value.id == "repository"
+            for node in ast.walk(operation)
+        )
+        home_assignment = any(
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "home"
+            and isinstance(node.value, ast.Call)
+            and _call_parts(node.value.func)[-1:] == ("resolve",)
+            and isinstance(node.value.func, ast.Attribute)
+            and isinstance(node.value.func.value, ast.Attribute)
+            and node.value.func.value.attr == "home_dir"
+            and isinstance(node.value.func.value.value, ast.Name)
+            and node.value.func.value.value.id == "app_paths"
+            for node in ast.walk(operation)
+        )
+        relative_to_target = any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "relative_to"
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "target"
+            and len(call.args) == 1
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "home"
+            for node in external_classification for statement in node.body for call in ast.walk(statement)
+        )
+        lease_uses_home = any(
+            isinstance(call, ast.Call)
+            and _call_parts(call.func)[-1:] == ("begin_transient",)
+            and len(call.args) == 1
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "home"
+            for call in lease_calls
+        )
+        bootstrap_uses_paths = any(
+            isinstance(call, ast.Call)
+            and _call_parts(call.func)[-1:] == ("prepare",)
+            and isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Call)
+            and _call_parts(call.func.value.func)[-1:] == ("StorageBootstrap",)
+            and len(call.args) == 1
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "app_paths"
+            for call in bootstrap_calls
+        )
+        if not (
+            len(lease_calls) == len(bootstrap_calls) == 1
+            and len(writer_calls) == 2
+            and len(guarded_tries) == 1
+            and len(guarded_writer) == len(guarded_bootstrap) == 1
+            and len(external_classification) == 1
+            and lease_assignment
+            and external_return
+            and target_assignment
+            and home_assignment
+            and relative_to_target
+            and lease_uses_home
+            and bootstrap_uses_paths
+        ):
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} lacks canonical/external guarded write projection"))
+        elif not (external_classification[0].lineno < lease_calls[0].lineno < guarded_bootstrap[0].lineno < guarded_writer[0].lineno):
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} violates lease/bootstrap/write ordering"))
+        canonical_region_calls = [*lease_calls, *guarded_calls]
+        if any(
+            isinstance(node, ast.Call)
+            and _call_parts(node.func)[-1:] in {("begin_transient",), ("prepare",)}
+            for node in ast.walk(operation)
+            if node not in canonical_region_calls
+        ):
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} guards a noncanonical branch"))
+    findings.extend(_check_interface_home_lifecycle(root))
+    return findings
+
+
+def _functions(tree: ast.Module | None) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    return {
+        node.name: node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    } if tree is not None else {}
+
+
+def _calls_in(node: ast.AST) -> list[ast.Call]:
+    return [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+
+
+def _context_body(function: ast.AST, seam: str, argument: str) -> ast.With | None:
+    matches = [
+        node for node in ast.walk(function) if isinstance(node, ast.With)
+        and any(
+            isinstance(item.context_expr, ast.Call)
+            and _call_parts(item.context_expr.func)[-1:] == (seam,)
+            and len(item.context_expr.args) == 1
+            and isinstance(item.context_expr.args[0], ast.Name)
+            and item.context_expr.args[0].id == argument
+            for item in node.items
+        )
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _check_interface_home_lifecycle(root: Path) -> list[ArchitectureViolation]:
+    """Enforce Interface delegation and Application-owned lease guarantees."""
+    findings: list[ArchitectureViolation] = []
+    interface_contracts = (
+        ("src/llm_agent/interfaces/cli/extensions.py", "run_extensions", "transient_home_operation", "app_paths", ("_run_extensions",)),
+        ("src/llm_agent/interfaces/cli/first_run.py", "recover_first_run_config", "transient_home_operation", "app_paths", ("read_first_run_configuration", "_complete_guided_setup")),
+    )
+    for relative, function_name, seam, argument, required_calls in interface_contracts:
+        function = _functions(_tree(root, relative)).get(function_name)
+        context = _context_body(function, seam, argument) if function is not None else None
+        if context is None or any(
+            not any(_call_parts(call.func)[-1:] == (required,) for statement in context.body for call in _calls_in(statement))
+            for required in required_calls
+        ):
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} must delegate protected work through {seam}"))
+    engineering_path = "src/llm_agent/interfaces/cli/engineering.py"
+    engineering = _functions(_tree(root, engineering_path)).get("_run_engineering_operation")
+    guard = next((node for node in ast.walk(engineering) if isinstance(node, ast.FunctionDef) and node.name == "startup_guard"), None) if engineering else None
+    startup = _context_body(guard, "startup_home_operation", "paths") if guard else None
+    guarded_call = any(
+        _call_parts(call.func)[-1:] == ("run_engineering",)
+        and any(keyword.arg == "run_guard" and isinstance(keyword.value, ast.Name) and keyword.value.id == "startup_guard" for keyword in call.keywords)
+        for call in _calls_in(engineering)
+    ) if engineering else False
+    if startup is None or not guarded_call or not any(_call_parts(call.func)[-1:] == ("execute",) for statement in startup.body for call in _calls_in(statement)):
+        findings.append(_violation("W19-S05-009", engineering_path, "engineering execution must use startup_home_operation"))
+    for relative in (*(contract[0] for contract in interface_contracts), engineering_path):
+        tree = _tree(root, relative)
+        if tree is not None and any(
+            (isinstance(node, ast.Name) and node.id in {"HomeLifecycleLease", "StorageBootstrap"})
+            or (isinstance(node, ast.ImportFrom) and any(alias.name in {"HomeLifecycleLease", "StorageBootstrap"} for alias in node.names))
+            or (isinstance(node, ast.Call) and _call_parts(node.func)[-1:] in {("begin_transient",), ("begin_startup",)})
+            for node in ast.walk(tree)
+        ):
+            findings.append(_violation("W19-S05-009", relative, "Interface code must not own the lifecycle lease or storage bootstrap"))
+
+    application_path = "src/llm_agent/application/home_operations.py"
+    operations = _functions(_tree(root, application_path))
+    for name, begin, activate in (("transient_home_operation", "begin_transient", False), ("startup_home_operation", "begin_startup", True)):
+        operation = operations.get(name)
+        calls = _calls_in(operation) if operation is not None else []
+        acquisition = [call for call in calls if _call_parts(call.func)[-1:] == (begin,)]
+        bootstrap = [call for call in calls if _call_parts(call.func)[-1:] == ("prepare",)]
+        activations = [call for call in calls if _call_parts(call.func)[-1:] == ("activate",)]
+        guarded = [
+            node for node in ast.walk(operation) if isinstance(node, ast.Try)
+            and any(isinstance(item, ast.Yield) for statement in node.body for item in ast.walk(statement))
+            and any(
+                isinstance(call.func, ast.Attribute) and call.func.attr == "close"
+                and isinstance(call.func.value, ast.Name) and call.func.value.id == "lease"
+                for statement in node.finalbody for call in _calls_in(statement)
+            )
+        ] if operation is not None else []
+        valid_acquisition = len(acquisition) == 1 and len(acquisition[0].args) == 1 and _call_parts(acquisition[0].args[0])[-2:] == ("paths", "home_dir") and operation is not None and any(
+            isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "lease" and node.value is acquisition[0]
+            for node in ast.walk(operation)
+        )
+        if not (valid_acquisition and len(bootstrap) == 1 and len(activations) == (1 if activate else 0) and len(guarded) == 1):
+            findings.append(_violation("W19-S05-009", application_path, f"{name} must acquire, prepare, execute, and release its lifecycle in finally"))
+            continue
+        protected = guarded[0]
+        protected_calls = _calls_in(protected)
+        valid_bootstrap = len(bootstrap) == 1 and bootstrap[0] in protected_calls and len(bootstrap[0].args) == 1 and isinstance(bootstrap[0].args[0], ast.Name) and bootstrap[0].args[0].id == "paths"
+        valid_activation = not activate or activations[0] in protected_calls
+        yields = [item.lineno for statement in protected.body for item in ast.walk(statement) if isinstance(item, ast.Yield)]
+        close_positions = [call.lineno for statement in protected.finalbody for call in _calls_in(statement) if isinstance(call.func, ast.Attribute) and call.func.attr == "close"]
+        ordered = [acquisition[0].lineno, bootstrap[0].lineno, *([activations[0].lineno] if activate else []), *yields]
+        if not valid_bootstrap or not valid_activation or len(yields) != 1 or ordered != sorted(ordered) or len(close_positions) != 1 or bootstrap[0].lineno >= close_positions[0]:
+            findings.append(_violation("W19-S05-009", application_path, f"{name} lifecycle ordering or finally cleanup changed"))
     return findings
 
 
@@ -336,13 +607,21 @@ def _check_guarded_writers(root: Path) -> list[ArchitectureViolation]:
             "StorageBootstrap().prepare",
             "home_lease.activate",
         ),
-        ("agent/interfaces/cli/maintenance.py", "initialize_config"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
-        ("agent/interfaces/cli/maintenance.py", "run_state"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
-        ("agent/interfaces/cli/maintenance.py", "run_config"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
-        ("agent/interfaces/cli/maintenance.py", "run_tools"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
-        ("agent/interfaces/cli/extensions.py", "run_extensions"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
+        ("src/llm_agent/application/configuration_admin.py", "initialize_configuration"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
+        ("src/llm_agent/application/state_migration/operations.py", "migrate_state"): (
+            "HomeLifecycleLease.begin_transient",
+            "StorageBootstrap().prepare",
+        ),
+        ("src/llm_agent/application/configuration_admin.py", "migrate_configuration"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
+        ("src/llm_agent/application/legacy_extension_registry.py", "add_legacy_extension"): (
+            "HomeLifecycleLease.begin_transient",
+            "StorageBootstrap().prepare",
+        ),
+        ("src/llm_agent/application/legacy_extension_registry.py", "set_legacy_extension_enabled"): (
+            "HomeLifecycleLease.begin_transient",
+            "StorageBootstrap().prepare",
+        ),
         ("agent/health/standalone.py", "write_health_report"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
-        ("agent/interfaces/cli/first_run.py", "recover_first_run_config"): ("HomeLifecycleLease.begin_transient", "StorageBootstrap().prepare"),
     }
     findings: list[ArchitectureViolation] = []
     for (relative, function), tokens in required.items():
@@ -353,7 +632,71 @@ def _check_guarded_writers(root: Path) -> list[ArchitectureViolation]:
         for token in tokens:
             if token not in source:
                 findings.append(_violation("W19-S05-009", relative, f"{function} is missing {token}"))
+    relative = "src/llm_agent/application/legacy_extension_registry.py"
+    tree = _tree(root, relative)
+    for function_name, mutation_name in (
+        ("add_legacy_extension", "add"),
+        ("set_legacy_extension_enabled", "set_enabled"),
+    ):
+        operation = next((
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
+        ), None) if tree is not None else None
+        canonical_if = next((
+            node for node in operation.body
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Call)
+            and _call_name(node.test.func) == "_canonical_target"
+        ), None) if operation is not None else None
+        if canonical_if is None:
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} does not classify canonical write target"))
+            continue
+        if canonical_if.orelse:
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} has an unprojected external mutation branch"))
+
+        lease = _call_positions(canonical_if, "begin_transient")
+        tries = [node for node in ast.walk(canonical_if) if isinstance(node, ast.Try)]
+        protected_body = tries[0] if len(tries) == 1 else canonical_if
+        bootstrap = _call_positions(protected_body, "prepare")
+        registry = _call_positions(protected_body, "ExtensionRegistry")
+        mutation = _call_positions(protected_body, mutation_name)
+        closes = [
+            child.lineno
+            for try_node in tries
+            for final in try_node.finalbody
+            for child in ast.walk(final)
+            if isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "close"
+            and isinstance(child.func.value, ast.Name)
+            and child.func.value.id == "lease"
+        ]
+        if not (len(tries) == 1 and len(lease) == len(bootstrap) == len(registry) == len(mutation) == len(closes) == 1):
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} lacks guarded mutation or finally close"))
+        elif not lease[0] < bootstrap[0] < registry[0] < mutation[0]:
+            findings.append(_violation("W19-S05-009", relative, f"{function_name} violates lease/bootstrap/load/mutation order"))
+    findings.extend(_check_configuration_writers(root))
     return findings
+
+
+def _call_positions(node: ast.AST, call_name: str) -> list[int]:
+    if isinstance(node, ast.Try):
+        scanned: Iterable[ast.AST] = [child for statement in node.body for child in ast.walk(statement)]
+    else:
+        scanned = ast.walk(node)
+    return [
+        child.lineno
+        for child in scanned
+        if isinstance(child, ast.Call) and _call_name(child.func) == call_name
+    ]
+
+
+def _call_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
 
 
 def _imports(tree: ast.AST) -> Iterable[tuple[str, str]]:

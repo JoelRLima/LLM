@@ -1,0 +1,2860 @@
+{
+  "acceptance": "Implementation evidence only; USER formal acceptance pending",
+  "actual_evidence": {
+    "F1_family_lineage": [
+      {
+        "baseline_family": "Agent.application_result",
+        "modules": [
+          "llm_agent.agent.application_result"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.application_result"
+          ]
+        ]
+      },
+      {
+        "baseline_family": "Agent.final_response",
+        "modules": [
+          "llm_agent.agent.final_response"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.final_response"
+          ]
+        ]
+      },
+      {
+        "baseline_family": "Agent.interaction",
+        "modules": [
+          "llm_agent.agent.interaction.transcript"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.interaction.transcript"
+          ]
+        ]
+      },
+      {
+        "baseline_family": "Agent.llm",
+        "modules": [
+          "llm_agent.agent.llm.session"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.llm.session"
+          ]
+        ]
+      },
+      {
+        "baseline_family": "Agent.reporting",
+        "modules": [
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.reporting.run_receipt_builder",
+          "llm_agent.agent.reporting.run_snapshot"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.reporting.run_receipt",
+            "llm_agent.agent.reporting.run_receipt_builder",
+            "llm_agent.agent.reporting.run_snapshot"
+          ]
+        ]
+      },
+      {
+        "baseline_family": "Agent.routing",
+        "modules": [
+          "llm_agent.agent.routing.persona.current"
+        ],
+        "successor_components": [
+          [
+            "llm_agent.agent.routing.persona.current"
+          ]
+        ]
+      }
+    ],
+    "F1_successor_components": [
+      {
+        "families": [
+          "Agent.application_result"
+        ],
+        "modules": [
+          "llm_agent.agent.application_result"
+        ]
+      },
+      {
+        "families": [
+          "Agent.final_response"
+        ],
+        "modules": [
+          "llm_agent.agent.final_response"
+        ]
+      },
+      {
+        "families": [
+          "Agent.interaction"
+        ],
+        "modules": [
+          "llm_agent.agent.interaction.transcript"
+        ]
+      },
+      {
+        "families": [
+          "Agent.llm"
+        ],
+        "modules": [
+          "llm_agent.agent.llm.session"
+        ]
+      },
+      {
+        "families": [
+          "Agent.routing"
+        ],
+        "modules": [
+          "llm_agent.agent.routing.persona.current"
+        ]
+      },
+      {
+        "families": [
+          "Agent.reporting"
+        ],
+        "modules": [
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.reporting.run_receipt_builder",
+          "llm_agent.agent.reporting.run_snapshot"
+        ]
+      }
+    ],
+    "F2_final_component": {
+      "families": [
+        "Agent.application",
+        "Agent.application_wiring",
+        "Agent.engineering",
+        "Agent.evaluation"
+      ],
+      "modules": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.engineering.backends.evaluation",
+        "llm_agent.agent.engineering.model_safe",
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.engineering.recovery",
+        "llm_agent.agent.engineering.service",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.evaluation.agent_executor",
+        "llm_agent.agent.evaluation.practical"
+      ],
+      "unchanged": true
+    },
+    "baseline_components": {
+      "F1": {
+        "families": [
+          "Agent.application_result",
+          "Agent.final_response",
+          "Agent.interaction",
+          "Agent.llm",
+          "Agent.reporting",
+          "Agent.routing"
+        ],
+        "modules": [
+          "llm_agent.agent.application_result",
+          "llm_agent.agent.final_response",
+          "llm_agent.agent.interaction.transcript",
+          "llm_agent.agent.llm.session",
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.reporting.run_receipt_builder",
+          "llm_agent.agent.reporting.run_snapshot",
+          "llm_agent.agent.routing.persona.current"
+        ]
+      },
+      "F2": {
+        "families": [
+          "Agent.application",
+          "Agent.application_wiring",
+          "Agent.engineering",
+          "Agent.evaluation"
+        ],
+        "modules": [
+          "llm_agent.agent.application",
+          "llm_agent.agent.application_wiring",
+          "llm_agent.agent.engineering.backends.evaluation",
+          "llm_agent.agent.engineering.model_safe",
+          "llm_agent.agent.engineering.policy",
+          "llm_agent.agent.engineering.recovery",
+          "llm_agent.agent.engineering.service",
+          "llm_agent.agent.engineering.store",
+          "llm_agent.agent.engineering.transactions",
+          "llm_agent.agent.evaluation.agent_executor",
+          "llm_agent.agent.evaluation.practical"
+        ]
+      }
+    },
+    "baseline_report_sha256": "a37dd0481517b4f221b1df59faa72fbb41c980f85462efa2359b2e41e3915125",
+    "baseline_vector": {
+      "cross_domain_scc_count": 2,
+      "largest_family_count": 6,
+      "total_cross_domain_family_membership": 10
+    },
+    "edge_delta": {
+      "added": [
+        [
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.reporting.partial_response"
+        ]
+      ],
+      "removed": [
+        [
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.final_response"
+        ]
+      ]
+    },
+    "final_vector": {
+      "cross_domain_cycle_edge_count": 5,
+      "cross_domain_cycle_edges": [
+        {
+          "destination_module": "llm_agent.agent.application_wiring",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application.py:15"
+          ],
+          "source_module": "llm_agent.agent.application"
+        },
+        {
+          "destination_module": "llm_agent.agent.engineering.model_safe",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application_wiring.py:72"
+          ],
+          "source_module": "llm_agent.agent.application_wiring"
+        },
+        {
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import",
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/backends/evaluation.py:14",
+            "src/llm_agent/agent/engineering/backends/evaluation.py:22"
+          ],
+          "source_module": "llm_agent.agent.engineering.backends.evaluation"
+        },
+        {
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/policy.py:84"
+          ],
+          "source_module": "llm_agent.agent.engineering.policy"
+        },
+        {
+          "destination_module": "llm_agent.agent.application",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/evaluation/agent_executor.py:11"
+          ],
+          "source_module": "llm_agent.agent.evaluation.agent_executor"
+        }
+      ],
+      "cross_domain_scc_count": 1,
+      "cross_domain_sccs": [
+        {
+          "families": [
+            "Agent.application",
+            "Agent.application_wiring",
+            "Agent.engineering",
+            "Agent.evaluation"
+          ],
+          "modules": [
+            "llm_agent.agent.application",
+            "llm_agent.agent.application_wiring",
+            "llm_agent.agent.engineering.backends.evaluation",
+            "llm_agent.agent.engineering.model_safe",
+            "llm_agent.agent.engineering.policy",
+            "llm_agent.agent.engineering.recovery",
+            "llm_agent.agent.engineering.service",
+            "llm_agent.agent.engineering.store",
+            "llm_agent.agent.engineering.transactions",
+            "llm_agent.agent.evaluation.agent_executor",
+            "llm_agent.agent.evaluation.practical"
+          ]
+        }
+      ],
+      "edges": 3145,
+      "largest_family_count": 4,
+      "largest_module_scc_size": 14,
+      "modules": 904,
+      "nontrivial_scc_count": 33,
+      "total_cross_domain_family_membership": 4
+    },
+    "pre_correction_vector": {
+      "cross_domain_cycle_edge_count": 12,
+      "cross_domain_cycle_edges": [
+        {
+          "destination_module": "llm_agent.agent.application_wiring",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application.py:15"
+          ],
+          "source_module": "llm_agent.agent.application"
+        },
+        {
+          "destination_module": "llm_agent.agent.reporting.run_receipt",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application_result.py:10"
+          ],
+          "source_module": "llm_agent.agent.application_result"
+        },
+        {
+          "destination_module": "llm_agent.agent.reporting.run_snapshot",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application_result.py:11"
+          ],
+          "source_module": "llm_agent.agent.application_result"
+        },
+        {
+          "destination_module": "llm_agent.agent.engineering.model_safe",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application_wiring.py:72"
+          ],
+          "source_module": "llm_agent.agent.application_wiring"
+        },
+        {
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import",
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/backends/evaluation.py:14",
+            "src/llm_agent/agent/engineering/backends/evaluation.py:22"
+          ],
+          "source_module": "llm_agent.agent.engineering.backends.evaluation"
+        },
+        {
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/policy.py:84"
+          ],
+          "source_module": "llm_agent.agent.engineering.policy"
+        },
+        {
+          "destination_module": "llm_agent.agent.application",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/evaluation/agent_executor.py:11"
+          ],
+          "source_module": "llm_agent.agent.evaluation.agent_executor"
+        },
+        {
+          "destination_module": "llm_agent.agent.routing.persona.current",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/final_response.py:20"
+          ],
+          "source_module": "llm_agent.agent.final_response"
+        },
+        {
+          "destination_module": "llm_agent.agent.application_result",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/interaction/transcript.py:9"
+          ],
+          "source_module": "llm_agent.agent.interaction.transcript"
+        },
+        {
+          "destination_module": "llm_agent.agent.interaction.transcript",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/llm/session.py:97"
+          ],
+          "source_module": "llm_agent.agent.llm.session"
+        },
+        {
+          "destination_module": "llm_agent.agent.final_response",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/reporting/run_receipt.py:185"
+          ],
+          "source_module": "llm_agent.agent.reporting.run_receipt"
+        },
+        {
+          "destination_module": "llm_agent.agent.llm.session",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/routing/persona/current.py:12"
+          ],
+          "source_module": "llm_agent.agent.routing.persona.current"
+        }
+      ],
+      "cross_domain_scc_count": 2,
+      "cross_domain_sccs": [
+        {
+          "families": [
+            "Agent.application_result",
+            "Agent.final_response",
+            "Agent.interaction",
+            "Agent.llm",
+            "Agent.reporting",
+            "Agent.routing"
+          ],
+          "modules": [
+            "llm_agent.agent.application_result",
+            "llm_agent.agent.final_response",
+            "llm_agent.agent.interaction.transcript",
+            "llm_agent.agent.llm.session",
+            "llm_agent.agent.reporting.run_receipt",
+            "llm_agent.agent.reporting.run_receipt_builder",
+            "llm_agent.agent.reporting.run_snapshot",
+            "llm_agent.agent.routing.persona.current"
+          ]
+        },
+        {
+          "families": [
+            "Agent.application",
+            "Agent.application_wiring",
+            "Agent.engineering",
+            "Agent.evaluation"
+          ],
+          "modules": [
+            "llm_agent.agent.application",
+            "llm_agent.agent.application_wiring",
+            "llm_agent.agent.engineering.backends.evaluation",
+            "llm_agent.agent.engineering.model_safe",
+            "llm_agent.agent.engineering.policy",
+            "llm_agent.agent.engineering.recovery",
+            "llm_agent.agent.engineering.service",
+            "llm_agent.agent.engineering.store",
+            "llm_agent.agent.engineering.transactions",
+            "llm_agent.agent.evaluation.agent_executor",
+            "llm_agent.agent.evaluation.practical"
+          ]
+        }
+      ],
+      "edges": 3145,
+      "largest_family_count": 6,
+      "largest_module_scc_size": 14,
+      "modules": 904,
+      "nontrivial_scc_count": 33,
+      "total_cross_domain_family_membership": 10
+    },
+    "production_source_fingerprint": {
+      "method": "SHA-256 of compact JSON sorted [relative path, raw SHA-256] pairs; all production Python modules",
+      "sha256": "4a5534cb6ccd4c16793db27b3272f019428cea848e65338f2811b5273e613cef"
+    },
+    "receipt_sha256": "73b8c61695509dc80b4f3811b724bcc1e89f1c5748021efa66f8877e06195f5a",
+    "retained_cycle_edges": [
+      {
+        "destination_module": "llm_agent.agent.application_wiring",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/application.py:15"
+        ],
+        "source_module": "llm_agent.agent.application"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.model_safe",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/application_wiring.py:72"
+        ],
+        "source_module": "llm_agent.agent.application_wiring"
+      },
+      {
+        "destination_module": "llm_agent.agent.continuity.snapshot",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/continuity/models.py:245"
+        ],
+        "source_module": "llm_agent.agent.continuity.models"
+      },
+      {
+        "destination_module": "llm_agent.agent.continuity.models",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/continuity/snapshot.py:9"
+        ],
+        "source_module": "llm_agent.agent.continuity.snapshot"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.practical",
+        "edge_kinds": [
+          "local_import",
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/backends/evaluation.py:14",
+          "src/llm_agent/agent/engineering/backends/evaluation.py:22"
+        ],
+        "source_module": "llm_agent.agent.engineering.backends.evaluation"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.backends.evaluation",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/model_safe.py:12"
+        ],
+        "source_module": "llm_agent.agent.engineering.model_safe"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.policy",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/model_safe.py:26"
+        ],
+        "source_module": "llm_agent.agent.engineering.model_safe"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.service",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/model_safe.py:28"
+        ],
+        "source_module": "llm_agent.agent.engineering.model_safe"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.store",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/model_safe.py:245"
+        ],
+        "source_module": "llm_agent.agent.engineering.model_safe"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.practical",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/policy.py:84"
+        ],
+        "source_module": "llm_agent.agent.engineering.policy"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.policy",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/recovery.py:18"
+        ],
+        "source_module": "llm_agent.agent.engineering.recovery"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.policy",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/service.py:24"
+        ],
+        "source_module": "llm_agent.agent.engineering.service"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.policy",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/store.py:23"
+        ],
+        "source_module": "llm_agent.agent.engineering.store"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.recovery",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/store.py:31"
+        ],
+        "source_module": "llm_agent.agent.engineering.store"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.transactions",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/store.py:45",
+          "src/llm_agent/agent/engineering/store.py:55"
+        ],
+        "source_module": "llm_agent.agent.engineering.store"
+      },
+      {
+        "destination_module": "llm_agent.agent.engineering.policy",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/engineering/transactions.py:22"
+        ],
+        "source_module": "llm_agent.agent.engineering.transactions"
+      },
+      {
+        "destination_module": "llm_agent.agent.application",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/agent_executor.py:11"
+        ],
+        "source_module": "llm_agent.agent.evaluation.agent_executor"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.campaign_report",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/campaign.py:11"
+        ],
+        "source_module": "llm_agent.agent.evaluation.campaign"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.campaign",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/campaign_report.py:50"
+        ],
+        "source_module": "llm_agent.agent.evaluation.campaign_report"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scenario_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/direct_authority_scenarios.py:6"
+        ],
+        "source_module": "llm_agent.agent.evaluation.direct_authority_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.feedback_store",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/feedback.py:11"
+        ],
+        "source_module": "llm_agent.agent.evaluation.feedback"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.feedback",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/feedback_store.py:28",
+          "src/llm_agent/agent/evaluation/feedback_store.py:38"
+        ],
+        "source_module": "llm_agent.agent.evaluation.feedback_store"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.direct_authority_scenarios",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/h_series_scenarios.py:8"
+        ],
+        "source_module": "llm_agent.agent.evaluation.h_series_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scenario_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/h_series_scenarios.py:9"
+        ],
+        "source_module": "llm_agent.agent.evaluation.h_series_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scenario_h12",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/h_series_scenarios.py:10"
+        ],
+        "source_module": "llm_agent.agent.evaluation.h_series_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.structured_proof_scenarios",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/h_series_scenarios.py:11"
+        ],
+        "source_module": "llm_agent.agent.evaluation.h_series_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.agent_executor",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/practical.py:110"
+        ],
+        "source_module": "llm_agent.agent.evaluation.practical"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.receipt_projection",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/receipt.py:192",
+          "src/llm_agent/agent/evaluation/receipt.py:250",
+          "src/llm_agent/agent/evaluation/receipt.py:264"
+        ],
+        "source_module": "llm_agent.agent.evaluation.receipt"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.receipt",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/receipt_projection.py:10",
+          "src/llm_agent/agent/evaluation/receipt_projection.py:25",
+          "src/llm_agent/agent/evaluation/receipt_projection.py:250"
+        ],
+        "source_module": "llm_agent.agent.evaluation.receipt_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.receipt_serialization",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/receipt_projection.py:21"
+        ],
+        "source_module": "llm_agent.agent.evaluation.receipt_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.receipt",
+        "edge_kinds": [
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/receipt_serialization.py:8"
+        ],
+        "source_module": "llm_agent.agent.evaluation.receipt_serialization"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.release_prerequisites_validation",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/release_prerequisites.py:266"
+        ],
+        "source_module": "llm_agent.agent.evaluation.release_prerequisites"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.release_prerequisites",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/release_prerequisites_validation.py:9"
+        ],
+        "source_module": "llm_agent.agent.evaluation.release_prerequisites_validation"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.h_series_scenarios",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/scenario_contracts.py:259"
+        ],
+        "source_module": "llm_agent.agent.evaluation.scenario_contracts"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scenario_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/scenario_h12.py:6"
+        ],
+        "source_module": "llm_agent.agent.evaluation.scenario_h12"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scripted_gateway_logic",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/scripted_gateway_dispatch.py:48",
+          "src/llm_agent/agent/evaluation/scripted_gateway_dispatch.py:78"
+        ],
+        "source_module": "llm_agent.agent.evaluation.scripted_gateway_dispatch"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scripted_gateway_dispatch",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/scripted_gateway_logic.py:187"
+        ],
+        "source_module": "llm_agent.agent.evaluation.scripted_gateway_logic"
+      },
+      {
+        "destination_module": "llm_agent.agent.evaluation.scenario_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/evaluation/structured_proof_scenarios.py:6"
+        ],
+        "source_module": "llm_agent.agent.evaluation.structured_proof_scenarios"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.guard_projection",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/admission.py:108"
+        ],
+        "source_module": "llm_agent.agent.interaction.admission"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.semantic_admission",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/admission.py:96"
+        ],
+        "source_module": "llm_agent.agent.interaction.admission"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.admission",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/guard_projection.py:43"
+        ],
+        "source_module": "llm_agent.agent.interaction.guard_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.resolver_runtime",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/resolver.py:209"
+        ],
+        "source_module": "llm_agent.agent.interaction.resolver"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.resolver",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/resolver_runtime.py:20"
+        ],
+        "source_module": "llm_agent.agent.interaction.resolver_runtime"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/result.py:9"
+        ],
+        "source_module": "llm_agent.agent.interaction.result"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.admission",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/semantic_admission.py:34"
+        ],
+        "source_module": "llm_agent.agent.interaction.semantic_admission"
+      },
+      {
+        "destination_module": "llm_agent.agent.interaction.result",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/interaction/types.py:198",
+          "src/llm_agent/agent/interaction/types.py:250",
+          "src/llm_agent/agent/interaction/types.py:266",
+          "src/llm_agent/agent/interaction/types.py:281"
+        ],
+        "source_module": "llm_agent.agent.interaction.types"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.identity",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/audit_identity.py:16"
+        ],
+        "source_module": "llm_agent.agent.llm.audit_identity"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_budget",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection.py:244"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_codec",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection.py:134",
+          "src/llm_agent/agent/llm/context_projection.py:143",
+          "src/llm_agent/agent/llm/context_projection.py:154",
+          "src/llm_agent/agent/llm/context_projection.py:161",
+          "src/llm_agent/agent/llm/context_projection.py:180"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection.py:15"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_guidance",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection.py:228"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_budget.py:10"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_budget"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_codec",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_budget.py:19"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_budget"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_codec.py:11",
+          "src/llm_agent/agent/llm/context_projection_codec.py:112",
+          "src/llm_agent/agent/llm/context_projection_codec.py:151",
+          "src/llm_agent/agent/llm/context_projection_codec.py:174",
+          "src/llm_agent/agent/llm/context_projection_codec.py:75",
+          "src/llm_agent/agent/llm/context_projection_codec.py:88"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_codec"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection",
+        "edge_kinds": [
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_contracts.py:9"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_contracts"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_guidance.py:11"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_guidance"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.context_projection_codec",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/context_projection_guidance.py:25"
+        ],
+        "source_module": "llm_agent.agent.llm.context_projection_guidance"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.task_definition_decision_compat",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/decision_contract.py:269"
+        ],
+        "source_module": "llm_agent.agent.llm.decision_contract"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.audit_identity",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/identity.py:11"
+        ],
+        "source_module": "llm_agent.agent.llm.identity"
+      },
+      {
+        "destination_module": "llm_agent.agent.llm.decision_contract",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/llm/task_definition_decision_compat.py:7"
+        ],
+        "source_module": "llm_agent.agent.llm.task_definition_decision_compat"
+      },
+      {
+        "destination_module": "llm_agent.agent.observability.trace_runtime",
+        "edge_kinds": [
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/observability/trace_catalog.py:29",
+          "src/llm_agent/agent/observability/trace_catalog.py:34"
+        ],
+        "source_module": "llm_agent.agent.observability.trace_catalog"
+      },
+      {
+        "destination_module": "llm_agent.agent.observability.trace_catalog",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/observability/trace_runtime.py:149",
+          "src/llm_agent/agent/observability/trace_runtime.py:30"
+        ],
+        "source_module": "llm_agent.agent.observability.trace_runtime"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.observation_types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/observation_receipts.py:13"
+        ],
+        "source_module": "llm_agent.agent.planning.observation_receipts"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.progress_receipt",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/observation_receipts.py:14"
+        ],
+        "source_module": "llm_agent.agent.planning.observation_receipts"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.observation_receipts",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/observation_types.py:54"
+        ],
+        "source_module": "llm_agent.agent.planning.observation_types"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_validator",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_admission.py:17"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_admission"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_builder_compat",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_builder.py:24"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_builder"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_builder",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_builder_compat.py:12",
+          "src/llm_agent/agent/planning/plan_builder_compat.py:23",
+          "src/llm_agent/agent/planning/plan_builder_compat.py:52"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_builder_compat"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model_types",
+        "edge_kinds": [
+          "local_import",
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_model.py:10",
+          "src/llm_agent/agent/planning/plan_model.py:81"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_reference_resolver",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_model.py:227"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_step_types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_model.py:17"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.result_bindings",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_model_types.py:65",
+          "src/llm_agent/agent/planning/plan_model_types.py:74"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_model_types"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_validator",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_policy_checks.py:51"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_policy_checks"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_reference_resolver.py:8"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_reference_resolver"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model_types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_reference_resolver.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_reference_resolver"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_step_types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_reference_resolver.py:14"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_reference_resolver"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model_types",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_step_types.py:10"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_step_types"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_policy_checks",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_validator.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_validator"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_validator_schema",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_validator.py:16"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_validator"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_policy_checks",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_validator_schema.py:20"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_validator_schema"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.validation_repair",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/plan_validator_schema.py:27"
+        ],
+        "source_module": "llm_agent.agent.planning.plan_validator_schema"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.presentation",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/planning_context.py:135",
+          "src/llm_agent/agent/planning/planning_context.py:28"
+        ],
+        "source_module": "llm_agent.agent.planning.planning_context"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.planning_context",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/presentation.py:8"
+        ],
+        "source_module": "llm_agent.agent.planning.presentation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.presentation_rendering",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/presentation.py:14"
+        ],
+        "source_module": "llm_agent.agent.planning.presentation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.planning_context",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/presentation_rendering.py:17"
+        ],
+        "source_module": "llm_agent.agent.planning.presentation_rendering"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.progress_receipt_state",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/progress_receipt.py:18"
+        ],
+        "source_module": "llm_agent.agent.planning.progress_receipt"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.observation_receipts",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/progress_receipt_state.py:42"
+        ],
+        "source_module": "llm_agent.agent.planning.progress_receipt_state"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.replan_validation",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/replan.py:7"
+        ],
+        "source_module": "llm_agent.agent.planning.replan"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_admission",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/replan_validation.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.replan_validation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/result_bindings.py:8"
+        ],
+        "source_module": "llm_agent.agent.planning.result_bindings"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.result_bindings_resolution",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/result_bindings.py:22"
+        ],
+        "source_module": "llm_agent.agent.planning.result_bindings"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/result_bindings_resolution.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.result_bindings_resolution"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_ast",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding.py:23"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_discovery",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding.py:24"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding.py:30"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_revalidation",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding.py:36"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_workflow",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding.py:233"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_ast.py:7"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_ast"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_ast",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_discovery.py:14"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_discovery"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_enumeration",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_discovery.py:12",
+          "src/llm_agent/agent/planning/target_grounding_discovery.py:18"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_discovery"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_discovery.py:25"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_discovery"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_enumeration.py:15"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_enumeration"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_discovery",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_global.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_global"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_global.py:10"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_global"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_model.py:118"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_ast",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_revalidation.py:20"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_revalidation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_discovery",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_revalidation.py:21"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_revalidation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_global",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_revalidation.py:22"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_revalidation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_revalidation.py:23"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_revalidation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.target_grounding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/target_grounding_workflow.py:14"
+        ],
+        "source_module": "llm_agent.agent.planning.target_grounding_workflow"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_authority_helpers",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_authority.py:8"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_authority"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_inference",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_authority.py:164"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_authority"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_authority",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_authority_helpers.py:98"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_authority_helpers"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_authority",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_inference.py:8"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_inference"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_types",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_obligation.py:148",
+          "src/llm_agent/agent/planning/task_semantics_obligation.py:56",
+          "src/llm_agent/agent/planning/task_semantics_obligation.py:9"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_obligation"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.task_semantics_obligation",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/task_semantics_types.py:341",
+          "src/llm_agent/agent/planning/task_semantics_types.py:353",
+          "src/llm_agent/agent/planning/task_semantics_types.py:359"
+        ],
+        "source_module": "llm_agent.agent.planning.task_semantics_types"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.validation_repair_plan",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/validation_repair.py:7"
+        ],
+        "source_module": "llm_agent.agent.planning.validation_repair"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.replan",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/validation_repair_plan.py:67"
+        ],
+        "source_module": "llm_agent.agent.planning.validation_repair_plan"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.validation_repair_support",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/validation_repair_plan.py:68"
+        ],
+        "source_module": "llm_agent.agent.planning.validation_repair_plan"
+      },
+      {
+        "destination_module": "llm_agent.agent.planning.plan_admission",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/planning/validation_repair_support.py:38",
+          "src/llm_agent/agent/planning/validation_repair_support.py:96"
+        ],
+        "source_module": "llm_agent.agent.planning.validation_repair_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.observation_evidence",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/invocation_evidence.py:10"
+        ],
+        "source_module": "llm_agent.agent.reporting.invocation_evidence"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.invocation_evidence",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/observation_evidence.py:211"
+        ],
+        "source_module": "llm_agent.agent.reporting.observation_evidence"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.observation_serialization",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/observation_evidence.py:217",
+          "src/llm_agent/agent/reporting/observation_evidence.py:223"
+        ],
+        "source_module": "llm_agent.agent.reporting.observation_evidence"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.invocation_evidence",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/observation_serialization.py:9"
+        ],
+        "source_module": "llm_agent.agent.reporting.observation_serialization"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.observation_evidence",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/observation_serialization.py:10"
+        ],
+        "source_module": "llm_agent.agent.reporting.observation_serialization"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.run_receipt_builder",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/run_receipt.py:18"
+        ],
+        "source_module": "llm_agent.agent.reporting.run_receipt"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.run_snapshot",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/run_receipt.py:23"
+        ],
+        "source_module": "llm_agent.agent.reporting.run_receipt"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.run_snapshot",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/run_receipt_builder.py:17"
+        ],
+        "source_module": "llm_agent.agent.reporting.run_receipt_builder"
+      },
+      {
+        "destination_module": "llm_agent.agent.reporting.run_receipt",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/reporting/run_snapshot.py:97"
+        ],
+        "source_module": "llm_agent.agent.reporting.run_snapshot"
+      },
+      {
+        "destination_module": "llm_agent.agent.runtime.budget_estimation",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/runtime/budget.py:9"
+        ],
+        "source_module": "llm_agent.agent.runtime.budget"
+      },
+      {
+        "destination_module": "llm_agent.agent.runtime.request_measurement",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/runtime/budget_estimation.py:9"
+        ],
+        "source_module": "llm_agent.agent.runtime.budget_estimation"
+      },
+      {
+        "destination_module": "llm_agent.agent.runtime.budget",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/runtime/request_measurement.py:129",
+          "src/llm_agent/agent/runtime/request_measurement.py:224"
+        ],
+        "source_module": "llm_agent.agent.runtime.request_measurement"
+      },
+      {
+        "destination_module": "llm_agent.agent.runtime.storage_receipts",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/runtime/storage_contracts.py:195",
+          "src/llm_agent/agent/runtime/storage_contracts.py:201",
+          "src/llm_agent/agent/runtime/storage_contracts.py:213",
+          "src/llm_agent/agent/runtime/storage_contracts.py:229"
+        ],
+        "source_module": "llm_agent.agent.runtime.storage_contracts"
+      },
+      {
+        "destination_module": "llm_agent.agent.runtime.storage_contracts",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/runtime/storage_receipts.py:11"
+        ],
+        "source_module": "llm_agent.agent.runtime.storage_receipts"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_filesystem_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state.py:15"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_model_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state.py:18"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_parser_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state.py:24",
+          "src/llm_agent/agent/skills/repository_state.py:27"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state_filesystem_support.py:15"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state_filesystem_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state_model_support.py:35"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state_model_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_filesystem_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state_model_support.py:9"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state_model_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state_parser_support.py:13",
+          "src/llm_agent/agent/skills/repository_state_parser_support.py:34"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state_parser_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.skills.repository_state_parser_support",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/skills/repository_state_support.py:5"
+        ],
+        "source_module": "llm_agent.agent.skills.repository_state_support"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.contract_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/binding_model.py:8"
+        ],
+        "source_module": "llm_agent.agent.task_definition.binding_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.spec_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/binding_model.py:20"
+        ],
+        "source_module": "llm_agent.agent.task_definition.binding_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.serialization",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/contract_model.py:123"
+        ],
+        "source_module": "llm_agent.agent.task_definition.contract_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.binding_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/models.py:3"
+        ],
+        "source_module": "llm_agent.agent.task_definition.models"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.contract_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/models.py:8"
+        ],
+        "source_module": "llm_agent.agent.task_definition.models"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.spec_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/models.py:24"
+        ],
+        "source_module": "llm_agent.agent.task_definition.models"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.models",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/serialization.py:11"
+        ],
+        "source_module": "llm_agent.agent.task_definition.serialization"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.contract_model",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/spec_model.py:8"
+        ],
+        "source_module": "llm_agent.agent.task_definition.spec_model"
+      },
+      {
+        "destination_module": "llm_agent.agent.task_definition.serialization",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/agent/task_definition/spec_model.py:257"
+        ],
+        "source_module": "llm_agent.agent.task_definition.spec_model"
+      },
+      {
+        "destination_module": "llm_agent.application.task_execution",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/application/conversation.py:15"
+        ],
+        "source_module": "llm_agent.application.conversation"
+      },
+      {
+        "destination_module": "llm_agent.application.services.query_find",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/application/services/queries.py:271"
+        ],
+        "source_module": "llm_agent.application.services.queries"
+      },
+      {
+        "destination_module": "llm_agent.application.services.query_git",
+        "edge_kinds": [
+          "local_import",
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/application/services/queries.py:13",
+          "src/llm_agent/application/services/queries.py:276",
+          "src/llm_agent/application/services/queries.py:281"
+        ],
+        "source_module": "llm_agent.application.services.queries"
+      },
+      {
+        "destination_module": "llm_agent.application.services.queries",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/application/services/query_find.py:9"
+        ],
+        "source_module": "llm_agent.application.services.query_find"
+      },
+      {
+        "destination_module": "llm_agent.application.services.queries",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/application/services/query_git.py:138",
+          "src/llm_agent/application/services/query_git.py:180",
+          "src/llm_agent/application/services/query_git.py:95"
+        ],
+        "source_module": "llm_agent.application.services.query_git"
+      },
+      {
+        "destination_module": "llm_agent.application.conversation",
+        "edge_kinds": [
+          "local_import",
+          "normal_import",
+          "type_checking"
+        ],
+        "evidence": [
+          "src/llm_agent/application/task_execution.py:113",
+          "src/llm_agent/application/task_execution.py:28"
+        ],
+        "source_module": "llm_agent.application.task_execution"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_registry",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_parser.py:5"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_parser"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.command_handlers",
+        "edge_kinds": [
+          "declarative_runtime_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_registry.py:242",
+          "src/llm_agent/interfaces/cli/action_registry.py:243",
+          "src/llm_agent/interfaces/cli/action_registry.py:244",
+          "src/llm_agent/interfaces/cli/action_registry.py:245",
+          "src/llm_agent/interfaces/cli/action_registry.py:246",
+          "src/llm_agent/interfaces/cli/action_registry.py:247",
+          "src/llm_agent/interfaces/cli/action_registry.py:248",
+          "src/llm_agent/interfaces/cli/action_registry.py:249",
+          "src/llm_agent/interfaces/cli/action_registry.py:250",
+          "src/llm_agent/interfaces/cli/action_registry.py:251",
+          "src/llm_agent/interfaces/cli/action_registry.py:252",
+          "src/llm_agent/interfaces/cli/action_registry.py:253",
+          "src/llm_agent/interfaces/cli/action_registry.py:254",
+          "src/llm_agent/interfaces/cli/action_registry.py:255",
+          "src/llm_agent/interfaces/cli/action_registry.py:256",
+          "src/llm_agent/interfaces/cli/action_registry.py:259",
+          "src/llm_agent/interfaces/cli/action_registry.py:260",
+          "src/llm_agent/interfaces/cli/action_registry.py:261",
+          "src/llm_agent/interfaces/cli/action_registry.py:263",
+          "src/llm_agent/interfaces/cli/action_registry.py:264",
+          "src/llm_agent/interfaces/cli/action_registry.py:265",
+          "src/llm_agent/interfaces/cli/action_registry.py:266",
+          "src/llm_agent/interfaces/cli/action_registry.py:269"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_registry"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.commands",
+        "edge_kinds": [
+          "declarative_runtime_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_registry.py:262"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_registry"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.discovery_ui",
+        "edge_kinds": [
+          "declarative_runtime_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_registry.py:216"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_registry"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_commands",
+        "edge_kinds": [
+          "declarative_runtime_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_registry.py:227",
+          "src/llm_agent/interfaces/cli/action_registry.py:228",
+          "src/llm_agent/interfaces/cli/action_registry.py:229",
+          "src/llm_agent/interfaces/cli/action_registry.py:230",
+          "src/llm_agent/interfaces/cli/action_registry.py:231",
+          "src/llm_agent/interfaces/cli/action_registry.py:232",
+          "src/llm_agent/interfaces/cli/action_registry.py:233",
+          "src/llm_agent/interfaces/cli/action_registry.py:234",
+          "src/llm_agent/interfaces/cli/action_registry.py:235",
+          "src/llm_agent/interfaces/cli/action_registry.py:236",
+          "src/llm_agent/interfaces/cli/action_registry.py:237",
+          "src/llm_agent/interfaces/cli/action_registry.py:238",
+          "src/llm_agent/interfaces/cli/action_registry.py:239",
+          "src/llm_agent/interfaces/cli/action_registry.py:240",
+          "src/llm_agent/interfaces/cli/action_registry.py:241",
+          "src/llm_agent/interfaces/cli/action_registry.py:257",
+          "src/llm_agent/interfaces/cli/action_registry.py:258"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_registry"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "declarative_runtime_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/action_registry.py:215"
+        ],
+        "source_module": "llm_agent.interfaces.cli.action_registry"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_commands",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/command_handlers.py:17"
+        ],
+        "source_module": "llm_agent.interfaces.cli.command_handlers"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_input",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/command_handlers.py:19"
+        ],
+        "source_module": "llm_agent.interfaces.cli.command_handlers"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.memory_commands",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/command_handlers.py:20"
+        ],
+        "source_module": "llm_agent.interfaces.cli.command_handlers"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/command_handlers.py:29"
+        ],
+        "source_module": "llm_agent.interfaces.cli.command_handlers"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_parser",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/commands.py:8"
+        ],
+        "source_module": "llm_agent.interfaces.cli.commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_registry",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/commands.py:9"
+        ],
+        "source_module": "llm_agent.interfaces.cli.commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_rendering",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/commands.py:105"
+        ],
+        "source_module": "llm_agent.interfaces.cli.commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.output_viewer",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/commands.py:21"
+        ],
+        "source_module": "llm_agent.interfaces.cli.commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/commands.py:10"
+        ],
+        "source_module": "llm_agent.interfaces.cli.commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_registry",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/discovery_projection.py:24"
+        ],
+        "source_module": "llm_agent.interfaces.cli.discovery_projection"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_registry",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/discovery_ui.py:8"
+        ],
+        "source_module": "llm_agent.interfaces.cli.discovery_ui"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.discovery_projection",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/discovery_ui.py:9"
+        ],
+        "source_module": "llm_agent.interfaces.cli.discovery_ui"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.engineering",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/discovery_ui.py:14"
+        ],
+        "source_module": "llm_agent.interfaces.cli.discovery_ui"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/discovery_ui.py:76"
+        ],
+        "source_module": "llm_agent.interfaces.cli.discovery_ui"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/engineering.py:32"
+        ],
+        "source_module": "llm_agent.interfaces.cli.engineering"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.command_handlers",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/interactive_commands.py:15"
+        ],
+        "source_module": "llm_agent.interfaces.cli.interactive_commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/interactive_commands.py:9"
+        ],
+        "source_module": "llm_agent.interfaces.cli.interactive_commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/interactive_input.py:8"
+        ],
+        "source_module": "llm_agent.interfaces.cli.interactive_input"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.query_rendering",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/interactive_rendering.py:11"
+        ],
+        "source_module": "llm_agent.interfaces.cli.interactive_rendering"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/interactive_rendering.py:16"
+        ],
+        "source_module": "llm_agent.interfaces.cli.interactive_rendering"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_input",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/memory_commands.py:10"
+        ],
+        "source_module": "llm_agent.interfaces.cli.memory_commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/memory_commands.py:11"
+        ],
+        "source_module": "llm_agent.interfaces.cli.memory_commands"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/output_viewer.py:19"
+        ],
+        "source_module": "llm_agent.interfaces.cli.output_viewer"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.interactive_rendering",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/query_rendering.py:145"
+        ],
+        "source_module": "llm_agent.interfaces.cli.query_rendering"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.ui",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/query_rendering.py:21"
+        ],
+        "source_module": "llm_agent.interfaces.cli.query_rendering"
+      },
+      {
+        "destination_module": "llm_agent.interfaces.cli.action_registry",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/interfaces/cli/ui.py:57"
+        ],
+        "source_module": "llm_agent.interfaces.cli.ui"
+      },
+      {
+        "destination_module": "llm_agent.outputs.validation",
+        "edge_kinds": [
+          "normal_import"
+        ],
+        "evidence": [
+          "src/llm_agent/outputs/models.py:11"
+        ],
+        "source_module": "llm_agent.outputs.models"
+      },
+      {
+        "destination_module": "llm_agent.outputs.models",
+        "edge_kinds": [
+          "local_import"
+        ],
+        "evidence": [
+          "src/llm_agent/outputs/validation.py:11",
+          "src/llm_agent/outputs/validation.py:127",
+          "src/llm_agent/outputs/validation.py:141",
+          "src/llm_agent/outputs/validation.py:150",
+          "src/llm_agent/outputs/validation.py:17",
+          "src/llm_agent/outputs/validation.py:175",
+          "src/llm_agent/outputs/validation.py:196",
+          "src/llm_agent/outputs/validation.py:215",
+          "src/llm_agent/outputs/validation.py:228",
+          "src/llm_agent/outputs/validation.py:26",
+          "src/llm_agent/outputs/validation.py:47",
+          "src/llm_agent/outputs/validation.py:60",
+          "src/llm_agent/outputs/validation.py:70",
+          "src/llm_agent/outputs/validation.py:97"
+        ],
+        "source_module": "llm_agent.outputs.validation"
+      }
+    ],
+    "retained_nontrivial_components": [
+      [
+        "llm_agent.agent.continuity.models",
+        "llm_agent.agent.continuity.snapshot"
+      ],
+      [
+        "llm_agent.agent.evaluation.campaign",
+        "llm_agent.agent.evaluation.campaign_report"
+      ],
+      [
+        "llm_agent.agent.evaluation.feedback",
+        "llm_agent.agent.evaluation.feedback_store"
+      ],
+      [
+        "llm_agent.agent.evaluation.release_prerequisites",
+        "llm_agent.agent.evaluation.release_prerequisites_validation"
+      ],
+      [
+        "llm_agent.agent.evaluation.scripted_gateway_dispatch",
+        "llm_agent.agent.evaluation.scripted_gateway_logic"
+      ],
+      [
+        "llm_agent.agent.interaction.resolver",
+        "llm_agent.agent.interaction.resolver_runtime"
+      ],
+      [
+        "llm_agent.agent.interaction.result",
+        "llm_agent.agent.interaction.types"
+      ],
+      [
+        "llm_agent.agent.llm.audit_identity",
+        "llm_agent.agent.llm.identity"
+      ],
+      [
+        "llm_agent.agent.llm.decision_contract",
+        "llm_agent.agent.llm.task_definition_decision_compat"
+      ],
+      [
+        "llm_agent.agent.observability.trace_catalog",
+        "llm_agent.agent.observability.trace_runtime"
+      ],
+      [
+        "llm_agent.agent.planning.plan_builder",
+        "llm_agent.agent.planning.plan_builder_compat"
+      ],
+      [
+        "llm_agent.agent.planning.task_semantics_obligation",
+        "llm_agent.agent.planning.task_semantics_types"
+      ],
+      [
+        "llm_agent.agent.runtime.storage_contracts",
+        "llm_agent.agent.runtime.storage_receipts"
+      ],
+      [
+        "llm_agent.application.conversation",
+        "llm_agent.application.task_execution"
+      ],
+      [
+        "llm_agent.outputs.models",
+        "llm_agent.outputs.validation"
+      ],
+      [
+        "llm_agent.agent.evaluation.receipt",
+        "llm_agent.agent.evaluation.receipt_projection",
+        "llm_agent.agent.evaluation.receipt_serialization"
+      ],
+      [
+        "llm_agent.agent.interaction.admission",
+        "llm_agent.agent.interaction.guard_projection",
+        "llm_agent.agent.interaction.semantic_admission"
+      ],
+      [
+        "llm_agent.agent.planning.planning_context",
+        "llm_agent.agent.planning.presentation",
+        "llm_agent.agent.planning.presentation_rendering"
+      ],
+      [
+        "llm_agent.agent.planning.task_semantics_authority",
+        "llm_agent.agent.planning.task_semantics_authority_helpers",
+        "llm_agent.agent.planning.task_semantics_inference"
+      ],
+      [
+        "llm_agent.agent.reporting.invocation_evidence",
+        "llm_agent.agent.reporting.observation_evidence",
+        "llm_agent.agent.reporting.observation_serialization"
+      ],
+      [
+        "llm_agent.agent.reporting.run_receipt",
+        "llm_agent.agent.reporting.run_receipt_builder",
+        "llm_agent.agent.reporting.run_snapshot"
+      ],
+      [
+        "llm_agent.agent.runtime.budget",
+        "llm_agent.agent.runtime.budget_estimation",
+        "llm_agent.agent.runtime.request_measurement"
+      ],
+      [
+        "llm_agent.application.services.queries",
+        "llm_agent.application.services.query_find",
+        "llm_agent.application.services.query_git"
+      ],
+      [
+        "llm_agent.agent.planning.observation_receipts",
+        "llm_agent.agent.planning.observation_types",
+        "llm_agent.agent.planning.progress_receipt",
+        "llm_agent.agent.planning.progress_receipt_state"
+      ],
+      [
+        "llm_agent.agent.evaluation.direct_authority_scenarios",
+        "llm_agent.agent.evaluation.h_series_scenarios",
+        "llm_agent.agent.evaluation.scenario_contracts",
+        "llm_agent.agent.evaluation.scenario_h12",
+        "llm_agent.agent.evaluation.structured_proof_scenarios"
+      ],
+      [
+        "llm_agent.agent.llm.context_projection",
+        "llm_agent.agent.llm.context_projection_budget",
+        "llm_agent.agent.llm.context_projection_codec",
+        "llm_agent.agent.llm.context_projection_contracts",
+        "llm_agent.agent.llm.context_projection_guidance"
+      ],
+      [
+        "llm_agent.agent.skills.repository_state",
+        "llm_agent.agent.skills.repository_state_filesystem_support",
+        "llm_agent.agent.skills.repository_state_model_support",
+        "llm_agent.agent.skills.repository_state_parser_support",
+        "llm_agent.agent.skills.repository_state_support"
+      ],
+      [
+        "llm_agent.agent.task_definition.binding_model",
+        "llm_agent.agent.task_definition.contract_model",
+        "llm_agent.agent.task_definition.models",
+        "llm_agent.agent.task_definition.serialization",
+        "llm_agent.agent.task_definition.spec_model"
+      ],
+      [
+        "llm_agent.agent.planning.plan_model",
+        "llm_agent.agent.planning.plan_model_types",
+        "llm_agent.agent.planning.plan_reference_resolver",
+        "llm_agent.agent.planning.plan_step_types",
+        "llm_agent.agent.planning.result_bindings",
+        "llm_agent.agent.planning.result_bindings_resolution"
+      ],
+      [
+        "llm_agent.agent.planning.target_grounding",
+        "llm_agent.agent.planning.target_grounding_ast",
+        "llm_agent.agent.planning.target_grounding_discovery",
+        "llm_agent.agent.planning.target_grounding_enumeration",
+        "llm_agent.agent.planning.target_grounding_global",
+        "llm_agent.agent.planning.target_grounding_model",
+        "llm_agent.agent.planning.target_grounding_revalidation",
+        "llm_agent.agent.planning.target_grounding_workflow"
+      ],
+      [
+        "llm_agent.agent.planning.plan_admission",
+        "llm_agent.agent.planning.plan_policy_checks",
+        "llm_agent.agent.planning.plan_validator",
+        "llm_agent.agent.planning.plan_validator_schema",
+        "llm_agent.agent.planning.replan",
+        "llm_agent.agent.planning.replan_validation",
+        "llm_agent.agent.planning.validation_repair",
+        "llm_agent.agent.planning.validation_repair_plan",
+        "llm_agent.agent.planning.validation_repair_support"
+      ],
+      [
+        "llm_agent.agent.application",
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.engineering.backends.evaluation",
+        "llm_agent.agent.engineering.model_safe",
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.engineering.recovery",
+        "llm_agent.agent.engineering.service",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.evaluation.agent_executor",
+        "llm_agent.agent.evaluation.practical"
+      ],
+      [
+        "llm_agent.interfaces.cli.action_parser",
+        "llm_agent.interfaces.cli.action_registry",
+        "llm_agent.interfaces.cli.command_handlers",
+        "llm_agent.interfaces.cli.commands",
+        "llm_agent.interfaces.cli.discovery_projection",
+        "llm_agent.interfaces.cli.discovery_ui",
+        "llm_agent.interfaces.cli.engineering",
+        "llm_agent.interfaces.cli.interactive_commands",
+        "llm_agent.interfaces.cli.interactive_input",
+        "llm_agent.interfaces.cli.interactive_rendering",
+        "llm_agent.interfaces.cli.memory_commands",
+        "llm_agent.interfaces.cli.output_viewer",
+        "llm_agent.interfaces.cli.query_rendering",
+        "llm_agent.interfaces.cli.ui"
+      ]
+    ],
+    "threshold": {
+      "largest_family_count_max": 5,
+      "total_membership_exclusive_max": 10
+    },
+    "verdict": "PASS"
+  },
+  "artifact": "W23_v007_BOUNDED_CYCLE_CORRECTION_ACTUAL_CANDIDATE",
+  "authority": {
+    "contract": {
+      "bytes": 11641,
+      "lines": 208,
+      "markers": {
+        "end": "[W23_V007_CONTRACT_END]",
+        "start": "[W23_V007_CONTRACT_START]"
+      },
+      "path": ".agent-local/W23_TASK_CONTRACT_v007_RESUME.md",
+      "self_check_algorithm": "Replace only CONTRACT_SELF_CHECK_SHA256 64-hex value with 64 ASCII zeros; SHA-256 all resulting bytes. Distinct from exact-byte sha256.",
+      "self_check_sha256": "bc80c9462096faef86f9609af7abe9092d060ce2968c1c03bf42fc27da592db8",
+      "sha256": "af8a9a8f09be60261a30120d5fe44bedc518c8e74ebf8d842858ca9bd8953965"
+    },
+    "selector": ".agent-local/AUTHORITY_MANIFEST.json",
+    "selector_sha256": "3cbe1b46c718abe681b3e9091c91dd46b686e148a85312b8e9a203651bc4bf25",
+    "spec": {
+      "bytes": 25448,
+      "lines": 385,
+      "markers": {
+        "end": "[W23_V007_SPEC_END]",
+        "start": "[W23_V007_SPEC_START]"
+      },
+      "path": ".agent-local/W23_TASK_SPEC_v007_RESUME.md",
+      "phases": {
+        "A": {
+          "end": "[W23_V007_A_END]",
+          "range": [
+            239,
+            263
+          ],
+          "start": "[W23_V007_A_START]"
+        },
+        "B": {
+          "end": "[W23_V007_B_END]",
+          "range": [
+            265,
+            283
+          ],
+          "start": "[W23_V007_B_START]"
+        },
+        "C": {
+          "end": "[W23_V007_C_END]",
+          "range": [
+            285,
+            319
+          ],
+          "start": "[W23_V007_C_START]"
+        },
+        "D": {
+          "end": "[W23_V007_D_END]",
+          "range": [
+            321,
+            344
+          ],
+          "start": "[W23_V007_D_START]"
+        },
+        "R0": {
+          "end": "[W23_V007_R0_END]",
+          "range": [
+            167,
+            180
+          ],
+          "start": "[W23_V007_R0_START]"
+        },
+        "R1": {
+          "end": "[W23_V007_R1_END]",
+          "range": [
+            182,
+            195
+          ],
+          "start": "[W23_V007_R1_START]"
+        },
+        "R2": {
+          "end": "[W23_V007_R2_END]",
+          "range": [
+            197,
+            216
+          ],
+          "start": "[W23_V007_R2_START]"
+        },
+        "R3": {
+          "end": "[W23_V007_R3_END]",
+          "range": [
+            218,
+            237
+          ],
+          "start": "[W23_V007_R3_START]"
+        }
+      },
+      "sha256": "3cd008124d6379362cef3997c76a748a131dedd0b5f3e94b01900bd930746ed7"
+    },
+    "user_activation_sha256": "d5784fea92a60611c7c81629cdc193933b9de58fd5ecb0647c84b1c0bacf608d",
+    "version": "W23-RESUME-v007"
+  },
+  "candidate": {
+    "branch": "feat/wave23-structural-consolidation",
+    "head": "389838acf18cb175613e1298b34c37b167916d10",
+    "immutable_inventory": {
+      "bytes": 127661,
+      "counts": {
+        "copied_task_execution_findings": 9,
+        "frozen_evidence_files": 10,
+        "protected_surfaces": 35,
+        "tracked_deletions": 1,
+        "tracked_modifications": 40,
+        "untracked_product_test_files": 15,
+        "untracked_temporary_files": 131
+      },
+      "immutable": true,
+      "lines": 2946,
+      "meaning": "Frozen observation of inherited dirty candidate, not immutable Git baseline.",
+      "ordered_inventory_sha256": "23dc59a275c6275d532aaa0bc38bc7a7be73e6b0e874e32cc40a6946317952e9",
+      "path": ".agent-local/W23_RESUME_CANDIDATE_v001.json",
+      "sha256": "3689389249d688d6f1ca1c5118e7ca105d395188f20971034074c233041788d4"
+    },
+    "receipt_precondition_sha256": "4da9479a213bf8142f8ce66577570f450b5d7416770afaff1c889d62f32fbe11",
+    "staging": "EMPTY",
+    "state": "dirty implemented candidate; not committed or formally accepted",
+    "tree": "82bf62c42f0005afdfa645cd2a948fae06fcdf51"
+  },
+  "freshness": "Bound to the recorded production fingerprint. Subsequent structural edits require fresh evidence.",
+  "methodology": {
+    "before_delta_proof": "Reverse only approved Design A in memory; authenticate exact receipt precondition hash; build the complete pre-correction graph against unchanged remaining candidate",
+    "cycle_edges": "Module edges with different domain families whose endpoints lie in the same cross-domain nontrivial SCC",
+    "graph": "RepositorySource(root, final-w22), build_graph.architecture_union_edges plus CURRENT _current_broker_graph_errors augmentation; canonical W23 strongly_connected and domain_family with CURRENT owner classification",
+    "lineage": "Partition all original F1 modules among complete final SCCs including singleton successors; verify exact approved F2 component",
+    "recompute_command": ".venv\\Scripts\\python.exe -B -c \"import json,runpy; print(json.dumps(runpy.run_path('tests/unit/test_w23_cycle_policy.py')['build_cycle_evidence'](),sort_keys=True))\"",
+    "reproduction_command": ".venv\\Scripts\\python.exe -B -m pytest -q -p no:cacheprovider tests/unit/test_w23_cycle_policy.py",
+    "threshold": "Frozen quality/w23/cycle_report_before.json raw hash and baseline B=6, T=5, total=10; never recomputed from final candidate"
+  },
+  "protected_production_sha256": {
+    "src/llm_agent/agent/application.py": "87529ebc53a0e4f954e7a9b2d95896140b8281675f835a26160d0c8792ac0eb6",
+    "src/llm_agent/agent/application_wiring.py": "b2a7e68554b616f19a2066d71e00ae58af5485c7d0fa09b1d44ed2029bc37e6b",
+    "src/llm_agent/agent/engineering/backends/evaluation.py": "c30d799a7d97f20334da13587baee3c3a4291289b394ef2f1b5eb5480dcaf89c",
+    "src/llm_agent/agent/engineering/model_safe.py": "a5cd9fbeede37686662cbba0385cdb03734a7a5183a87bca6fc532425c89d22d",
+    "src/llm_agent/agent/engineering/policy.py": "02b3dcbef06aa06c274d9e51bcd25cdb9aa7f158d55397f1a86ae03eb6ced3ca",
+    "src/llm_agent/agent/engineering/recovery.py": "6cd3c0c9aac6a25c1937479ce776f32c7240174534a273db2c5f042726e56555",
+    "src/llm_agent/agent/engineering/service.py": "efeedcec58bc4306782665229e8de80d4431d322e4fe752e238d65ff5afeaac7",
+    "src/llm_agent/agent/engineering/store.py": "86f12170760f4450609e874ebdcdc49ceb3bf8e0e2cb9c248546888ddea4fbc2",
+    "src/llm_agent/agent/engineering/transactions.py": "47666f21c483789b350cba0502aa2277491a2abaa1edd64d27552167b02f33fd",
+    "src/llm_agent/agent/evaluation/agent_executor.py": "dd7639610770a6ba1211d3476b13a7d54f6bb2ac10501ee46c71efccbbd94254",
+    "src/llm_agent/agent/evaluation/practical.py": "54751b61152c14c7ede437eedfa04fb326c4a9ff12ac78b847d864c004302360",
+    "src/llm_agent/agent/final_response.py": "b430f80c59d9f61d3cacd70be56bb0f56462299746afb4451355b9747b76c20a",
+    "src/llm_agent/agent/reporting/partial_response.py": "2baafd7acc73669cfada226bb3a287a1824d090dba82f55481d35f5b190564b5"
+  },
+  "schema_version": 1,
+  "verdict": "PASS"
+}

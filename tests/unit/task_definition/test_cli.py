@@ -118,6 +118,8 @@ def test_task_context_cli_fails_without_fallback_or_mutation(
 
     assert cli.main(arguments) == 2
     output = json.loads(capsys.readouterr().out)
+    assert set(output) == {"error", "status", "success"}
     assert output["status"] == "failed"
+    assert output["success"] is False
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     assert after == before

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Literal, cast
 
 from rich.panel import Panel
 
-from llm_agent.application.agent_boundary import (
-    CODE_TASK_ACTIONS,
-    OperationalMode,
-    requests_test_execution,
-    set_debug_level,
-)
+from llm_agent.application.code_commands import execute_code_command
+from llm_agent.application.conversation import configure_conversation, execute_history_command, read_conversation
+from llm_agent.application.session_diagnostics import apply_interactive_diagnostic_mode
 from llm_agent.application.task_directives import parse_task_request as parse_task_request
+from llm_agent.application.task_execution import (
+    execute_workspace_command,
+    read_execution_capabilities,
+    select_execution_mode,
+    set_session_diagnostics,
+)
 from llm_agent.interfaces.cli import interactive_commands as _interactive_commands
 from llm_agent.interfaces.cli import task_commands as _task_commands
 from llm_agent.interfaces.cli.interactive_input import prompt_value as _prompt_value
@@ -32,14 +35,13 @@ Handler = Callable[[str, Any], None]
 def mode_command(text: str, ctx: Any) -> None:
     parts = text.strip().split(maxsplit=1)
     if len(parts) == 1:
-        mode = getattr(ctx.orchestrator, "operational_mode", None)
-        label = mode.display_name if isinstance(mode, OperationalMode) else "FULL"
+        label = read_execution_capabilities(ctx.task_execution).label
         console.print(
             f"Modo ativo: {label}\n\n"
-            "Opções:\n"
-            "  /modo read-only   Somente leitura; sem mutações\n"
-            "  /modo editor      Leitura e edição controlada no workspace\n"
-            "  /modo full        Usa toda a autoridade já concedida\n\n"
+            "OpÃ§Ãµes:\n"
+            "  /modo read-only   Somente leitura; sem mutaÃ§Ãµes\n"
+            "  /modo editor      Leitura e ediÃ§Ã£o controlada no workspace\n"
+            "  /modo full        Usa toda a autoridade jÃ¡ concedida\n\n"
             "FULL continua sujeito a grants, approvals e confinement."
         )
         return
@@ -49,49 +51,47 @@ def mode_command(text: str, ctx: Any) -> None:
     if remainder.casefold() in {"help", "ajuda"}:
         mode_command("/modo", ctx)
         return
-    mode = OperationalMode.parse(remainder)
-    if mode is None:
+    selection = select_execution_mode(ctx.task_execution, remainder)
+    if selection.status == "invalid":
         console.print("[yellow]Uso: /modo [read-only|editor|full][/yellow]")
         return
-    setter = getattr(ctx.orchestrator, "set_operational_mode", None)
-    if not callable(setter):
-        console.print("[red]Modos operacionais indisponíveis nesta sessão.[/red]")
+    if selection.status == "unavailable":
+        console.print("[red]Modos operacionais indispon?veis nesta sess?o.[/red]")
         return
-    setter(mode)
-    console.print(f"Modo ativo: {mode.display_name}")
+    console.print(f"Modo ativo: {selection.label}")
 
 
 def system_prompt(_: str, ctx: Any) -> None:
     value = _prompt_value(ctx, "[bold cyan]Digite o novo System Prompt:[/bold cyan] ")
     if value.strip():
-        ctx.session.set_system_prompt(value)
+        configure_conversation(ctx.conversation, system_prompt=value)
         console.print("[bold green]System Prompt atualizado![/bold green]")
 
 
 def show_prompt(_: str, ctx: Any) -> None:
-    console.print(Panel(ctx.session.get_effective_system_prompt(), title="[bold blue]Prompt ativo[/bold blue]"))
+    console.print(Panel(read_conversation(ctx.conversation).effective_system_prompt, title="[bold blue]Prompt ativo[/bold blue]"))
 
 
 def toggle_thinking(_: str, ctx: Any) -> None:
-    if ctx.session.thinking_budget:
-        ctx.session.thinking_budget = 0
+    if read_conversation(ctx.conversation).thinking_budget:
+        configure_conversation(ctx.conversation, thinking_budget=0)
         console.print("[bold yellow]Thinking OFF[/bold yellow]")
         return
-    choice = _prompt_value(ctx, "[bold cyan]Tokens (B=baixo, M=médio, A=alto, ou número):[/bold cyan] ").upper()
+    choice = _prompt_value(ctx, "[bold cyan]Tokens (B=baixo, M=mÃ©dio, A=alto, ou nÃºmero):[/bold cyan] ").upper()
     budget = THINKING_PRESET_BY_KEY.get(choice)
     if budget is not None:
-        ctx.session.thinking_budget = budget
+        configure_conversation(ctx.conversation, thinking_budget=budget)
     else:
         try:
-            ctx.session.thinking_budget = int(choice)
+            configure_conversation(ctx.conversation, thinking_budget=int(choice))
         except ValueError:
-            ctx.session.thinking_budget = DEFAULT_THINKING_BUDGET
-    console.print(f"[bold green]Thinking ON (teto: {ctx.session.thinking_budget} tokens)[/bold green]")
+            configure_conversation(ctx.conversation, thinking_budget=DEFAULT_THINKING_BUDGET)
+    console.print(f"[bold green]Thinking ON (teto: {read_conversation(ctx.conversation).thinking_budget} tokens)[/bold green]")
 
 
 def clear_history(_: str, ctx: Any) -> None:
-    ctx.session.clear_history()
-    console.print("[bold green]Histórico limpo![/bold green]")
+    execute_history_command(ctx.conversation, "clear")
+    console.print("[bold green]HistÃ³rico limpo![/bold green]")
 
 
 def _history_path(prompt: str, ctx: Any) -> str:
@@ -102,104 +102,84 @@ def _history_path(prompt: str, ctx: Any) -> str:
 
 def save_history(_: str, ctx: Any) -> None:
     path = _history_path("Caminho do arquivo", ctx)
-    success, error = ctx.session.save_to_file(path)
-    console.print(f"[bold green]Histórico salvo em '{path}'.[/bold green]" if success else f"[bold red]Erro ao salvar: {error}[/bold red]")
+    outcome = execute_history_command(ctx.conversation, "save", path)
+    assert outcome is not None
+    success, error = outcome.success, outcome.message
+    console.print(f"[bold green]HistÃ³rico salvo em '{path}'.[/bold green]" if success else f"[bold red]Erro ao salvar: {error}[/bold red]")
 
 
 def load_history(_: str, ctx: Any) -> None:
     path = _history_path("Caminho do arquivo", ctx)
-    success, error = ctx.session.load_from_file(path)
-    console.print(f"[bold green]Histórico carregado de '{path}'.[/bold green]" if success else f"[bold red]Erro ao carregar: {error}[/bold red]")
+    outcome = execute_history_command(ctx.conversation, "load", path)
+    assert outcome is not None
+    success, error = outcome.success, outcome.message
+    console.print(f"[bold green]HistÃ³rico carregado de '{path}'.[/bold green]" if success else f"[bold red]Erro ao carregar: {error}[/bold red]")
 
 
 def toggle_debug(_: str, ctx: Any) -> None:
     ctx.modo_diagnostico = (ctx.modo_diagnostico + 1) % 3
-    set_debug_level(0 if ctx.modo_diagnostico == 0 else 1)
+    apply_interactive_diagnostic_mode(
+        ctx.task_execution,
+        ctx.modo_diagnostico,
+        session_diagnostics_enabled=(
+            None if getattr(ctx, "controller", None) is not None else ctx.modo_diagnostico >= 1
+        ),
+    )
     labels = ("DESLIGADO", "LIGADO", "VERBOSE")
-    console.print(f"[bold yellow]Diagnóstico {labels[ctx.modo_diagnostico]}.[/bold yellow]")
+    console.print(f"[bold yellow]DiagnÃ³stico {labels[ctx.modo_diagnostico]}.[/bold yellow]")
     if getattr(ctx, "controller", None) is None:
-        ctx.orchestrator.verbose = ctx.modo_diagnostico >= 1
-        ctx.orchestrator.context_manager.verbose = ctx.orchestrator.verbose
+        set_session_diagnostics(ctx.task_execution, ctx.modo_diagnostico >= 1)
     else:
         ctx.diagnostic_level = labels[ctx.modo_diagnostico]
 
 
 def code_command(text: str, ctx: Any) -> None:
-    from llm_agent.application.agent_boundary import (
-        CODE_COMMAND_HELP,
-        CodeCommandError,
-        CodeRequest,
-        CodingApplicationService,
-        build_code_context,
-        parse_code_command,
-    )
+    def allows_write_validate() -> bool:
+        return cast(bool, read_execution_capabilities(ctx.task_execution).allows_write_validate)
 
-    try:
-        parsed = parse_code_command(text)
-    except CodeCommandError as exc:
-        console.print(f"[bold red]{exc}[/bold red]")
-        return
-    if parsed.action in CODE_TASK_ACTIONS - {"analyze", "review"}:
-        mode_allows = getattr(ctx.orchestrator, "mode_allows", None)
-        if not callable(mode_allows) or not mode_allows({"write", "validate"}):
-            console.print("[bold red]Ação negada pelo modo operacional ativo.[/bold red]")
-            return
-        mode = getattr(ctx.orchestrator, "operational_mode", None)
-        if mode is not OperationalMode.FULL and requests_test_execution(
-            {"include_tests": parsed.include_tests}
-        ):
-            console.print("[bold red]Execução de testes exige modo FULL.[/bold red]")
-            return
-    if parsed.action == "help":
-        console.print(Panel(CODE_COMMAND_HELP, title="[bold blue]/code[/bold blue]"))
-        return
-    request = CodeRequest(
-        action=parsed.action,
-        objective=parsed.objective,
-        targets=parsed.targets,
-        include_tests=parsed.include_tests,
-        template=parsed.template,
-    )
-    service_context = build_code_context(ctx.config, ctx.session.gateway)
     workspace = getattr(ctx, "workspace", None)
-    base_dir = workspace.root if workspace is not None else "."
-    result = CodingApplicationService(base_dir, service_context, ctx.config).execute(
-        request, approver=ConsoleChangeApprover(parsed.assume_yes)
+    outcome = execute_code_command(
+        text,
+        config=ctx.config,
+        conversation=ctx.conversation,
+        workspace_root=workspace.root if workspace is not None else ".",
+        allows_write_validate=allows_write_validate,
+        is_full_mode=lambda: read_execution_capabilities(ctx.task_execution).is_full_mode,
+        approval_factory=lambda assume_yes: ConsoleChangeApprover(assume_yes).approve,
     )
-    render_code_result(result)
+    if outcome.kind in {"parse_error", "mode_denied", "tests_denied"}:
+        console.print(f"[bold red]{outcome.error}[/bold red]")
+        return
+    if outcome.kind == "help":
+        console.print(Panel(outcome.help_text, title="[bold blue]/code[/bold blue]"))
+        return
+    render_code_result(outcome)
 
 
 def doctor(text: str, ctx: Any) -> None:
-    from llm_agent.application.agent_boundary import run_health_check
-
-    run_health_check(
-        write_report="--write-report" in text.split(),
-        verbose=True,
-        app_paths=getattr(ctx, "app_paths", None),
-        workspace=getattr(ctx, "workspace", None),
-        config_path=getattr(ctx, "config_path", None),
-        profile=getattr(ctx, "config", {}).get("default_model_profile"),
+    from llm_agent.application.health import (
+        HealthDiagnosticsRequest,
+        run_health_diagnostics,
     )
+
+    result = run_health_diagnostics(
+        HealthDiagnosticsRequest(
+            write_report="--write-report" in text.split(),
+            app_paths=getattr(ctx, "app_paths", None),
+            workspace=getattr(ctx, "workspace", None),
+            config_path=getattr(ctx, "config_path", None),
+            profile=getattr(ctx, "config", {}).get("default_model_profile"),
+        )
+    )
+    print(result.rendered_report)
 
 
 def _skill_result(ctx: Any, name: str, args: dict[str, Any], *, empty: str = "") -> None:
-    gateway = getattr(ctx.orchestrator, "tool_invocation_gateway", None)
-    if gateway is not None:
-        result = gateway.run(
-            name,
-            args,
-            # Explicit slash commands select a fixed, public capability.  The
-            # planner/persona visibility projection applies only to model
-            # selection; passing the fresh-session empty projection here
-            # would deny every otherwise-authorized explicit read/search.
-            active_skills=None,
-            allowed_capabilities=getattr(ctx.orchestrator, "allowed_capabilities", None),
-        ).to_legacy_dict()
-    else:
-        console.print(f"[red]Skill '{name}' não disponível.[/red]")
-        return
+    actions: dict[str, Literal["list", "read", "find", "search"]] = {"directory_lister": "list", "file_reader": "read", "grep": "find", "web_search": "search"}
+    value = str(args.get("file_path") or args.get("pattern") or args.get("query") or "")
+    result = execute_workspace_command(ctx.task_execution, actions[name], value)
     if result.get("status") == "unavailable":
-        console.print(f"[red]Skill '{name}' não disponível.[/red]")
+        console.print(f"[red]Skill '{name}' nÃ£o disponÃ­vel.[/red]")
         return
     if not result.get("ok"):
         console.print(f"[red]Erro: {result.get('error', 'desconhecido')}[/red]")
@@ -208,7 +188,7 @@ def _skill_result(ctx: Any, name: str, args: dict[str, Any], *, empty: str = "")
 
 
 def list_files(_: str, ctx: Any) -> None:
-    _skill_result(ctx, "directory_lister", {"path": "."}, empty="[yellow]Diretório vazio.[/yellow]")
+    _skill_result(ctx, "directory_lister", {"path": "."}, empty="[yellow]DiretÃ³rio vazio.[/yellow]")
 
 
 def _argument(text: str, usage: str) -> str:
@@ -228,7 +208,7 @@ def read_file(text: str, ctx: Any) -> None:
 def find_text(text: str, ctx: Any) -> None:
     pattern = _argument(text, "/find <texto>")
     if pattern:
-        _skill_result(ctx, "grep", {"pattern": pattern, "path": "."}, empty="[yellow]Nenhuma ocorrência encontrada.[/yellow]")
+        _skill_result(ctx, "grep", {"pattern": pattern, "path": "."}, empty="[yellow]Nenhuma ocorrÃªncia encontrada.[/yellow]")
 
 
 def web_search(text: str, ctx: Any) -> None:

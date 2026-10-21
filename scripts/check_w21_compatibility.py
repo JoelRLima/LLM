@@ -7,12 +7,14 @@ import ast
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Mapping, cast
 
 ROOT = Path(__file__).resolve().parents[1]
+_W23_RETIREMENT_ACTIVATION_SHA256 = "f7ce1f2a97aca6b740c55c501d6747739bf4730efd6a49b6c3b69867d7c7d1da"
+_W23_FINAL_CANDIDATE_RETIREMENTS = frozenset({"W21-CB-META-004"})
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -166,6 +168,54 @@ class BridgeLifecycleResult:
     lane: str | None
     analysis: BridgeAnalysis
     lifecycle: BridgeLifecycle
+
+
+def _authorized_final_candidate_retirement_ids(amendments: Mapping[str, Any]) -> frozenset[str]:
+    records = amendments.get("amendments", [])
+    matches = [
+        item for item in records
+        if isinstance(item, Mapping) and item.get("id") == "W23-V007-COMPATIBILITY-RETIREMENT-001"
+    ]
+    if not matches:
+        return frozenset()
+    if len(matches) != 1:
+        raise ValueError("W23 compatibility retirement amendment must be unique")
+    record = matches[0]
+    authorization = record.get("user_activation")
+    if not isinstance(authorization, Mapping) or authorization.get("raw_sha256") != _W23_RETIREMENT_ACTIVATION_SHA256:
+        raise ValueError("W23 compatibility retirement activation provenance is invalid")
+    retired = record.get("retired_w21_symbol_bridges", [])
+    if not isinstance(retired, list) or any(not isinstance(item, str) for item in retired):
+        raise ValueError("W23 retired W21 bridge IDs are malformed")
+    requested = frozenset(retired)
+    if not requested <= _W23_FINAL_CANDIDATE_RETIREMENTS:
+        raise ValueError("W23 compatibility amendment attempts an unauthorized W21 bridge retirement")
+    return requested
+
+
+def _project_final_candidate_retirements(
+    registry: CompatibilityRegistry,
+    source: RepositorySource,
+    amendments: Mapping[str, Any],
+) -> CompatibilityRegistry:
+    if source.root.resolve() != ROOT.resolve() or source.layout.profile != "final-w22":
+        return registry
+    retired_ids = _authorized_final_candidate_retirement_ids(amendments)
+    if not retired_ids:
+        return registry
+    projected: set[str] = set()
+    modules = source.module_paths()
+    for bridge in registry.symbol_bridges:
+        if bridge.bridge_id not in retired_ids:
+            continue
+        module = bridge.source_module
+        target = bridge.target_module
+        if module is None or module in modules or target not in modules:
+            raise ValueError(f"W23 authorized bridge retirement does not match the final candidate: {bridge.bridge_id}")
+        projected.add(bridge.bridge_id)
+    if projected != retired_ids:
+        raise ValueError("W23 authorized bridge retirement does not match a registered historical bridge")
+    return replace(registry, symbol_bridges=tuple(item for item in registry.symbol_bridges if item.bridge_id not in retired_ids))
 
 
 # Static truthiness and AST support tables removed under AMENDMENT-003.
@@ -362,6 +412,9 @@ def analyze_registered_bridges(
     if source.layout.agent_module_root is None:
         return ()
     parsed = normalize_registry(project_compatibility_document(parsed.document, source.layout))
+    amendments_path = resolved / "quality" / "w23" / "disposition_amendments.json"
+    amendments = _load(amendments_path, ROOT / "quality" / "w23" / "disposition_amendments.json")
+    parsed = _project_final_candidate_retirements(parsed, source, amendments)
     return _symbol_bridge_lifecycle(
         source,
         parsed,
@@ -459,6 +512,9 @@ def check_compatibility(
     if source.layout.agent_module_root is None:
         return [CompatibilityFinding("W21-COMP-LAYOUT", f"layout {layout_profile!r} has no W21 Agent namespace")]
     parsed = normalize_registry(project_compatibility_document(document, source.layout))
+    amendments_path = resolved / "quality" / "w23" / "disposition_amendments.json"
+    amendments = _load(amendments_path, ROOT / "quality" / "w23" / "disposition_amendments.json")
+    parsed = _project_final_candidate_retirements(parsed, source, amendments)
     findings = _registry_findings(document)
     findings.extend(_shape_findings(source))
     findings.extend(

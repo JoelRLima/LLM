@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
 def print_operational_receipt(result: Any) -> None:
-    receipt = getattr(result, "receipt", None)
+    receipt = _observed(result, "receipt", None)
     if not isinstance(receipt, dict) or not receipt:
         return
     print(chr(10) + "Operational receipt:")
-    print(f"  status: {getattr(result, 'status', receipt.get('status', ''))}")
-    print(f"  workspace: {receipt.get('workspace', getattr(result, 'workspace', ''))}")
+    print(f"  status: {_observed(result, 'status', receipt.get('status', ''))}")
+    print(f"  workspace: {receipt.get('workspace', _observed(result, 'workspace', ''))}")
     tools = receipt.get("tools") or []
     print("  tools:")
     for item in tools:
@@ -37,6 +38,10 @@ def print_operational_receipt(result: Any) -> None:
     cause = receipt.get("error")
     if isinstance(cause, dict):
         print(f"  cause: {cause.get('code')} ({cause.get('layer')}): {cause.get('message')}")
-    report_path = getattr(result, "report_path", None) or receipt.get("report_path")
+    report_path = _observed(result, "report_path", None) or receipt.get("report_path")
     if report_path:
         print(f"  report_path: {report_path}")
+
+
+def _observed(value: Any, name: str, default: Any = None) -> Any:
+    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)

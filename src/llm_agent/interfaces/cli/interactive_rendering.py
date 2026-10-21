@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from llm_agent.interfaces.cli import turn_rendering
+from llm_agent.application.task_execution import TaskSettlement, observe_task_settlement, read_execution_capabilities
 from llm_agent.interfaces.cli.interactive_shell import prompt_from
 from llm_agent.interfaces.cli.output_projection import render_publication
 from llm_agent.interfaces.cli.query_rendering import query_arguments, render_query_result, submit_query
+from llm_agent.interfaces.cli.startup_rendering import diagnostic_label as diagnostic_label
+from llm_agent.interfaces.cli.startup_rendering import diagnostic_prompt_token as diagnostic_prompt_token
+from llm_agent.interfaces.cli.startup_rendering import render_startup_status as render_startup_status
+from llm_agent.interfaces.cli.startup_rendering import thinking_label as thinking_label
 from llm_agent.interfaces.cli.ui import console
 from llm_agent.outputs.models import (
     OutputContentPolicy,
@@ -29,10 +34,9 @@ __all__ = [
     "submit_query",
 ]
 
-
 def prompt(ctx: Any) -> str | None:
-    mode = getattr(ctx.orchestrator, "operational_mode_label", "FULL")
-    diagnostic = turn_rendering.diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
+    mode = read_execution_capabilities(ctx.task_execution).label
+    diagnostic = diagnostic_prompt_token(int(getattr(ctx, "modo_diagnostico", 0)))
     shell = getattr(ctx, "shell", None)
     draft = str(getattr(ctx, "draft_text", "") or "")
     set_draft = getattr(shell, "set_draft", None)
@@ -143,11 +147,11 @@ def _worker_result_parts(message: Any) -> tuple[Any, str, str, bool, bool]:
     if not (hasattr(result, "result") and hasattr(result, "stdout") and hasattr(result, "stderr")):
         return result, "", "", False, False
     return (
-        getattr(result, "result", None),
-        str(getattr(result, "stdout", "") or ""),
-        str(getattr(result, "stderr", "") or ""),
-        bool(getattr(result, "assistant_streamed", False)),
-        bool(getattr(result, "assistant_stream_truncated", False)),
+        _observed(result, "result", None),
+        str(_observed(result, "stdout", "") or ""),
+        str(_observed(result, "stderr", "") or ""),
+        bool(_observed(result, "assistant_streamed", False)),
+        bool(_observed(result, "assistant_stream_truncated", False)),
     )
 
 
@@ -194,22 +198,25 @@ def _render_worker_diagnostics(ctx: Any, stdout: str, stderr: str, publication: 
 def _render_streamed_worker_result(ctx: Any, result: Any, truncated: bool) -> None:
     if truncated:
         _emit(ctx, "[interactive] resposta parcial; saída excedeu o limite de streaming")
-    status = str(getattr(result, "status", "")).casefold()
+    status = str(_observed(result, "status", "")).casefold()
     if status in {"", "succeeded", "success"}:
         return
-    summary = getattr(result, "error", None) or getattr(result, "summary", None)
+    summary = _observed(result, "error", None) or _observed(result, "summary", None)
     if summary:
         _emit(ctx, summary)
 
 
 def _render_settled_worker_result(ctx: Any, result: Any) -> None:
-    to_legacy_dict = getattr(result, "to_legacy_dict", None)
+    if isinstance(result, Mapping) and "ok" in result:
+        _emit(ctx, result.get("data") or result.get("error") or result.get("status", "conclu?do"))
+        return
+    to_legacy_dict = _observed(result, "to_legacy_dict", None)
     if callable(to_legacy_dict):
         document = to_legacy_dict()
         _emit(ctx, document.get("data") or document.get("error") or document.get("status", "concluído"))
         return
-    answer = getattr(result, "answer", None)
-    summary = getattr(result, "summary", None) or getattr(result, "error", None)
+    answer = _observed(result, "answer", None)
+    summary = _observed(result, "summary", None) or _observed(result, "error", None)
     if answer or summary:
         _emit(ctx, answer or summary)
 
@@ -223,6 +230,8 @@ def _render_worker_result(
     assistant_streamed: bool = False,
     assistant_stream_truncated: bool = False,
 ) -> None:
+    if isinstance(result, TaskSettlement):
+        result = observe_task_settlement(result, channel="interactive")
     view_model = getattr(ctx, "view_model", None)
     if view_model is not None:
         view_model.apply_result(message.run_generation, result)
@@ -262,3 +271,7 @@ def render_worker_message(ctx: Any, message: Any) -> None:
         assistant_streamed,
         assistant_stream_truncated,
     )
+
+
+def _observed(value: Any, name: str, default: Any = None) -> Any:
+    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)

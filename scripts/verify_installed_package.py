@@ -1562,7 +1562,7 @@ from pathlib import Path
 from llm_agent.agent.application import AgentApplication
 from llm_agent.agent.runtime.config_repository import ConfigRepository
 from llm_agent.workspace.paths import AppPaths
-from llm_agent.application.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
+from llm_agent.agent.runtime.task_directives import DeliberationProfile, TaskDirective, TaskRunDirective
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.agent.task_definition.models import TaskContract, TaskSpec, TaskSpecPhase
 from llm_agent.agent.task_definition.repository import TaskDefinitionRepository

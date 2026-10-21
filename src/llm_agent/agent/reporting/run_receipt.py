@@ -7,6 +7,12 @@ from typing import Any, Mapping
 
 from llm_agent.agent.llm.errors import ModelProviderError
 from llm_agent.agent.reporting.observation_evidence import result_error_code
+from llm_agent.agent.reporting.partial_response import (
+    compose_operational_answer as _compose_operational_answer,
+)
+from llm_agent.agent.reporting.partial_response import (
+    render_operational_answer as _render_operational_answer,
+)
 from llm_agent.agent.reporting.public_safety import sanitize_public_text
 from llm_agent.agent.reporting.run_projection_facts import thaw_projection
 from llm_agent.agent.reporting.run_receipt_builder import build_run_receipt
@@ -182,17 +188,17 @@ def finalize_run_result(
             snapshot=snapshot,
         )
         outcome = snapshot.operational_outcome
-    from llm_agent.agent.final_response import compose_operational_answer
     answer_history = (
         [thaw_projection(item) for item in snapshot.projection_facts.invocation_evidence]
         if snapshot is not None
         else getattr(orchestrator.agent_state, "tool_history", ())
     )
-    public_answer = compose_operational_answer(
+    public_answer = _compose_operational_answer(
         outcome,
         answer,
         answer_history,
         getattr(orchestrator, "tool_registry", None),
+        _render_operational_answer,
     )
     snapshot_diagnostics = (
         tuple(item for item in snapshot.to_dict()["diagnostics"] if isinstance(item, dict))

@@ -11,16 +11,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Mapping, cast
 
-from llm_agent.agent.runtime.file_lock import OPEN_BINARY, lock_descriptor, unlock_descriptor
-from llm_agent.agent.runtime.lock_filesystem import UnsafeLockPathError, descriptor_matches_path, open_verified
-from llm_agent.agent.runtime.process_identity import (
+from llm_agent.agent.runtime.storage_contracts import StorageMaintenanceError, validate_home_lease
+from llm_agent.filesystem.lock_filesystem import UnsafeLockPathError, descriptor_matches_path, open_verified
+from llm_agent.filesystem.primitives import FinalPathInspection, inspect_final_path
+from llm_agent.process.file_lock import OPEN_BINARY, lock_descriptor, unlock_descriptor
+from llm_agent.process.process_identity import (
     OwnerLiveness,
     OwnerStatus,
     ProcessOwnerLiveness,
     current_process_start_id,
 )
-from llm_agent.agent.runtime.storage_contracts import StorageMaintenanceError, validate_home_lease
-from llm_agent.filesystem.primitives import FinalPathInspection, inspect_final_path
 
 
 def _coordination_dir(home: Path) -> Path:

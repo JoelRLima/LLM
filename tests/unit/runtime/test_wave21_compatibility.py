@@ -10,6 +10,7 @@ import pytest
 
 from scripts.check_w21_compatibility import (
     BridgeLifecycle,
+    _authorized_final_candidate_retirement_ids,
     analyze_registered_bridges,
     check_compatibility,
     check_source_text,
@@ -420,16 +421,35 @@ def test_current_meta_bridges_are_exact_after_lane_migration() -> None:
 
     activated_findings = check_compatibility(ROOT, mode="transition", activated_lanes=("A",))
     assert activated_findings == []
-    assert [result.lifecycle for result in analyze_registered_bridges(ROOT)[:5]] == [
-        BridgeLifecycle.EXACT_TARGET,
+    assert [result.lifecycle for result in analyze_registered_bridges(ROOT)] == [
         BridgeLifecycle.EXACT_TARGET,
         BridgeLifecycle.EXACT_TARGET,
         BridgeLifecycle.EXACT_TARGET,
         BridgeLifecycle.EXACT_TARGET,
     ]
+    assert any(item["bridge_id"] == "W21-CB-META-004" for item in _registry()["bridges"])
 
     strict_findings = check_compatibility(ROOT, mode="strict")
     assert strict_findings == []
+
+
+def test_final_candidate_retirement_is_narrow_and_activation_bound() -> None:
+    authorized = {
+        "amendments": [
+            {
+                "id": "W23-V007-COMPATIBILITY-RETIREMENT-001",
+                "user_activation": {
+                    "raw_sha256": "f7ce1f2a97aca6b740c55c501d6747739bf4730efd6a49b6c3b69867d7c7d1da"
+                },
+                "retired_w21_symbol_bridges": ["W21-CB-META-004"],
+            }
+        ]
+    }
+    assert _authorized_final_candidate_retirement_ids(authorized) == frozenset({"W21-CB-META-004"})
+    unauthorized = json.loads(json.dumps(authorized))
+    unauthorized["amendments"][0]["retired_w21_symbol_bridges"] = ["W21-CB-META-003"]
+    with pytest.raises(ValueError, match="unauthorized W21 bridge retirement"):
+        _authorized_final_candidate_retirement_ids(unauthorized)
 
 
 # C005 runtime-interpreter probes removed under AMENDMENT-003.

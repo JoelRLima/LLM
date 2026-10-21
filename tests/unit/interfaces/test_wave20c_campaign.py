@@ -87,11 +87,12 @@ def test_C07_low_level_server_advertises_tools_only() -> None:
 
 def test_C08_mcp_schema_owner_is_model_safe_descriptor_metadata() -> None:
     pytest.importorskip("mcp")
+    from llm_agent.application.model_safe_mcp import list_model_safe_tools
     from llm_agent.interfaces.mcp.engineering_server import _tool
 
     assert all(item.result_data_schema is None and item.adapter_id == "builtin" for item in MODEL_SAFE_TOOL_DESCRIPTORS)
-    for descriptor in MODEL_SAFE_TOOL_DESCRIPTORS:
-        wire = _tool(descriptor)
+    for descriptor, view in zip(MODEL_SAFE_TOOL_DESCRIPTORS, list_model_safe_tools(), strict=True):
+        wire = _tool(view)
         schema = getattr(wire, "inputSchema", getattr(wire, "input_schema", None))
         assert wire.name == descriptor.name and schema == descriptor.schema
 
@@ -111,8 +112,8 @@ def test_C11_unexpected_adapter_failure_has_generic_reason() -> None:
     from llm_agent.interfaces.mcp.engineering_server import _safe_adapter_failure
 
     response = _safe_adapter_failure("engineering_list", RuntimeError("private detail"))
-    assert response.reason_code == "MCP_ADAPTER_ERROR"
-    assert "private detail" not in json.dumps(response.to_dict())
+    assert response.document["reason_code"] == "MCP_ADAPTER_ERROR"
+    assert "private detail" not in json.dumps(response.document)
 
 
 def test_C12_foreign_workspace_result_is_unknown() -> None:
@@ -149,6 +150,7 @@ def test_C14_anyio_bridge_is_non_abandoning() -> None:
 
 def test_C15_lifecycle_closes_after_stdio(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     pytest.importorskip("mcp")
+    import llm_agent.application.home_operations as home_operations
     import llm_agent.interfaces.mcp.engineering_server as server_module
 
     events: list[str] = []
@@ -164,8 +166,8 @@ def test_C15_lifecycle_closes_after_stdio(monkeypatch: pytest.MonkeyPatch, tmp_p
     lease = Lease()
     monkeypatch.setattr(server_module.MCPWorkspaceBinding, "from_path", classmethod(lambda _cls, _value: binding))
     monkeypatch.setattr(server_module.AppPaths, "discover", classmethod(lambda _cls, app_home=None: SimpleNamespace(home_dir=tmp_path)))
-    monkeypatch.setattr(server_module.HomeLifecycleLease, "begin_startup", classmethod(lambda _cls, _home: lease))
-    monkeypatch.setattr(server_module.StorageBootstrap, "prepare", lambda _self, _paths: events.append("prepare"))
+    monkeypatch.setattr(home_operations._home_lifecycle.HomeLifecycleLease, "begin_startup", classmethod(lambda _cls, _home: lease))
+    monkeypatch.setattr(home_operations._storage_bootstrap.StorageBootstrap, "prepare", lambda _self, _paths: events.append("prepare"))
     monkeypatch.setattr(server_module, "_default_adapter", lambda _binding, _paths: object())
     monkeypatch.setattr(server_module.anyio, "run", lambda _call, *_args: events.append("run"))
 

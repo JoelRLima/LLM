@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from llm_agent.application.conversation import read_conversation
+from llm_agent.application.task_execution import read_execution_capabilities
 from llm_agent.interfaces.cli.ui import console
 from llm_agent.interfaces.cli.workspace_entry import render_active_workspace
 
@@ -34,10 +36,10 @@ def status(_: str, ctx: Any) -> None:
     snapshot = _view_snapshot(ctx)
     controller = getattr(ctx, "controller", None)
     state = snapshot.state if snapshot is not None else (controller.state.value if controller is not None else "IDLE")
-    profile = getattr(getattr(ctx, "session", None), "model_profile", None)
-    model = getattr(profile, "model", "unknown")
+    view = read_conversation(ctx.conversation)
+    model = view.model
     workspace = getattr(getattr(ctx, "workspace", None), "root", "unknown")
-    mode = getattr(getattr(ctx, "orchestrator", None), "operational_mode_label", "unknown")
+    mode = read_execution_capabilities(ctx.task_execution).label
     pending_count = len(controller.pending.list()) if controller is not None else 0
     attention = bool(snapshot is not None and snapshot.attention_pending)
     _ui_print(
@@ -163,7 +165,7 @@ def attention(text: str, ctx: Any) -> None:
 
 
 def model(text: str, ctx: Any) -> None:
-    profile = getattr(getattr(ctx, "session", None), "model_profile", None)
+    view = read_conversation(ctx.conversation)
     parts = text.strip().split(maxsplit=2)
     if len(parts) >= 2 and parts[1].casefold() in {"select", "usar", "use"}:
         selected = parts[2].strip() if len(parts) >= 3 else ""
@@ -204,17 +206,18 @@ def model(text: str, ctx: Any) -> None:
         if controller is not None and controller.is_busy():
             _ui_print(ctx, "model: selection requires an idle session")
             return
-        from llm_agent.application.agent_boundary import ConfigRepository, resolve_model_profile
+        from llm_agent.application.model_profile_selection import select_default_model_profile
 
-        resolve_model_profile(ctx.config, profile_name=selected)
-        ConfigRepository(ctx.app_paths, config_path=ctx.config_path).update({"default_model_profile": selected})
+        select_default_model_profile(
+            ctx.config, selected, ctx.app_paths, config_path=ctx.config_path
+        )
         ctx.rebootstrap_profile = selected
         _ui_print(ctx, f"model: profile {selected} selected; recreating the session")
         return
     suffix = "\nModel selection requires an idle session." if len(parts) > 1 else ""
     _ui_print(
         ctx,
-        f"model={getattr(profile, 'model', 'unknown')} provider={getattr(profile, 'provider', 'unknown')}" + suffix,
+        f"model={view.model} provider={view.provider}" + suffix,
     )
 
 
@@ -235,21 +238,20 @@ def show_workspace(text: str, ctx: Any) -> None:
     if query_executor is not None and query_executor.is_busy():
         _ui_print(ctx, "workspace: cancel or wait for the active query before switching")
         return
+    from llm_agent.application.workspace_recents import list_recent_workspaces
     from llm_agent.interfaces.cli.workspace_entry import (
         WorkspaceSelectionCancelled,
         canonical_workspace,
         choose_workspace,
         load_last_workspace,
     )
-    from llm_agent.interfaces.cli.workspace_recents import load_recent_workspaces
-
     requested = parts[2] if len(parts) == 3 else None
     try:
         target = canonical_workspace(requested) if requested else choose_workspace(
             console=_output_console(),
             current=ctx.workspace.root,
             last_workspace=load_last_workspace(ctx.app_paths),
-            recent_workspaces=load_recent_workspaces(ctx.app_paths),
+            recent_workspaces=list_recent_workspaces(ctx.app_paths),
             prompt=getattr(ctx, "prompt_line", None),
             path_prompt=getattr(ctx, "prompt_path", None),
         )

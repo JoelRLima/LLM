@@ -163,7 +163,7 @@ def run_bounded_process(
     if executable is None:
         raise FileNotFoundError(selected_argv[0])
     try:
-        result = CommandExecutor().execute(
+        result = CommandExecutor(fail_on_orphaned_group=True).execute(
             CommandRequest(
                 executable=executable,
                 argv=tuple(selected_argv[1:]),

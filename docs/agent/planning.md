@@ -132,3 +132,36 @@ complete source bytes. A changed hash alone earns no credit.
 
 Exact cache reuse means **zero physical tool dispatch**. Source-local hashing is
 freshness control-plane filesystem I/O and remains required before reuse.
+
+## Structural organization (W23 disposition)
+
+Agent owns planning behavior. For W23, production modules intentionally remain
+directly under `llm_agent.agent.planning`. This is an accepted structural
+retention decision, not an unfinished package move. Module names identify their
+responsibilities, imports remain direct, and the planning package initializer
+has no imports, reexports, registries, or runtime side effects. Existing
+composition and admission seams define where routes and contracts meet.
+
+The analytical responsibilities include task semantics and authority proofs;
+target grounding; trusted intent admission; typed plans and result bindings;
+plan construction, admission, and validation; recovery and repair; planning
+context, presentation, and tool disclosure; plan and step execution; observation
+freshness and progress receipts; completion and terminal decisions; task graphs,
+resource rules, and scheduling; and linear, reactive, hierarchical, and
+parallel routes. These are responsibility descriptions, not physical
+subpackages.
+
+The reviewed W23 Phase-0 package groupings did not improve dependency direction.
+Some combine distinct responsibilities; others mix plan construction with
+execution/recovery or split existing dependency components. The projected
+moves preserve graph edges while adding import migration and test discovery
+work. The accepted W23 disposition is `RETENTION_JUSTIFIED`; production reshape
+is not required.
+
+Extend planning through its existing canonical seams. Do not add a generic
+planning broker. Create a subpackage only when responsibility, dependency,
+consumer, test, compatibility, and change evidence shows that physical
+separation clarifies ownership or dependency direction. Prefix similarity or
+module count alone is not sufficient. This retention decision does not waive
+existing module-size or C901 debt; the established Quality baseline and ratchet
+continue to govern it.

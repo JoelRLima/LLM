@@ -38,6 +38,7 @@ GOVERNANCE_EXCEPTIONS = frozenset(
         "scripts/w22_architecture/namespace_audit.py",
         "scripts/w22_architecture/phase0_inventory.json",
         "scripts/w22_architecture/phase0_inventory.py",
+        "scripts/w23_architecture/phase0_inventory.py",
     }
 )
 SELF_PATH = "scripts/check_production_naming_hygiene.py"

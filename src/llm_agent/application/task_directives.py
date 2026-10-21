@@ -15,7 +15,6 @@ from llm_agent.agent.runtime.task_directives import (
     MAX_STRING_LENGTH,
     DeliberationProfile,
     TaskDirective,
-    TaskRunDirective,
 )
 
 __all__ = [
@@ -32,6 +31,5 @@ __all__ = [
     "TaskDirectiveParseError",
     "TaskEntryAction",
     "TaskRequestAction",
-    "TaskRunDirective",
     "parse_task_request",
 ]

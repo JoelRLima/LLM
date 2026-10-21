@@ -56,10 +56,10 @@ from llm_agent.agent.engineering.transactions import (
     persist_managed_guard as persist_guard_transaction,
 )
 from llm_agent.agent.runtime.home_lifecycle import HomeLifecycleLease
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
-from llm_agent.agent.runtime.process_identity import OwnerLiveness, OwnerStatus, ProcessOwnerLiveness
 from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
 from llm_agent.agent.runtime.storage_contracts import StorageMaintenanceError
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
+from llm_agent.process.process_identity import OwnerLiveness, OwnerStatus, ProcessOwnerLiveness
 from llm_agent.storage.json_persistence import AtomicWriteError
 
 _RUN_FILE = re.compile(r"^(engr-[0-9a-f]{32})\.json$")

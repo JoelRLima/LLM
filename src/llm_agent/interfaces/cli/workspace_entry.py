@@ -73,7 +73,7 @@ def remember_workspace(app_paths: Any, workspace: str | Path) -> None:
         root = canonical_workspace(workspace)
         destination = Path(path)
         write_json_atomic(destination, {"schema_version": 1, "workspace": str(root)})
-        from llm_agent.interfaces.cli.workspace_recents import remember_recent_workspace
+        from llm_agent.application.workspace_recents import remember_recent_workspace
         remember_recent_workspace(app_paths, root)
     except (AtomicJsonWriteError, OSError, TypeError, ValueError):
         # The optional convenience must never make a valid startup fail.

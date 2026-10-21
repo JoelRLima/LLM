@@ -5,15 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, ApprovalWaitCancelled
-from llm_agent.agent.code.change_models import ChangePreview
-from llm_agent.agent.code.policy import ProposalAssessment
+from llm_agent.application.approval import ApprovalPrompt, ApprovalResponse
+from llm_agent.application.code_review import CodeReviewAssessment, CodeReviewPreview
 from llm_agent.interfaces.cli import interactive_commands
 from llm_agent.interfaces.cli.attention import ApprovalBroker
 
 
-def _request(name: str = "write") -> ApprovalRequest:
-    return ApprovalRequest(
+def _request(name: str = "write") -> ApprovalPrompt:
+    return ApprovalPrompt(
         action=name,
         resource="workspace/file.txt",
         prompt="apply concrete operation",
@@ -28,7 +27,7 @@ def _start_request(broker: ApprovalBroker) -> tuple[Thread, list[object], Event]
     def run() -> None:
         started.set()
         try:
-            values.append(broker.request(_request()))
+            values.append(broker.present(_request()))
         except BaseException as exc:
             values.append(exc)
 
@@ -49,40 +48,120 @@ def test_matching_approval_resolves_once_and_wrong_identity_cannot_release_waite
     current = broker.current()
     assert current is not None
     assert current.identity.run_generation == 7
-    assert broker.resolve(current.identity.attention_id + 1, ApprovalDecision.APPROVED) == "IGNORED_STALE"
+    assert broker.resolve(current.identity.attention_id + 1, ApprovalResponse.APPROVE) == "IGNORED_STALE"
     assert broker.resolve(
         current.identity.attention_id,
-        ApprovalDecision.APPROVED,
+        ApprovalResponse.APPROVE,
         run_generation=8,
     ) == "IGNORED_STALE"
     assert broker.resolve(
         current.identity.attention_id,
-        ApprovalDecision.APPROVED,
+        ApprovalResponse.APPROVE,
         run_generation=7,
         request_fingerprint=current.identity.request_fingerprint,
     ) == "RESOLVED"
-    assert broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED) == "IGNORED_DUPLICATE"
+    assert broker.resolve(current.identity.attention_id, ApprovalResponse.DENY) == "IGNORED_DUPLICATE"
     thread.join(2)
-    assert values == [ApprovalDecision.APPROVED]
+    assert values == [ApprovalResponse.APPROVE]
 
 
-def test_cancel_and_shutdown_raise_dedicated_wait_cancellation() -> None:
+def test_default_attention_display_keeps_pending_wait_resolvable_by_deny() -> None:
+    broker = ApprovalBroker()
+    published = Event()
+    broker.bind_generation(11, on_attention=lambda _snapshot: published.set())
+    values: list[object] = []
+    thread = Thread(target=lambda: values.append(broker.present(_request())))
+    thread.start()
+    assert published.wait(2)
+    before = broker.current()
+    assert before is not None
+    assert before.identity.run_generation == 11
+
+    output: list[str] = []
+    context = SimpleNamespace(
+        approval_broker=broker,
+        shell=SimpleNamespace(print_background=lambda value: output.append(str(value))),
+    )
+    interactive_commands.attention("/attention", context)
+
+    assert "attention #" in "\n".join(output)
+    assert broker.current() is before
+    assert thread.is_alive()
+    assert values == []
+    assert broker.resolve(
+        before.identity.attention_id,
+        ApprovalResponse.DENY,
+        run_generation=before.identity.run_generation,
+        request_fingerprint=before.identity.request_fingerprint,
+    ) == "RESOLVED"
+    thread.join(2)
+    assert not thread.is_alive()
+    assert values == [ApprovalResponse.DENY]
+    assert broker.current() is None
+
+
+def test_rebinding_generation_cancels_old_wait_and_preserves_new_generation_usability() -> None:
+    broker = ApprovalBroker()
+    published_g1 = Event()
+    broker.bind_generation(21, on_attention=lambda _snapshot: published_g1.set())
+    old_values: list[object] = []
+    old_thread = Thread(target=lambda: old_values.append(broker.present(_request("old"))))
+    old_thread.start()
+    assert published_g1.wait(2)
+    old_snapshot = broker.current()
+    assert old_snapshot is not None
+    assert old_snapshot.identity.run_generation == 21
+
+    broker.bind_generation(22)
+    old_thread.join(2)
+    assert not old_thread.is_alive()
+    assert old_values == [ApprovalResponse.CANCELLED]
+    assert broker.current() is None
+    assert broker.resolve(
+        old_snapshot.identity.attention_id,
+        ApprovalResponse.DENY,
+        run_generation=21,
+        request_fingerprint=old_snapshot.identity.request_fingerprint,
+    ) == "IGNORED_STALE"
+
+    published_g2 = Event()
+    broker.bind_generation(22, on_attention=lambda _snapshot: published_g2.set())
+    new_values: list[object] = []
+    new_thread = Thread(target=lambda: new_values.append(broker.present(_request("new"))))
+    new_thread.start()
+    assert published_g2.wait(2)
+    new_snapshot = broker.current()
+    assert new_snapshot is not None
+    assert new_snapshot.identity.run_generation == 22
+    assert broker.resolve(
+        new_snapshot.identity.attention_id,
+        ApprovalResponse.DENY,
+        run_generation=22,
+        request_fingerprint=new_snapshot.identity.request_fingerprint,
+    ) == "RESOLVED"
+    new_thread.join(2)
+    assert not new_thread.is_alive()
+    assert new_values == [ApprovalResponse.DENY]
+    assert broker.current() is None
+
+
+def test_cancel_and_shutdown_return_neutral_wait_cancellation() -> None:
     broker = ApprovalBroker()
     broker.bind_generation(3)
     thread, values, _ = _start_request(broker)
     current = broker.current()
     assert current is not None
     assert broker.invalidate(attention_id=current.identity.attention_id, generation=3)
-    assert broker.resolve(current.identity.attention_id, ApprovalDecision.APPROVED) == "IGNORED_STALE"
+    assert broker.resolve(current.identity.attention_id, ApprovalResponse.APPROVE) == "IGNORED_STALE"
     thread.join(2)
-    assert len(values) == 1 and isinstance(values[0], ApprovalWaitCancelled)
+    assert values == [ApprovalResponse.CANCELLED]
 
     broker2 = ApprovalBroker()
     broker2.bind_generation(4)
     thread2, values2, _ = _start_request(broker2)
     broker2.shutdown()
     thread2.join(2)
-    assert len(values2) == 1 and isinstance(values2[0], ApprovalWaitCancelled)
+    assert values2 == [ApprovalResponse.CANCELLED]
 
 
 def test_second_unresolved_request_fails_closed_without_overwrite() -> None:
@@ -90,12 +169,12 @@ def test_second_unresolved_request_fails_closed_without_overwrite() -> None:
     broker.bind_generation(1)
     thread, values, _ = _start_request(broker)
     with pytest.raises(RuntimeError, match="second unresolved"):
-        broker.request(_request("second"))
+        broker.present(_request("second"))
     current = broker.current()
     assert current is not None
-    broker.resolve(current.identity.attention_id, ApprovalDecision.REJECTED)
+    broker.resolve(current.identity.attention_id, ApprovalResponse.DENY)
     thread.join(2)
-    assert values == [ApprovalDecision.REJECTED]
+    assert values == [ApprovalResponse.DENY]
 
 
 def test_approval_wins_when_resolution_linearizes_before_invalidation() -> None:
@@ -104,18 +183,18 @@ def test_approval_wins_when_resolution_linearizes_before_invalidation() -> None:
     thread, values, _ = _start_request(broker)
     current = broker.current()
     assert current is not None
-    assert broker.resolve(current.identity.attention_id, ApprovalDecision.APPROVED) == "RESOLVED"
+    assert broker.resolve(current.identity.attention_id, ApprovalResponse.APPROVE) == "RESOLVED"
     assert broker.invalidate(attention_id=current.identity.attention_id, generation=2) is False
     thread.join(2)
-    assert values == [ApprovalDecision.APPROVED]
+    assert values == [ApprovalResponse.APPROVE]
 
 
 def test_attention_details_exposes_the_exact_bounded_proposed_diff_without_new_request() -> None:
     broker = ApprovalBroker()
     broker.bind_generation(9)
     diff = "--- a/file.py\n+++ b/file.py\n@@\n+return 42\n"
-    preview = ChangePreview("change-1", ("file.py",), diff)
-    assessment = ProposalAssessment(0.8, True, ("needs confirmation",))
+    preview = CodeReviewPreview("change-1", ("file.py",), diff)
+    assessment = CodeReviewAssessment(0.8, ("needs confirmation",))
     values: list[object] = []
     thread = Thread(target=lambda: values.append(broker.approve_change(preview, assessment)))
     thread.start()
@@ -139,7 +218,7 @@ def test_attention_details_exposes_the_exact_bounded_proposed_diff_without_new_r
     assert broker.current() is not None
     broker.resolve(
         current.identity.attention_id,
-        ApprovalDecision.REJECTED,
+        ApprovalResponse.DENY,
         run_generation=current.identity.run_generation,
         request_fingerprint=current.identity.request_fingerprint,
     )
@@ -153,14 +232,14 @@ def test_attention_details_marks_diff_truncation_and_binds_original_digest() -> 
     broker = ApprovalBroker()
     broker.bind_generation(10)
     diff = "+" + ("x" * (MAX_REVIEW_DIFF_CHARS + 50))
-    preview = ChangePreview("change-2", ("large.py",), diff)
-    assessment = ProposalAssessment(0.5, True)
+    preview = CodeReviewPreview("change-2", ("large.py",), diff)
+    assessment = CodeReviewAssessment(0.5)
     values: list[object] = []
 
     def wait_for_approval() -> None:
         try:
             values.append(broker.approve_change(preview, assessment))
-        except ApprovalWaitCancelled as exc:
+        except BaseException as exc:
             values.append(exc)
 
     thread = Thread(target=wait_for_approval)
@@ -183,4 +262,4 @@ def test_attention_details_marks_diff_truncation_and_binds_original_digest() -> 
     assert current.request.metadata["proposed_diff_sha256"] in current.identity.request_fingerprint or current.request.metadata["proposed_diff"] in rendered
     broker.invalidate(attention_id=current.identity.attention_id, generation=10)
     thread.join(2)
-    assert values and isinstance(values[0], ApprovalWaitCancelled)
+    assert values == [False]

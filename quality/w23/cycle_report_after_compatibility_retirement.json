@@ -1,0 +1,546 @@
+{
+  "schema_version": 1,
+  "artifact": "quality/w23/cycle_report_after_compatibility_retirement.json",
+  "unit": "W23_PRODUCTION_COMPATIBILITY_RETIREMENT",
+  "verdict": "PASS",
+  "authority": {
+    "contract": {
+      "bytes": 11641,
+      "lines": 208,
+      "markers": {
+        "end": "[W23_V007_CONTRACT_END]",
+        "start": "[W23_V007_CONTRACT_START]"
+      },
+      "path": ".agent-local/W23_TASK_CONTRACT_v007_RESUME.md",
+      "self_check_algorithm": "Replace only CONTRACT_SELF_CHECK_SHA256 64-hex value with 64 ASCII zeros; SHA-256 all resulting bytes. Distinct from exact-byte sha256.",
+      "self_check_sha256": "bc80c9462096faef86f9609af7abe9092d060ce2968c1c03bf42fc27da592db8",
+      "sha256": "af8a9a8f09be60261a30120d5fe44bedc518c8e74ebf8d842858ca9bd8953965"
+    },
+    "selector": ".agent-local/AUTHORITY_MANIFEST.json",
+    "selector_sha256": "3cbe1b46c718abe681b3e9091c91dd46b686e148a85312b8e9a203651bc4bf25",
+    "spec": {
+      "bytes": 25448,
+      "lines": 385,
+      "markers": {
+        "end": "[W23_V007_SPEC_END]",
+        "start": "[W23_V007_SPEC_START]"
+      },
+      "path": ".agent-local/W23_TASK_SPEC_v007_RESUME.md",
+      "phases": {
+        "A": {
+          "end": "[W23_V007_A_END]",
+          "range": [
+            239,
+            263
+          ],
+          "start": "[W23_V007_A_START]"
+        },
+        "B": {
+          "end": "[W23_V007_B_END]",
+          "range": [
+            265,
+            283
+          ],
+          "start": "[W23_V007_B_START]"
+        },
+        "C": {
+          "end": "[W23_V007_C_END]",
+          "range": [
+            285,
+            319
+          ],
+          "start": "[W23_V007_C_START]"
+        },
+        "D": {
+          "end": "[W23_V007_D_END]",
+          "range": [
+            321,
+            344
+          ],
+          "start": "[W23_V007_D_START]"
+        },
+        "R0": {
+          "end": "[W23_V007_R0_END]",
+          "range": [
+            167,
+            180
+          ],
+          "start": "[W23_V007_R0_START]"
+        },
+        "R1": {
+          "end": "[W23_V007_R1_END]",
+          "range": [
+            182,
+            195
+          ],
+          "start": "[W23_V007_R1_START]"
+        },
+        "R2": {
+          "end": "[W23_V007_R2_END]",
+          "range": [
+            197,
+            216
+          ],
+          "start": "[W23_V007_R2_START]"
+        },
+        "R3": {
+          "end": "[W23_V007_R3_END]",
+          "range": [
+            218,
+            237
+          ],
+          "start": "[W23_V007_R3_START]"
+        }
+      },
+      "sha256": "3cd008124d6379362cef3997c76a748a131dedd0b5f3e94b01900bd930746ed7"
+    },
+    "user_activation_sha256": "b86798f0bf79ed2bfd70b20daffd50be7d087048dcebe07a3bdcd2d05271fae4",
+    "version": "W23-RESUME-v007"
+  },
+  "candidate": {
+    "branch": "feat/wave23-structural-consolidation",
+    "head": "389838acf18cb175613e1298b34c37b167916d10",
+    "immutable_inventory": {
+      "bytes": 127661,
+      "counts": {
+        "copied_task_execution_findings": 9,
+        "frozen_evidence_files": 10,
+        "protected_surfaces": 35,
+        "tracked_deletions": 1,
+        "tracked_modifications": 40,
+        "untracked_product_test_files": 15,
+        "untracked_temporary_files": 131
+      },
+      "immutable": true,
+      "lines": 2946,
+      "meaning": "Frozen observation of inherited dirty candidate, not immutable Git baseline.",
+      "ordered_inventory_sha256": "23dc59a275c6275d532aaa0bc38bc7a7be73e6b0e874e32cc40a6946317952e9",
+      "path": ".agent-local/W23_RESUME_CANDIDATE_v001.json",
+      "sha256": "3689389249d688d6f1ca1c5118e7ca105d395188f20971034074c233041788d4"
+    },
+    "receipt_precondition_sha256": "4da9479a213bf8142f8ce66577570f450b5d7416770afaff1c889d62f32fbe11",
+    "source_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+    "staging": "EMPTY",
+    "state": "dirty implemented candidate; not committed or formally accepted",
+    "tree": "82bf62c42f0005afdfa645cd2a948fae06fcdf51"
+  },
+  "predecessor": {
+    "path": "quality/w23/cycle_report_after_lock_ownership.json",
+    "sha256": "baba1da510914f2e8d355a4a983e97a7d3afccc66da341a479cb6783ec1e5389",
+    "production_fingerprint_sha256": "12816fa011f2db6ada2fd0ca153e1dc54455e80c983448aa3c6d2eed734890bf",
+    "semantic_graph_sha256": "2f689f0570bc775c952236a43e71efab2d71de3b9a1a43eb7194ca8f92aae692",
+    "modules": 909,
+    "edges": 3150,
+    "largest_family_count": 4,
+    "total_cross_domain_family_membership": 4,
+    "f1_modules": [
+      "llm_agent.agent.application_result",
+      "llm_agent.agent.final_response",
+      "llm_agent.agent.interaction.transcript",
+      "llm_agent.agent.llm.session",
+      "llm_agent.agent.reporting.run_receipt",
+      "llm_agent.agent.reporting.run_receipt_builder",
+      "llm_agent.agent.reporting.run_snapshot",
+      "llm_agent.agent.routing.persona.current"
+    ],
+    "f2_modules": [
+      "llm_agent.agent.application",
+      "llm_agent.agent.application_wiring",
+      "llm_agent.agent.engineering.backends.evaluation",
+      "llm_agent.agent.engineering.model_safe",
+      "llm_agent.agent.engineering.policy",
+      "llm_agent.agent.engineering.recovery",
+      "llm_agent.agent.engineering.service",
+      "llm_agent.agent.engineering.store",
+      "llm_agent.agent.engineering.transactions",
+      "llm_agent.agent.evaluation.agent_executor",
+      "llm_agent.agent.evaluation.practical"
+    ]
+  },
+  "authorization": {
+    "attachment_name": "W23 v007 ACTIVATE BOUNDED PRODUCTION COMPATIBILITY RETIREMENT 26 HISTORICAL FACADES + PRODUCTION SUCCESSOR EVIDENCE",
+    "decision_source": "USER",
+    "raw_sha256": "f7ce1f2a97aca6b740c55c501d6747739bf4730efd6a49b6c3b69867d7c7d1da",
+    "normalized_sha256": "b86798f0bf79ed2bfd70b20daffd50be7d087048dcebe07a3bdcd2d05271fae4"
+  },
+  "baseline": {
+    "path": "quality/w23/cycle_report_before.json",
+    "sha256": "a37dd0481517b4f221b1df59faa72fbb41c980f85462efa2359b2e41e3915125"
+  },
+  "predecessor_production_inventory_sha256": "12816fa011f2db6ada2fd0ca153e1dc54455e80c983448aa3c6d2eed734890bf",
+  "current_evidence": {
+    "modules": 883,
+    "edges": 3124,
+    "production_fingerprint_sha256": "6b2e70a908b2bb719d6b7e1c55869a3ba458815a249735326ca9b0045c7f62ff",
+    "semantic_graph_sha256": "e13f188a7e1e887918c32fb8de938f93b641eebf21e104d78f3cd4d74b9d6075",
+    "vector": {
+      "modules": 883,
+      "edges": 3124,
+      "nontrivial_scc_count": 33,
+      "largest_module_scc_size": 14,
+      "cross_domain_scc_count": 1,
+      "cross_domain_cycle_edge_count": 5,
+      "largest_family_count": 4,
+      "total_cross_domain_family_membership": 4,
+      "cross_domain_sccs": [
+        {
+          "modules": [
+            "llm_agent.agent.application",
+            "llm_agent.agent.application_wiring",
+            "llm_agent.agent.engineering.backends.evaluation",
+            "llm_agent.agent.engineering.model_safe",
+            "llm_agent.agent.engineering.policy",
+            "llm_agent.agent.engineering.recovery",
+            "llm_agent.agent.engineering.service",
+            "llm_agent.agent.engineering.store",
+            "llm_agent.agent.engineering.transactions",
+            "llm_agent.agent.evaluation.agent_executor",
+            "llm_agent.agent.evaluation.practical"
+          ],
+          "families": [
+            "Agent.application",
+            "Agent.application_wiring",
+            "Agent.engineering",
+            "Agent.evaluation"
+          ]
+        }
+      ],
+      "cross_domain_cycle_edges": [
+        {
+          "source_module": "llm_agent.agent.application",
+          "destination_module": "llm_agent.agent.application_wiring",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application.py:15"
+          ]
+        },
+        {
+          "source_module": "llm_agent.agent.application_wiring",
+          "destination_module": "llm_agent.agent.engineering.model_safe",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/application_wiring.py:72"
+          ]
+        },
+        {
+          "source_module": "llm_agent.agent.engineering.backends.evaluation",
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import",
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/backends/evaluation.py:14",
+            "src/llm_agent/agent/engineering/backends/evaluation.py:22"
+          ]
+        },
+        {
+          "source_module": "llm_agent.agent.engineering.policy",
+          "destination_module": "llm_agent.agent.evaluation.practical",
+          "edge_kinds": [
+            "local_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/engineering/policy.py:84"
+          ]
+        },
+        {
+          "source_module": "llm_agent.agent.evaluation.agent_executor",
+          "destination_module": "llm_agent.agent.application",
+          "edge_kinds": [
+            "normal_import"
+          ],
+          "evidence": [
+            "src/llm_agent/agent/evaluation/agent_executor.py:11"
+          ]
+        }
+      ]
+    },
+    "f1_successor_components": [
+      {
+        "modules": [
+          "llm_agent.agent.application_result"
+        ],
+        "families": [
+          "Agent.application_result"
+        ]
+      },
+      {
+        "modules": [
+          "llm_agent.agent.final_response"
+        ],
+        "families": [
+          "Agent.final_response"
+        ]
+      },
+      {
+        "modules": [
+          "llm_agent.agent.interaction.transcript"
+        ],
+        "families": [
+          "Agent.interaction"
+        ]
+      },
+      {
+        "modules": [
+          "llm_agent.agent.llm.session"
+        ],
+        "families": [
+          "Agent.llm"
+        ]
+      },
+      {
+        "modules": [
+          "llm_agent.agent.routing.persona.current"
+        ],
+        "families": [
+          "Agent.routing"
+        ]
+      },
+      {
+        "modules": [
+          "llm_agent.agent.reporting.run_receipt",
+          "llm_agent.agent.reporting.run_receipt_builder",
+          "llm_agent.agent.reporting.run_snapshot"
+        ],
+        "families": [
+          "Agent.reporting"
+        ]
+      }
+    ],
+    "f1_reconnected": false,
+    "f2_final_component": {
+      "modules": [
+        "llm_agent.agent.application",
+        "llm_agent.agent.application_wiring",
+        "llm_agent.agent.engineering.backends.evaluation",
+        "llm_agent.agent.engineering.model_safe",
+        "llm_agent.agent.engineering.policy",
+        "llm_agent.agent.engineering.recovery",
+        "llm_agent.agent.engineering.service",
+        "llm_agent.agent.engineering.store",
+        "llm_agent.agent.engineering.transactions",
+        "llm_agent.agent.evaluation.agent_executor",
+        "llm_agent.agent.evaluation.practical"
+      ],
+      "families": [
+        "Agent.application",
+        "Agent.application_wiring",
+        "Agent.engineering",
+        "Agent.evaluation"
+      ],
+      "unchanged": true
+    },
+    "retired_modules_absent": [
+      "llm_agent.agent.memory.json_persistence",
+      "llm_agent.agent.memory.path_safety",
+      "llm_agent.agent.runtime.filesystem_primitives",
+      "llm_agent.agent.runtime.legacy_paths",
+      "llm_agent.agent.runtime.path_safety",
+      "llm_agent.agent.runtime.workspace_trace_paths",
+      "llm_agent.agent.tools.extension_catalog_codec",
+      "llm_agent.agent.tools.extension_catalog_document",
+      "llm_agent.agent.tools.extension_catalog_errors",
+      "llm_agent.agent.tools.extension_catalog_lock",
+      "llm_agent.agent.tools.extension_catalog_migration",
+      "llm_agent.agent.tools.extension_catalog_service",
+      "llm_agent.agent.tools.extension_catalog_storage",
+      "llm_agent.agent.tools.extension_catalog_validation",
+      "llm_agent.agent.tools.extension_manifest_parser",
+      "llm_agent.agent.tools.extension_path",
+      "llm_agent.agent.tools.extension_registry",
+      "llm_agent.agent.tools.extension_state",
+      "llm_agent.agent.tools.process_tree",
+      "llm_agent.agent.tools.provenance",
+      "llm_agent.agent.tools.stdio_launcher",
+      "llm_agent.agent.tools.stdio_streams",
+      "llm_agent.agent.tools.workspace_extensions_codec",
+      "llm_agent.agent.tools.workspace_extensions_resolver",
+      "llm_agent.agent.tools.workspace_extensions_service",
+      "llm_agent.agent.tools.workspace_extensions_storage"
+    ],
+    "retired_incoming_production_edges": [],
+    "broker_absent": true
+  },
+  "protected_production_sha256": {
+    "src/llm_agent/agent/application.py": "0012c41577dd1727745e2a59e149be46f1501074286c5e0b3e6af0e368bcad08",
+    "src/llm_agent/agent/application_wiring.py": "44e445d7100bfb7e05b1177b0d89e318b57718f8861875a1d5286fb20569ecb8",
+    "src/llm_agent/agent/engineering/backends/evaluation.py": "c30d799a7d97f20334da13587baee3c3a4291289b394ef2f1b5eb5480dcaf89c",
+    "src/llm_agent/agent/engineering/model_safe.py": "a5cd9fbeede37686662cbba0385cdb03734a7a5183a87bca6fc532425c89d22d",
+    "src/llm_agent/agent/engineering/policy.py": "f5c822e76af584daaf011f78871f341f9fe533d0b5b1cfe8526ebbb6d6f0f79f",
+    "src/llm_agent/agent/engineering/recovery.py": "33f5b082548dd2b765c543a1989f44cc68333cc525f9c91f517eaf6ee1678ec0",
+    "src/llm_agent/agent/engineering/service.py": "efeedcec58bc4306782665229e8de80d4431d322e4fe752e238d65ff5afeaac7",
+    "src/llm_agent/agent/engineering/store.py": "9b5634e5126610b1f617683e26af9a7bf85c9d8a6dbdce8ad14494aa05ee3710",
+    "src/llm_agent/agent/engineering/transactions.py": "70c355ff0eec99d9a1356bed327b5114dcf2f4e4bdc5e4e31a4ceda8059aab10",
+    "src/llm_agent/agent/evaluation/agent_executor.py": "dd7639610770a6ba1211d3476b13a7d54f6bb2ac10501ee46c71efccbbd94254",
+    "src/llm_agent/agent/evaluation/practical.py": "54751b61152c14c7ede437eedfa04fb326c4a9ff12ac78b847d864c004302360",
+    "src/llm_agent/agent/final_response.py": "b430f80c59d9f61d3cacd70be56bb0f56462299746afb4451355b9747b76c20a",
+    "src/llm_agent/agent/reporting/partial_response.py": "2baafd7acc73669cfada226bb3a287a1824d090dba82f55481d35f5b190564b5"
+  },
+  "unit_delta": {
+    "changed_existing": [],
+    "added": [],
+    "removed": [
+      "src/llm_agent/agent/memory/json_persistence.py",
+      "src/llm_agent/agent/memory/path_safety.py",
+      "src/llm_agent/agent/runtime/filesystem_primitives.py",
+      "src/llm_agent/agent/runtime/legacy_paths.py",
+      "src/llm_agent/agent/runtime/path_safety.py",
+      "src/llm_agent/agent/runtime/workspace_trace_paths.py",
+      "src/llm_agent/agent/tools/extension_catalog_codec.py",
+      "src/llm_agent/agent/tools/extension_catalog_document.py",
+      "src/llm_agent/agent/tools/extension_catalog_errors.py",
+      "src/llm_agent/agent/tools/extension_catalog_lock.py",
+      "src/llm_agent/agent/tools/extension_catalog_migration.py",
+      "src/llm_agent/agent/tools/extension_catalog_service.py",
+      "src/llm_agent/agent/tools/extension_catalog_storage.py",
+      "src/llm_agent/agent/tools/extension_catalog_validation.py",
+      "src/llm_agent/agent/tools/extension_manifest_parser.py",
+      "src/llm_agent/agent/tools/extension_path.py",
+      "src/llm_agent/agent/tools/extension_registry.py",
+      "src/llm_agent/agent/tools/extension_state.py",
+      "src/llm_agent/agent/tools/process_tree.py",
+      "src/llm_agent/agent/tools/provenance.py",
+      "src/llm_agent/agent/tools/stdio_launcher.py",
+      "src/llm_agent/agent/tools/stdio_streams.py",
+      "src/llm_agent/agent/tools/workspace_extensions_codec.py",
+      "src/llm_agent/agent/tools/workspace_extensions_resolver.py",
+      "src/llm_agent/agent/tools/workspace_extensions_service.py",
+      "src/llm_agent/agent/tools/workspace_extensions_storage.py"
+    ],
+    "module_edge_delta": {
+      "removed": [
+        [
+          "llm_agent.agent.memory.json_persistence",
+          "llm_agent.storage.json_persistence"
+        ],
+        [
+          "llm_agent.agent.memory.path_safety",
+          "llm_agent.filesystem.path_safety"
+        ],
+        [
+          "llm_agent.agent.runtime.filesystem_primitives",
+          "llm_agent.filesystem.primitives"
+        ],
+        [
+          "llm_agent.agent.runtime.legacy_paths",
+          "llm_agent.workspace.legacy_paths"
+        ],
+        [
+          "llm_agent.agent.runtime.path_safety",
+          "llm_agent.filesystem.path_safety"
+        ],
+        [
+          "llm_agent.agent.runtime.workspace_trace_paths",
+          "llm_agent.workspace.trace_paths"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_codec",
+          "llm_agent.extensions.extension_catalog_codec"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_document",
+          "llm_agent.extensions.extension_catalog_document"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_errors",
+          "llm_agent.extensions.extension_catalog_errors"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_lock",
+          "llm_agent.extensions.extension_catalog_lock"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_migration",
+          "llm_agent.extensions.extension_catalog_migration"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_service",
+          "llm_agent.extensions.extension_catalog_service"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_storage",
+          "llm_agent.extensions.extension_catalog_storage"
+        ],
+        [
+          "llm_agent.agent.tools.extension_catalog_validation",
+          "llm_agent.extensions.extension_catalog_validation"
+        ],
+        [
+          "llm_agent.agent.tools.extension_manifest_parser",
+          "llm_agent.extensions.extension_manifest_parser"
+        ],
+        [
+          "llm_agent.agent.tools.extension_path",
+          "llm_agent.extensions.extension_path"
+        ],
+        [
+          "llm_agent.agent.tools.extension_registry",
+          "llm_agent.extensions.extension_registry"
+        ],
+        [
+          "llm_agent.agent.tools.extension_state",
+          "llm_agent.extensions.extension_state"
+        ],
+        [
+          "llm_agent.agent.tools.process_tree",
+          "llm_agent.process.tree"
+        ],
+        [
+          "llm_agent.agent.tools.provenance",
+          "llm_agent.agent.operation.provenance"
+        ],
+        [
+          "llm_agent.agent.tools.stdio_launcher",
+          "llm_agent.extensions.stdio_launcher"
+        ],
+        [
+          "llm_agent.agent.tools.stdio_streams",
+          "llm_agent.process.streams"
+        ],
+        [
+          "llm_agent.agent.tools.workspace_extensions_codec",
+          "llm_agent.extensions.workspace_extensions_codec"
+        ],
+        [
+          "llm_agent.agent.tools.workspace_extensions_resolver",
+          "llm_agent.extensions.workspace_extensions_resolver"
+        ],
+        [
+          "llm_agent.agent.tools.workspace_extensions_service",
+          "llm_agent.extensions.workspace_extensions_service"
+        ],
+        [
+          "llm_agent.agent.tools.workspace_extensions_storage",
+          "llm_agent.extensions.workspace_extensions_storage"
+        ]
+      ],
+      "added": []
+    }
+  },
+  "input_sha256": {
+    "scripts/w21_architecture/graph.py": "46415fb1fd7363986c625a4ba182fcf52505ca637606cc4c4738abf5ce836ae0",
+    "scripts/w21_architecture/imports.py": "0313763a97caf81ab55185883a05b383ab2504d90812933b7022b8615d42b99f",
+    "scripts/w21_architecture/source.py": "7034ca4746d0deb0a1b7dc03f8d103f5d3607a12d8e13a394c0180c044d5239f",
+    "scripts/w23_architecture/phase0_inventory.py": "06c287b08695e0cde22c0dd60d0fed6d18b5bf2bc7f8499db3fbf286df9ffb6d",
+    "scripts/check_current_architecture.py": "724a5350703ae690e335e2cb1ca13c831d9641153e00e7ff244179d27b58f133",
+    "scripts/check_w21_compatibility.py": "904dce3c2b18a31145477cab904808d03d9bebe05417d01bcc7ad7b68666d27f",
+    "quality/architecture_current_policy.json": "96a0a009e9af2d3ad5f260d0c07dd4f6903ccdf6b9a0aa6512211ddab3efe507",
+    "quality/architecture_compatibility.json": "ade7fbb13a5a9ea50712717729baf59533df36b4d0a6b1a9a4c2fb182c4015e8",
+    "quality/w23/disposition_amendments.json": "2d8dff4c3ced90af62730db66547a228ae64f4e7a78a958fab317d426945df0a",
+    "tests/unit/test_current_architecture.py": "4911cff457d68cb1077624174d2cc4185744935d141c8b5a0c169ab56fcc6238",
+    "tests/unit/runtime/test_wave21_compatibility.py": "049c3598eeb731cc9b23293b3ae265a555ddb97268af40440ed52cf4dcdc8a73",
+    "tests/unit/test_w23_cycle_policy.py": "d3f616d46c6f244f63aa91ecdfe9a88f2b1e3ad65041130136f592b45c10a10c",
+    "quality/w23/cycle_report_before.json": "a37dd0481517b4f221b1df59faa72fbb41c980f85462efa2359b2e41e3915125",
+    ".agent-local/AUTHORITY_MANIFEST.json": "3cbe1b46c718abe681b3e9091c91dd46b686e148a85312b8e9a203651bc4bf25"
+  },
+  "methodology": {
+    "production_fingerprint": "SHA-256 of compact JSON sorted [relative path, raw SHA-256] pairs for all current production Python modules",
+    "predecessor": "Reconstructed the accepted lock successor inventory by applying its recorded delta to its immutable predecessor inventory; verified its complete source graph using authenticated HEAD blobs for the 26 retired modules",
+    "successor": "Recomputed from current disk source using RepositorySource final-w22, complete graph and CURRENT augmentation"
+  }
+}

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from llm_agent.agent.observability.audit_projection_fields import MAX_AUDIT_TEXT, _safe_relative_path
-from llm_agent.agent.runtime.path_safety import normalize_relative_path
+from llm_agent.filesystem.path_safety import normalize_relative_path
 
 _EXTERNAL = {"scope": "external"}
 

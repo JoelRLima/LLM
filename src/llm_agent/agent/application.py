@@ -32,7 +32,6 @@ from llm_agent.agent.orchestration.operational_modes import ApplicationOperation
 from llm_agent.agent.orchestrator import Orchestrator
 from llm_agent.agent.routing.persona.factory import build_persona_router
 from llm_agent.agent.runtime.home_lifecycle import HomeLifecycleLease
-from llm_agent.agent.runtime.instance_lock import InstanceLock
 from llm_agent.agent.runtime.logging import setup_logger
 from llm_agent.agent.runtime.storage_bootstrap import StorageBootstrap
 from llm_agent.agent.runtime.task_directives import TaskRunDirective
@@ -42,6 +41,7 @@ from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
 from llm_agent.agent.tools.tool_registry import ToolRegistry
 from llm_agent.agent.variants.models import VariantComposition, VariantSeam
 from llm_agent.agent.variants.preflight import validate_variant_composition
+from llm_agent.process.instance_lock import InstanceLock
 from llm_agent.workspace.context import WorkspaceContext
 from llm_agent.workspace.paths import AppPaths, WorkspacePaths
 

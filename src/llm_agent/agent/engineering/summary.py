@@ -32,8 +32,8 @@ from llm_agent.agent.engineering.contracts import (
     validate_sha256,
     validate_workspace_id,
 )
-from llm_agent.agent.runtime.process_identity import current_process_start_id
 from llm_agent.filesystem.primitives import inspect_final_path
+from llm_agent.process.process_identity import current_process_start_id
 
 MAX_ENGINEERING_SUMMARY_BYTES = 32_768
 MAX_ENGINEERING_SUMMARY_DEPTH = 6

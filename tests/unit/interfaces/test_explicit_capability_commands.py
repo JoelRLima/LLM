@@ -9,6 +9,7 @@ from llm_agent.agent.skills import load_tool_registry
 from llm_agent.agent.tools.authority import OperationalMode, operational_mode_capabilities
 from llm_agent.agent.tools.contracts import ToolResult, ToolStatus
 from llm_agent.agent.tools.invocation_gateway import ToolInvocationGateway
+from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import command_handlers
 from llm_agent.interfaces.cli.commands import EXACT_HANDLERS, PREFIX_HANDLERS, handle_command
 
@@ -26,15 +27,7 @@ def _context(tmp_path: Path) -> SimpleNamespace:
     gateway = ToolInvocationGateway(registry)
     capabilities = operational_mode_capabilities(OperationalMode.READ_ONLY)
     gateway.set_capability_ceiling(capabilities, mode=OperationalMode.READ_ONLY.display_name)
-    return SimpleNamespace(
-        orchestrator=SimpleNamespace(
-            tool_invocation_gateway=gateway,
-            # A fresh session has no persona/planning projection yet.
-            active_skills=[],
-            allowed_capabilities=capabilities,
-        ),
-        workspace=SimpleNamespace(root=tmp_path),
-    )
+    return SimpleNamespace(workspace=SimpleNamespace(root=tmp_path), task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(tool_invocation_gateway=gateway, active_skills=[], allowed_capabilities=capabilities))))
 
 
 @pytest.mark.parametrize(
@@ -75,13 +68,7 @@ def test_explicit_helper_does_not_forward_planner_visibility(monkeypatch: pytest
     gateway = _Gateway()
     output = _Console()
     monkeypatch.setattr(command_handlers, "console", output)
-    context = SimpleNamespace(
-        orchestrator=SimpleNamespace(
-            tool_invocation_gateway=gateway,
-            active_skills=[],
-            allowed_capabilities=frozenset({"read"}),
-        )
-    )
+    context = SimpleNamespace(task_execution=_retain_runtime(SimpleNamespace(orchestrator=SimpleNamespace(tool_invocation_gateway=gateway, active_skills=[], allowed_capabilities=frozenset({'read'})))))
 
     command_handlers.read_file("/read controle.txt", context)
 

@@ -24,8 +24,8 @@ from llm_agent.agent.engineering.contracts import (
 )
 from llm_agent.agent.engineering.registry import EngineeringRegistry
 from llm_agent.agent.engineering.summary import EngineeringRecordError
-from llm_agent.agent.runtime.process_identity import OwnerLiveness
 from llm_agent.agent.runtime.schema_validation_values import valid_closed_schema_value
+from llm_agent.process.process_identity import OwnerLiveness
 
 MAX_ENGINEERING_RUN_RECORD_BYTES = 65_536
 MAX_ENGINEERING_TRANSITION_RECORD_BYTES = 8_192

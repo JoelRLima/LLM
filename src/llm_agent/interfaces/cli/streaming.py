@@ -1,18 +1,28 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from rich.console import Console
 
-from llm_agent.application.agent_boundary import ChatSession, emit_worker_output, logger
+from llm_agent.application.conversation import ChatTurn, ConversationRuntime, read_conversation
+
+_logger = logging.getLogger("LLM_Agent")
 
 
 class StreamingDisplay:
     """Owns presentation state and callbacks for one streamed chat response."""
 
-    def __init__(self, console: Console, session: ChatSession, diagnostic_level: int) -> None:
+    def __init__(
+        self,
+        console: Console,
+        conversation: ConversationRuntime,
+        turn: ChatTurn,
+        diagnostic_level: int,
+    ) -> None:
         self.console = console
-        self.session = session
+        self.conversation = conversation
+        self.turn = turn
         self.diagnostic_level = diagnostic_level
         self.chunk_count = 0
         self.thinking_started = False
@@ -20,11 +30,7 @@ class StreamingDisplay:
         self.timings: dict[str, Any] | None = None
 
     def _emit(self, value: object, *, end: str = "\n") -> None:
-        emit_worker_output(
-            value,
-            end=end,
-            fallback=lambda item, item_end: self.console.print(item, end=item_end),
-        )
+        self.turn.present_stream_text(value, end=end)
 
     def on_raw_line(self, line: str) -> None:
         self.chunk_count += 1
@@ -44,14 +50,14 @@ class StreamingDisplay:
     def on_content_chunk(self, text: str) -> None:
         if not self.content_started:
             self._clear_progress()
-            title = "[RESPOSTA FINAL]" if self.thinking_started and self.session.thinking_budget else "[RESPOSTA]"
+            title = "[RESPOSTA FINAL]" if self.thinking_started and read_conversation(self.conversation).thinking_budget else "[RESPOSTA]"
             self._emit(f"[bold green]{title}:[/bold green]")
             self.content_started = True
         self._emit(text, end="")
 
     def on_error(self, message: str) -> None:
         self._emit(f"\n\n[bold red]Erro do servidor: {message}[/bold red]")
-        logger.error("Erro reportado pelo servidor no stream: %s", message)
+        _logger.error("Erro reportado pelo servidor no stream: %s", message)
 
     def on_done(self, timings: dict[str, Any]) -> None:
         self.timings = timings

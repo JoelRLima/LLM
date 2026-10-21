@@ -9,7 +9,6 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_agent.agent.runtime.instance_lock import InstanceLock, InstanceLockError
 from llm_agent.filesystem.path_safety import LinkLikePathError, reject_link_like
 from llm_agent.filesystem.primitives import has_reparse_point, write_bytes_atomic
 from llm_agent.outputs.models import (
@@ -33,6 +32,7 @@ from llm_agent.outputs.models import (
     OutputValidationError,
     payload_digest,
 )
+from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
 
 _FINAL = re.compile(r"^out-[0-9a-f]{32}\.(?:payload\.txt|meta\.json)$")
 _LOCK = ".output-store.lock"
