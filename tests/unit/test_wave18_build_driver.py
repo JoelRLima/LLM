@@ -353,7 +353,7 @@ def test_w18_workflow_wires_complete_hash_bound_evidence_chain() -> None:
     workflow = Path(".github/workflows/wave18-installed-product.yml").read_text(encoding="utf-8")
 
     workflow = re.sub(r'"(--[a-z-]+)", (\$[a-z]+)', r'\1 \2', workflow)
-    assert "timeout-minutes: 60" in workflow
+    assert "timeout-minutes: 150" in workflow
     assert "--conpty-layer-matrix-json $matrix" in workflow
     assert "scripts/build_conpty_authority_evidence.py" in workflow
     assert "--installed-product-summary $summary" in workflow
