@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import platform
@@ -15,12 +16,12 @@ from typing import Any
 
 
 def _git(root: Path, *args: str, input: bytes | None = None) -> bytes:
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_NO_REPLACE_OBJECTS="1")
     return subprocess.check_output(["git", *args], cwd=root, env=env, input=input)
 
 
 def _assert_index_matches_head(root: Path) -> None:
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_NO_REPLACE_OBJECTS="1")
     result = subprocess.run(
         ["git", "diff-index", "--cached", "--quiet", "HEAD", "--"],
         cwd=root, env=env, capture_output=True,
@@ -115,16 +116,47 @@ def _capture_index_files(
     return entries, snapshots
 
 
-def _authenticate_checkout_blobs(root: Path, entries: list[tuple[str, str, str]]) -> None:
-    # hash-object applies Git's configured clean filters and .gitattributes,
-    # matching the blob that `git add` would create without writing objects.
-    filtered = _git(root, "hash-object", "--stdin-paths",
-                    input=("\n".join(path for path, _, _ in entries) + "\n").encode("utf-8")) if entries else b""
-    filtered_oids = filtered.decode("ascii", errors="strict").splitlines()
-    if len(filtered_oids) != len(entries):
-        raise ValueError("Git clean-filter output count differs from index entries")
-    for (relative, _, expected_oid), actual_oid in zip(entries, filtered_oids, strict=True):
-        if actual_oid != expected_oid:
+def _read_authenticated_blob(stream: io.BytesIO, expected_oid: str, algorithm: str) -> bytes:
+    header = stream.readline().decode("ascii", errors="strict").split()
+    if len(header) != 3 or header[:2] != [expected_oid, "blob"]:
+        raise ValueError("Git blob response differs from authenticated index entry")
+    size = int(header[2])
+    if size < 0:
+        raise ValueError("Git blob response has a negative size")
+    data = stream.read(size)
+    if len(data) != size or stream.read(1) != b"\n":
+        raise ValueError("Git blob response is truncated or malformed")
+    actual_oid = hashlib.new(algorithm, b"blob " + str(size).encode() + b"\0" + data).hexdigest()
+    if actual_oid != expected_oid:
+        raise ValueError("Git blob bytes differ from authenticated object identity")
+    return data
+
+
+def _authenticated_git_blobs(root: Path, entries: list[tuple[str, str, str]]) -> list[bytes]:
+    algorithm = _git(root, "rev-parse", "--show-object-format").decode().strip()
+    requests = "".join(oid + "\n" for _, _, oid in entries).encode("ascii")
+    stream = io.BytesIO(_git(root, "cat-file", "--batch", input=requests))
+    blobs = [_read_authenticated_blob(stream, oid, algorithm) for _, _, oid in entries]
+    if stream.read():
+        raise ValueError("Git blob response contains unexpected trailing bytes")
+    return blobs
+
+
+def _authenticate_checkout_blobs(
+    root: Path,
+    head: str,
+    entries: list[tuple[str, str, str]],
+    snapshots: list[tuple[str, str, tuple[int, ...]]],
+) -> None:
+    blobs = _authenticated_git_blobs(root, entries)
+    for (relative, _, oid), (_, checkout_sha256, _), blob in zip(entries, snapshots, blobs, strict=True):
+        if hashlib.sha256(blob).hexdigest() == checkout_sha256:
+            continue
+        # Cleaning a checkout is not an inverse of historical blob storage.
+        # Derive the expected materialization from the authenticated blob,
+        # pinning attributes to the commit rather than mutable worktree files.
+        expected = _git(root, "--attr-source=" + head, "cat-file", "--filters", "--path=" + relative, oid)
+        if hashlib.sha256(expected).hexdigest() != checkout_sha256:
             raise ValueError("Git checkout changed authenticated bytes: " + relative)
 
 
@@ -151,7 +183,7 @@ def capture(root: Path) -> dict[str, Any]:
     _assert_index_matches_head(root)
 
     entries, snapshots = _capture_index_files(root)
-    _authenticate_checkout_blobs(root, entries)
+    _authenticate_checkout_blobs(root, head, entries, snapshots)
     files = _verify_checkout_snapshots(root, entries, snapshots)
 
     final_head = _git(root, "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
