@@ -1,5 +1,7 @@
 # Estratégias para persistência da fila e identidade do runtime — 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Estado: investigação com experimento local e correções de compatibilidade. A fila
 continua usando JSON; a adoção de outro formato depende dos critérios abaixo.
 Este documento registra uma recomendação, sem substituir os contratos CURRENT.
@@ -175,7 +177,7 @@ compartilhado, UX de fila e runtime real com fronteira de modelo simulada. Lint
 passou; mypy passou para os quatro módulos de produção alterados. Nenhuma
 chamada a provider foi feita. A primeira
 tentativa no sandbox falhou nas permissões de temporários; a rodada válida foi
-executada fora dele. [XML local da rodada final](../../../.tmp/queue-strategies-20261102/tests-final.xml).
+executada fora dele. XML local da rodada final (artefato local: `.tmp/queue-strategies-20261102/tests-final.xml`).
 
 ## Medições locais e limites da evidência
 
@@ -223,9 +225,9 @@ energia nem ganho de desempenho do produto inteiro. A escala de 1.000 casos
 ainda não foi medida. Repetir a comparação depois dos testes de falha é condição
 para promover qualquer formato.
 
-Evidências locais: [persistência e hash atual](../../../.tmp/queue-strategies-20261102/results.json),
-[journal e ZIP de fontes](../../../.tmp/queue-strategies-20261102/alternatives-results.json),
-[ZIP com bytecode](../../../.tmp/queue-strategies-20261102/archive-pyc-results.json).
+Evidências locais: persistência e hash atual (artefato local: `.tmp/queue-strategies-20261102/results.json`),
+journal e ZIP de fontes (artefato local: `.tmp/queue-strategies-20261102/alternatives-results.json`),
+ZIP com bytecode (artefato local: `.tmp/queue-strategies-20261102/archive-pyc-results.json`).
 Os scripts correspondentes ficam na mesma pasta, sem alterar o runtime ativo.
 
 ## Ordem recomendada após as medições
@@ -271,7 +273,7 @@ por gravação, mantém uma única autoridade e não acrescenta replay ou migra�
 Essa é a primeira etapa aplicada; o journal permanece condicionado ao perfil de
 baterias maiores.
 
-Resultado bruto: [pares de 250 casos](../../../.tmp/queue-strategies-20261102/compact-confirm-results.json).
+Resultado bruto: pares de 250 casos (artefato local: `.tmp/queue-strategies-20261102/compact-confirm-results.json`).
 
 ## Seguimento: perfil ponta a ponta e candidatos
 
@@ -311,10 +313,10 @@ Workbench. Como o formato atual apresenta ao usuário um `state.json` sempre
 atualizado, o custo e o impacto de um journal completo precisam ser avaliados
 antes de implementar outra autoridade de estado.
 
-Evidências: [pipeline de 100 casos](../../../.tmp/queue-strategies-20261102/queue-pipeline-results.json),
-[hashes equivalentes](../../../.tmp/queue-strategies-20261102/runtime-hash-results.json),
-[worker do checkout](../../../.tmp/queue-strategies-20261102/e2e-offline-results.json)
-e [worker do ZIP](../../../.tmp/queue-strategies-20261102/e2e-archive-results.json).
+Evidências: pipeline de 100 casos (artefato local: `.tmp/queue-strategies-20261102/queue-pipeline-results.json`),
+hashes equivalentes (artefato local: `.tmp/queue-strategies-20261102/runtime-hash-results.json`),
+worker do checkout (artefato local: `.tmp/queue-strategies-20261102/e2e-offline-results.json`)
+e worker do ZIP (artefato local: `.tmp/queue-strategies-20261102/e2e-archive-results.json`).
 
 ## Perfil aprofundado: traces e trabalho por caso
 
@@ -376,14 +378,14 @@ medem bytes físicos no dispositivo. A diferença de duração média entre 50 e
 100 ms é pequena para esta amostra. A escolha de 50 ms privilegia frescor da
 visão ativa, enquanto o corte de snapshots já é grande frente à janela zero.
 
-Evidências: [0 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0.json),
-[25 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p025.json),
-[50 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05.json),
-[repetições de 50 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05-a.json),
-[segunda repetição de 50 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05-b.json),
-[100 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1.json) e
-[repetições de 100 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1-a.json) e
-[segunda repetição de 100 ms](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1-b.json).
-O perfil anterior permanece disponível: [A/B com traces](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-trace-results.json),
-[A/B sem traces](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-no-trace-results.json) e
-[chamadas e `cProfile`](../../../.tmp/queue-strategies-20261102/e2e-profile-worker-deep-results.json).
+Evidências: 0 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0.json`),
+25 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p025.json`),
+50 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05.json`),
+repetições de 50 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05-a.json`),
+segunda repetição de 50 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p05-b.json`),
+100 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1.json`) e
+repetições de 100 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1-a.json`) e
+segunda repetição de 100 ms (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-0p1-b.json`).
+O perfil anterior permanece disponível: A/B com traces (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-trace-results.json`),
+A/B sem traces (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-no-trace-results.json`) e
+chamadas e `cProfile` (artefato local: `.tmp/queue-strategies-20261102/e2e-profile-worker-deep-results.json`).

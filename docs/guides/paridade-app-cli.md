@@ -1,8 +1,11 @@
 # Sessão compartilhada entre app e CLI
 
-O app WebView2, `llm-agent`, `llm-agent chat` e `llm-agent local` usam
+O app WebView2, `llm-agent chat` e `llm-agent local` usam
 `InteractiveSession`. As interfaces apresentam resultados e encaminham ações;
 admissão, authority, aprovação, consultas e estado pertencem ao núcleo.
+
+Sem subcomando, `llm-agent` preserva o fluxo W17 de primeiro uso guiado e
+seleção de workspace, também acessível por `llm-agent chat --legacy-session`.
 
 | Jornada | App WebView2 | Terminal compartilhado |
 | --- | --- | --- |

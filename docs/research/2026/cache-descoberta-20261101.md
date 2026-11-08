@@ -1,5 +1,7 @@
 # Isolamento e limite do cache de descoberta
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 ## Problema e prioridade
 
 O cache de seleção de ferramentas usava somente `(snapshot_id, planner_kind, objective)` como chave e crescia sem limite. Os nomes guardados eram revalidados contra o catálogo atual, mas a seleção podia ter vindo de outra tarefa ou autoridade. Uma atualização forçada que falhasse também deixava a seleção anterior disponível para uma chamada seguinte. Isso podia fornecer ao modelo detalhes de ferramentas escolhidas em condições antigas; os controles de execução continuavam presentes.
@@ -33,13 +35,13 @@ Comando reproduzível antes de remover o pacote de referência:
 .venv/Scripts/python.exe scripts/benchmark_disclosure_cache.py --reference-python .workbench-managed/versions/eca9119645f6-20261101T205106Z-1ff920d7/runtime/Scripts/python.exe --output reports/disclosure-cache-reproduction-20261101.json
 ```
 
-[Reprodução comparativa](../../../reports/disclosure-cache-reproduction-20261101.json). O script verifica especificamente o defeito do pacote de referência; não é uma comparação genérica entre quaisquer versões.
+Reprodução comparativa (artefato local: `reports/disclosure-cache-reproduction-20261101.json`). O script verifica especificamente o defeito do pacote de referência; não é uma comparação genérica entre quaisquer versões.
 
 ## Validação
 
 - Planejamento, LLM e rota compacta: **1.466 testes aprovados, um ignorado**.
 - Os testes cobrem troca de tentativa/tarefa, autoridades, capacidades, objetivo, catálogo, descrição, schema e orçamento; descarte de entradas legadas; expulsão por uso; atualização inválida e falha de apresentação.
-- [Campanha de 44 tarefas simuladas](../../../reports/disclosure-cache-20261101.json): todas aprovadas, com os mesmos resultados, falhas, arquivos alterados e efeitos não autorizados da campanha anterior. Chamadas simuladas preservadas: 171 no perfil padrão e 173 no compacto.
+- Campanha de 44 tarefas simuladas (artefato local: `reports/disclosure-cache-20261101.json`): todas aprovadas, com os mesmos resultados, falhas, arquivos alterados e efeitos não autorizados da campanha anterior. Chamadas simuladas preservadas: 171 no perfil padrão e 173 no compacto.
 - Ruff e Mypy passaram nos módulos alterados. A verificação estática de tipos também passou com plataforma Linux; não houve execução em Linux.
 - Arquitetura CURRENT aprovada: 981 módulos e 3.464 arestas, sem alterar a política ou o baseline nesta rodada.
 

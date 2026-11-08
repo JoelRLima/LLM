@@ -264,11 +264,23 @@ def check_markdown_links() -> tuple[list[str], int]:
                 checked += 1
                 local_target = unquote(target.split("#", 1)[0])
                 resolved = (ROOT / local_target.lstrip("/")) if local_target.startswith("/") else (path.parent / local_target)
-                if not resolved.exists():
+                if _is_local_only_link(resolved):
+                    failures.append(
+                        f"documentacao: {_relative(path)}:{line_number} aponta para {target}, artefato local nao publicado"
+                    )
+                elif not resolved.exists():
                     failures.append(
                         f"documentacao: {_relative(path)}:{line_number} aponta para {target}, que nao existe"
                     )
     return failures, checked
+
+
+def _is_local_only_link(path: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return False
+    return bool(relative.parts) and relative.parts[0] in {"reports", ".tmp"}
 
 
 def check_text_encoding() -> tuple[list[str], int]:

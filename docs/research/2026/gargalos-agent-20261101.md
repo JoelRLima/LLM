@@ -1,5 +1,7 @@
 # Gargalos do agente: diagnóstico, escolha e implementação
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Análise de 1º de novembro de 2026. Nenhum endpoint ou modelo real foi chamado. A investigação combinou inspeção do caminho de produção, perfil local de cinco tarefas simuladas, relatórios da matriz de 22 tarefas e benchmark do transporte HTTP substituído por funções locais.
 
 ## Prioridades encontradas
@@ -11,7 +13,7 @@ Análise de 1º de novembro de 2026. Nenhum endpoint ou modelo real foi chamado.
 | 3 — custo local de persistência | No perfil de cinco tarefas, publicação de metadados e índice de traces aparece entre os maiores custos. O perfil registrou 168 gravações atômicas e 84 atualizações de índice. Uma execução instrumentada separada encontrou 79 gravações de metadados e 79 de índice, sem gravações idênticas. | Agrupar publicações ou alterar o armazenamento do índice. | Adiado: envolve durabilidade, progresso visível, `flush` e recuperação após falha. Pular gravações idênticas não resolveria o caso medido. |
 | 4 — montagem de contexto | Memória, pistas de arquivos e orientação do projeto são construídas por etapa; parte opcional pode ser descartada depois do dimensionamento. | Construção sob demanda e cache de fontes. | Candidato posterior. Invalidação precisa acompanhar alterações no workspace e nos fatos do runtime; não foi quantificado como principal custo desta amostra. |
 
-O perfil local levou aproximadamente 4,2 s, com `cProfile` ativo. Seus tempos acumulados incluem espera e podem se sobrepor entre caminhos concorrentes; não são parcelas somáveis de latência. A diferença entre contagens de publicações nas duas execuções decorre do agendamento assíncrono. O perfil bruto de investigação está em `.tmp/agent-bottlenecks-before.prof`; as contagens de chamadas semânticas vêm do [relatório anterior](../../../reports/weak-model-v2-fixture-20261101-recovery.json).
+O perfil local levou aproximadamente 4,2 s, com `cProfile` ativo. Seus tempos acumulados incluem espera e podem se sobrepor entre caminhos concorrentes; não são parcelas somáveis de latência. A diferença entre contagens de publicações nas duas execuções decorre do agendamento assíncrono. O perfil bruto de investigação está em `.tmp/agent-bottlenecks-before.prof`; as contagens de chamadas semânticas vêm do relatório anterior (artefato local: `reports/weak-model-v2-fixture-20261101-recovery.json`).
 
 As recomendações oficiais de [otimização de latência da OpenAI](https://developers.openai.com/api/docs/guides/latency-optimization) incluem reduzir requisições e aplicar técnicas convencionais de otimização. A experiência da Anthropic sobre [harnesses para tarefas longas](https://www.anthropic.com/research/harness-design-long-running-apps) também explicita custos adicionais de orquestração, tokens e latência. Essas fontes orientaram a comparação; não demonstram ganhos neste repositório. A escolha aqui depende das reproduções locais acima.
 
@@ -47,7 +49,7 @@ O script bloqueia o caminho HTTP real substituindo `requests.post` e usa um gate
 | Chamadas de modelo no ledger em cada modo | 20 | 20 |
 | Tokens contabilizados no ledger em cada modo | 660 | 660 |
 
-Artefatos: [referência antes da implementação](../../../reports/request-measurement-before-20261101.json), [resultado posterior](../../../reports/request-measurement-after-20261101.json) e [comparação pareada reproduzível](../../../reports/request-measurement-comparison-20261101.json).
+Artefatos: referência antes da implementação (artefato local: `reports/request-measurement-before-20261101.json`), resultado posterior (artefato local: `reports/request-measurement-after-20261101.json`) e comparação pareada reproduzível (artefato local: `reports/request-measurement-comparison-20261101.json`).
 
 O ganho confirmado é a eliminação de 50% das consultas duplicadas ao contador/tokenizer nesse fluxo. Isso não significa agente 50% mais rápido, economia de tokens de inferência ou melhoria de acurácia. O benchmark sem latência de rede apresentou tempos locais semelhantes, aproximadamente 175–179 ms para 20 repetições. Não foi medida a latência de um servidor real.
 
@@ -57,7 +59,7 @@ O ganho confirmado é a eliminação de 50% das consultas duplicadas ao contador
 - 20 testes específicos aprovados, cobrindo expiração, uso único, capacidade limitada, alterações de payload, falhas de transporte, gravação de traces e impossibilidade de ultrapassar o orçamento mesmo com medição reaproveitada. Os conjuntos se sobrepõem.
 - Ruff e complexidade até 10 por função aprovados. Mypy dos cinco módulos/script passou para Windows e Linux como plataformas estáticas; não é execução em Linux.
 - Arquitetura CURRENT aprovada: 979 módulos, 3.451 arestas.
-- Matriz completa: 44 tarefas simuladas aprovadas, sem falsos sucessos ou efeitos não autorizados, com fontes inalteradas. [Relatório desta rodada](../../../reports/weak-model-v2-fixture-20261101-measurement.json).
+- Matriz completa: 44 tarefas simuladas aprovadas, sem falsos sucessos ou efeitos não autorizados, com fontes inalteradas. Relatório desta rodada (artefato local: `reports/weak-model-v2-fixture-20261101-measurement.json`).
 
 O perfil padrão continua `standard`, e `compact` permanece opt-in. As melhorias de seleção de ferramentas e persistência ficam identificadas com seus riscos, sem promoção baseada apenas em raciocínio manual ou em tempo de fixture.
 

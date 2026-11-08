@@ -1,5 +1,7 @@
 # Execução compacta e avaliação de modelos menores
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 O runtime oferece um perfil experimental para reduzir a carga de decisão e o
 contexto opcional enviados ao modelo. CLI e Workbench usam a mesma implementação.
 Não há dependência nova nem serviço adicional.
@@ -75,7 +77,7 @@ resposta real, separadamente da seleção do backend.
 ## Estado da validação
 
 O endpoint local configurado não respondeu à consulta de identificação desta rodada. A campanha offline histórica de 29/10/2026 está em
-[`reports/weak-model-fixture-20261029.json`](../reports/weak-model-fixture-20261029.json).
+`reports/weak-model-fixture-20261029.json` (artefato local: `reports/weak-model-fixture-20261029.json`).
 Ela não comprova ganho de precisão, tokens ou latência com modelos menores. O
 perfil compacto continua opt-in até a comparação com um modelo real.
 ## Atualizacao de implementacao - 1/11/2026
@@ -84,7 +86,7 @@ O perfil `standard` continua sendo o padrao. `compact` permanece opt-in; esta ro
 
 O caminho de saida estruturada ganhou schemas nativos somente para os contratos exatos `FINAL_GENERATION` e `SUMMARIZATION`, quando o perfil declara suporte a `JSON_SCHEMA`. Se `GBNF` for declarado, ele continua preferido; um fallback para schema ocorre apos rejeicao GBNF em cache. Contratos de plano, ferramenta reativa e bindings mantem o caminho GBNF ou prompt existente. Schema restringe o formato e nao substitui admissao tipada nem verificacao do resultado.
 
-Os testes offline e checagens estáticas validam esses caminhos de código, não a qualidade de um modelo real. A avaliação v2 foi implementada com 22 casos distintos; a referência simulada passou nos dois modos (44 execuções), registrada em [weak-model-v2-fixture-20261101.json](../reports/weak-model-v2-fixture-20261101.json). Seu gate de qualidade de modelo permanece `inconclusive`, com `MODEL_NOT_RUN`.
+Os testes offline e checagens estáticas validam esses caminhos de código, não a qualidade de um modelo real. A avaliação v2 foi implementada com 22 casos distintos; a referência simulada passou nos dois modos (44 execuções), registrada em weak-model-v2-fixture-20261101.json (artefato local: `reports/weak-model-v2-fixture-20261101.json`). Seu gate de qualidade de modelo permanece `inconclusive`, com `MODEL_NOT_RUN`.
 
 O canário usa dez casos e uma repetição em um único modo. Cada caso usa os limites canônicos do runtime, com tetos de 20 chamadas de modelo, 30 passos, 200.000 tokens contabilizados, 30 chamadas de ferramentas e 300 segundos; limites menores da configuração são preservados. O prazo é cooperativo: uma chamada em andamento ainda depende do timeout do provedor. O relatório registra os limites efetivos.
 

@@ -1,5 +1,7 @@
 # Reparo estruturado com feedback específico
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Entrega selecionada pela [pesquisa ampla de prioridades](../../../research/2026/pesquisa-ampla-prioridades-20261101.md), com fundamento nas orientações de feedback acionável e avaliação por trajetória.
 
 ## Lacuna reproduzida
@@ -26,16 +28,16 @@ A autorização de reparo, o limite de chamadas, a admissão de decisão, a gram
 .venv/Scripts/python.exe scripts/benchmark_decision_repair.py --reference-python .workbench-managed/versions/e1f222af37ba-20261102T011032Z-e675b8bc/runtime/Scripts/python.exe --output reports/decision-repair-comparison-20261101.json
 ```
 
-[Resultado completo](../../../../reports/decision-repair-comparison-20261101.json). Cada runtime executou sete episódios: resposta válida inicial, JSON inválido, contrato inválido, truncamento, filtro, segundo erro e esgotamento de chamadas. Foram preservados resultado, número de chamadas ao provider simulado e número de chamadas no ledger. O novo comportamento observado é o feedback somente nos retries autorizados que chegaram ao provider; não houve uma chamada adicional.
+Resultado completo (artefato local: `reports/decision-repair-comparison-20261101.json`). Cada runtime executou sete episódios: resposta válida inicial, JSON inválido, contrato inválido, truncamento, filtro, segundo erro e esgotamento de chamadas. Foram preservados resultado, número de chamadas ao provider simulado e número de chamadas no ledger. O novo comportamento observado é o feedback somente nos retries autorizados que chegaram ao provider; não houve uma chamada adicional.
 
 As respostas foram pré-definidas, independentemente da nota. Portanto, a comparação **não demonstra aumento da taxa de recuperação de modelos**, redução de custo faturado ou ganho de latência. Ela verifica mudança no pedido enviado e preservação dos gates nos casos cobertos.
 
 ## Validação
 
-- Planejamento, LLM, rota compacta e código: **1.614 aprovados, cinco ignorados**. [JUnit](../../../../reports/research-repair-tests-20261101.xml).
-- Interfaces e integração: **724 aprovados, 16 ignorados**, com o aviso Tk de descarte fora da thread principal já observado nas rodadas anteriores. [JUnit](../../../../reports/research-repair-integration-20261101.xml).
+- Planejamento, LLM, rota compacta e código: **1.614 aprovados, cinco ignorados**. JUnit (artefato local: `reports/research-repair-tests-20261101.xml`).
+- Interfaces e integração: **724 aprovados, 16 ignorados**, com o aviso Tk de descarte fora da thread principal já observado nas rodadas anteriores. JUnit (artefato local: `reports/research-repair-integration-20261101.xml`).
 - Conjunto focado final: **17 testes aprovados**, incluindo o caso adicional de JSON Schema nativo. Verifica duplicidade de chaves, não finitos, decisões múltiplas, JSON inválido, contrato inválido, truncamento, filtro, limite de recuperação, limite real de chamadas, overflow de contexto com a nota, GBNF/fallback, JSON Schema, restauração de mensagens e ausência de estado entre chamadas.
-- [44 tarefas simuladas](../../../../reports/research-repair-campaign-20261101.json): mesmos resultados, códigos de falha, arquivos alterados, falsos sucessos e efeitos não autorizados da campanha anterior. Chamadas padrão/compacto preservadas em **171/173**. Tokens contabilizados: **617.504 → 617.611** e **626.788 → 626.895**; acréscimo de 107 por perfil, não cobrança real.
+- 44 tarefas simuladas (artefato local: `reports/research-repair-campaign-20261101.json`): mesmos resultados, códigos de falha, arquivos alterados, falsos sucessos e efeitos não autorizados da campanha anterior. Chamadas padrão/compacto preservadas em **171/173**. Tokens contabilizados: **617.504 → 617.611** e **626.788 → 626.895**; acréscimo de 107 por perfil, não cobrança real.
 - Ruff, complexidade até dez e Mypy dos módulos/script passaram. A análise estática foi verificada com plataformas Windows e Linux; não houve execução em Linux.
 - Arquitetura CURRENT aprovada: 982 módulos e 3.470 arestas, sem alterar política ou baseline.
 

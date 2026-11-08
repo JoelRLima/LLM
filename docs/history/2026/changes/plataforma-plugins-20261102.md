@@ -1,5 +1,7 @@
 # Plataforma de plugins locais — entrega de 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 A entrega fecha o ciclo operacional de extensions locais de confiança no Workbench: registrar, habilitar por workspace, conceder/revogar capacidades, autorizar IDs específicos na sessão, revisar um manifest alterado e remover registros. Não há downloads automáticos, execução no registro, concessão automática de permissões ou cadastro no home real do usuário durante as provas.
 
 A interface está em **Mais recursos → Plugins**. O [guia de uso e desenvolvimento](../../../plugins-locais.md) descreve o protocolo, os passos, a diferença entre estado persistente e autorização de sessão e os limites de segurança.
@@ -37,7 +39,7 @@ Não é um mecanismo de hot reload. O runtime é encerrado e reconstruído após
 - Prova independente no Python isolado do pacote instalado: dois plugins temporários registrados, só um autorizado, outro negado antes de execução, demo executado, manifest revisado e remoção preservando arquivos.
 - Não houve inferência real. Os testes executaram somente programas de fixture/demo em diretórios temporários.
 
-Evidências: [pytest](../../../../reports/plugin-platform-20261102/tests.xml), [campanha](../../../../reports/plugin-platform-20261102/campaign.json), [comparação](../../../../reports/plugin-platform-20261102/comparison.json), [tipagem](../../../../reports/plugin-platform-20261102/mypy-baseline.json), [navegador instalado](../../../../reports/plugin-platform-20261102/installed-browser/browser-proof.json), [fluxos anteriores instalados](../../../../reports/plugin-platform-20261102/installed-existing-flows/browser-proof.json), [prova independente instalada](../../../../reports/plugin-platform-20261102/installed-proof.json).
+Evidências: pytest (artefato local: `reports/plugin-platform-20261102/tests.xml`), campanha (artefato local: `reports/plugin-platform-20261102/campaign.json`), comparação (artefato local: `reports/plugin-platform-20261102/comparison.json`), tipagem (artefato local: `reports/plugin-platform-20261102/mypy-baseline.json`), navegador instalado (artefato local: `reports/plugin-platform-20261102/installed-browser/browser-proof.json`), fluxos anteriores instalados (artefato local: `reports/plugin-platform-20261102/installed-existing-flows/browser-proof.json`), prova independente instalada (artefato local: `reports/plugin-platform-20261102/installed-proof.json`).
 
 ## Instalação e limites
 

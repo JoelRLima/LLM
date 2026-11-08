@@ -1,5 +1,7 @@
 # Seleção guiada de projeto e perfil — 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 O botão do projeto agora abre uma janela com projetos recentes e campo para a pasta existente. Em **Sessão → Perfil e modelo**, os perfis configurados aparecem com nome, provedor e modelo. Nenhuma dessas seleções ocupa o campo da conversa. A aplicação exige um clique explícito em **Aplicar seleção**.
 
 O comando equivalente fica disponível em detalhes recolhidos. O envio usa `dispatchSubmission` e os comandos canônicos `/workspace switch` e `/model select`, mantendo admissão, settlement, validação da configuração e fechamento do runtime anterior. A seleção do perfil atualiza o perfil padrão pelo serviço existente. A troca de projeto continua recusada quando há pedidos pendentes e o novo projeto começa em READ_ONLY neste fluxo.
@@ -18,7 +20,7 @@ A janela bloqueia envio durante trabalho, rejeita caracteres de controle, ignora
 - Ruff sem erros nos arquivos Python alterados. Arquitetura: **982 módulos, 3471 arestas**, política preservada.
 - Mypy isolado dos três módulos: **30 diagnósticos preexistentes** de retorno Any. Comparação por arquivo e mensagem com a versão anterior confirmou zero diagnósticos acrescentados. A configuração da checagem foi preservada; não se declara aprovação integral de mypy.
 
-Evidências: [pytest](../../../../reports/ux-navigation-20261102/tests.xml), [seleção instalada](../../../../reports/ux-navigation-20261102/installed-browser/browser-proof.json), [fluxos anteriores instalados](../../../../reports/ux-navigation-20261102/installed-existing-flows/browser-proof.json), [comparação de tipagem](../../../../reports/ux-navigation-20261102/mypy-baseline.json), [verificação independente instalada](../../../../reports/ux-navigation-20261102/installed-proof.json).
+Evidências: pytest (artefato local: `reports/ux-navigation-20261102/tests.xml`), seleção instalada (artefato local: `reports/ux-navigation-20261102/installed-browser/browser-proof.json`), fluxos anteriores instalados (artefato local: `reports/ux-navigation-20261102/installed-existing-flows/browser-proof.json`), comparação de tipagem (artefato local: `reports/ux-navigation-20261102/mypy-baseline.json`), verificação independente instalada (artefato local: `reports/ux-navigation-20261102/installed-proof.json`).
 
 Para repetir a prova visual:
 

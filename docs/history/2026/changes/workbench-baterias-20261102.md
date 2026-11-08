@@ -1,5 +1,7 @@
 # Baterias de testes no Workbench — 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 O painel **Testes** integra importação, conferência, execução, acompanhamento, controles e evidências à aplicação. O menu/CLI permanece disponível e usa o mesmo núcleo.
 
 ## Implementação e fronteiras
@@ -37,7 +39,7 @@ O diálogo usa os controles nativos de foco e Escape, mantém o fechamento acess
 - O checker arquitetural passou sem flexibilizar regras. Nenhuma inferência real foi usada.
 - A seleção nativa é simulada nos testes automatizados; sua chamada segue a API da versão instalada de pywebview.
 
-[Regressão](../../../../reports/workbench-batteries-20261102/regression.xml), [prova do runtime](../../../../reports/workbench-batteries-20261102/runtime.xml), [testes direcionados](../../../../reports/workbench-batteries-20261102/final.xml), [nova tela](../../../../reports/workbench-batteries-20261102/browser) e [fluxos anteriores](../../../../reports/workbench-batteries-20261102/existing-flows).
+Regressão (artefato local: `reports/workbench-batteries-20261102/regression.xml`), prova do runtime (artefato local: `reports/workbench-batteries-20261102/runtime.xml`), testes direcionados (artefato local: `reports/workbench-batteries-20261102/final.xml`), nova tela (artefato local: `reports/workbench-batteries-20261102/browser`) e fluxos anteriores (artefato local: `reports/workbench-batteries-20261102/existing-flows`).
 
 ## Limites e próximas prioridades
 

@@ -65,7 +65,9 @@ def _run_chat(args: argparse.Namespace) -> int:
     _sync_console()
     if not first_run.is_interactive_terminal():
         raise first_run.InteractiveTTYRequiredError()
-    if not _value(args, "legacy_session", False):
+    # Bare installed entry retains W17 onboarding and workspace ownership.
+    # The explicit chat/local commands opt into the shared local session.
+    if _value(args, "command") == "chat" and not _value(args, "legacy_session", False):
         return _run_local(args)
     from llm_agent.interfaces.cli.bootstrap import context_from_application
 

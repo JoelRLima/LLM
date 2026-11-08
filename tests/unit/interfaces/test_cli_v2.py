@@ -432,6 +432,43 @@ def test_human_run_exposes_read_only_truth_against_model_mutation_claim(
     assert "validation: not_run" in output
 
 
+@pytest.mark.parametrize("arguments", [[], ["chat", "--legacy-session"]])
+def test_installed_entry_preserves_w17_session_route(monkeypatch, arguments):
+    seen = []
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli.interactive_session, "run_chat", lambda args, **kwargs: seen.append(args) or 0)
+    monkeypatch.setattr(cli, "_run_local", lambda args: pytest.fail("W17 entry bypassed onboarding"))
+
+    assert cli.main(arguments) == 0
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("command", ["chat", "local"])
+def test_explicit_shared_commands_keep_local_session(monkeypatch, command):
+    seen = []
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli, "_run_local", lambda args: seen.append(args.command) or 0)
+    monkeypatch.setattr(cli.interactive_session, "run_chat", lambda *a, **k: pytest.fail("shared entry used W17"))
+
+    assert cli.main([command]) == 0
+    assert seen == [command]
+
+
+@pytest.mark.parametrize("answer, created", [("y", True), ("n", False), (None, False)])
+def test_bare_entry_first_run_observes_marker_and_respects_consent(tmp_path, monkeypatch, capsys, answer, created):
+    home = tmp_path / "bare-home"
+    monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
+    monkeypatch.setattr(cli.console, "input", lambda message: answer)
+    monkeypatch.setattr(cli, "_run_local", lambda args: pytest.fail("bare entry bypassed first run"))
+
+    assert cli.main(["--home", str(home)]) == 0
+    assert "Parece ser o primeiro uso" in capsys.readouterr().out
+    config = home / "config" / "config.json"
+    assert config.exists() is created
+    if created:
+        assert json.loads(config.read_text(encoding="utf-8"))["schema_version"] == 1
+
+
 def test_default_command_is_chat_non_tty_fails_fast(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     application = _Application()
     seen: dict[str, Any] = {}

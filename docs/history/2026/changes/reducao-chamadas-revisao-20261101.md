@@ -1,5 +1,7 @@
 # Redução de chamadas sem remover a revisão de conclusão
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Rodada de 1º de novembro de 2026. O objetivo foi reduzir etapas de modelo, mantendo o fluxo de autoridade, validação e conclusão. Não houve inferência ou acesso a endpoint real.
 
 ## Escolha pelo alcance
@@ -49,7 +51,7 @@ No perfil padrão, a redução foi de **18 chamadas, ou 9,5%**, com 8,5% menos t
 
 Os resultados de tarefa, códigos de falha, arquivos alterados, falsos sucessos e efeitos não autorizados coincidiram entre braços. Todas as tarefas passaram nos oráculos. As 18 revisões de raciocínio por perfil foram mantidas. Os fingerprints de fonte coincidem e as fontes não mudaram durante as execuções.
 
-Artefatos: [comparação](../../../../reports/boundary-discovery-20261101/comparison.json), [referência completa](../../../../reports/boundary-discovery-20261101/fresh-selection-reference.json) e [candidato completo](../../../../reports/boundary-discovery-20261101/same-task-selection.json).
+Artefatos: comparação (artefato local: `reports/boundary-discovery-20261101/comparison.json`), referência completa (artefato local: `reports/boundary-discovery-20261101/fresh-selection-reference.json`) e candidato completo (artefato local: `reports/boundary-discovery-20261101/same-task-selection.json`).
 
 ## Verificação e limites
 

@@ -1,5 +1,7 @@
 # Recuperação limitada sem perder os vínculos do plano
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Rodada de 1º de novembro de 2026. Toda a validação usou inspeção de código, respostas simuladas e testes locais; nenhum modelo ou endpoint foi chamado.
 
 ## Falhas confirmadas e correções
@@ -33,7 +35,7 @@ Código: [structured_output.py](../../../../src/llm_agent/agent/llm/structured_o
 ## Validação
 
 - LLM, planejamento, vínculos, autoridade, reparo e modo compacto: 543 testes aprovados.
-- Campanha completa: 44 execuções simuladas aprovadas, fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados. [Relatório](../../../../reports/weak-model-v2-fixture-20261101-recovery.json).
+- Campanha completa: 44 execuções simuladas aprovadas, fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados. Relatório (artefato local: `reports/weak-model-v2-fixture-20261101-recovery.json`).
 - Ruff e complexidade até 10 por função: aprovados. Mypy dos três módulos alterados passou nas plataformas estáticas Windows e Linux; não equivale a execução em Linux.
 
 Os resultados confirmam o comportamento do código nos casos cobertos. O gate de qualidade de modelo permanece inconclusivo, com `model_used=false`. Não houve promoção do modo compacto, ajuste especulativo de thresholds ou aumento de tentativas.

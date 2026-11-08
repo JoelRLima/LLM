@@ -1,5 +1,7 @@
 # Rodada ampla: resposta, evidência, recuperação e integração
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 ## Prioridade e cobertura
 
 Foram revisados entrada e cancelamento, planejamento, seleção de ferramentas, progresso, fronteira de resposta do provedor, contabilidade de chamadas e apresentação do resultado pela interface. As mudanças se concentram nos defeitos reproduzidos. Não foram adicionados novos modos, configurações ou decisões para o usuário.
@@ -32,7 +34,7 @@ Processos isolados usaram o pacote `88423c595ace-20261101T232117Z-9b62c2dc` e a 
 .venv/Scripts/python.exe scripts/benchmark_runtime_boundaries.py --reference-python .workbench-managed/versions/88423c595ace-20261101T232117Z-9b62c2dc/runtime/Scripts/python.exe --output reports/runtime-boundaries-reproduction-20261101.json
 ```
 
-[Resultados brutos da reprodução](../../../reports/runtime-boundaries-reproduction-20261101.json). O script verifica especificamente os defeitos desse pacote de referência, não qualquer par de versões.
+Resultados brutos da reprodução (artefato local: `reports/runtime-boundaries-reproduction-20261101.json`). O script verifica especificamente os defeitos desse pacote de referência, não qualquer par de versões.
 
 ## Recuperação da suíte ampliada
 
@@ -44,9 +46,9 @@ A primeira execução passou em 2.278 testes, ignorou 21 e falhou em 50. Os mesm
 
 ## Validação final, campanha e limites
 
-A suíte ampliada terminou com **2.328 testes aprovados e 21 ignorados**. [Resultado bruto JUnit](../../../reports/rodada-ampla-tests-20261101.xml). Houve um aviso de descarte de variável Tk fora da thread principal durante um teste de interface; não foi uma falha de asserção, mas permanece registrado como limitação da execução, sem atribuir uma causa não comprovada.
+A suíte ampliada terminou com **2.328 testes aprovados e 21 ignorados**. Resultado bruto JUnit (artefato local: `reports/rodada-ampla-tests-20261101.xml`). Houve um aviso de descarte de variável Tk fora da thread principal durante um teste de interface; não foi uma falha de asserção, mas permanece registrado como limitação da execução, sem atribuir uma causa não comprovada.
 
-[44 tarefas simuladas](../../../reports/rodada-ampla-final-20261101.json) passaram, com resultados, códigos de falha, arquivos alterados, falsos sucessos e efeitos não autorizados iguais à rodada anterior. As contagens de chamadas permanecem 171 no padrão e 173 no compacto. O [primeiro artefato desta rodada](../../../reports/rodada-ampla-20261101.json) também foi preservado; o final registra a fonte após trocar a atribuição dinâmica de atributos de erro por `setattr`, sem mudança comportamental.
+44 tarefas simuladas (artefato local: `reports/rodada-ampla-final-20261101.json`) passaram, com resultados, códigos de falha, arquivos alterados, falsos sucessos e efeitos não autorizados iguais à rodada anterior. As contagens de chamadas permanecem 171 no padrão e 173 no compacto. O primeiro artefato desta rodada (artefato local: `reports/rodada-ampla-20261101.json`) também foi preservado; o final registra a fonte após trocar a atribuição dinâmica de atributos de erro por `setattr`, sem mudança comportamental.
 
 Os tokens contabilizados aumentaram de 616.761 para 617.504 no padrão e de 626.045 para 626.788 no compacto: 743 por perfil, associados à projeção explícita de metadados. Não é cobrança real. A mudança privilegia clareza da fronteira de dados; não houve alegação de economia adicional de quota.
 

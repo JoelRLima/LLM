@@ -1,5 +1,7 @@
 # Pesquisa e diagnóstico de respostas — 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Foram abertas oito fontes primárias e as recomendações foram cruzadas com o código atual. Esta rodada prioriza tornar as falhas observáveis antes de alterar modelos, prompts ou política de contexto. A seleção guiada de projeto/perfil da rodada anterior já está instalada e foi considerada nesta análise.
 
 ## Prioridades
@@ -70,7 +72,7 @@ A campanha continua simulada: `model_used=false`, gate de capacidade real inconc
 
 Sem `--live`, esse comando usa fixtures determinísticas. Consulte `summary[modo].response_diagnostic_counts`, `results[].response_diagnostic_counts` e `results[].stage_context[].diagnostic`. Para relatórios antigos sem esses campos, a cobertura permanece desconhecida.
 
-Evidências: [campanha](../../../reports/trace-diagnostics-20261102/campaign.json), [comparação](../../../reports/trace-diagnostics-20261102/comparison.json), [testes](../../../reports/trace-diagnostics-20261102/tests.xml).
+Evidências: campanha (artefato local: `reports/trace-diagnostics-20261102/campaign.json`), comparação (artefato local: `reports/trace-diagnostics-20261102/comparison.json`), testes (artefato local: `reports/trace-diagnostics-20261102/tests.xml`).
 
 ## Verificações desta entrega
 
@@ -79,7 +81,7 @@ Evidências: [campanha](../../../reports/trace-diagnostics-20261102/campaign.jso
 - Os 44 casos simulados preservaram as comparações documentadas. A igualdade inclui contabilidade de tokens; não inclui latência de execução dos testes, que varia e não representa produção.
 - A checagem de arquitetura usa a política existente, sem alterações em baselines, gates ou oráculos.
 
-A revisão instalada e a prova independente do pacote serão registradas em [installed-proof.json](../../../reports/trace-diagnostics-20261102/installed-proof.json).
+A revisão instalada e a prova independente do pacote serão registradas em installed-proof.json (artefato local: `reports/trace-diagnostics-20261102/installed-proof.json`).
 
 ## Instalação verificada
 

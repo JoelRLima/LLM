@@ -1,5 +1,7 @@
 # Decisões inequívocas antes de executar ferramentas
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Rodada complementar de 1º de novembro de 2026, voltada à correção do protocolo e à transparência. Não altera o modelo padrão, a elegibilidade de ferramentas, a autoridade ou os critérios de conclusão.
 
 ## Problemas reproduzidos
@@ -37,7 +39,7 @@ Essa proteção não confirma a veracidade dos argumentos, a escolha correta da 
 - Suíte LLM: 306 testes aprovados. Após compartilhar a verificação de término com a engenharia, o parser e os contratos foram reavaliados junto das suítes de código.
 - Planejamento, autoridade, conclusão, rota compacta e gates selecionados: 181 testes aprovados.
 - Engenharia e novos casos do parser: 137 aprovados, quatro ignorados; inclui propostas e pareceres interrompidos. Os conjuntos de testes se sobrepõem.
-- Suíte de avaliação: 180 testes aprovados. A campanha completa passou em 44 execuções simuladas, com fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados: [relatório final](../../../../reports/weak-model-v2-fixture-20261101-parser-final.json). O gate de qualidade de modelo segue inconclusivo porque nenhum modelo foi executado.
+- Suíte de avaliação: 180 testes aprovados. A campanha completa passou em 44 execuções simuladas, com fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados: relatório final (artefato local: `reports/weak-model-v2-fixture-20261101-parser-final.json`). O gate de qualidade de modelo segue inconclusivo porque nenhum modelo foi executado.
 - Ruff e complexidade até 10 nas funções alteradas: aprovados. Mypy dos quatro módulos alterados passou nas plataformas estáticas Windows e Linux; isso não é execução em Linux.
 
 O modelo real permanece sem medição nesta rodada. O perfil `compact` continua opt-in.

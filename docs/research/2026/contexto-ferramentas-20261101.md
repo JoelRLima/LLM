@@ -1,5 +1,7 @@
 # Preparação de ferramentas sem renderizações repetidas
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Rodada complementar de 1º de novembro de 2026. A investigação e a validação foram locais, sem rede e sem inferência.
 
 ## Diagnóstico e escolha
@@ -38,7 +40,7 @@ O benchmark usa o fluxo real de descoberta e de preparação do prompt com um se
 
 Os hashes do texto entregue ao modelo e dos eventos de diagnóstico são idênticos entre variantes e em todas as amostras. O ganho confirmado é a remoção de dois terços das renderizações detalhadas repetidas e a redução do tempo nessa etapa local. Não demonstra a mesma redução no tempo total de uma tarefa nem em latência de inferência.
 
-Artefatos: [antes da implementação](../../../reports/tool-guidance-before-20261101.json), [depois](../../../reports/tool-guidance-after-20261101.json) e [comparação repetida](../../../reports/tool-guidance-comparison-20261101.json).
+Artefatos: antes da implementação (artefato local: `reports/tool-guidance-before-20261101.json`), depois (artefato local: `reports/tool-guidance-after-20261101.json`) e comparação repetida (artefato local: `reports/tool-guidance-comparison-20261101.json`).
 
 ## Regressões e conformidade
 
@@ -46,7 +48,7 @@ Os testes verificam igualdade do conteúdo, rejeição de catálogos grandes já
 
 A execução ampla também encontrou duas expectativas antigas de GBNF numa fixture do fluxo reativo que não declarava capabilities. Uma reprodução isolada no pacote anterior `8be32aba36cd-20261101T200621Z-d50b34f3` confirmou que esse gateway já recebia uma requisição sem GBNF. A fixture passou a declarar suporte explicitamente; as asserções de gramática foram mantidas. Dois testes adicionais garantem que suporte ausente ou somente JSON por prompt continua sem gramática. Nenhuma permissão ou capability foi ampliada no produto.
 
-Ruff, complexidade até 10 por função e Mypy dos dois módulos/script passaram para Windows e Linux como plataformas estáticas. A arquitetura CURRENT passou com 979 módulos e 3.451 arestas. A [matriz de 44 tarefas simuladas](../../../reports/weak-model-v2-fixture-20261101-guidance.json) passou com fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados. Seu gate de qualidade de modelo continua inconclusivo porque não executa modelo real.
+Ruff, complexidade até 10 por função e Mypy dos dois módulos/script passaram para Windows e Linux como plataformas estáticas. A arquitetura CURRENT passou com 979 módulos e 3.451 arestas. A matriz de 44 tarefas simuladas (artefato local: `reports/weak-model-v2-fixture-20261101-guidance.json`) passou com fontes inalteradas, zero falsos sucessos e zero efeitos não autorizados. Seu gate de qualidade de modelo continua inconclusivo porque não executa modelo real.
 
 A repetição da suíte ampla após corrigir a declaração da fixture passou com **1.429 testes aprovados e um ignorado**. A equivalência dos hashes foi conferida em todas as vinte linhas do benchmark repetido, e as fontes atuais correspondem ao fingerprint do relatório da matriz.
 

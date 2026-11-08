@@ -1,8 +1,9 @@
 # Uso local e ativação da LLM
 
-`llm-agent`, `llm-agent chat` e `llm-agent local` usam agora essa mesma sessão
-compartilhada, com LLM inicialmente desativada. A sessão antiga permanece em
-`llm-agent chat --legacy-session` para compatibilidade. Consulte a
+`llm-agent chat` e `llm-agent local` usam a sessão compartilhada, com LLM
+inicialmente desativada. Sem subcomando, `llm-agent` preserva o primeiro uso
+guiado e a escolha de workspace da W17; esse fluxo também está disponível em
+`llm-agent chat --legacy-session`. Consulte a
 [matriz de paridade](paridade-app-cli.md).
 
 O Workbench abre em **Uso local**, mesmo quando já existe um modelo configurado. O botão **Ativar LLM**, no topo, libera conversa e tarefas com IA. O botão passa a **Desativar LLM** para voltar ao uso local. A troca vale para a sessão atual; reabrir o app volta ao uso local.
@@ -43,7 +44,7 @@ No painel **Testes**, preparação e consulta permanecem disponíveis no uso loc
 
 A autorização fica em `InteractiveSession`, com `set_llm_enabled(bool)`, `llm_enabled` e bloqueio antes do caminho de modelo. A bridge só delega e apresenta a projeção. Mudanças são recusadas durante uma operação ou após encerramento; o botão também confere a identidade do projeto. Pendências e resultados não são apagados ao desativar.
 
-A composição desktop, `llm-agent local`, `llm-agent` e `llm-agent chat` iniciam a mesma `InteractiveSession` com a LLM desativada. Ative-a com `/llm on` na CLI ou pelo botão no Workbench. `llm-agent chat --legacy-session` mantém o fluxo antigo somente para compatibilidade. Os serviços de análise, consultas, comandos locais e baterias são compartilhados; cada interface só adapta entrada e apresentação.
+A composição desktop, `llm-agent local` e `llm-agent chat` iniciam a mesma `InteractiveSession` com a LLM desativada. Ative-a com `/llm on` na CLI ou pelo botão no Workbench. `llm-agent` sem subcomando e `llm-agent chat --legacy-session` preservam o fluxo W17. Os serviços de análise, consultas, comandos locais e baterias são compartilhados; cada interface só adapta entrada e apresentação.
 
 “Uso local” significa que a geração por LLM está desativada neste fluxo. Não é sandbox nem bloqueio global de rede: consultas explícitas ao catálogo, plugins e outros serviços preservam seus próprios contratos.
 

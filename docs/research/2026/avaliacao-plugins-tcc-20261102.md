@@ -1,5 +1,7 @@
 # Avaliação de plugins e recorte do TCC — 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 > Atualização posterior em 02/11/2026: o ciclo de administração visual e autorização por ID foi implementado, e a prova do launcher foi corrigida. Esta avaliação registra o estado anterior à [entrega da plataforma de plugins locais](../../history/2026/changes/plataforma-plugins-20261102.md). Os limites de sandbox e integração científica continuam explícitos.
 
 O usuário esclareceu que o foco de segurança combina análise de vulnerabilidades e proteção da execução do agente. A avaliação examinou código, documentação CURRENT, configuração local da instalação gerenciada e testes existentes. Não modifica o runtime, não registra plugins nem concede permissões.
@@ -70,7 +72,7 @@ Uma evolução experimental pode comparar o núcleo atual, o núcleo com scanner
 
 Foram executados testes existentes de parser de manifest, catálogo, grants, resolução, materialização, bootstrap, autoridade, gateway, adapter stdio, exemplo executável e integração de workspaces.
 
-Resultado: **203 aprovados, 2 ignorados e 1 falha**. [JUnit](../../../reports/plugins-tcc-20261102/tests.xml).
+Resultado: **203 aprovados, 2 ignorados e 1 falha**. JUnit (artefato local: `reports/plugins-tcc-20261102/tests.xml`).
 
 A falha está em `test_windows_launcher_waits_for_job_association_before_immediate_extension_sentinel`, que tenta acessar `llm_agent.execution.command.write_stdin`, atributo que não existe mais. O código atual usa `start_stdin_writer`. O teste falha antes de exercitar a ordem de execução. A leitura do código mostra associação ao Job Object antes do início da escrita em stdin, mas isso não substitui a prova dinâmica que esse teste deveria fornecer. Não se conclui daí que houve uma fuga nem que a suíte está completamente aprovada.
 

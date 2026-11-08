@@ -1,5 +1,7 @@
 # Roteiro de prioridades para modelos menores
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 **Pesquisa de 1º de novembro de 2026 — revisão, sem mudanças no runtime.**
 
 ## Objetivo e limite
@@ -16,9 +18,9 @@ O achado P0 mais claro é uma divergência no contrato de plano inicial. O promp
 
 Há mecanismos existentes que devem ser preservados e aproveitados, não reimplementados: admissão tipada fail-closed, validações de efeito/resultado e autoridade canônica, reparo limitado e watchdog/convergência, além de uma fronteira de execução derivada pelo runtime e reinjetada no contexto do modelo em [context_manager_auxiliary.py](../../../src/llm_agent/agent/llm/context_manager_auxiliary.py) e [context_model_call.py](../../../src/llm_agent/agent/llm/context_model_call.py). Não há evidência nesta revisão de que a compactação ativa perca esses fatos protegidos; um caminho legado de histórico metadata-only não tem caller de produção conhecido, então não deve ser tratado como bug ativo.
 
-A fixture [weak-model-fixture-20261029.json](../../../reports/weak-model-fixture-20261029.json) registra 28/28 aprovações de oráculo determinístico offline, 14 casos por variante e duas repetições; não usou modelo (`model_used=false`), não fez chamadas vivas (`live_requested=false`) e não tem uso de tokens completo. O padrão registrou 132 chamadas e 398.070 tokens contabilizados; a variante compacta, 134 e 411.370. São contagens do harness, não cobrança real nem evidência de latência/qualidade de modelo. Como ambas passaram e a compacta consumiu mais chamadas/tokens contabilizados, não há base para adotá-la como padrão.
+A fixture weak-model-fixture-20261029.json (artefato local: `reports/weak-model-fixture-20261029.json`) registra 28/28 aprovações de oráculo determinístico offline, 14 casos por variante e duas repetições; não usou modelo (`model_used=false`), não fez chamadas vivas (`live_requested=false`) e não tem uso de tokens completo. O padrão registrou 132 chamadas e 398.070 tokens contabilizados; a variante compacta, 134 e 411.370. São contagens do harness, não cobrança real nem evidência de latência/qualidade de modelo. Como ambas passaram e a compacta consumiu mais chamadas/tokens contabilizados, não há base para adotá-la como padrão.
 
-Há também relatório histórico rotulado como modelo real, [block7-real-model.json](../../../reports/acceptance/block7-real-model.json): 43 execuções, 14 aprovadas e 29 reprovadas. Porém o fingerprint identifica provider OpenAI-compatible e um perfil planejado, sem versão/modelo observado auditável ou recibos de chamada no artefato exportado. É um sinal histórico útil, não uma baseline reproduzível de modelo menor atual. A prioridade é criar uma baseline rastreável, e não atribuir essas falhas a um modelo ou perfil não verificado.
+Há também relatório histórico rotulado como modelo real, block7-real-model.json (artefato local: `reports/acceptance/block7-real-model.json`): 43 execuções, 14 aprovadas e 29 reprovadas. Porém o fingerprint identifica provider OpenAI-compatible e um perfil planejado, sem versão/modelo observado auditável ou recibos de chamada no artefato exportado. É um sinal histórico útil, não uma baseline reproduzível de modelo menor atual. A prioridade é criar uma baseline rastreável, e não atribuir essas falhas a um modelo ou perfil não verificado.
 
 A dimensão dos benchmarks públicos pode inspirar a suíte, sem substituí-la. O BFCL cobre chamadas simples, paralelas, irrelevância de ferramentas e diálogos multi-turno com parâmetros/funções ausentes ou contexto longo. Mas suas ferramentas e oráculos padronizados não reproduzem automaticamente os efeitos, fronteiras de autoridade e estado deste harness. [Artigo BFCL](https://openreview.net/pdf/d52a12bb32128210600246f8979d90b892505cca.pdf)
 

@@ -40,7 +40,9 @@ Na sessão:
 | Ativar ou desativar IA | `/llm on` ou `/llm off` | Não envia tarefa |
 | Acompanhar ou cancelar | `/status` ou `/cancel` | Não |
 
-`llm-agent` e `llm-agent chat` usam essa mesma sessão. Durante uma tarefa, você
+`llm-agent chat` e `llm-agent local` usam essa mesma sessão. Sem subcomando,
+`llm-agent` preserva a configuração guiada e a escolha de workspace da W17.
+Durante uma tarefa na sessão compartilhada, você
 pode continuar consultando estado e decidir aprovações. Novos pedidos ficam
 pendentes para envio explícito com `/pending send ID`.
 

@@ -207,6 +207,38 @@ def test_repository_python_sources_are_visible_to_git() -> None:
     assert failures == []
 
 
+@pytest.mark.parametrize("local_root", ["reports", ".tmp"])
+@pytest.mark.parametrize("exists", [True, False])
+def test_documentation_cannot_link_to_unpublished_local_artifacts(tmp_path, monkeypatch, local_root, exists):
+    monkeypatch.setattr("scripts.check_quality.ROOT", tmp_path)
+    destination = tmp_path / local_root / "result.json"
+    if exists:
+        destination.parent.mkdir()
+        destination.write_text("{}", encoding="utf-8")
+    (tmp_path / "README.md").write_text(f"[report]({local_root}/result.json)\n", encoding="utf-8")
+
+    failures, checked = check_markdown_links()
+
+    assert checked == 1
+    assert len(failures) == 1
+    assert "artefato local nao publicado" in failures[0]
+
+
+def test_documentation_allows_published_links_and_plain_local_provenance(tmp_path, monkeypatch):
+    monkeypatch.setattr("scripts.check_quality.ROOT", tmp_path)
+    published = tmp_path / "reports-guide.md"
+    published.write_text("# Published guide\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "[guide](reports-guide.md)\nLocal artifact: `reports/result.json` (not published).\n",
+        encoding="utf-8",
+    )
+
+    failures, checked = check_markdown_links()
+
+    assert checked == 1
+    assert failures == []
+
+
 def test_local_documentation_links_are_valid() -> None:
     failures, checked_links = check_markdown_links()
 

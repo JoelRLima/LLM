@@ -1,5 +1,7 @@
 # Núcleo compartilhado — verificação de 02/11/2026
 
+Os artefatos locais citados neste documento não são versionados nem publicados com o repositório. Seus caminhos são referências da investigação original e não comprovam a validação do candidato atual.
+
 Atualizacao posterior nesta data: o [painel Testes no Workbench](../changes/workbench-baterias-20261102.md) foi entregue. As observacoes anteriores sobre ausencia do painel representam o estado historico desta avaliacao.
 
 App e CLI devem captar entrada, encaminhar ações aos casos de uso e apresentar observações. Configuração efetiva, autorização, execução, persistência, validação e classificação de resultados pertencem às camadas compartilhadas.
@@ -50,4 +52,4 @@ A fila ainda é exposta pelo menu/CLI. O backend agora tem uma fachada compartil
 - Ruff passou; mypy passou nos quatro arquivos de produção alterados.
 - Nenhuma inferência real foi realizada.
 
-As verificações cobrem os caminhos citados e o grafo arquitetural do projeto. Evidências: [regressão](../../../../reports/shared-core-20261102/regression.xml) e [testes direcionados](../../../../reports/shared-core-20261102/tests.xml).
+As verificações cobrem os caminhos citados e o grafo arquitetural do projeto. Evidências: regressão (artefato local: `reports/shared-core-20261102/regression.xml`) e testes direcionados (artefato local: `reports/shared-core-20261102/tests.xml`).
