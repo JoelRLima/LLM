@@ -13,6 +13,12 @@ from llm_agent.interfaces.cli.interactive_shell import prompt_from
 
 console = Console()
 
+# Presentation only; routing and action definitions remain with the catalog.
+PRIMARY_ACTION_IDS = frozenset({
+    "run.status", "run.where", "run.cancel", "run.attention_show", "model.show", "model.llm_control",
+    "workspace.show", "configuration.mode_show", "discovery.commands", "session.exit",
+})
+
 
 class ConsoleChangeApprover:
     # CLI edits always carry an explicit human approval authority.  This is
@@ -52,19 +58,23 @@ def render_code_result(result: CodeCommandOutcome) -> None:
         console.print(f"{code} {file_path}:{line} {message}", markup=False)
 
 
-def exibir_menu() -> None:
+def exibir_menu(*, complete: bool = False) -> None:
     from llm_agent.actions import DEFAULT_ACTION_CATALOG
     from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 
-    table = Table(title="Comandos Disponíveis", show_header=True, header_style="bold magenta")
-    table.add_column("Comando", style="cyan", width=20)
+    console.print('Converse em português: "Explique este projeto" ou "Encontre a causa deste erro".', markup=False)
+    console.print("Descreva o objetivo e acompanhe a tarefa por /where. Alterações dependem do modo e das aprovações.", markup=False)
+    table = Table(title="Todos os comandos" if complete else "Para começar", show_header=True, header_style="bold magenta")
+    table.add_column("Comando", style="cyan", overflow="fold")
     table.add_column("Descrição")
     definitions = {item.action_id: item for item in DEFAULT_ACTION_CATALOG}
     for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
-        if binding.advertised:
+        if binding.advertised and (complete or binding.action_id in PRIMARY_ACTION_IDS):
             definition = definitions[binding.action_id]
             preferred = "/" + " ".join(binding.preferred_path).lstrip("/")
             aliases = tuple(" ".join(alias) for alias in binding.aliases)
-            label = preferred if not aliases else f"{preferred} (aliases: {', '.join(aliases)})"
+            label = preferred if not complete or not aliases else f"{preferred} (aliases: {', '.join(aliases)})"
             table.add_row(label, definition.description)
     console.print(table)
+    console.print("/modo explica as permissões; /code help orienta o trabalho com código.", markup=False)
+    console.print("/commands <busca> procura recursos; /help all mostra todos os comandos e aliases. Tab completa comandos.", markup=False)

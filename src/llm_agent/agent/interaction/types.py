@@ -261,6 +261,7 @@ class AgentInteractionResult:
     error: str | None = None
     reason_code: str | None = None
     interaction_usage: Mapping[str, Any] = field(default_factory=dict)
+    transport_error: BaseException | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         from .result import _validate_agent_interaction_result

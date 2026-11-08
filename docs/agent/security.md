@@ -1,5 +1,12 @@
 # Segurança, authority e trust boundaries
 
+Os logs pertencentes ao Agent agora aplicam a redaction de credenciais ao
+registro completamente formatado, incluindo argumentos e traceback, e usam
+rotação de 2 MiB com duas cópias anteriores. O host WebView2 configura stderr
+redigido quando não há handlers previamente instalados. Esse controle não
+reescreve logs antigos nem transforma memória, histórico ou arquivos de projeto
+em conteúdo anônimo. Consulte o [inventário de privacidade](../guides/privacidade-dados-locais.md).
+
 > **STATUS: CURRENT — PRIMARY HOME.** Este documento define o contrato atual de
 > authority, grants, approval, eligibility e enforcement. ADRs registram por
 > que as decisões foram tomadas; em especial, consulte os
@@ -147,3 +154,9 @@ hostil, exactly-once histórico ou `attempt_id` de retry.
 não são o ScannerCore científico do TCC. O LLM Agent e o ScannerCore externo
 são sistemas distintos; uma integração futura deve usar a mesma fronteira de
 extension, sem importar a arquitetura científica para este repositório.
+
+## Escopo de extensions no Workbench
+
+O gerenciador **Mais recursos → Plugins** separa catálogo, habilitação, grants e autorização temporária. A seleção explícita usa allowed_extension_ids no TaskAuthoritySnapshot e os fingerprints revisados no bootstrap. Planejamento e gateway negam extensions fora do escopo, mesmo que declarem capacidades iguais. Os grants, o modo, a política de persona e approval continuam sendo verificados.
+
+A ausência do escopo opcional mantém a semântica histórica da API/CLI. No Workbench nativo, ele é criado somente por ação explícita do usuário. Alterações administrativas e troca de workspace limpam a seleção; o modo retorna a somente leitura. Consulte o [guia de plugins locais](../plugins-locais.md) e a [validação da entrega](../history/2026/changes/plataforma-plugins-20261102.md). Isso não acrescenta sandbox de processo nem autorização derivada de resultados do modelo.

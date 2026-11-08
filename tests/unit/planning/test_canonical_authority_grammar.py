@@ -90,6 +90,50 @@ def test_memory_negative_fragment_uses_the_same_canonical_ledger() -> None:
 
 
 @pytest.mark.parametrize(
+    ("objective", "targets"),
+    (
+        ("Write README.md and validate it.", ("readme.md",)),
+        (
+            "Write README.md and pyproject.toml.",
+            ("readme.md", "pyproject.toml"),
+        ),
+        ("Read README.md and edit it.", ("readme.md",)),
+        ("Corrija src/app.py e valide.", ("src/app.py",)),
+    ),
+)
+def test_conjoined_validation_and_targets_preserve_direct_write_authority(
+    objective: str, targets: tuple[str, ...]
+) -> None:
+    authority = admit_effect_authority(objective)
+
+    assert tuple(sorted(item.target for item in authority.positive_authority_proofs)) == tuple(
+        sorted(targets)
+    )
+    assert authority.requested_effects == ("write",)
+
+
+@pytest.mark.parametrize(
+    "objective",
+    (
+        "Read README.md and do not modify any files.",
+        "Read README.md and cite the sources.",
+        "Summarize README.md and cite its sources.",
+        "Do not write README.md.",
+        "Explain what README.md is for without opening or changing it.",
+        "Maybe improve this project.",
+        "Propose a change to README.md without applying it.",
+        "Write README.md and validate it without changing pyproject.toml.",
+    ),
+)
+def test_conjoined_command_support_does_not_widen_write_authority(
+    objective: str,
+) -> None:
+    authority = admit_effect_authority(objective)
+
+    assert authority.requested_effects == ()
+
+
+@pytest.mark.parametrize(
     "objective",
     (
         "remember this; do not write to memory",

@@ -13,26 +13,63 @@ from scripts.w21_architecture import SourceLayout
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def _copy_file(source: Path, destination: Path, relative: str) -> None:
+    origin = source / relative
+    if not origin.is_file():
+        return
+    target = destination / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(origin, target)
+
+
+def _copy_python_tree(source: Path, destination: Path, relative: str) -> None:
+    origin = source / relative
+    if not origin.is_dir():
+        return
+    for path in origin.rglob("*.py"):
+        if "__pycache__" not in path.parts:
+            _copy_file(source, destination, path.relative_to(source).as_posix())
+
+
 def _final_path(root: Path, relative: str) -> Path:
     return SourceLayout.for_profile(root, "final-w22").path_for_w21_relative(relative)
 
 
 def _copy_repository(source: Path, destination: Path) -> None:
-    def ignored(_directory: str, names: list[str]) -> set[str]:
-        return {
-            name
-            for name in names
-            if (name.startswith(".") and name != ".github")
-            or name == "__pycache__"
-            or name in {"build", "out", "reports"}
-        }
+    """Copy only the source surfaces read by the migrated architecture checks."""
 
-    shutil.copytree(source, destination, ignore=ignored)
+    for relative in ("src/llm_agent", "scripts", "tests"):
+        _copy_python_tree(source, destination, relative)
+
+    root_files = (
+        "pyproject.toml",
+        "installer/install.ps1",
+        "installer/uninstall.ps1",
+        "installer/install.cmd",
+        "installer/uninstall.cmd",
+        "distribution/payload.py",
+        "distribution/release_identity.py",
+        "distribution/release_manifest.py",
+        "distribution/provenance.py",
+        "distribution/reproducibility.py",
+    )
+    for relative in root_files:
+        _copy_file(source, destination, relative)
+
+    workflow_root = source / ".github" / "workflows"
+    if workflow_root.is_dir():
+        workflows = (workflow_root / "ci.yml", *workflow_root.glob("*-installed-product.yml"))
+        for origin in workflows:
+            if not origin.is_file():
+                continue
+            _copy_file(source, destination, origin.relative_to(source).as_posix())
 
 
 def test_current_repository_remains_green_for_all_migrated_checkers(tmp_path: Path) -> None:
     fixture = tmp_path / "current"
     _copy_repository(ROOT, fixture)
+    assert (fixture / "src/llm_agent/agent/runtime/paths.py").is_file()
+    assert not any((fixture / relative).exists() for relative in ("runtime", "reports", "prototypes"))
     assert wave18.check_architecture(fixture) == []
     assert wave19.check_architecture(fixture) == []
     assert wave20.findings(fixture) == []

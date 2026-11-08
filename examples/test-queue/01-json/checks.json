@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {
+      "kind": "json_equals",
+      "path": "result.json",
+      "expected": {
+        "message": "ok",
+        "count": 3
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,12 @@ from .security_symbols import SECURITY_SYMBOL_REGISTRY, get_pattern_id_map
 
 __all__ = ["CodeAnalyzerSkill", "SECURITY_SYMBOL_REGISTRY", "get_pattern_id_map"]
 
+MAX_SOURCE_BYTES = 1_000_000
+MAX_CODE_INCLUDED_SOURCE_BYTES = 256_000
+MAX_DIRECTORY_FILES = 200
+MAX_DIRECTORY_SCAN_ENTRIES = 20_000
+MAX_DIRECTORY_OUTPUT_BYTES = 2 * 1024 * 1024
+
 
 class CodeAnalyzerSkill(BaseSkill):
     name = "code_analyzer"
@@ -31,7 +38,8 @@ class CodeAnalyzerSkill(BaseSkill):
         "subdiretórios excluídos e arquivos cuja análise falhou; use mode=file "
         "quando a observação de um descendente específico for necessária. "
         "Python recebe análise AST; outras linguagens têm fallback textual "
-        "explicitamente identificado."
+        "explicitamente identificado. A analise de diretorio e limitada e "
+        "informa truncated, skipped_large_files e failed_files."
     )
 
     def __init__(self, base_dir: str = ".") -> None:
@@ -49,7 +57,10 @@ class CodeAnalyzerSkill(BaseSkill):
                 ),
                 "enum": ["file", "directory", "security"],
             },
-            "include_code": {"type": "boolean", "description": "Inclui o código fonte completo."},
+            "include_code": {
+                "type": "boolean",
+                "description": "Inclui o codigo fonte quando o arquivo cabe no limite de analise.",
+            },
             "compact": {
                 "type": "boolean",
                 "description": "Retorna somente a estrutura essencial (DERIVED_LOSSY); não contém valores literais.",
@@ -90,6 +101,12 @@ class CodeAnalyzerSkill(BaseSkill):
         if file_path.suffix != ".py":
             return self._analyze_with_adapter(file_path)
         try:
+            max_source_bytes = MAX_CODE_INCLUDED_SOURCE_BYTES if include_code else MAX_SOURCE_BYTES
+            if file_path.stat().st_size > max_source_bytes:
+                return self._error(
+                    "source file exceeds analysis size limit",
+                    f"Maximum source size is {max_source_bytes} bytes for this analysis mode.",
+                )
             data = analyze_python_file(
                 file_path,
                 self.base_dir,
@@ -143,15 +160,42 @@ class CodeAnalyzerSkill(BaseSkill):
             return self._error("não é diretório", f"'{dir_path}' não é um diretório.")
         project_map: dict[str, Any] = {}
         dependencies: dict[str, list[str]] = {}
-        for file_path in self._python_files(dir_path):
+        files, truncated = self._python_files(dir_path)
+        skipped_large_files = 0
+        failed_files = 0
+        output_bytes = 0
+        max_source_bytes = MAX_CODE_INCLUDED_SOURCE_BYTES if include_code else MAX_SOURCE_BYTES
+        for file_path in files:
+            try:
+                if file_path.stat().st_size > max_source_bytes:
+                    skipped_large_files += 1
+                    truncated = True
+                    continue
+            except OSError:
+                truncated = True
+                continue
             relative = str(file_path.relative_to(self.base_dir))
             result = self._analyze_file(file_path, include_code, compact)
             if not legacy_result_successful(result):
+                failed_files += 1
                 continue
+            serialized_size = len(
+                json.dumps(result["data"], ensure_ascii=False, default=str).encode("utf-8")
+            )
+            if output_bytes + serialized_size > MAX_DIRECTORY_OUTPUT_BYTES:
+                truncated = True
+                break
             project_map[relative] = result["data"]
+            output_bytes += serialized_size
             if not compact:
                 self._collect_dependencies(result["data"], relative, dependencies)
-        data: dict[str, Any] = {"files": project_map, "total_files": len(project_map)}
+        data: dict[str, Any] = {
+            "files": project_map,
+            "total_files": len(project_map),
+            "truncated": truncated,
+            "skipped_large_files": skipped_large_files,
+            "failed_files": failed_files,
+        }
         if not compact:
             data["dependencies"] = dependencies
         return {
@@ -164,21 +208,47 @@ class CodeAnalyzerSkill(BaseSkill):
             "message": f"Mapa gerado com {len(project_map)} arquivos (modo {'compacto' if compact else 'completo'}).",
         }
 
-    def _python_files(self, directory: Path) -> list[Path]:
+    def _python_entry(self, entry: Any, ignored: set[str]) -> tuple[Path | None, Path | None, bool]:
+        if entry.name.startswith(".") or entry.name in ignored:
+            return None, None, False
+        try:
+            if entry.is_dir(follow_symlinks=False):
+                return None, Path(entry.path), False
+            if not entry.is_file(follow_symlinks=False) or not entry.name.endswith(".py"):
+                return None, None, False
+        except OSError:
+            return None, None, True
+        candidate = resolve_confined_file(self.base_dir, Path(entry.path))
+        return candidate, None, False
+
+
+
+    def _python_files(self, directory: Path) -> tuple[list[Path], bool]:
         discovered: list[Path] = []
         ignored = {"__pycache__", "venv", "env", "node_modules", "build", "dist"}
-        for root, directories, files in os.walk(directory):
-            directories[:] = [name for name in directories if not name.startswith(".") and name not in ignored]
-            for name in files:
-                if not name.endswith(".py"):
-                    continue
-                candidate = resolve_confined_file(
-                    self.base_dir,
-                    Path(root) / name,
-                )
-                if candidate is not None:
-                    discovered.append(candidate)
-        return discovered
+        pending = [directory]
+        scanned_entries = 0
+        truncated = False
+        while pending:
+            current = pending.pop()
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        scanned_entries += 1
+                        if scanned_entries > MAX_DIRECTORY_SCAN_ENTRIES:
+                            return sorted(discovered, key=lambda path: path.as_posix()), True
+                        candidate, child, failed = self._python_entry(entry, ignored)
+                        truncated = truncated or failed
+                        if child is not None:
+                            pending.append(child)
+                        if candidate is None:
+                            continue
+                        if len(discovered) >= MAX_DIRECTORY_FILES:
+                            return sorted(discovered, key=lambda path: path.as_posix()), True
+                        discovered.append(candidate)
+            except OSError:
+                truncated = True
+        return sorted(discovered, key=lambda path: path.as_posix()), truncated
 
     @staticmethod
     def _collect_dependencies(data: Any, relative: str, dependencies: dict[str, list[str]]) -> None:
@@ -197,6 +267,11 @@ class CodeAnalyzerSkill(BaseSkill):
         if file_path.suffix != ".py":
             return self._error("tipo não suportado", "Apenas arquivos .py são analisados.")
         try:
+            if file_path.stat().st_size > MAX_SOURCE_BYTES:
+                return self._error(
+                    "source file exceeds analysis size limit",
+                    f"Maximum source size is {MAX_SOURCE_BYTES} bytes.",
+                )
             data = analyze_security_file(file_path, self.base_dir)
         except SyntaxError as exc:
             return self._error(str(exc), "Erro de sintaxe no arquivo.")

@@ -53,6 +53,7 @@ class AgentState(
         # Persisted logical runtime-task identity used to link resumed
         # attempts without deriving identity from a report artifact.
         self.root_task_id: str | None = root_task_id
+        self.requirement_replan_fingerprints: tuple[str, ...] = ()
         # Compact durable binding; bodies stay in the workspace repository.
         self.task_definition_ref: TaskDefinitionRef | None = None
         self._runtime_correlation: Any = None

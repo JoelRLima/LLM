@@ -21,7 +21,7 @@ from llm_agent.agent.llm.contracts import (
     StructuredOutputMode,
     StructuredOutputRequest,
 )
-from llm_agent.agent.llm.structured_output import StructuredOutputError, parse_structured_response
+from llm_agent.agent.llm.structured_output import StructuredOutputError, parse_model_response
 from llm_agent.agent.runtime.model_call import ModelCallService
 from llm_agent.agent.runtime.outcome_contracts import MAX_VERIFIER_EVIDENCE_IDS
 
@@ -172,8 +172,7 @@ class CodeOutcomeVerifier:
                 .complete(fit.request, operation="code_outcome_verifier")
                 .response
             )
-            content = response.content if isinstance(response, ModelResponse) else str(response)
-            parsed = parse_structured_response(content, VERIFIER_SCHEMA)
+            parsed = parse_model_response(response if isinstance(response, ModelResponse) else str(response), VERIFIER_SCHEMA)
             return self._project_verdict(
                 parsed,
                 manifest,

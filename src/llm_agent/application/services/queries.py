@@ -11,10 +11,12 @@ from types import MappingProxyType
 from typing import Protocol, cast
 
 from llm_agent.application.services.query_git import run_git
+from llm_agent.application.services.query_utf8 import decode_utf8_prefix
 from llm_agent.filesystem.path_safety import WorkspacePathError, resolve_workspace_path
 from llm_agent.workspace.context import WorkspaceContext
 
 WORKSPACE_QUERY_CONTRACT_VERSION = 1
+QUERY_CANCELLED = "QUERY_CANCELLED"
 QUERY_INVALID_REQUEST = "QUERY_INVALID_REQUEST"
 QUERY_PATH_INVALID = "QUERY_PATH_INVALID"
 QUERY_PATH_NOT_FOUND = "QUERY_PATH_NOT_FOUND"
@@ -24,10 +26,8 @@ QUERY_FILE_TYPE_UNSUPPORTED = "QUERY_FILE_TYPE_UNSUPPORTED"
 QUERY_FILE_NOT_UTF8 = "QUERY_FILE_NOT_UTF8"
 QUERY_FIND_PATTERN_EMPTY = "QUERY_FIND_PATTERN_EMPTY"
 QUERY_FIND_PATTERN_INVALID = "QUERY_FIND_PATTERN_INVALID"
-QUERY_GIT_UNAVAILABLE = "QUERY_GIT_UNAVAILABLE"
-QUERY_GIT_FAILED = "QUERY_GIT_FAILED"
+QUERY_GIT_UNAVAILABLE, QUERY_GIT_FAILED = "QUERY_GIT_UNAVAILABLE", "QUERY_GIT_FAILED"
 QUERY_TIMEOUT = "QUERY_TIMEOUT"
-QUERY_CANCELLED = "QUERY_CANCELLED"
 QUERY_IO_FAILED = "QUERY_IO_FAILED"
 
 MAX_DIFF_FILES = 200
@@ -59,9 +59,13 @@ class QueryCancellation(Protocol):
 
 
 def _freeze(value: object) -> object:
-    return (MappingProxyType({key: _freeze(item) for key, item in value.items()}) if isinstance(value, Mapping) else
-            tuple(_freeze(item) for item in value) if isinstance(value, (list, tuple)) else
-            frozenset(_freeze(item) for item in value) if isinstance(value, set) else value)
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,9 +78,7 @@ class WorkspaceQueryRequest:
             raise TypeError("kind must be WorkspaceQueryKind")
         if not isinstance(self.arguments, Mapping):
             raise TypeError("arguments must be a mapping")
-        frozen = _freeze(dict(self.arguments))
-        if not isinstance(frozen, Mapping):
-            raise TypeError("arguments must be a mapping")
+        frozen = cast(Mapping[str, object], _freeze(dict(self.arguments)))
         object.__setattr__(self, "arguments", frozen)
 
 
@@ -90,12 +92,8 @@ class WorkspaceQueryResult:
     truncated: bool = False
 
     def __post_init__(self) -> None:
-        if not isinstance(self.kind, WorkspaceQueryKind):
-            raise TypeError("kind must be WorkspaceQueryKind")
-        if not isinstance(self.status, WorkspaceQueryStatus):
-            raise TypeError("status must be WorkspaceQueryStatus")
-        if not isinstance(self.truncated, bool):
-            raise TypeError("truncated must be bool")
+        if not isinstance(self.kind, WorkspaceQueryKind) or not isinstance(self.status, WorkspaceQueryStatus) or not isinstance(self.truncated, bool):
+            raise TypeError("kind, status, and truncated must have valid types")
         if self.status is WorkspaceQueryStatus.SUCCEEDED and (self.reason_code is not None or self.error is not None):
             raise ValueError("successful query cannot carry failure metadata")
         if self.status is WorkspaceQueryStatus.FAILED and (not isinstance(self.reason_code, str) or not self.reason_code):
@@ -198,19 +196,24 @@ class ReadOnlyWorkspaceQueryService:
         with os.scandir(selected) as entries:
             for scanned_entries, entry in enumerate(entries, 1):
                 if _cancel_requested(cancellation):
+                    rows.sort(key=lambda row: (row["name"].casefold(), row["name"]))
+                    if len(rows) > MAX_LIST_ITEMS:
+                        rows = rows[:MAX_LIST_ITEMS]
+                        truncated = True
                     return rows, truncated, True
                 if scanned_entries > MAX_LIST_SCAN_ENTRIES:
-                    return rows, True, False
+                    truncated = True
+                    break
                 relative = (selected / entry.name).relative_to(self.workspace.root).as_posix()
                 try:
                     safe = self._resolve(relative)
                 except Exception:
                     continue
                 rows.append({"name": entry.name, "relative": relative, "type": "dir" if safe.is_dir() else "file"})
-                rows.sort(key=lambda row: (row["name"].casefold(), row["name"]))
-                if len(rows) > MAX_LIST_ITEMS:
-                    rows.pop()
-                    truncated = True
+        rows.sort(key=lambda row: (row["name"].casefold(), row["name"]))
+        if len(rows) > MAX_LIST_ITEMS:
+            rows = rows[:MAX_LIST_ITEMS]
+            truncated = True
         truncated = truncated or len(rows) >= MAX_LIST_ITEMS and scanned_entries > len(rows)
         return rows, truncated, False
 
@@ -249,7 +252,7 @@ class ReadOnlyWorkspaceQueryService:
             if _cancel_requested(cancellation):
                 return _cancelled(request)
             byte_truncated = len(payload) > MAX_READ_BYTES
-            text = payload[:MAX_READ_BYTES].decode("utf-8")
+            text = decode_utf8_prefix(payload[:MAX_READ_BYTES], truncated=byte_truncated)
             lines = text.splitlines(keepends=True)
             start = cast(int | None, arguments["start_line"])
             end = cast(int | None, arguments["end_line"])

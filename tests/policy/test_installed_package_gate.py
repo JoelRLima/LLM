@@ -10,6 +10,7 @@ from scripts.verify_installed_package import (
     INSTALLED_PROBE_SOURCE,
     CommandResult,
     VerificationError,
+    _F1ModelHandler,
     _is_junction_compatible,
     _run,
     _validate_slice_a_payload,
@@ -101,6 +102,13 @@ def test_ci_runs_installed_wheel_gate_after_pytest() -> None:
     assert "--offline-diagnostic" not in linux + windows
     assert "--pytest-command" in windows
     assert "fetch-depth: 0" in workflow
+
+
+def test_ci_workflows_limit_repository_token_to_read_access() -> None:
+    root = Path(__file__).parents[2]
+    for name in ("ci.yml", "wave18-installed-product.yml"):
+        workflow = (root / ".github/workflows" / name).read_text(encoding="utf-8")
+        assert "\npermissions:\n  contents: read\n\nconcurrency:" in workflow
 
 
 def test_clean_acceptance_is_default_and_offline_mode_is_explicitly_weaker() -> None:
@@ -219,6 +227,13 @@ def test_installed_probe_covers_slice_a_journey_and_measurement() -> None:
         assert field in INSTALLED_PROBE_SOURCE
     source = inspect.getsource(_validate_slice_a_payload)
     assert 'payload.get("slice_a")' in source
+
+
+def test_f1_fixture_matches_current_initial_plan_prompt_and_shape() -> None:
+    source = inspect.getsource(_F1ModelHandler.do_POST)
+
+    assert 'Escolha exatamente uma destas duas respostas JSON' in source
+    assert '{"action":"use_tools","plan":' in source
 
 
 def test_installed_probe_covers_slice_c_journey_and_reuses_measurement() -> None:

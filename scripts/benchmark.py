@@ -24,7 +24,7 @@ BENCHMARK_TASKS = (
     "Crie um arquivo hello.py que imprime 'Hello, world!'.",
     "Execute o arquivo hello.py com python_executor.",
     "Calcule a soma de 1 a 10 usando python_executor.",
-    "Leia o arquivo EstruturaProjeto.md e faça um resumo de 3 linhas.",
+    "Leia o arquivo docs/arquitetura-detalhada.md e faça um resumo de 3 linhas.",
 )
 
 

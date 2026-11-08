@@ -56,16 +56,25 @@ class InspectionService:
         self._clock = clock
         self._liveness_policy = TraceLivenessPolicy()
 
-    def list_runs(self, *, limit: int = MAX_QUERY_LIMIT) -> tuple[RunSummary, ...]:
+    def list_runs(self, *, limit: int = MAX_QUERY_LIMIT, offset: int = 0) -> tuple[RunSummary, ...]:
         bounded = self._limit(limit)
+        start = self._offset(offset)
         return tuple(
             RunSummary.from_metadata(
                 item,
                 now=self._now(item),
                 liveness_policy=self._liveness_policy,
             )
-            for item in self.catalog.list_runs(limit=bounded)
+            for item in self.catalog.list_runs(limit=bounded, offset=start)
         )
+
+    @staticmethod
+    def _offset(offset: int) -> int:
+        if isinstance(offset, bool) or not isinstance(offset, int):
+            raise TypeError("inspection offset must be an integer")
+        if offset < 0 or offset > 1_000_000:
+            raise ValueError("inspection offset must be from 0 to 1000000")
+        return offset
 
     def select(self, run_id: str | None = None, *, active_first: bool = True) -> SelectedTrace:
         now = self._now()

@@ -229,13 +229,19 @@ class JourneyGateway:
                 "DIRECT_CAPITAL": "A capital da França é Paris.",
                 "DIRECT_SKY": "O céu parece azul porque a atmosfera dispersa mais a luz azul.",
             }
-            for marker, answer in direct_answers.items():
-                if marker in self.objective:
-                    return answer
+            answer = next(
+                (answer for marker, answer in direct_answers.items() if marker in self.objective),
+                None,
+            )
+            if answer is not None:
+                return answer
         if "You are a Router Agent" in system:
             return '{"persona":"coder"}'
-        if "Escolha exatamente uma das duas respostas JSON" in prompt:
-            return self._plan_response()
+        if request_contract == ModelRequestContract.INITIAL_PLAN.value:
+            decision = json.loads(self._plan_response())
+            if "plan" in decision:
+                decision.setdefault("action", "use_tools")
+            return json.dumps(decision, ensure_ascii=False)
         if "Uma fronteira" in prompt:
             return '{"action":"complete","reason":"a evidencia observada basta"}'
         if "Objetivo de engenharia:" in prompt and self.scenario_id == "CAP_MODIFY":

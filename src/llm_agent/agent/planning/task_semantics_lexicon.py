@@ -203,7 +203,7 @@ def _build_lexicon() -> CanonicalSemanticLexicon:
             "adicione", "adicionar", "ajuste", "ajustar", "alter", "alterar",
             "altere", "aplicar", "aplique", "change", "corrija", "corrigir",
             "create", "crie", "criar", "delete", "edit", "edite", "editar", "fix",
-            "modify", "modifique", "modificar", "refactor", "remove", "remova",
+            "modify", "modifique", "modificar", "refactor", "remove", "remova", "write",
             "remover", "replace", "substitua", "substituir", "touch", "toque", "update",
             "atualize", "atualizar", "configure", "configurar", "mude", "mudar",
         },

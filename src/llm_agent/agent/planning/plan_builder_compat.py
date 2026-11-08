@@ -14,12 +14,14 @@ if TYPE_CHECKING:
 
 def build_legacy_initial(
     builder: Any,
-    decision: LegacyModelDecision,
+    decision: Any,
     *,
     require_executable_plan: bool = False,
-) -> "PlanBuildResult":
+) -> "PlanBuildResult | None":
     """Adapt the retained initial-plan response without making it canonical."""
 
+    if not isinstance(decision, LegacyModelDecision):
+        return None
     from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
 
     plan = legacy_plan(builder, decision)
@@ -45,10 +47,12 @@ def build_legacy_initial(
 
 
 def build_legacy_continuation(
-    builder: Any, decision: LegacyModelDecision
-) -> "PlanBuildResult":
+    builder: Any, decision: Any
+) -> "PlanBuildResult | None":
     """Adapt the retained continuation response at its explicit edge."""
 
+    if not isinstance(decision, LegacyModelDecision):
+        return None
     from llm_agent.agent.planning.plan_builder import PlanBuildResult, PlanningDecisionKind
 
     plan = legacy_plan(builder, decision)

@@ -1240,7 +1240,7 @@ def test_windows_launcher_waits_for_job_association_before_immediate_extension_s
     release_association = threading.Event()
     original_assign = command_module.assign_windows_job
     original_popen = subprocess.Popen
-    original_write_stdin = command_module.write_stdin
+    original_start_stdin_writer = command_module.start_stdin_writer
     created_commands: list[list[str]] = []
     sent_requests: list[bytes] = []
 
@@ -1248,9 +1248,10 @@ def test_windows_launcher_waits_for_job_association_before_immediate_extension_s
         created_commands.append(command)
         return original_popen(command, **kwargs)
 
-    def record_write_stdin(process: subprocess.Popen[Any], request: bytes) -> None:
-        sent_requests.append(request)
-        original_write_stdin(process, request)
+    def record_start_stdin_writer(process: subprocess.Popen[Any], request: bytes | None, errors: list[str]) -> Any:
+        if request is not None:
+            sent_requests.append(request)
+        return original_start_stdin_writer(process, request, errors)
 
     def blocked_assign(job: object, process: object) -> bool:
         association_entered.set()
@@ -1259,7 +1260,7 @@ def test_windows_launcher_waits_for_job_association_before_immediate_extension_s
 
     monkeypatch.setattr(command_module, "assign_windows_job", blocked_assign)
     monkeypatch.setattr(command_module.subprocess, "Popen", record_popen)
-    monkeypatch.setattr(command_module, "write_stdin", record_write_stdin)
+    monkeypatch.setattr(command_module, "start_stdin_writer", record_start_stdin_writer)
     result_holder: dict[str, object] = {}
     worker = threading.Thread(
         target=lambda: result_holder.setdefault(

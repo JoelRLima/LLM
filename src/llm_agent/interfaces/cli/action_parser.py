@@ -1,36 +1,12 @@
-"""Deterministic slash-path parser for the canonical CLI registry."""
+"""Compatibility facade for the shared interactive core."""
 
-from __future__ import annotations
+from typing import Any
 
-from llm_agent.interfaces.cli.action_registry import (
-    DEFAULT_CLI_ACTION_REGISTRY,
-    CliActionMatch,
-    CliActionRegistry,
+from llm_agent.interactive import action_parser as _core
+from llm_agent.interactive.action_parser import (
+    parse_action as parse_action,
 )
 
-_MODE_VALUES = frozenset({"read-only", "editor", "full"})
 
-
-def parse_action(
-    text: str,
-    registry: CliActionRegistry = DEFAULT_CLI_ACTION_REGISTRY,
-) -> CliActionMatch | None:
-    match = registry.match(text)
-    if match is None:
-        return None
-    if (
-        match.action_id == "configuration.mode_show"
-        and match.raw_payload.strip().casefold() in _MODE_VALUES
-    ):
-        binding = registry.binding_for_action("configuration.mode_set")
-        return CliActionMatch(
-            action_id="configuration.mode_set",
-            binding=binding,
-            matched_path=binding.preferred_path,
-            used_compatibility_alias=True,
-            raw_payload=match.raw_payload.strip(),
-        )
-    return match
-
-
-__all__ = ["parse_action"]
+def __getattr__(name: str) -> Any:
+    return getattr(_core, name)

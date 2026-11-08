@@ -1,0 +1,51 @@
+{
+  "artifact": "LOCAL_MODERNIZATION_VALIDATION",
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "scope": "Original selected pytest cases, consolidated across initial execution and corrective reruns; additional focal tests are separate.",
+  "selected_cases": 3464,
+  "results": {
+    "passed": 3445,
+    "failed": 0,
+    "skipped": 19
+  },
+  "unverified_cases": [],
+  "stages": [
+    {
+      "name": "initial_broad_run",
+      "passed": 2701,
+      "failed": 8,
+      "skipped": 14,
+      "stopped_at_failure_limit": true
+    },
+    {
+      "name": "nonruntime_continuation",
+      "passed": 675,
+      "failed": 0,
+      "skipped": 2
+    },
+    {
+      "name": "runtime_behavior_recheck",
+      "passed": 115,
+      "failed": 0,
+      "skipped": 3,
+      "includes_previously_passed_and_new_cases": true
+    }
+  ],
+  "architecture_corrective_evidence": {
+    "tests/unit/runtime/test_wave12_architecture_checker.py::test_real_repository_passes_wave12_checker": "targeted root run: 32 passed, 1 skipped; Wave12 file included",
+    "tests/unit/runtime/test_wave21_architecture.py::test_transition_mode_accepts_the_completed_migration": "Luna targeted pytest closure: 2 passed in 45.09s",
+    "tests/unit/runtime/test_wave21_architecture.py::test_strict_mode_is_green_after_all_lanes_close_the_baseline": "Luna targeted pytest closure: 2 passed in 45.09s",
+    "tests/unit/runtime/test_wave21_checker_equivalence.py::test_current_repository_remains_green_for_all_migrated_checkers": "Luna targeted pytest closure: 1 passed in 145.25s",
+    "tests/unit/runtime/test_wave21_checker_equivalence.py::test_w19_positive_fixture_accepts_typed_path_surface": "Luna targeted pytest closure: 1 passed in 247.08s",
+    "tests/unit/runtime/test_wave8_checker_adversarial.py::test_current_repository_passes_wave8_source_checks": "targeted root run: 9 passed, 1 failed; sole failure was Wave9 live, subsequently corrected"
+  },
+  "static": {
+    "ruff_src_scripts_tests": "passed",
+    "mypy_linux": "passed",
+    "mypy_windows": "passed",
+    "git_diff_check": "passed",
+    "official_static_profile": "3/5 gates passed; global Ruff and quality policy retain prototype findings"
+  },
+  "real_model_evaluation": false
+}

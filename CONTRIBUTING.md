@@ -2,7 +2,9 @@
 
 Este documento define o padrão para mudanças que continuem fáceis de entender,
 testar e estender por pessoas e por ferramentas de análise. As regras valem para
-todo o código de produção; não há módulos ou funções dispensados dos limites.
+todo o código de produção. Exceções de complexidade e tamanho já registradas
+em `quality/baseline.json` são dívida em ratchet, não autorização para novas
+exceções.
 
 ## Princípios de projeto
 
@@ -36,7 +38,8 @@ todo o código de produção; não há módulos ou funções dispensados dos lim
 - Funções coordenadoras devem delegar decisões a unidades pequenas e testáveis.
 - Um comentário explica uma invariável, limitação ou decisão que o código sozinho
   não comunica. Não registre histórico de PR, edição ou conversa em comentários.
-- Imports não podem inverter os limites descritos em `EstruturaProjeto.md`. O gate
+- Imports não podem inverter os limites descritos em
+  [`docs/arquitetura-detalhada.md`](docs/arquitetura-detalhada.md). O gate
   arquitetural verifica as partes estáveis de `code`, `runtime`, `evaluation`,
   `llm` e `planning`.
 
@@ -74,35 +77,87 @@ capacidade nova deve ganhar um cenário hermético em
 
 ## Quality gates
 
-Execute antes de concluir:
+Use `scripts/validate.py` como entrada local única para validação. O perfil é
+obrigatório; `--plan` mostra os comandos do perfil sem executá-los. No Windows
+PowerShell:
 
 ```powershell
-.venv\Scripts\python.exe scripts\check_quality.py
-.venv\Scripts\python.exe -m ruff check .
-.venv\Scripts\python.exe -m mypy --platform linux
-.venv\Scripts\python.exe -m mypy --platform win32
-.venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\python.exe scripts\verify_installed_package.py
+.venv\Scripts\python.exe scripts\validate.py static --plan
+.venv\Scripts\python.exe scripts\validate.py static
+.venv\Scripts\python.exe scripts\validate.py tests
+.venv\Scripts\python.exe scripts\validate.py installed
+.venv\Scripts\python.exe scripts\validate.py all
+```
+
+Em Linux ou macOS, use o mesmo interpretador do ambiente virtual:
+
+```sh
+.venv/bin/python scripts/validate.py static --plan
+.venv/bin/python scripts/validate.py static
+.venv/bin/python scripts/validate.py tests
+.venv/bin/python scripts/validate.py installed
+.venv/bin/python scripts/validate.py all
+```
+
+`static` executa Ruff, a política de qualidade, mypy para as plataformas Linux
+e Windows e `git diff --check`. `tests` executa `pytest -q`. `installed`
+verifica o pacote instalado em ambiente limpo; não use
+`--offline-diagnostic` como substituto. `all` executa todos os grupos mesmo
+quando um falha e termina com status diferente de zero se algum falhar. Os
+comandos são ancorados na raiz do repositório e usam o mesmo interpretador que
+iniciou o runner.
+
+Esses perfis são validações locais. `static` não substitui os testes; `tests`
+local não equivale aos wrappers de aceitação do CI. A matriz de
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) cobre Linux e Windows
+com Python 3.10 e 3.12. Os scripts `scripts/w23_ci_windows.ps1` e
+`scripts/w23_ci_linux.sh` são exclusivos dos runners descartáveis do GitHub
+Actions: não os chame localmente nem simule `GITHUB_ACTIONS` para executá-los.
+As duas plataformas do mypy ajudam a verificar APIs condicionais, mas não
+substituem essa matriz de sistemas operacionais e versões de Python.
+
+Os gates individuais continuam disponíveis para diagnóstico direcionado:
+
+```sh
+python -m ruff check .
+python scripts/check_quality.py
+python -m mypy --platform linux
+python -m mypy --platform win32
+python -m pytest -q
+python scripts/verify_installed_package.py
 git diff --check
 ```
 
-As duas execuções do mypy são obrigatórias: elas validam APIs condicionais de
-Linux e Windows mesmo quando o desenvolvimento ocorre em apenas um dos sistemas.
-O último comando constrói e instala o wheel em ambiente limpo; o modo
-`--offline-diagnostic` não substitui esse critério de aceitação.
-
 `scripts/check_quality.py` verifica:
 
-- complexidade ciclomática máxima 10 em todo o código de produção;
-- módulos com no máximo 300 linhas em todo o código de produção;
+- complexidade C901 máxima 10 em `.` e tamanho máximo de 300 linhas para
+  módulos de produção;
 - nenhum módulo Python do projeto oculto por regras do `.gitignore`;
 - direção de dependências nas camadas estáveis;
 - links locais da documentação;
 - arquivos de texto em UTF-8 sem BOM.
 
-`quality/baseline.json` contém os limites e mantém as listas `allowed` vazias.
-Uma entrada nessas listas, um `noqa` para C901, um override de mypy ou o
-relaxamento dos limites não é uma forma aceita de concluir uma mudança.
+`check_quality.py` executa Ruff com C901 sobre `.` sem limitar a busca ao código
+de produção. Separadamente, seu limite de 300 linhas se aplica aos módulos de
+produção. O arquivo `quality/baseline.json` funciona como ratchet da dívida já
+registrada.
+As listas `allowed` desse baseline não estão vazias: elas registram exceções
+preexistentes, não autorizam novas exceções nem tornam a dívida um padrão
+aceitável. Não acrescente entradas ao baseline, `noqa` para C901 ou overrides
+de mypy para contornar uma mudança.
+
+## Mapa do repositório
+
+- `src/`: código Python do pacote;
+- `tests/`: testes e fixtures;
+- `scripts/` e `quality/`: ferramentas, políticas e configuração dos gates;
+- `quality/w23/`: registros e material histórico da Wave 23;
+- `prototypes/workbench-comparison/`: comparação e evidências que ainda contêm
+  código ativo; não trate o diretório inteiro como descartável;
+- `runtime/`, `reports/` e `.temp_analysis/`: dados locais de runtime, relatórios
+  e análises temporárias, não fontes de código do pacote;
+- `.workbench-installed-*`: instalações locais geradas, também usadas pelo
+  launcher local; confira seus consumidores antes de remover esses diretórios.
 
 `.editorconfig` padroniza charset, indentação e final de linha nos editores.
 `.gitattributes` mantém LF no repositório, inclusive quando o Git roda no
@@ -116,6 +171,6 @@ Uma mudança está pronta quando:
 - contratos e efeitos novos estão tipados e documentados;
 - os testes cobrem sucesso, falhas relevantes e limites;
 - todos os gates locais passam;
-- README, `EstruturaProjeto.md` e o guia específico refletem o comportamento
+- README, `docs/arquitetura-detalhada.md` e o guia específico refletem o comportamento
   público atual;
 - não há segredo, artefato de runtime ou documento temporário versionado.

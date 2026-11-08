@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "model_used": false,
+  "fixture_sha256": "af6142d6a7366dcdea8c29a754e3d833d95ad9fce6c0ef7eaf61e2c220945861",
+  "candidate_source_sha256": "93940fa2384ac550f215f26d3520d2ea9b05340136155e2fa9e6998a71a4bd45",
+  "candidate_sources_sha256": {
+    "src/llm_agent/agent/planning/task_completion_constraints.py": "5a745eafc3589b4105b830bf114f3549c488ee53b3a6f3bdc5c65ad912c85789",
+    "src/llm_agent/agent/runtime/validation_evidence.py": "c7302a94103650cadbc6f6ab8412d34db884a4a9a93d27bd8df9323089759ff0",
+    "src/llm_agent/agent/runtime/mutation_evidence.py": "92ec2f2a0e8ae482d02c98a954941dcc64b7b12f2ff39eb5a09956a5aad1f0d1",
+    "src/llm_agent/agent/runtime/mutation_evidence_support.py": "0fe13f65ab979834d53d869d0571f8d3875a8e62377d52b17e23cc2ae39bf52c"
+  },
+  "candidate": {
+    "scenarios": 27,
+    "oracle_matches": 27,
+    "constraints_admission_false_positives": {
+      "count": 0,
+      "case_ids": []
+    },
+    "oracle_mismatches": [],
+    "oracle_mismatch_count": 0,
+    "classes": {
+      "analysis.accepted": 2,
+      "analysis.matches_oracle": 2,
+      "analysis.total": 2,
+      "cancel.accepted": 1,
+      "cancel.matches_oracle": 1,
+      "cancel.total": 1,
+      "effect_scope.accepted": 0,
+      "effect_scope.matches_oracle": 1,
+      "effect_scope.total": 1,
+      "failure.accepted": 1,
+      "failure.matches_oracle": 5,
+      "failure.total": 5,
+      "multiple_mutations.accepted": 1,
+      "multiple_mutations.matches_oracle": 5,
+      "multiple_mutations.total": 5,
+      "proposal.accepted": 2,
+      "proposal.matches_oracle": 2,
+      "proposal.total": 2,
+      "repair.accepted": 2,
+      "repair.matches_oracle": 5,
+      "repair.total": 5,
+      "resume.accepted": 1,
+      "resume.matches_oracle": 1,
+      "resume.total": 1,
+      "validation.accepted": 2,
+      "validation.matches_oracle": 5,
+      "validation.total": 5
+    }
+  },
+  "baseline_source_sha256": "9c2f9d9d6b884b2ded6f3d7633d02d89cf19d8a3b7839122b9281158b87d5fcc",
+  "baseline": {
+    "scenarios": 27,
+    "oracle_matches": 15,
+    "constraints_admission_false_positives": {
+      "count": 11,
+      "case_ids": [
+        "success_status_without_ok",
+        "valid_write_then_unvalidated_same_target",
+        "valid_a_write_then_unvalidated_b",
+        "rollback_with_unrepaired_resource",
+        "multi_artifact_one_unvalidated",
+        "mutation_marked_unknown",
+        "mutation_rolled_back",
+        "two_validated_mutations_then_third_unvalidated",
+        "valid_latest_mutation_but_earlier_target_missing",
+        "validation_success_on_failed_write",
+        "three_resources_partial_validation"
+      ]
+    },
+    "oracle_mismatches": [
+      "mutation_attempt_only",
+      "success_status_without_ok",
+      "valid_write_then_unvalidated_same_target",
+      "valid_a_write_then_unvalidated_b",
+      "rollback_with_unrepaired_resource",
+      "multi_artifact_one_unvalidated",
+      "mutation_marked_unknown",
+      "mutation_rolled_back",
+      "two_validated_mutations_then_third_unvalidated",
+      "valid_latest_mutation_but_earlier_target_missing",
+      "validation_success_on_failed_write",
+      "three_resources_partial_validation"
+    ],
+    "oracle_mismatch_count": 12,
+    "classes": {
+      "analysis.accepted": 2,
+      "analysis.matches_oracle": 2,
+      "analysis.total": 2,
+      "cancel.accepted": 1,
+      "cancel.matches_oracle": 1,
+      "cancel.total": 1,
+      "effect_scope.accepted": 1,
+      "effect_scope.matches_oracle": 0,
+      "effect_scope.total": 1,
+      "failure.accepted": 4,
+      "failure.matches_oracle": 2,
+      "failure.total": 5,
+      "multiple_mutations.accepted": 5,
+      "multiple_mutations.matches_oracle": 1,
+      "multiple_mutations.total": 5,
+      "proposal.accepted": 2,
+      "proposal.matches_oracle": 2,
+      "proposal.total": 2,
+      "repair.accepted": 5,
+      "repair.matches_oracle": 2,
+      "repair.total": 5,
+      "resume.accepted": 1,
+      "resume.matches_oracle": 1,
+      "resume.total": 1,
+      "validation.accepted": 1,
+      "validation.matches_oracle": 4,
+      "validation.total": 5
+    }
+  },
+  "changed_cases": [
+    {
+      "id": "mutation_attempt_only",
+      "baseline": false,
+      "candidate": true
+    },
+    {
+      "id": "success_status_without_ok",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "valid_write_then_unvalidated_same_target",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "valid_a_write_then_unvalidated_b",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "rollback_with_unrepaired_resource",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "multi_artifact_one_unvalidated",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "mutation_marked_unknown",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "mutation_rolled_back",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "two_validated_mutations_then_third_unvalidated",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "valid_latest_mutation_but_earlier_target_missing",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "validation_success_on_failed_write",
+      "baseline": true,
+      "candidate": false
+    },
+    {
+      "id": "three_resources_partial_validation",
+      "baseline": true,
+      "candidate": false
+    }
+  ],
+  "baseline_git_commit": "9b5a2ddc2645430142e3c1ecaf6ef95c41e40406",
+  "baseline_git_blob": "338a4b7382c8de470af8f5b4e4e4161ff8f514a7",
+  "verification": {
+    "tests": 1576,
+    "failures": 0,
+    "errors": 0,
+    "skipped": [
+      {
+        "test": "test_symlink_escape_is_not_a_discovery_candidate",
+        "reason": "symlink creation unavailable (Windows privilege)"
+      },
+      {
+        "test": "test_repository_rejects_link_like_task_directory",
+        "reason": "symlink creation unavailable (Windows privilege)"
+      }
+    ],
+    "campaign_tests": 47,
+    "python": "3.12.10"
+  }
+}

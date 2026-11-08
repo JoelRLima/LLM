@@ -7,6 +7,7 @@ from typing import Any, cast
 from llm_agent.discovery.contracts import DiscoveryResultV1
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.discovery_projection import discover_commands, record_discovery_use
+from llm_agent.interfaces.cli.ui import PRIMARY_ACTION_IDS
 
 
 def _engineering_views(ctx: Any) -> tuple[object, ...]:
@@ -29,14 +30,16 @@ def commands_action(text: str, ctx: Any) -> None:
             controller=getattr(ctx, "controller", None),
             workspace_bound=getattr(ctx, "workspace", None) is not None,
             engineering_views=_engineering_views(ctx),
+            entry_ids=frozenset(f"action:{action_id}" for action_id in PRIMARY_ACTION_IDS) if not query else None,
         ),
     )
+    candidates = result.candidates
     shell = getattr(ctx, "shell", None)
     if shell is not None:
         prompt_line = getattr(ctx, "prompt_line", None)
         if not callable(prompt_line):
             prompt_line = getattr(shell, "prompt_line", None)
-        if result.candidates and callable(prompt_line):
+        if candidates and callable(prompt_line):
             from llm_agent.interfaces.cli.selector import SelectorItem, TerminalSelector
 
             items = tuple(
@@ -46,29 +49,32 @@ def commands_action(text: str, ctx: Any) -> None:
                     description=candidate.entry.description,
                     disabled_reason=None if candidate.available else (candidate.disabled_reason or "unavailable"),
                 )
-                for candidate in result.candidates
+                for candidate in candidates
             )
             selected = TerminalSelector(
                 prompt_line=prompt_line,
                 emit=lambda value: shell.print_background(value),
-            ).choose(items, title="Comandos disponíveis")
-            if selected.cancelled:
+            ).choose(items, title="Comandos principais — /commands <busca> encontra outros recursos", allow_command_draft=True)
+            if selected.draft is not None:
+                shell.take_palette_return_draft() if callable(getattr(shell, "take_palette_return_draft", None)) else None
+                shell.set_draft(selected.draft)
+            elif selected.cancelled:
                 prior = shell.take_palette_return_draft() if callable(getattr(shell, "take_palette_return_draft", None)) else None
                 if prior:
                     shell.set_draft(prior)
             else:
                 candidate = next(
-                    (item for item in result.candidates if item.entry.entry_id == selected.item_id),
+                    (item for item in candidates if item.entry.entry_id == selected.item_id),
                     None,
                 )
                 if candidate is not None:
                     select_palette_entry(candidate, ctx)
             return
         lines: list[str] = []
-        for candidate in result.candidates:
+        for candidate in candidates:
             suffix = "" if candidate.available else f" [{candidate.disabled_reason or 'unavailable'}]"
             lines.append(f"{candidate.entry.preferred_invocation} — {candidate.entry.description}{suffix}")
-        shell.print_background("\n".join(lines) or "(no matching commands)")
+        shell.print_background("\n".join(lines) or "Nenhum comando encontrado. Tente /commands com outra palavra ou /help.")
         prior = shell.take_palette_return_draft() if callable(getattr(shell, "take_palette_return_draft", None)) else None
         if prior:
             shell.set_draft(prior)
@@ -78,9 +84,9 @@ def commands_action(text: str, ctx: Any) -> None:
     lines = [
         f"{candidate.entry.preferred_invocation} - {candidate.entry.description}"
         + ("" if candidate.available else f" [{candidate.disabled_reason or 'unavailable'}]")
-        for candidate in result.candidates
+        for candidate in candidates
     ]
-    rendered = "\n".join(lines) or "(no matching commands)"
+    rendered = "\n".join(lines) or "Nenhum comando encontrado. Tente /commands com outra palavra ou /help."
     console.print(rendered, markup=False)
 
 

@@ -77,24 +77,24 @@ def get_shell(
     return shell_holder["shell"]
 
 
-def prompt_line(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., str] | None:
+def prompt_line(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., str | None] | None:
     if not enabled:
         return None
 
-    def read_prompt(message: str, default: str = "") -> str:
+    def read_prompt(message: str, default: str = "") -> str | None:
         value = get_shell().prompt_line(message, default=default)
-        return "" if value is None else str(value)
+        return None if value is None else str(value)
 
     return read_prompt
 
 
-def prompt_path(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., str] | None:
+def prompt_path(get_shell: Callable[[], Any], enabled: bool) -> Callable[..., str | None] | None:
     if not enabled:
         return None
 
-    def read_path(message: str, default: str = "") -> str:
+    def read_path(message: str, default: str = "") -> str | None:
         value = get_shell().prompt_path(message, default=default)
-        return "" if value is None else str(value)
+        return None if value is None else str(value)
 
     return read_path
 
@@ -107,7 +107,7 @@ def recover_missing_config(
     interactive: bool,
     shell_enabled: bool,
     shell_holder: dict[str, Any],
-    console_prompt: Callable[..., str] | None,
+    console_prompt: Callable[..., str | None] | None,
     app_paths: Callable[[argparse.Namespace], Any],
 ) -> tuple[bool, int]:
     if value(args, "config") is not None or not interactive:

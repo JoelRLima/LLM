@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from llm_agent.agent.interaction.types import AgentInteractionResult
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
@@ -15,7 +16,9 @@ from llm_agent.agent.runtime.worker_output import emit_worker_output
 from llm_agent.application._task_activity import _project_task_activity_update
 from llm_agent.application.conversation import bind_conversation
 from llm_agent.application.task_execution import TaskActivityUpdate, _retain_runtime
+from llm_agent.interactive.admission import build_agentic_envelope, build_natural_envelope
 from llm_agent.interfaces.cli import command_handlers, interactive_rendering
+from llm_agent.interfaces.cli.action_parser import parse_action
 from llm_agent.interfaces.cli.action_registry import DEFAULT_CLI_ACTION_REGISTRY
 from llm_agent.interfaces.cli.controller import InteractiveExecutionController, SubmissionEnvelope
 from llm_agent.interfaces.cli.interactive_shell import InteractiveShell
@@ -98,9 +101,9 @@ def test_search_code_and_agent_routes_share_scoped_worker_publication(monkeypatc
     from llm_agent.interfaces.cli import interactive_worker
 
     routes = (
-        ("search", "search-text", "search-result"),
-        ("code", "code-text", "code-result"),
-        ("natural_text", "agent-text", "agent-result"),
+        ("/search subject", "search-text", "search-result"),
+        ("/code analyze sample.py", "code-text", "code-result"),
+        ("ordinary subject", "agent-text", "agent-result"),
     )
 
     def make_route(output_text, result_value):
@@ -116,12 +119,14 @@ def test_search_code_and_agent_routes_share_scoped_worker_publication(monkeypatc
 
         return execute
 
-    for command_id, output_text, result_value in routes:
+    for text, output_text, result_value in routes:
         route = make_route(output_text, result_value)
+        match = parse_action(text)
+        envelope = build_agentic_envelope(text, match) if match else build_natural_envelope(text)
 
-        if command_id == "search":
+        if envelope.command_id == "query.web_search":
             monkeypatch.setattr(interactive_worker, "_execute_search", route)
-        elif command_id == "code":
+        elif envelope.command_id == "interaction.code_submit":
             monkeypatch.setattr(interactive_worker, "_execute_code", route)
         else:
             monkeypatch.setattr(
@@ -129,10 +134,6 @@ def test_search_code_and_agent_routes_share_scoped_worker_publication(monkeypatc
                 "_execute_application_submission",
                 make_application_submission(route),
             )
-        envelope = SubmissionEnvelope(
-            5, "visible", command_id, "AGENTIC", "AGENTIC_SUBMIT",
-            "PENDING_EXACT_TEXT", "payload", "natural", "owner",
-        )
         context = _fixture_context(controller=None, approval_broker=None, view_model=None)
         result = execute_submission(context, envelope, Event(), lambda _callback: None)
         assert result.result == result_value
@@ -184,7 +185,7 @@ def test_live_stream_survives_active_composer_cancel_without_terminal_duplicatio
         while not cancel_holder["event"].is_set():
             time.sleep(0.005)
         cancelled.set()
-        return SimpleNamespace(status="failed", answer="part-1-part-2", error="cancelled")
+        return AgentInteractionResult(status="failed", answer="part-1-part-2", resolution=None, error="cancelled")
 
     application = SimpleNamespace(interact=interact, bind_interactive_cancellation=bind)
     context = _fixture_context(
@@ -287,7 +288,7 @@ def test_rejected_first_assistant_publish_keeps_canonical_answer_visible() -> No
     def interact(*_args, **kwargs):
         emit_worker_output("diag")
         kwargs["stream_callback"]("answer-from-model")
-        return SimpleNamespace(status="succeeded", answer="canonical-answer")
+        return AgentInteractionResult(status="succeeded", answer="canonical-answer", resolution=None)
 
     context = _fixture_context(
         application=SimpleNamespace(interact=interact),

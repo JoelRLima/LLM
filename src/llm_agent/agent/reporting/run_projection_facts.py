@@ -16,6 +16,7 @@ from llm_agent.agent.reporting.run_projection_value_support import (
     _canonical_code_outcome,
     _freeze,
     _project_args,
+    _public_plan_coverage,
     _text,
 )
 from llm_agent.agent.reporting.run_receipt_support import executed_projection, execution_incidents
@@ -26,6 +27,7 @@ from llm_agent.agent.reporting.task_report_events import (
 )
 from llm_agent.agent.runtime.events import bounded_event_data
 from llm_agent.agent.runtime.mutation_evidence import project_mutation_evidence
+from llm_agent.agent.runtime.validation_evidence import current_validation_evidence
 
 MAX_PROJECTION_HISTORY = 50
 MAX_PROJECTION_FILES = 128
@@ -149,12 +151,14 @@ def build_run_projection_facts(
     *,
     observed_at: str,
     operational_outcome: Any = None,
+    plan_coverage: Mapping[str, Any] | None = None,
 ) -> RunProjectionFacts:
-    history = tuple(
+    full_history = tuple(
         item
-        for item in (getattr(state, "tool_history", None) or ())[:MAX_PROJECTION_HISTORY]
+        for item in (getattr(state, "tool_history", None) or ())
         if isinstance(item, Mapping)
     )
+    history = full_history[:MAX_PROJECTION_HISTORY]
     projected_pairs = tuple(
         _project_history_entry(index, entry) for index, entry in enumerate(history)
     )
@@ -168,25 +172,26 @@ def build_run_projection_facts(
         for item in execution_incidents(state)[:MAX_EXECUTION_INCIDENTS]
     )
     proposed: list[str] = []
-    validation: dict[str, Any] = {"ran": False, "outcome": None}
+    validation = current_validation_evidence(
+        entry.get("result") for entry in full_history
+    ).summary()
     rollback: dict[str, Any] = {"occurred": False, "outcome": None}
     effects: list[bool] = []
     corrective_action_count = 0
-    for entry, tool in zip(history, tools, strict=True):
-        mutation = tool.get("mutation", {})
-        for path in mutation.get("affected_files", ()):
+    for entry in full_history:
+        mutation = project_mutation_evidence(entry.get("result"))
+        for path in mutation.affected_files[:MAX_PROJECTION_FILES]:
             bounded_path = str(path)[:MAX_PROJECTION_PATH_CHARS]
             if bounded_path not in proposed and len(proposed) < MAX_PROJECTION_FILES:
                 proposed.append(bounded_path)
-        if mutation.get("validation_status") is not None:
-            validation = {"ran": True, "outcome": mutation.get("validation_status")}
-        if mutation.get("rollback_occurred") is True:
+        if mutation.rollback_occurred:
             rollback = {
                 "occurred": True,
-                "outcome": "restored" if mutation.get("final_state") == "restored" else "unknown",
+                "outcome": "restored" if mutation.final_state == "restored" else "unknown",
             }
-        if isinstance(tool.get("executed"), bool):
-            effects.append(tool["executed"])
+        executed = project_tool_observation(entry).executed
+        if isinstance(executed, bool):
+            effects.append(executed)
         args = entry.get("args")
         if isinstance(args, Mapping) and args.get("action") == "repair":
             corrective_action_count += 1
@@ -197,13 +202,13 @@ def build_run_projection_facts(
     )
     event_dicts = [dict(item) for item in events]
     replan_count = sum(item.get("type") == "replan" for item in event_dicts)
-    last_result = history[-1].get("result") if history else None
+    last_result = full_history[-1].get("result") if full_history else None
     last_data = last_result.get("data") if isinstance(last_result, Mapping) else None
     metadata = last_data.get("metadata") if isinstance(last_data, Mapping) else None
     output = _text(last_data) if last_data is not None else ""
     total_chars = metadata.get("total_chars") if isinstance(metadata, Mapping) else None
-    code_outcome = _canonical_code_outcome(history)
-    validation_detail = _canonical_validation_detail(history)
+    code_outcome = _canonical_code_outcome(full_history)
+    validation_detail = _canonical_validation_detail(full_history)
     return RunProjectionFacts(
         objective=_text(getattr(state, "objective", None)) or None,
         tools=tools,
@@ -260,6 +265,7 @@ def build_run_projection_facts(
         ),
         code_outcome=code_outcome,
         validation_detail=validation_detail,
+        plan_coverage=_freeze(_public_plan_coverage(plan_coverage or {})),
     )
 
 

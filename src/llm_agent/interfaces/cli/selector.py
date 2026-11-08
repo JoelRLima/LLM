@@ -36,21 +36,20 @@ class SelectorItem:
 class SelectorResult:
     item_id: str | None
     cancelled: bool
+    draft: str | None = None
 
 
 def _find_selection(items: tuple[SelectorItem, ...], value: str) -> tuple[SelectorItem | None, bool]:
-    selected: SelectorItem | None = None
-    if value.isdigit():
+    selected = next((item for item in items if value.casefold() == item.item_id.casefold()), None)
+    if selected is None and value.isdecimal() and len(value) <= 3:
         index = int(value)
         if 1 <= index <= len(items):
             selected = items[index - 1]
-    if selected is None:
-        selected = next(
-            (item for item in items if item.item_id.casefold() == value.casefold()),
-            None,
-        )
     if selected is not None or not value:
         return selected, False
+    labels = tuple(item for item in items if item.label.casefold() == value.casefold())
+    if labels:
+        return (labels[0], False) if len(labels) == 1 else (None, True)
     candidates = tuple(
         item
         for item in items
@@ -70,7 +69,7 @@ def _resolve_selection(
     value = str(raw).strip()
     if not value and default is not None:
         return SelectorResult(default.item_id, False), None
-    if value.casefold() in {"q", "quit", "cancel"}:
+    if not value or value.casefold() in {"q", "quit", "cancel", "cancelar", "voltar"}:
         return SelectorResult(None, True), None
     selected, ambiguous = _find_selection(items, value)
     if ambiguous:
@@ -108,7 +107,9 @@ class TerminalSelector:
         self._emit(title)
         for index, item in enumerate(items, start=1):
             suffix = f" — {item.disabled_reason}" if item.disabled_reason else ""
-            self._emit(f"{index}. {item.label} [{item.item_id}]{suffix}")
+            self._emit(f"{index}. {item.label}{suffix}")
+            if item.description:
+                self._emit(f"   {item.description}")
 
     def choose(
         self,
@@ -116,6 +117,7 @@ class TerminalSelector:
         *,
         title: str,
         default_id: str | None = None,
+        allow_command_draft: bool = False,
     ) -> SelectorResult:
         values = self._normalize(items)
         if not isinstance(title, str) or not title.strip():
@@ -125,12 +127,21 @@ class TerminalSelector:
             (item for item in enabled if default_id is not None and item.item_id.casefold() == default_id.casefold()),
             None,
         )
+        if not values:
+            self._emit("Nenhuma opção disponível. Voltando ao chat.")
+            return SelectorResult(None, True)
+        self._emit("Digite o número ou nome; q cancela. Ctrl+C também cancela.")
+        self._emit(f"Enter: {default.label}" if default else "Enter: voltar ao chat.")
+        if allow_command_draft:
+            self._emit("Escolher apenas prepara um rascunho. Você também pode digitar /comando; revise e envie no chat.")
         while True:
             self._display(values, title)
             try:
                 raw = self._prompt_line("> ", default="")
             except (EOFError, KeyboardInterrupt):
                 return SelectorResult(None, True)
+            if allow_command_draft and raw is not None and str(raw).lstrip().startswith("/"):
+                return SelectorResult(None, False, str(raw))
             result, feedback = _resolve_selection(values, default, raw)
             if feedback is not None:
                 self._emit(feedback)

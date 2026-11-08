@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+desktop = [
+    "pywebview>=6,<7; sys_platform == 'win32'",
+]
 mcp = [
     "mcp==2.2.0",
 ]
@@ -31,6 +34,7 @@ dev = [
 
 [project.scripts]
 llm-agent = "llm_agent.interfaces.cli.app:main"
+llm-agent-workbench = "llm_agent.interfaces.workbench.webview:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -41,6 +45,7 @@ version = {attr = "llm_agent._version.VERSION"}
 
 [tool.setuptools.package-data]
 "llm_agent.resources" = ["*.json"]
+"llm_agent.interfaces.workbench" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.ruff]
 line-length = 120

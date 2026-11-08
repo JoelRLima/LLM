@@ -141,7 +141,9 @@ class TraceCatalog:
             raise TraceCorruptError("trace index is invalid")
         return value
 
-    def list_runs(self, *, limit: int = MAX_TRACE_QUERY_LIMIT) -> tuple[TraceMetadata, ...]:
+    def list_runs(self, *, limit: int = MAX_TRACE_QUERY_LIMIT, offset: int = 0) -> tuple[TraceMetadata, ...]:
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 1_000_000:
+            raise ValueError("trace offset must be an integer from 0 to 1000000")
         bounded = max(0, min(int(limit), MAX_TRACE_QUERY_LIMIT))
         records: list[TraceMetadata] = []
         for run_key, summary in self._index().get("runs", {}).items():
@@ -160,14 +162,25 @@ class TraceCatalog:
             except (OSError, UnicodeError, json.JSONDecodeError, TraceStoreError) as exc:
                 raise TraceCorruptError(f"trace metadata is invalid for {run_key}") from exc
         records.sort(key=lambda item: (item.start_time, item.run_id), reverse=True)
-        return tuple(records[:bounded])
+        return tuple(records[offset:offset + bounded])
 
     def find(self, run_id: str) -> TraceMetadata:
         key = safe_run_key(run_id)
-        for metadata in self.list_runs():
-            if metadata.run_id == run_id and safe_run_key(metadata.run_id) == key:
-                return metadata
-        raise TraceUnavailableError("selected run is not retained")
+        if key not in self._index().get("runs", {}):
+            raise TraceUnavailableError("selected run is not retained")
+        run_dir = self.trace_root / key
+        try:
+            _assert_owned_child(self.trace_root, run_dir)
+            metadata_file = run_dir / "metadata.json"
+            _assert_safe_path(metadata_file, directory=False)
+            metadata = TraceMetadata.from_dict(json.loads(metadata_file.read_text(encoding="utf-8")))
+        except FileNotFoundError as exc:
+            raise TraceUnavailableError("selected run is not retained") from exc
+        except (OSError, UnicodeError, json.JSONDecodeError, TraceStoreError) as exc:
+            raise TraceCorruptError("trace metadata is invalid for selected run") from exc
+        if metadata.run_id != run_id or safe_run_key(metadata.run_id) != key:
+            raise TraceCorruptError("trace metadata does not match selected run")
+        return metadata
 
     def latest(
         self,

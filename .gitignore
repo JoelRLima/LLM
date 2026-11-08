@@ -59,3 +59,32 @@ Thumbs.db
 # Generated local artifacts
 /candidate-materialized-check-*/
 /pytest-results.xml
+/.pytest-routing/
+/pytest-cache-files-*/
+/pytest-weak-eval-*/
+/.pytest-c14-*/
+/.pytest-f1-*/
+/_pytest-f1-*/
+/.workbench-package-check-*/
+/.workbench-wheel-install-*/
+
+# Local Workbench installations
+/.workbench-installed-*/
+/.workbench-installed-current.json
+/.workbench-managed/
+
+# Local validation campaigns and frozen evidence
+/f1-autonomous-close-20261024/
+/investigacao-generalizacao-20261023/
+/p3-final-acceptance-20261023/
+
+# Local WebView comparison run output; curated conclusions live in the reports.
+/prototypes/workbench-comparison/evidence/
+/prototypes/workbench-comparison/.pytest-tmp*/
+/prototypes/workbench-comparison/*.log
+/prototypes/workbench-comparison/*.zip
+/prototypes/workbench-comparison/pywebview-startup.json
+
+# Local temporary test workspaces and cache output.
+/weak-model-standard-WM-01-yf6r8377/
+/wrapper-fixture/

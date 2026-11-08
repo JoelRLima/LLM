@@ -13,6 +13,7 @@ from llm_agent.agent.observability.trace_types import TraceCompleteness, TraceMe
 
 
 class TraceLifecycleMixin:
+    _metadata_dirty_since: float | None
     """Lifecycle methods kept separate from queue and parser implementation."""
 
     @property
@@ -79,33 +80,27 @@ class TraceLifecycleMixin:
                     # Keep this coalesced heartbeat pending without creating a
                     # new independent revision.
                     self._metadata_dirty = True
+                    if self._metadata_dirty_since is None:
+                        self._metadata_dirty_since = time.monotonic()
             elif getattr(self, "_heartbeat_quiesced", False) and self._publication_in_flight == 0:
-                # A bounded recovery publication may settle while this latest
-                # observer tick remains dirty but quiesced.  The next ordinary
-                # tick re-arms one coalesced writer opportunity without adding
-                # another independent metadata revision.
+                # Re-arm one coalesced writer opportunity after recovery.
                 self._heartbeat_quiesced = False
             self._condition.notify_all()
 
-    def close(self: Any, *, timeout_seconds: float | None = None) -> TraceMetadata:
-        timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)
-        deadline = time.monotonic() + timeout
-        finalization_reserve = min(0.5, timeout / 4.0)
-        initial_drain_budget = max(0.0, timeout - finalization_reserve)
-        if not self._worker_started:
-            self.start()
+    def _closed_snapshot(self: Any) -> TraceMetadata:
         with self._condition:
-            if self._read_only or self._closed:
-                return cast(TraceMetadata, self._metadata_snapshot())
-            self._closing = True
-            self._finalization_pending = True
-            self._condition.notify_all()
+            metadata = cast(TraceMetadata, self._metadata_snapshot())
+            release_writer_lock = (
+                not self._worker.is_alive()
+                and not self._inflight
+                and self._publication_in_flight == 0
+            )
+            if release_writer_lock:
+                self._release_writer_lock()
+            return metadata
 
-        clean_drain = self.flush(initial_drain_budget)
+    def _record_initial_close_state(self: Any, clean_drain: bool) -> None:
         with self._condition:
-            # The worker is intentionally kept alive by ``_finalization_pending``
-            # until the final snapshot below has been handed to its control
-            # path, so liveness here is not itself an unclean result.
             if not clean_drain or self._writer_error is not None:
                 completeness = TraceCompleteness.UNCLEAN
             elif int(self._metadata_values.get("dropped_count", 0)) > 0:
@@ -123,9 +118,7 @@ class TraceLifecycleMixin:
             self._mark_metadata_dirty_locked()
             self._condition.notify_all()
 
-        final_drain = self.flush(max(0.0, deadline - time.monotonic()))
-        if self._worker.is_alive():
-            self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
+    def _record_final_drain_state(self: Any, final_drain: bool) -> None:
         with self._condition:
             if not final_drain or self._worker.is_alive() or self._writer_error is not None:
                 self._finalization_timed_out = True
@@ -134,23 +127,53 @@ class TraceLifecycleMixin:
                 self._mark_metadata_dirty_locked()
             self._condition.notify_all()
 
-        # A failed writer has already terminated, so there is no control path
-        # left to publish the unclean terminal snapshot.  Use one bounded,
-        # daemonized final attempt in that exceptional case; it can never
-        # extend this caller's deadline or be force-killed.
+    def _publish_final_fallback(self: Any, deadline: float) -> None:
+        # After the writer stops, this bounded attempt is the only remaining
+        # path that can publish the unclean terminal snapshot.
         with self._condition:
             fallback_needed = not self._worker.is_alive() and self._metadata_dirty
-        if fallback_needed:
-            published = self._publish_metadata_bounded(max(0.0, deadline - time.monotonic()))
-            if not published:
-                with self._condition:
-                    self._finalization_timed_out = True
-                    self._metadata_values["completeness"] = TraceCompleteness.UNCLEAN.value
-                    self._metadata_values["status"] = TraceCompleteness.UNCLEAN.value
-                    self._mark_metadata_dirty_locked()
-                    self._condition.notify_all()
+        if not fallback_needed:
+            return
+        published = self._publish_metadata_bounded(max(0.0, deadline - time.monotonic()))
+        if published:
+            return
         with self._condition:
-            return cast(TraceMetadata, self._metadata_snapshot())
+            self._finalization_timed_out = True
+            self._metadata_values["completeness"] = TraceCompleteness.UNCLEAN.value
+            self._metadata_values["status"] = TraceCompleteness.UNCLEAN.value
+            self._mark_metadata_dirty_locked()
+            self._condition.notify_all()
+
+    def close(self: Any, *, timeout_seconds: float | None = None) -> TraceMetadata:
+        timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)
+        deadline = time.monotonic() + timeout
+        initial_drain_budget = max(0.0, timeout - min(0.5, timeout / 4.0))
+        if not self._worker_started:
+            self.start()
+        with self._condition:
+            if self._read_only or self._closed:
+                return cast(TraceMetadata, self._closed_snapshot())
+            self._closing = True
+            self._finalization_pending = True
+            self._condition.notify_all()
+
+        clean_drain = self.flush(initial_drain_budget)
+        self._record_initial_close_state(clean_drain)
+        final_drain = self.flush(max(0.0, deadline - time.monotonic()))
+        if self._worker.is_alive():
+            self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
+        self._record_final_drain_state(final_drain)
+        self._publish_final_fallback(deadline)
+        with self._condition:
+            metadata = cast(TraceMetadata, self._metadata_snapshot())
+            release_writer_lock = (
+                not self._worker.is_alive()
+                and not self._inflight
+                and self._publication_in_flight == 0
+            )
+        if release_writer_lock:
+            self._release_writer_lock()
+        return metadata
 
 
 __all__ = ["TraceLifecycleMixin"]

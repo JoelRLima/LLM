@@ -21,6 +21,7 @@ from llm_agent.agent.task_definition.models import (
     TaskDefinitionRef,
     TaskSpec,
     TaskSpecPhase,
+    VerificationCheck,
 )
 
 
@@ -62,4 +63,5 @@ __all__ = [
     "TaskDefinitionValidationError",
     "TaskSpec",
     "TaskSpecPhase",
+    "VerificationCheck",
 ]

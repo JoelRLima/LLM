@@ -477,10 +477,8 @@ def test_w15_a18_task_definition_is_intact_and_subject_is_not_duplicated() -> No
         "current prompt",
         "SYSTEM POLICY",
         True,
-        "plan",
         None,
         None,
-        {},
         128,
     )
     system = session.messages[0]["content"]

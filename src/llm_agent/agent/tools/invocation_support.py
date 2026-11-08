@@ -100,6 +100,46 @@ def validate_binding(
     return None
 
 
+def _check_builtin_authority(
+    task: TaskAuthoritySnapshot | None,
+    invocation: ToolInvocation,
+    required: frozenset[str],
+) -> ToolResult | None:
+    if task is None or required.issubset(task.allowed_capabilities):
+        return None
+    return denial(
+        invocation,
+        ToolStatus.PERMISSION_DENIED,
+        "TASK_AUTHORITY_DENIED",
+        "Task authority insuficiente.",
+    )
+
+
+def _check_extension_authority(
+    descriptor: ToolDescriptor,
+    application: ApplicationAuthoritySnapshot | None,
+    task: TaskAuthoritySnapshot | None,
+    invocation: ToolInvocation,
+    required: frozenset[str],
+) -> ToolResult | None:
+    if descriptor.origin_kind is not ToolOriginKind.EXTENSION or not descriptor.extension_id:
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "ORIGIN_MISMATCH", "Origem da tool inv\u00e1lida.")
+    if application is None:
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "APPLICATION_AUTHORITY_MISSING", "Authority da aplica\u00e7\u00e3o ausente.")
+    grants = application.grants_for(descriptor.extension_id)
+    if grants is None:
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "APPLICATION_AUTHORITY_DENIED", "Extension n\u00e3o autorizada pela aplica\u00e7\u00e3o.")
+    if task is None:
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_AUTHORITY_MISSING", "Authority da tarefa ausente.")
+    if task.allowed_extension_ids is not None and descriptor.extension_id not in task.allowed_extension_ids:
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_EXTENSION_DENIED", "Extension nao selecionada para esta sessao.")
+    if not required.issubset(grants):
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "WORKSPACE_GRANT_DENIED", "Grant da extension insuficiente.")
+    if not required.issubset(task.allowed_capabilities):
+        return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_AUTHORITY_DENIED", "Task authority insuficiente.")
+    return None
+
+
 def check_authority(
     descriptor: ToolDescriptor,
     application: ApplicationAuthoritySnapshot | None,
@@ -125,28 +165,8 @@ def check_authority(
             "Task authority pertence a outro runtime.",
         )
     if descriptor.origin_kind is ToolOriginKind.BUILTIN:
-        if task is not None and not required.issubset(task.allowed_capabilities):
-            return denial(
-                invocation,
-                ToolStatus.PERMISSION_DENIED,
-                "TASK_AUTHORITY_DENIED",
-                "Task authority insuficiente.",
-            )
-        return None
-    if descriptor.origin_kind is not ToolOriginKind.EXTENSION or not descriptor.extension_id:
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "ORIGIN_MISMATCH", "Origem da tool inválida.")
-    if application is None:
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "APPLICATION_AUTHORITY_MISSING", "Authority da aplicação ausente.")
-    grants = application.grants_for(descriptor.extension_id)
-    if grants is None:
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "APPLICATION_AUTHORITY_DENIED", "Extension não autorizada pela aplicação.")
-    if task is None:
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_AUTHORITY_MISSING", "Authority da tarefa ausente.")
-    if not required.issubset(grants):
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "WORKSPACE_GRANT_DENIED", "Grant da extension insuficiente.")
-    if not required.issubset(task.allowed_capabilities):
-        return denial(invocation, ToolStatus.PERMISSION_DENIED, "TASK_AUTHORITY_DENIED", "Task authority insuficiente.")
-    return None
+        return _check_builtin_authority(task, invocation, required)
+    return _check_extension_authority(descriptor, application, task, invocation, required)
 
 
 def validate_arguments(descriptor: Any, args: dict[str, Any]) -> None:

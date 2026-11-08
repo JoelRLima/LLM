@@ -11,7 +11,7 @@ import pytest
 from llm_agent.agent.application import AgentApplication
 from llm_agent.agent.application_result import finalize_application_result
 from llm_agent.agent.approval import ApprovalDecision, ApprovalRequest, AutoApprove
-from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StructuredOutputMode
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.memory.memory import MemoryLoadError
 from llm_agent.agent.orchestration.task_runner import TaskRunner
@@ -757,8 +757,8 @@ def test_manual_deferred_equals_true_promotes_only_write_branch(tmp_path: Path) 
     assert snapshot["terminal"] == "unverified"
     assert snapshot["step_statuses"][-1] == "unverified"
     assert approval.requests
-    assert len(gateway.payloads) == 3  # router, proposal, and verifier
-    assert len(gateway.calls) == 3
+    assert len(gateway.payloads) == 2  # router and proposal; simple edit is unverified
+    assert len(gateway.calls) == 2
     resolved = next(
         event
         for event in snapshot["events"]
@@ -867,8 +867,8 @@ def test_real_initial_planner_deferred_true_promotes_write_without_continuation(
         "code_task",
         "apply_changeset",
     ]
-    assert len(gateway.payloads) == 4  # router, plan, proposal, and verifier
-    assert len(gateway.calls) == 4
+    assert len(gateway.payloads) == 3  # router, plan, and proposal; simple edit is unverified
+    assert len(gateway.calls) == 3
     assert "continuation_plan" not in str(gateway.payloads)
     assert not any(event.get("type") == "replan" for event in progression["events"])
 
@@ -956,12 +956,16 @@ def test_simple_edit_executes_from_initial_plan_without_rediscovery(tmp_path: Pa
     assert history == ["code_task"]
     assert progression["step_statuses"] == ["unverified"]
     assert progression["continuations"] == 0
-    assert len(gateway.payloads) == 4  # router, plan, proposal, and verifier
-    assert len(gateway.calls) == 4
+    assert len(gateway.payloads) == 3  # router, plan, and proposal; simple edit is unverified
+    assert len(gateway.calls) == 3
     assert "continuation_plan" not in str(gateway.payloads)
 
 
-def test_mutation_request_continues_after_observation(tmp_path: Path) -> None:
+def test_mutation_request_continues_after_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_QueuedChatGateway, "capabilities", ProviderCapabilities(
+        streaming=True,
+        structured_output_modes=(StructuredOutputMode.GBNF, StructuredOutputMode.JSON_PROMPT),
+    ))
     result, gateway, workspace, history, progression = _run_queued_task(
         tmp_path,
         "original",

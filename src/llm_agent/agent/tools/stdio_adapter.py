@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from llm_agent.agent.operation.contracts import CancellationSafetyMode
 from llm_agent.agent.operation.schema import FrozenJsonObject, freeze_json_like, thaw_json_like
@@ -18,75 +17,63 @@ from llm_agent.agent.tools.contracts import (
     ToolResult,
     ToolStatus,
 )
+from llm_agent.agent.tools.stdio_manifest import (
+    ExtensionManifest,
+    _ManifestSnapshot,
+    _reject_constant,
+    _strict_float,
+    _strict_pairs,
+)
+from llm_agent.agent.tools.stdio_manifest import (
+    _load_extension_manifest as _load_extension_manifest,
+)
+from llm_agent.agent.tools.stdio_manifest import (
+    load_strict_extension_manifest as load_strict_extension_manifest,
+)
 from llm_agent.agent.tools.stdio_process import ProcessFailure, run_stdio_process
 from llm_agent.extensions.extension_manifest_parser import (
     SUPPORTED_PROTOCOL as _SUPPORTED_PROTOCOL,
 )
 from llm_agent.extensions.extension_manifest_parser import (
-    ManifestParseError,
-    ManifestParserMode,
-    ManifestProtocolError,
-    ManifestStructureError,
-    load_extension_manifest_bytes,
-    validate_transport_capabilities,
+    ManifestParseError as ManifestParseError,
+)
+from llm_agent.extensions.extension_manifest_parser import (
+    ManifestParserMode as ManifestParserMode,
+)
+from llm_agent.extensions.extension_manifest_parser import (
+    ManifestProtocolError as ManifestProtocolError,
+)
+from llm_agent.extensions.extension_manifest_parser import (
+    ManifestStructureError as ManifestStructureError,
+)
+from llm_agent.extensions.extension_manifest_parser import (
+    load_extension_manifest_bytes as load_extension_manifest_bytes,
+)
+from llm_agent.extensions.extension_manifest_parser import (
+    validate_transport_capabilities as validate_transport_capabilities,
 )
 
 SUPPORTED_PROTOCOL = _SUPPORTED_PROTOCOL
-MAX_OUTPUT_BYTES = 1_048_576
-MAX_STDERR_BYTES = 1_048_576
 
-@dataclass(frozen=True)
-class ExtensionManifest:
-    """Historical public manifest model exported by the stdio adapter."""
-
-    id: str
-    version: str
-    protocol_version: str
-    transport: str
-    entrypoint: Tuple[str, ...]
-    timeout_seconds: int
-    tools: Tuple[Dict[str, Any], ...] = field(default_factory=tuple)
-
-@dataclass(frozen=True, slots=True)
-class _ManifestSnapshot:
-    id: str
-    version: str
-    protocol_version: str
-    transport: str
-    entrypoint: Tuple[str, ...]
-    timeout_seconds: int
-    tools: Tuple[FrozenJsonObject, ...]
-
-def _load_extension_manifest(path: str | Path, *, mode: ManifestParserMode) -> ExtensionManifest:
-    manifest_path = Path(path).expanduser().resolve()
-    try:
-        parsed = load_extension_manifest_bytes(
-            manifest_path.read_bytes(),
-            mode=mode,
-        )
-    except ManifestProtocolError as exc:
-        raise ValueError(str(exc)) from None
-    except (ManifestParseError, ManifestStructureError) as exc:
-        raise ValueError(str(exc)) from None
-    return ExtensionManifest(
-        id=parsed.id,
-        version=parsed.version,
-        protocol_version=parsed.protocol_version,
-        transport=parsed.transport,
-        entrypoint=parsed.entrypoint,
-        timeout_seconds=parsed.timeout_seconds,
-        tools=parsed.tools,
-    )
 
 def load_extension_manifest(path: str | Path) -> ExtensionManifest:
-    """Read the historical stdio path API at its explicit protocol boundary."""
+    """Load the retained path API at the explicit stdio compatibility boundary."""
 
     return _load_extension_manifest(path, mode="legacy_stdio_compatibility")
 
-def load_strict_extension_manifest(path: str | Path) -> ExtensionManifest:
-    """Read a manifest for registry/bootstrap use with strict catalog rules."""
 
-    return _load_extension_manifest(path, mode="strict_catalog")
+# Preserve the original module path for repr/pickle compatibility after the parser split.
+ExtensionManifest.__module__ = __name__
+# Preserve the original module path for repr/pickle compatibility after the parser split.
+ExtensionManifest.__module__ = __name__
+
+
+
+
+
+
+MAX_OUTPUT_BYTES = 1_048_576
+MAX_STDERR_BYTES = 1_048_576
 
 class StdioToolAdapter(ToolAdapter):
     """Executes a stdio-based tool extension as a subprocess."""
@@ -218,8 +205,8 @@ class StdioToolAdapter(ToolAdapter):
         if len(lines) != 1:
             return self._failure_by_id(invocation_id, ToolStatus.PROTOCOL_ERROR, "INVALID_RESPONSE", "A extensão deve emitir exatamente uma linha JSON.", "Protocolo stdio inválido.")
         try:
-            response = json.loads(lines[0])
-        except json.JSONDecodeError as exc:
+            response = json.loads(lines[0], object_pairs_hook=_strict_pairs, parse_float=_strict_float, parse_constant=_reject_constant)
+        except (ValueError, RecursionError) as exc:
             return self._failure_by_id(invocation_id, ToolStatus.PROTOCOL_ERROR, "INVALID_RESPONSE", str(exc), "Resposta inválida da extensão.")
         if not isinstance(response, dict):
             return self._failure_by_id(invocation_id, ToolStatus.PROTOCOL_ERROR, "INVALID_RESPONSE", "Resposta deve ser um objeto JSON.", "Resposta inválida da extensão.")

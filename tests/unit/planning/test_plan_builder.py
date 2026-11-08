@@ -1,5 +1,9 @@
+import json
+
 import pytest
 
+from llm_agent.agent.llm.admitted_decisions import InitialPlanDecision, admit_typed_model_decision
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.planning.plan_builder import PlanBuilder, build_planner_tools_description
 from llm_agent.agent.state import AgentState
 
@@ -61,7 +65,34 @@ def test_initial_prompt_requests_one_complete_persisted_plan() -> None:
     assert '"op":"equals"' in prompt
     assert '"waive_effect":"write"' in prompt
     assert "este contrato substitui exemplos legados de action=tool" in prompt
-    assert '"action": "continue_after_plan"' in prompt
+    assert "continue_after_plan" not in prompt
+
+
+def test_initial_prompt_action_examples_match_exact_admission_contract() -> None:
+    prompt = PlanBuilder(_PromptOrchestrator())._build_prompt("compare a.txt e b.txt")
+    examples = [
+        json.loads(line)
+        for line in prompt.splitlines()
+        if line.startswith('{"action":')
+    ]
+
+    assert examples
+    assert {example["action"] for example in examples} == {"direct_response", "use_tools"}
+    for example in examples:
+        decision = admit_typed_model_decision(
+            example, request_contract=ModelRequestContract.INITIAL_PLAN
+        )
+        assert decision is not None
+        if example["action"] == "use_tools":
+            assert isinstance(decision, InitialPlanDecision)
+
+    legacy_example = {
+        "action": "continue_after_plan",
+        "plan": [{"tool": "file_reader", "args": {}}],
+    }
+    assert admit_typed_model_decision(
+        legacy_example, request_contract=ModelRequestContract.INITIAL_PLAN
+    ) is None
 
 
 def test_initial_prompt_frames_file_hints_as_untrusted_project_data() -> None:

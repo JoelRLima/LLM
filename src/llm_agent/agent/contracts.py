@@ -143,5 +143,6 @@ class CheckpointData(TypedDict, total=False):
     reasoning_last_progress_token: Optional[str]
     continue_after_plan: bool
     recovery_budget: Dict[str, Any]
+    requirement_replan_fingerprints: List[str]
     # Compact identity/binding only; bodies remain in the durable repository.
     task_definition: Dict[str, Any]

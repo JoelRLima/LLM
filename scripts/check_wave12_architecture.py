@@ -176,6 +176,11 @@ def _has_text(root: Path, relative: str, *needles: str) -> bool:
     return source is not None and all(needle in source for needle in needles)
 
 
+def _guard_text(root: Path, owner: str, *needles: str) -> bool:
+    """Check the implementation module after the legacy guards facade split."""
+    return _has_text(root, f"agent/interaction/{owner}.py", *needles)
+
+
 def _check_s1(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative in RESOLVER_FILES:
@@ -472,7 +477,7 @@ def _check_s28(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s29(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", "OperationalClassification.HYPOTHETICAL", "_standalone_plain_conditional") and _has_text(root, "agent/interaction/admission.py", "guard is not OperationalClassification.DIRECT") else [_violation("W12-S29", "agent/interaction", "conditional effects can escape inferred-DO admission")]
+    return [] if _guard_text(root, "guard_operational", "OperationalClassification.HYPOTHETICAL", "_standalone_plain_conditional") and _has_text(root, "agent/interaction/admission.py", "guard is not OperationalClassification.DIRECT") else [_violation("W12-S29", "agent/interaction", "conditional effects can escape inferred-DO admission")]
 
 
 def _check_s30(root: Path) -> list[ArchitectureViolation]:
@@ -490,24 +495,38 @@ def _check_s32(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s33(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/interaction/guards.py") or ""
+    source = _source(root, "agent/interaction/guard_targets.py") or ""
     bad = "anchor in complement" in source or "any(anchor in" in source
     return [_violation("W12-S33", "agent/interaction/guards.py", "target proof scans an entire complement", None)] if bad else []
 
 
 def _check_s34(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", "_standalone_plain_conditional", "OperationalClassification.HYPOTHETICAL") else [_violation("W12-S34", "agent/interaction/guards.py", "conditional suffix guard is missing")]
+    return [] if _guard_text(root, "guard_operational", "_standalone_plain_conditional", "OperationalClassification.HYPOTHETICAL") else [_violation("W12-S34", "agent/interaction/guard_operational.py", "conditional suffix guard is missing")]
 
 
 def _check_s35(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", '"TARGET_SCOPED"', '"FAMILY_ALL"') else [_violation("W12-S35", "agent/interaction/guards.py", "negative restriction scopes are not distinguished")]
+    return [] if _guard_text(root, "guard_cross", '"TARGET_SCOPED"', '"FAMILY_ALL"') else [_violation("W12-S35", "agent/interaction/guard_cross.py", "negative restriction scopes are not distinguished")]
 
 
 def _check_s36(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/interaction/guards.py") or ""
-    family = source.find('restriction.scope == "FAMILY_ALL"')
-    anchor = source.find("_target_for_relation", family if family >= 0 else 0)
-    return [] if family >= 0 and anchor > family else [_violation("W12-S36", "agent/interaction/guards.py", "FAMILY_ALL is not consumed before target relation")]
+    tree = _tree(root, "agent/interaction/guard_cross.py")
+    function = _function(tree, "_compare_claim_pair")
+    if function is not None:
+        for index, statement in enumerate(function.body):
+            if not isinstance(statement, ast.If) or ast.unparse(statement.test) not in {
+                "restriction.scope == 'FAMILY_ALL'",
+                'restriction.scope == "FAMILY_ALL"',
+            }:
+                continue
+            returns_early = any(isinstance(node, ast.Return) for node in ast.walk(statement.body[0])) if statement.body else False
+            later_calls = any(
+                isinstance(node, ast.Call) and _name(node.func) == "_target_for_relation"
+                for later in function.body[index + 1 :]
+                for node in ast.walk(later)
+            )
+            if returns_early and later_calls:
+                return []
+    return [_violation("W12-S36", "agent/interaction/guard_cross.py", "FAMILY_ALL is not consumed before target relation", function)]
 
 
 def _check_s37(root: Path) -> list[ArchitectureViolation]:
@@ -515,8 +534,8 @@ def _check_s37(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s38(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/interaction/guards.py") or ""
-    return [] if "value.startswith(core + \" \")" in source else [_violation("W12-S38", "agent/interaction/guards.py", "NETWORK FAMILY_ALL lacks trailing-core matching")]
+    source = _source(root, "agent/interaction/guard_cross.py") or ""
+    return [] if "value.startswith(core + \" \")" in source else [_violation("W12-S38", "agent/interaction/guard_cross.py", "NETWORK FAMILY_ALL lacks trailing-core matching")]
 
 
 def _check_s39(root: Path) -> list[ArchitectureViolation]:
@@ -525,7 +544,7 @@ def _check_s39(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s40(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", "NEGATIVE_INFINITIVE_FORMS") else [_violation("W12-S40", "agent/interaction/guards.py", "local/cross negation does not share canonical forms")]
+    return [] if _guard_text(root, "guard_operational", "NEGATIVE_INFINITIVE_FORMS") else [_violation("W12-S40", "agent/interaction/guard_operational.py", "local/cross negation does not share canonical forms")]
 
 
 def _check_s41(root: Path) -> list[ArchitectureViolation]:
@@ -538,7 +557,24 @@ def _check_s42(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s43(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/application.py", "cancel_active_model_call") and _has_text(root, "agent/interaction/service.py", "_active_model_cancellation") else [_violation("W12-S43", "agent/application.py", "application cancellation lacks active interaction seam")]
+    application = _tree(root, "agent/application.py")
+    app_class = next(
+        (
+            node
+            for node in (application.body if application is not None else ())
+            if isinstance(node, ast.ClassDef) and node.name == "AgentApplication"
+        ),
+        None,
+    )
+    lifecycle_mixin_is_used = app_class is not None and any(
+        isinstance(base, ast.Name) and base.id == "ApplicationLifecycleMixin"
+        for base in app_class.bases
+    )
+    return [] if (
+        lifecycle_mixin_is_used
+        and _has_text(root, "agent/application_lifecycle.py", "cancel_active_model_call")
+        and _has_text(root, "agent/interaction/service.py", "_active_model_cancellation")
+    ) else [_violation("W12-S43", "agent/application_lifecycle.py", "application cancellation lacks active interaction seam")]
 
 
 def _is_active_interaction_cancel(node: ast.AST) -> bool:
@@ -613,7 +649,7 @@ def _has_explicit_return_guard(statements: list[ast.stmt]) -> bool:
 
 
 def _check_s44(root: Path) -> list[ArchitectureViolation]:
-    relative = "agent/application.py"
+    relative = "agent/application_lifecycle.py"
     method = _function(_tree(root, relative), "cancel")
     if method is None:
         return [_violation("W12-S44", relative, "active interaction cancel fans out to task cancellation")]
@@ -633,7 +669,8 @@ def _check_s44(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s45(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", "normalize_clause_for_guard") else [_violation("W12-S45", "agent/interaction/guards.py", "guards do not use shared clause normalization")]
+    owners = ("guard_intent", "guard_operational", "guard_targets")
+    return [] if all(_guard_text(root, owner, "normalize_clause_for_guard") for owner in owners) else [_violation("W12-S45", "agent/interaction", "guards do not use shared clause normalization")]
 
 
 def _check_s46(root: Path) -> list[ArchitectureViolation]:
@@ -647,7 +684,7 @@ def _check_s47(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s48(root: Path) -> list[ArchitectureViolation]:
-    return [] if _has_text(root, "agent/interaction/guards.py", "_target_fragment", "__unproven__") else [_violation("W12-S48", "agent/interaction/guards.py", "tail-closed effect target proof is missing")]
+    return [] if _guard_text(root, "guard_targets", "_target_fragment", "__unproven__") else [_violation("W12-S48", "agent/interaction/guard_targets.py", "tail-closed effect target proof is missing")]
 
 
 def _check_s49(root: Path) -> list[ArchitectureViolation]:
@@ -667,9 +704,15 @@ def _check_s50(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_s51(root: Path) -> list[ArchitectureViolation]:
-    source = _source(root, "agent/interaction/guards.py") or ""
-    cross = source[source.find("def cross_clause_effect_conflict") :]
-    return [] if "def normalize_target_anchor_identity" in source and "_target_for_relation(" in cross else [_violation("W12-S51", "agent/interaction/guards.py", "cross-clause relation lacks canonical target identity")]
+    cross_tree = _tree(root, "agent/interaction/guard_cross.py")
+    target_tree = _tree(root, "agent/interaction/guard_targets.py")
+    relation = _function(cross_tree, "_target_for_relation")
+    calls_canonicalizer = relation is not None and any(
+        isinstance(node, ast.Call) and _name(node.func) == "normalize_target_anchor_identity"
+        for node in ast.walk(relation)
+    )
+    canonicalizer = _function(target_tree, "normalize_target_anchor_identity")
+    return [] if calls_canonicalizer and canonicalizer is not None else [_violation("W12-S51", "agent/interaction/guard_cross.py", "cross-clause relation lacks canonical target identity")]
 
 
 def _check_s52(root: Path) -> list[ArchitectureViolation]:

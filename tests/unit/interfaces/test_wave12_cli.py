@@ -1,21 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
+from llm_agent.agent.interaction.types import AgentInteractionResult
 from llm_agent.application.task_execution import _retain_runtime
 from llm_agent.interfaces.cli import app as cli
 from llm_agent.interfaces.cli import commands
-
-
-@dataclass
-class _Result:
-    success: bool = True
-    answer: str = "ok"
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"success": self.success, "status": "succeeded", "answer": self.answer, "error": self.error}
 
 
 class _InteractionApplication:
@@ -23,9 +13,9 @@ class _InteractionApplication:
         self.calls: list[dict[str, Any]] = []
         self.closed = 0
 
-    def interact(self, text: str, **kwargs: Any) -> _Result:
+    def interact(self, text: str, **kwargs: Any) -> AgentInteractionResult:
         self.calls.append({"text": text, **kwargs})
-        return _Result()
+        return AgentInteractionResult("succeeded", "ok", None)
 
     def close(self) -> None:
         self.closed += 1

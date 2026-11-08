@@ -25,3 +25,16 @@ def test_report_failures_handles_missing_report_without_masking_failure(
 ) -> None:
     assert report_failures(tmp_path / "missing.xml") == 0
     assert "JUnit report not found" in capsys.readouterr().out
+
+
+def test_report_failures_handles_malformed_xml_without_traceback(
+    tmp_path: Path, capsys
+) -> None:
+    report = tmp_path / "truncated.xml"
+    report.write_text("<testsuite><testcase>", encoding="utf-8")
+
+    assert report_failures(report) == 0
+
+    output = capsys.readouterr().out
+    assert "Could not read JUnit report" in output
+    assert "no element found" in output

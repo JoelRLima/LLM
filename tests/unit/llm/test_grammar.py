@@ -1,6 +1,7 @@
 """Tests for canonical grammar selection and typed model requests."""
 
 import inspect
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from llm_agent.agent.llm import grammars
 from llm_agent.agent.llm.context_manager import ContextManager
 from llm_agent.agent.llm.contracts import ModelResponse
+from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.llm.grammars import AUTO_GRAMMAR, get_grammar
 from llm_agent.agent.llm.session import ChatSession
 from llm_agent.agent.llm.structured_output import normalize_model_decision
@@ -95,6 +97,55 @@ def test_get_grammar_uses_effective_config_without_global_mutation(monkeypatch):
 
     assert get_grammar("tool_decision", {"ENABLE_GBNF": False}) is None
     assert get_grammar("tool_decision", {"ENABLE_GBNF": True}) == grammars.TOOL_DECISION_GRAMMAR
+
+
+def test_task_contract_grammar_matches_closed_optional_check_shape():
+    grammar = get_grammar(
+        "task_contract",
+        {"ENABLE_GBNF": True},
+        request_contract=ModelRequestContract.TASK_CONTRACT,
+    )
+
+    assert grammar == grammars.TASK_CONTRACT_GRAMMAR
+    assert '"\\\"verification_checks\\\""' in grammar
+    assert "file-exists-check" in grammar
+    assert "json-fields-check" in grammar
+    assert "non-empty-string-array" in grammar
+    assert '"\\\"intent\\\""' not in grammar
+
+
+def test_task_contract_admission_rejects_json_fields_without_required_fields():
+    contract = {
+        "task_id": "grammar-task",
+        "objective": "Read the data file.",
+        "summary": "Read data",
+        "requirements": ["Read the data file"],
+        "constraints": [],
+        "invariants": [],
+        "success_criteria": [],
+        "out_of_scope": [],
+        "stop_conditions": [],
+        "assumptions": [],
+        "open_questions": [],
+        "verification_checks": [
+            {
+                "check_id": "v1",
+                "kind": "json_fields",
+                "field": "requirements",
+                "index": 0,
+                "path": "data.json",
+            }
+        ],
+    }
+    raw = json.dumps({"action": "define_contract", "contract": contract})
+
+    admitted = normalize_model_decision(
+        ModelResponse(content=raw),
+        request_contract=ModelRequestContract.TASK_CONTRACT,
+        step_type="task_contract",
+    )
+
+    assert admitted is None
 
 
 def test_tool_decision_grammar_matches_canonical_parser():

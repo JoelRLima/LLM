@@ -268,6 +268,7 @@ def test_process_runner_sanitizes_python_and_pytest_environment(
         "import os;"
         "print('|'.join(str(os.environ.get(name)) for name in "
         "('PYTHONPATH','PYTHONHOME','PYTEST_ADDOPTS','PYTEST_PLUGINS')));"
+        "print('|'.join(os.environ.get(name,'') for name in ('TEMP','TMP','TMPDIR')));"
         "print(os.environ['PYTHONDONTWRITEBYTECODE']);"
         "print(os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'])"
     )
@@ -279,6 +280,7 @@ def test_process_runner_sanitizes_python_and_pytest_environment(
     assert result.status == ValidationStatus.PASSED
     assert result.stdout.splitlines() == [
         "None|None|None|None",
+        "|".join([str(tmp_path)] * 3),
         "1",
         "1",
     ]

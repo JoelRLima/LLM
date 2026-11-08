@@ -14,6 +14,13 @@ OpenAI-compatible, payloads, `choices`, SSE, tokenização opcional e capabiliti
 de structured output. `factory.py` resolve um profile de configuração e cria o
 gateway. Não há adapter nativo adicional documentado como suportado.
 
+`providers/openai_response.py` valida os formatos de resposta e stream antes
+de expor os valores neutros. Dados malformados falham como `ModelResponseError`;
+contagens de uso inválidas permanecem indisponíveis. O gateway fecha respostas
+de chat, streaming e tokenização opcional, inclusive em saídas antecipadas e
+falhas. Erros de transporte durante o stream preservam a taxonomia de conexão
+e timeout, sem emitir conclusão normal após a falha.
+
 `ResolvedModelProfile` carrega somente a referência opcional de credencial. O
 shape V1 aceita `source=env`, `kind=bearer` e um nome de variável; o valor não
 entra no profile persistido, em requests, métricas ou eventos. A resolução é

@@ -9,9 +9,10 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
+from llm_agent.agent.observability.credential_patterns import redact_credentials
 from llm_agent.agent.observability.redaction_keys import key_as_text
 
-REDACTION_POLICY_VERSION = "w9-redaction-v1"
+REDACTION_POLICY_VERSION = "w9-redaction-v2"
 REDACTED_VALUE = "[REDACTED]"
 OMITTED_VALUE = "[OMITTED]"
 
@@ -93,19 +94,6 @@ _OMITTED_KEY_NAMES = frozenset(
     }
 )
 
-_BEARER_RE = re.compile(
-    r"(?i)(\bbearer\s+)(?!\[REDACTED\])([^\s,;\]}\"']+)"
-)
-_ASSIGNMENT_RE = re.compile(
-    r"(?i)(\b(?:api[ _-]?key|api[ _-]?token|access[ _-]?token|refresh[ _-]?token|token|"
-    r"authorization|cookie|session[ _-]?secret|password|passphrase|secret|credentials?|"
-    r"task[ _-]?authority(?:[ _-]?token)?|(?:capability|authority)[ _-]?token)\b"
-    r"\s*[:=]\s*)(?P<quote>[\"']?)(?P<value>[^\s,;}\]\"']+)(?P=quote)"
-)
-_AUTHORIZATION_RE = re.compile(
-    r"(?i)(\bauthorization\s*[:=]\s*)(?P<scheme>[A-Za-z][A-Za-z0-9_-]*\s+)?"
-    r"(?P<quote>[\"']?)(?P<value>[^\s,;}\]\"']+)(?P=quote)"
-)
 
 
 def _normalized_key(key: str) -> str:
@@ -166,13 +154,7 @@ def redact_text(value: str, *, limit: int = MAX_OBSERVATION_TEXT) -> str:
     if not isinstance(value, str):
         raise TypeError("observation text must be a string")
 
-    def assignment(match: re.Match[str]) -> str:
-        quote = match.group("quote")
-        return f"{match.group(1)}{quote}{REDACTED_VALUE}{quote}"
-
-    sanitized = _AUTHORIZATION_RE.sub(assignment, value)
-    sanitized = _ASSIGNMENT_RE.sub(assignment, sanitized)
-    sanitized = _BEARER_RE.sub(rf"\1{REDACTED_VALUE}", sanitized)
+    sanitized = redact_credentials(value)
     if len(sanitized) <= limit:
         return sanitized
     return sanitized[: max(0, limit - 3)] + "..."

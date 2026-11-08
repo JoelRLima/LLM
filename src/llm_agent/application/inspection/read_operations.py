@@ -91,7 +91,7 @@ def list_inspection_runs(
     """List retained runs as canonical primitive projections."""
 
     try:
-        return tuple(run.to_dict() for run in context._service.list_runs(limit=request.limit))
+        return tuple(run.to_dict() for run in context._service.list_runs(limit=request.limit, offset=request.offset))
     except TraceUnavailableError as exc:
         raise InspectionUnavailableError(str(exc)) from exc
     except TraceCorruptError as exc:

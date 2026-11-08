@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import json
-import re
 from collections.abc import Callable
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from llm_agent.agent.llm.admitted_decisions import (
     ModelDecisionValue,
     _project_exactly_admitted_model_decision,
 )
-from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, response_text
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, StructuredOutputMode, response_text
 from llm_agent.agent.llm.decision_contract import (
     ModelRequestContract,
     admit_model_decision_value,
@@ -18,6 +16,8 @@ from llm_agent.agent.llm.decision_contract import (
     request_contract_for_request,
 )
 from llm_agent.agent.llm.errors import ModelProviderError
+from llm_agent.agent.llm.grammar_errors import is_grammar_unsupported_error
+from llm_agent.agent.llm.model_json import extract_json_value
 from llm_agent.agent.llm.structured_output_strategy import (
     StructuredOutputError,
     StructuredOutputStrategy,
@@ -25,25 +25,6 @@ from llm_agent.agent.llm.structured_output_strategy import (
 from llm_agent.agent.runtime.budget import BudgetExhausted
 
 
-def extract_json_value(text: str) -> Any:
-    if not isinstance(text, str) or not text.strip():
-        raise StructuredOutputError("Resposta estruturada vazia.")
-    cleaned = text.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, flags=re.IGNORECASE)
-    if fenced:
-        cleaned = fenced.group(1).strip()
-    decoder = json.JSONDecoder()
-    starts = [index for index, char in enumerate(cleaned) if char in "[{"]
-    for start in starts:
-        try:
-            value, end = decoder.raw_decode(cleaned[start:])
-        except json.JSONDecodeError:
-            continue
-        suffix = cleaned[start + end :].strip()
-        if suffix and not suffix.startswith("```"):
-            continue
-        return value
-    raise StructuredOutputError("Não foi encontrado um JSON completo e válido.")
 def _validate_schema_type(value: Any, schema: Dict[str, Any], path: str) -> None:
     expected_type = schema.get("type")
     type_map: Dict[str, Any] = {
@@ -93,11 +74,29 @@ def parse_structured_response(text: str, schema: Optional[Dict[str, Any]] = None
     if schema:
         validate_json_schema(value, schema)
     return value
+
+
+def parse_model_response(response: ModelResponse | str, schema: Optional[Dict[str, Any]] = None) -> Any:
+    """Validate completion metadata before decoding a structured decision."""
+    if getattr(response, "finish_reason", None) in {"length", "content_filter"}:
+        raise StructuredOutputError("A saída estruturada foi interrompida pelo provedor.")
+    return parse_structured_response(response_text(response), schema)
+
+
 def _parsed_response(response: ModelResponse | str) -> Any:
     try:
-        return parse_structured_response(response_text(response))
+        return parse_model_response(response)
     except StructuredOutputError:
         return None
+
+
+def _decision_error(response: ModelResponse | str) -> Dict[str, Any]:
+    reason = getattr(response, "finish_reason", None)
+    code, message = {
+        "length": ("MODEL_OUTPUT_INCOMPLETE", "A resposta do modelo foi interrompida pelo limite de saída."),
+        "content_filter": ("MODEL_OUTPUT_FILTERED", "A resposta do modelo foi interrompida pelo provedor."),
+    }.get(reason if isinstance(reason, str) else "", ("MODEL_DECISION_INVALID", "A resposta do modelo não atende ao contrato solicitado."))
+    return {"action": "error", "error_code": code, "message": message, "raw_response": response_text(response)}
 def is_model_decision_contract_valid(
     response: ModelResponse | str,
     step_type: str | None = None,
@@ -112,16 +111,7 @@ def normalize_model_decision(
     request_contract: ModelRequestContract | str | None = None,
 ) -> Optional[Dict[str, Any]]:
     parsed = _parsed_response(response)
-    return normalize_generic_model_decision(parsed) if step_type is None and request_contract is None else admit_model_decision_value(parsed, step_type=step_type, request_contract=request_contract)
-def is_grammar_unsupported_error(error: Exception) -> bool:
-    response = getattr(error, "response", None)
-    if response is None or getattr(response, "status_code", None) != 400:
-        return False
-    try:
-        body_text = response.text or ""
-    except Exception:
-        body_text = ""
-    return "grammar" in body_text.lower()
+    return cast(Optional[Dict[str, Any]], normalize_generic_model_decision(parsed) if step_type is None and request_contract is None else admit_model_decision_value(parsed, step_type=step_type, request_contract=request_contract))
 def _complete_or_wrap(
     complete: Callable[[ModelRequest], ModelResponse],
     request: ModelRequest,
@@ -153,6 +143,14 @@ def _complete_initial_request(
     set_grammar_supported: Callable[[bool], None],
     fallback_request: Callable[[ModelRequest], ModelRequest] | None,
 ) -> tuple[ModelResponse, ModelRequest]:
+    # A desired grammar is not evidence that the request actually sent GBNF.
+    structured = request.structured_output
+    active_grammar = (
+        structured.grammar
+        if grammar is not None and structured is not None
+        and structured.mode is StructuredOutputMode.GBNF and structured.grammar
+        else None
+    )
     try:
         response = complete(request)
     except (BudgetExhausted, ModelProviderError):
@@ -160,7 +158,7 @@ def _complete_initial_request(
     except Exception as exc:
         builder = _grammar_fallback_builder(
             exc,
-            grammar=grammar,
+            grammar=active_grammar,
             grammar_supported=grammar_supported,
             fallback_request=fallback_request,
         )
@@ -169,7 +167,7 @@ def _complete_initial_request(
         set_grammar_supported(False)
         active_request = builder(request)
         return _complete_or_wrap(complete, active_request), active_request
-    if grammar is not None and grammar_supported is None:
+    if active_grammar is not None and grammar_supported is None:
         set_grammar_supported(True)
     return response, request
 def _request_contract_hint(
@@ -237,12 +235,10 @@ def resolve_model_decision(
     )
     if legacy_decision is not None:
         return legacy_decision
+    if getattr(response, "finish_reason", None) == "content_filter":
+        return _decision_error(response)
     if retry_authorizer is not None and not retry_authorizer():
-        return {
-            "action": "error",
-            "message": "Falha ao extrair JSON da resposta.",
-            "raw_response": response_text(response),
-        }
+        return _decision_error(response)
     retry_request_value = retry_request()
     retry_contract_hint = _request_contract_hint(
         retry_request_value,
@@ -272,9 +268,7 @@ def resolve_model_decision(
     )
     if legacy_retry_decision is not None:
         return legacy_retry_decision
-    return {
-        "action": "error",
-        "message": "Falha ao extrair JSON da resposta.",
-        "raw_response": response_text(response),
-    }
-__all__ = ["StructuredOutputError", "StructuredOutputStrategy", "extract_json_value", "is_model_decision_contract_valid", "is_grammar_unsupported_error", "normalize_model_decision", "parse_structured_response", "resolve_model_decision", "validate_json_schema"]
+    failure = _decision_error(retry_response)
+    failure["initial_raw_response"] = response_text(response)
+    return failure
+__all__ = ["StructuredOutputError", "StructuredOutputStrategy", "extract_json_value", "is_model_decision_contract_valid", "is_grammar_unsupported_error", "normalize_model_decision", "parse_structured_response", "parse_model_response", "resolve_model_decision", "validate_json_schema"]

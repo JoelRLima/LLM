@@ -21,7 +21,6 @@ from .errors import (
     INTERACTION_CANCELLED,
     INTERACTION_EVIDENCE_MISMATCH,
     INTERACTION_INPUT_INVALID,
-    INTERACTION_INPUT_REQUIRED,
     INTERACTION_INPUT_TOO_LARGE,
     INTERACTION_INTERNAL_FAILED,
     INTERACTION_REQUEST_CONTRACT_MISMATCH,
@@ -34,6 +33,7 @@ from .errors import (
     InteractionAdmissionError,
     public_explanation,
 )
+from .input_validation import _natural_input_reason, _visible_input_reason, input_resolution
 from .resolver import (
     InteractionResolver,
     ResolverInvalid,
@@ -114,6 +114,7 @@ class InteractionService:
         answer: str = "",
         error: str | None = None,
         context: Any = None,
+        transport_error: BaseException | None = None,
     ) -> AgentInteractionResult:
         return AgentInteractionResult(
             status=status,
@@ -122,22 +123,27 @@ class InteractionService:
             error=error,
             reason_code=reason_code,
             interaction_usage=self._usage(context),
+            transport_error=transport_error,
         )
+
+    @staticmethod
+    def _transport_cause(error: BaseException) -> BaseException | None:
+        current: BaseException | None = error
+        while current is not None:
+            if isinstance(current, (ModelConnectionError, ModelTimeoutError)):
+                return current
+            current = current.__cause__
+        return None
     @staticmethod
     def _input_resolution(
         boundary: InteractionBoundary,
         reason_code: str,
     ) -> InteractionResolution:
-        return InteractionResolution(
-            action=InteractionAction.CLARIFY,
+        return input_resolution(
             boundary=boundary,
-            directive=None,
-            deliberation_profile=None,
-            provenance=InteractionProvenance.DETERMINISTIC,
-            ambiguity=InteractionAmbiguity.NONE,
-            subject=None,
             reason_code=reason_code,
         )
+
     def _input_failure(
         self,
         boundary: InteractionBoundary,
@@ -153,27 +159,11 @@ class InteractionService:
     @staticmethod
     def _natural_input_reason(text: object, visible_user_text: object | None) -> str | None:
         """Validate NATURAL identity and its semantic subject before dispatch."""
-        # NATURAL subject identity is checked before any resolver or task work.
-        if type(text) is not str:
-            return INTERACTION_INPUT_INVALID
-        if visible_user_text is not None and (
-            type(visible_user_text) is not str or visible_user_text != text
-        ):
-            return INTERACTION_INPUT_INVALID
-        if not text.strip():
-            return INTERACTION_INPUT_REQUIRED
-        if len(text) > 8192:
-            return INTERACTION_INPUT_TOO_LARGE
-        return None
+        return _natural_input_reason(text, visible_user_text)
     @staticmethod
     def _visible_input_reason(visible: object) -> str | None:
-        if type(visible) is not str:
-            return INTERACTION_INPUT_INVALID
-        if not visible.strip():
-            return INTERACTION_INPUT_REQUIRED
-        if len(visible) > 8192:
-            return INTERACTION_INPUT_TOO_LARGE
-        return None
+        """Validate explicitly supplied display text before transcript admission."""
+        return _visible_input_reason(visible)
     def _commit_clarify(
         self,
         visible_text: str,
@@ -196,6 +186,7 @@ class InteractionService:
         reason_code: str,
         *,
         context: Any = None,
+        transport_error: BaseException | None = None,
     ) -> AgentInteractionResult:
         answer = public_explanation(reason_code)
         commit_one_pair(self.session, visible_text, answer)
@@ -204,6 +195,7 @@ class InteractionService:
             reason_code=reason_code,
             answer=answer,
             context=context,
+            transport_error=transport_error,
         )
     def _cancelled(self, context: Any = None) -> AgentInteractionResult:
         return self._failure(
@@ -374,7 +366,10 @@ class InteractionService:
         except ResolverUnavailable as exc:
             if str(exc) == INTERACTION_CANCELLED:
                 return self._cancelled(context)
-            return self._commit_unavailable(visible, INTERACTION_RESOLVER_UNAVAILABLE, context=context)
+            return self._commit_unavailable(
+                visible, INTERACTION_RESOLVER_UNAVAILABLE, context=context,
+                transport_error=self._transport_cause(exc),
+            )
         except ResolverInvalid:
             semantic_observability.emit_semantic_parse_event(self.application, failure_reason=INTERACTION_RESOLVER_INVALID)
             return self._commit_unavailable(visible, INTERACTION_RESOLVER_INVALID, context=context)
@@ -402,8 +397,11 @@ class InteractionService:
                 error=public_explanation(INTERACTION_INTERNAL_FAILED),
                 context=context,
             )
-        except (ModelTimeoutError, ModelConnectionError, ModelProviderError, UnsupportedModelCapability, BudgetExhausted):
-            return self._commit_unavailable(visible, INTERACTION_RESOLVER_UNAVAILABLE, context=context)
+        except (ModelTimeoutError, ModelConnectionError, ModelProviderError, UnsupportedModelCapability, BudgetExhausted) as exc:
+            return self._commit_unavailable(
+                visible, INTERACTION_RESOLVER_UNAVAILABLE, context=context,
+                transport_error=self._transport_cause(exc),
+            )
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             raise
         except Exception:
@@ -472,13 +470,15 @@ class InteractionService:
                     reason_code=INTERACTION_RESPONSE_UNAVAILABLE,
                     error=public_explanation(INTERACTION_RESPONSE_UNAVAILABLE),
                     context=context,
+                    transport_error=self._transport_cause(exc),
                 )
-            except (ModelTimeoutError, ModelConnectionError, ModelProviderError, UnsupportedModelCapability, BudgetExhausted):
+            except (ModelTimeoutError, ModelConnectionError, ModelProviderError, UnsupportedModelCapability, BudgetExhausted) as exc:
                 return self._failure(
                     status="unavailable",
                     reason_code=INTERACTION_RESPONSE_UNAVAILABLE,
                     error=public_explanation(INTERACTION_RESPONSE_UNAVAILABLE),
                     context=context,
+                    transport_error=self._transport_cause(exc),
                 )
             except (ModelResponseError, ValueError):
                 return self._failure(

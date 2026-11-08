@@ -255,9 +255,11 @@ class DeterministicJourneyGateway:
             raise RuntimeError("provider request failed https://example.test/?api_key=TOPSECRET")
         system = str(messages[0].get("content", "")) if messages else ""
         prompt = str(messages[-1].get("content", "")) if messages else ""
-        if "You are a Router Agent" in system:
+        raw_contract = getattr(request, "request_contract", None)
+        request_contract = getattr(raw_contract, "value", raw_contract)
+        if request_contract == ModelRequestContract.PERSONA_ROUTE.value or "You are a Router Agent" in system:
             return '{"persona": "coder"}'
-        if "TOOL DISCOVERY" in prompt:
+        if request_contract == ModelRequestContract.TOOL_DISCOVERY.value or "TOOL DISCOVERY" in prompt:
             if self.scenario_id == "audit_unknown":
                 return '{"tools":["missing_tool"]}'
             marker = "<untrusted_tool_catalog>"
@@ -290,32 +292,47 @@ class DeterministicJourneyGateway:
             selected = [name for name in preferred.get(self.scenario_id, ("file_reader",)) if name in names]
             selected.extend(name for name in names if name not in selected)
             return json.dumps({"tools": selected[:8]})
-        if "Escolha exatamente uma das duas respostas JSON" in prompt:
+        if request_contract in {
+            ModelRequestContract.INITIAL_PLAN.value,
+            ModelRequestContract.REACTIVE_TOOL_DECISION.value,
+            ModelRequestContract.REPLAN.value,
+        } or "Escolha exatamente uma das duas respostas JSON" in prompt:
             if self.scenario_id == "audit_unknown":
                 return '{"action":"direct_response","answer":"unknown tool denial was observed"}'
             if self.scenario_id == "a6_direct":
-                return '{"action":"direct_response","answer":"abacaxi azul"}'
+                if request_contract == ModelRequestContract.INITIAL_PLAN.value:
+                    return '{"action":"direct_response","answer":"abacaxi azul"}'
+                return '{"action":"final","answer":"abacaxi azul"}'
             if self.scenario_id == "a1_read":
-                return '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
-            if self.scenario_id == "a2_search":
-                return '{"plan":[{"tool":"grep","args":{"pattern":"SLICE_A2_EVIDENCE","path":"."}}]}'
-            if self.scenario_id in {"c1_history", "c3_failure"}:
-                return '{"plan":[{"tool":"shell","args":{"command":"git log -1"}}]}'
-            if self.scenario_id == "c2_unsupported":
-                return '{"plan":[{"tool":"shell","args":{"command":"git status"}}]}'
-            if (
-                self.scenario_id
-                in {"b1_modify_validate", "b2_validation_failure", "b4_denied_modify", "b5_preview_blocked"}
-            ):
-                return '{"plan":[{"tool":"code_task","args":{"action":"modify","objective":"%s","targets":["sample.py"]}}]}' % self.objective
-            if self.scenario_id == "b3_writer_bypass":
-                return '{"plan":[{"tool":"file_writer","args":{"action":"write","file_path":"sample.py","content":"bypass\\n"}}]}'
-            if self.scenario_id in {"d1_success", "d3_denied", "d4_failure"}:
+                step = {"tool": "file_reader", "args": {"file_path": "notes.txt"}}
+            elif self.scenario_id == "a2_search":
+                step = {"tool": "grep", "args": {"pattern": "SLICE_A2_EVIDENCE", "path": "."}}
+            elif self.scenario_id in {"c1_history", "c3_failure"}:
+                step = {"tool": "shell", "args": {"command": "git log -1"}}
+            elif self.scenario_id == "c2_unsupported":
+                step = {"tool": "shell", "args": {"command": "git status"}}
+            elif self.scenario_id in {"b1_modify_validate", "b2_validation_failure", "b4_denied_modify", "b5_preview_blocked"}:
+                step = {
+                    "tool": "code_task",
+                    "args": {"action": "modify", "objective": self.objective, "targets": ["sample.py"]},
+                }
+            elif self.scenario_id == "b3_writer_bypass":
+                step = {"tool": "file_writer", "args": {"action": "write", "file_path": "sample.py", "content": "bypass"}}
+            elif self.scenario_id in {"d1_success", "d3_denied", "d4_failure"}:
                 marker = "D1_EXTERNAL_EVIDENCE" if self.scenario_id == "d1_success" else ("D3_AUTHORITY_DENIED" if self.scenario_id == "d3_denied" else "D4_EXTERNAL_FAILURE")
-                return '{"plan":[{"tool":"demo_tool","args":{"text":"%s"}}]}' % marker
-            if self.scenario_id in {"w12_natural_read", "w12_task_respond", "w12_explicit_read"}:
-                return '{"plan":[{"tool":"file_reader","args":{"file_path":"parser.py"}}]}'
-            return '{"plan":[{"tool":"file_reader","args":{"file_path":"../outside.txt"}}]}'
+                step = {"tool": "demo_tool", "args": {"text": marker}}
+            elif self.scenario_id in {"w12_natural_read", "w12_task_respond", "w12_explicit_read"}:
+                step = {"tool": "file_reader", "args": {"file_path": "parser.py"}}
+            elif self.scenario_id not in {"a1_read", "a2_search"}:
+                step = {"tool": "file_reader", "args": {"file_path": "../outside.txt"}}
+            if request_contract == ModelRequestContract.INITIAL_PLAN.value:
+                return json.dumps({"action": "use_tools", "plan": [step]})
+            if request_contract in {
+                ModelRequestContract.REACTIVE_TOOL_DECISION.value,
+                ModelRequestContract.REPLAN.value,
+            }:
+                return json.dumps({"action": "tool", **step})
+            return json.dumps({"action": "use_tools", "plan": [step]})
         if "Uma fronteira sem" in prompt:
             return '{"action":"complete","reason":"as observacoes reais bastam"}'
         structured = getattr(request, "structured_output", None)
@@ -1842,11 +1859,11 @@ class _F1ModelHandler(BaseHTTPRequestHandler):
                 )
         elif "TOOL DISCOVERY" in prompt:
             content = _installed_tool_discovery_content(prompt)
-        elif "Escolha exatamente uma das duas respostas JSON" in prompt:
+        elif "Escolha exatamente uma destas duas respostas JSON" in prompt:
             if "notes.txt" in prompt:
-                content = '{"plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
+                content = '{"action":"use_tools","plan":[{"tool":"file_reader","args":{"file_path":"notes.txt"}}]}'
             else:
-                content = '{"plan":[{"tool":"wheel_tool","args":{}}]}'
+                content = '{"action":"use_tools","plan":[{"tool":"wheel_tool","args":{}}]}'
         elif "Uma fronteira sem" in prompt:
             content = '{"action":"complete","reason":"a evidencia real basta"}'
         elif "Resultados das ferramentas executadas:" in prompt:

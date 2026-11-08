@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Sequence
+from typing import Sequence, cast
 
 from llm_agent.agent.planning.task_semantics_authority_model import (
     _AUTHORITY_RESULT_FACTORY_TOKEN,
@@ -16,10 +16,13 @@ from llm_agent.agent.planning.task_semantics_positive_proof_condition import _pa
 from llm_agent.agent.planning.task_semantics_positive_proof_data import (
     _MAX_OBJECTIVE_CHARS,
     _MAX_SCOPE_CHARS,
+    _MUTATION_VERBS,
+    _PUNCTUATION,
 )
 from llm_agent.agent.planning.task_semantics_positive_proof_lexing import (
     _contains_quoted_command,
     _lexemes,
+    _path_value,
     _repair_mojibake,
     _single_path,
     _split_conjoined_commands,
@@ -30,6 +33,7 @@ from llm_agent.agent.planning.task_semantics_positive_proof_model import (
     AuthorizedEffect,
     PositiveAuthorityProof,
     _ConstraintSpec,
+    _Lexeme,
     _Predicate,
     _ProofSpec,
 )
@@ -49,7 +53,8 @@ def objective_authority_fingerprint(objective: str) -> str:
 def build_positive_authority_proofs(objective: str) -> tuple[PositiveAuthorityProof, ...]:
     """Project positive proofs from the complete canonical authority parse."""
 
-    return parse_objective_authority(objective).positive_proofs
+    parsed: ObjectiveAuthorityGrammarResult = parse_objective_authority(objective)
+    return cast(tuple[PositiveAuthorityProof, ...], parsed.positive_proofs)
 
 
 def parse_objective_authority(objective: str) -> ObjectiveAuthorityGrammarResult:
@@ -105,16 +110,59 @@ def _build_direct_specs(
     complete = True
     for group in segment_groups:
         fallback_target = _single_path(group)
-        for fragment in _split_conjoined_commands(group):
-            fragment_specs, fragment_constraints, recognized = _parse_fragment(
-                fragment,
-                fallback_target=fallback_target,
-                predicate=None,
-            )
-            specs.extend(fragment_specs)
-            constraints.extend(fragment_constraints)
-            complete = complete and recognized
+        for command in _split_conjoined_commands(group):
+            for fragment in _split_conjoined_targets(command):
+                fragment = _trim_bound_target_pronoun(fragment, fallback_target)
+                fragment_specs, fragment_constraints, recognized = _parse_fragment(
+                    fragment,
+                    fallback_target=_single_path(fragment) or fallback_target,
+                    predicate=None,
+                )
+                specs.extend(fragment_specs)
+                constraints.extend(fragment_constraints)
+                complete = complete and recognized
     return tuple(specs), tuple(constraints), complete
+
+
+def _split_conjoined_targets(
+    lexemes: Sequence[_Lexeme],
+) -> tuple[tuple[_Lexeme, ...], ...]:
+    path_indexes = tuple(
+        index for index, item in enumerate(lexemes) if _path_value(item.raw)
+    )
+    if len(path_indexes) < 2:
+        return (tuple(lexemes),)
+    command = tuple(item.value for item in lexemes[: path_indexes[0]])
+    if not command or not any(item in _MUTATION_VERBS for item in command):
+        return (tuple(lexemes),)
+    if any(
+        tuple(item.value for item in lexemes[left + 1 : right]) not in {("and",), ("e",)}
+        for left, right in zip(path_indexes, path_indexes[1:], strict=False)
+    ):
+        return (tuple(lexemes),)
+    prefix = tuple(lexemes[: path_indexes[0]])
+    suffix = tuple(lexemes[path_indexes[-1] + 1 :])
+    return tuple(
+        (*prefix, lexemes[index], *suffix) for index in path_indexes
+    )
+
+
+def _trim_bound_target_pronoun(
+    lexemes: tuple[_Lexeme, ...], fallback_target: str | None
+) -> tuple[_Lexeme, ...]:
+    if fallback_target is None:
+        return lexemes
+    values = tuple(item.value for item in lexemes)
+    end = len(values)
+    while end and values[end - 1] in _PUNCTUATION:
+        end -= 1
+    verb_index = next(
+        (index for index, value in enumerate(values) if value in _MUTATION_VERBS),
+        None,
+    )
+    if verb_index is not None and values[verb_index + 1 : end] == ("it",):
+        return (*lexemes[: verb_index + 1], *lexemes[end:])
+    return lexemes
 
 
 def authorized_effect_from_proof(

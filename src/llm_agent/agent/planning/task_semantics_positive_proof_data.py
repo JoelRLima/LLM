@@ -120,8 +120,13 @@ _VALIDATION_TAILS = (
     ("e", "valide", "a", "mudanca", "localmente"),
     ("e", "valide", "a", "mudanca"),
     ("and", "validate"),
+    ("and", "validate", "it"),
     ("and", "validate", "the", "change", "locally"),
     ("and", "validate", "the", "change"),
+    ("e", "valide", "o"),
+    ("e", "valide", "a"),
+    ("e", "valide", "os"),
+    ("e", "valide", "as"),
 )
 _PUNCTUATION = frozenset({",", ".", ":", "!", "?"})
 _QUOTE_PAIRS = (("\"", "\""), ("`", "`"), ("\u201c", "\u201d"), ("\u2018", "\u2019"))

@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from llm_agent.agent.llm.plan_association_contract import PLAN_ASSOCIATION_FIELDS, valid_plan_associations
 from llm_agent.agent.planning.plan_model import ToolPlanStep
 
 
@@ -33,7 +34,9 @@ def accepts_constrained_repair(
 ) -> bool:
     if not fields or not isinstance(candidate, Mapping):
         return False
-    if any(key not in {"tool", "args", "bindings", "_step_id"} for key in candidate):
+    if any(key not in {"tool", "args", "bindings", "_step_id"} | PLAN_ASSOCIATION_FIELDS for key in candidate):
+        return False
+    if not _preserves_associations(original, candidate):
         return False
     if candidate.get("tool") != original.get("tool"):
         return False
@@ -48,6 +51,22 @@ def accepts_constrained_repair(
         return False
     if any(str(key) not in set(original_args) | set(fields) for key in candidate_args):
         return False
+    return _preserves_bindings(original, candidate, fields)
+
+
+def _preserves_associations(original: Mapping[str, Any], candidate: Mapping[str, Any]) -> bool:
+    return (
+        valid_plan_associations(dict(original)) and valid_plan_associations(dict(candidate))
+        and all(
+            (field in original) == (field in candidate) and original.get(field) == candidate.get(field)
+            for field in PLAN_ASSOCIATION_FIELDS
+        )
+    )
+
+
+def _preserves_bindings(
+    original: Mapping[str, Any], candidate: Mapping[str, Any], fields: frozenset[str],
+) -> bool:
     original_bindings = original.get("bindings")
     candidate_bindings = candidate.get("bindings")
     original_bindings = original_bindings if isinstance(original_bindings, Mapping) else {}

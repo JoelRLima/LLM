@@ -47,7 +47,7 @@ def execute_code_command(
     text: str,
     *,
     config: dict[str, Any],
-    conversation: ConversationRuntime,
+    conversation: ConversationRuntime | None,
     workspace_root: str | Path,
     allows_write_validate: Callable[[], bool],
     is_full_mode: Callable[[], bool],
@@ -86,7 +86,13 @@ def execute_code_command(
         include_tests=parsed.include_tests,
         template=parsed.template,
     )
-    context = build_code_context(config, _resolve_gateway(conversation))
+    if parsed.action in {"analyze", "review"}:
+        gateway = None
+    elif conversation is None:
+        raise ValueError("A model-backed conversation is required for this code command")
+    else:
+        gateway = _resolve_gateway(conversation)
+    context = build_code_context(config, gateway)
     if register_cancellation is not None:
         register_cancellation(context.cancellation.cancel)
         if cancellation_requested is not None and cancellation_requested():

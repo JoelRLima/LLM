@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 from llm_agent.agent.memory.prompt_context_envelope import _bounded_envelope
-from llm_agent.filesystem.path_safety import assert_no_link_ancestors, resolve_workspace_path
+from llm_agent.agent.memory.prompt_context_file_facts import (
+    _include_file_fact,
+    file_fact_freshness,
+)
+from llm_agent.agent.memory.prompt_context_file_facts import (
+    _stored_source_hash as _stored_source_hash,
+)
 
 DEFAULT_MEMORY_PROMPT_BUDGET_TOKENS = 800
 MEMORY_PROMPT_CHARS_PER_TOKEN = 4
+MAX_MEMORY_PROMPT_HASH_BYTES = 32 * 1024 * 1024
+MAX_MEMORY_PROMPT_FILE_HASH_BYTES = 8 * 1024 * 1024
 
 _FILE_REFERENCE_RE = re.compile(r"[\w./\\-]+\.[\w-]+", re.UNICODE)
 _TOKEN_RE = re.compile(r"[\w./\\-]+", re.UNICODE)
@@ -68,12 +75,15 @@ def _rank_entries(
 ) -> list[tuple[str, Any]]:
     if not objective_tokens:
         return entries
-    relevant = [
-        entry
-        for entry in entries
-        if objective_tokens.intersection(_entry_tokens(entry[0], entry[1]))
-    ]
-    unrelated = [entry for entry in entries if entry not in relevant]
+    relevant: list[tuple[str, Any]] = []
+    unrelated: list[tuple[str, Any]] = []
+    for entry in entries:
+        target = (
+            relevant
+            if objective_tokens.intersection(_entry_tokens(entry[0], entry[1]))
+            else unrelated
+        )
+        target.append(entry)
     return relevant + unrelated
 
 
@@ -87,69 +97,13 @@ def _referenced_file(path: str, objective: str, objective_tokens: set[str]) -> b
     return normalized in references or basename in references or basename in objective_tokens
 
 
-_SOURCE_HASH_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
-def _stored_source_hash(state: Mapping[str, Any], path: str) -> str | None:
-    """Return the one current source hash exposed by existing memory state."""
-
-    normalized_path = path.replace("\\", "/").casefold()
-
-    def lookup(mapping: Mapping[str, Any], key: str) -> Any:
-        if key in mapping:
-            return mapping.get(key)
-        for candidate, value in mapping.items():
-            if str(candidate).replace("\\", "/").casefold() == normalized_path:
-                return value
-        return None
-
-    hashes = state.get("file_hashes")
-    if isinstance(hashes, Mapping):
-        value = lookup(hashes, path)
-        return value if isinstance(value, str) and _SOURCE_HASH_RE.fullmatch(value) else None
-    cache_entries = state.get("file_cache_entries")
-    if isinstance(cache_entries, Mapping):
-        entry = lookup(cache_entries, path)
-        if isinstance(entry, Mapping):
-            value = entry.get("source_hash")
-            return value if isinstance(value, str) and _SOURCE_HASH_RE.fullmatch(value) else None
-    return None
 
 
-def file_fact_freshness(
-    state: Mapping[str, Any],
-    path: str,
-    *,
-    workspace_root: str | Path | None = None,
-    expected_hash: str | None = None,
-) -> str:
-    """Classify a file-derived memory fact without a model call or mutation."""
-
-    stored_hash = expected_hash if expected_hash is not None else _stored_source_hash(state, path)
-    if stored_hash is None:
-        return "UNVERIFIED_LEGACY_FILE_FACT"
-    if workspace_root is None:
-        # The legacy public helper has no workspace argument.  Its callers
-        # retain the historical projection; W13 callers always provide it.
-        return "FRESH_FILE_FACT"
-    try:
-        root = Path(workspace_root).expanduser().resolve()
-        current = resolve_workspace_path(root, path, require_file=True)
-        assert_no_link_ancestors(current)
-        current_hash = hashlib.sha256(current.read_bytes()).hexdigest()
-    except (OSError, RuntimeError, ValueError):
-        return "STALE_OR_INVALID_FILE_FACT"
-    return "FRESH_FILE_FACT" if current_hash == stored_hash else "STALE_OR_INVALID_FILE_FACT"
 
 
-def _include_file_fact(
-    state: Mapping[str, Any],
-    path: str,
-    workspace_root: str | Path | None,
-) -> bool:
-    if workspace_root is None:
-        return True
-    return file_fact_freshness(state, path, workspace_root=workspace_root) == "FRESH_FILE_FACT"
+
 
 
 def _section_lines(
@@ -158,29 +112,46 @@ def _section_lines(
     objective_tokens: set[str],
     *,
     only_relevant: bool = False,
-) -> list[str]:
+) -> Iterator[str]:
     entries = _entries(state.get(section))
     ranked = _rank_entries(entries, objective_tokens)
-    if only_relevant and objective_tokens:
-        ranked = [
-            entry
-            for entry in ranked
-            if objective_tokens.intersection(_entry_tokens(entry[0], entry[1]))
-        ]
-    return [f"- {key}: {_as_text(value)}" for key, value in ranked]
+    for key, value in ranked:
+        if only_relevant and objective_tokens and not objective_tokens.intersection(
+            _entry_tokens(key, value)
+        ):
+            continue
+        yield f"- {key}: {_as_text(value)}"
 
 
-def _append_bounded(body: str, text: str, available: int) -> tuple[str, bool]:
-    separator = "\n" if body else ""
-    remaining = available - len(body) - len(separator)
-    if remaining <= 0:
-        return body, False
-    addition = separator + text
-    if len(addition) <= remaining:
-        return body + addition, True
-    return body + addition[:remaining], False
-
-
+def _bounded_file_entries(
+    state: Mapping[str, Any],
+    entries: Iterable[tuple[str, Any]],
+    objective: str,
+    objective_tokens: set[str],
+    workspace_root: str | Path | None,
+    budget_chars: int,
+    remaining_hash_bytes: int,
+    *,
+    referenced_only: bool,
+) -> tuple[list[tuple[str, Any]], int, int]:
+    selected: list[tuple[str, Any]] = []
+    used_chars = 0
+    for key, value in entries:
+        if referenced_only and not _referenced_file(key, objective, objective_tokens):
+            continue
+        if used_chars >= budget_chars:
+            break
+        include, hashed_bytes = _include_file_fact(
+            state,
+            key,
+            workspace_root,
+            max_bytes=min(MAX_MEMORY_PROMPT_FILE_HASH_BYTES, remaining_hash_bytes),
+        )
+        remaining_hash_bytes = max(0, remaining_hash_bytes - hashed_bytes)
+        if include:
+            selected.append((key, value))
+            used_chars += len(f"- {key}: {_as_text(value)}") + 1
+    return selected, used_chars, remaining_hash_bytes
 
 
 def build_memory_prompt_context(
@@ -197,53 +168,62 @@ def build_memory_prompt_context(
     the file.  An analyzed-file entry is omitted when its detailed summary is
     already rendered, so the same artifact is not emitted by two projections.
     """
-
     if not isinstance(state, Mapping) or budget_tokens <= 0:
         return ""
 
     objective_tokens = _objective_tokens(objective)
-    detailed_entries = [
-        (key, value)
-        for key, value in _entries(state.get("file_summaries"))
-        if _referenced_file(key, objective, objective_tokens)
-        and _include_file_fact(state, key, workspace_root)
-    ]
+    budget_chars = budget_tokens * MEMORY_PROMPT_CHARS_PER_TOKEN
+    detailed_entries, detail_chars, remaining_hash_bytes = _bounded_file_entries(
+        state,
+        _entries(state.get("file_summaries")),
+        objective,
+        objective_tokens,
+        workspace_root,
+        budget_chars,
+        MAX_MEMORY_PROMPT_HASH_BYTES,
+        referenced_only=True,
+    )
     detailed_paths = {key.replace("\\", "/").casefold() for key, _ in detailed_entries}
-
-    analyzed_entries = [
+    analyzed_candidates = [
         (key, value)
         for key, value in _entries(state.get("analyzed_files"))
         if key.replace("\\", "/").casefold() not in detailed_paths
-        and _include_file_fact(state, key, workspace_root)
     ]
-    analyzed_entries = _rank_entries(analyzed_entries, objective_tokens)
-
-    sections: list[tuple[str, list[str]]] = [
+    analyzed_budget = max(
+        0,
+        budget_chars
+        - detail_chars
+        - (len("[RELEVANT FILE SUMMARIES]") if detailed_entries else 0),
+    )
+    analyzed_entries, _, _ = _bounded_file_entries(
+        state,
+        _rank_entries(analyzed_candidates, objective_tokens),
+        objective,
+        objective_tokens,
+        workspace_root,
+        analyzed_budget,
+        remaining_hash_bytes,
+        referenced_only=False,
+    )
+    sections: list[tuple[str, Iterable[str]]] = [
         (
             "RELEVANT FILE SUMMARIES",
-            [f"- {key}: {_as_text(value)}" for key, value in detailed_entries],
+            (f"- {key}: {_as_text(value)}" for key, value in detailed_entries),
         ),
         (
             "ANALYZED FILE INDEX",
-            [f"- {key}: {_as_text(value)}" for key, value in analyzed_entries],
+            (f"- {key}: {_as_text(value)}" for key, value in analyzed_entries),
         ),
     ]
-
     for section in ("key_findings", "notes", "todo"):
         sections.append((section.upper(), _section_lines(state, section, objective_tokens)))
     for section in ("project_map", "files_index"):
         sections.append(
             (
                 section.upper(),
-                _section_lines(
-                    state,
-                    section,
-                    objective_tokens,
-                    only_relevant=True,
-                ),
+                _section_lines(state, section, objective_tokens, only_relevant=True),
             )
         )
-
     return _bounded_envelope(sections, budget_tokens)
 
 

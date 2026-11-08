@@ -117,7 +117,8 @@ def test_compatibility_adjusted_grammar_fallback_retry_keeps_geometry() -> None:
         assert request.compatibility_reason_code == REASON
         assert "[THINKING]" not in request.messages[0].content
     assert retry.max_output_tokens == 64
-    assert retry.messages[-1].content == "choose"
+    assert retry.messages[-1].content.startswith("choose\n\nHARNESS DECISION FORMAT FEEDBACK")
+    assert "required_contract=reactive_tool_decision" in retry.messages[-1].content
     assert session.thinking_budget == 512
 
 

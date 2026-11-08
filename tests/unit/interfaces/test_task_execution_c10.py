@@ -35,8 +35,8 @@ def test_sync_worker_c7_live_gate_parity(monkeypatch, mode, write, full):
     monkeypatch.setattr(command_handlers.console, "print", lambda *_args, **_kw: None)
     ctx = SimpleNamespace(task_execution=runtime, config={}, conversation=ConversationRuntime(SimpleNamespace()),
                           workspace=None, approval_broker=None)
-    command_handlers.code_command("/code help", ctx)
-    interactive_worker._execute_code(ctx, SimpleNamespace(visible_text="/code help"),
+    command_handlers.code_command("/code modify sample.py -- change it", ctx)
+    interactive_worker._execute_code(ctx, SimpleNamespace(visible_text="/code modify sample.py -- change it"),
                                      SimpleNamespace(is_set=lambda: False), lambda _: None)
     assert observed == [(write, full), (write, full)]
 

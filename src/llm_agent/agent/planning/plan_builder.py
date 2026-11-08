@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from llm_agent.agent.llm.admitted_decisions import (
     DirectResponseDecision,
@@ -14,13 +14,14 @@ from llm_agent.agent.llm.admitted_decisions import (
     EffectObservationCompleteWithoutEffectDecision,
     EffectObservationExecuteDecision,
     InitialPlanDecision,
-    LegacyModelDecision,
     ReasoningBoundaryBlockedDecision,
     ReasoningBoundaryCompleteDecision,
     ReasoningBoundaryExecuteDecision,
     ask_model_decision_with_compatibility,
 )
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
+from llm_agent.agent.planning.boundary_discovery import discovery_scope, request_reasoning_boundary
+from llm_agent.agent.planning.outcome_planning import outcome_planning_context
 from llm_agent.agent.planning.plan_builder_compat import (
     build_legacy_continuation,
     build_legacy_initial,
@@ -83,6 +84,8 @@ class PlanBuilder:
         self.orchestrator = orchestrator
         self.analysis_notes_file = Path(analysis_notes_file)
         self._last_planning_view: PlanningPresentationSnapshot | None = None
+        self._last_tool_disclosure: Any = None
+        self._last_discovery_scope: Any = None
 
     def build_plan(
         self,
@@ -113,21 +116,14 @@ class PlanBuilder:
                 )
             self.orchestrator._emit("direct_response", {})
             return PlanBuildResult(direct_answer=decision.answer)
-        if isinstance(decision, LegacyModelDecision):
-            return build_legacy_initial(
-                self,
-                decision,
-                require_executable_plan=require_executable_plan,
-            )
+        legacy_result = build_legacy_initial(self, decision, require_executable_plan=require_executable_plan)
+        if legacy_result is not None:
+            return legacy_result
         if not isinstance(decision, InitialPlanDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
-        reviewed_obligations: Optional[List[Dict[str, Any]]] = None
-        if not require_executable_plan:
-            obligations_ok, reviewed_obligations = self._review_obligations(
-                decision.obligations, source="initial_plan"
-            )
-            if not obligations_ok:
-                return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
+        obligations_ok, reviewed_obligations = self._initial_obligations(decision, require_executable_plan)
+        if not obligations_ok:
+            return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         plan = self._project_plan(decision)
         if plan is None:
             if require_executable_plan:
@@ -143,6 +139,13 @@ class PlanBuilder:
             obligations=reviewed_obligations,
             planning_view=self._last_planning_view,
         )
+
+    def _initial_obligations(
+        self, decision: InitialPlanDecision, require_executable_plan: bool,
+    ) -> tuple[bool, Optional[List[Dict[str, Any]]]]:
+        if require_executable_plan:
+            return True, None
+        return self._review_obligations(decision.obligations, source="initial_plan")
 
     def _review_obligations(
         self,
@@ -193,8 +196,9 @@ class PlanBuilder:
                 ),
                 kind=PlanningDecisionKind.BLOCK,
             )
-        if isinstance(decision, LegacyModelDecision):
-            return build_legacy_continuation(self, decision)
+        legacy_result = build_legacy_continuation(self, decision)
+        if legacy_result is not None:
+            return legacy_result
         if not isinstance(decision, EffectObservationExecuteDecision):
             return PlanBuildResult(kind=PlanningDecisionKind.FAIL)
         plan = self._project_plan(decision)
@@ -217,13 +221,7 @@ class PlanBuilder:
         summarize = getattr(responder, "_tool_results_summary", None)
         if callable(summarize):
             summary = str(summarize())
-        decision = ask_model_decision_with_compatibility(
-            self.orchestrator.context_manager,
-            self._build_reasoning_boundary_prompt(objective, summary, build_plan_progress(self.orchestrator.agent_state)),
-            step_type="continuation_plan", base_prompt=getattr(self.orchestrator, "_cached_base_prompt", None),
-            log_metric_callback=self.orchestrator._log_metric,
-            request_contract=ModelRequestContract.REASONING_BOUNDARY_CONTINUATION,
-        )
+        decision = request_reasoning_boundary(self, objective, summary)
         if isinstance(decision, ReasoningBoundaryCompleteDecision):
             return PlanBuildResult(
                 review_obligations=(
@@ -269,20 +267,18 @@ class PlanBuilder:
     ) -> str:
         hints = self.orchestrator.context_manager.get_file_hints(objective)
         tools = self._tool_guidance(objective, force_refresh=False)
-        return build_plan_prompt(
-            objective,
-            hints,
-            tools,
+        return cast(str, build_plan_prompt(
+            objective, hints, tools,
             require_executable_plan=require_executable_plan,
-        )
+        )) + cast(str, outcome_planning_context(self.orchestrator))
 
     def _build_continuation_prompt(self, objective: str, observations: str, effect_evidence: str, observation_references: str, plan_progress: str) -> str:
         tools = self._tool_guidance(objective, force_refresh=True)
-        return build_continuation_prompt(objective, observations, effect_evidence, observation_references, plan_progress, tools)
+        return cast(str, build_continuation_prompt(objective, observations, effect_evidence, observation_references, plan_progress, tools)) + cast(str, outcome_planning_context(self.orchestrator))
 
-    def _build_reasoning_boundary_prompt(self, objective: str, observations: str, plan_progress: str) -> str:
-        tools = self._tool_guidance(objective, force_refresh=True)
-        return build_reasoning_boundary_prompt(objective, observations, plan_progress, tools)
+    def _build_reasoning_boundary_prompt(self, objective: str, observations: str, plan_progress: str, *, tool_guidance: str | None = None) -> str:
+        tools = self._tool_guidance(objective, force_refresh=True) if tool_guidance is None else tool_guidance
+        return cast(str, build_reasoning_boundary_prompt(objective, observations, plan_progress, tools)) + cast(str, outcome_planning_context(self.orchestrator))
 
     def _tool_guidance(self, objective: str, *, force_refresh: bool) -> str:
         disclosure, guidance = build_tool_guidance(
@@ -292,10 +288,12 @@ class PlanBuilder:
             force_refresh=force_refresh,
         )
         self._last_planning_view = disclosure.selected_view if disclosure is not None else None
-        return guidance
+        self._last_tool_disclosure = disclosure
+        self._last_discovery_scope = discovery_scope(self.orchestrator, objective)
+        return cast(str, guidance)
 
     def _plan_progress(self) -> str:
-        return build_plan_progress(self.orchestrator.agent_state)
+        return cast(str, build_plan_progress(self.orchestrator.agent_state))
 
     def _project_plan(self, decision: Any) -> Optional[Plan]:
         """Decode an admitted decision into the live typed plan value."""

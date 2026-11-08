@@ -9,7 +9,7 @@ from llm_agent.agent.llm.admitted_decisions import (
     ask_typed_model_decision,
 )
 from llm_agent.agent.llm.context_manager import ContextManager
-from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse
+from llm_agent.agent.llm.contracts import ModelRequest, ModelResponse, ProviderCapabilities, StructuredOutputMode
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.llm.grammars import TOOL_DECISION_GRAMMAR
 from llm_agent.agent.llm.session import ChatSession
@@ -46,6 +46,9 @@ class _Gateway:
 class _RealDecisionGateway:
     provider_name = "test-provider"
     model = "test-model"
+    capabilities = ProviderCapabilities(
+        structured_output_modes=(StructuredOutputMode.GBNF, StructuredOutputMode.JSON_PROMPT),
+    )
 
     def __init__(self, responses):
         self.responses = iter(responses)
@@ -87,6 +90,17 @@ def _real_context_manager(orchestrator, response):
     orchestrator.context_manager = context_manager
     orchestrator.session = session
     return context_manager, gateway
+
+
+@pytest.mark.parametrize("capability", ["missing", "prompt_only"])
+def test_reactive_gateway_without_declared_gbnf_does_not_receive_grammar(monkeypatch, capability):
+    if capability == "missing":
+        monkeypatch.delattr(_RealDecisionGateway, "capabilities")
+    else:
+        monkeypatch.setattr(_RealDecisionGateway, "capabilities", ProviderCapabilities())
+    context_manager, _gateway = _real_context_manager(_Orchestrator(), '{"action":"final","answer":"ok"}')
+    request = context_manager.session.build_request(grammar=TOOL_DECISION_GRAMMAR, stream=False)
+    assert request.structured_output is None
 
 
 class _State:

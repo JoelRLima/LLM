@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -26,26 +25,9 @@ from llm_agent.interfaces.cli import command_handlers, commands
 from llm_agent.interfaces.cli.parser import build_parser
 
 
-@dataclass
-class _Result:
-    success: bool = True
-    answer: str = "answer"
-    error: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "status": "succeeded" if self.success else "failed",
-            "success": self.success,
-            "answer": self.answer,
-            "error": self.error,
-            "metadata": dict(self.metadata),
-        }
-
-
 class _Application:
-    def __init__(self, result: _Result | None = None) -> None:
-        self.result = result or _Result()
+    def __init__(self, result: application_result.AgentRunResult | None = None) -> None:
+        self.result = result or application_result.AgentRunResult("succeeded", "answer", ".")
         self.closed = 0
         self.run_calls: list[tuple[str, TaskRunDirective | None]] = []
         self.resume_calls = 0
@@ -55,12 +37,12 @@ class _Application:
         objective: str | None,
         *,
         task_run_directive: TaskRunDirective | None = None,
-    ) -> _Result:
+    ) -> application_result.AgentRunResult:
         assert objective is not None
         self.run_calls.append((objective, task_run_directive))
         return self.result
 
-    def resume(self) -> _Result:
+    def resume(self) -> application_result.AgentRunResult:
         self.resume_calls += 1
         return self.result
 
@@ -72,7 +54,9 @@ def test_headless_run_passes_typed_directive_and_preserves_model_profile(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    application = _Application(_Result(metadata={"task_directive": "read", "deliberation_profile": "smart"}))
+    application = _Application(application_result.AgentRunResult(
+        "succeeded", "answer", ".", metadata={"task_directive": "read", "deliberation_profile": "smart"},
+    ))
     seen: dict[str, Any] = {}
 
     def create(args: Any, *, configure_logging: bool) -> _Application:
@@ -131,9 +115,9 @@ def test_headless_recognized_directive_never_downgrades_to_old_run_signature(
     executed: list[str] = []
 
     class OldStyleFacade:
-        def run(self, subject: str) -> _Result:
+        def run(self, subject: str) -> application_result.AgentRunResult:
             executed.append(subject)
-            return _Result()
+            return application_result.AgentRunResult("succeeded", "answer", ".")
 
         def close(self) -> None:
             pass

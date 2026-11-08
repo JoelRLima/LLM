@@ -155,3 +155,7 @@ grant ausente/não utilizado; somente `ready` é materializado.
 MCP não existe neste repositório. Não há arbitrary shell, package install
 model-actionable, sandbox universal, hot reload, marketplace ou transport
 remoto. Web existe somente pela skill `web_search`; não implica browser/MCP.
+
+## Administração visual de plugins locais
+
+O Workbench expõe **Mais recursos → Plugins** sobre os mesmos serviços canônicos. Registro e habilitação não concedem grants nem autoridade de sessão. A seleção por ID é aplicada no planejamento e no gateway; atualização revisada e alterações de configuração exigem sessão ociosa e limpam a seleção temporária. [Guia de uso e protocolo](../plugins-locais.md).

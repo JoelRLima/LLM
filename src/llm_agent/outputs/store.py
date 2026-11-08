@@ -37,6 +37,7 @@ from llm_agent.process.instance_lock import InstanceLock, InstanceLockError
 _FINAL = re.compile(r"^out-[0-9a-f]{32}\.(?:payload\.txt|meta\.json)$")
 _LOCK = ".output-store.lock"
 _LOCK_GUARD = ".output-store.lock.guard"
+MAX_OUTPUT_METADATA_BYTES = 64 * 1024
 
 
 def _default_clock() -> str:
@@ -124,9 +125,15 @@ class OutputStore:
         if not path.exists():
             raise OutputNotFound(OUTPUT_NOT_FOUND, "output metadata was not found")
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            with path.open("rb") as stream:
+                raw_bytes = stream.read(MAX_OUTPUT_METADATA_BYTES + 1)
+            if len(raw_bytes) > MAX_OUTPUT_METADATA_BYTES:
+                raise OutputStoreError(OUTPUT_METADATA_INVALID, "output metadata exceeds its bound")
+            raw = json.loads(raw_bytes.decode("utf-8"))
             artifact = OutputArtifact.from_dict(raw)
         except OutputNotFound:
+            raise
+        except OutputStoreError:
             raise
         except (OSError, UnicodeError, json.JSONDecodeError, OutputValidationError) as exc:
             raise OutputStoreError(OUTPUT_METADATA_INVALID, "output metadata is invalid") from exc
@@ -142,7 +149,8 @@ class OutputStore:
         if not payload_path.exists():
             raise OutputStoreError(OUTPUT_PAYLOAD_MISSING, "output payload is missing")
         try:
-            raw = payload_path.read_bytes()
+            with payload_path.open("rb") as stream:
+                raw = stream.read(MAX_OUTPUT_PAYLOAD_BYTES + 1)
         except OSError as exc:
             raise OutputStoreError(OUTPUT_PAYLOAD_CORRUPT, "output payload cannot be read") from exc
         if len(raw) > MAX_OUTPUT_PAYLOAD_BYTES:

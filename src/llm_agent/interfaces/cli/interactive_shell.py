@@ -1,15 +1,12 @@
-"""The single prompt-toolkit owner for interactive chat sessions.
-
-The shell owns stdin, prompt rendering and composer state.  It deliberately
-does not know how an agent task is executed; callers provide a toolbar
-projection and consume submitted text through :meth:`prompt`.
-"""
+"""The single prompt-toolkit owner for interactive chat sessions."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from threading import RLock
 from typing import Any, Callable, Iterator
+
+from llm_agent.interfaces.cli.shell_bindings import key_bindings as _key_bindings
 
 
 def prompt_from(
@@ -32,7 +29,7 @@ def prompt_from(
         if callable(printer):
             printer("Encerrando...")
         return None
-    return str(value) if value is not None else default
+    return str(value) if value is not None else None
 
 
 def _registry_completer(registry: Any, completer_type: Any, completion_type: Any) -> Any:
@@ -46,47 +43,6 @@ def _registry_completer(registry: Any, completer_type: Any, completion_type: Any
                 yield completion_type(item, start_position=-len(text), display=item)
 
     return RegistryCompleter()
-
-
-def _key_bindings(shell: Any, key_bindings_type: Any) -> Any:
-    bindings = key_bindings_type()
-
-    @bindings.add("enter")
-    def accept(event: Any) -> None:
-        event.current_buffer.validate_and_handle()
-
-    @bindings.add("c-j")
-    def newline(event: Any) -> None:
-        event.current_buffer.insert_text("\n")
-
-    @bindings.add("c-c")
-    def interrupt(event: Any) -> None:
-        handler = shell._interrupt_handler
-        if handler is not None:
-            try:
-                handler()
-            except Exception:
-                pass
-        else:
-            event.current_buffer.text = ""
-        event.app.invalidate()
-
-    @bindings.add("f2")
-    def command_palette(event: Any) -> None:
-        request = getattr(shell, "request_command_palette", None)
-        if callable(request):
-            request(event)
-            event.app.invalidate()
-            return
-        handler = shell._f2_handler
-        if handler is not None:
-            try:
-                handler()
-            except Exception:
-                pass
-        event.app.invalidate()
-
-    return bindings
 
 
 class InteractiveShell:
@@ -112,6 +68,7 @@ class InteractiveShell:
         self._toolbar = toolbar
         self._registry = registry
         self._closed = False
+        self._line_prompt_active = False
         self._next_default = ""
         self._background_pump: Callable[[], None] | None = None
         self._interrupt_handler: Callable[[], None] | None = None
@@ -225,14 +182,17 @@ class InteractiveShell:
             if buffer is not None:
                 buffer.text = ""
 
-    def _prompt_line_value(self, message: str, default: str) -> str | None:
+    def _prompt_line_value(self, message: str, default: str, **options: Any) -> str | None:
         with self._lock:
             if self._closed:
                 return None
         try:
-            value = self.session.prompt(message, default=default, multiline=False)
+            self._line_prompt_active = True
+            value = self.session.prompt(message, default=default, multiline=False, **options)
         except (EOFError, KeyboardInterrupt):
             return None
+        finally:
+            self._line_prompt_active = False
         return str(value)
 
     def set_draft(self, value: str) -> None:
@@ -248,19 +208,7 @@ class InteractiveShell:
         """Read a directory path through this shell's sole PromptSession."""
         from prompt_toolkit.completion import PathCompleter
 
-        with self._lock:
-            if self._closed:
-                return None
-        try:
-            value = self.session.prompt(
-                message,
-                default=default,
-                multiline=False,
-                completer=PathCompleter(only_directories=True, expanduser=True),
-            )
-        except (EOFError, KeyboardInterrupt):
-            return None
-        return str(value)
+        return self._prompt_line_value(message, default, completer=PathCompleter(only_directories=True, expanduser=True))
 
     def print_background(self, text: object = "", *, end: str = "\n") -> None:
         """Print literal worker output above the prompt without consuming stdin."""

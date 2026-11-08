@@ -1,28 +1,32 @@
 """Finite task and session use cases over one privately retained Agent runtime.
 
-Approval/event collaborators are temporary opaque composition inputs until their
-own cohorts. Settlements retain Agent results privately until C11; observations
-are copied, validated primitive values already consumed by the CLI.
+Settlements retain typed Agent results privately; observations are copied,
+validated primitive values with separate headless and interactive contracts.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 from llm_agent.agent import approval as _agent_approval
 from llm_agent.agent.application import AgentApplication as _AgentApplication
+from llm_agent.agent.application_result import AgentRunResult as _AgentRunResult
 from llm_agent.agent.approval import RequireExplicitApproval as _RequireExplicitApproval
 from llm_agent.agent.interaction.task_directives import parse_task_request as _parse_task_request
+from llm_agent.agent.interaction.types import AgentInteractionResult as _AgentInteractionResult
 from llm_agent.agent.interaction.types import ParsedTaskRequest as _ParsedTaskRequest
 from llm_agent.agent.tools.authority import OperationalMode as _OperationalMode
 from llm_agent.application import _task_activity, _task_commands, _task_observation, _task_submission
 from llm_agent.application.approval import ApprovalPresenter, _bind_approval_presenter
 from llm_agent.application.configuration_errors import translate_configuration_errors
 from llm_agent.application.context import AppPaths, WorkspaceContext, WorkspacePaths
+from llm_agent.application.task_results import HeadlessTaskObservation as _HeadlessObservation
+from llm_agent.application.task_results import InteractiveTaskObservation as _InteractiveObservation
+from llm_agent.application.task_results import TaskObservation as _TaskObservation
 
 if TYPE_CHECKING:
     from llm_agent.application.conversation import ConversationRuntime
@@ -54,6 +58,8 @@ class TaskExecutionStart:
     config_path: str | Path | None = None
     profile: str | None = None
     startup_capabilities: tuple[str, ...] | None = None
+    startup_extension_ids: tuple[str, ...] | None = field(default=None, kw_only=True)
+    startup_extension_fingerprints: tuple[tuple[str, str], ...] | None = field(default=None, kw_only=True)
     observability_mode: str | None = None
     configure_logging: bool = True
 
@@ -84,6 +90,8 @@ def _start(start: TaskExecutionStart, approval: _agent_approval.ApprovalPort, *,
             workspace=Path(start.workspace).expanduser(), paths=start.app_paths,
             config_path=start.config_path, profile=start.profile, approval_policy=approval,
             task_authority_capabilities=None if start.startup_capabilities is None else list(start.startup_capabilities),
+            task_authority_extension_ids=start.startup_extension_ids,
+            task_authority_extension_fingerprints=None if start.startup_extension_fingerprints is None else dict(start.startup_extension_fingerprints),
             observability_mode=start.observability_mode,
             operational_mode=_OperationalMode.READ_ONLY if interactive else None,
             configure_logging=start.configure_logging,
@@ -173,14 +181,14 @@ def prepare_task_dispatch(text: str) -> TaskDispatch:
 
 class TaskSettlement:
     __slots__ = ("_value", "_legacy")
-    _value: Any
+    _value: _AgentRunResult | _AgentInteractionResult
     _legacy: bool
 
     def __init__(self) -> None:
         raise TypeError("settlements are produced by execution")
 
 
-def _settle(value: object, *, legacy: bool = False) -> TaskSettlement:
+def _settle(value: _AgentRunResult | _AgentInteractionResult, *, legacy: bool = False) -> TaskSettlement:
     settlement = object.__new__(TaskSettlement)
     settlement._value = value
     settlement._legacy = legacy
@@ -201,9 +209,17 @@ def execute_submission(
     )
 
 
+@overload
+def observe_task_settlement(settlement: TaskSettlement, *, channel: Literal["headless"]) -> _HeadlessObservation: ...
+
+
+@overload
+def observe_task_settlement(settlement: TaskSettlement, *, channel: Literal["interactive"]) -> _InteractiveObservation: ...
+
+
 def observe_task_settlement(
     settlement: TaskSettlement, *, channel: Literal["headless", "interactive"],
-) -> dict[str, Any]:
+) -> _TaskObservation:
     return _task_observation._observe_task_settlement(settlement, channel=channel)
 
 

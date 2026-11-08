@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from llm_agent.agent.application_cleanup import StartupCleanupError, abort_startup
 from llm_agent.agent.application_interactive import InteractiveCancellationMixin
-from llm_agent.agent.application_lifecycle import close_application
+from llm_agent.agent.application_lifecycle import _RUN_LOCK, ApplicationLifecycleMixin
 from llm_agent.agent.application_result import AgentRunResult, finalize_application_result
 from llm_agent.agent.application_run import run_locked
 from llm_agent.agent.application_wiring import (
@@ -50,9 +49,7 @@ if TYPE_CHECKING:
     from llm_agent.agent.interaction.service import InteractionService
     from llm_agent.agent.interaction.types import AgentInteractionResult
 
-_RUN_LOCK = threading.RLock()
-
-class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeMixin):
+class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeMixin, ApplicationLifecycleMixin):
     """Owns one configured assistant runtime and its resources."""
     def __init__(
         self,
@@ -118,6 +115,8 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
         approval_policy: ApprovalPort | None = None,
         task_authority: TaskAuthoritySnapshot | None = None,
         task_authority_capabilities: Iterable[str] | None = None,
+        task_authority_extension_ids: Iterable[str] | None = None,
+        task_authority_extension_fingerprints: Mapping[str, str] | None = None,
         operational_mode: OperationalMode | None = None,
         configure_logging: bool = True,
         debug_mode: int = 0,
@@ -165,6 +164,8 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
                 selected_approval=selected_approval,
                 task_authority=task_authority,
                 task_authority_capabilities=task_authority_capabilities,
+                task_authority_extension_ids=task_authority_extension_ids,
+                task_authority_extension_fingerprints=task_authority_extension_fingerprints,
                 extension_bootstrap=extension_bootstrap,
                 skill_registry=skill_registry,
             )
@@ -293,15 +294,5 @@ class AgentApplication(InteractiveCancellationMixin, ApplicationOperationalModeM
         )
         finish_observation(self, result)
         return result
-
-    def cancel(self) -> None:
-        if not self._closed and not self.interaction_service().cancel_active_model_call():
-            self.orchestrator.cancel_task()
-
-    def close(self) -> None:
-        close_application(self, _RUN_LOCK)
-
-    def __enter__(self) -> "AgentApplication": return self
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None: self.close()
 
 __all__ = ["AgentApplication", "AgentRunResult"]

@@ -100,6 +100,24 @@ def write_stdin(process: subprocess.Popen[Any], request: bytes) -> None:
         raise OSError("could not write command stdin") from exc
 
 
+def start_stdin_writer(
+    process: subprocess.Popen[Any], request: bytes | None, errors: list[str]
+) -> Thread | None:
+    """Write command input in parallel with output draining and timeout checks."""
+    if request is None:
+        return None
+
+    def write() -> None:
+        try:
+            write_stdin(process, request)
+        except OSError as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    writer = Thread(target=write, daemon=True, name="command-stdin-writer")
+    writer.start()
+    return writer
+
+
 def send_request(process: subprocess.Popen[Any], payload: dict[str, Any]) -> None:
     if process.stdin is None:
         raise OSError("stdin da extensão não foi criado")

@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from llm_agent.agent.runtime.logging import configure_interface_logging as _configure_interface_logging
 from llm_agent.agent.runtime.logging import set_debug_level as _set_debug_level
 from llm_agent.application.task_execution import TaskExecutionRuntime, set_session_diagnostics
 
 __all__ = ["apply_interactive_diagnostic_mode"]
+
+
+def configure_interface_logging() -> None:
+    """Configure redacted diagnostics when the host has no logging handlers."""
+    _configure_interface_logging()
 
 
 def apply_interactive_diagnostic_mode(

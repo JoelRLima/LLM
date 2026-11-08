@@ -31,6 +31,7 @@ class DiagnosticExportRequest:
     output: str | Path | None = None
     force: bool = False
     include_bookmarks: bool = False
+    metadata_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,7 @@ class InspectionListRequest:
     """Inputs for listing retained runs."""
 
     limit: int = 100
+    offset: int = 0
 
 
 @dataclass(frozen=True, slots=True)

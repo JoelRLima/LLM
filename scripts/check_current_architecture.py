@@ -683,6 +683,7 @@ def _policy_surface_errors(name: str, surface: dict[str, Any]) -> tuple[list[str
             "src/llm_agent/application/services/queries.py",
             "src/llm_agent/application/services/query_find.py",
             "src/llm_agent/application/services/query_git.py",
+            "src/llm_agent/application/services/query_utf8.py",
         },
         "health_diagnostics": {"src/llm_agent/application/health/diagnostics.py"},
         "inspection_auxiliary": {
@@ -1612,10 +1613,44 @@ def _builtin_action_registry_errors(source: RepositorySource, graph: Any, policy
     action_registry = action_site["module"]
     path = modules.get(action_registry)
     tree = source.tree_for_path(path) if path is not None else None
-    default_function = next((node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_default_bindings"), None) if tree is not None else None
+    default_function = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_default_bindings"
+        ),
+        None,
+    ) if tree is not None else None
+    if default_function is None and tree is not None:
+        # CLI action bindings moved to the shared, UI-neutral command catalog.
+        # Resolve that explicit adapter import while keeping the handler owner
+        # edges rooted at the CLI module that performs the dynamic import.
+        shared_module = next(
+            (
+                f"{node.module}.{alias.name}"
+                for node in tree.body
+                if isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module == "llm_agent.interactive"
+                for alias in node.names
+                if alias.name == "commands"
+            ),
+            None,
+        )
+        shared_path = modules.get(shared_module) if shared_module is not None else None
+        shared_tree = source.tree_for_path(shared_path) if shared_path is not None else None
+        if shared_tree is not None:
+            default_function = next(
+                (
+                    node
+                    for node in shared_tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_default_bindings"
+                ),
+                None,
+            )
     expected_handlers: set[str] = set()
     if default_function is None:
-        errors.append("built-in CLI action registry has no _default_bindings function")
+        errors.append("built-in CLI action registry has no local or shared _default_bindings function")
     else:
         errors.extend(_collect_default_action_handlers(default_function, modules, expected_handlers))
     actual_handlers = {str(edge["destination_module"]) for edge in graph.declarative_edges if edge["source_module"] == action_registry}
@@ -3103,8 +3138,25 @@ def _conversation_interface_c7_errors(root: Path) -> list[str]:
         operation = next((item for item in tree.body if isinstance(item, ast.FunctionDef) and item.name == "execute_code_command"), None)
         if operation is not None:
             args = {arg.arg: ast.unparse(arg.annotation) if arg.annotation else "" for arg in operation.args.kwonlyargs}
-            if args.get("conversation") != "ConversationRuntime" or "gateway" in args:
+            if args.get("conversation") not in {"ConversationRuntime", "ConversationRuntime | None"} or "gateway" in args:
                 errors.append("CURRENT C9 C7 gateway seam was not retired")
+            if args.get("conversation") == "ConversationRuntime | None":
+                expected = ast.parse('''if parsed.action in {"analyze", "review"}:
+    gateway = None
+elif conversation is None:
+    raise ValueError("A model-backed conversation is required for this code command")
+else:
+    gateway = _resolve_gateway(conversation)
+''').body[0]
+                gates = [node for node in operation.body if isinstance(node, ast.If)
+                         and ast.dump(node, include_attributes=False) == ast.dump(expected, include_attributes=False)]
+                contexts = [node for node in ast.walk(operation) if isinstance(node, ast.Call)
+                            and ast.unparse(node.func) == "build_code_context"]
+                gate_end = gates[0].end_lineno if len(gates) == 1 else None
+                if (gate_end is None or len(contexts) != 1 or contexts[0].lineno <= gate_end
+                        or len(contexts[0].args) != 2 or ast.unparse(contexts[0].args[1]) != "gateway"
+                        or contexts[0].lineno != gate_end + 1):
+                    errors.append("CURRENT C9 C7 model-free context is not restricted to read-only code actions")
             if not any(isinstance(item, ast.Call) and ast.unparse(item.func) == "_resolve_gateway"
                        for item in ast.walk(operation)):
                 errors.append("CURRENT C9 C7 does not privately resolve the original gateway")
@@ -5508,7 +5560,7 @@ _C10_SYMBOLS = frozenset({
 })
 _TASK_EXECUTION_PRIVATE = {
     "_task_activity": {"_project_task_activity_update", "_TaskActivityAdapter", "_bind_task_activity"},
-    "_task_observation": {"_primitive", "_receipt", "_observe_task_settlement", "_read_runtime_inspection"},
+    "_task_observation": {"_Settlement", "_primitive", "_receipt", "_interaction_fields", "_run_report_fields", "_observe_task_settlement", "_read_runtime_inspection"},
     "_task_commands": {"_prepare_workspace_command", "_execute_workspace_command", "_execute_memory_command", "_set_session_diagnostics"},
     "_task_submission": {"_execute_submission", "_execute_early_resume", "_execute_headless_run"},
 }
@@ -5556,13 +5608,31 @@ def _task_execution_surface_errors(tree: ast.Module, definitions: Mapping[str, a
     return agent_aliases, errors
 
 
+def _task_start_plugin_scope_errors(cls: ast.ClassDef) -> list[str]:
+    if cls.name != "TaskExecutionStart":
+        return []
+    errors: list[str] = []
+    scope_types = {"startup_extension_ids": "tuple[str, ...] | None",
+                   "startup_extension_fingerprints": "tuple[tuple[str, str], ...] | None"}
+    for member in cls.body:
+        if not isinstance(member, ast.AnnAssign) or not isinstance(member.target, ast.Name) or member.target.id not in scope_types:
+            continue
+        value = member.value
+        if (ast.unparse(member.annotation) != scope_types[member.target.id]
+                or not isinstance(value, ast.Call) or ast.unparse(value.func) != "field"
+                or not any(kw.arg == "kw_only" and literal_value(kw.value) is True for kw in value.keywords)
+                or not any(kw.arg == "default" and isinstance(kw.value, ast.Constant) and kw.value.value is None for kw in value.keywords)):
+            errors.append("CURRENT C10 plugin startup scope must be immutable, keyword-only and default-denied")
+    return errors
+
+
 def _task_execution_dto_errors(definitions: Mapping[str, ast.AST]) -> list[str]:
     errors: list[str] = []
     fields = {
         "TaskActivityUpdate": ["run_id", "timestamp", "coalescing_key", "delivery", "activity",
                                "advances_activity", "model_active", "tool_transition", "tool_name",
                                "invocation_id", "step_label", "warning", "terminal_outcome"],
-        "TaskExecutionStart": ["workspace", "app_paths", "config_path", "profile", "startup_capabilities", "observability_mode", "configure_logging"],
+        "TaskExecutionStart": ["workspace", "app_paths", "config_path", "profile", "startup_capabilities", "startup_extension_ids", "startup_extension_fingerprints", "observability_mode", "configure_logging"],
         "TaskExecutionContext": ["conversation", "config", "app_paths", "workspace", "workspace_paths", "config_path"],
         "TaskExecutionCapabilities": ["label", "allows_write_validate", "is_full_mode"],
         "ModeSelection": ["status", "label"],
@@ -5577,6 +5647,7 @@ def _task_execution_dto_errors(definitions: Mapping[str, ast.AST]) -> list[str]:
                      for node in cls.decorator_list)
         if actual != expected or not frozen:
             errors.append(f"CURRENT C10 {name} is not the immutable finite projection")
+        errors.extend(_task_start_plugin_scope_errors(cls))
         if name == "TaskActivityUpdate":
             annotations = {node.target.id: ast.unparse(node.annotation) for node in cls.body
                            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Sequence
+from typing import Any, Dict, Sequence, cast
 
 from llm_agent.agent.code.changes import ChangeSet, ChangeSetError, changeset_from_dict
 from llm_agent.agent.code.context_selection import SelectedFile
@@ -22,13 +22,15 @@ from llm_agent.agent.llm.context_projection import (
     fixed_untrusted_data_policy,
     render_untrusted_context_envelope,
 )
-from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest
+from llm_agent.agent.llm.contracts import ModelMessage, ModelRequest, ModelResponse
 from llm_agent.agent.llm.structured_output import (
     StructuredOutputError,
     StructuredOutputStrategy,
-    parse_structured_response,
+    parse_model_response,
 )
 
+from .workflow_proposal_runtime import complete as _complete
+from .workflow_proposal_runtime import context_limit as _context_limit
 from .workflow_proposal_support import build_decision_prompt, build_prompt
 
 CHANGESET_SCHEMA: Dict[str, Any] = {
@@ -69,11 +71,11 @@ CHANGESET_SCHEMA: Dict[str, Any] = {
 
 
 def _prompt(objective: str, targets: Sequence[str], context: str, instruction: str | None) -> str:
-    return build_prompt(objective, targets, context, instruction, CHANGESET_SCHEMA)
+    return cast(str, build_prompt(objective, targets, context, instruction, CHANGESET_SCHEMA))
 
 
 def _decision_prompt(objective: str, targets: Sequence[str], instruction: str | None) -> str:
-    return build_decision_prompt(objective, targets, instruction)
+    return cast(str, build_decision_prompt(objective, targets, instruction))
 
 
 def propose_changes(service: Any, objective: str, target_files: Sequence[str]) -> ChangeSet:
@@ -103,8 +105,10 @@ def propose_changes(service: Any, objective: str, target_files: Sequence[str]) -
         ),
     )
     try:
-        return _decode_proposal(response.content, objective, selected.files)
+        return _decode_proposal(response, objective, selected.files)
     except (StructuredOutputError, ChangeSetError) as first_error:
+        if getattr(response, "finish_reason", None) == "content_filter":
+            raise
         repair_prompt = (
             f"{prompt}\n\nA resposta anterior foi rejeitada: {first_error}. "
             "Retorne agora um único objeto JSON completo com a chave changes, contendo "
@@ -120,7 +124,7 @@ def propose_changes(service: Any, objective: str, target_files: Sequence[str]) -
                 optional_records=optional_records,
             ),
         )
-        return _decode_proposal(response.content, objective, selected.files)
+        return _decode_proposal(response, objective, selected.files)
 
 
 def propose_code_decision(
@@ -159,9 +163,12 @@ def propose_code_decision(
         ),
     )
     try:
-        value = parse_structured_response(response.content)
-        return parse_code_proposal(value, objective), manifest
+        value = parse_model_response(response)
+        decision = parse_code_proposal(value, objective)
+        return _bind_decision_preconditions(decision, objective, selected.files), manifest
     except (StructuredOutputError, ChangeSetError) as first_error:
+        if getattr(response, "finish_reason", None) == "content_filter":
+            raise
         repair_prompt = (
             f"{prompt}\n\nA resposta anterior foi rejeitada: {first_error}. "
             "Retorne somente o envelope fechado decision/rationale/reason_code/question/changes."
@@ -176,22 +183,45 @@ def propose_code_decision(
                 optional_records=guidance.records,
             ),
         )
-        return parse_code_proposal(parse_structured_response(response.content), objective), manifest
+        decision = parse_code_proposal(parse_model_response(response), objective)
+        return _bind_decision_preconditions(decision, objective, selected.files), manifest
+
+
+def _bind_decision_preconditions(
+    decision: CodeProposalDecision,
+    objective: str,
+    observed_files: Sequence[SelectedFile],
+) -> CodeProposalDecision:
+    """Attach runtime-owned stale-write guards to every model-proposed edit."""
+
+    if decision.kind.value != "CHANGE":
+        return decision
+    proposal = bind_observed_preconditions(
+        ChangeSet(objective=objective, changes=decision.changes, rationale=decision.rationale),
+        observed_files,
+    )
+    return CodeProposalDecision(
+        kind=decision.kind,
+        rationale=decision.rationale,
+        reason_code=decision.reason_code,
+        question=decision.question,
+        changes=proposal.changes,
+    )
 
 
 def _code_evidence_records(
     root: str | Path,
     observed_files: Sequence[SelectedFile],
 ) -> tuple[ContextSourceRecord, ...]:
-    return bind_selected_file_evidence(root, observed_files).context_records
+    return cast(tuple[ContextSourceRecord, ...], bind_selected_file_evidence(root, observed_files).context_records)
 
 
 def _decode_proposal(
-    content: str,
+    content: ModelResponse | str,
     objective: str,
     observed_files: Sequence[SelectedFile],
 ) -> ChangeSet:
-    parsed = parse_structured_response(content, CHANGESET_SCHEMA)
+    parsed = parse_model_response(content, CHANGESET_SCHEMA)
     proposed = changeset_from_dict(parsed, objective=objective)
     return bind_observed_preconditions(proposed, observed_files)
 
@@ -260,25 +290,3 @@ def _proposal_request(
     if not isinstance(fit.request, ModelRequest):
         raise TypeError("context fitting returned an invalid model request")
     return fit.request
-
-
-def _context_limit(service: Any) -> int | None:
-    hardware = getattr(service.context, "hardware_profile", None)
-    value = getattr(hardware, "context_limit", None)
-    if isinstance(value, int) and value > 0:
-        return value
-    metadata = getattr(service.context, "metadata", {})
-    value = metadata.get("context_limit") if isinstance(metadata, dict) else None
-    return value if isinstance(value, int) and value > 0 else None
-
-
-def _complete(service: Any, request: ModelRequest) -> tuple[Any, int]:
-    """Delegate the coding provider attempt to the canonical lifecycle owner."""
-
-    from llm_agent.agent.runtime.model_call import ModelCallService
-
-    outcome = ModelCallService.for_context(service.context).complete(
-        request,
-        operation="propose_changes",
-    )
-    return outcome.response, outcome.call_number

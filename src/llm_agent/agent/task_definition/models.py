@@ -22,6 +22,7 @@ from llm_agent.agent.task_definition.model_validation import (
     TASK_ID_PATTERN,
 )
 from llm_agent.agent.task_definition.spec_model import TaskSpec, TaskSpecPhase
+from llm_agent.agent.task_definition.verification_model import VerificationCheck
 
 __all__ = [
     "CONTRACT_VERSION",
@@ -43,4 +44,5 @@ __all__ = [
     "TaskDefinitionRef",
     "TaskSpec",
     "TaskSpecPhase",
+    "VerificationCheck",
 ]

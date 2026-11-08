@@ -113,12 +113,14 @@ def test_application_diagnostic_export_projects_receipt_and_preserves_options(
             output: str | Path | None,
             force: bool,
             include_bookmarks: bool,
+            metadata_only: bool,
         ) -> ExportReceipt:
             observed.update(
                 run_id=run_id,
                 output=output,
                 force=force,
                 include_bookmarks=include_bookmarks,
+                metadata_only=metadata_only,
             )
             return ExportReceipt(
                 path=str(tmp_path / "bundle.zip"),
@@ -145,6 +147,7 @@ def test_application_diagnostic_export_projects_receipt_and_preserves_options(
     assert observed["output"] == tmp_path / "bundle.zip"
     assert observed["force"] is True
     assert observed["include_bookmarks"] is True
+    assert observed["metadata_only"] is False
     assert not isinstance(result, ExportReceipt)
     assert result.to_dict() == {
         "path": str(tmp_path / "bundle.zip"),

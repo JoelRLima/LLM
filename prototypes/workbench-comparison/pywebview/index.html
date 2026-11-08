@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>LLM Agent — Workbench</title>
+  <link rel="stylesheet" href="workbench.css">
+  <link rel="stylesheet" href="candidate-overrides.css">
+</head>
+<body>
+  <div class="app-shell" id="shell">
+    <aside class="rail" id="rail">
+      <div class="brand"><div class="brand-mark">L</div><div class="brand-copy"><b>LLM Agent</b><span>WORKBENCH</span></div><button class="icon-button collapse" id="collapse-nav" title="Recolher navegação">‹</button></div>
+      <div class="workspace-switch"><span class="workspace-glyph">⌘</span><div><span class="eyebrow">WORKSPACE</span><b id="workspace-name">agent-workbench</b></div><span class="chevron">⌄</span></div>
+      <div class="nav-section">SESSÃO</div>
+      <nav class="nav-list" aria-label="Navegação principal">
+        <button class="nav-item selected" id="nav-chat" aria-current="page" title="Focar mensagem na conversa atual"><span class="nav-icon">◉</span><span>Chat</span></button>
+        <button class="nav-item" id="nav-files" disabled title="Aguardando disponibilidade da inspeção de arquivos"><span class="nav-icon">▦</span><span>Arquivos</span><small id="nav-files-availability" class="unavailable-label">Indisponível</small></button>
+        <button class="nav-item" id="nav-tasks" disabled title="Aguardando disponibilidade da inspeção da sessão"><span class="nav-icon">◷</span><span>Tarefas</span><small id="nav-tasks-availability" class="unavailable-label">Indisponível</small></button>
+        <button class="nav-item" id="nav-tools" disabled title="Aguardando disponibilidade do inventário de ferramentas"><span class="nav-icon">⚒</span><span>Ferramentas</span><small id="nav-tools-availability" class="unavailable-label">Indisponível</small></button>
+      </nav>
+      <div class="nav-section artifacts-heading">ARTEFATOS <button class="tiny-icon" id="refresh-artifacts" disabled title="Atualizar artefatos: indisponível neste protótipo; relatórios aparecem após a execução" aria-label="Atualizar artefatos indisponível">↻</button></div>
+      <button class="artifact-link" id="artifact-link" disabled><span class="file-icon">▤</span><span>Relatórios</span><span class="nav-count" id="artifact-count">0</span></button>
+      <div class="rail-spacer"></div>
+      <div class="profile"><div class="avatar">U</div><div class="profile-copy"><b>Workbench</b><span id="session-mode">Inicializando sessão…</span></div><button class="tiny-icon" id="profile-menu" disabled title="Menu do perfil: indisponível neste protótipo" aria-label="Menu do perfil indisponível">···</button></div>
+    </aside>
+    <main class="main-column">
+      <header class="topbar"><div class="crumb"><span>Chat</span><span class="slash">/</span><b>Nova conversa</b></div><div class="top-actions"><button class="offline-pill" id="model-availability" disabled title="Aguardando o modo de execução informado pela bridge"><i></i> Inicializando sessão…</button><button class="icon-button" id="theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button><button class="icon-button" id="shortcuts" title="Mostrar atalhos" aria-label="Mostrar atalhos">⌘</button><div class="avatar small">U</div></div></header>
+      <section class="conversation" id="conversation" aria-label="Conversa">
+        <div class="welcome" id="welcome"><div class="welcome-icon">✳</div><div class="eyebrow">AGENT WORKBENCH</div><h1>O que vamos<br><em>construir hoje?</em></h1><p>Converse com o Agent para analisar arquivos, explorar<br>projetos e examinar os resultados sem perder o contexto.</p><button class="suggestion" id="suggestion"><span>⌕</span><span><b>Analise notes.txt</b><small>Leia o arquivo e descreva os pontos encontrados</small></span><span class="arrow">↗</span></button></div>
+        <div class="messages" id="messages"></div>
+      </section>
+      <div class="composer-wrap"><div class="composer"><textarea id="prompt" rows="2" placeholder="Peça uma análise ou descreva o trabalho…" aria-label="Mensagem"></textarea><div class="composer-tools"><div class="composer-hint"><span>Enviar</span> <kbd>Ctrl</kbd><kbd>Enter</kbd></div><div class="composer-actions"><button class="attach" id="attach-file" title="Anexar arquivo: indisponível neste protótipo" aria-label="Anexar arquivo indisponível" disabled>＋</button><button class="cancel" id="cancel" title="Solicitar cancelamento" hidden>Parar</button><button class="send" id="send" title="Enviar">↑</button></div></div></div><div class="composer-caption">O Agent trabalha no workspace ativo e segue as permissões da sessão.</div></div>
+      <footer class="statusbar"><span class="status-left"><i class="status-dot"></i><b>READ ONLY</b><span class="status-sep">·</span><span id="run-status">Pronto</span></span><span class="status-right"><span>Modelo <b id="model-name">não informado</b></span><span class="status-sep">·</span><span>Workspace <b id="workspace-name-status">carregando…</b></span></span></footer>
+    </main>
+    <div class="resize-grip" id="resize-grip" hidden aria-label="Redimensionar painel"></div>
+    <aside class="inspector" id="inspector" hidden>
+      <div class="inspector-header"><div class="tabs" id="tabs"><div class="tab active" role="tab"><span class="file-icon">▤</span><span id="tab-title">Relatório</span><button class="tab-close" id="close-panel" title="Fechar painel">×</button></div></div><button class="icon-button" id="report-options" disabled title="Mais opções do relatório: indisponível neste protótipo" aria-label="Mais opções do relatório indisponível">···</button></div>
+      <div class="report-toolbar"><div><div class="eyebrow" id="panel-kind-label">RELATÓRIO DE EXECUÇÃO</div><h2 id="report-heading">Relatório do Agent</h2></div><span class="complete-badge" id="complete-badge"><i></i><span id="completeness-label">não informada</span></span></div>
+      <div class="report-meta"><div><span class="eyebrow">ORIGEM</span><b id="report-source">origem da aplicação</b></div><div><span class="eyebrow">EXECUÇÃO</span><b id="report-run">execução associada</b></div><div><span class="eyebrow">WORKSPACE</span><b id="report-workspace">workspace ativo</b></div></div>
+      <div class="report-content"><div class="report-banner"><span>✓</span><div><b id="report-state">Relatório recebido</b><small>Conteúdo original fornecido pela aplicação</small></div></div><div class="markdown" id="report-body"><div class="skeleton"></div><div class="skeleton short"></div></div></div>
+      <div class="inspector-footer"><span id="report-integrity">Metadados pendentes</span><button id="copy-report" disabled>Copiar texto</button></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="workbench.js"></script>
+</body>
+</html>

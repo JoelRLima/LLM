@@ -32,7 +32,16 @@ def report_failures(path: Path) -> int:
         )
         return 0
 
-    root = ET.parse(path).getroot()
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError) as exc:
+        detail = str(exc) or type(exc).__name__
+        print(
+            "::error title=Pytest diagnostics::"
+            f"Could not read JUnit report: {_escape_annotation(str(path))}: "
+            f"{_escape_annotation(detail)}"
+        )
+        return 0
     failures = 0
     for testcase in root.iter("testcase"):
         failure = testcase.find("failure")

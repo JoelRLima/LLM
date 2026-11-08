@@ -1,9 +1,11 @@
 """Pure regressions for post-parent POSIX cleanup classification."""
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
 
 from llm_agent.execution import cleanup
+from llm_agent.process.streams import StreamCapture
 
 
 @pytest.mark.parametrize("state", ["live", "absent", "unavailable"])
@@ -30,7 +32,17 @@ def test_query_failure_does_not_skip_any_cleanup(monkeypatch: pytest.MonkeyPatch
     events = []
     for name in ["_terminate_tree", "_settle_readers", "_close_process_pipes"]:
         monkeypatch.setattr(cleanup, name, lambda *args, name=name: events.append(name))
-    context = SimpleNamespace(process=SimpleNamespace(poll=lambda: 0), process_group=43210, windows_job=None, fail_on_orphaned_group=True)
+    context = cleanup.CommandContext(
+        process=SimpleNamespace(poll=lambda: 0, stdin=None),
+        windows_job=None,
+        process_group=43210,
+        readers=[],
+        stdout=StreamCapture(0),
+        stderr=StreamCapture(0),
+        stop_readers=Event(),
+        reader_errors=[],
+        fail_on_orphaned_group=True,
+    )
     error = cleanup.cleanup_command(context, terminate_tree=True)
     assert error is not None and "could not confirm" in error
     assert events == ["_terminate_tree", "_settle_readers", "_close_process_pipes"]

@@ -155,6 +155,390 @@
       "destination": "agent.tools",
       "class": "adapter",
       "constraint": "Existing bounded construction surface only; not a generic reverse dependency authorization."
+    },
+    {
+      "direction_id": "W21-DIR-REPORT-SNAPSHOT-OUTCOME-PLANNING",
+      "source": "agent.reporting.run_snapshot",
+      "destination": "agent.planning.outcome_planning",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Run snapshot may call the bounded plan-coverage projection to include requirement coverage facts."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-VERIFICATION-TASK-ERRORS",
+      "source": "agent.planning.outcome_verification",
+      "destination": "agent.task_definition.errors",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome verification may consume canonical task-definition error values."
+    },
+    {
+      "direction_id": "W21-DIR-PLAN-COVERAGE-TASK-RESOLVER",
+      "source": "agent.planning.plan_coverage",
+      "destination": "agent.task_definition.resolver",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Coverage may consume the immutable materialization value returned by the task-definition resolver."
+    },
+    {
+      "direction_id": "W21-DIR-PLAN-COVERAGE-TASK-MODELS",
+      "source": "agent.planning.plan_coverage",
+      "destination": "agent.task_definition.models",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Coverage may consume immutable task-definition value types."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-VERIFICATION-TASK-MODELS",
+      "source": "agent.planning.outcome_verification",
+      "destination": "agent.task_definition.models",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome verification may consume immutable task-definition value types."
+    },
+    {
+      "direction_id": "W21-DIR-COMPLETION-CONSTRAINTS-VALIDATION-EVIDENCE",
+      "source": "agent.planning.task_completion_constraints",
+      "destination": "agent.runtime.validation_evidence",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Completion constraint evaluation may consume canonical validation evidence values."
+    },
+    {
+      "direction_id": "W21-DIR-REPORT-PROJECTION-VALIDATION-EVIDENCE",
+      "source": "agent.reporting.run_projection_facts",
+      "destination": "agent.runtime.validation_evidence",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Report projection may read canonical validation facts for presentation."
+    },
+    {
+      "direction_id": "W21-DIR-REPORT-RECEIPT-VALIDATION-EVIDENCE",
+      "source": "agent.reporting.run_receipt_builder",
+      "destination": "agent.runtime.validation_evidence",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Receipt construction may read canonical validation facts for durable evidence."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-DEFINITION-TASK-RESOLVER",
+      "source": "agent.planning.outcome_definition",
+      "destination": "agent.task_definition.resolver",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome definition may use the immutable materialization value returned by the task-definition resolver."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-DEFINITION-TASK-MODELS",
+      "source": "agent.planning.outcome_definition",
+      "destination": "agent.task_definition.models",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome definition may consume immutable task-definition value types."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-VERIFICATION-TASK-VERIFICATION",
+      "source": "agent.planning.outcome_verification",
+      "destination": "agent.task_definition.verification_model",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome verification may consume canonical task verification values."
+    },
+    {
+      "direction_id": "W21-DIR-REQUIREMENT-CONTINUATION-BUDGET",
+      "source": "agent.planning.requirement_continuation",
+      "destination": "agent.runtime.budget",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Requirement continuation may consume the existing runtime budget value contract."
+    },
+    {
+      "direction_id": "W21-DIR-PLAN-COVERAGE-REQUIREMENT-REFS",
+      "source": "agent.planning.plan_coverage",
+      "destination": "agent.task_definition.requirement_refs",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Coverage may consume canonical requirement reference values."
+    },
+    {
+      "direction_id": "W21-DIR-PLAN-COVERAGE-EXECUTION-STATE",
+      "source": "agent.planning.plan_coverage",
+      "destination": "agent.execution_state",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Coverage may inspect canonical execution records to measure represented outcomes."
+    },
+    {
+      "direction_id": "W21-DIR-STATE-CHECKPOINT-REPLAN",
+      "source": "agent.state_checkpointing",
+      "destination": "agent.state_replan",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Checkpointing may delegate replan state serialization to its focused owner."
+    },
+    {
+      "direction_id": "W21-DIR-REQUIREMENT-VERIFICATION-TASK-VERIFICATION",
+      "source": "agent.planning.requirement_verification",
+      "destination": "agent.task_definition.verification_model",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Requirement verification may consume canonical task verification values."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-PLANNING-TASK-MODELS",
+      "source": "agent.planning.outcome_planning",
+      "destination": "agent.task_definition.models",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome planning may consume immutable task-definition value types."
+    },
+    {
+      "direction_id": "W21-DIR-PLAN-COVERAGE-CONTRACTS",
+      "source": "agent.planning.plan_coverage",
+      "destination": "agent.contracts",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Coverage may consume canonical execution contract values."
+    },
+    {
+      "direction_id": "W21-DIR-REQUIREMENT-CONTINUATION-RECOVERY",
+      "source": "agent.planning.requirement_continuation",
+      "destination": "agent.runtime.recovery",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Requirement continuation may consume the existing runtime recovery outcome contract."
+    },
+    {
+      "direction_id": "W21-DIR-OUTCOME-PLANNING-TASK-ERRORS",
+      "source": "agent.planning.outcome_planning",
+      "destination": "agent.task_definition.errors",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Outcome planning may consume canonical task-definition error values."
+    },
+    {
+      "direction_id": "W21-DIR-TRACE-BUDGET-ESTIMATION",
+      "source": "agent.evaluation.trace_request_summary",
+      "destination": "agent.runtime.budget_estimation",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Trace summaries may use the shared request token estimator."
+    },
+    {
+      "direction_id": "W21-DIR-WORKFLOW-PROPOSAL-LLM-CONTRACTS",
+      "source": "agent.code.workflow_proposal_runtime",
+      "destination": "agent.llm.contracts",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Workflow proposal runtime may build canonical model requests."
+    },
+    {
+      "direction_id": "W21-DIR-TOOL-DISCLOSURE-RECOVERY",
+      "source": "agent.planning.tool_disclosure_selection",
+      "destination": "agent.runtime.recovery",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Tool disclosure selection may use the typed recovery scope value."
+    },
+    {
+      "direction_id": "W21-DIR-STAGE-EXECUTION-PROFILE",
+      "source": "agent.llm.stage_context",
+      "destination": "agent.runtime.execution_profile",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Stage context may project the canonical execution profile."
+    },
+    {
+      "direction_id": "W21-DIR-COMPILER-PROMPTS-ADMITTED-DECISION",
+      "source": "agent.task_definition.compiler_prompts",
+      "destination": "agent.llm.admitted_decisions",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Task compiler prompts may name the admitted task-contract decision type."
+    },
+    {
+      "direction_id": "W21-DIR-RUNTIME-LOG-FORMATTER",
+      "source": "agent.runtime.logging",
+      "destination": "agent.observability.log_formatter",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Runtime logging may use the shared redacting formatter."
+    },
+    {
+      "direction_id": "W21-DIR-TRACE-DECISION-CONTRACT",
+      "source": "agent.evaluation.trace_diagnostics",
+      "destination": "agent.llm.decision_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Trace diagnostics may interpret the canonical decision contract."
+    },
+    {
+      "direction_id": "W21-DIR-COMPACT-PLANNING-SEMANTICS",
+      "source": "agent.orchestration.compact_route",
+      "destination": "agent.planning.task_semantics",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Compact orchestration may use canonical task semantics."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-VARIANTS",
+      "source": "agent.evaluation.weak_model_execution",
+      "destination": "agent.variants.models",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Evaluation may compose the declared model variants."
+    },
+    {
+      "direction_id": "W21-DIR-TOOL-DISCLOSURE-DECISION-CONTRACT",
+      "source": "agent.planning.tool_disclosure_selection",
+      "destination": "agent.llm.decision_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Tool disclosure selection may use the canonical model-request contract."
+    },
+    {
+      "direction_id": "W21-DIR-OPENAI-MEASUREMENT-REUSE",
+      "source": "agent.llm.providers.openai_compatible",
+      "destination": "agent.runtime.request_measurement_reuse",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "The OpenAI-compatible provider may reuse request-local token measurements."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-APPROVAL",
+      "source": "agent.evaluation.weak_model_execution",
+      "destination": "agent.approval",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Evaluation may compose the explicit test approval policy."
+    },
+    {
+      "direction_id": "W21-DIR-WORKFLOW-PROPOSAL-MODEL-CALL",
+      "source": "agent.code.workflow_proposal_runtime",
+      "destination": "agent.runtime.model_call",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Workflow proposal runtime may invoke the canonical model-call service."
+    },
+    {
+      "direction_id": "W21-DIR-BOUNDARY-DISCOVERY-ADMITTED",
+      "source": "agent.planning.boundary_discovery",
+      "destination": "agent.llm.admitted_decisions",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Boundary discovery may consume admitted reasoning-boundary decisions."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-RESPONSE-CONTRACTS",
+      "source": "agent.evaluation.weak_model_fixtures",
+      "destination": "agent.llm.contracts",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Deterministic model fixtures may construct canonical model responses."
+    },
+    {
+      "direction_id": "W21-DIR-TOOL-DISCLOSURE-ADMITTED",
+      "source": "agent.planning.tool_disclosure_selection",
+      "destination": "agent.llm.admitted_decisions",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Tool disclosure selection may consume typed admitted decisions."
+    },
+    {
+      "direction_id": "W21-DIR-TRACE-REQUEST-CONTRACT",
+      "source": "agent.evaluation.trace_request_summary",
+      "destination": "agent.llm.decision_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Trace summaries may identify canonical request contracts."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-GATEWAY-CONTRACT",
+      "source": "agent.evaluation.weak_model_execution",
+      "destination": "agent.llm.contracts",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Evaluation may compose the canonical model gateway contract."
+    },
+    {
+      "direction_id": "W21-DIR-VALIDATION-PLAN-ASSOCIATION",
+      "source": "agent.planning.validation_repair_contracts",
+      "destination": "agent.llm.plan_association_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Validation repair may use canonical plan-association validation."
+    },
+    {
+      "direction_id": "W21-DIR-COMPACT-EXECUTION-PROFILE",
+      "source": "agent.orchestration.compact_route",
+      "destination": "agent.runtime.execution_profile",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Compact orchestration may resolve the canonical execution profile."
+    },
+    {
+      "direction_id": "W21-DIR-TOOL-DISCLOSURE-LIMIT",
+      "source": "agent.planning.tool_disclosure_selection",
+      "destination": "agent.llm.tool_discovery_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Tool disclosure selection may use the bounded discovery limit."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-CONFIG-REPOSITORY",
+      "source": "agent.evaluation.weak_model_execution",
+      "destination": "agent.runtime.config_repository",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Evaluation may construct its runtime from the canonical configuration repository."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-AUTHORITY",
+      "source": "agent.evaluation.weak_model_execution",
+      "destination": "agent.tools.authority",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Evaluation may supply the explicit task-authority snapshot."
+    },
+    {
+      "direction_id": "W21-DIR-DISCLOSURE-RUN-CORRELATION",
+      "source": "agent.planning.disclosure_cache",
+      "destination": "agent.runtime.correlation",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Disclosure cache entries may use the run-correlation value."
+    },
+    {
+      "direction_id": "W21-DIR-WEAK-MODEL-DECISION-CONTRACT",
+      "source": "agent.evaluation.weak_model_fixtures",
+      "destination": "agent.llm.decision_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Deterministic model fixtures may select the canonical request contract."
+    },
+    {
+      "direction_id": "W21-DIR-TRACE-STRUCTURED-OUTPUT",
+      "source": "agent.evaluation.trace_diagnostics",
+      "destination": "agent.llm.structured_output",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Trace diagnostics may use the canonical structured-output parser."
+    },
+    {
+      "direction_id": "W21-DIR-COMPACT-TASK-DIRECTIVES",
+      "source": "agent.orchestration.compact_route",
+      "destination": "agent.runtime.task_directives",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Compact orchestration may resolve explicit task directives."
+    },
+    {
+      "direction_id": "W21-DIR-BOUNDARY-DECISION-CONTRACT",
+      "source": "agent.planning.boundary_discovery",
+      "destination": "agent.llm.decision_contract",
+      "exact": true,
+      "class": "canonical",
+      "constraint": "Boundary discovery may identify the canonical decision contract."
     }
   ],
   "selector_schema": {

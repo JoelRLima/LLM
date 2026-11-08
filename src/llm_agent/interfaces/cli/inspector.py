@@ -140,6 +140,7 @@ def _run_export(args: Any, operations: InspectionAuxiliaryOperations) -> int:
             output=_value(args, "output"),
             force=bool(_value(args, "force", False)),
             include_bookmarks=bool(_value(args, "include_bookmarks", False)),
+            metadata_only=bool(_value(args, "metadata_only", False)),
         )
     )
     if _value(args, "json_output", False):

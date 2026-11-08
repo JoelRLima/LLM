@@ -18,6 +18,7 @@ from llm_agent.agent.observability.trace_paths import (
 )
 from llm_agent.agent.observability.trace_types import TraceCompleteness
 from llm_agent.agent.observability.trace_writer_publication import (
+    flush_to_frontier,
     publish_metadata,
     publish_metadata_bounded,
 )
@@ -37,10 +38,13 @@ class TraceWriterMixin:
 
     _writer_error: str | None
     _metadata_dirty: bool
+    _metadata_dirty_since: float | None
 
     def _mark_metadata_dirty_locked(self: Any) -> None:
         """Record a metadata generation while the ingestion condition is held."""
 
+        if not self._metadata_dirty:
+            self._metadata_dirty_since = time.monotonic()
         self._metadata_revision += 1
         self._metadata_dirty = True
         self._heartbeat_quiesced = False
@@ -276,23 +280,6 @@ class TraceWriterMixin:
         run_writer(self)
 
     def flush(self: Any, timeout_seconds: float | None = None) -> bool:
-        timeout = self._shutdown_timeout_seconds if timeout_seconds is None else max(0.0, timeout_seconds)
-        deadline = time.monotonic() + timeout
-        with self._condition:
-            while (
-                self._pending
-                or self._pending_gaps
-                or self._inflight
-                or (self._metadata_dirty and not getattr(self, "_heartbeat_quiesced", False))
-                or self._publication_in_flight > 0
-            ):
-                if self._writer_error is not None:
-                    return False
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return False
-                self._condition.notify_all()
-                self._condition.wait(timeout=remaining)
-            return self._writer_error is None
+        return flush_to_frontier(self, timeout_seconds)
 
 __all__ = ["TraceWriterMixin"]

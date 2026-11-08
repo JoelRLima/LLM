@@ -50,17 +50,14 @@ def build_plan_prompt(
 Ferramentas disponíveis:
 {tools}
 
-Escolha exatamente uma das duas respostas JSON principais, ou a forma explícita
-de fronteira descrita logo abaixo:
+Escolha exatamente uma destas duas respostas JSON:
 {{"action": "direct_response", "answer": "resposta final ao usuario"}}
 {{"action": "use_tools", "plan": [{{"tool": "ferramenta", "args": {{}}}}]}}
-{{"action": "continue_after_plan", "plan": [{{"tool": "ferramenta", "args": {{}}}}]}}
 Nesta chamada produza nesta unica decisao o plano executavel completo e limitado.
 O runtime persiste o plano e executa seus passos sem pedir nova decisão entre eles.
 A exaustão de qualquer plano de ferramentas sempre passa por uma fronteira
 canônica de conclusão; nenhuma escolha desta resposta pode dispensar essa
-verificação. `continue_after_plan` permanece aceito apenas por compatibilidade
-de checkpoint/telemetria e não autoriza o sucesso. Para uma dependência
+verificação. Para uma dependência
 mecânica use bindings separados:
 {{"tool":"grep","args":{{"path":"."}},"bindings":{{"pattern":{{"from_step":1,"path":[]}}}}}}
 Cada from_step aponta apenas para um ToolStep anterior. Valores falsy presentes

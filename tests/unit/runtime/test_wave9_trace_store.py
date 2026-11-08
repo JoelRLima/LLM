@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from llm_agent.agent.observability import (
     DiagnosticRecord,
     ObservationSource,
     TraceCompleteness,
+    TraceCorruptError,
     TraceRetentionPolicy,
     TraceStore,
+    TraceStoreError,
     safe_run_key,
 )
+from llm_agent.agent.observability.trace_paths import _atomic_write
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.events import RuntimeEvent
 from llm_agent.workspace.paths import WorkspacePaths
@@ -148,3 +153,126 @@ def test_catalog_and_retention_keep_active_runs(tmp_path: Path) -> None:
     assert active.run_id not in removed
     assert catalog.latest().run_id == active.run_id
     active.close()
+
+
+def test_metadata_coalescing_keeps_events_live_and_flush_bypasses_delay(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(
+        paths,
+        "run-coalesced-metadata",
+        shutdown_timeout_seconds=2,
+        metadata_coalesce_delay_seconds=5,
+    )
+    store.append(_event(store.run_id, "2026-09-02T12:00:00Z"))
+    with store._condition:
+        assert store._condition.wait_for(
+            lambda: store._metadata_values["highest_sequence_persisted"] == 1,
+            timeout=2,
+        )
+
+    assert [record.sequence for record in TraceStore.open(paths, store.run_id).read()] == [1]
+    assert store._read_metadata_file().highest_sequence_persisted == 0
+    assert store.flush(2)
+    assert store._read_metadata_file().highest_sequence_persisted == 1
+    assert store.close().completeness is TraceCompleteness.COMPLETE
+
+
+def test_close_bypasses_metadata_coalescing_delay(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(
+        paths,
+        "run-close-coalesced-metadata",
+        shutdown_timeout_seconds=2,
+        metadata_coalesce_delay_seconds=5,
+    )
+    store.append(_event(store.run_id, "2026-09-02T12:00:00Z"))
+
+    metadata = store.close()
+
+    assert metadata.completeness is TraceCompleteness.COMPLETE
+    assert metadata.highest_sequence_persisted == 1
+
+
+def test_active_trace_recovery_reconciles_jsonl_ahead_of_metadata(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(paths, "run-recover-metadata", shutdown_timeout_seconds=2)
+    store.append(_event(store.run_id, "2026-09-02T12:00:00Z"))
+    assert store.flush(2)
+    store.close()
+
+    stale = store._read_metadata_file().to_dict()
+    stale.update(
+        active=True,
+        status=TraceCompleteness.ACTIVE.value,
+        completeness=TraceCompleteness.ACTIVE.value,
+        end_time=None,
+        highest_sequence_accepted=0,
+        highest_sequence_persisted=0,
+        semantic_count=0,
+    )
+    _atomic_write(store.metadata_file, stale)
+
+    resumed = TraceStore(paths, store.run_id, shutdown_timeout_seconds=2)
+    assert resumed.metadata.highest_sequence_accepted == 1
+    assert resumed.metadata.highest_sequence_persisted == 1
+    assert resumed._next_sequence == 2
+    resumed.append(_event(resumed.run_id, "2026-09-02T12:00:01Z"))
+    assert resumed.flush(2)
+    resumed.close()
+
+    records = TraceStore.open(paths, store.run_id).read()
+    assert [record.sequence for record in records] == [1, 2]
+
+
+def test_active_trace_recovery_rejects_unpersisted_accepted_tail(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(paths, "run-reject-lost-tail", shutdown_timeout_seconds=2)
+    store.append(_event(store.run_id, "2026-09-02T12:00:00Z"))
+    assert store.flush(2)
+    store.close()
+
+    stale = store._read_metadata_file().to_dict()
+    stale.update(
+        active=True,
+        status=TraceCompleteness.ACTIVE.value,
+        completeness=TraceCompleteness.ACTIVE.value,
+        end_time=None,
+        highest_sequence_accepted=2,
+    )
+    _atomic_write(store.metadata_file, stale)
+
+    with pytest.raises(TraceStoreError, match="accepted records missing"):
+        TraceStore(paths, store.run_id)
+
+
+def test_active_trace_recovery_rejects_partial_jsonl_tail(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(paths, "run-reject-partial-tail", shutdown_timeout_seconds=2)
+    store.append(_event(store.run_id, "2026-09-02T12:00:00Z"))
+    assert store.flush(2)
+    store.close()
+
+    stale = store._read_metadata_file().to_dict()
+    stale.update(
+        active=True,
+        status=TraceCompleteness.ACTIVE.value,
+        completeness=TraceCompleteness.ACTIVE.value,
+        end_time=None,
+    )
+    _atomic_write(store.metadata_file, stale)
+    with store.trace_file.open("ab") as handle:
+        handle.write(b'{"source":"runtime_event"')
+
+    with pytest.raises(TraceCorruptError, match="incomplete record"):
+        TraceStore(paths, store.run_id)
+
+
+def test_trace_run_has_single_writer_but_allows_read_only_observer(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    writer = TraceStore(paths, "run-single-writer", shutdown_timeout_seconds=2)
+    with pytest.raises(TraceStoreError, match="already has a writer"):
+        TraceStore(paths, writer.run_id)
+
+    observer = TraceStore.open(paths, writer.run_id)
+    assert observer.metadata.active is True
+    assert writer.close().completeness is TraceCompleteness.COMPLETE

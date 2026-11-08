@@ -69,3 +69,40 @@ def test_s07_007_rejects_reintroduced_query_modules_and_semantic_shadows(tmp_pat
         "agent/application_services/query_validation.py",
     }
     assert all(finding.rule_id == "W19-S07-007" for finding in findings)
+
+
+def test_s07_007_accepts_only_bounded_query_support_helpers(tmp_path: Path) -> None:
+    application_services = tmp_path / "agent" / "application_services"
+    application_services.mkdir(parents=True)
+    pattern = application_services / "query_find_pattern.py"
+    pattern.write_text(
+        '"""Pattern helper."""\n'
+        "from __future__ import annotations\n"
+        "from llm_agent.application.services.queries import (\n"
+        "    MAX_FIND_PATTERN_CHARS,\n    QUERY_FIND_PATTERN_EMPTY,\n"
+        "    QUERY_FIND_PATTERN_INVALID,\n    WorkspaceQueryRequest,\n"
+        "    WorkspaceQueryResult,\n    _failed,\n)\n\n"
+        "_FIND_LITERAL_META = frozenset()\n\n"
+        "def pattern_error(request, pattern):\n    return None\n",
+        encoding="utf-8",
+    )
+    utf8 = application_services / "query_utf8.py"
+    utf8.write_text(
+        '"""UTF-8 helper."""\n'
+        "from __future__ import annotations\n\nimport codecs\n\n"
+        "def decode_utf8_prefix(payload, *, truncated):\n    return payload\n",
+        encoding="utf-8",
+    )
+
+    assert checker._check_single_owner_shapes(tmp_path) == []
+
+    pattern.write_text(
+        pattern.read_text(encoding="utf-8")
+        + "\ndef dispatch_query(request):\n    return request\n",
+        encoding="utf-8",
+    )
+    findings = checker._check_single_owner_shapes(tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "W19-S07-007"
+    assert findings[0].path == "agent/application_services/query_find_pattern.py"

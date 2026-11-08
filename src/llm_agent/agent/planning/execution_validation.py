@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
+from llm_agent.agent.planning.outcome_planning import admit_outcome_links
 from llm_agent.agent.planning.plan_admission import PlanAdmissionMode, PlanAdmissionService
 from llm_agent.agent.planning.plan_model import Plan
 from llm_agent.agent.planning.planning_context import PlanningContextSnapshot
@@ -22,6 +23,8 @@ def validate_and_optimize_plan(
     admitted_intent: Any = None,
     grounded_targets: Any = None,
 ) -> Optional[Plan]:
+    if not admit_outcome_links(gateway, plan):
+        return None
     explicit_context = planning_context is not None
     context = (
         planning_context
@@ -112,7 +115,11 @@ def validate_and_optimize_plan(
         context,
         presentation,
     )
-    return recovered if isinstance(recovered, Plan) else None
+    return _validated_links(gateway, recovered)
+
+
+def _validated_links(gateway: Any, plan: Any) -> Optional[Plan]:
+    return plan if isinstance(plan, Plan) and admit_outcome_links(gateway, plan) else None
 
 
 def _repairable_report(report: Any) -> bool:

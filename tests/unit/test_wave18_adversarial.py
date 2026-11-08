@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,14 @@ from scripts.run_wave18_adversarial import (
     run_campaign,
 )
 from scripts.uv_build_evidence import UV_EVIDENCE_SCHEMA, UV_REQUIRED_CASES
+
+
+@pytest.fixture(autouse=True)
+def _use_private_temp_for_candidate_materialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give this Windows ACL-sensitive campaign's TemporaryDirectory a private root."""
+    private_root = os.environ.get("W23_PRIVATE_TEST_ROOT")
+    if os.name == "nt" and private_root:
+        monkeypatch.setattr(tempfile, "tempdir", private_root)
 
 CRITICAL_IDENTITIES = {
     "W18-A05": "payload file hash/size mismatch after extraction",

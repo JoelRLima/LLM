@@ -35,6 +35,7 @@ from llm_agent.agent.planning.task_semantics import (
 from llm_agent.agent.runtime.context import RuntimeLimits, TaskExecutionContext, TaskStatus
 from llm_agent.agent.state import AgentState
 from llm_agent.cancellation import CancellationToken
+from tests.unit.code.test_coding_workflows import FakeGateway, _service
 
 
 def _proposal(decision="CHANGE", rationale="do it", reason_code="NONE", question="", changes=None):
@@ -65,6 +66,25 @@ def test_code_proposal_decision_is_closed_and_never_builds_empty_changeset():
             "",
             (FileChange("a.py", ChangeKind.MODIFY, content="same"),),
         )
+
+
+def test_decision_workflow_binds_edit_preconditions_to_observed_file(tmp_path):
+    source = '{"enabled":false,"retries":2}\n'
+    (tmp_path / "settings.json").write_bytes(source.encode("utf-8"))
+    gateway = FakeGateway([json.dumps(_proposal(changes=[{
+        "path": "settings.json",
+        "kind": "edit",
+        "edits": [{"operation": "replace", "start_line": 1, "end_line": 1,
+                   "content": '{"enabled":true,"retries":2}\n'}],
+    }]))])
+
+    decision, _manifest = _service(tmp_path, gateway).propose_code_decision(
+        "Set enabled to true", ["settings.json"]
+    )
+
+    change = decision.changes[0]
+    assert change.base_hash == hashlib.sha256(source.encode("utf-8")).hexdigest()
+    assert change.edits[0].expected_text == source
 
 
 def test_runtime_evidence_ids_and_verifier_support_are_not_model_authored(tmp_path):

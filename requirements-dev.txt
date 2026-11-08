@@ -1,2 +1,0 @@
-# Runtime leve e ferramentas de desenvolvimento declarados em pyproject.toml.
-.[dev]

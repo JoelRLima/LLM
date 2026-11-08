@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import codecs
 import json
+import os
 import re
 import subprocess
 import sys
@@ -39,12 +40,26 @@ IGNORED_ROOT_PARTS = {
     ".tmp",
     ".pytest_temp",
     ".pytest_tmp",
+    ".pytest-routing",
+    "tmp_pytest",
     ".temp_analysis",
     ".test_runtime",
     "memory_backups",
     "reports",
     "runtime",
+    ".workbench-managed",
+    "weak-model-standard-WM-01-yf6r8377",
+    "wrapper-fixture",
 }
+IGNORED_ROOT_PREFIXES = (
+    "candidate-materialized-check-",
+    "pytest-cache-files-",
+    "pytest-weak-eval-",
+    ".pytest-f1-",
+    "_pytest-f1-",
+    ".workbench-package-check-",
+    ".workbench-wheel-install-",
+)
 COMPLEXITY_PATTERN = re.compile(r"`(?P<name>[^`]+)` is too complex \((?P<value>\d+) > (?P<limit>\d+)\)")
 MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 TEXT_SUFFIXES = {".json", ".lock", ".md", ".py", ".toml", ".txt", ".yaml", ".yml"}
@@ -66,9 +81,18 @@ def _source_identity(path: Path) -> str:
 
 def _is_ignored(path: Path) -> bool:
     parts = path.relative_to(ROOT).parts
-    ignored_at_root = bool(parts) and parts[0] in IGNORED_ROOT_PARTS
+    ignored_at_root = bool(parts) and (
+        parts[0] in IGNORED_ROOT_PARTS
+        or parts[0].startswith((".workbench-installed-", *IGNORED_ROOT_PREFIXES))
+    )
+    ignored_prototype_runs = len(parts) >= 3 and parts[:3] == (
+        "prototypes",
+        "workbench-comparison",
+        "evidence",
+    )
     return (
         ignored_at_root
+        or ignored_prototype_runs
         or (bool(parts) and parts[0] == QUALITY_EVIDENCE_ROOT)
         or bool(IGNORED_PARTS.intersection(parts))
         or any(part.endswith(".egg-info") for part in parts)
@@ -206,9 +230,20 @@ def check_architecture() -> tuple[list[str], int]:
     return [f"arquitetura: {item}" for item in failures], counts["modules"]
 
 
+def _repository_artifacts() -> Iterable[Path]:
+    """Prune existing exclusions before traversing local environments and state."""
+    for directory, names, filenames in os.walk(ROOT, followlinks=False):
+        parent = Path(directory)
+        names[:] = sorted(name for name in names if not _is_ignored(parent / name))
+        for name in sorted(filenames):
+            path = parent / name
+            if not _is_ignored(path):
+                yield path
+
+
 def _markdown_files() -> Iterable[Path]:
-    for path in sorted(ROOT.rglob("*.md")):
-        if not _is_ignored(path):
+    for path in _repository_artifacts():
+        if path.match("*.md"):
             yield path
 
 
@@ -240,7 +275,7 @@ def check_text_encoding() -> tuple[list[str], int]:
     """Require repository text artifacts to be valid BOM-free UTF-8."""
     failures: list[str] = []
     checked = 0
-    for path in sorted(ROOT.rglob("*")):
+    for path in _repository_artifacts():
         if _is_ignored(path):
             continue
         if path.suffix.lower() not in TEXT_SUFFIXES and path.name not in TEXT_FILENAMES:

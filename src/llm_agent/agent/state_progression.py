@@ -14,6 +14,7 @@ def reset_task_progression(
     *,
     preserve_semantics: bool = False,
 ) -> None:
+    state.requirement_replan_fingerprints = ()
     semantics = getattr(state, "task_semantics", None)
     if isinstance(semantics, TaskSemantics):
         if preserve_semantics:

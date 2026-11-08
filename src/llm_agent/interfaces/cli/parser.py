@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 
+from llm_agent.interfaces.cli.parser_inspect_options import add_inspect_options
+
 
 def _common_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False, argument_default=argparse.SUPPRESS)
@@ -11,7 +13,7 @@ def _common_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--workspace",
         metavar="DIR",
-        help="workspace da tarefa (obrigatório em execução/resume; chat interativo pergunta quando ausente)",
+        help="workspace de trabalho; o padrão ou a obrigatoriedade dependem do comando",
     )
     parser.add_argument("--profile", metavar="NOME", help="perfil de modelo configurado")
     parser.add_argument(
@@ -62,6 +64,14 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_argument("--json", action="store_true", dest="json_output")
     commands.add_argument("--semantic", action="store_true", help="usa Discovery semântico se configurado")
     commands.add_argument("--plain", action="store_true", help="emite texto sem cores nem controles")
+    queue = subcommands.add_parser(
+        "queue",
+        add_help=False,
+        help="cria, confere e controla baterias de testes do agent; executar usa a LLM",
+        argument_default=argparse.SUPPRESS,
+    )
+    queue.add_argument("--help", action="store_true", dest="queue_help", help="mostra as opções da bateria de testes")
+    queue.add_argument("queue_args", nargs=argparse.REMAINDER, metavar="ARGUMENTOS_DA_FILA")
     completion = subcommands.add_parser("completion", parents=[common], help="gera completion local", argument_default=argparse.SUPPRESS)
     completion_commands = completion.add_subparsers(dest="completion_command", required=True)
     completion_commands.add_parser("powershell", parents=[common], help="gera completion PowerShell")
@@ -70,8 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_engineering = mcp_commands.add_parser("engineering", help="serve model-safe Engineering over MCP stdio")
     mcp_engineering.add_argument("--workspace", required=True, metavar="DIR", help="immutable server workspace")
     mcp_engineering.add_argument("--home", metavar="DIR", help="diretório-base dos dados da aplicação")
-    subcommands.add_parser(
+    chat = subcommands.add_parser(
         "chat", parents=[common], help="abre o chat interativo (comando padrão)", argument_default=argparse.SUPPRESS
+    )
+    chat.add_argument("--legacy-session", action="store_true", help="compatibilidade temporária com a sessão antiga")
+    subcommands.add_parser(
+        "local",
+        parents=[common],
+        help="abre uma sessão de projeto local; a LLM começa desativada",
+        argument_default=argparse.SUPPRESS,
+        epilog="Na sessão: /llm status, on, off ou test. /llm test consulta o catálogo /models; não gera texto.",
     )
     run = subcommands.add_parser(
         "run",
@@ -241,31 +259,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="inspeciona traces de observabilidade sem iniciar uma tarefa",
         argument_default=argparse.SUPPRESS,
     )
-    def add_inspect_options(item: argparse.ArgumentParser) -> None:
-        item.add_argument("--run-id", dest="inspect_run_id", metavar="RUN_ID", help="seleciona uma execução")
-        item.add_argument("--json", action="store_true", dest="json_output", help="emite um único documento JSON")
-        item.add_argument("--follow", action="store_true", help="acompanha um run ativo em terminal interativo")
-        item.add_argument("--limit", type=int, default=100, metavar="N", help="limite bounded de registros")
-        item.add_argument("--after", type=int, default=0, metavar="SEQ", help="começa após a sequência")
-        item.add_argument(
-            "--sequence", type=int, dest="inspect_sequence", metavar="SEQ", help="seleciona detalhe de uma sequência"
-        )
-        item.add_argument("--sequence-start", type=int, dest="inspect_sequence_start", metavar="SEQ")
-        item.add_argument("--sequence-end", type=int, dest="inspect_sequence_end", metavar="SEQ")
-        item.add_argument("--search", metavar="TEXT", help="busca apenas na representação redigida")
-        item.add_argument("--source", action="append", dest="inspect_sources", metavar="SOURCE")
-        item.add_argument("--kind", action="append", dest="inspect_kinds", metavar="KIND")
-        item.add_argument("--category", action="append", dest="inspect_categories", metavar="CATEGORY")
-        item.add_argument("--severity", action="append", dest="inspect_severities", metavar="SEVERITY")
-        item.add_argument("--status", action="append", dest="inspect_statuses", metavar="STATUS")
-        item.add_argument("--task-id", dest="inspect_task_id", metavar="ID")
-        item.add_argument("--root-task-id", dest="inspect_root_task_id", metavar="ID")
-        item.add_argument("--step", type=int, dest="inspect_step", metavar="N")
-        item.add_argument("--correlation-id", dest="inspect_correlation_id", metavar="ID")
-        item.add_argument("--invocation-id", dest="inspect_invocation_id", metavar="ID")
-        item.add_argument("--time-start", dest="inspect_time_start", metavar="ISO_TIME")
-        item.add_argument("--time-end", dest="inspect_time_end", metavar="ISO_TIME")
-        item.add_argument("--bookmarked-only", action="store_true", dest="inspect_bookmarked_only")
     add_inspect_options(inspect)
     inspect_commands = inspect.add_subparsers(dest="inspect_command")
     inspect_list = inspect_commands.add_parser(
@@ -287,6 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_export.add_argument("--output", metavar="ARQUIVO", help="destino do bundle")
     inspect_export.add_argument("--force", action="store_true", help="autoriza substituir o destino")
     inspect_export.add_argument("--include-bookmarks", action="store_true", help="inclui anotações de bookmarks")
+    inspect_export.add_argument("--metadata-only", action="store_true", help="exporta somente IDs, sequência e tempos; omite payloads e notas")
     inspect_bookmark = inspect_commands.add_parser(
         "bookmark", parents=[common], help="gerencia bookmarks da trace", argument_default=argparse.SUPPRESS
     )

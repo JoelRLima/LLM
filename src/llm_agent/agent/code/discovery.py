@@ -107,12 +107,19 @@ class ProjectDiscovery:
                     return
 
     def discover(self) -> ProjectProfile:
+        profile, _paths = self.discover_with_files()
+        return profile
+
+    def discover_with_files(self) -> tuple[ProjectProfile, tuple[Path, ...]]:
+        """Return profile and validated file paths from one bounded walk."""
+
+        paths = tuple(self.iter_files())
         languages: Counter[str] = Counter()
         manifests: list[str] = []
         source_roots: set[str] = set()
         test_roots: set[str] = set()
         scanned = 0
-        for path in self.iter_files():
+        for path in paths:
             scanned += 1
             relative = path.relative_to(self.root)
             relative_posix = relative.as_posix()
@@ -133,7 +140,7 @@ class ProjectDiscovery:
             if not is_link_like(git_metadata) and git_metadata.exists()
             else None
         )
-        return ProjectProfile(
+        profile = ProjectProfile(
             root=str(self.root),
             vcs=vcs,
             languages=dict(sorted(languages.items())),
@@ -143,3 +150,4 @@ class ProjectDiscovery:
             scanned_files=scanned,
             truncated=truncated,
         )
+        return profile, paths

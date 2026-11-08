@@ -163,8 +163,6 @@ def _iter_production_files(root: Path) -> Iterable[Path]:
         "pyproject.toml",
         "setup.py",
         "setup.cfg",
-        "requirements.txt",
-        "requirements-dev.txt",
     ):
         candidate = root / name
         if candidate.is_file():

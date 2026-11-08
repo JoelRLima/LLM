@@ -80,6 +80,7 @@ llm-agent config validate
 llm-agent config migrate --from ARQUIVO
 llm-agent state migrate --from DIRETÓRIO
 llm-agent extensions list|register|enable|disable|grant|revoke|inspect
+llm-agent queue [create|run|status|pause|stop|next|check|details|report]
 llm-agent task context --task-id ID [--phase PHASE_ID] [--json]
 llm-agent task status [--json]
 llm-agent task resume --workspace DIR [--json] [--yes]
@@ -96,6 +97,30 @@ seleção próprio.
 
 `--help`, `--version` e `config path` não constroem a aplicação nem escrevem no
 filesystem. `doctor` também não constrói modelo, skills ou orquestrador.
+
+No chat, descreva seu objetivo em linguagem natural. `/help` oferece um
+percurso inicial; `/help all` preserva o catálogo completo e os aliases.
+`/commands` mostra comandos cotidianos e `/commands <busca>` encontra outros
+recursos. A seleção prepara um rascunho para revisão e envio, inclusive quando
+se digita outro comando dentro da paleta. Número ou nome escolhe; `q`, Ctrl+C
+e Enter sem padrão retornam ao chat. Em seletores com padrão, Enter o escolhe
+e Ctrl+C cancela sem aceitar o padrão ou cancelar a tarefa em execução.
+
+Nos prompts de configuração, raciocínio, histórico e memória, Ctrl+C ou fim
+da entrada cancelam sem aplicar o padrão; Enter mantém sua confirmação
+habitual. Cancelar a configuração guiada preserva somente a configuração
+padrão cuja criação você já confirmou, sem salvar ajustes incompletos.
+Nomes de opção repetidos exigem escolha pelo número ou ID, mesmo quando
+uma das opções está indisponível.
+
+O diagnóstico distingue capacidade do filesystem de permissão da sessão.
+`READ_WRITE` indica que a pasta permite escrita, enquanto o chat inicia em
+`READ ONLY`; `/modo` consulta ou altera o modo pelos mecanismos existentes.
+`default` é apresentado como alias, com identidade efetiva não confirmada.
+A conectividade não é inferida da configuração: `/doctor --online` solicita
+explicitamente a sonda limitada, tanto no chat quanto no comando standalone.
+Pastas de sistema são sinalizadas no chooser; Enter não as aceita como
+workspace implícito. A escolha explícita e os limites de autoridade permanecem.
 
 ### Execução headless e aprovação
 

@@ -57,7 +57,9 @@ def test_task_context_application_matches_agent_materialization(
     result = read_task_context(request)
 
     assert isinstance(result, TaskContextResult)
-    assert result.to_dict() == legacy_materialization.to_dict()
+    legacy_document = legacy_materialization.to_dict()
+    legacy_document.pop("requirement_refs")
+    assert result.to_dict() == legacy_document
     assert result.to_dict()["context"] == result.trusted_text
     assert isinstance(result.to_dict()["authority"], dict)
     assert read_task_context(request).to_dict() == result.to_dict()

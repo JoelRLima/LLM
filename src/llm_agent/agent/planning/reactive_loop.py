@@ -12,6 +12,7 @@ from llm_agent.agent.llm.admitted_decisions import (
 )
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.planning.planner_prompt_tools import build_planner_tools_description
+from llm_agent.agent.planning.planning_view_support import execution_planning_view
 from llm_agent.agent.planning.presentation import PlanningPresentationSnapshot
 from llm_agent.agent.planning.task_completion import allow_linear_completion, mark_terminal_blocked
 from llm_agent.agent.planning.task_policy_support import policy_terminal_answer
@@ -264,7 +265,10 @@ class ReactiveLoop:
             step["bindings"] = projected["bindings"]
         gateway_kwargs: Dict[str, Any] = {}
         if self._last_planning_view is not None:
-            gateway_kwargs["planning_view"] = self._last_planning_view
+            gateway_kwargs["planning_view"] = execution_planning_view(
+                self.orchestrator,
+                self._last_planning_view,
+            )
         result = self.orchestrator.execution_gateway.execute_validated_plan(
             [step], objective, usage, **gateway_kwargs
         )

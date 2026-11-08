@@ -98,6 +98,23 @@ mas não definem sucesso. A autoridade operacional continua em
 `OperationalOutcome`, e a autoridade semântica/evidencial continua em
 `TaskSemantics`.
 
+A validação exigida usa `current_validation_evidence`, uma projeção dos fatos
+mais recentes por recurso compartilhada entre completion, snapshot e receipt.
+Mudanças posteriores invalidam a validação anterior do mesmo recurso; reparos
+validados podem substituir falhas anteriores, sem cobrir outros alvos. O
+catálogo de referências dos requisitos é uma projeção de inspeção da definição
+imutável e não concede efeitos nem comprova critérios textuais. Consulte
+[previsibilidade de tarefas](../previsibilidade-tarefas.md) para regras e limites.
+
+Na fronteira de Application, `TaskSettlement` retém privadamente um
+`AgentRunResult` ou `AgentInteractionResult`. Os contratos de apresentação em
+`llm_agent.application.task_results` distinguem os documentos headless das
+observações interativas. `observe_task_settlement` seleciona o tipo de saída
+pelo canal; a projeção interativa expõe campos conhecidos e copia recursivamente
+somente valores primitivos. Os serializers headless, os campos opcionais e a
+autoridade de sucesso do resultado original são preservados. Os DTOs não
+introduzem decisões de execução nem expõem objetos internos às interfaces.
+
 O lifecycle macro hierárquico é representado explicitamente. Se uma execução
 hierárquica for interrompida enquanto `running`, o resume não restaura
 silenciosamente um microplano: ele é bloqueado de forma determinística com

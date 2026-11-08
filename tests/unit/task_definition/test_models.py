@@ -16,6 +16,7 @@ from llm_agent.agent.task_definition.models import (
     TaskDefinitionRef,
     TaskSpec,
     TaskSpecPhase,
+    VerificationCheck,
 )
 from llm_agent.agent.task_definition.serialization import (
     contract_digest,
@@ -82,6 +83,38 @@ def test_contract_digest_is_deterministic_and_round_trips() -> None:
     assert contract_digest(contract) == "13d6c1989d3eca315c033e940c0ca921882cc3b9f8ec422c66667bce1a642ed7"
     assert deserialize_contract(serialize_contract(contract)) == contract
     assert deserialize_contract({"objective": contract.objective, "task_id": contract.task_id}).version == 1
+    assert "verification_checks" not in contract.to_dict()
+
+
+def test_verification_checks_round_trip_and_preserve_old_digest() -> None:
+    contract = make_contract(requirements=("first", "second"), constraints=("bounded",))
+    check = VerificationCheck(
+        check_id="report_exists", kind="file_exists", field="requirements", index=0,
+        path="reports/result.json",
+    )
+    checked = TaskContract.from_dict({**contract.to_dict(), "verification_checks": [check.to_dict()]})
+    assert deserialize_contract(serialize_contract(checked)) == checked
+    assert checked.verification_checks == (check,)
+    assert contract.digest() == "13d6c1989d3eca315c033e940c0ca921882cc3b9f8ec422c66667bce1a642ed7"
+
+
+@pytest.mark.parametrize("path", ["/tmp/a", "../a", "a/../b", "C:/x", "a\\b", "./a"])
+def test_verification_check_rejects_unsafe_paths(path: str) -> None:
+    with pytest.raises(TaskDefinitionValidationError):
+        VerificationCheck("check", "file_exists", "requirements", 0, path)
+
+
+def test_verification_checks_reject_malformed_shape_and_target() -> None:
+    with pytest.raises(TaskDefinitionValidationError):
+        VerificationCheck.from_dict({"check_id": "x", "kind": "file_exists", "field": "requirements", "index": 0, "path": "a", "extra": True})
+    with pytest.raises(TaskDefinitionValidationError):
+        VerificationCheck.from_dict({"check_id": "x"})
+    with pytest.raises(TaskDefinitionValidationError):
+        TaskContract.from_dict({"task_id": "task", "objective": "x", "verification_checks": None})
+    with pytest.raises(TaskDefinitionValidationError):
+        VerificationCheck("json", "json_fields", "requirements", 0, "a.json")
+    with pytest.raises(TaskDefinitionValidationError):
+        TaskContract(task_id="task", objective="x", verification_checks=(VerificationCheck("x", "file_exists", "requirements", 0, "a"),))
 
 
 def test_valid_spec_is_bound_to_contract_and_round_trips() -> None:

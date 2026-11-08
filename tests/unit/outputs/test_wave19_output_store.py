@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from llm_agent.outputs.models import (
+    MAX_OUTPUT_PAYLOAD_BYTES,
+    OUTPUT_METADATA_INVALID,
     OUTPUT_PAYLOAD_CORRUPT,
+    OUTPUT_PAYLOAD_TOO_LARGE,
     OUTPUT_STORE_UNSAFE,
     OutputArtifact,
     OutputKind,
@@ -14,7 +17,7 @@ from llm_agent.outputs.models import (
     OutputStoreError,
     payload_digest,
 )
-from llm_agent.outputs.store import OutputStore
+from llm_agent.outputs.store import MAX_OUTPUT_METADATA_BYTES, OutputStore
 
 
 def _artifact(text: str, output_id: str = "out-" + "a" * 32) -> OutputArtifact:
@@ -78,3 +81,27 @@ def test_foreign_entry_fails_closed_for_mutation(tmp_path: Path) -> None:
         OutputStore(root).commit(_artifact("payload"), "payload")
     assert error.value.reason_code == OUTPUT_STORE_UNSAFE
     assert (root / "foreign.txt").read_text(encoding="utf-8") == "do not touch"
+
+
+def test_oversized_payload_is_rejected_after_bounded_read(tmp_path: Path) -> None:
+    store = OutputStore(tmp_path / "outputs")
+    artifact = store.commit(_artifact("payload"), "payload")
+    payload = tmp_path / "outputs" / f"{artifact.output_id}.payload.txt"
+    payload.write_bytes(b"x" * (MAX_OUTPUT_PAYLOAD_BYTES + 1))
+
+    with pytest.raises(OutputStoreError) as error:
+        store.read(artifact.output_id)
+
+    assert error.value.reason_code == OUTPUT_PAYLOAD_TOO_LARGE
+
+
+def test_oversized_metadata_is_rejected_before_json_parse(tmp_path: Path) -> None:
+    store = OutputStore(tmp_path / "outputs")
+    artifact = store.commit(_artifact("payload"), "payload")
+    metadata = tmp_path / "outputs" / f"{artifact.output_id}.meta.json"
+    metadata.write_bytes(b" " * (MAX_OUTPUT_METADATA_BYTES + 1))
+
+    with pytest.raises(OutputStoreError) as error:
+        store.metadata(artifact.output_id)
+
+    assert error.value.reason_code == OUTPUT_METADATA_INVALID

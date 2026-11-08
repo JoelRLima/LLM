@@ -822,6 +822,12 @@ def _check_application_surface_file(root: Path, path: Path) -> list[Architecture
         return []
     imported_pairs = tuple(_imports(tree))
     findings = _check_query_capability_imports(relative, imported_pairs)
+    if relative == "agent/interfaces/cli/query_executor.py":
+        _, query_owner = _resolved_cli_sources(root, relative)
+        try:
+            imported_pairs += tuple(_imports(ast.parse(query_owner)))
+        except SyntaxError:
+            pass
     findings.extend(_check_query_executor_boundary(relative, imported_pairs))
     findings.extend(_check_presentation_boundary(relative, imported_pairs))
     findings.extend(_check_reserved_cli_owners(relative, tree))
@@ -1108,6 +1114,39 @@ _QUERY_OWNER_PATHS = {
     "agent/application_services/query_find.py",
     "agent/application_services/query_git.py",
 }
+_QUERY_SUPPORT_FUNCTIONS = {
+    "agent/application_services/query_find_pattern.py": frozenset({"pattern_error"}),
+    "agent/application_services/query_utf8.py": frozenset({"decode_utf8_prefix"}),
+}
+_QUERY_SUPPORT_ASSIGNMENTS = {
+    "agent/application_services/query_find_pattern.py": frozenset({"_FIND_LITERAL_META"}),
+    "agent/application_services/query_utf8.py": frozenset(),
+}
+_QUERY_SUPPORT_IMPORTS = {
+    "agent/application_services/query_find_pattern.py": frozenset(
+        {
+            ("from", "__future__", ("annotations",)),
+            (
+                "from",
+                "llm_agent.application.services.queries",
+                (
+                    "MAX_FIND_PATTERN_CHARS",
+                    "QUERY_FIND_PATTERN_EMPTY",
+                    "QUERY_FIND_PATTERN_INVALID",
+                    "WorkspaceQueryRequest",
+                    "WorkspaceQueryResult",
+                    "_failed",
+                ),
+            ),
+        }
+    ),
+    "agent/application_services/query_utf8.py": frozenset(
+        {
+            ("from", "__future__", ("annotations",)),
+            ("import", "codecs", ()),
+        }
+    ),
+}
 _QUERY_RETIRED_PATHS = {
     "agent/application_services/query_diff.py",
     "agent/application_services/query_listing.py",
@@ -1194,29 +1233,77 @@ def _check_single_owner_node(relative: str, node: ast.AST) -> list[ArchitectureV
     return []
 
 
-def _check_single_owner_file(root: Path, path: Path) -> list[ArchitectureViolation]:
-    relative = _relative(path, root)
+def _query_support_shape_is_bounded(relative: str, tree: ast.Module) -> bool:
+    functions: set[str] = set()
+    assignments: set[str] = set()
+    imports: set[tuple[str, str, tuple[str, ...]]] = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imports.update(("import", alias.name, ()) for alias in node.names)
+            continue
+        if isinstance(node, ast.ImportFrom):
+            imports.add(("from", node.module or "", tuple(sorted(alias.name for alias in node.names))) )
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            functions.add(node.name)
+            continue
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            names = _assignment_names(node)
+            if not names or any(not name.startswith("_") for name in names):
+                return False
+            assignments.update(names)
+            continue
+        return False
+    return (
+        functions == _QUERY_SUPPORT_FUNCTIONS[relative]
+        and assignments == _QUERY_SUPPORT_ASSIGNMENTS[relative]
+        and imports == _QUERY_SUPPORT_IMPORTS[relative]
+    )
+
+
+def _query_module_violation(root: Path, relative: str) -> ArchitectureViolation | None:
+    if relative in _QUERY_SUPPORT_FUNCTIONS:
+        tree = _tree(root, relative)
+        if tree is None or not _query_support_shape_is_bounded(relative, tree):
+            return _violation("W19-S07-007", relative, "query support module exceeds its bounded helper surface")
     if relative in _QUERY_RETIRED_PATHS or (
         relative.startswith("agent/application_services/")
         and Path(relative).name.startswith("query_")
         and relative not in _QUERY_OWNER_PATHS
+        and relative not in _QUERY_SUPPORT_FUNCTIONS
     ):
-        return [_violation("W19-S07-007", relative, "query module is outside the three authorized semantic owners")]
+        return _violation("W19-S07-007", relative, "query module is outside the three authorized semantic owners")
+    return None
+
+
+def _query_semantic_findings(relative: str, node: ast.AST) -> list[ArchitectureViolation]:
+    if not relative.startswith("agent/application_services/") or relative in _QUERY_OWNER_PATHS:
+        return []
+    if isinstance(node, ast.ClassDef) and node.name in _QUERY_SEMANTIC_CLASS_NAMES:
+        return [_violation("W19-S07-007", relative, f"query semantic owner {node.name} is outside the authorized owners")]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in _QUERY_SEMANTIC_FUNCTION_NAMES:
+        return [_violation("W19-S07-007", relative, f"query semantic owner {node.name} is outside the authorized owners")]
+    if isinstance(node, (ast.Assign, ast.AnnAssign)) and any(
+        name.startswith(("QUERY_", "MAX_FIND", "MAX_LIST", "MAX_READ", "MAX_DIFF", "MAX_GIT"))
+        for name in _assignment_names(node)
+    ):
+        return [_violation("W19-S07-007", relative, "query bounds or reason-code owner is outside the authorized owners")]
+    return []
+
+
+def _check_single_owner_file(root: Path, path: Path) -> list[ArchitectureViolation]:
+    relative = _relative(path, root)
+    module_violation = _query_module_violation(root, relative)
+    if module_violation is not None:
+        return [module_violation]
     tree = _tree(root, relative)
     if tree is None:
         return []
     findings: list[ArchitectureViolation] = []
     for node in ast.walk(tree):
-        if relative.startswith("agent/application_services/") and relative not in _QUERY_OWNER_PATHS:
-            if isinstance(node, ast.ClassDef) and node.name in _QUERY_SEMANTIC_CLASS_NAMES:
-                findings.append(_violation("W19-S07-007", relative, f"query semantic owner {node.name} is outside the authorized owners"))
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in _QUERY_SEMANTIC_FUNCTION_NAMES:
-                findings.append(_violation("W19-S07-007", relative, f"query semantic owner {node.name} is outside the authorized owners"))
-            if isinstance(node, (ast.Assign, ast.AnnAssign)) and any(
-                name.startswith(("QUERY_", "MAX_FIND", "MAX_LIST", "MAX_READ", "MAX_DIFF", "MAX_GIT"))
-                for name in _assignment_names(node)
-            ):
-                findings.append(_violation("W19-S07-007", relative, "query bounds or reason-code owner is outside the authorized owners"))
+        findings.extend(_query_semantic_findings(relative, node))
         findings.extend(_check_single_owner_node(relative, node))
     if relative == "agent/interfaces/cli/app.py" and "NIVEIS_THINKING" in _read(root, relative):
         findings.append(_violation("W19-S07-012", relative, "retired thinking map remains in CLI app"))
@@ -1393,9 +1480,65 @@ def _check_semantic_storage_properties(root: Path) -> list[ArchitectureViolation
     return findings
 
 
+
+def _resolved_cli_sources(root: Path, relative: str) -> tuple[str, str]:
+    """Inspect both the adapter and its explicitly delegated canonical owner."""
+    adapter = _read(root, relative)
+    owners = {
+        "agent/interfaces/cli/action_registry.py": "commands",
+        "agent/interfaces/cli/action_parser.py": "action_parser",
+        "agent/interfaces/cli/query_executor.py": "query_executor",
+    }
+    owner = owners.get(relative)
+    if owner is None:
+        return adapter, adapter
+    try:
+        tree = ast.parse(adapter)
+    except SyntaxError:
+        return adapter, adapter
+    aliases = {alias.asname or alias.name for node in tree.body
+               if isinstance(node, ast.ImportFrom) and node.module == "llm_agent.interactive"
+               for alias in node.names if alias.name == owner}
+    imported_owner = any(isinstance(node, ast.ImportFrom) and node.module == f"llm_agent.interactive.{owner}"
+                         for node in tree.body)
+    if not aliases or not imported_owner:
+        return adapter, adapter
+    if owner == "commands" and not _delegates_action_bindings(tree, aliases):
+        return adapter, adapter
+    return adapter, _read(root, f"agent/interactive/{owner}.py")
+
+
+def _delegates_action_bindings(tree: ast.Module, aliases: set[str]) -> bool:
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not any(isinstance(t, ast.Name) and t.id == "DEFAULT_CLI_ACTION_REGISTRY" for t in node.targets):
+            continue
+        call = node.value
+        if not isinstance(call, ast.Call) or _call_parts(call.func) != ("CliActionRegistry",) or len(call.args) < 2:
+            continue
+        if _call_parts(call.args[1]) in {(alias, "DEFAULT_CLI_ACTION_REGISTRY", "_bindings") for alias in aliases}:
+            return True
+    return False
+
+
+def _registry_binding(source: str, action: str) -> tuple[ast.Module, ast.Call | None]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ast.Module(body=[], type_ignores=[]), None
+    defaults = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_default_bindings"), None)
+    binding = next((n for n in ast.walk(defaults) if isinstance(n, ast.Call) and len(n.args) >= 3
+                    and isinstance(n.args[0], ast.Constant) and n.args[0].value == action), None) if defaults else None
+    return tree, binding
+
+
+def _literal_strings(tree: ast.AST) -> set[str]:
+    return {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+
+
 def _check_output_action_unity(root: Path) -> list[ArchitectureViolation]:
-    registry_source = _read(root, "agent/interfaces/cli/action_registry.py")
-    if "inspection.open" not in registry_source or '"/output"' in registry_source:
+    adapter, owner = _resolved_cli_sources(root, "agent/interfaces/cli/action_registry.py")
+    tree, inspection = _registry_binding(owner, "inspection.open")
+    if inspection is None or "/output" in _literal_strings(tree) or '\"/output\"' in adapter or "'/output'" in adapter:
         return [_violation("W19-S08-005", "agent/interfaces/cli/action_registry.py", "inspection/output action unity is not preserved")]
     return []
 
@@ -1598,13 +1741,14 @@ def _check_action_catalog_contract(root: Path) -> list[ArchitectureViolation]:
 
 
 def _check_action_registry_contract(root: Path) -> list[ArchitectureViolation]:
-    registry = _read(root, "agent/interfaces/cli/action_registry.py")
+    _, owner = _resolved_cli_sources(root, "agent/interfaces/cli/action_registry.py")
+    tree, memory = _registry_binding(owner, "memory.show")
     findings: list[ArchitectureViolation] = []
-    if '"memory.show", "/memory show"' not in registry:
+    if memory is None or not isinstance(memory.args[1], ast.Constant) or memory.args[1].value != "/memory show":
         findings.append(_violation("W19-S03-003", "agent/interfaces/cli/action_registry.py", "memory.show preferred path is not /memory show"))
-    if '"/memory"' not in registry or '"/memoria"' not in registry:
+    if memory is None or not {"/memory", "/memoria"}.issubset(_literal_strings(memory.args[2])):
         findings.append(_violation("W19-S03-004", "agent/interfaces/cli/action_registry.py", "memory compatibility aliases are missing"))
-    if registry.count("class CliActionRegistry") != 1:
+    if sum(isinstance(n, ast.ClassDef) and n.name == "CliActionRegistry" for n in ast.walk(tree)) != 1:
         findings.append(_violation("W19-S03-005", "agent/interfaces/cli/action_registry.py", "CLI action registry does not have one owner"))
     return findings
 
@@ -1612,14 +1756,15 @@ def _check_action_registry_contract(root: Path) -> list[ArchitectureViolation]:
 def _check_cli_action_projections(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     for relative in ("agent/interfaces/cli/action_parser.py", "agent/interfaces/cli/action_completion.py"):
-        source = _read(root, relative)
-        if "DEFAULT_CLI_ACTION_REGISTRY" not in source and "CliActionRegistry" not in source:
+        adapter, owner = _resolved_cli_sources(root, relative)
+        if "DEFAULT_CLI_ACTION_REGISTRY" not in adapter + owner and "CliActionRegistry" not in adapter + owner:
             findings.append(_violation("W19-S03-006", relative, "CLI projection does not consume the canonical action registry"))
     return findings
 
 
 def _check_interaction_output_namespace(root: Path) -> list[ArchitectureViolation]:
-    if "/output" in _read(root, "agent/interfaces/cli/action_registry.py"):
+    adapter, owner = _resolved_cli_sources(root, "agent/interfaces/cli/action_registry.py")
+    if "/output" in adapter + owner:
         return [_violation("W19-S03-007", "agent/interfaces/cli/action_registry.py", "second output action namespace remains")]
     return []
 

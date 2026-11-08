@@ -44,6 +44,7 @@ ROOT_FIELDS: dict[str, Validator] = {
     "temperature": _is_number_between(0.0, 2.0),
     "max_tokens": _is_int_at_least(1),
     "agent_max_tokens": lambda value: value is None or _is_int_at_least(1)(value),
+    "agent_execution_profile": lambda value: isinstance(value, str) and value in {"standard", "compact"},
     "timeout": _is_number_between(1.0),
     "hardware_profile": lambda value: isinstance(value, str) and value in HARDWARE_PROFILES,
     "semantic_memory_enabled": _is_bool,
@@ -276,7 +277,7 @@ def validate_config_document(
         ROOT_FIELDS,
         "$",
         require_all=require_complete,
-        optional_keys=frozenset({"agent_max_tokens"}),
+        optional_keys=frozenset({"agent_max_tokens", "agent_execution_profile"}),
     )
     _validate_sections(document, require_all=require_complete)
     _validate_profiles(document, require_all=require_complete)

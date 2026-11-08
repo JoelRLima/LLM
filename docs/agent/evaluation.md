@@ -22,6 +22,11 @@ aceitação instalada e autorização explícita para o epoch correspondente.
 
 ## Capability Set
 
+Conjuntos vazios exportam `total=0` e `pass_rate=0.0`; não representam sucesso
+observado. A política de repetições exige contagens inteiras, exclui booleanos
+e valida os limites da amostra e a quantidade de aprovações antes de decidir
+se uma campanha deve continuar.
+
 `CURATED_CAPABILITY_SET`, em `agent/evaluation/curated.py`, contém **9** cenários:
 
 | ID | Propriedade observada |

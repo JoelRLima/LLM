@@ -24,6 +24,7 @@ _FINAL_W22_LOGICAL_PREFIXES = (
     ("agent/extensions", "extensions"),
     ("agent/filesystem", "filesystem"),
     ("agent/interfaces", "interfaces"),
+    ("agent/interactive", "interactive"),
     ("agent/outputs", "outputs"),
     ("agent/process", "process"),
     ("agent/storage", "storage"),
@@ -42,7 +43,7 @@ def _final_w22_physical_suffix(relative: str) -> str | None:
         if relative == logical_prefix:
             return physical_suffix
         if relative.startswith(logical_prefix + "/"):
-            return f"{physical_suffix}/{relative[len(logical_prefix) + 1:]}"
+            return f"{physical_suffix}/{relative[len(logical_prefix) + 1 :]}"
     return None
 
 
@@ -54,7 +55,7 @@ def _final_w22_logical_prefix(path_suffix: str) -> str | None:
         if path_suffix == physical_suffix:
             return logical_prefix
         if path_suffix.startswith(physical_suffix + "/"):
-            return f"{logical_prefix}/{path_suffix[len(physical_suffix) + 1:]}"
+            return f"{logical_prefix}/{path_suffix[len(physical_suffix) + 1 :]}"
     return None
 
 
@@ -65,7 +66,7 @@ def _final_w22_projected_module(module: str) -> str | None:
         if module == physical_module:
             return logical_module
         if module.startswith(physical_module + "."):
-            return logical_module + module[len(physical_module):]
+            return logical_module + module[len(physical_module) :]
     if module == "llm_agent.interfaces.cli.engineering":
         return "agent.engineering.cli"
     return None
@@ -78,7 +79,7 @@ def _final_w22_physical_module(module: str) -> str | None:
         if module == logical_module:
             return physical_module
         if module.startswith(logical_module + "."):
-            return physical_module + module[len(logical_module):]
+            return physical_module + module[len(logical_module) :]
     if module == "agent.engineering.cli":
         return "llm_agent.interfaces.cli.engineering"
     return None

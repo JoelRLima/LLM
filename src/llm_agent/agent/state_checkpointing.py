@@ -24,6 +24,10 @@ from llm_agent.agent.state_checkpoint_restore import (
 from llm_agent.agent.state_checkpoint_restore import (
     validate_restored_cross_fields as _validate_restored_cross_fields,
 )
+from llm_agent.agent.state_replan import (
+    checkpoint_replan_fingerprints,
+    restore_replan_fingerprints,
+)
 from llm_agent.agent.task_definition.models import TaskDefinitionRef
 from llm_agent.agent.tools.result_adapter import ensure_canonical_result, to_legacy_result
 
@@ -68,6 +72,7 @@ class StateCheckpointMixin:
             "persona": self.persona,
             "persona_prompt": self.persona_prompt,
             **progression_checkpoint(self),
+            "requirement_replan_fingerprints": checkpoint_replan_fingerprints(self),
             "task_definition": (
                 task_definition_ref.to_dict() if task_definition_ref is not None else None
             ),
@@ -91,6 +96,7 @@ class StateCheckpointMixin:
         provisional.objective = _restore_objective(provisional, data)
         _restore_plan(provisional, data)
         restore_progression(provisional, dict(data))
+        restore_replan_fingerprints(provisional, data)
         _restore_step_records(provisional, data)
         _restore_last_result(provisional, data)
         _restore_histories(

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any, Dict
 
 from llm_agent.agent.final_response import compose_operational_answer
+from llm_agent.agent.orchestration.compact_route import use_compact_read_route
 from llm_agent.agent.orchestration.route_coordinator import (
     LINEAR_ROUTE as _LINEAR_ROUTE,
 )
@@ -137,6 +138,12 @@ def execute_task(
     )
     if route_answer is not None:
         return str(route_answer)
+    if use_compact_read_route(orchestrator, inputs):
+        runner._emit_route_transition(
+            RouteResult.fallback(_LINEAR_ROUTE, reason_code="COMPACT_READ_ROUTE"),
+            reason_code="COMPACT_READ_ROUTE", next_route=_REACTIVE_ROUTE, action="continue",
+        )
+        return _run_reactive(orchestrator, inputs, usage)
     decision = orchestrator.plan_builder.build_plan(inputs.objective)
     if decision.kind is PlanningDecisionKind.BLOCK:
         blocked_answer = str(
@@ -179,24 +186,7 @@ def execute_task(
             next_route=_REACTIVE_ROUTE,
             action="continue",
         )
-        reactive_answer = str(
-            orchestrator._run_reactive(
-                inputs.objective, usage, inputs.original_message_count
-            )
-        )
-        outcome = project_operational_outcome(
-            orchestrator.agent_state,
-            task_failed=bool(getattr(orchestrator, "_task_failed", False)),
-            cancelled=bool(getattr(orchestrator, "_cancelled", False)),
-        )
-        return str(
-            compose_operational_answer(
-                outcome,
-                reactive_answer,
-                orchestrator.agent_state.tool_history,
-                getattr(orchestrator, "tool_registry", None),
-            )
-        )
+        return _run_reactive(orchestrator, inputs, usage)
     return str(
         runner._execute_plan(
             decision.plan,
@@ -211,3 +201,14 @@ def execute_task(
 
 def _terminal(orchestrator: Any, objective: str, answer: str) -> str:
     return terminal_answer(orchestrator, objective, None, answer)
+
+
+def _run_reactive(orchestrator: Any, inputs: Any, usage: Dict[str, int]) -> str:
+    answer = str(orchestrator._run_reactive(inputs.objective, usage, inputs.original_message_count))
+    outcome = project_operational_outcome(
+        orchestrator.agent_state,
+        task_failed=bool(getattr(orchestrator, "_task_failed", False)),
+        cancelled=bool(getattr(orchestrator, "_cancelled", False)),
+    )
+    return str(compose_operational_answer(outcome, answer, orchestrator.agent_state.tool_history,
+                                         getattr(orchestrator, "tool_registry", None)))

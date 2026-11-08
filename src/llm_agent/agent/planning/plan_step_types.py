@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, TypeAlias
 
+from llm_agent.agent.planning.plan_association_ids import decode_association_ids
 from llm_agent.agent.planning.plan_model_types import (
     PlanDecodeError,
     PlanStepReference,
@@ -16,111 +17,11 @@ from llm_agent.agent.planning.plan_model_types import (
     _thaw,
     _validate_binding_target,
 )
-
-
-def _decode_bindings(value: Any) -> Mapping[str, ResultBinding] | None:
-    if value is None:
-        return None
-    if not isinstance(value, Mapping):
-        raise PlanDecodeError("bindings deve ser um objeto")
-    normalized: dict[str, ResultBinding] = {}
-    for target, binding in value.items():
-        if not isinstance(target, str) or not target.strip():
-            raise PlanDecodeError("binding target deve ser textual nao vazio")
-        _validate_binding_target(target)
-        normalized[target] = (
-            binding if isinstance(binding, ResultBinding) else ResultBinding.from_raw(binding)
-        )
-    return MappingProxyType(normalized)
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class DeferredToolBranch:
-    """Concrete branch payload; it is not a plan slot and has no step ID."""
-
-    tool: str
-    args: Mapping[str, Any]
-    bindings: Mapping[str, ResultBinding] | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "tool", _text(self.tool, "on_true.tool"))
-        object.__setattr__(self, "args", _mapping(self.args, "on_true.args"))
-        object.__setattr__(self, "bindings", _decode_bindings(self.bindings))
-
-    @classmethod
-    def from_raw(cls, value: Any) -> "DeferredToolBranch":
-        if not isinstance(value, Mapping) or set(value) - {"tool", "args", "bindings"}:
-            raise PlanDecodeError("on_true possui campos nÃ£o suportados")
-        if "tool" not in value or "args" not in value:
-            raise PlanDecodeError("on_true exige tool e args")
-        return cls(
-            tool=_text(value["tool"], "on_true.tool"),
-            args=_mapping(value["args"], "on_true.args"),
-            bindings=_decode_bindings(value.get("bindings")),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        value = {"tool": self.tool, "args": _thaw(self.args)}
-        if self.bindings is not None:
-            value["bindings"] = {
-                target: binding.to_dict() for target, binding in self.bindings.items()
-            }
-        return value
-
-    def __getitem__(self, key: str) -> Any:
-        return self.to_dict()[key]
-
-    def __iter__(self) -> Iterator[tuple[str, Any]]:
-        return iter(self.to_dict().items())
-
-    def __contains__(self, key: object) -> bool:
-        return key in self.to_dict()
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.to_dict().get(key, default)
-
-    def __repr__(self) -> str:
-        return f"DeferredToolBranch(tool={self.tool!r})"
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class EqualsPredicate:
-    """The existing deferred-condition domain predicate."""
-
-    value: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.value, str):
-            raise PlanDecodeError("predicate.value deve ser texto")
-
-    @classmethod
-    def from_raw(cls, value: Any) -> "EqualsPredicate":
-        if not isinstance(value, Mapping) or set(value) != {"op", "value"}:
-            raise PlanDecodeError("predicate deve conter somente op e value")
-        if value["op"] != "equals":
-            raise PlanDecodeError("operador de predicate não suportado; somente equals é aceito")
-        return cls(value=value["value"])
-
-    @property
-    def op(self) -> str:
-        return "equals"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"op": self.op, "value": self.value}
-
-    def __repr__(self) -> str:
-        return f"EqualsPredicate(value={self.value!r})"
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class WriteWaiver:
-    """The closed deferred branch that waives the write effect."""
-
-    def to_dict(self) -> dict[str, str]:
-        return {"waive_effect": "write"}
-
-    def __repr__(self) -> str:
-        return "WriteWaiver()"
+from llm_agent.agent.planning.plan_step_support import (
+    DeferredToolBranch,
+    EqualsPredicate,
+    WriteWaiver,
+)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -131,11 +32,25 @@ class ToolPlanStep:
     tool: str
     args: Mapping[str, Any]
     bindings: Mapping[str, ResultBinding] | None = None
+    requirement_ids: tuple[str, ...] | None = None
+    obligation_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step_id", _text(self.step_id, "step_id"))
         object.__setattr__(self, "tool", _text(self.tool, "tool"))
         object.__setattr__(self, "args", _mapping(self.args, "args"))
+        if self.requirement_ids is not None:
+            object.__setattr__(
+                self,
+                "requirement_ids",
+                decode_association_ids(self.requirement_ids, "requirement_ids"),
+            )
+        if self.obligation_ids is not None:
+            object.__setattr__(
+                self,
+                "obligation_ids",
+                decode_association_ids(self.obligation_ids, "obligation_ids"),
+            )
         if self.bindings is not None:
             if not isinstance(self.bindings, Mapping):
                 raise PlanDecodeError("bindings deve ser um objeto")
@@ -151,7 +66,8 @@ class ToolPlanStep:
 
     @classmethod
     def from_raw(cls, value: Any, step_id: str) -> "ToolPlanStep":
-        if not isinstance(value, Mapping) or set(value) - {"tool", "args", "bindings", "_step_id"}:
+        allowed = {"tool", "args", "bindings", "_step_id", "requirement_ids", "obligation_ids"}
+        if not isinstance(value, Mapping) or set(value) - allowed:
             raise PlanDecodeError("ToolPlanStep possui campos não suportados")
         if "tool" not in value or "args" not in value:
             raise PlanDecodeError("ToolPlanStep exige tool e args")
@@ -174,6 +90,16 @@ class ToolPlanStep:
             tool=_text(value["tool"], "tool"),
             args=_mapping(value["args"], "args"),
             bindings=bindings,
+            requirement_ids=(
+                decode_association_ids(value["requirement_ids"], "requirement_ids")
+                if "requirement_ids" in value
+                else None
+            ),
+            obligation_ids=(
+                decode_association_ids(value["obligation_ids"], "obligation_ids")
+                if "obligation_ids" in value
+                else None
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -186,6 +112,10 @@ class ToolPlanStep:
             value["bindings"] = {
                 target: binding.to_dict() for target, binding in self.bindings.items()
             }
+        if self.requirement_ids is not None:
+            value["requirement_ids"] = list(self.requirement_ids)
+        if self.obligation_ids is not None:
+            value["obligation_ids"] = list(self.obligation_ids)
         return value
 
     def __getitem__(self, key: str) -> Any:
@@ -213,6 +143,8 @@ class DeferredConditionStep:
     predicate: EqualsPredicate
     on_true: DeferredToolBranch
     on_false: WriteWaiver = field(default_factory=WriteWaiver)
+    requirement_ids: tuple[str, ...] | None = None
+    obligation_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step_id", _text(self.step_id, "step_id"))
@@ -224,11 +156,26 @@ class DeferredConditionStep:
             raise PlanDecodeError("on_true deve ser DeferredToolBranch")
         if not isinstance(self.on_false, WriteWaiver):
             raise PlanDecodeError("on_false deve ser WriteWaiver")
+        if self.requirement_ids is not None:
+            object.__setattr__(
+                self,
+                "requirement_ids",
+                decode_association_ids(self.requirement_ids, "requirement_ids"),
+            )
+        if self.obligation_ids is not None:
+            object.__setattr__(
+                self,
+                "obligation_ids",
+                decode_association_ids(self.obligation_ids, "obligation_ids"),
+            )
 
     @classmethod
     def from_raw(cls, value: Any, step_id: str) -> "DeferredConditionStep":
-        allowed = {"_step_id", "kind", "observation_ref", "predicate", "on_true", "on_false"}
-        required = allowed - {"_step_id"}
+        allowed = {
+            "_step_id", "kind", "observation_ref", "predicate", "on_true", "on_false",
+            "requirement_ids", "obligation_ids",
+        }
+        required = {"kind", "observation_ref", "predicate", "on_true", "on_false"}
         if not isinstance(value, Mapping) or set(value) - allowed or not required.issubset(value):
             raise PlanDecodeError("DeferredConditionStep possui shape inválido")
         if value["kind"] != "deferred_condition":
@@ -241,10 +188,20 @@ class DeferredConditionStep:
             predicate=EqualsPredicate.from_raw(value["predicate"]),
             on_true=DeferredToolBranch.from_raw(value["on_true"]),
             on_false=WriteWaiver(),
+            requirement_ids=(
+                decode_association_ids(value["requirement_ids"], "requirement_ids")
+                if "requirement_ids" in value
+                else None
+            ),
+            obligation_ids=(
+                decode_association_ids(value["obligation_ids"], "obligation_ids")
+                if "obligation_ids" in value
+                else None
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value: dict[str, Any] = {
             "_step_id": self.step_id,
             "kind": "deferred_condition",
             "observation_ref": self.observation_ref.to_raw(),
@@ -252,6 +209,11 @@ class DeferredConditionStep:
             "on_true": self.on_true.to_dict(),
             "on_false": self.on_false.to_dict(),
         }
+        if self.requirement_ids is not None:
+            value["requirement_ids"] = list(self.requirement_ids)
+        if self.obligation_ids is not None:
+            value["obligation_ids"] = list(self.obligation_ids)
+        return value
 
     def __getitem__(self, key: str) -> Any:
         return self.to_dict()[key]

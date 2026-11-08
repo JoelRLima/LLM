@@ -1,18 +1,12 @@
-"""
-agent/semantic_memory.py
-
-Camada de busca semântica sobre a memória de longo prazo do agente
-(`AgentMemory.state['file_summaries']`).
-    Isso permitiria que o agente encontre arquivos relevantes mesmo quando
-    o usuário não menciona o nome exato do arquivo no objetivo (busca por
-    significado, não por substring).
-"""
+"""Semantic search over ``AgentMemory.state['file_summaries']``."""
 
 from __future__ import annotations
 
 import logging
-import pickle
 from typing import TYPE_CHECKING, Any, List, Optional
+
+from llm_agent.agent.memory.semantic_memory_cache import decode_cache_index
+from llm_agent.storage.json_persistence import read_json_object, write_json_atomic
 
 if TYPE_CHECKING:
     # Import apenas para type checking, evita import circular em runtime.
@@ -201,24 +195,26 @@ class SemanticMemory:
         Persiste o índice atual (caminhos + embeddings) em disco, para
         evitar recalcular os embeddings em execuções futuras.
 
-        Usa `pickle` para serializar `paths` e o array numpy de
-        embeddings em um único arquivo. Se o índice ainda não tiver
-        sido construído, ele é construído antes de salvar.
+        Stores paths and embeddings as versioned JSON data.
 
         Args:
-            path: Caminho do arquivo de destino (ex.: 'semantic_index.pkl').
+            path: Caminho do arquivo de destino (ex.: 'semantic_index.json').
         """
         if not self._index_built:
             self.build_index()
 
         payload = {
+            "format_version": 1,
             "model_name": self.model_name,
             "paths": self._paths,
-            "embeddings": self._embeddings,  # pode ser None se índice vazio
+            "embeddings": (
+                self._embeddings.tolist() if self._embeddings is not None else None
+            ),
         }
         try:
-            with open(path, "wb") as f:
-                pickle.dump(payload, f)
+            # JSON keeps cache loading data-only. Pickle would execute arbitrary
+            # code when an index file came from an untrusted workspace.
+            write_json_atomic(path, payload)
             logger.info("Índice semântico salvo em '%s'.", path)
         except Exception as exc:
             logger.warning("Não foi possível salvar o índice semântico: %s", exc)
@@ -238,20 +234,15 @@ class SemanticMemory:
             `build_index()` caso `load_index` retorne False.
         """
         try:
-            with open(path, "rb") as f:
-                payload = pickle.load(f)
-
-            if payload.get("model_name") != self.model_name:
+            payload = read_json_object(path)
+            decoded = decode_cache_index(payload, self.model_name) if payload else None
+            if decoded is None:
                 logger.warning(
-                    "Índice salvo foi gerado com modelo diferente ('%s' != '%s'); "
-                    "ignorando cache.",
-                    payload.get("model_name"),
-                    self.model_name,
+                    "Índice semântico inválido ou incompatível; ignorando cache.",
                 )
                 return False
 
-            self._paths = payload.get("paths", [])
-            self._embeddings = payload.get("embeddings")
+            self._paths, self._embeddings = decoded
             self._index_built = True
             logger.info("Índice semântico carregado de '%s' (%d arquivos).", path, len(self._paths))
             return True

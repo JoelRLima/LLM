@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 PROVIDER_CHAT_INPUT_TOKENS = "provider_chat_input_tokens"
 PROVIDER_TEXT_TOKENIZER = "provider_text_tokenizer"
@@ -200,7 +200,7 @@ def measure_request_input_tokens_from_texts(
     return _provider_text_measurement("\n".join(texts), token_counter)
 
 
-def measure_model_request_input_tokens(
+def _measure_model_request_input_tokens(
     request: Any,
     gateway: Any = None,
     *,
@@ -234,6 +234,20 @@ def measure_model_request_input_tokens(
     if text is None:
         return RequestInputMeasurement.unavailable()
     return _provider_text_measurement(text, token_counter)
+
+
+def measure_model_request_input_tokens(
+    request: Any, gateway: Any = None, *, token_counter: Callable[[str], Any] | None = None,
+) -> RequestInputMeasurement:
+    """Use a provider-opted-in, one-use handoff only for unchanged requests."""
+    from llm_agent.agent.runtime.request_measurement_reuse import RequestMeasurementReuse
+
+    reuse = getattr(gateway, "_request_input_measurement_reuse", None)
+    if token_counter is None and isinstance(reuse, RequestMeasurementReuse):
+        return cast(RequestInputMeasurement, reuse.measure(
+            request, lambda: _measure_model_request_input_tokens(request, gateway),
+        ))
+    return _measure_model_request_input_tokens(request, gateway, token_counter=token_counter)
 
 
 def measure_payload_input_tokens(

@@ -103,7 +103,7 @@ def test_config_init_then_validate_offline(tmp_path: Path, capsys: pytest.Captur
     assert "Configuração válida" in capsys.readouterr().out
 
 
-def test_chat_missing_config_interactive_yes_uses_canonical_init(
+def test_legacy_chat_missing_config_interactive_yes_uses_canonical_init(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -117,7 +117,7 @@ def test_chat_missing_config_interactive_yes_uses_canonical_init(
         lambda prompt: prompts.append(prompt) or "y",
     )
 
-    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 0
 
     config = home / "config" / "config.json"
     assert json.loads(config.read_text(encoding="utf-8"))["schema_version"] == 1
@@ -129,7 +129,7 @@ def test_chat_missing_config_interactive_yes_uses_canonical_init(
     assert prompts == ["Deseja criar a configuração padrão agora? [Y/n] "]
 
 
-def test_chat_missing_config_interactive_no_does_not_write(
+def test_legacy_chat_missing_config_interactive_no_does_not_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -138,13 +138,13 @@ def test_chat_missing_config_interactive_no_does_not_write(
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     monkeypatch.setattr(cli.console, "input", lambda _prompt: "n")
 
-    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 0
 
     assert not (home / "config" / "config.json").exists()
     assert "llm-agent config init" in capsys.readouterr().out
 
 
-def test_chat_missing_config_interactive_eof_does_not_write(
+def test_legacy_chat_missing_config_interactive_eof_does_not_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -157,12 +157,12 @@ def test_chat_missing_config_interactive_eof_does_not_write(
 
     monkeypatch.setattr(cli.console, "input", eof)
 
-    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 0
     assert not (home / "config" / "config.json").exists()
     assert "llm-agent config init" in capsys.readouterr().out
 
 
-def test_chat_missing_config_noninteractive_is_actionable_without_prompt_or_write(
+def test_legacy_chat_missing_config_noninteractive_is_actionable_without_prompt_or_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -175,7 +175,7 @@ def test_chat_missing_config_noninteractive_is_actionable_without_prompt_or_writ
         lambda _prompt: (_ for _ in ()).throw(AssertionError("non-interactive prompt")),
     )
 
-    assert cli.main(["chat", "--home", str(home)]) == 2
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 2
 
     assert not (home / "config" / "config.json").exists()
     captured = capsys.readouterr()
@@ -247,6 +247,7 @@ def test_explicit_missing_config_never_uses_first_run_prompt(
     assert cli.main(
         [
             "chat",
+            "--legacy-session",
             "--config",
             str(explicit),
             "--home",
@@ -276,14 +277,14 @@ def test_invalid_config_is_not_treated_as_first_run(
         lambda _prompt: (_ for _ in ()).throw(AssertionError("invalid config prompt")),
     )
 
-    assert cli.main(["chat", "--home", str(home)]) == 2
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 2
 
     captured = capsys.readouterr()
     assert "llm-agent config init" not in captured.err
     assert "Configuração criada" not in captured.out
 
 
-def test_existing_config_keeps_normal_chat_startup(
+def test_existing_config_keeps_legacy_chat_startup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -299,7 +300,7 @@ def test_existing_config_keeps_normal_chat_startup(
         lambda _prompt: "1",
     )
 
-    assert cli.main(["chat", "--home", str(home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 0
     assert entered == [True]
     assert "[READ ONLY]" not in capsys.readouterr().out
 
@@ -318,7 +319,7 @@ def test_first_run_init_failure_preserves_error_without_false_success(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("sem permissão")),
     )
 
-    assert cli.main(["chat", "--home", str(home)]) == 2
+    assert cli.main(["chat", "--legacy-session", "--home", str(home)]) == 2
 
     captured = capsys.readouterr()
     assert "sem permissão" in captured.err

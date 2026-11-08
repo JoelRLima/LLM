@@ -20,7 +20,7 @@ from llm_agent.execution.cleanup import (
     cleanup_command,
     close_unassigned_windows_job,
 )
-from llm_agent.process.streams import StreamCapture, start_readers, write_stdin
+from llm_agent.process.streams import StreamCapture, start_readers, start_stdin_writer
 from llm_agent.process.tree import (
     assign_windows_job,
     create_windows_job,
@@ -125,7 +125,11 @@ def _wait_for_process(
             return True, False
         if deadline is not None and time.monotonic() >= deadline:
             return False, True
-        time.sleep(0.02)
+        wait = getattr(request.cancellation, "wait", None)
+        if callable(wait):
+            wait(0.02)
+        else:
+            time.sleep(0.02)
     return False, False
 
 
@@ -147,15 +151,6 @@ def _popen_kwargs(request: CommandRequest) -> dict[str, Any]:
     if request.pre_execution is not None:
         kwargs["preexec_fn"] = request.pre_execution
     return kwargs
-
-
-def _write_requested_stdin(process: subprocess.Popen[Any], data: bytes | None) -> None:
-    if data is None:
-        return
-    try:
-        write_stdin(process, data)
-    except OSError as exc:
-        raise CommandExecutionError("could not write command stdin") from exc
 
 
 def _terminate_interrupted_process(state: _CommandExecutionState) -> None:
@@ -239,12 +234,12 @@ class CommandExecutor:
                 "failed to assign process to Windows Job Object",
                 code="WINDOWS_JOB_ASSOCIATION",
             )
-        _write_requested_stdin(process, request.stdin)
         readers, stdout, stderr, stop_readers, reader_errors = start_readers(
             process, request.stdout_limit, request.stderr_limit
         )
         state.stdout, state.stderr = stdout, stderr
-        state.context = CommandContext(
+        stdin_errors: list[str] = []
+        context = CommandContext(
             process=process,
             windows_job=state.windows_job,
             process_group=state.process_group,
@@ -254,7 +249,11 @@ class CommandExecutor:
             stop_readers=stop_readers,
             reader_errors=reader_errors,
             fail_on_orphaned_group=self._fail_on_orphaned_group,
+            stdin_errors=stdin_errors,
+            ignore_stdin_errors=False,
         )
+        state.context = context
+        context.stdin_writer = start_stdin_writer(process, request.stdin, stdin_errors)
 
     @staticmethod
     def _wait_for_completion(request: CommandRequest, state: _CommandExecutionState) -> None:
@@ -266,6 +265,8 @@ class CommandExecutor:
             windows_job=state.windows_job,
         )
         if state.cancelled or state.timed_out:
+            if state.context is not None:
+                state.context.ignore_stdin_errors = True
             _terminate_interrupted_process(state)
         state.return_code = state.process.wait(timeout=2)
         state.result_ready = True

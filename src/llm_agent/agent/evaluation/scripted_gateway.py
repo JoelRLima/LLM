@@ -133,7 +133,7 @@ class ScriptedEvaluationGateway:
         self.calls: list[ModelRequest] = []
         self._last_task_contract: TaskContract | None = None
 
-    def complete(self, request: ModelRequest) -> ModelResponse:
+    def _complete_scripted(self, request: ModelRequest) -> ModelResponse:
         self.calls.append(request)
         system = str(request.messages[0].content) if request.messages else ""
         prompt = str(request.messages[-1].content) if request.messages else ""
@@ -144,6 +144,8 @@ class ScriptedEvaluationGateway:
             content = self._task_spec_response()
         elif request_contract == ModelRequestContract.SEMANTIC_INTENT.value:
             content = scripted_semantic_response(self.fixture_marker, self.objective)
+        elif request_contract == ModelRequestContract.INITIAL_PLAN.value:
+            content = self._plan_response(prompt)
         elif "Decision to verify:" in prompt or "Decisão a verificar:" in prompt:
             content = self._verifier_response(request)
         else:
@@ -152,6 +154,8 @@ class ScriptedEvaluationGateway:
             content=content,
             provider_metadata={"observed_provider_model_id": self.provider_model_id},
         )
+
+    complete = _complete_scripted
 
     @staticmethod
     def _verifier_response(request: ModelRequest) -> str:

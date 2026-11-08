@@ -25,6 +25,7 @@ from llm_agent.agent.evaluation.evidence import (
     sanitize_evidence_text,
 )
 from llm_agent.agent.evaluation.fixture_context import fixture_marker, runtime_objective
+from llm_agent.agent.evaluation.repetition_policy import RepetitionPolicy
 
 H_SERIES_VERSION = "H-SERIES-V1.5"
 # Per-run evidence remains readable by the preserved Epoch 1 artifact.  The
@@ -42,53 +43,6 @@ def _unavailable_observed_model_identity() -> dict[str, Any]:
         "endpoint_identity": None,
         "source": "unavailable",
     }
-
-
-@dataclass(frozen=True)
-class RepetitionPolicy:
-    """Bounded repetition policy for the H-series campaign."""
-
-    initial_repetitions: int = 3
-    h2_repetitions: int = 5
-    maximum_repetitions: int = 5
-
-    def __post_init__(self) -> None:
-        if self.initial_repetitions < 1 or self.h2_repetitions < 1:
-            raise EvidenceContractError("repetitions must be positive")
-        if self.h2_repetitions > self.maximum_repetitions:
-            raise EvidenceContractError("H2 repetitions exceed campaign maximum")
-
-    def required_for(self, scenario_id: str) -> int:
-        return self.h2_repetitions if scenario_id.upper() == "H2" else self.initial_repetitions
-
-    def to_dict(self) -> dict[str, int]:
-        return {
-            "initial_repetitions": self.initial_repetitions,
-            "h2_repetitions": self.h2_repetitions,
-            "maximum_repetitions": self.maximum_repetitions,
-        }
-
-    def initial_decision(self, pass_count: int, valid_count: int) -> str:
-        """Return the only permitted decision after the initial sample.
-
-        The decision is intentionally based on scenario repetitions, rather
-        than arm executions.  H1 is therefore evaluated once per paired
-        repetition even though it produces two arm records.
-        """
-
-        if valid_count != self.initial_repetitions:
-            raise EvidenceContractError("initial repetition decision requires exactly three valid samples")
-        if pass_count == valid_count:
-            return "stop_unanimous_pass"
-        if pass_count == 0:
-            return "stop_unanimous_fail"
-        return "extend_exactly_two"
-
-    def target_for_initial_result(self, scenario_id: str, pass_count: int, valid_count: int) -> int:
-        if scenario_id.upper() == "H2":
-            return self.h2_repetitions
-        decision = self.initial_decision(pass_count, valid_count)
-        return self.initial_repetitions if decision.startswith("stop_") else self.maximum_repetitions
 
 
 @dataclass(frozen=True)

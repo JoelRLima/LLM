@@ -226,7 +226,7 @@ class EvaluationSetReport:
 
     @property
     def pass_rate(self) -> float:
-        return self.passed / self.total if self.total else 1.0
+        return self.passed / self.total if self.total else 0.0
 
     def to_dict(self) -> dict[str, object]:
         return {

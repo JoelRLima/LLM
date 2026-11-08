@@ -10,10 +10,21 @@ import pytest
 
 from scripts import w23_authority as authority
 from scripts.w23_authority_transaction import SELECTOR
+from scripts.w23_tooling_successor import WITNESS, WITNESS_SHA256
 
 
 def encoded(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True) + "\n").encode()
+
+
+def identity_bytes(value: Any) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def refresh_binding(p: dict[str, Any], path: str, data: bytes) -> None:
+    for row in p["bindings"]:
+        if row["source"] == path:
+            row["sha256"] = authority.digest(data)
 
 
 @pytest.fixture
@@ -25,20 +36,51 @@ def proposal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     (source / "scripts/w23_authority.py").write_bytes(b"verifier fixture\n")
     data = b"verifier fixture\n"
     oid = authority.hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).digest()
-    tree = authority._tree({"scripts": {"w23_authority.py": ("100644", oid)}}, "sha1").hex()
-    manifest = {"files": [{"path": "scripts/w23_authority.py", "mode": "100644", "bytes": len(data),
-                          "sha256": authority.digest(data)}], "source_tree": tree, "object_format": "sha1",
-                "workspace_context": {"operational_roots": []}}
+    candidate_data = b"candidate fixture\n"
+    candidate_oid = authority.hashlib.sha1(
+        b"blob " + str(len(candidate_data)).encode() + b"\0" + candidate_data,
+    ).digest()
+    tree = authority._tree({"scripts": {"w23_authority.py": ("100644", oid)},
+                            "src": {"candidate.py": ("100644", candidate_oid)}}, "sha1").hex()
+    (source / "src").mkdir()
+    (source / "src/candidate.py").write_bytes(candidate_data)
     predecessor = encoded({"schema_version": 1})
     monkeypatch.setattr(authority, "PREDECESSOR_SHA256", authority.digest(predecessor))
-    monkeypatch.setattr(authority, "parse_manifest", lambda raw, expected: json.loads(raw))
-    monkeypatch.setattr(authority, "verify_successor", lambda *args: {
-        "historical_integrity": "SIMULATED", "current_identity": "SIMULATED"})
-    manifest["lineage"] = {"authority_predecessor": {"path": "predecessor.json", "sha256": authority.digest(predecessor)},
-        "inherited_observation": {"path": "SPEC.md", "sha256": authority.digest(b"spec\n")}, "acceptance_records": []}
-    manifest["selected_evidence"] = []
-    files = {"predecessor.json": predecessor, "manifest.json": encoded(manifest), "CONTRACT.md": b"contract\n",
-             "SPEC.md": b"spec\n", "tooling.json": b"{}\n"}
+    monkeypatch.setattr(authority, "verify_archived_history", lambda _root: {
+        "historical_integrity": "PASS_ARCHIVED_BYTES"})
+    predecessor_ref = {"path": "predecessor.json", "sha256": authority.digest(predecessor)}
+    contract = b"contract\n"
+    spec = b"spec\n"
+    manifest = {"schema_version": 1, "kind": "EXACT_BYTE_REPOSITORY_CANDIDATE", "unit": "fixture",
+        "object_format": "sha1", "base": {"head": "0" * 40, "tree": "0" * 40}, "source_tree": tree,
+        "files": [{"path": "scripts/w23_authority.py", "mode": "100644", "bytes": len(data),
+                   "sha256": authority.digest(data)},
+                  {"path": "src/candidate.py", "mode": "100644", "bytes": len(candidate_data),
+                   "sha256": authority.digest(candidate_data)}],
+        "overlay": [{"path": "scripts/w23_authority.py", "operation": "add", "before": None,
+                     "after_sha256": authority.digest(data), "acceptance_record_id": "fixture"},
+                    {"path": "src/candidate.py", "operation": "add", "before": None,
+                     "after_sha256": authority.digest(candidate_data), "acceptance_record_id": "fixture"}],
+        "lineage": {"authority_predecessor": predecessor_ref,
+                    "inherited_observation": {"path": "SPEC.md", "sha256": authority.digest(spec)},
+                    "acceptance_records": [{"id": "fixture", "decision": {"path": "CONTRACT.md",
+                        "sha256": authority.digest(contract)}, "evidence": [{"path": "SPEC.md",
+                        "sha256": authority.digest(spec)}]}]},
+        "selected_evidence": [], "workspace_context": {"protected_files": [], "operational_roots": []}}
+    from distribution.candidate_manifest import canonical_manifest_bytes
+
+    manifest_bytes = canonical_manifest_bytes(manifest)
+    verifier_ref = {"path": "scripts/w23_authority.py", "sha256": authority.digest(data)}
+    predecessor_ref = {"path": "predecessor.json", "sha256": authority.digest(predecessor)}
+    identity = {"schema": "W23_V010_CANDIDATE_IDENTITY", "version": 1, "state": "IDENTIFIED_INACTIVE",
+        "candidate_manifest": {"path": "manifest.json", "sha256": authority.digest(manifest_bytes)},
+        "source_tree": tree, "verifier": verifier_ref, "predecessor": predecessor_ref,
+        "historical_predecessor": {"path": WITNESS, "sha256": WITNESS_SHA256,
+                                   "integrity": "PASS_ARCHIVED_BYTES"},
+        "owner_selection": "PENDING", "approval": {"state": "NOT_PROVIDED", "sha256": None},
+        "grants": dict(authority.GRANTS)}
+    files = {"predecessor.json": predecessor, "manifest.json": manifest_bytes, "CONTRACT.md": contract,
+             "SPEC.md": spec, "tooling.json": identity_bytes(identity)}
     for name in authority.REQUIRED_GATES:
         files["gate-" + name + ".json"] = encoded({"schema": "W23_GATE_OBSERVATION", "gate": name,
             "source_tree": tree, "state": "UNKNOWN", "evidence_refs": []})
@@ -49,7 +91,7 @@ def proposal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     p: dict[str, Any] = {"schema": "W23_PROSPECTIVE_AUTHORITY", "version": 10, "state": "PROPOSED_INACTIVE",
         "grants": dict(authority.GRANTS), "predecessor": ref("predecessor.json"), "candidate": ref("manifest.json"),
         "contract": ref("CONTRACT.md"), "spec": ref("SPEC.md"), "tooling_record": ref("tooling.json"),
-        "verifier": {"path": "scripts/w23_authority.py", "sha256": authority.digest(data)},
+        "verifier": verifier_ref,
         "historical_index": {"pin": authority.HISTORICAL_INDEX_PIN, "state": "UNVERIFIED_HISTORICAL_DIVERGENCE",
             "policy": "prospective_identity_does_not_repair_historical_raw_pin"},
         "bindings": [{"source": name, "destination": "quality/w23/authority/v010-cand03/" + name,
@@ -71,7 +113,10 @@ def test_inactive_prospect_does_not_grant_acceptance(proposal: tuple[Path, Path,
     assert result["canonical_acceptance"] == "NOT_GRANTED"
     assert result["mandatory_gates_passed"] is False
     assert result["grants"] == authority.GRANTS
-    assert result["historical_integrity"] == "SIMULATED"
+    assert result["historical_integrity"] == "PASS_ARCHIVED_BYTES"
+    assert result["current_identity"] == "PASS_CANDIDATE_MANIFEST_AND_TREE"
+    assert result["owner_selection"] == "PENDING"
+    assert result["candidate_identity_sha256"] == proposal[2]["tooling_record"]["sha256"]
     assert result["historical_raw_index"] == "UNVERIFIED_HISTORICAL_DIVERGENCE"
 
 
@@ -137,7 +182,9 @@ def test_candidate_mode_is_part_of_the_authenticated_git_tree(
     manifest_path = bundle / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["files"][0]["mode"] = "100755"
-    raw = encoded(manifest)
+    from distribution.candidate_manifest import canonical_manifest_bytes
+
+    raw = canonical_manifest_bytes(manifest)
     manifest_path.write_bytes(raw)
     digest = authority.digest(raw)
     p["candidate"]["sha256"] = digest
@@ -307,6 +354,19 @@ def test_future_approval_verification_does_not_install_or_activate(
     assert not (source / SELECTOR).exists()
 
 
+def test_missing_owner_approval_is_rejected(
+    proposal: tuple[Path, Path, dict[str, Any]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, bundle, p = proposal
+    monkeypatch.setattr(authority, "verify_prospective", lambda *args: {
+        "source_tree": "1" * 40, "mandatory_gates_passed": True})
+    raw = encoded(p)
+    with pytest.raises(authority.AuthorityError, match="artifact bytes and independently expected digest"):
+        authority.verify_owner_approval(
+            source, bundle, raw, authority.digest(raw), None, None,  # type: ignore[arg-type]
+        )
+
+
 def test_bound_runner_does_not_export_bytecode_outside_pip_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts.w23_bounded_windows import _environment
 
@@ -321,11 +381,171 @@ def test_manifest_cannot_claim_a_different_historical_predecessor(proposal: tupl
     _, bundle, p = proposal
     manifest = json.loads((bundle / "manifest.json").read_bytes())
     manifest["lineage"]["authority_predecessor"]["sha256"] = "0" * 64
-    raw = encoded(manifest)
+    from distribution.candidate_manifest import canonical_manifest_bytes
+
+    raw = canonical_manifest_bytes(manifest)
     (bundle / "manifest.json").write_bytes(raw)
     p["candidate"]["sha256"] = authority.digest(raw)
-    for row in p["bindings"]:
-        if row["source"] == "manifest.json":
-            row["sha256"] = authority.digest(raw)
+    refresh_binding(p, "manifest.json", raw)
     with pytest.raises(authority.AuthorityError, match="lineage"):
         verify(proposal)
+
+
+@pytest.mark.parametrize("field", ["source_tree", "verifier", "predecessor", "historical_predecessor",
+                                    "owner_selection", "approval", "grants", "coerced_grant",
+                                    "coerced_version", "fractional_version"])
+def test_candidate_identity_receipt_rejects_inconsistent_claims(
+    proposal: tuple[Path, Path, dict[str, Any]], field: str,
+) -> None:
+    _, bundle, p = proposal
+    identity_path = bundle / "tooling.json"
+    identity = json.loads(identity_path.read_bytes())
+    if field == "source_tree":
+        identity[field] = "0" * 40
+    elif field == "verifier":
+        identity[field]["sha256"] = "0" * 64
+    elif field == "predecessor":
+        identity[field]["sha256"] = "0" * 64
+    elif field == "historical_predecessor":
+        identity[field]["sha256"] = "0" * 64
+    elif field == "owner_selection":
+        identity[field] = "APPROVED"
+    elif field == "approval":
+        identity[field] = {"state": "APPROVED", "sha256": "1" * 64}
+    elif field == "grants":
+        identity[field]["merge"] = True
+    elif field == "coerced_grant":
+        identity["grants"]["merge"] = 0
+    elif field == "coerced_version":
+        identity["version"] = True
+    else:
+        identity["version"] = 1.0
+    raw = identity_bytes(identity)
+    identity_path.write_bytes(raw)
+    p["tooling_record"]["sha256"] = authority.digest(raw)
+    refresh_binding(p, "tooling.json", raw)
+    with pytest.raises(authority.AuthorityError, match="candidate identity receipt"):
+        verify(proposal)
+
+
+def test_candidate_identity_digest_divergence_is_rejected(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    p = proposal[2]
+    p["tooling_record"]["sha256"] = "0" * 64
+    with pytest.raises(authority.AuthorityError, match="artifact digest differs"):
+        verify(proposal)
+
+
+@pytest.mark.parametrize("mutation", ["changed", "missing", "extra"])
+def test_frozen_candidate_rejects_file_substitution(
+    proposal: tuple[Path, Path, dict[str, Any]], mutation: str,
+) -> None:
+    source = proposal[0]
+    target = source / "src/candidate.py"
+    if mutation == "changed":
+        target.write_bytes(b"substituted verifier bytes\n")
+    elif mutation == "missing":
+        target.unlink()
+    else:
+        (source / "extra.txt").write_bytes(b"unmanifested candidate bytes\n")
+    with pytest.raises(authority.AuthorityError, match="candidate file differs|source membership"):
+        verify(proposal)
+
+
+@pytest.mark.parametrize("kind", ["git", "operational", "protected"])
+def test_frozen_candidate_rejects_workspace_only_paths(
+    proposal: tuple[Path, Path, dict[str, Any]], kind: str,
+) -> None:
+    from distribution.candidate_manifest import parse_manifest
+
+    source, bundle, p = proposal
+    manifest = parse_manifest((bundle / "manifest.json").read_bytes(), p["candidate"]["sha256"])
+    if kind == "git":
+        excluded = ".git"
+    elif kind == "operational":
+        excluded = "cache"
+        manifest["workspace_context"]["operational_roots"] = [excluded]
+    else:
+        excluded = "local-workspace.json"
+        protected_bytes = b"workspace state\n"
+        manifest["workspace_context"]["protected_files"] = [{"path": excluded, "mode": "100644",
+            "bytes": len(protected_bytes), "sha256": authority.digest(protected_bytes)}]
+    path = source / excluded
+    if kind == "operational":
+        path.mkdir()
+    else:
+        path.write_bytes(b"workspace state\n")
+    with pytest.raises(authority.AuthorityError, match="workspace-only path"):
+        authority._candidate(source, manifest)
+
+
+def test_frozen_candidate_allows_missing_nested_exclusion_under_source_directory(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    from distribution.candidate_manifest import parse_manifest
+
+    source, bundle, p = proposal
+    manifest = parse_manifest((bundle / "manifest.json").read_bytes(), p["candidate"]["sha256"])
+    manifest["workspace_context"]["operational_roots"] = ["scripts/__pycache__"]
+
+    authority._candidate(source, manifest)
+
+
+def test_frozen_candidate_rejects_exact_nested_exclusion(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    from distribution.candidate_manifest import parse_manifest
+
+    source, bundle, p = proposal
+    manifest = parse_manifest((bundle / "manifest.json").read_bytes(), p["candidate"]["sha256"])
+    manifest["workspace_context"]["operational_roots"] = ["scripts/__pycache__"]
+    (source / "scripts/__pycache__").mkdir()
+
+    with pytest.raises(authority.AuthorityError, match="workspace-only path: scripts/__pycache__"):
+        authority._candidate(source, manifest)
+
+
+def test_candidate_manifest_substitution_invalidates_identity_receipt(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    _, bundle, p = proposal
+    from distribution.candidate_manifest import canonical_manifest_bytes
+
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["unit"] = "substituted-candidate"
+    raw = canonical_manifest_bytes(manifest)
+    manifest_path.write_bytes(raw)
+    p["candidate"]["sha256"] = authority.digest(raw)
+    refresh_binding(p, "manifest.json", raw)
+    with pytest.raises(authority.AuthorityError, match="candidate identity receipt"):
+        verify(proposal)
+
+
+def test_old_f01_f02_record_cannot_be_reused_as_current_identity(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    _, bundle, p = proposal
+    old_record = Path("quality/w23/tooling_corrections_20261015_f01_f02.json").read_bytes()
+    identity_path = bundle / "tooling.json"
+    identity_path.write_bytes(old_record)
+    p["tooling_record"]["sha256"] = authority.digest(old_record)
+    refresh_binding(p, "tooling.json", old_record)
+    with pytest.raises(authority.AuthorityError, match="candidate identity receipt"):
+        verify(proposal)
+
+
+def test_old_owner_approval_does_not_authorize_a_new_proposal(
+    proposal: tuple[Path, Path, dict[str, Any]],
+) -> None:
+    source, bundle, p = proposal
+    proposal_raw = encoded(p)
+    approval = encoded({"schema": "W23_OWNER_SELECTION_APPROVAL", "proposal_sha256": "0" * 64,
+        "source_tree": p["gates"]["full_pytest"]["source_tree"],
+        "predecessor_sha256": authority.PREDECESSOR_SHA256,
+        "decision": "APPROVE_CANONICAL_SELECTION", "activation_authorized": False,
+        "publication_authorized": False, "merge_authorized": False})
+    with pytest.raises(authority.AuthorityError, match="owner approval"):
+        authority.verify_owner_approval(source, bundle, proposal_raw, authority.digest(proposal_raw),
+                                        approval, authority.digest(approval))

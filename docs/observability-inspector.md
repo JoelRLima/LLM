@@ -1,5 +1,12 @@
 # Observabilidade e Inspector
 
+Para compartilhar somente metadados operacionais, use
+`llm-agent inspect export --metadata-only`. O bundle omite payloads, snapshot de
+conteúdo, notas e erros detalhados; identifica o modo no manifesto e grava
+`events-metadata.jsonl`, que não deve ser usado como trace de replay. A opção é
+incompatível com `--include-bookmarks`. Consulte o
+[inventário de dados e retenção](guides/privacidade-dados-locais.md).
+
 Este documento é o primary home da espinha de observabilidade da Wave 9.
 
 ## Ownership e fluxo
@@ -65,6 +72,14 @@ Heartbeat do observer e silêncio semântico são fatos diferentes. Heartbeat pr
 apenas que a sessão conseguiu publicar seu pulso; não prova progresso da tarefa.
 O inspector mostra os dois, o tempo de silêncio e o evento canônico `WATCHDOG`
 separadamente, sem inferir “hung” só pelo tempo.
+
+`TraceStore.flush(timeout)` captura a geração de metadados e a sequência aceita
+na chamada e aguarda sua publicação confirmada. Heartbeats e eventos posteriores
+não mudam essa fronteira. A confirmação exige a sequência efetivamente
+persistida e a publicação dos metadados e do índice; aceitar um registro na fila
+não basta. Heartbeats são coalescíveis e podem continuar sendo publicados depois
+da confirmação dessa fronteira semântica.
+Falhas do writer permanecem latched, e o prazo continua limitado pelo timeout.
 
 ## CLI e uso
 

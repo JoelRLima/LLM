@@ -6,6 +6,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from llm_agent.agent.runtime.mutation_evidence import project_mutation_evidence
+from llm_agent.agent.runtime.validation_evidence import current_validation_evidence
+from llm_agent.agent.tools.result_adapter import (
+    ensure_canonical_result,
+    result_explicitly_succeeded,
+)
 
 
 def _constraint_owner(orchestrator: Any) -> Any:
@@ -15,28 +20,26 @@ def _constraint_owner(orchestrator: Any) -> Any:
     return getattr(getattr(orchestrator, "agent_state", None), "task_semantics", None)
 
 
-def _result_success(record: Any) -> bool:
-    if isinstance(record, Mapping):
-        if record.get("ok") is True:
-            return True
-        raw_status = record.get("status")
-    else:
-        if getattr(record, "ok", False) is True:
-            return True
-        raw_status = getattr(record, "status", None)
-    return str(getattr(raw_status, "value", raw_status)).casefold() == "succeeded"
-
-
 def _history_results(orchestrator: Any) -> tuple[Any, ...]:
     state = orchestrator.agent_state
     results: list[Any] = []
-    for item in getattr(state, "tool_history", ()) or ():
+    history = getattr(state, "tool_history", ()) or ()
+    for item in history:
         if isinstance(item, Mapping) and "result" in item:
-            results.append(item["result"])
+            results.append(_canonical_success_result(item["result"]))
+    if history:
+        return tuple(results)
     last_result = getattr(state, "last_result", None)
     if last_result is not None:
-        results.append(last_result)
+        results.append(_canonical_success_result(last_result))
     return tuple(results)
+
+
+def _canonical_success_result(value: Any) -> Any:
+    """Adapt only explicitly successful legacy mappings at the planning boundary."""
+    if isinstance(value, Mapping) and result_explicitly_succeeded(value):
+        return ensure_canonical_result(value)
+    return value
 
 
 def required_validation_satisfied(orchestrator: Any) -> bool:
@@ -51,22 +54,7 @@ def required_validation_satisfied(orchestrator: Any) -> bool:
         or ()
     ):
         return True
-    mutation_seen = False
-    for result in _history_results(orchestrator):
-        evidence = project_mutation_evidence(result)
-        if not (evidence.attempted or evidence.occurred or evidence.survives):
-            continue
-        mutation_seen = True
-        if (
-            isinstance(evidence.validation_status, str)
-            and evidence.validation_status.casefold() == "passed"
-            and _result_success(result)
-        ):
-            return True
-    # No mutation/proposal has proceeded yet; pending-effect review remains
-    # responsible for rejecting an incomplete task.  Once it has proceeded,
-    # missing validation is a hard completion blocker.
-    return not mutation_seen
+    return current_validation_evidence(_history_results(orchestrator)).satisfied
 
 
 def proposal_only_mutation_observed(orchestrator: Any) -> bool:

@@ -384,8 +384,8 @@ def successor_report() -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def compatibility_retirement_successor_report() -> dict[str, Any]:
-    return _build_compatibility_retirement_report()
+def compatibility_retirement_successor_report(w23_checkpoint_root: Path) -> dict[str, Any]:
+    return _build_compatibility_retirement_report(w23_checkpoint_root)
 
 
 def test_frozen_cycle_threshold_and_explicit_lineage(evidence: dict[str, Any]) -> None:
@@ -633,12 +633,12 @@ def _retirement_predecessor_inventory(report: dict[str, Any]) -> list[list[str]]
     return [[path, inventory[path]] for path in sorted(inventory)]
 
 
-def _retirement_predecessor_source() -> RepositorySource:
-    source = RepositorySource(ROOT, "final-w22")
+def _retirement_predecessor_source(root: Path) -> RepositorySource:
+    source = RepositorySource(root, "final-w22")
     source.module_paths()
-    archived = read_historical_retired_sources(ROOT)
+    archived = read_historical_retired_sources(root)
     for relative in sorted(RETIREMENT_PRODUCTION_PATHS):
-        path = ROOT / relative
+        path = root / relative
         module = "llm_agent." + relative.removeprefix("src/llm_agent/").removesuffix(".py").replace("/", ".")
         assert not path.exists()
         blob = archived[relative]
@@ -647,32 +647,32 @@ def _retirement_predecessor_source() -> RepositorySource:
     return source
 
 
-def _build_compatibility_retirement_report() -> dict[str, Any]:
+def _build_compatibility_retirement_report(root: Path) -> dict[str, Any]:
     """Recompute historical retirement through an exact authenticated text-only projection."""
 
     predecessor_path = "quality/w23/cycle_report_after_lock_ownership.json"
-    predecessor_bytes = (ROOT / predecessor_path).read_bytes()
+    predecessor_bytes = (root / predecessor_path).read_bytes()
     assert _sha(predecessor_bytes) == RETIREMENT_PREDECESSOR_SHA
     predecessor = json.loads(predecessor_bytes)
     predecessor_inventory = _retirement_predecessor_inventory(predecessor)
     assert len(predecessor_inventory) == 909
     assert _production_fingerprint(predecessor_inventory) == predecessor["candidate"]["source_fingerprint_sha256"]
 
-    live_inventory = _production_inventory(RepositorySource(ROOT, "final-w22"))
-    current_inventory = project_historical_production(ROOT, live_inventory)
+    live_inventory = _production_inventory(RepositorySource(root, "final-w22"))
+    current_inventory = project_historical_production(root, live_inventory)
     before, after = dict(predecessor_inventory), dict(current_inventory)
     assert sorted(set(before) - set(after)) == sorted(RETIREMENT_PRODUCTION_PATHS)
     assert sorted(set(after) - set(before)) == []
     assert sorted(path for path in set(before) & set(after) if before[path] != after[path]) == []
-    assert all((ROOT / path).is_file() for path in after)
-    assert all(not (ROOT / path).exists() for path in RETIREMENT_PRODUCTION_PATHS)
+    assert all((root / path).is_file() for path in after)
+    assert all(not (root / path).exists() for path in RETIREMENT_PRODUCTION_PATHS)
 
-    policy = json.loads((ROOT / "quality/architecture_current_policy.json").read_text(encoding="utf-8"))
-    source = RepositorySource(ROOT, "final-w22")
+    policy = json.loads((root / "quality/architecture_current_policy.json").read_text(encoding="utf-8"))
+    source = RepositorySource(root, "final-w22")
     graph, edges = _complete_graph(source, policy)
     assert not _dynamic_errors(source, graph, policy)
     assert not _owner_edge_errors(edges, policy)
-    predecessor_source = _retirement_predecessor_source()
+    predecessor_source = _retirement_predecessor_source(root)
     predecessor_graph, predecessor_edges = _complete_graph(predecessor_source, policy)
     assert len(predecessor_graph.modules) == 909 and len(predecessor_edges) == 3150
     assert _semantic_graph_sha(predecessor_edges) == predecessor["current_evidence"]["semantic_graph_sha256"]
@@ -720,14 +720,14 @@ def _build_compatibility_retirement_report() -> dict[str, Any]:
     protected = predecessor["protected_production_sha256"]
     protected_hashes = dict(protected)
     historical_production = dict(after)
-    historical_production.update({path: _sha(data) for path, data in read_historical_retired_sources(ROOT).items()})
+    historical_production.update({path: _sha(data) for path, data in read_historical_retired_sources(root).items()})
     recomputed_protected = {path: historical_production[path] for path in sorted(protected)
                             if path.startswith("src/")}
     assert all(protected_hashes[path] == digest for path, digest in recomputed_protected.items())
     protected_hashes.update(recomputed_protected)
-    recorded_inputs = json.loads((ROOT / RETIREMENT_CYCLE_REPORT).read_bytes())["input_sha256"]
+    recorded_inputs = json.loads((root / RETIREMENT_CYCLE_REPORT).read_bytes())["input_sha256"]
     input_hashes = dict(recorded_inputs)
-    historical_tooling = read_historical_retirement_inputs(ROOT)
+    historical_tooling = read_historical_retirement_inputs(root)
     baseline_bytes = historical_tooling["quality/w23/cycle_report_before.json"]
     assert _sha(baseline_bytes) == BASELINE_SHA
     input_hashes.update({path: _sha(historical_tooling[path]) for path in input_paths})
@@ -965,11 +965,13 @@ def test_historical_compatibility_witness_continues_accepted_production() -> Non
 
 @pytest.mark.parametrize("field", ["current_evidence", "unit_delta", "input_sha256", "authorization"])
 def test_compatibility_retirement_successor_mutation_is_rejected(
-    compatibility_retirement_successor_report: dict[str, Any], field: str
+    compatibility_retirement_successor_report: dict[str, Any],
+    field: str,
+    w23_checkpoint_root: Path,
 ) -> None:
     selected = copy.deepcopy(compatibility_retirement_successor_report)
     selected[field] = {**selected[field], "synthetic": "stale"}
-    recomputed = _build_compatibility_retirement_report()
+    recomputed = _build_compatibility_retirement_report(w23_checkpoint_root)
     with pytest.raises(AssertionError):
         _assert_successor_freshness(selected, recomputed)
 

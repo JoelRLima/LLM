@@ -6,10 +6,15 @@ from typing import Any, cast
 
 import pytest
 
+from llm_agent.agent.application_result import AgentRunResult
 from llm_agent.agent.approval import ApprovalDecision, AutoApprove, RequireExplicitApproval
+from llm_agent.agent.interaction.types import AgentInteractionResult, InteractionResolution
+from llm_agent.agent.llm.errors import ModelConnectionError, ModelTimeoutError
+from llm_agent.agent.reporting.run_snapshot import build_canonical_run_snapshot
 from llm_agent.agent.runtime.correlation import RunCorrelation
 from llm_agent.agent.runtime.event_kinds import RuntimeEventKind
 from llm_agent.agent.runtime.events import RuntimeEvent
+from llm_agent.agent.state import AgentState
 from llm_agent.agent.tools.authority import OperationalMode
 from llm_agent.application import _task_observation
 from llm_agent.application import task_execution as api
@@ -41,6 +46,7 @@ def test_startup_one_owner_and_exact_inputs(monkeypatch, tmp_path, interactive, 
     assert arguments == {
         "workspace": tmp_path, "paths": start.app_paths, "config_path": "configuration", "profile": "profile",
         "approval_policy": arguments["approval_policy"], "task_authority_capabilities": ["read", "process"],
+        "task_authority_extension_ids": None, "task_authority_extension_fingerprints": None,
         "observability_mode": "normal", "operational_mode": mode, "configure_logging": False,
     }
     if interactive:
@@ -84,7 +90,8 @@ def test_live_mode_single_authority(mode, label, write, full):
 def test_dispatch_preserves_prefix_profile_and_subject(directive, profile, fallback):
     text = f"{directive} {profile} inspect source".strip()
     calls = []
-    result = SimpleNamespace(answer="ok", status="succeeded", success=True)
+    run = AgentRunResult(answer="ok", status="succeeded", workspace=".")
+    result = run if fallback else AgentInteractionResult("succeeded", "ok", None, run_result=run)
     owner = SimpleNamespace(run=lambda *args, **kw: calls.append((args, kw)) or result)
     if not fallback:
         owner.interact = lambda *args, **kw: calls.append((args, kw)) or result
@@ -358,16 +365,18 @@ def test_activity_projector_covers_every_canonical_kind_and_preserves_special_ef
 
 @pytest.mark.parametrize("bad", [AutoApprove(), OperationalMode.FULL, SimpleNamespace(), {1: "bad"}])
 def test_nested_owner_and_enum_values_rejected(bad):
-    settlement = api._settle(SimpleNamespace(to_dict=lambda: {"nested": [{"value": bad}]}))
+    settlement = api._settle(AgentRunResult("failed", "", ".", metadata={"nested": [{"value": bad}]}))
     with pytest.raises(TypeError):
         api.observe_task_settlement(settlement, channel="headless")
 
 
 def test_settlement_copy_receipt_diagnostics_and_no_owner_escape():
     receipt = {"tools": [{"tool": "file_reader", "executed": True}]}
-    result = SimpleNamespace(answer="ok", error=None, status="succeeded", success=True,
-                             interaction_usage={"model_calls": 1}, resolution=SimpleNamespace(action="run"),
-                             run_result=SimpleNamespace(receipt=receipt, report_path="report"))
+    resolution = InteractionResolution("run", "task", "read", "normal", "explicit", "none", "inspect", None)
+    result = AgentInteractionResult(
+        answer="ok", status="succeeded", interaction_usage={"model_calls": 1}, resolution=resolution,
+        run_result=AgentRunResult("succeeded", "ok", ".", receipt=receipt, report_path="report"),
+    )
     settlement = api._settle(result)
     observed = api.observe_task_settlement(settlement, channel="interactive")
     assert observed["receipt"] == receipt and observed["receipt"] is not receipt
@@ -378,6 +387,105 @@ def test_settlement_copy_receipt_diagnostics_and_no_owner_escape():
     for handle in (api.TaskExecutionRuntime, api.TaskDispatch, api.TaskSettlement):
         with pytest.raises(TypeError):
             handle()
+
+
+@pytest.mark.parametrize(
+    ("transport_error", "expected_failure"),
+    [
+        pytest.param(ModelConnectionError("connection refused"), "MODEL_CONNECTION_ERROR", id="connection"),
+        pytest.param(ModelTimeoutError("timeout"), "MODEL_TIMEOUT", id="timeout"),
+    ],
+)
+def test_interactive_observation_projects_workbench_facts_as_primitives(transport_error, expected_failure):
+    snapshot = build_canonical_run_snapshot(
+        SimpleNamespace(agent_state=AgentState()), "failed",
+        correlation=RunCorrelation(run_id="run-public-17", root_task_id="task", task_id="task"),
+    )
+    value = AgentInteractionResult(
+        answer="unavailable",
+        status="unavailable",
+        resolution=None,
+        reason_code="INTERACTION_RESOLVER_UNAVAILABLE",
+        run_result=AgentRunResult(
+            "failed", "unavailable", ".", snapshot=snapshot,
+            receipt={"status": "failed"},
+            report_path="report.json",
+        ),
+        transport_error=transport_error,
+    )
+
+    observed = api.observe_task_settlement(api._settle(value), channel="interactive")
+
+    assert observed["run_id"] == "run-public-17"
+    assert type(observed["run_id"]) is str
+    assert observed["report_completeness"] == "final"
+    assert type(observed["report_completeness"]) is str
+    assert observed["model_transport_failure"] == expected_failure
+    assert type(observed["model_transport_failure"]) is str
+    assert observed["receipt"] == {"status": "failed"}
+
+
+def test_homonymous_noncanonical_transport_error_is_not_causal_evidence():
+    lookalike_type = type(
+        "ModelConnectionError",
+        (Exception,),
+        {"__module__": "llm_agent.agent.llm.errors"},
+    )
+    value = AgentInteractionResult(
+        answer="unavailable",
+        status="unavailable",
+        resolution=None,
+        reason_code="INTERACTION_RESOLVER_UNAVAILABLE",
+        transport_error=lookalike_type("lookalike"),
+    )
+
+    observed = api.observe_task_settlement(api._settle(value), channel="interactive")
+
+    assert observed["reason_code"] == "INTERACTION_RESOLVER_UNAVAILABLE"
+    assert "model_transport_failure" not in observed
+
+
+@pytest.mark.parametrize("reason_code", [
+    "INTERACTION_RESOLVER_UNAVAILABLE",
+    "INTERACTION_RESPONSE_UNAVAILABLE",
+])
+@pytest.mark.parametrize("transport_error", [None, ConnectionError("generic connection"), TimeoutError("generic timeout")])
+def test_generic_interaction_unavailable_code_is_not_transport_evidence(reason_code, transport_error):
+    value = AgentInteractionResult(
+        answer="unavailable",
+        status="unavailable",
+        resolution=None,
+        reason_code=reason_code,
+        transport_error=transport_error,
+    )
+
+    observed = api.observe_task_settlement(api._settle(value), channel="interactive")
+
+    assert observed["reason_code"] == reason_code
+    assert "model_transport_failure" not in observed
+
+
+def test_workbench_settlement_adapter_keeps_task_settlement_opaque(monkeypatch):
+    from llm_agent.application.workbench import submission as workbench_submission
+
+    observed_value = {"run_id": "run-public", "model_transport_failure": "MODEL_TIMEOUT"}
+    calls = []
+
+    class OpaqueSettlement:
+        def __getattribute__(self, name):
+            if name == "_value":
+                raise AssertionError("Workbench adapter read a private settlement value")
+            return object.__getattribute__(self, name)
+
+    monkeypatch.setattr(
+        workbench_submission,
+        "observe_task_settlement",
+        lambda settlement, *, channel: calls.append((settlement, channel)) or observed_value,
+    )
+    settlement = OpaqueSettlement()
+
+    assert workbench_submission.observe_workbench_settlement(settlement) is observed_value
+    assert calls == [(settlement, "interactive")]
 
 
 def test_cancellation_new_binding_cleanup_and_close_failure():

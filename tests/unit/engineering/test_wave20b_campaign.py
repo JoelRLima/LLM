@@ -744,6 +744,23 @@ def test_B29_frecency_is_bounded_and_merged(tmp_path: Path) -> None:
     assert store.score("cli:299") > 0
 
 
+def test_frecency_record_merges_latest_disk_state_across_stale_instances(tmp_path: Path) -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    path = tmp_path / "shared-frecency.json"
+    first = FrecencyStore(path, clock=lambda: now)
+    second = FrecencyStore(path, clock=lambda: now)
+
+    first.record("cli:shared", now=now)
+    second.record("cli:shared", now=now)
+    second.record("cli:other", now=now)
+
+    merged = FrecencyStore(path, clock=lambda: now)
+    assert merged.snapshot() == (
+        {"entry_id": "cli:shared", "use_count": 2, "last_used_utc": "2026-01-01T00:00:00Z"},
+        {"entry_id": "cli:other", "use_count": 1, "last_used_utc": "2026-01-01T00:00:00Z"},
+    )
+
+
 def test_B30_frecency_ignores_future_and_corrupt_documents(tmp_path: Path) -> None:
     path = tmp_path / "frecency.json"
     future = (datetime(2026, 1, 2, tzinfo=timezone.utc)).isoformat().replace("+00:00", "Z")

@@ -66,3 +66,22 @@ def test_export_default_is_separate_from_retention(tmp_path: Path) -> None:
     receipt = DiagnosticExporter(InspectionService(paths)).export(correlation.run_id)
     assert Path(receipt.path).parent == paths.trace_exports_dir
     assert Path(receipt.path).exists()
+
+
+def test_metadata_export_omits_all_payload_and_notes_without_building_content_snapshot(tmp_path: Path, monkeypatch) -> None:
+    paths, correlation = _fixture(tmp_path)
+    service = InspectionService(paths)
+    monkeypatch.setattr(service, "snapshot", lambda *a, **k: pytest.fail("metadata export must not build content snapshot"))
+    exporter = DiagnosticExporter(service)
+    receipt = exporter.export(correlation.run_id, metadata_only=True)
+    with zipfile.ZipFile(receipt.path) as archive:
+        assert "trace.jsonl" not in archive.namelist()
+        assert "bookmarks.json" not in archive.namelist()
+        payload = b"".join(archive.read(name) for name in archive.namelist())
+        assert b"safe warning" not in payload
+        assert b"safe note" not in payload
+        for line in archive.read("events-metadata.jsonl").decode().splitlines():
+            assert "payload" not in json.loads(line)
+        assert json.loads(archive.read("manifest.json"))["privacy_mode"] == "metadata_only"
+    with pytest.raises(ValueError, match="bookmark"):
+        exporter.export(correlation.run_id, metadata_only=True, include_bookmarks=True)

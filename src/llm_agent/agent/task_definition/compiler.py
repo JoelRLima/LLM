@@ -16,6 +16,11 @@ from llm_agent.agent.llm.admitted_decisions import (
 )
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.runtime.budget import BudgetExhausted
+from llm_agent.agent.task_definition.compiler_prompts import (
+    _bind_contract_inputs,
+    _contract_prompt,
+    _spec_prompt,
+)
 from llm_agent.agent.task_definition.errors import (
     TaskDefinitionBlocked,
     TaskDefinitionCompilationError,
@@ -117,6 +122,7 @@ class TaskDefinitionCompiler:
                 request_contract=ModelRequestContract.TASK_CONTRACT,
                 step_type="task_contract",
             )
+        raw = _bind_contract_inputs(raw, task_id, objective)
         admitted = self._admit(raw, ModelRequestContract.TASK_CONTRACT, "Contract")
         if isinstance(admitted, TaskContractNeedsInputDecision):
             raise TaskDefinitionNeedsInput(admitted.reason, admitted.question)
@@ -252,29 +258,10 @@ def _call_provider(
         ) from exc
 
 
-def _contract_prompt(task_id: str, objective: str) -> str:
-    return (
-        "Compile uma TaskContract normativa para a tarefa abaixo. Responda exclusivamente "
-        "com o contrato fechado TASK_CONTRACT, sem markdown, prose, ferramentas, grants ou plano executavel.\n"
-        f"task_id exato: {task_id}\nobjective exato: {objective}\n"
-        'Forma permitida: {"action":"define_contract","contract":{...}} ou '
-        '{"action":"needs_input","reason":"...","question":"..."}. '
-        "O Contract deve conter apenas intent, requirements, constraints, invariants, "
-        "success_criteria, out_of_scope e stop_conditions, dentro dos limites admitidos."
-    )
 
 
-def _spec_prompt(contract: TaskContract) -> str:
-    return (
-        "Expand the admitted Contract into a bounded TaskSpec. Respond only with the closed "
-        "TASK_SPEC decision; do not emit prose, tool calls, capability grants, approvals, or an executable Plan.\n"
-        f"Canonical Contract: {contract.to_dict()}\n"
-        f"Contract version: {contract.version}; Contract digest: {contract.digest()}\n"
-        'Allowed success form: {"action":"define_spec","spec":{...}}; blocked form: '
-        '{"action":"blocked","reason":"..."}. The Spec must reproduce the exact task_id, '
-        "contract_version and contract_digest and contain descriptive phases with requirements, "
-        "invariants, acceptance_criteria, evidence_requirements and depends_on."
-    )
+
+
 
 
 __all__ = ["TaskDefinitionCompiler"]

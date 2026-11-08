@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from llm_agent.agent.application_cleanup import release_resources
 from llm_agent.agent.application_shutdown import require_application_invocations_drained
 from llm_agent.agent.observability.application_adapter import finish_observation
+
+_RUN_LOCK = threading.RLock()
+
+
+class ApplicationLifecycleMixin:
+    def cancel(self: Any) -> None:
+        if not self._closed and not self.interaction_service().cancel_active_model_call():
+            self.orchestrator.cancel_task()
+
+    def close(self: Any) -> None:
+        close_application(self, _RUN_LOCK)
+
+    def __enter__(self: Any) -> Any:
+        return self
+
+    def __exit__(self: Any, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.close()
 
 
 def close_application(application: Any, run_lock: Any) -> None:
@@ -39,4 +57,4 @@ def close_application(application: Any, run_lock: Any) -> None:
             raise cleanup_error
 
 
-__all__ = ["close_application"]
+__all__ = ["ApplicationLifecycleMixin", "close_application"]

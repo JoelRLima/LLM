@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from collections import deque
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
+from llm_agent.agent.observability.envelopes import ObservationSource
 from llm_agent.agent.observability.modes import ObservabilityMode
 from llm_agent.agent.observability.redaction import REDACTION_POLICY_VERSION
 from llm_agent.agent.observability.trace_lifecycle import TraceLifecycleMixin
@@ -22,15 +24,23 @@ from llm_agent.agent.observability.trace_paths import (
     _resolve_trace_root,
     safe_run_key,
 )
-from llm_agent.agent.observability.trace_reader import MAX_TRACE_QUERY_LIMIT, TraceReaderMixin
+from llm_agent.agent.observability.trace_reader import (
+    MAX_TRACE_QUERY_LIMIT,
+    TraceReaderMixin,
+    _uncovered_sequences,
+)
+from llm_agent.agent.observability.trace_runtime_validation import validate_constructor_options
 from llm_agent.agent.observability.trace_types import TraceCompleteness, TraceMetadata
 from llm_agent.agent.observability.trace_writer import TraceWriterMixin
+from llm_agent.filesystem.lock_filesystem import open_verified
+from llm_agent.process.file_lock import OPEN_BINARY, try_lock_descriptor, unlock_descriptor
 
 if TYPE_CHECKING:
     from llm_agent.agent.observability.trace_catalog import TraceCatalog
 
 DEFAULT_QUEUE_CAPACITY = 128
 DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+DEFAULT_METADATA_COALESCE_DELAY_SECONDS = 0.05
 
 
 class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
@@ -47,20 +57,22 @@ class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
         queue_capacity: int = DEFAULT_QUEUE_CAPACITY,
         clock: Callable[[], Any] | None = None,
         shutdown_timeout_seconds: float = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS,
+        metadata_coalesce_delay_seconds: float = DEFAULT_METADATA_COALESCE_DELAY_SECONDS,
         auto_start: bool = True,
         read_only: bool = False,
     ) -> None:
-        if isinstance(queue_capacity, bool) or not isinstance(queue_capacity, int) or queue_capacity < 1:
-            raise ValueError("queue_capacity must be a positive integer")
-        if shutdown_timeout_seconds < 0:
-            raise ValueError("shutdown_timeout_seconds must be non-negative")
+        selected_root_task_id = root_task_id or run_id
+        validate_constructor_options(
+            selected_root_task_id,
+            queue_capacity,
+            shutdown_timeout_seconds,
+            metadata_coalesce_delay_seconds,
+        )
         self._read_only = bool(read_only)
         self._clock = clock
         self.trace_root = _resolve_trace_root(workspace_paths, create=not self._read_only)
         self.run_id = run_id
-        self.root_task_id = root_task_id or run_id
-        if not isinstance(self.root_task_id, str) or not self.root_task_id.strip():
-            raise ValueError("root_task_id must be a non-empty string")
+        self.root_task_id = selected_root_task_id
         self.mode = ObservabilityMode.parse(observability_mode if observability_mode is not None else mode)
         self.queue_capacity = queue_capacity
         self._shutdown_timeout_seconds = float(shutdown_timeout_seconds)
@@ -68,6 +80,10 @@ class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
         self.run_dir = self.trace_root / self.run_key
         self.trace_file = self.run_dir / "trace.jsonl"
         self.metadata_file = self.run_dir / "metadata.json"
+        self.writer_lock_file = self.run_dir / "writer.lock"
+        self._writer_lock_descriptor: int | None = None
+        self._metadata_coalesce_delay_seconds = float(metadata_coalesce_delay_seconds)
+        self._metadata_dirty_since: float | None = None
         self._ensure_owned_run_paths()
         existing: TraceMetadata | None = self._read_metadata_file() if self.metadata_file.exists() else None
         if existing is not None:
@@ -106,6 +122,9 @@ class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
         self._pending_gaps: list[tuple[int, int, str, int]] = []
         self._metadata_dirty = False
         self._metadata_revision = 0
+        self._published_metadata_revision = 0
+        self._published_highest_sequence = int(self._metadata_values["highest_sequence_persisted"])
+        self._flush_targets: list[tuple[int, int]] = []
         self._metadata_publish_lock = threading.RLock()
         self._condition = threading.Condition(threading.RLock())
         self._inflight = False
@@ -123,10 +142,73 @@ class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
             daemon=True,
         )
         if not self._read_only:
-            self._write_metadata()
-            self._update_index()
-            if auto_start:
-                self.start()
+            self._acquire_writer_lock()
+            try:
+                self._recover_active_trace(existing)
+                self._write_metadata()
+                self._update_index()
+                if auto_start:
+                    self.start()
+            except BaseException:
+                self._release_writer_lock()
+                raise
+
+    def _acquire_writer_lock(self) -> None:
+        descriptor = open_verified(
+            self.writer_lock_file,
+            os.O_CREAT | os.O_RDWR | OPEN_BINARY,
+        )
+        if not try_lock_descriptor(descriptor):
+            os.close(descriptor)
+            raise TraceStoreError("trace run already has a writer")
+        self._writer_lock_descriptor = descriptor
+
+    def _release_writer_lock(self) -> None:
+        descriptor = self._writer_lock_descriptor
+        self._writer_lock_descriptor = None
+        if descriptor is None:
+            return
+        unlock_descriptor(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+    def _recover_active_trace(self, existing: TraceMetadata | None) -> None:
+        """Reconcile bounded metadata lag before continuing an active trace."""
+
+        if existing is None or not existing.active:
+            return
+        result = self.read_result(raise_on_corrupt=True)
+        if result.partial_final_line:
+            raise TraceCorruptError("active trace ends with an incomplete record; refusing writer recovery")
+        records = list(result.records)
+        last_sequence = records[-1].sequence if records else 0
+        if last_sequence < existing.highest_sequence_accepted:
+            raise TraceStoreError("active trace has accepted records missing from JSONL; refusing writer recovery")
+        if last_sequence < existing.highest_sequence_persisted:
+            raise TraceCorruptError("active trace metadata is ahead of its JSONL records")
+
+        missing, covered = _uncovered_sequences(existing, records)
+        if missing > covered:
+            raise TraceStoreError("active trace has unaccounted sequence gaps; refusing writer recovery")
+
+        self._metadata_values["highest_sequence_accepted"] = last_sequence
+        self._metadata_values["highest_sequence_persisted"] = last_sequence
+        self._metadata_values["semantic_count"] = sum(
+            item.source is ObservationSource.RUNTIME_EVENT for item in records
+        )
+        self._metadata_values["diagnostic_count"] = sum(
+            item.source is ObservationSource.DIAGNOSTIC for item in records
+        )
+        self._metadata_values["gap_count"] = sum(
+            item.source is ObservationSource.GAP for item in records
+        )
+        self._next_sequence = last_sequence + 1
+        self._published_highest_sequence = last_sequence
+        if result.completeness is TraceCompleteness.PARTIAL:
+            self._metadata_values["completeness"] = TraceCompleteness.PARTIAL.value
+            self._metadata_values["status"] = TraceCompleteness.PARTIAL.value
 
     def _now_text(self) -> str:
         if self._clock is None:
@@ -152,7 +234,7 @@ class TraceStore(TraceLifecycleMixin, TraceWriterMixin, TraceReaderMixin):
 
     @classmethod
     def list_runs(cls, workspace_paths: Any, *, limit: int = MAX_TRACE_QUERY_LIMIT) -> tuple[TraceMetadata, ...]:
-        return cls.for_workspace(workspace_paths).list_runs(limit=limit)
+        return cast(tuple[TraceMetadata, ...], cls.for_workspace(workspace_paths).list_runs(limit=limit))
 
     def _ensure_owned_run_paths(self) -> None:
         _assert_safe_path(self.trace_root, directory=True)

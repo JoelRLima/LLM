@@ -6,8 +6,8 @@ Todos os detalhes de HTTP, `choices`, SSE, GBNF, `chat_template_kwargs` e
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, Iterator, Optional
+from contextlib import closing
+from typing import Any, Dict, Iterator, Optional, cast
 
 import requests
 from requests import Response
@@ -20,7 +20,6 @@ from llm_agent.agent.llm.contracts import (
     StreamEvent,
     StreamEventType,
     StructuredOutputMode,
-    TokenUsage,
 )
 from llm_agent.agent.llm.errors import (
     ModelConnectionError,
@@ -33,28 +32,57 @@ from llm_agent.agent.llm.model_profile_compat import thaw_provider_options
 from llm_agent.agent.llm.providers.openai_input_tokens import (
     extension_url,
     measure_request_input_tokens,
+    request_measurement_fingerprint,
+)
+from llm_agent.agent.llm.providers.openai_response import (
+    StreamCompletion,
+    decode_stream_line,
+    parse_chat_response,
+    stream_data_events,
 )
 from llm_agent.agent.runtime.budget_estimation import RequestInputMeasurement
 from llm_agent.agent.runtime.logging import logger
+from llm_agent.agent.runtime.request_measurement_reuse import RequestMeasurementReuse
 from llm_agent.agent.runtime.secret_reference import (
     SecretReferenceResolutionError,
     resolve_secret_reference,
 )
 
 
-def _token_value(data: Dict[str, Any], primary: str, legacy: str) -> int | None:
-    for key in (primary, legacy):
-        if key not in data:
-            continue
-        value = data[key]
-        if value is None or isinstance(value, bool):
-            return None
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            return None
-        return parsed if parsed >= 0 else None
-    return None
+def _apply_structured_output(payload: Dict[str, Any], capabilities: ProviderCapabilities, structured: Any) -> None:
+    if structured is None:
+        return
+    mode = structured.mode
+    if mode == StructuredOutputMode.AUTO:
+        mode = capabilities.structured_output_modes[0]
+    if mode == StructuredOutputMode.GBNF:
+        if not capabilities.supports(StructuredOutputMode.GBNF):
+            raise UnsupportedModelCapability("O provider não suporta GBNF.")
+        if structured.grammar:
+            payload["grammar"] = structured.grammar
+    elif mode == StructuredOutputMode.JSON_SCHEMA:
+        if not capabilities.supports(StructuredOutputMode.JSON_SCHEMA):
+            raise UnsupportedModelCapability("O provider não suporta JSON Schema nativo.")
+        if structured.schema:
+            schema = structured.schema
+            schema_response: Dict[str, Any] = {
+                "name": "agent_response",
+                "schema": schema,
+            }
+            if (
+                schema.get("type") == "object"
+                and schema.get("additionalProperties") is False
+                and set(schema.get("required", ())) == set(schema.get("properties", {}))
+                and all(
+                    property_schema == {"type": "string"}
+                    for property_schema in schema.get("properties", {}).values()
+                )
+            ):
+                schema_response["strict"] = True
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": schema_response,
+            }
 
 
 class OpenAICompatibleGateway:
@@ -72,6 +100,9 @@ class OpenAICompatibleGateway:
         self.endpoint_identity = self.resolved_profile.endpoint_identity
         self._capabilities = self.resolved_profile.capabilities
         self.credential_ref = self.resolved_profile.credential_ref
+        self._request_input_measurement_reuse = RequestMeasurementReuse(
+            lambda request: request_measurement_fingerprint(self, request)
+        )
 
     @property
     def capabilities(self) -> ProviderCapabilities:
@@ -95,24 +126,7 @@ class OpenAICompatibleGateway:
                 "thinking_budget": max(0, request.reasoning_budget),
             }
 
-        structured = request.structured_output
-        if structured is not None:
-            mode = structured.mode
-            if mode == StructuredOutputMode.AUTO:
-                mode = self.capabilities.structured_output_modes[0]
-            if mode == StructuredOutputMode.GBNF:
-                if not self.capabilities.supports(StructuredOutputMode.GBNF):
-                    raise UnsupportedModelCapability("O provider não suporta GBNF.")
-                if structured.grammar:
-                    payload["grammar"] = structured.grammar
-            elif mode == StructuredOutputMode.JSON_SCHEMA:
-                if not self.capabilities.supports(StructuredOutputMode.JSON_SCHEMA):
-                    raise UnsupportedModelCapability("O provider não suporta JSON Schema nativo.")
-                if structured.schema:
-                    payload["response_format"] = {
-                        "type": "json_schema",
-                        "json_schema": {"name": "agent_response", "schema": structured.schema},
-                    }
+        _apply_structured_output(payload, self.capabilities, request.structured_output)
         payload.update(request.provider_options)
         payload.update({"stream_options": {**dict(payload.get("stream_options") or {}), "include_usage": True}} if request.stream else {})
         return payload
@@ -148,102 +162,68 @@ class OpenAICompatibleGateway:
         except Timeout as exc:
             raise ModelTimeoutError(str(exc)) from exc
         except HTTPError as exc:
-            # Preserve the HTTP response for provider-error classification.
+            # Keep status/header metadata while releasing an unconsumed stream.
+            if exc.response is not None:
+                exc.response.close()
             raise ModelConnectionError(str(exc), response=exc.response) from exc
         except RequestException as exc:
             raise ModelConnectionError(str(exc)) from exc
 
     @staticmethod
     def parse_response(data: Any) -> ModelResponse:
-        try:
-            choice = data["choices"][0]
-            message = choice["message"]
-            content = message.get("content") or ""
-            reasoning = message.get("reasoning_content") or ""
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ModelResponseError("Resposta do servidor em formato inesperado.") from exc
-        usage_raw = data.get("usage")
-        if isinstance(usage_raw, dict):
-            usage = TokenUsage(
-                input_tokens=_token_value(usage_raw, "input_tokens", "prompt_tokens"),
-                output_tokens=_token_value(usage_raw, "output_tokens", "completion_tokens"),
-                total_tokens=_token_value(usage_raw, "total_tokens", "total_tokens"),
-                available=True,
-            )
-        else:
-            usage = TokenUsage(available=False)
-        return ModelResponse(
-            content=str(content),
-            reasoning=str(reasoning),
-            usage=usage,
-            finish_reason=choice.get("finish_reason"),
-            provider_metadata={
-                "timings": data.get("timings"),
-                "observed_provider_model_id": data.get("model"),
-            },
-        )
+        return parse_chat_response(data)
 
     def complete(self, request: ModelRequest) -> ModelResponse:
+        self._request_input_measurement_reuse.discard(request)
         response = self._send_payload(self.build_payload(request), stream=False)
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise ModelResponseError("Resposta do servidor não contém JSON válido.") from exc
-        return self.parse_response(data)
+        with closing(response):
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise ModelResponseError("Resposta do servidor não contém JSON válido.") from exc
+            return self.parse_response(data)
 
     @staticmethod
     def _decode_stream_line(line: bytes) -> tuple[Dict[str, Any] | None, bool]:
-        line_str = line.decode("utf-8")
-        if line_str.startswith("data: "):
-            line_str = line_str[6:]
-        if line_str.strip() == "[DONE]":
-            return None, True
-        try:
-            data = json.loads(line_str)
-        except json.JSONDecodeError:
-            return None, False
-        return data if isinstance(data, dict) else None, False
+        return cast(tuple[Dict[str, Any] | None, bool], decode_stream_line(line))
 
     @staticmethod
     def _events_from_stream_data(data: Dict[str, Any]) -> list[StreamEvent]:
-        events: list[StreamEvent] = []
-        usage = data.get("usage")
-        if isinstance(usage, dict):
-            events.append(StreamEvent(StreamEventType.USAGE, data=usage))
-        if "error" in data:
-            raw_error = data["error"]
-            message = raw_error.get("message", str(raw_error)) if isinstance(raw_error, dict) else str(raw_error)
-            return [StreamEvent(StreamEventType.ERROR, text=message)]
-        choices = data.get("choices")
-        if not choices:
-            return events
-        delta = choices[0].get("delta", {})
-        if delta.get("reasoning_content"):
-            events.append(StreamEvent(StreamEventType.REASONING, text=str(delta["reasoning_content"])))
-        if delta.get("content"):
-            events.append(StreamEvent(StreamEventType.CONTENT, text=str(delta["content"])))
-        return events
+        return cast(list[StreamEvent], stream_data_events(data))
 
     @classmethod
     def iter_stream(cls, response: Response) -> Iterator[StreamEvent]:
         last_timings: Optional[Dict[str, Any]] = None
-        for line in response.iter_lines():
-            if not line:
-                continue
-            data, done = cls._decode_stream_line(line)
-            if done:
-                break
-            if data is None:
-                continue
-            if isinstance(data.get("timings"), dict):
-                last_timings = data["timings"]
-            for event in cls._events_from_stream_data(data):
-                yield event
-                if event.type == StreamEventType.ERROR:
-                    return
-        yield StreamEvent(StreamEventType.DONE, data=last_timings or {})
+        completion = StreamCompletion()
+        try:
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                data, done = cls._decode_stream_line(line)
+                if done:
+                    completion.marked_done = True
+                    break
+                if data is None:
+                    continue
+                completion.observe(data)
+                if isinstance(data.get("timings"), dict):
+                    last_timings = data["timings"]
+                for event in cls._events_from_stream_data(data):
+                    yield event
+                    if event.type == StreamEventType.ERROR:
+                        return
+            yield completion.final_event(last_timings)
+        except Timeout as exc:
+            raise ModelTimeoutError("O stream do modelo excedeu o tempo de leitura.") from exc
+        except RequestException as exc:
+            raise ModelConnectionError("A conexão com o stream do modelo foi interrompida.") from exc
+        finally:
+            # A caller may stop consuming early (or an upstream chunk may
+            # fail); release the socket on every exit path.
+            response.close()
 
     def stream(self, request: ModelRequest) -> Iterator[StreamEvent]:
+        self._request_input_measurement_reuse.discard(request)
         if not self.capabilities.streaming:
             raise UnsupportedModelCapability("O provider não suporta streaming.")
         response = self._send_payload(self.build_payload(request), stream=True)
@@ -268,10 +248,11 @@ class OpenAICompatibleGateway:
             if headers is not None:
                 request_kwargs["headers"] = headers
             response = requests.post(tokenize_url, **request_kwargs)
-            if response.status_code != 200:
-                return None
-            data = response.json()
-            tokens = data.get("tokens", []) if isinstance(data, dict) else []
+            with closing(response):
+                if response.status_code != 200:
+                    return None
+                data = response.json()
+            tokens = data.get("tokens") if isinstance(data, dict) else None
             return len(tokens) if isinstance(tokens, list) else None
         except (ModelConnectionError, RequestException, TypeError, ValueError):
             return None

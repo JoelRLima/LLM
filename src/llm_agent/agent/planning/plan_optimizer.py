@@ -171,7 +171,12 @@ class PlanOptimizer:
             args_repr = json.dumps(args, sort_keys=True, ensure_ascii=False)
         except TypeError:
             args_repr = str(sorted(args.items())) if isinstance(args, dict) else str(args)
-        return (tool, args_repr)
+        return (
+            tool,
+            args_repr,
+            step.requirement_ids,
+            step.obligation_ids,
+        )
 
     @staticmethod
     def _code_analyzer_semantic_args(args: Any) -> Any:

@@ -20,6 +20,9 @@ on:
   push:
     branches: ["**"]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_mode != '' && inputs.diagnostic_mode != 'normal' && format('-diagnostic-{0}', github.run_id) || '' }}
   cancel-in-progress: true

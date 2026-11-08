@@ -217,7 +217,7 @@ def test_mode_command_changes_only_by_explicit_user_command(monkeypatch) -> None
             self.operational_mode = mode
 
     orchestrator = _Orchestrator()
-    context = _fixture_context(orchestrator=orchestrator)
+    context = _fixture_context(orchestrator=orchestrator, conversation=None)
 
     handled, exiting = handle_command("/modo editor", context)
     assert handled is True and exiting is False

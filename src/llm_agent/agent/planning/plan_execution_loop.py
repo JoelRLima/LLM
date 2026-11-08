@@ -5,11 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, cast
 
 from llm_agent.agent.planning.completion_observations import terminal_failure
+from llm_agent.agent.planning.reasoning_boundary import BoundaryContinuationResult
 from llm_agent.agent.planning.reasoning_boundary_execution import handle_boundary
+from llm_agent.agent.planning.requirement_continuation import continue_failed_requirements
 from llm_agent.agent.planning.task_completion import (
     allow_linear_completion,
     continue_after_observation,
     mark_reasoning_boundary_blocked,
+    mark_terminal_blocked,
     mark_unfinished_effect,
     mark_unfinished_obligation,
     needs_effect_continuation,
@@ -28,6 +31,9 @@ def _advance(executor: Any, objective: str, iteration: Any, continue_after_plan:
             return None, answer, True, continue_after_plan
         index = state.next_pending_index()
     if index is None and not terminal_failure(executor.orchestrator):
+        result = _advance_requirement_repair(executor, objective, continue_after_plan)
+        if result is not None:
+            return result
         # Plan exhaustion is an observation frontier, never completion.  The
         # legacy flag is retained for checkpoint compatibility but has no
         # authority to skip the canonical boundary.
@@ -49,6 +55,19 @@ def _advance(executor: Any, objective: str, iteration: Any, continue_after_plan:
     return index, None, False, continue_after_plan
 
 
+def _advance_requirement_repair(
+    executor: Any, objective: str, continue_after_plan: bool
+) -> tuple[int | None, str | None, bool, bool] | None:
+    repair, index = _requirement_repair(executor, objective)
+    if repair is None:
+        return None
+    if repair.answer:
+        return None, repair.answer, True, continue_after_plan
+    if repair.extended:
+        return index, None, False, True
+    return None
+
+
 def _initial_index(
     executor: Any,
     objective: str,
@@ -59,6 +78,12 @@ def _initial_index(
     eligible = getattr(state, "terminal_disposition", None) in (None, "complete")
     if index is not None or terminal_failure(executor.orchestrator) or not eligible:
         return index, None
+    repair, repaired_index = _requirement_repair(executor, objective)
+    if repair is not None:
+        if repair.answer:
+            return None, repair.answer
+        if repair.extended:
+            return repaired_index, None
     handled, answer, extended = handle_boundary(
         executor, objective, continue_after_plan
     )
@@ -70,6 +95,24 @@ def _initial_index(
     if index is None:
         return None, mark_reasoning_boundary_blocked(executor.orchestrator, objective)
     return index, None
+
+
+def _requirement_repair(
+    executor: Any, objective: str
+) -> tuple[BoundaryContinuationResult | None, int | None]:
+    repair = continue_failed_requirements(executor.orchestrator, objective)
+    if repair is None or not repair.extended:
+        return repair, None
+    executor._rebuild_dependency_map()
+    index = executor.orchestrator.agent_state.next_pending_index()
+    if index is None:
+        answer = mark_terminal_blocked(
+            executor.orchestrator,
+            reason_code="requirement_replan_empty_extension",
+            message="A correção dos requisitos não acrescentou uma etapa pendente executável.",
+        )
+        return BoundaryContinuationResult(answer=answer, blocked=True), None
+    return repair, index
 
 
 def _finish_loop(

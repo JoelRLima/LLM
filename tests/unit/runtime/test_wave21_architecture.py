@@ -8,9 +8,126 @@ from pathlib import Path
 
 from scripts.check_wave21_architecture import FROZEN_GRAPH, check_architecture
 from scripts.w21_architecture import RepositorySource, SourceLayout, build_graph
-from scripts.w21_architecture.policy import stable_violation_id, w22_owner_violations
+from scripts.w21_architecture.policy import classify_edge, stable_violation_id, w22_owner_violations
 
 ROOT = Path(__file__).resolve().parents[3]
+
+PREVIOUS_EXACT_ROUTES = (
+    ("agent.reporting.run_snapshot", "agent.planning.outcome_planning"),
+    ("agent.planning.outcome_verification", "agent.task_definition.errors"),
+    ("agent.planning.plan_coverage", "agent.task_definition.resolver"),
+    ("agent.planning.plan_coverage", "agent.task_definition.models"),
+    ("agent.planning.outcome_verification", "agent.task_definition.models"),
+    ("agent.planning.task_completion_constraints", "agent.runtime.validation_evidence"),
+    ("agent.reporting.run_projection_facts", "agent.runtime.validation_evidence"),
+    ("agent.reporting.run_receipt_builder", "agent.runtime.validation_evidence"),
+    ("agent.planning.outcome_definition", "agent.task_definition.resolver"),
+    ("agent.planning.outcome_definition", "agent.task_definition.models"),
+    ("agent.planning.outcome_verification", "agent.task_definition.verification_model"),
+    ("agent.planning.requirement_continuation", "agent.runtime.budget"),
+    ("agent.planning.plan_coverage", "agent.task_definition.requirement_refs"),
+    ("agent.planning.plan_coverage", "agent.execution_state"),
+    ("agent.state_checkpointing", "agent.state_replan"),
+    ("agent.planning.requirement_verification", "agent.task_definition.verification_model"),
+    ("agent.planning.outcome_planning", "agent.task_definition.models"),
+    ("agent.planning.plan_coverage", "agent.contracts"),
+    ("agent.planning.requirement_continuation", "agent.runtime.recovery"),
+    ("agent.planning.outcome_planning", "agent.task_definition.errors"),
+)
+
+NEW_EXACT_ROUTES = (
+    ("agent.evaluation.trace_request_summary", "agent.runtime.budget_estimation"),
+    ("agent.code.workflow_proposal_runtime", "agent.llm.contracts"),
+    ("agent.planning.tool_disclosure_selection", "agent.runtime.recovery"),
+    ("agent.llm.stage_context", "agent.runtime.execution_profile"),
+    ("agent.task_definition.compiler_prompts", "agent.llm.admitted_decisions"),
+    ("agent.runtime.logging", "agent.observability.log_formatter"),
+    ("agent.evaluation.trace_diagnostics", "agent.llm.decision_contract"),
+    ("agent.orchestration.compact_route", "agent.planning.task_semantics"),
+    ("agent.evaluation.weak_model_execution", "agent.variants.models"),
+    ("agent.planning.tool_disclosure_selection", "agent.llm.decision_contract"),
+    ("agent.llm.providers.openai_compatible", "agent.runtime.request_measurement_reuse"),
+    ("agent.evaluation.weak_model_execution", "agent.approval"),
+    ("agent.code.workflow_proposal_runtime", "agent.runtime.model_call"),
+    ("agent.planning.boundary_discovery", "agent.llm.admitted_decisions"),
+    ("agent.evaluation.weak_model_fixtures", "agent.llm.contracts"),
+    ("agent.planning.tool_disclosure_selection", "agent.llm.admitted_decisions"),
+    ("agent.evaluation.trace_request_summary", "agent.llm.decision_contract"),
+    ("agent.evaluation.weak_model_execution", "agent.llm.contracts"),
+    ("agent.planning.validation_repair_contracts", "agent.llm.plan_association_contract"),
+    ("agent.orchestration.compact_route", "agent.runtime.execution_profile"),
+    ("agent.planning.tool_disclosure_selection", "agent.llm.tool_discovery_contract"),
+    ("agent.evaluation.weak_model_execution", "agent.runtime.config_repository"),
+    ("agent.evaluation.weak_model_execution", "agent.tools.authority"),
+    ("agent.planning.disclosure_cache", "agent.runtime.correlation"),
+    ("agent.evaluation.weak_model_fixtures", "agent.llm.decision_contract"),
+    ("agent.evaluation.trace_diagnostics", "agent.llm.structured_output"),
+    ("agent.orchestration.compact_route", "agent.runtime.task_directives"),
+    ("agent.planning.boundary_discovery", "agent.llm.decision_contract"),
+)
+
+BASE_DIRECTION_IDS = frozenset(
+    {
+        "W21-DIR-SKILLS-TOOLS",
+        "W21-DIR-PLANNING-TOOLS",
+        "W21-DIR-INTERACTION-PLANNING",
+        "W21-DIR-TOOLS-SKILLS-ADAPTER",
+        "W21-DIR-SKILLS-TOOLS-CONSTRUCTION-ADAPTER",
+    }
+)
+
+ADDED_DIRECTION_IDS = frozenset(
+    {
+        "W21-DIR-REPORT-SNAPSHOT-OUTCOME-PLANNING",
+        "W21-DIR-OUTCOME-VERIFICATION-TASK-ERRORS",
+        "W21-DIR-PLAN-COVERAGE-TASK-RESOLVER",
+        "W21-DIR-PLAN-COVERAGE-TASK-MODELS",
+        "W21-DIR-OUTCOME-VERIFICATION-TASK-MODELS",
+        "W21-DIR-COMPLETION-CONSTRAINTS-VALIDATION-EVIDENCE",
+        "W21-DIR-REPORT-PROJECTION-VALIDATION-EVIDENCE",
+        "W21-DIR-REPORT-RECEIPT-VALIDATION-EVIDENCE",
+        "W21-DIR-OUTCOME-DEFINITION-TASK-RESOLVER",
+        "W21-DIR-OUTCOME-DEFINITION-TASK-MODELS",
+        "W21-DIR-OUTCOME-VERIFICATION-TASK-VERIFICATION",
+        "W21-DIR-REQUIREMENT-CONTINUATION-BUDGET",
+        "W21-DIR-PLAN-COVERAGE-REQUIREMENT-REFS",
+        "W21-DIR-PLAN-COVERAGE-EXECUTION-STATE",
+        "W21-DIR-STATE-CHECKPOINT-REPLAN",
+        "W21-DIR-REQUIREMENT-VERIFICATION-TASK-VERIFICATION",
+        "W21-DIR-OUTCOME-PLANNING-TASK-MODELS",
+        "W21-DIR-PLAN-COVERAGE-CONTRACTS",
+        "W21-DIR-REQUIREMENT-CONTINUATION-RECOVERY",
+        "W21-DIR-OUTCOME-PLANNING-TASK-ERRORS",
+        "W21-DIR-TRACE-BUDGET-ESTIMATION",
+        "W21-DIR-WORKFLOW-PROPOSAL-LLM-CONTRACTS",
+        "W21-DIR-TOOL-DISCLOSURE-RECOVERY",
+        "W21-DIR-STAGE-EXECUTION-PROFILE",
+        "W21-DIR-COMPILER-PROMPTS-ADMITTED-DECISION",
+        "W21-DIR-RUNTIME-LOG-FORMATTER",
+        "W21-DIR-TRACE-DECISION-CONTRACT",
+        "W21-DIR-COMPACT-PLANNING-SEMANTICS",
+        "W21-DIR-WEAK-MODEL-VARIANTS",
+        "W21-DIR-TOOL-DISCLOSURE-DECISION-CONTRACT",
+        "W21-DIR-OPENAI-MEASUREMENT-REUSE",
+        "W21-DIR-WEAK-MODEL-APPROVAL",
+        "W21-DIR-WORKFLOW-PROPOSAL-MODEL-CALL",
+        "W21-DIR-BOUNDARY-DISCOVERY-ADMITTED",
+        "W21-DIR-WEAK-MODEL-RESPONSE-CONTRACTS",
+        "W21-DIR-TOOL-DISCLOSURE-ADMITTED",
+        "W21-DIR-TRACE-REQUEST-CONTRACT",
+        "W21-DIR-WEAK-MODEL-GATEWAY-CONTRACT",
+        "W21-DIR-VALIDATION-PLAN-ASSOCIATION",
+        "W21-DIR-COMPACT-EXECUTION-PROFILE",
+        "W21-DIR-TOOL-DISCLOSURE-LIMIT",
+        "W21-DIR-WEAK-MODEL-CONFIG-REPOSITORY",
+        "W21-DIR-WEAK-MODEL-AUTHORITY",
+        "W21-DIR-DISCLOSURE-RUN-CORRELATION",
+        "W21-DIR-WEAK-MODEL-DECISION-CONTRACT",
+        "W21-DIR-TRACE-STRUCTURED-OUTPUT",
+        "W21-DIR-COMPACT-TASK-DIRECTIVES",
+        "W21-DIR-BOUNDARY-DECISION-CONTRACT",
+    }
+)
 
 
 def _write(root: Path, relative: str, text: str) -> None:
@@ -71,6 +188,61 @@ def test_strict_mode_is_green_after_all_lanes_close_the_baseline() -> None:
     result = check_architecture(ROOT, mode="strict")
     assert result.passed
     assert not result.violations
+
+
+def test_exact_canonical_directions_admit_only_the_named_module_pairs() -> None:
+    policy = json.loads((ROOT / "quality/architecture_policy.json").read_text(encoding="utf-8"))
+    routes = (*PREVIOUS_EXACT_ROUTES, *NEW_EXACT_ROUTES)
+    directions = policy["explicit_canonical_directions"]
+    by_id = {row["direction_id"]: row for row in directions}
+    assert len(by_id) == len(directions)
+    assert set(by_id) == BASE_DIRECTION_IDS | ADDED_DIRECTION_IDS
+    added = [by_id[direction_id] for direction_id in ADDED_DIRECTION_IDS]
+    assert {(row["source"], row["destination"]) for row in added} == set(routes)
+    assert all(
+        row.get("exact") is True
+        and row.get("class") == "canonical"
+        and isinstance(row.get("constraint"), str)
+        and row["constraint"].strip()
+        for row in added
+    )
+
+    for source, destination in routes:
+        decision = classify_edge(source, destination, "normal_import", policy=policy)
+        assert decision.edge_class == "canonical"
+        assert decision.authority_id.startswith("W21-DIR-")
+
+
+def test_exact_canonical_directions_do_not_authorize_neighbors_or_higher_owners() -> None:
+    policy = json.loads((ROOT / "quality/architecture_policy.json").read_text(encoding="utf-8"))
+    forbidden_routes = (
+        ("agent.task_definition.models", "agent.planning.outcome_planning"),
+        ("agent.planning.outcome_planning", "agent.task_definition.resolver"),
+        ("agent.planning.plan_coverage.extensions", "agent.task_definition.models"),
+        ("agent.planning.plan_coverage", "agent.task_definition.models.values"),
+        ("agent.planning.outcome_planning", "agent.application.task_execution"),
+        ("agent.planning.outcome_planning", "agent.interfaces.cli.controller"),
+        ("agent.runtime.validation_evidence", "agent.tools.result_adapter"),
+        ("agent.tools.result_adapter", "agent.runtime.validation_evidence"),
+        ("agent.runtime.validation_evidence.extensions", "agent.tools.result_adapter"),
+        ("agent.runtime.validation_evidence", "agent.tools.result_adapter.experimental"),
+    )
+
+    for source, destination in forbidden_routes:
+        decision = classify_edge(source, destination, "normal_import", policy=policy)
+        assert decision.edge_class == "forbidden"
+        assert decision.authority_id == "W21-POLICY-NEW-EDGE"
+
+    for source, destination in (*PREVIOUS_EXACT_ROUTES, *NEW_EXACT_ROUTES):
+        for neighbor_source, neighbor_destination in (
+            (source + ".unapproved_neighbor", destination),
+            (source, destination + ".unapproved_neighbor"),
+        ):
+            decision = classify_edge(
+                neighbor_source, neighbor_destination, "normal_import", policy=policy
+            )
+            assert decision.edge_class == "forbidden"
+            assert decision.authority_id == "W21-POLICY-NEW-EDGE"
 
 
 def test_stable_violation_id_uses_only_the_contract_payload() -> None:

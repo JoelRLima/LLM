@@ -24,6 +24,15 @@ def _freeze(value: Any) -> Any:
     return value
 
 
+def _public_plan_coverage(value: Any) -> Any:
+    """Redact text at publication while retaining canonical IDs and statuses."""
+    if isinstance(value, Mapping):
+        return {str(key): _public_plan_coverage(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return tuple(_public_plan_coverage(item) for item in value)
+    return sanitize_public_text(value) if isinstance(value, str) else value
+
+
 def _text(value: Any, limit: int = MAX_PROJECTION_TEXT) -> str:
     if value is None:
         raw = ""
@@ -231,5 +240,6 @@ __all__ = [
     "_freeze",
     "_metadata_records",
     "_project_args",
+    "_public_plan_coverage",
     "_text",
 ]

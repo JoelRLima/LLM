@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from distribution.candidate_manifest import manifest_references, parse_manifest, validate_repo_path
-from scripts.w23_tooling_successor import verify_successor
+from scripts.w23_prospective_history import verify_archived_history
+from scripts.w23_tooling_successor import WITNESS, WITNESS_SHA256
 
 PREDECESSOR_SHA256 = "418e0ccac42c9532ff9519f72631045dce82a3b370f6455a08f42fdecfba94e4"
 HISTORICAL_INDEX_PIN = "be38e8c7005814cd0462bdd2933fdf5207a62e5b9932c80eff2ea56d3ebeaf8f"
@@ -32,9 +33,22 @@ def digest(data: bytes) -> str:
 
 
 def _object(data: bytes, expected: str) -> dict[str, Any]:
+    if not isinstance(data, bytes) or not isinstance(expected, str):
+        raise AuthorityError("authority artifact bytes and independently expected digest are required")
     if digest(data) != expected:
         raise AuthorityError("independently expected digest differs")
-    value = json.loads(data.decode("utf-8"))
+    def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise AuthorityError("duplicate JSON key in authority artifact")
+            result[key] = item
+        return result
+
+    try:
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=unique_pairs)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise AuthorityError("authority artifact is not valid UTF-8 JSON") from exc
     if not isinstance(value, dict):
         raise AuthorityError("authority artifact must be an object")
     return value
@@ -67,7 +81,8 @@ def _semantics(proposal: dict[str, Any]) -> None:
               "verifier", "tooling_record", "historical_index", "bindings", "gates"}
     if set(proposal) != fields:
         raise AuthorityError("prospective schema differs")
-    if (proposal["schema"] != "W23_PROSPECTIVE_AUTHORITY" or proposal["version"] != 10
+    if (proposal["schema"] != "W23_PROSPECTIVE_AUTHORITY" or type(proposal["version"]) is not int
+            or proposal["version"] != 10
             or proposal["state"] != "PROPOSED_INACTIVE" or proposal["grants"] != GRANTS
             or any(value is not False for value in proposal["grants"].values())):
         raise AuthorityError("inactive proposal and denied grants required")
@@ -83,7 +98,7 @@ def _predecessor(bundle: Path, proposal: dict[str, Any]) -> None:
         raise AuthorityError("v009 predecessor differs")
     predecessor = _object(_reference(bundle, ref), PREDECESSOR_SHA256)
     # Hash identity, not a declaration that v009's historical raw-index pin passes.
-    if predecessor.get("schema_version") != 1:
+    if type(predecessor.get("schema_version")) is not int or predecessor["schema_version"] != 1:
         raise AuthorityError("predecessor schema differs")
 
 
@@ -118,10 +133,38 @@ def _source_paths(root: Path, ignored: set[str], prefix: str = "") -> set[str]:
     return result
 
 
-def _candidate(source: Path, manifest: dict[str, Any]) -> None:
-    ignored = set(manifest["workspace_context"]["operational_roots"]) | {".git"}
-    if _source_paths(source, ignored) != {row["path"] for row in manifest["files"]}:
-        raise AuthorityError("complete source membership differs")
+def _workspace_exclusions(source: Path, workspace: dict[str, Any]) -> set[str]:
+    try:
+        source_info = source.lstat()
+    except OSError as exc:
+        raise AuthorityError("candidate source is unavailable") from exc
+    if (not stat.S_ISDIR(source_info.st_mode) or stat.S_ISLNK(source_info.st_mode)
+            or getattr(source_info, "st_file_attributes", 0) & 0x400):
+        raise AuthorityError("candidate source must be a detached regular directory")
+    excluded = set(workspace["operational_roots"]) | {".git"}
+    excluded.update(row["path"] for row in workspace["protected_files"])
+    for relative in excluded:
+        current = source
+        components = relative.split("/")
+        for index, component in enumerate(components):
+            current /= component
+            try:
+                info = current.lstat()
+            except FileNotFoundError:
+                break
+            except OSError as exc:
+                raise AuthorityError("cannot authenticate frozen candidate exclusions") from exc
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise AuthorityError("frozen candidate contains a workspace-only reparse path")
+            if index == len(components) - 1:
+                raise AuthorityError("frozen candidate contains a workspace-only path: " + relative)
+            if not stat.S_ISDIR(info.st_mode):
+                break
+
+    return excluded
+
+
+def _candidate_tree(source: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     node: dict[str, Any] = {}
     for row in manifest["files"]:
         path = _regular(source, row["path"])
@@ -136,6 +179,14 @@ def _candidate(source: Path, manifest: dict[str, Any]) -> None:
             tree = tree.setdefault(component, {})
         oid = hashlib.new(manifest["object_format"], b"blob " + str(len(data)).encode() + b"\0" + data).digest()
         tree[components[-1]] = (row["mode"], oid)
+    return node
+
+
+def _candidate(source: Path, manifest: dict[str, Any]) -> None:
+    excluded = _workspace_exclusions(source, manifest["workspace_context"])
+    if _source_paths(source, excluded) != {row["path"] for row in manifest["files"]}:
+        raise AuthorityError("complete source membership differs")
+    node = _candidate_tree(source, manifest)
     if _tree(node, manifest["object_format"]).hex() != manifest["source_tree"]:
         raise AuthorityError("candidate source tree differs")
 
@@ -199,6 +250,40 @@ def _gates(bundle: Path, proposal: dict[str, Any], tree: str) -> bool:
     return passed
 
 
+def _candidate_identity(
+    bundle: Path,
+    proposal: dict[str, Any],
+    manifest: dict[str, Any],
+    historical_integrity: str,
+) -> dict[str, Any]:
+    """Bind the v010 receipt to this candidate, while keeping approval absent."""
+    raw = _reference(bundle, proposal["tooling_record"])
+    identity = _object(raw, proposal["tooling_record"]["sha256"])
+    grants = identity.get("grants")
+    if (type(identity.get("version")) is not int or identity["version"] != 1
+            or not isinstance(grants, dict) or set(grants) != set(GRANTS)
+            or any(type(value) is not bool or value is not False for value in grants.values())):
+        raise AuthorityError("current candidate identity receipt has invalid version or grants")
+    expected = {
+        "schema": "W23_V010_CANDIDATE_IDENTITY",
+        "version": 1,
+        "state": "IDENTIFIED_INACTIVE",
+        "candidate_manifest": dict(proposal["candidate"]),
+        "source_tree": manifest["source_tree"],
+        "verifier": dict(proposal["verifier"]),
+        "predecessor": dict(proposal["predecessor"]),
+        "historical_predecessor": {"path": WITNESS, "sha256": WITNESS_SHA256,
+                                   "integrity": historical_integrity},
+        "owner_selection": "PENDING",
+        "approval": {"state": "NOT_PROVIDED", "sha256": None},
+        "grants": dict(GRANTS),
+    }
+    canonical = (json.dumps(identity, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    if canonical != raw or identity != expected:
+        raise AuthorityError("current candidate identity receipt differs from the authenticated candidate")
+    return identity
+
+
 def verify_prospective(source: Path, bundle: Path, proposal_bytes: bytes, expected_sha256: str) -> dict[str, Any]:
     """Verify current source and archived evidence separately; never grant authority."""
     proposal = _object(proposal_bytes, expected_sha256)
@@ -217,14 +302,19 @@ def verify_prospective(source: Path, bundle: Path, proposal_bytes: bytes, expect
     for reference in manifest_references(manifest, workspace=True):
         _reference(bundle, reference)
     _candidate(source, manifest)
-    record = _reference(bundle, proposal["tooling_record"])
-    tooling = verify_successor(source, record, proposal["tooling_record"]["sha256"])
+    history = verify_archived_history(source)
+    if history.get("historical_integrity") != "PASS_ARCHIVED_BYTES":
+        raise AuthorityError("immutable predecessor history did not verify")
+    identity = _candidate_identity(bundle, proposal, manifest, history["historical_integrity"])
     bindings = _bindings(bundle, proposal)
     gates_passed = _gates(bundle, proposal, manifest["source_tree"])
     return {"status": "PROSPECTIVE_VERIFIED_INACTIVE", "source_tree": manifest["source_tree"],
-            "historical_integrity": tooling["historical_integrity"], "current_identity": tooling["current_identity"],
+            "historical_integrity": history["historical_integrity"],
+            "current_identity": "PASS_CANDIDATE_MANIFEST_AND_TREE",
+            "candidate_identity_sha256": proposal["tooling_record"]["sha256"],
             "historical_raw_index": "UNVERIFIED_HISTORICAL_DIVERGENCE", "bindings": bindings,
-            "mandatory_gates_passed": gates_passed, "owner_selection": "PENDING", "grants": dict(GRANTS),
+            "mandatory_gates_passed": gates_passed, "owner_selection": identity["owner_selection"],
+            "grants": dict(GRANTS),
             "canonical_acceptance": "NOT_GRANTED", "green": False}
 
 

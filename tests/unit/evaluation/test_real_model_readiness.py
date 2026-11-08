@@ -44,6 +44,11 @@ class _TraceStreamGateway(_TraceGateway):
             text="PRIVATE_REASONING_MARKER",
         )
         yield StreamEvent(StreamEventType.CONTENT, text="VISIBLE_CONTENT_MARKER")
+        yield StreamEvent(
+            StreamEventType.USAGE,
+            data={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+        )
+        yield StreamEvent(StreamEventType.DONE)
 
 
 class _FailingTraceStreamGateway(_TraceStreamGateway):
@@ -140,6 +145,37 @@ def test_failed_stream_trace_keeps_visible_content_without_private_reasoning() -
     assert "VISIBLE_CONTENT_MARKER" in evidence_text
     assert "PRIVATE_REASONING_MARKER" not in evidence_text
     assert gateway.export_evidence()["model_calls"][0]["provider_call_succeeded"] is False
+
+
+def test_cancelled_stream_is_recorded_as_incomplete_with_partial_content() -> None:
+    gateway = RecordingGateway(_TraceStreamGateway())
+    request = ModelRequest(
+        messages=(ModelMessage(role="user", content="objective"),),
+        model="trace-model",
+        temperature=0.0,
+        max_output_tokens=32,
+    )
+
+    stream = gateway.stream(request)
+    next(stream)  # reasoning
+    next(stream)  # visible content
+    next(stream)  # usage
+    stream.close()
+    stream.close()  # closing an already closed stream must not duplicate evidence
+    calls = gateway.export_evidence()["model_calls"]
+
+    assert len(calls) == 1
+    assert calls[0]["provider_call_succeeded"] is False
+    assert calls[0]["cancelled"] is True
+    assert calls[0]["response"] == "VISIBLE_CONTENT_MARKER"
+    assert calls[0]["usage"] == {
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "total_tokens": 5,
+        "available": True,
+        "complete": True,
+        "source": "provider_reported",
+    }
 
 
 def test_trace_config_fingerprint_excludes_dynamic_request_measurements() -> None:

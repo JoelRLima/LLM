@@ -14,37 +14,66 @@ import pytest
 
 from scripts import w23_tooling_successor as successor
 from scripts.w23_architecture.evidence import EvidenceError
+from scripts.w23_prospective_history import verify_archived_history
 
 ROOT = Path(__file__).resolve().parents[2]
+F01_F02_RECORD_SHA256 = "5bd7686f359017eb5840b9dcc9fe0ced731d9b058954e4a4bc6a92325f788cd7"
 
 
 def _canonical(value: object) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
 
 
-def test_explicit_current_successor_and_archived_predecessor_are_separate() -> None:
-    raw = (ROOT / successor.RECORD).read_bytes()
-    result = successor.verify_successor(ROOT, raw, hashlib.sha256(raw).hexdigest())
+def test_frozen_checkpoint_identity_and_archived_predecessor_are_separate(
+    w23_checkpoint_root: Path,
+) -> None:
+    checkpoint = w23_checkpoint_root
+    raw = (checkpoint / successor.RECORD).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == F01_F02_RECORD_SHA256
+    result = successor.verify_successor(checkpoint, raw, F01_F02_RECORD_SHA256)
     assert result["historical_integrity"] == "PASS_ARCHIVED_BYTES"
     assert result["current_identity"] == "PASS_CURRENT_BYTES"
     assert result["functional_acceptance"] == "PENDING_USER_ACCEPTANCE"
-    old = successor.read_historical_tooling(ROOT)
-    assert old["distribution/candidate_snapshot.py"] != (ROOT / "distribution/candidate_snapshot.py").read_bytes()
+    old = successor.read_historical_tooling(checkpoint)
+    assert old["distribution/candidate_snapshot.py"] != (checkpoint / "distribution/candidate_snapshot.py").read_bytes()
     from scripts.w23_acceptance import AcceptanceError, verify_portable_files
 
     with pytest.raises(AcceptanceError):
-        verify_portable_files(ROOT)
+        verify_portable_files(checkpoint)
 
 
-def test_successor_requires_independently_expected_digest() -> None:
-    raw = (ROOT / successor.RECORD).read_bytes()
+def test_frozen_checkpoint_record_rejects_the_current_worktree_identity(
+    w23_checkpoint_root: Path,
+) -> None:
+    """A passing historical fixture must not make the modified checkout look current."""
+    raw = (w23_checkpoint_root / successor.RECORD).read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == F01_F02_RECORD_SHA256
+    with pytest.raises(
+        EvidenceError,
+        match=r"artifact digest mismatch: quality/architecture_current_policy\.json",
+    ):
+        successor.verify_successor(ROOT, raw, F01_F02_RECORD_SHA256)
+
+
+def test_v010_history_check_authenticates_archives_without_current_projection() -> None:
+    result = verify_archived_history(ROOT)
+    assert result["historical_integrity"] == "PASS_ARCHIVED_BYTES"
+    assert result["witness"] == {"path": successor.WITNESS, "sha256": successor.WITNESS_SHA256}
+    assert result["archived_tooling_files"] == 22
+    assert result["retired_source_files"] == 26
+    assert result["retirement_inputs"] == 25
+    assert result["git_transport"] == "PASS_PINNED_ATTRIBUTES"
+
+
+def test_successor_requires_independently_expected_digest(w23_checkpoint_root: Path) -> None:
+    raw = (w23_checkpoint_root / successor.RECORD).read_bytes()
     with pytest.raises(EvidenceError, match="selection digest"):
-        successor.verify_successor(ROOT, raw, "0" * 64)
+        successor.verify_successor(w23_checkpoint_root, raw, "0" * 64)
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "duplicate", "stale", "accepted", "wrong_base", "wrong_predecessor", "stale_production"])
-def test_successor_mutations_fail_closed(mutation: str) -> None:
-    record = copy.deepcopy(json.loads((ROOT / successor.RECORD).read_bytes()))
+def test_successor_mutations_fail_closed(mutation: str, w23_checkpoint_root: Path) -> None:
+    record = copy.deepcopy(json.loads((w23_checkpoint_root / successor.RECORD).read_bytes()))
     if mutation == "missing":
         record["current_tooling"].pop()
     elif mutation == "extra":
@@ -64,10 +93,12 @@ def test_successor_mutations_fail_closed(mutation: str) -> None:
         record["production"]["files"][0]["sha256"] = "0" * 64
     raw = _canonical(record)
     with pytest.raises(EvidenceError):
-        successor.verify_successor(ROOT, raw, hashlib.sha256(raw).hexdigest())
+        successor.verify_successor(w23_checkpoint_root, raw, hashlib.sha256(raw).hexdigest())
 
 
-def test_missing_archive_cannot_fall_back_to_corrected_code(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_archive_cannot_fall_back_to_corrected_code(
+    monkeypatch: pytest.MonkeyPatch, w23_checkpoint_root: Path,
+) -> None:
     original = successor._read
     missing = f"{successor.ARCHIVE}/distribution/candidate_manifest.py.blob"
     seen: list[str] = []
@@ -80,35 +111,37 @@ def test_missing_archive_cannot_fall_back_to_corrected_code(monkeypatch: pytest.
 
     monkeypatch.setattr(successor, "_read", read)
     with pytest.raises(FileNotFoundError):
-        successor.read_historical_tooling(ROOT)
+        successor.read_historical_tooling(w23_checkpoint_root)
     assert "distribution/candidate_manifest.py" not in seen
 
 
-def test_historical_projection_requires_exact_live_production() -> None:
-    actual = successor.production_inventory(ROOT)
-    projected = successor.project_historical_production(ROOT, actual)
+def test_historical_projection_requires_exact_live_production(w23_checkpoint_root: Path) -> None:
+    actual = successor.production_inventory(w23_checkpoint_root)
+    projected = successor.project_historical_production(w23_checkpoint_root, actual)
     assert successor.inventory_sha256(actual) != successor.PREDECESSOR_PRODUCTION
     assert successor.inventory_sha256(projected) == successor.PREDECESSOR_PRODUCTION
     with pytest.raises(EvidenceError, match="stale or incomplete"):
-        successor.project_historical_production(ROOT, actual[:-1])
+        successor.project_historical_production(w23_checkpoint_root, actual[:-1])
 
 
-def test_retired_predecessor_sources_are_authenticated_without_moving_head() -> None:
-    retired = successor.read_historical_retired_sources(ROOT)
+def test_retired_predecessor_sources_are_authenticated_without_moving_head(w23_checkpoint_root: Path) -> None:
+    retired = successor.read_historical_retired_sources(w23_checkpoint_root)
     assert len(retired) == 26
-    assert all(not (ROOT / path).exists() for path in retired)
+    assert all(not (w23_checkpoint_root / path).exists() for path in retired)
 
 
 @pytest.mark.parametrize("field,value", [("exit_code", True), ("exit_code", "0"), ("command", ""), ("executor", {}), ("scope", "bad\ntext")])
-def test_observation_attribution_cannot_be_malformed(field: str, value: object) -> None:
-    record = json.loads((ROOT / successor.RECORD).read_bytes())
+def test_observation_attribution_cannot_be_malformed(
+    field: str, value: object, w23_checkpoint_root: Path,
+) -> None:
+    record = json.loads((w23_checkpoint_root / successor.RECORD).read_bytes())
     output = {"path": successor.WITNESS, "sha256": successor.WITNESS_SHA256}
     observation = {"command": "inert command", "executor": "test", "platform": "fake", "scope": "pure", "exit_code": 0, "output": output}
     observation[field] = value
     record["observations"] = [observation]
     raw = _canonical(record)
     with pytest.raises(EvidenceError, match="observation"):
-        successor.verify_successor(ROOT, raw, hashlib.sha256(raw).hexdigest())
+        successor.verify_successor(w23_checkpoint_root, raw, hashlib.sha256(raw).hexdigest())
 
 
 def test_production_scan_rejects_even_non_python_reparse_directory(

@@ -53,9 +53,26 @@ class ArchitectureViolation:
 
 def _source(root: Path, relative: str) -> str:
     try:
-        return w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
+        source = w21_source_layout(root).path_for_w21_relative(relative).read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return ""
+    # Inspect both the actual shared owner and its compatibility adapter. Never
+    # exempt moved code from the existing worker/bounds/stdin checks.
+    shared = {
+        "controller": "controller",
+        "controller_models": "controller_models",
+        "worker_stream": "worker_stream",
+        "attention": "attention",
+        "ui_mailbox": "ui_mailbox",
+        "ui_plane": "ui_plane",
+        "query_executor": "query_executor",
+        "action_registry": "commands",
+    }
+    for facade, owner in shared.items():
+        if relative == f"{CLI_ROOT}/{facade}.py" and f"from llm_agent.interactive.{owner} import" in source:
+            implementation = _source(root, f"agent/interactive/{owner}.py")
+            return implementation + "\n" + source
+    return source
 
 
 def _tree(root: Path, relative: str) -> ast.Module | None:
@@ -327,11 +344,7 @@ def _direct_query_calls(tree: ast.AST | None) -> list[ast.Call]:
 def _reachable_functions(tree: ast.Module | None, entry_name: str) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
     if tree is None:
         return []
-    functions = {
-        node.name: node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    functions = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
     pending = [entry_name]
     seen: set[str] = set()
     reachable: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
@@ -392,11 +405,23 @@ def _check_single_execution_owner(root: Path) -> list[ArchitectureViolation]:
     )
     controller = _source(root, f"{CLI_ROOT}/controller.py")
     if app.count("InteractiveExecutionController()") != 0 or session.count("InteractiveExecutionController()") != 1:
-        findings.append(_violation("W17-ARCH-02", f"{CLI_ROOT}/interactive_session.py", "interactive controller must have one product construction site"))
+        findings.append(
+            _violation(
+                "W17-ARCH-02",
+                f"{CLI_ROOT}/interactive_session.py",
+                "interactive controller must have one product construction site",
+            )
+        )
     if controller.count("class InteractiveExecutionController") != 1 or controller.count("Thread(") != 1:
-        findings.append(_violation("W17-ARCH-02", f"{CLI_ROOT}/controller.py", "agentic execution must have one bounded worker owner"))
+        findings.append(
+            _violation(
+                "W17-ARCH-02", f"{CLI_ROOT}/controller.py", "agentic execution must have one bounded worker owner"
+            )
+        )
     if "daemon=False" not in controller:
-        findings.append(_violation("W17-ARCH-02", f"{CLI_ROOT}/controller.py", "agent worker must settle as a non-daemon thread"))
+        findings.append(
+            _violation("W17-ARCH-02", f"{CLI_ROOT}/controller.py", "agent worker must settle as a non-daemon thread")
+        )
     return findings
 
 
@@ -436,32 +461,37 @@ def _check_query_plane(root: Path) -> list[ArchitectureViolation]:
         if not any(alternate in source for alternate in alternates):
             findings.append(_violation("W17-ARCH-17", relative, f"bounded Git query contract is missing {token}"))
     executor_tree = _tree(root, f"{CLI_ROOT}/query_executor.py")
-    executor_class = next(
-        (
-            node
-            for node in ast.walk(executor_tree)
-            if isinstance(node, ast.ClassDef) and node.name == "BoundedQueryExecutor"
-        ),
-        None,
-    ) if executor_tree is not None else None
+    executor_class = (
+        next(
+            (
+                node
+                for node in ast.walk(executor_tree)
+                if isinstance(node, ast.ClassDef) and node.name == "BoundedQueryExecutor"
+            ),
+            None,
+        )
+        if executor_tree is not None
+        else None
+    )
     executor_init = _function(executor_class, "__init__")
     has_bounded_lane = any(
         _call_name(call) == "Queue"
         and any(
-            keyword.arg == "maxsize"
-            and isinstance(keyword.value, ast.Constant)
-            and keyword.value.value in {1, 2}
+            keyword.arg == "maxsize" and isinstance(keyword.value, ast.Constant) and keyword.value.value in {1, 2}
             for keyword in call.keywords
         )
         for call in _calls(executor_init)
     )
-    has_result_pending = any(
-        isinstance(target, ast.Attribute)
-        and target.attr == "_result_pending"
-        for node in ast.walk(executor_init)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
-    ) if executor_init is not None else False
+    has_result_pending = (
+        any(
+            isinstance(target, ast.Attribute) and target.attr == "_result_pending"
+            for node in ast.walk(executor_init)
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
+        )
+        if executor_init is not None
+        else False
+    )
     if not has_bounded_lane or not has_result_pending:
         findings.append(_violation("W17-ARCH-17", relative, "query executor lacks one bounded unsettled-result lane"))
     admission_relative = f"{CLI_ROOT}/interactive_admission.py"
@@ -516,11 +546,15 @@ def _check_approval_and_shell(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     attention = _source(root, f"{CLI_ROOT}/attention.py")
     if any(token in attention for token in ("console.input", "sys.stdin", "input(")):
-        findings.append(_violation("W17-ARCH-05", f"{CLI_ROOT}/attention.py", "approval broker reads a competing stdin"))
+        findings.append(
+            _violation("W17-ARCH-05", f"{CLI_ROOT}/attention.py", "approval broker reads a competing stdin")
+        )
     shell_relative = f"{CLI_ROOT}/interactive_shell.py"
     shell = _source(root, shell_relative)
     if "mouse_support=False" not in shell or "mouse_support=True" in shell:
-        findings.append(_violation("W17-ARCH-06", shell_relative, "product shell must not capture the mouse by default"))
+        findings.append(
+            _violation("W17-ARCH-06", shell_relative, "product shell must not capture the mouse by default")
+        )
     if any(token in shell for token in ("full_screen=True", "alternate_screen", "enable_page_navigation=True")):
         findings.append(_violation("W17-ARCH-06", shell_relative, "product shell must preserve native scrollback"))
     return findings
@@ -531,7 +565,9 @@ def _check_pending_and_cancel(root: Path) -> list[ArchitectureViolation]:
     controller_relative = f"{CLI_ROOT}/controller.py"
     controller = _source(root, controller_relative)
     if "def send_pending" not in controller or "self.pending.consume" not in controller:
-        findings.append(_violation("W17-ARCH-07", controller_relative, "pending send must be explicit and consume-on-accept"))
+        findings.append(
+            _violation("W17-ARCH-07", controller_relative, "pending send must be explicit and consume-on-accept")
+        )
     if "self.pending.consume" in _source(root, f"{CLI_ROOT}/app.py"):
         findings.append(_violation("W17-ARCH-07", f"{CLI_ROOT}/app.py", "chat path auto-consumes pending follow-ups"))
     cancel_relative = f"{CLI_ROOT}/command_handlers.py"
@@ -543,7 +579,9 @@ def _check_pending_and_cancel(root: Path) -> list[ArchitectureViolation]:
         findings.append(_violation("W17-ARCH-13", cancel_relative, "UI cancel must be request-only"))
     app = _source(root, f"{CLI_ROOT}/app.py")
     if "orchestrator.cancel_task" in app or "orchestrator.checkpoint" in app:
-        findings.append(_violation("W17-ARCH-13", f"{CLI_ROOT}/app.py", "chat cancellation calls terminal/checkpoint logic"))
+        findings.append(
+            _violation("W17-ARCH-13", f"{CLI_ROOT}/app.py", "chat cancellation calls terminal/checkpoint logic")
+        )
     return findings
 
 
@@ -559,9 +597,15 @@ def _check_headless_and_boundaries(root: Path) -> list[ArchitectureViolation]:
     )
     if "InteractiveShell" in run_once or "PromptSession" in run_once:
         findings.append(_violation("W17-ARCH-08", app_relative, "headless run path initializes prompt-toolkit"))
-    if "InteractiveTTYRequiredError" not in run_chat or run_chat.find("InteractiveTTYRequiredError") > run_chat.find("_create_application") >= 0:
+    if (
+        "InteractiveTTYRequiredError" not in run_chat
+        or run_chat.find("InteractiveTTYRequiredError") > run_chat.find("_create_application") >= 0
+    ):
         findings.append(_violation("W17-ARCH-15", app_relative, "chat TTY gate is not before application/prompt setup"))
-    if "shell_enabled = interactive and real_tty" not in session or "get_shell() if shell_enabled else None" not in session:
+    if (
+        "shell_enabled = interactive and real_tty" not in session
+        or "get_shell() if shell_enabled else None" not in session
+    ):
         findings.append(_violation("W17-ARCH-15", f"{CLI_ROOT}/interactive_session.py", "PTK shell is not TTY-gated"))
     for relative in (f"{CLI_ROOT}/{name}" for name in PRIMARY_FILES):
         tree = _tree(root, relative)
@@ -573,7 +617,9 @@ def _check_headless_and_boundaries(root: Path) -> list[ArchitectureViolation]:
                 module = node.module or "" if isinstance(node, ast.ImportFrom) else ""
                 for imported in [*modules, module]:
                     if any(imported == prefix or imported.startswith(prefix + ".") for prefix in FORBIDDEN_UI_IMPORTS):
-                        findings.append(_violation("W17-ARCH-10", relative, f"unnecessary live/evaluation import: {imported}"))
+                        findings.append(
+                            _violation("W17-ARCH-10", relative, f"unnecessary live/evaluation import: {imported}")
+                        )
     return findings
 
 
@@ -582,14 +628,30 @@ def _check_agentic_boundary(root: Path) -> list[ArchitectureViolation]:
     registry_relative = f"{CLI_ROOT}/action_registry.py"
     registry = _source(root, registry_relative)
     if "SubmissionEnvelope" in registry or "ToolInvocationGateway" in registry or ".grant(" in registry:
-        findings.append(_violation("W17-ARCH-09", registry_relative, "command registry contains runtime authority instead of routing metadata"))
+        findings.append(
+            _violation(
+                "W17-ARCH-09",
+                registry_relative,
+                "command registry contains runtime authority instead of routing metadata",
+            )
+        )
     input_relative = f"{CLI_ROOT}/interactive_admission.py"
     input_handler = _function_source(root, input_relative, "handle_input")
-    if "controller.submit" not in _source(root, input_relative) or "execute_submission" not in _source(root, input_relative):
-        findings.append(_violation("W17-ARCH-11", input_relative, "agentic input does not pass through the single controller"))
+    if "controller.submit" not in _source(root, input_relative) or "execute_submission" not in _source(
+        root, input_relative
+    ):
+        findings.append(
+            _violation("W17-ARCH-11", input_relative, "agentic input does not pass through the single controller")
+        )
     if "application.interact" in input_handler:
-        findings.append(_violation("W17-ARCH-11", input_relative, "interactive handler directly invokes the application boundary"))
-    if "AGENTIC_SUBMIT" not in registry or "PENDING_EXACT_TEXT" not in registry or "PENDING_TYPED_PAYLOAD" not in registry:
+        findings.append(
+            _violation("W17-ARCH-11", input_relative, "interactive handler directly invokes the application boundary")
+        )
+    if (
+        "AGENTIC_SUBMIT" not in registry
+        or "PENDING_EXACT_TEXT" not in registry
+        or "PENDING_TYPED_PAYLOAD" not in registry
+    ):
         findings.append(_violation("W17-ARCH-11", registry_relative, "agentic busy-submit metadata is incomplete"))
     return findings
 
@@ -603,20 +665,42 @@ def _check_manifest(root: Path) -> list[ArchitectureViolation]:
         seen: set[str] = set()
         for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
             if binding.action_id in seen:
-                findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", "duplicate canonical action id"))
+                findings.append(
+                    _violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", "duplicate canonical action id")
+                )
             seen.add(binding.action_id)
             for alias in binding.aliases:
                 resolved = DEFAULT_CLI_ACTION_REGISTRY.match(" ".join(alias))
                 if resolved is None or resolved.action_id != binding.action_id:
-                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"alias is not accounted for: {' '.join(alias)}"))
+                    findings.append(
+                        _violation(
+                            "W17-ARCH-12",
+                            f"{CLI_ROOT}/action_registry.py",
+                            f"alias is not accounted for: {' '.join(alias)}",
+                        )
+                    )
             if binding.handler_owner:
                 try:
                     if DEFAULT_CLI_ACTION_REGISTRY.resolve_handler(binding) is None:
-                        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"handler owner is unavailable: {binding.handler_owner}"))
+                        findings.append(
+                            _violation(
+                                "W17-ARCH-12",
+                                f"{CLI_ROOT}/action_registry.py",
+                                f"handler owner is unavailable: {binding.handler_owner}",
+                            )
+                        )
                 except (AttributeError, ImportError, ValueError, TypeError):
-                    findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"handler owner is not importable: {binding.handler_owner}"))
+                    findings.append(
+                        _violation(
+                            "W17-ARCH-12",
+                            f"{CLI_ROOT}/action_registry.py",
+                            f"handler owner is not importable: {binding.handler_owner}",
+                        )
+                    )
     except (ImportError, OSError, ValueError, TypeError) as exc:
-        findings.append(_violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"registry cannot be validated: {exc}"))
+        findings.append(
+            _violation("W17-ARCH-12", f"{CLI_ROOT}/action_registry.py", f"registry cannot be validated: {exc}")
+        )
     return findings
 
 
@@ -625,7 +709,9 @@ def _check_worker_thread_output(relative: str, source: str) -> list[Architecture
     if any(token in source for token in ("print(", "console.print", "sys.stdout", "sys.stderr")):
         findings.append(_violation("W17-ARCH-14", relative, "worker thread writes directly into the composer terminal"))
     if "InteractiveWorkerResult" not in source or "bind_worker_output" not in source:
-        findings.append(_violation("W17-ARCH-14", relative, "worker output is not captured through the canonical UI seam"))
+        findings.append(
+            _violation("W17-ARCH-14", relative, "worker output is not captured through the canonical UI seam")
+        )
     if "redirect_stdout" in source or "redirect_stderr" in source:
         findings.append(_violation("W17-ARCH-14", relative, "worker output uses process-global stream redirection"))
     return findings
@@ -652,11 +738,19 @@ def _check_worker_stream(
         or "drain_worker_stream" not in rendering
         or "render_worker_stream" not in rendering
     ):
-        findings.append(_violation("W17-ARCH-18", f"{CLI_ROOT}/interactive_rendering.py", "UI stream consumer is not generation-bound"))
+        findings.append(
+            _violation(
+                "W17-ARCH-18", f"{CLI_ROOT}/interactive_rendering.py", "UI stream consumer is not generation-bound"
+            )
+        )
     if "MAX_WORKER_STREAM_CHARS" not in stream or "MAX_WORKER_STREAM_ITEMS" not in stream:
-        findings.append(_violation("W17-ARCH-18", f"{CLI_ROOT}/worker_stream.py", "worker stream bounds are not explicit"))
+        findings.append(
+            _violation("W17-ARCH-18", f"{CLI_ROOT}/worker_stream.py", "worker stream bounds are not explicit")
+        )
     if "StringIO" in source:
-        findings.append(_violation("W17-ARCH-18", relative, "worker stream must not accumulate an unbounded terminal buffer"))
+        findings.append(
+            _violation("W17-ARCH-18", relative, "worker stream must not accumulate an unbounded terminal buffer")
+        )
     return findings
 
 
@@ -670,7 +764,9 @@ def _check_worker_stdin(root: Path, relative: str) -> list[ArchitectureViolation
             continue
         for call in _calls(tree):
             if _call_name(call) in {"input", "console.input", "sys.stdin.readline", "sys.stdin.read"}:
-                findings.append(_violation("W17-ARCH-16", relative_file, "interactive handler retains a direct stdin reader"))
+                findings.append(
+                    _violation("W17-ARCH-16", relative_file, "interactive handler retains a direct stdin reader")
+                )
     return findings
 
 
@@ -680,7 +776,12 @@ def _check_worker_output(root: Path) -> list[ArchitectureViolation]:
     controller = _source(root, f"{CLI_ROOT}/controller.py")
     rendering = _source(root, f"{CLI_ROOT}/interactive_rendering.py")
     stream = _source(root, f"{CLI_ROOT}/worker_stream.py")
-    findings = _check_worker_thread_output(relative, source)
+    scoped_source = source
+    if "from llm_agent.application.interactive_worker import run_interactive_worker" in source:
+        canonical = _source(root, "src/llm_agent/application/interactive_worker.py")
+        if any(_call_name(call) == "run_interactive_worker" for call in _calls(_tree(root, relative))):
+            scoped_source += "\n" + canonical
+    findings = _check_worker_thread_output(relative, scoped_source)
     findings.extend(_check_worker_stream(relative, source, controller, rendering, stream))
     findings.extend(_check_worker_stdin(root, relative))
     return findings

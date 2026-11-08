@@ -118,7 +118,7 @@ def test_clean_settled_close_still_runs_automatic_retention(
     assert store.run_dir.exists()
 
 
-def test_flush_waits_for_metadata_publication_to_settle(
+def test_flush_waits_for_unpublished_metadata_frontier(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -140,7 +140,7 @@ def test_flush_waits_for_metadata_publication_to_settle(
 
     monkeypatch.setattr(store._condition, "wait", observe_wait)
     with store._condition:
-        store._publication_in_flight = 1
+        store._mark_metadata_dirty_locked()
 
     def flush_worker() -> None:
         result["clean"] = store.flush(timeout_seconds=2)
@@ -152,7 +152,8 @@ def test_flush_waits_for_metadata_publication_to_settle(
     assert finished.is_set() is False
 
     with store._condition:
-        store._publication_in_flight = 0
+        store._published_metadata_revision = store._metadata_revision
+        store._metadata_dirty = False
         store._condition.notify_all()
 
     assert finished.wait(1)

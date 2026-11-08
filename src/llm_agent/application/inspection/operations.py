@@ -76,6 +76,7 @@ class InspectionAuxiliaryOperations:
                 output=request.output,
                 force=request.force,
                 include_bookmarks=request.include_bookmarks,
+                metadata_only=request.metadata_only,
             )
             return DiagnosticExportResult(
                 path=receipt.path,

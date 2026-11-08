@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from llm_agent.agent.evaluation.campaign_runner import adversarial_audit, campaign_config, resume_compatible
 from llm_agent.agent.evaluation.scenario_contracts import (
     H_SERIES,
     H_SERIES_VERSION,
     CausalFailureClass,
+    EvidenceContractError,
     EvidenceLevel,
     HRunEvidence,
     RepetitionPolicy,
@@ -62,6 +65,32 @@ def test_repetition_policy_is_bounded_and_h2_is_special() -> None:
     assert policy.required_for("H2") == 5
     assert policy.required_for("h2") == 5
     assert policy.maximum_repetitions == 5
+
+
+def test_repetition_policy_rejects_impossible_sample_counts() -> None:
+    with pytest.raises(EvidenceContractError, match="initial repetitions exceed"):
+        RepetitionPolicy(initial_repetitions=6, maximum_repetitions=5)
+
+    policy = RepetitionPolicy(initial_repetitions=2, h2_repetitions=3, maximum_repetitions=3)
+    with pytest.raises(EvidenceContractError, match="pass count"):
+        policy.initial_decision(3, 2)
+    with pytest.raises(EvidenceContractError, match="pass count"):
+        policy.initial_decision(-1, 2)
+    with pytest.raises(EvidenceContractError, match="exactly 2"):
+        policy.initial_decision(1, 1)
+
+
+@pytest.mark.parametrize("value", [True, 3.0, float("nan")])
+def test_repetition_policy_rejects_non_integer_counts(value: object) -> None:
+    for field in ("initial_repetitions", "h2_repetitions", "maximum_repetitions"):
+        with pytest.raises(EvidenceContractError, match="integers"):
+            RepetitionPolicy(**{field: value})
+
+    policy = RepetitionPolicy()
+    with pytest.raises(EvidenceContractError, match="valid samples"):
+        policy.initial_decision(3, value)
+    with pytest.raises(EvidenceContractError, match="pass count"):
+        policy.initial_decision(value, 3)
 
 
 def test_evidence_export_is_bounded_and_secret_safe() -> None:

@@ -16,6 +16,7 @@ from llm_agent.agent.reporting.run_receipt_support import (
 )
 from llm_agent.agent.reporting.run_snapshot import CanonicalRunSnapshot
 from llm_agent.agent.runtime.mutation_evidence import project_mutation_evidence
+from llm_agent.agent.runtime.validation_evidence import current_validation_evidence
 
 
 def _project_tool(entry: dict[str, Any]) -> dict[str, Any]:
@@ -47,7 +48,7 @@ def _history_projection(
     incidents = execution_incidents(state)
     tools: list[dict[str, Any]] = []
     proposed: set[str] = set()
-    validation: dict[str, Any] = {"ran": False, "outcome": None}
+    validation = current_validation_evidence(item.get("result") for item in history).summary()
     rollback: dict[str, Any] = {"occurred": False, "outcome": None}
     effects: list[bool] = []
     for entry in history:
@@ -59,9 +60,6 @@ def _history_projection(
         if isinstance(effect, bool):
             effects.append(effect)
         proposed.update(artifact.affected_files)
-        if artifact.validation_status is not None:
-            validation["ran"] = True
-            validation["outcome"] = artifact.validation_status
         if artifact.rollback_occurred:
             rollback["occurred"] = True
             rollback["outcome"] = "restored" if artifact.final_state == "restored" else "unknown"
@@ -153,6 +151,8 @@ def build_run_receipt(
     }
     if snapshot is not None:
         receipt["correlation"] = snapshot.correlation.as_dict()
+        if snapshot.projection_facts.plan_coverage:
+            receipt["plan_coverage"] = thaw_projection(snapshot.projection_facts.plan_coverage)
         receipt["run_id"] = snapshot.correlation.run_id
         receipt["root_task_id"] = snapshot.correlation.root_task_id
         receipt["task_id"] = snapshot.correlation.task_id

@@ -27,7 +27,14 @@ from llm_agent.interfaces.cli import (
     interactive_session,
     workspace_entry,
 )
+from llm_agent.interfaces.cli.completion_command import _run_completion as _run_completion
 from llm_agent.interfaces.cli.parser import build_parser
+from llm_agent.interfaces.cli.queue_commands import (
+    _forward_queue_model_flags as _forward_queue_model_flags,
+)
+from llm_agent.interfaces.cli.queue_commands import (
+    _run_test_queue,
+)
 from llm_agent.interfaces.cli.ui import console
 
 
@@ -58,6 +65,8 @@ def _run_chat(args: argparse.Namespace) -> int:
     _sync_console()
     if not first_run.is_interactive_terminal():
         raise first_run.InteractiveTTYRequiredError()
+    if not _value(args, "legacy_session", False):
+        return _run_local(args)
     from llm_agent.interfaces.cli.bootstrap import context_from_application
 
     return cast(int, interactive_session.run_chat(
@@ -68,6 +77,10 @@ def _run_chat(args: argparse.Namespace) -> int:
         context_from_application=context_from_application,
         chat_loop_fn=_chat_loop,
     ))
+def _run_local(args: argparse.Namespace) -> int:
+    from llm_agent.interfaces.cli.local_mode import run_local_mode
+
+    return run_local_mode(args)
 def _print_json(document: Any) -> None:
     print(json.dumps(document, ensure_ascii=False, sort_keys=True))
 def _print_operational_receipt(result: Any) -> None:
@@ -199,14 +212,7 @@ def _run_commands(args: argparse.Namespace) -> int:
             suffix = "" if item["available"] else f" [{item['disabled_reason'] or 'unavailable'}]"
             print(f"{index}. {entry['preferred_invocation']} - {entry['description']}{suffix}")
     return 0
-def _run_completion(args: argparse.Namespace) -> int:
-    from llm_agent.application.actions.engineering import engineering_operation_ids
-    from llm_agent.interfaces.cli.completion import powershell_completion_script
-    if getattr(args, "completion_command", None) == "powershell":
-        operation_ids = engineering_operation_ids()
-        print(powershell_completion_script(engineering_operation_ids=operation_ids))
-        return 0
-    raise ValueError("completion command is required")
+
 def _dispatch_task(args: argparse.Namespace) -> int:
     from llm_agent.interfaces.cli.task_continuity import dispatch_task
     return cast(int, dispatch_task(args, run_context=_run_task_context))
@@ -216,6 +222,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     command = args.command or "chat"
     handlers = {
         "chat": _run_chat,
+        "local": _run_local,
         "run": _run_once,
         "doctor": _run_doctor,
         "config": _run_config,
@@ -226,6 +233,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         "test": _run_engineering,
         "mcp": _run_mcp,
         "commands": _run_commands,
+        "queue": _run_test_queue,
         "completion": _run_completion,
     }
     handler = handlers.get(command)

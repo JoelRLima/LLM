@@ -17,6 +17,7 @@ from llm_agent.agent.runtime.failure_policy import local_failure_permitted
 from llm_agent.agent.runtime.outcome_taxonomy import FailureLayer
 from llm_agent.agent.state import AgentState
 from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
+from llm_agent.agent.tools.result_adapter import ensure_canonical_result
 
 
 def _owner(state: object, correlation: RunCorrelation, **values: object) -> SimpleNamespace:
@@ -181,10 +182,18 @@ def _mutation_state() -> AgentState:
         },
     }
     state.tool_history = [
-        {"tool": "code_task", "args": {"action": "repair"}, "result": applied},
-        {"tool": "code_task", "args": {"action": "preview"}, "result": proposed},
+        {
+            "tool": "code_task",
+            "args": {"action": "repair"},
+            "result": ensure_canonical_result(applied),
+        },
+        {
+            "tool": "code_task",
+            "args": {"action": "preview"},
+            "result": ensure_canonical_result(proposed),
+        },
     ]
-    state.last_result = proposed
+    state.last_result = ensure_canonical_result(proposed)
     state.last_tool = "code_task"
     state.events = [
         {"type": "plan_created", "data": {"steps": 2}},

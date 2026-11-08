@@ -18,6 +18,7 @@ from llm_agent.application.inspection.errors import InspectionCorruptDataError, 
 def test_list_request_is_frozen_and_slotted() -> None:
     request = InspectionListRequest()
     assert request.limit == 100
+    assert request.offset == 0
     assert not hasattr(request, "__dict__")
     with pytest.raises(FrozenInstanceError):
         request.__setattr__("limit", 2)
@@ -25,7 +26,7 @@ def test_list_request_is_frozen_and_slotted() -> None:
 
 def test_list_uses_context_service_once_and_canonical_projection(monkeypatch: pytest.MonkeyPatch) -> None:
     constructed: list[object] = []
-    limits: list[int] = []
+    requests: list[tuple[int, int]] = []
     projections: list[bool] = []
 
     class Summary:
@@ -37,8 +38,8 @@ def test_list_uses_context_service_once_and_canonical_projection(monkeypatch: py
         def __init__(self, paths: object) -> None:
             constructed.append(paths)
 
-        def list_runs(self, *, limit: int) -> tuple[Summary, ...]:
-            limits.append(limit)
+        def list_runs(self, *, limit: int, offset: int) -> tuple[Summary, ...]:
+            requests.append((limit, offset))
             return (Summary(),)
 
     monkeypatch.setattr(read_operations, "InspectionService", Service)
@@ -46,7 +47,7 @@ def test_list_uses_context_service_once_and_canonical_projection(monkeypatch: py
     result = list_inspection_runs(context, InspectionListRequest(limit=17))
 
     assert constructed == ["workspace-paths"]
-    assert limits == [17]
+    assert requests == [(17, 0)]
     assert projections == [True]
     assert result == ({"run_id": "run-1", "mode": "full"},)
     assert not isinstance(result[0], Summary)
@@ -70,8 +71,8 @@ def test_list_translates_only_canonical_trace_errors(
         def __init__(self, _paths: object) -> None:
             pass
 
-        def list_runs(self, *, limit: int) -> tuple[object, ...]:
-            assert limit == 100
+        def list_runs(self, *, limit: int, offset: int) -> tuple[object, ...]:
+            assert (limit, offset) == (100, 0)
             raise original
 
     monkeypatch.setattr(read_operations, "InspectionService", Service)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -108,33 +108,34 @@ def _collect_guidance_candidates(
 ) -> tuple[dict[str, _GuidanceCandidate], int]:
     by_path: dict[str, _GuidanceCandidate] = {}
     rejected_count = 0
+    target_lineages_by_directory: dict[Path, set[str]] = {}
     for target_relative, directory in sorted(
         set(target_directories), key=lambda item: item[0]
     ):
         for ancestor in _ancestor_lineage(directory, workspace):
-            candidate_path = ancestor / "AGENTS.md"
-            try:
-                if candidate_path.exists() and not candidate_path.is_file():
-                    rejected_count += 1
-                    continue
-            except OSError:
+            target_lineages_by_directory.setdefault(ancestor, set()).add(target_relative)
+    for ancestor, target_lineages in sorted(
+        target_lineages_by_directory.items(),
+        key=lambda item: item[0].relative_to(workspace).as_posix(),
+    ):
+        candidate_path = ancestor / "AGENTS.md"
+        try:
+            if candidate_path.exists() and not candidate_path.is_file():
                 rejected_count += 1
                 continue
-            candidate = _candidate_for_directory(workspace, ancestor, (target_relative,))
-            if candidate is None:
-                if candidate_path.exists():
-                    rejected_count += 1
-                continue
-            previous = by_path.get(candidate.path)
-            if previous is None:
-                by_path[candidate.path] = candidate
-            else:
-                by_path[candidate.path] = replace(
-                    previous,
-                    target_lineages=tuple(
-                        sorted(set(previous.target_lineages) | set(candidate.target_lineages))
-                    ),
-                )
+        except OSError:
+            rejected_count += 1
+            continue
+        candidate = _candidate_for_directory(
+            workspace,
+            ancestor,
+            tuple(sorted(target_lineages)),
+        )
+        if candidate is None:
+            if candidate_path.exists():
+                rejected_count += 1
+            continue
+        by_path[candidate.path] = candidate
     return by_path, rejected_count
 
 

@@ -4,8 +4,13 @@ from typing import Any
 
 import pytest
 
+from llm_agent.agent.llm.admitted_decisions import TaskContractDecision
 from llm_agent.agent.llm.decision_contract import ModelRequestContract
-from llm_agent.agent.task_definition.compiler import TaskDefinitionCompiler
+from llm_agent.agent.task_definition.compiler import (
+    TaskDefinitionCompiler,
+    _bind_contract_inputs,
+    _contract_prompt,
+)
 from llm_agent.agent.task_definition.errors import (
     TaskDefinitionCompilationError,
     TaskDefinitionMismatchError,
@@ -24,6 +29,51 @@ def _contract_decision(task_id: str, objective: str) -> dict[str, Any]:
 
 def _spec_decision(contract: Any) -> dict[str, Any]:
     return {"action": "define_spec", "spec": make_spec(contract).to_dict()}
+
+
+def test_contract_prompt_uses_canonical_fields_and_describes_check_requirements() -> None:
+    prompt = _contract_prompt("read-task", "Read notes.txt.")
+
+    assert '"task_id":"..."' in prompt
+    assert '"objective":"..."' in prompt
+    assert "Nao use intent como campo" in prompt
+    assert 'kind "json_fields" com required_fields nao vazio' in prompt
+
+
+def test_typed_contract_binds_caller_owned_identity_fields() -> None:
+    model_contract = make_contract("model-invented-id", "Read notes.txt")
+    decision = TaskContractDecision(contract=model_contract)
+
+    bound = _bind_contract_inputs(decision, "caller-task", "Read notes.txt.")
+
+    assert isinstance(bound, TaskContractDecision)
+    assert bound.contract.task_id == "caller-task"
+    assert bound.contract.objective == "Read notes.txt."
+
+
+def test_mapping_contract_binds_caller_owned_identity_fields(repository) -> None:
+    contract = make_contract("caller-task", "Read notes.txt.")
+    model_contract = contract.to_dict()
+    model_contract["task_id"] = "model-invented-id"
+    model_contract["objective"] = "Read notes.txt"
+    model_contract["summary"] = "Read requested file"
+
+    compiler = TaskDefinitionCompiler(
+        repository,
+        contract_provider=lambda *_args: {
+            "action": "define_contract",
+            "contract": model_contract,
+        },
+        spec_provider=lambda persisted: _spec_decision(persisted),
+    )
+
+    reference = compiler.compile(contract.task_id, contract.objective)
+    saved = repository.load(contract.task_id).contract
+
+    assert reference.is_complete
+    assert saved.task_id == contract.task_id
+    assert saved.objective == contract.objective
+    assert saved.summary == "Read requested file"
 
 
 def test_fresh_compile_persists_contract_before_spec_and_returns_complete_ref(repository) -> None:

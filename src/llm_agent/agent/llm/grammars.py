@@ -19,6 +19,8 @@ from llm_agent.agent.llm.decision_contract import (
     ModelRequestContract,
     resolve_request_contract,
 )
+from llm_agent.agent.llm.grammar_sentinel import AUTO_GRAMMAR as AUTO_GRAMMAR
+from llm_agent.agent.llm.grammar_sentinel import AutoGrammar as AutoGrammar
 from llm_agent.agent.runtime.config_repository import packaged_config_defaults
 
 # ----------------------------------------------------------------------
@@ -26,14 +28,8 @@ from llm_agent.agent.runtime.config_repository import packaged_config_defaults
 # ----------------------------------------------------------------------
 
 
-class AutoGrammar:
-    """Sentinela que indica que a gramática deve ser escolhida
-    automaticamente com base no `step_type` do passo atual."""
-
-    pass
 
 
-AUTO_GRAMMAR = AutoGrammar()
 
 
 # ----------------------------------------------------------------------
@@ -61,8 +57,9 @@ PLAN_GRAMMAR = (
 plan-response ::= "{" ws "\"action\"" ws ":" ws "\"use_tools\"" ws "," ws "\"plan\"" ws ":" ws "[" ws (plan-item ("," ws plan-item)*)? ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
 direct-response ::= "{" ws "\"action\"" ws ":" ws "\"direct_response\"" ws "," ws "\"answer\"" ws ":" ws string ws "}"
 plan-item ::= tool-step | deferred-condition
-tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
-    deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws step-ordinal ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step ws "," ws "\"on_false\"" ws ":" ws write-waiver ws "}"
+tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? association-fields ws "}"
+tool-step-branch ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+    deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws step-ordinal ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step-branch ws "," ws "\"on_false\"" ws ":" ws write-waiver association-fields ws "}"
 equals-predicate ::= "{" ws "\"op\"" ws ":" ws "\"equals\"" ws "," ws "\"value\"" ws ":" ws string ws "}"
 write-waiver ::= "{" ws "\"waive_effect\"" ws ":" ws "\"write\"" ws "}"
     step-ordinal ::= [1-9] [0-9]*
@@ -72,6 +69,8 @@ binding-member ::= string ws ":" ws binding-spec
     binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
 path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
     path-segment ::= string | path-index
+association-fields ::= (ws "," ws "\"requirement_ids\"" ws ":" ws association-id-array)? (ws "," ws "\"obligation_ids\"" ws ":" ws association-id-array)?
+association-id-array ::= "[" ws (string ("," ws string)*)? ws "]"
 """
     + _COMMON_RULES
 )
@@ -82,7 +81,12 @@ EFFECT_OBSERVATION_CONTINUATION_GRAMMAR = (
     execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws plan-item ("," ws plan-item)* ws "]" ws "}"
     complete-without-effect-response ::= "{" ws "\"action\"" ws ":" ws "\"complete_without_effect\"" ws "," ws "\"observation_index\"" ws ":" ws step-ordinal ws "}"
     blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
-    plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+    plan-item ::= tool-step | deferred-condition
+    tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? association-fields ws "}"
+    deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws step-ordinal ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step-branch ws "," ws "\"on_false\"" ws ":" ws write-waiver association-fields ws "}"
+    equals-predicate ::= "{" ws "\"op\"" ws ":" ws "\"equals\"" ws "," ws "\"value\"" ws ":" ws string ws "}"
+    write-waiver ::= "{" ws "\"waive_effect\"" ws ":" ws "\"write\"" ws "}"
+    tool-step-branch ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
     bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
     binding-member ::= string ws ":" ws binding-spec
     binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
@@ -90,6 +94,8 @@ EFFECT_OBSERVATION_CONTINUATION_GRAMMAR = (
     path-segment ::= string | path-index
     step-ordinal ::= [1-9] [0-9]*
     path-index ::= "0" | [1-9] [0-9]*
+    association-fields ::= (ws "," ws "\"requirement_ids\"" ws ":" ws association-id-array)? (ws "," ws "\"obligation_ids\"" ws ":" ws association-id-array)?
+    association-id-array ::= "[" ws (string ("," ws string)*)? ws "]"
     """
     + _COMMON_RULES
 )
@@ -100,7 +106,12 @@ REASONING_BOUNDARY_CONTINUATION_GRAMMAR = (
     execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"plan\"" ws ":" ws "[" ws plan-item ("," ws plan-item)* ws "]" (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
     complete-response ::= "{" ws "\"action\"" ws ":" ws "\"complete\"" ws "," ws "\"reason\"" ws ":" ws string (ws "," ws "\"obligations\"" ws ":" ws array)? ws "}"
     blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
-    plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+    plan-item ::= tool-step | deferred-condition
+    tool-step ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? association-fields ws "}"
+    deferred-condition ::= "{" ws "\"kind\"" ws ":" ws "\"deferred_condition\"" ws "," ws "\"observation_ref\"" ws ":" ws step-ordinal ws "," ws "\"predicate\"" ws ":" ws equals-predicate ws "," ws "\"on_true\"" ws ":" ws tool-step-branch ws "," ws "\"on_false\"" ws ":" ws write-waiver association-fields ws "}"
+    equals-predicate ::= "{" ws "\"op\"" ws ":" ws "\"equals\"" ws "," ws "\"value\"" ws ":" ws string ws "}"
+    write-waiver ::= "{" ws "\"waive_effect\"" ws ":" ws "\"write\"" ws "}"
+    tool-step-branch ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
     bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
     binding-member ::= string ws ":" ws binding-spec
     binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
@@ -108,6 +119,8 @@ REASONING_BOUNDARY_CONTINUATION_GRAMMAR = (
     path-segment ::= string | path-index
     step-ordinal ::= [1-9] [0-9]*
     path-index ::= "0" | [1-9] [0-9]*
+    association-fields ::= (ws "," ws "\"requirement_ids\"" ws ":" ws association-id-array)? (ws "," ws "\"obligation_ids\"" ws ":" ws association-id-array)?
+    association-id-array ::= "[" ws (string ("," ws string)*)? ws "]"
     """
     + _COMMON_RULES
 )
@@ -119,7 +132,7 @@ execute-response ::= "{" ws "\"action\"" ws ":" ws "\"execute\"" ws "," ws "\"pl
     complete-without-effect-response ::= "{" ws "\"action\"" ws ":" ws "\"complete_without_effect\"" ws "," ws "\"observation_index\"" ws ":" ws step-ordinal ws "}"
 complete-response ::= "{" ws "\"action\"" ws ":" ws "\"complete\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
 blocked-response ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
-plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? ws "}"
+plan-item ::= "{" ws "\"tool\"" ws ":" ws string ws "," ws "\"args\"" ws ":" ws object (ws "," ws "\"bindings\"" ws ":" ws bindings-object)? association-fields ws "}"
 bindings-object ::= "{" ws (binding-member ("," ws binding-member)*)? ws "}"
 binding-member ::= string ws ":" ws binding-spec
     binding-spec ::= "{" ws "\"from_step\"" ws ":" ws step-ordinal ws "," ws "\"path\"" ws ":" ws path-array ws "}"
@@ -127,6 +140,8 @@ path-array ::= "[" ws (path-segment ("," ws path-segment)*)? ws "]"
     path-segment ::= string | path-index
     step-ordinal ::= [1-9] [0-9]*
     path-index ::= "0" | [1-9] [0-9]*
+    association-fields ::= (ws "," ws "\"requirement_ids\"" ws ":" ws association-id-array)? (ws "," ws "\"obligation_ids\"" ws ":" ws association-id-array)?
+    association-id-array ::= "[" ws (string ("," ws string)*)? ws "]"
 """
     + _COMMON_RULES
 )
@@ -195,11 +210,27 @@ string-array ::= "[" ws (string ("," ws string)*)? ws "]"
 )
 
 
-TASK_DEFINITION_GRAMMAR = _COMMON_RULES + '\nroot ::= object\n'
+TASK_CONTRACT_GRAMMAR = _COMMON_RULES + r'''
+root ::= define-contract | needs-input | blocked
+define-contract ::= "{" ws "\"action\"" ws ":" ws "\"define_contract\"" ws "," ws "\"contract\"" ws ":" ws contract ws "}"
+needs-input ::= "{" ws "\"action\"" ws ":" ws "\"needs_input\"" ws "," ws "\"reason\"" ws ":" ws string ws "," ws "\"question\"" ws ":" ws string ws "}"
+blocked ::= "{" ws "\"action\"" ws ":" ws "\"blocked\"" ws "," ws "\"reason\"" ws ":" ws string ws "}"
+contract ::= "{" ws "\"task_id\"" ws ":" ws string ws "," ws "\"objective\"" ws ":" ws string ws "," ws "\"summary\"" ws ":" ws string ws "," ws "\"requirements\"" ws ":" ws string-array ws "," ws "\"constraints\"" ws ":" ws string-array ws "," ws "\"invariants\"" ws ":" ws string-array ws "," ws "\"success_criteria\"" ws ":" ws string-array ws "," ws "\"out_of_scope\"" ws ":" ws string-array ws "," ws "\"stop_conditions\"" ws ":" ws string-array ws "," ws "\"assumptions\"" ws ":" ws string-array ws "," ws "\"open_questions\"" ws ":" ws string-array (ws "," ws "\"verification_checks\"" ws ":" ws verification-check-array)? ws "}"
+string-array ::= "[" ws (string ("," ws string)*)? ws "]"
+verification-check-array ::= "[" ws (verification-check ("," ws verification-check)*)? ws "]"
+verification-check ::= file-exists-check | json-fields-check
+file-exists-check ::= "{" ws "\"check_id\"" ws ":" ws string ws "," ws "\"kind\"" ws ":" ws "\"file_exists\"" ws "," ws "\"field\"" ws ":" ws verification-field ws "," ws "\"index\"" ws ":" ws unsigned-integer ws "," ws "\"path\"" ws ":" ws string ws "}"
+json-fields-check ::= "{" ws "\"check_id\"" ws ":" ws string ws "," ws "\"kind\"" ws ":" ws "\"json_fields\"" ws "," ws "\"field\"" ws ":" ws verification-field ws "," ws "\"index\"" ws ":" ws unsigned-integer ws "," ws "\"path\"" ws ":" ws string ws "," ws "\"required_fields\"" ws ":" ws non-empty-string-array ws "}"
+verification-field ::= "\"requirements\"" | "\"success_criteria\""
+non-empty-string-array ::= "[" ws string ("," ws string)* ws "]"
+unsigned-integer ::= "0" | [1-9] [0-9]*
+'''
+
+TASK_SPEC_GRAMMAR = _COMMON_RULES + '\nroot ::= object\n'
 
 _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
-    ModelRequestContract.TASK_CONTRACT: TASK_DEFINITION_GRAMMAR,
-    ModelRequestContract.TASK_SPEC: TASK_DEFINITION_GRAMMAR,
+    ModelRequestContract.TASK_CONTRACT: TASK_CONTRACT_GRAMMAR,
+    ModelRequestContract.TASK_SPEC: TASK_SPEC_GRAMMAR,
 
     ModelRequestContract.INITIAL_PLAN: PLAN_GRAMMAR,
     ModelRequestContract.EFFECT_OBSERVATION_CONTINUATION: EFFECT_OBSERVATION_CONTINUATION_GRAMMAR,
@@ -218,8 +249,8 @@ _CONTRACT_GRAMMARS: Dict[ModelRequestContract, str] = {
 # ----------------------------------------------------------------------
 
 GRAMMARS: Dict[str, str] = {
-    'task_contract': TASK_DEFINITION_GRAMMAR,
-    'task_spec': TASK_DEFINITION_GRAMMAR,
+    'task_contract': TASK_CONTRACT_GRAMMAR,
+    'task_spec': TASK_SPEC_GRAMMAR,
     "plan": PLAN_GRAMMAR,
     "continuation_plan": CONTINUATION_PLAN_GRAMMAR,
     "macro_plan": MACRO_PLAN_GRAMMAR,

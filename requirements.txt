@@ -1,2 +1,0 @@
-# Instalação completa de desenvolvimento e memória semântica.
-.[dev,ml]

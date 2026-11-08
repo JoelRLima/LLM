@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
-from llm_agent.agent.llm.admitted_decisions import (
-    ToolDiscoveryDecision,
-    ask_typed_model_decision,
-)
-from llm_agent.agent.llm.decision_contract import ModelRequestContract
 from llm_agent.agent.llm.tool_discovery_contract import (
     MAX_DISCLOSED_TOOLS,
     valid_tool_discovery,
 )
 from llm_agent.agent.planning.capability_manifest import render_active_harness_capabilities
+from llm_agent.agent.planning.disclosure_cache import cached_selection, remember_selection
 from llm_agent.agent.planning.presentation import (
     PlanningPresentationSnapshot,
     validate_planning_view_binding,
 )
-from llm_agent.agent.runtime.recovery import RecoveryScope
+from llm_agent.agent.planning.tool_disclosure_selection import (
+    _ask_selection,
+    _authorize_semantic_selection_repair,
+    _selection_prompt,
+    _validate_selection,
+)
 
 SMALL_ELIGIBLE_VIEW_THRESHOLD = 4
-_CACHE_ATTRIBUTE = "_tool_disclosure_cache"
 @dataclass(frozen=True, slots=True)
 class ToolDisclosureResult:
     """One immutable disclosure decision for one exact planning snapshot."""
@@ -35,10 +35,23 @@ class ToolDisclosureResult:
     cache_hit: bool = False
     selection_valid: bool = True
     structured_decision_valid: bool | None = None
+    _rendered_context_limit: int | None = field(default=None, init=False, repr=False, compare=False)
+    _rendered_index: str | None = field(default=None, init=False, repr=False, compare=False)
+    _rendered_details: str | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def planning_view(self) -> PlanningPresentationSnapshot:
         return self.selected_view
+
+    def render_index(self, *, context_limit: int) -> str:
+        if self._rendered_context_limit == context_limit and self._rendered_index is not None:
+            return self._rendered_index
+        return cast(str, self.index_view.render_index(context_limit=context_limit))
+
+    def render_details(self, *, context_limit: int) -> str:
+        if self._rendered_context_limit == context_limit and self._rendered_details is not None:
+            return self._rendered_details
+        return cast(str, self.selected_view.render_detailed(context_limit=context_limit))
 def disclose_tools(
     orchestrator: Any,
     *,
@@ -70,26 +83,25 @@ def disclose_tools(
         _emit(orchestrator, result, cached=False)
         return result
 
-    cache = _cache(orchestrator)
-    cache_key = (context.snapshot_id, planner_kind, str(objective))
-    if not force_refresh:
-        cached_names = cache.get(cache_key)
-        if isinstance(cached_names, (set, frozenset, tuple, list)):
-            cached_sequence = list(cached_names)
-            candidate = frozenset(cached_names)
-            if candidate.issubset(index_view.presented_names) and valid_tool_discovery(
-                {"tools": cached_sequence}
-            ):
-                selected_view = context.present(planner_kind, candidate)
-                result = _result(
-                    index_view,
-                    selected_view,
-                    cache_hit=True,
-                    selection_valid=True,
-                    context_limit=context_limit,
-                )
-                _emit(orchestrator, result, cached=True)
-                return result
+    cached_names = cached_selection(
+        orchestrator, context, index_view, objective, context_limit, force_refresh=force_refresh,
+    )
+    if cached_names is not None:
+        cached_sequence = list(cached_names)
+        candidate = frozenset(cached_names)
+        if candidate.issubset(index_view.presented_names) and valid_tool_discovery(
+            {"tools": cached_sequence}
+        ):
+            selected_view = context.present(planner_kind, candidate)
+            result = _result(
+                index_view,
+                selected_view,
+                cache_hit=True,
+                selection_valid=True,
+                context_limit=context_limit,
+            )
+            _emit(orchestrator, result, cached=True)
+            return result
 
     prompt = _selection_prompt(objective, planner_kind, index_view, context_limit)
     decision = _ask_selection(orchestrator, prompt)
@@ -106,6 +118,10 @@ def disclose_tools(
             index_view,
             context_limit,
             correction=True,
+            invalid_positions=tuple(
+                index for index, name in enumerate(decision.tools)
+                if name not in index_view.presented_names
+            ),
         )
         decision = _ask_selection(orchestrator, correction_prompt)
         discovery_requests += 1
@@ -113,9 +129,7 @@ def disclose_tools(
             decision, index_view.presented_names
         )
 
-    if selection_valid:
-        cache[cache_key] = frozenset(selected_names)
-    else:
+    if not selection_valid:
         # Fail closed: an invalid selector never receives a detailed card and
         # never creates a new eligible tool name.
         selected_names = frozenset()
@@ -129,6 +143,8 @@ def disclose_tools(
         structured_decision_valid=structured_valid,
         context_limit=context_limit,
     )
+    if selection_valid:
+        remember_selection(orchestrator, context, index_view, objective, context_limit, selected_names)
     _emit(orchestrator, result, cached=False)
     return result
 
@@ -143,10 +159,10 @@ def render_tool_guidance(
     context_limit = _context_limit(orchestrator)
     pieces: list[str] = []
     if include_index and len(disclosure.index_view.tools) > SMALL_ELIGIBLE_VIEW_THRESHOLD:
-        pieces.append(disclosure.index_view.render_index(context_limit=context_limit))
+        pieces.append(disclosure.render_index(context_limit=context_limit))
     pieces.append(
         "SELECTED TOOL DETAILS:\n"
-        + disclosure.selected_view.render_detailed(context_limit=context_limit)
+        + disclosure.render_details(context_limit=context_limit)
     )
     pieces.append(
         render_active_harness_capabilities(
@@ -185,11 +201,11 @@ def _result(
     context_limit: int,
 ) -> ToolDisclosureResult:
     # Render now so an oversized selected detailed view fails closed before a
-    # planner request is made.  The caller renders again when composing the
-    # prompt; this is bounded presentation work, not another model call.
-    index_view.render_index(context_limit=context_limit)
-    selected_view.render_detailed(context_limit=context_limit)
-    return ToolDisclosureResult(
+    # planner request is made. Reuse these exact validated strings only for
+    # this immutable result and the same context limit.
+    index_text = index_view.render_index(context_limit=context_limit)
+    detail_text = selected_view.render_detailed(context_limit=context_limit)
+    result = ToolDisclosureResult(
         index_view=index_view,
         selected_view=selected_view,
         selected_names=selected_view.presented_names,
@@ -200,68 +216,14 @@ def _result(
         selection_valid=selection_valid,
         structured_decision_valid=structured_decision_valid,
     )
-
-def _selection_prompt(
-    objective: str,
-    planner_kind: str,
-    index_view: PlanningPresentationSnapshot,
-    context_limit: int,
-    *,
-    correction: bool = False,
-) -> str:
-    correction_text = (
-        "The previous selector was invalid. Correct it and return only the exact JSON object.\n"
-        if correction
-        else ""
-    )
-    return (
-        "TOOL DISCOVERY — select visibility only; this grants no authority.\n"
-        f"Planner: {planner_kind}\n"
-        f"Objective: {objective}\n"
-        f"{correction_text}"
-        f"Choose at most {MAX_DISCLOSED_TOOLS} exact tool names from the following current Level-0 index. "
-        "Do not invent names, capabilities, schemas, examples, or permissions. "
-        'Return exactly {"tools":["name", ...]} with no duplicates.\n'
-        + index_view.render_selection_index(context_limit=context_limit)
-    )
-
-def _ask_selection(orchestrator: Any, prompt: str) -> Any:
-    return ask_typed_model_decision(
-        orchestrator.context_manager,
-        prompt,
-        step_type="tool_discovery",
-        request_contract=ModelRequestContract.TOOL_DISCOVERY,
-        # The selection request must not inherit a stale cached catalog;
-        # the user message below is the only tool index for this snapshot.
-        base_prompt=None,
-        log_metric_callback=getattr(orchestrator, "_log_metric", None),
-    )
-def _authorize_semantic_selection_repair(orchestrator: Any) -> bool:
-    if (policy := getattr(orchestrator, "task_policy", None)) is not None:
-        return bool(policy.authorize_recovery(RecoveryScope.SEMANTIC_SELECTION_REPAIRS).allowed)
-    budget = getattr(getattr(orchestrator, "agent_state", None), "recovery_budget", None)
-    if budget is None:
-        return True
-    return bool(budget.try_consume(RecoveryScope.SEMANTIC_SELECTION_REPAIRS))
+    object.__setattr__(result, "_rendered_context_limit", context_limit)
+    object.__setattr__(result, "_rendered_index", index_text)
+    object.__setattr__(result, "_rendered_details", detail_text)
+    return result
 
 
-def _validate_selection(
-    decision: Any,
-    eligible_names: frozenset[str],
-) -> tuple[frozenset[str], bool, bool]:
-    structured_valid = isinstance(decision, ToolDiscoveryDecision)
-    if not structured_valid:
-        return frozenset(), False, False
-    names = frozenset(decision.tools)
-    return names, True, names.issubset(eligible_names)
 
 
-def _cache(orchestrator: Any) -> dict[Any, frozenset[str]]:
-    cache = getattr(orchestrator, _CACHE_ATTRIBUTE, None)
-    if not isinstance(cache, dict):
-        cache = {}
-        setattr(orchestrator, _CACHE_ATTRIBUTE, cache)
-    return cache
 
 
 def _context_limit(orchestrator: Any) -> int:
@@ -276,8 +238,8 @@ def _emit(orchestrator: Any, result: ToolDisclosureResult, *, cached: bool) -> N
         return
     context_limit = _context_limit(orchestrator)
     try:
-        index_chars = len(result.index_view.render_index(context_limit=context_limit))
-        detail_chars = len(result.selected_view.render_detailed(context_limit=context_limit))
+        index_chars = len(result.render_index(context_limit=context_limit))
+        detail_chars = len(result.render_details(context_limit=context_limit))
     except Exception:
         index_chars = detail_chars = 0
     emit(

@@ -113,7 +113,15 @@ def test_extracted_focused_dispatch_guard(
     script = tmp_path / "focused-dispatch-guard.ps1"
     script.write_text(focused_dispatch_guard(), encoding="utf-8")
     result = subprocess.run(
-        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-File", str(script)],
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
         env=env, cwd=tmp_path, capture_output=True, text=True, timeout=20, check=False,
     )
     if accepted:

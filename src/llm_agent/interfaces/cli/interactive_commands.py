@@ -6,6 +6,7 @@ from typing import Any
 
 from llm_agent.application.conversation import read_conversation
 from llm_agent.application.task_execution import read_execution_capabilities
+from llm_agent.interfaces.cli.startup_rendering import model_summary
 from llm_agent.interfaces.cli.ui import console
 from llm_agent.interfaces.cli.workspace_entry import render_active_workspace
 
@@ -37,14 +38,13 @@ def status(_: str, ctx: Any) -> None:
     controller = getattr(ctx, "controller", None)
     state = snapshot.state if snapshot is not None else (controller.state.value if controller is not None else "IDLE")
     view = read_conversation(ctx.conversation)
-    model = view.model
     workspace = getattr(getattr(ctx, "workspace", None), "root", "unknown")
     mode = read_execution_capabilities(ctx.task_execution).label
     pending_count = len(controller.pending.list()) if controller is not None else 0
     attention = bool(snapshot is not None and snapshot.attention_pending)
     _ui_print(
         ctx,
-        f"workspace={workspace}\nmodel={model}\nmode={mode}\nstate={state}\n"
+        f"workspace={workspace}\nmodel={view.model}\n{model_summary(ctx.conversation)}\nmode={mode} (modo da sessão)\nstate={state}\n"
         f"pending={pending_count}\nattention={'yes' if attention else 'no'}",
     )
 
@@ -52,15 +52,18 @@ def status(_: str, ctx: Any) -> None:
 def where(_: str, ctx: Any) -> None:
     snapshot = _view_snapshot(ctx)
     if snapshot is None:
-        _ui_print(ctx, "where: live UI projection unavailable")
+        _ui_print(ctx, "Acompanhamento indisponível nesta sessão. Use /status para consultar a sessão.")
         return
-    activity = snapshot.current_tool or snapshot.current_step or (snapshot.milestones[-1] if snapshot.milestones else "unknown")
-    milestones = ", ".join(snapshot.milestones[-8:]) or "none"
+    if not snapshot.short_run_id and snapshot.state == "IDLE":
+        _ui_print(ctx, "Nenhuma tarefa em execução. Descreva seu objetivo no chat para começar.")
+        return
+    activity = snapshot.current_tool or snapshot.current_step or (snapshot.milestones[-1] if snapshot.milestones else "Aguardando atualização")
+    milestones = ", ".join(snapshot.milestones[-8:]) or "Nenhum evento registrado"
     _ui_print(
         ctx,
-        f"run={snapshot.short_run_id or 'unknown'}\nstate={snapshot.state}\nowner={snapshot.owner or 'unknown'}\n"
-        f"activity={activity}\nlast_activity={snapshot.last_activity_at or 'unknown'}\n"
-        f"attention={'pending' if snapshot.attention_pending else 'none'}\nmilestones={milestones}",
+        f"Execução: {snapshot.short_run_id or 'Aguardando identificação'}\nEstado: {snapshot.state}\n"
+        f"Atividade: {activity}\nÚltima atualização: {snapshot.last_activity_at or 'Ainda não registrada'}\n"
+        f"Aprovação: {'pendente; use /attention para revisar' if snapshot.attention_pending else 'nenhuma pendente'}\nEventos: {milestones}",
     )
 
 
@@ -70,7 +73,7 @@ def timeline(_: str, ctx: Any) -> None:
         _ui_print(ctx, "timeline: live UI projection unavailable")
         return
     text = "\n".join(f"{index + 1}. {item}" for index, item in enumerate(snapshot.milestones[-12:]))
-    _ui_print(ctx, text or "(no milestones)")
+    _ui_print(ctx, text or "Nenhum evento registrado. Descreva seu objetivo no chat para começar.")
 
 
 def details(_: str, ctx: Any) -> None:
@@ -124,7 +127,8 @@ def cancel(_: str, ctx: Any) -> None:
         _ui_print(ctx, "cancel: controller unavailable")
         return
     outcome = controller.request_cancel()
-    _ui_print(ctx, f"cancel: {outcome.disposition.lower()} generation={outcome.run_generation or 'none'}")
+    message = "Cancelamento solicitado; aguardando a tarefa encerrar." if outcome.disposition == "CANCEL_REQUESTED" else "Nenhum cancelamento solicitado."
+    _ui_print(ctx, f"{message} ({outcome.disposition.lower()})")
 
 
 def attention(text: str, ctx: Any) -> None:
@@ -134,7 +138,7 @@ def attention(text: str, ctx: Any) -> None:
         return
     current = broker.current()
     if current is None:
-        _ui_print(ctx, "attention: none")
+        _ui_print(ctx, "Nenhuma aprovação pendente.")
         return
     action = text.strip().split()[1].casefold() if len(text.strip().split()) > 1 else ""
     if action in {"approve", "aprovar", "yes", "sim", "deny", "negar", "no", "nao"}:
@@ -158,14 +162,13 @@ def attention(text: str, ctx: Any) -> None:
         return
     _ui_print(
         ctx,
-        f"attention #{current.identity.attention_id} (default=deny/view details)\n"
+        f"attention #{current.identity.attention_id} (aguardando decisão explícita; padrão: negar)\n"
         f"action={request.action}\nresource={request.resource}\nprompt={request.prompt}\n"
-        "Use /attention details to inspect the bounded proposed diff, or /attention approve/deny.",
+        "Revise o diff com /attention details. Para decidir: /attention approve (aprovar) ou /attention deny (negar).",
     )
 
 
 def model(text: str, ctx: Any) -> None:
-    view = read_conversation(ctx.conversation)
     parts = text.strip().split(maxsplit=2)
     if len(parts) >= 2 and parts[1].casefold() in {"select", "usar", "use"}:
         selected = parts[2].strip() if len(parts) >= 3 else ""
@@ -217,7 +220,7 @@ def model(text: str, ctx: Any) -> None:
     suffix = "\nModel selection requires an idle session." if len(parts) > 1 else ""
     _ui_print(
         ctx,
-        f"model={view.model} provider={view.provider}" + suffix,
+        model_summary(ctx.conversation) + suffix,
     )
 
 

@@ -7,7 +7,7 @@ import platform
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from llm_agent import __version__
 from llm_agent.agent.observability.bookmarks import BookmarkStore
@@ -50,10 +50,10 @@ class DiagnosticExporter:
 
     def _default_output(self, run_id: str) -> Path:
         export_root = Path(self.service.workspace_paths.trace_exports_dir)
-        return resolve_path(
+        return cast(Path, resolve_path(
             export_root / f"{run_id_hash(run_id)}-{DEFAULT_EXPORT_NAME}",
             reject_link_like=True,
-        )
+        ))
 
     @staticmethod
     def _safe_output(path: Path) -> Path:
@@ -69,7 +69,7 @@ class DiagnosticExporter:
             assert_path_safe(selected)
         except (WorkspacePathError, IsADirectoryError) as exc:
             raise FileExistsError("export destination is link-like or not a regular path") from exc
-        return selected
+        return cast(Path, selected)
 
     @staticmethod
     def _zip_bytes(files: Mapping[str, bytes]) -> bytes:
@@ -92,7 +92,12 @@ class DiagnosticExporter:
         output: str | Path | None = None,
         force: bool = False,
         include_bookmarks: bool = False,
+        metadata_only: bool = False,
     ) -> ExportReceipt:
+        if type(metadata_only) is not bool:
+            raise ValueError("metadata_only must be a boolean")
+        if metadata_only and include_bookmarks:
+            raise ValueError("metadata-only exports cannot include bookmark notes")
         selected = self.service.select(run_id)
         chosen_run_id = selected.metadata.run_id
         destination = self._safe_output(Path(output) if output is not None else self._default_output(chosen_run_id))
@@ -100,9 +105,9 @@ class DiagnosticExporter:
         if existed and not force:
             raise FileExistsError(f"export destination exists; use --force: {destination}")
 
-        trace_lines = [item.to_json() for item in selected.read_result.records]
+        trace_lines = [] if metadata_only else [item.to_json() for item in selected.read_result.records]
         metadata = redact_observation_value(selected.metadata.to_dict())
-        snapshot = redact_observation_value(self.service.snapshot(chosen_run_id, limit=100).to_dict())
+        snapshot = {} if metadata_only else redact_observation_value(self.service.snapshot(chosen_run_id, limit=100).to_dict())
         files: dict[str, bytes] = {
             "metadata.json": (canonical_json(metadata) + "\n").encode("utf-8"),
             "trace.jsonl": ("\n".join(trace_lines) + ("\n" if trace_lines else "")).encode("utf-8"),
@@ -122,15 +127,27 @@ class DiagnosticExporter:
                 + "\n"
             ).encode("utf-8"),
         }
+        if metadata_only:
+            # A distinct projection; never present this as a replayable trace.
+            records = selected.read_result.records
+            projected = [{"schema_version": item.schema_version, "run_id": item.run_id, "sequence": item.sequence,
+                          "source": item.source.value, "timestamp": item.timestamp} for item in records]
+            metadata = {"run_id": chosen_run_id, "completeness": selected.read_result.completeness.value,
+                        "privacy_mode": "metadata_only", "record_count": len(records)}
+            files["metadata.json"] = (canonical_json(metadata) + "\n").encode("utf-8")
+            files["snapshot.json"] = (canonical_json(metadata) + "\n").encode("utf-8")
+            files.pop("trace.jsonl")
+            files["events-metadata.jsonl"] = ("\n".join(canonical_json(item) for item in projected) + "\n").encode("utf-8")
         if include_bookmarks:
             bookmarks = BookmarkStore(self.service.workspace_paths).reader(chosen_run_id)
             files["bookmarks.json"] = (canonical_json(redact_observation_value({"bookmarks": bookmarks})) + "\n").encode("utf-8")
 
         manifest = {
             "schema_version": EXPORT_SCHEMA_VERSION,
+            "privacy_mode": "metadata_only" if metadata_only else "redacted_content",
             "run_id": chosen_run_id,
             "trace_completeness": selected.read_result.completeness.value,
-            "issues": list(selected.read_result.issues),
+            "issues": [] if metadata_only else list(selected.read_result.issues),
             "files": {name: hashlib.sha256(content).hexdigest() for name, content in sorted(files.items())},
         }
         files["manifest.json"] = (canonical_json(redact_observation_value(manifest)) + "\n").encode("utf-8")

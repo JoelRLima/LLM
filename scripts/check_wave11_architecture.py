@@ -271,13 +271,45 @@ def _check_s4_operational_mode_separation(root: Path) -> list[ArchitectureViolat
     return findings
 
 
+def _interactive_registry_tree(root: Path, relative: str) -> ast.Module | None:
+    """Follow the explicitly delegated shared registry without waiving /read."""
+    tree = _tree(root, relative)
+    if tree is None:
+        return None
+    aliases = {
+        alias.asname or alias.name
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module == "llm_agent.interactive"
+        for alias in node.names if alias.name == "commands"
+    }
+    direct_import = any(
+        isinstance(node, ast.ImportFrom) and node.module == "llm_agent.interactive.commands"
+        for node in tree.body
+    )
+    if not aliases or not direct_import:
+        return tree
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not any(
+            isinstance(target, ast.Name) and target.id == "DEFAULT_CLI_ACTION_REGISTRY"
+            for target in node.targets
+        ):
+            continue
+        call = node.value
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "CliActionRegistry" and len(call.args) >= 2:
+            if ast.unparse(call.args[1]) in {
+                f"{alias}.DEFAULT_CLI_ACTION_REGISTRY._bindings" for alias in aliases
+            }:
+                return _tree(root, "agent/interactive/commands.py")
+    return tree
+
+
 def _check_s5_interactive_read(root: Path) -> list[ArchitectureViolation]:
     findings: list[ArchitectureViolation] = []
     handlers = _tree(root, "agent/interfaces/cli/command_handlers.py")
     if not any(_functions(handlers, "read_file")):
         findings.append(_violation("W11-S5", "agent/interfaces/cli/command_handlers.py", "existing /read file-reader handler is missing"))
     registry_relative = "agent/interfaces/cli/action_registry.py"
-    registry = _tree(root, registry_relative)
+    registry = _interactive_registry_tree(root, registry_relative)
     if registry is None or not any(
         isinstance(node, ast.Constant) and node.value == "/read"
         for node in ast.walk(registry)

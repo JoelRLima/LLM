@@ -1,11 +1,16 @@
 """Closed model-response contracts and their fail-closed admission rules."""
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, TypeGuard, cast
 
+from llm_agent.agent.llm.plan_decision_contract import (
+    valid_plan_bindings as _valid_bindings,
+)
+from llm_agent.agent.llm.plan_decision_contract import (
+    valid_plan_items as _valid_plan_items,
+)
 from llm_agent.agent.llm.task_definition_contract import (
     valid_task_contract_decision as _valid_task_contract_decision,
 )
@@ -96,66 +101,6 @@ def _is_non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 def _is_integer(value: Any) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
-_MAX_PATH_INDEX = 1_000_000
-_MAX_PATH_LENGTH = 32
-_MAX_PATH_KEY = 128
-_BINDING_TARGET = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
-def _valid_path_segment(value: Any) -> bool:
-    if _is_integer(value):
-        return 0 <= value <= _MAX_PATH_INDEX
-    return bool(
-        isinstance(value, str)
-        and 0 < len(value) <= _MAX_PATH_KEY
-        and not value.startswith("__")
-        and all(ord(character) >= 32 for character in value)
-    )
-def _valid_bindings(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    for target, binding in value.items():
-        if not isinstance(target, str) or not _BINDING_TARGET.fullmatch(target):
-            return False
-        if not isinstance(binding, dict) or set(binding) != {"from_step", "path"}:
-            return False
-        if not _is_integer(binding["from_step"]) or binding["from_step"] < 1:
-            return False
-        path = binding["path"]
-        if not isinstance(path, list) or len(path) > _MAX_PATH_LENGTH:
-            return False
-        if not all(_valid_path_segment(segment) for segment in path):
-            return False
-    return True
-def _valid_tool_step(value: Any) -> bool:
-    if not isinstance(value, dict) or set(value) - {"tool", "args", "bindings"}:
-        return False
-    if not _is_non_empty_string(value.get("tool")) or not isinstance(
-        value.get("args"), dict
-    ):
-        return False
-    return "bindings" not in value or _valid_bindings(value["bindings"])
-def _valid_deferred_condition(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    required = {"kind", "observation_ref", "predicate", "on_true", "on_false"}
-    if set(value) != required or value["kind"] != "deferred_condition":
-        return False
-    if not _is_integer(value["observation_ref"]) or value["observation_ref"] < 1:
-        return False
-    predicate = value["predicate"]
-    if (
-        not isinstance(predicate, dict)
-        or set(predicate) != {"op", "value"}
-        or predicate["op"] != "equals"
-        or not _is_string(predicate["value"])
-    ):
-        return False
-    return value["on_false"] == {"waive_effect": "write"} and _valid_tool_step(
-        value["on_true"]
-    )
-def _valid_plan_items(value: Any) -> bool:
-    return isinstance(value, list) and all(
-        _valid_deferred_condition(item) or _valid_tool_step(item) for item in value
-    )
 def _valid_plan_action(
     decision: dict[str, Any],
     action: str,
@@ -255,6 +200,10 @@ _CONTRACT_VALIDATORS: dict[ModelRequestContract, Callable[[dict[str, Any]], bool
     ModelRequestContract.REPLAN: _valid_replan,
     ModelRequestContract.TOOL_DISCOVERY: _valid_tool_discovery,
 }
+def supports_model_decision_contract(request_contract: Any) -> bool:
+    """Whether this admission owner has an exact validator for the contract."""
+    return coerce_request_contract(request_contract) in _CONTRACT_VALIDATORS
+
 def normalize_generic_model_decision(value: Any) -> dict[str, Any] | None:
     """Keep the historical object normalization outside canonical admission."""
     if not isinstance(value, dict):
@@ -290,4 +239,4 @@ def admit_model_decision_value(
     contract = resolve_request_contract(request_contract=request_contract, step_type=step_type)
     validator = _CONTRACT_VALIDATORS.get(contract) if contract is not None else None
     return dict(value) if validator is not None and validator(value) else None
-__all__ = ["ModelRequestContract", "RequestContract", "RequestContractId", "admit_model_decision_value", "coerce_request_contract", "legacy_model_decision_compatibility", "normalize_generic_model_decision", "request_contract_for_request", "request_contract_for_step_type", "request_contract_value", "resolve_request_contract"]
+__all__ = ["ModelRequestContract", "RequestContract", "RequestContractId", "admit_model_decision_value", "coerce_request_contract", "legacy_model_decision_compatibility", "normalize_generic_model_decision", "request_contract_for_request", "request_contract_for_step_type", "request_contract_value", "resolve_request_contract", "supports_model_decision_contract"]

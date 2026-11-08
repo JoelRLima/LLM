@@ -114,6 +114,9 @@ class ProcessRunner:
                 {
                     "PYTHONDONTWRITEBYTECODE": "1",
                     "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                    "TEMP": str(self.root),
+                    "TMP": str(self.root),
+                    "TMPDIR": str(self.root),
                 }
             )
             try:

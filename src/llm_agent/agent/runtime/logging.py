@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from llm_agent.agent.observability.log_formatter import RedactingFormatter
 from llm_agent.agent.runtime import paths
 
 LOGGER_NAME = "LLM_Agent"
@@ -20,6 +22,13 @@ _lock = threading.RLock()
 
 class LoggingConfigurationError(RuntimeError):
     """Raised when live applications request incompatible process logging."""
+
+
+def configure_interface_logging() -> None:
+    """Configure redacted host diagnostics without replacing existing handlers."""
+    handler = logging.StreamHandler()
+    handler.setFormatter(RedactingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 logger = logging.getLogger(LOGGER_NAME)
 logger.addHandler(logging.NullHandler())
@@ -82,13 +91,13 @@ def setup_logger(
 
         _close_owned_handlers()
         logger.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(
+        formatter = RedactingFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         selected.parent.mkdir(parents=True, exist_ok=True)
         try:
             file_handler = _mark_owned(
-                logging.FileHandler(selected, encoding="utf-8")
+                RotatingFileHandler(selected, maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8")
             )
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)

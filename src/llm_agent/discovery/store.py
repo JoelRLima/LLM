@@ -7,10 +7,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Protocol, cast
 
+from llm_agent.discovery.contracts import MAX_DISCOVERY_ENTRY_ID_BYTES
+from llm_agent.filesystem.path_safety import assert_no_link_ancestors
 from llm_agent.process.instance_lock import InstanceLock
-from llm_agent.storage.json_persistence import read_json_object, write_text_atomic
+from llm_agent.storage.json_persistence import write_text_atomic
 
 MAX_DISCOVERY_FRECENCY_ENTRIES = 256
+MAX_DISCOVERY_FRECENCY_BYTES = 128 * 1024
 MAX_DISCOVERY_USE_COUNT = 1_000_000
 MAX_FUTURE_CLOCK_SKEW_SECONDS = 300
 
@@ -36,6 +39,24 @@ def _parse_stamp(value: object) -> datetime:
     return _utc(parsed)
 
 
+def _validated_entry_fields(item: object) -> tuple[str, int, object]:
+    if not isinstance(item, dict):
+        raise ValueError("invalid frecency entry")
+    entry_id = item.get("entry_id")
+    count = item.get("use_count")
+    stamp = item.get("last_used_utc")
+    if (
+        not isinstance(entry_id, str)
+        or not entry_id
+        or len(entry_id.encode("utf-8")) > MAX_DISCOVERY_ENTRY_ID_BYTES
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or not 0 <= count <= MAX_DISCOVERY_USE_COUNT
+    ):
+        raise ValueError("invalid frecency entry")
+    return entry_id, count, stamp
+
+
 class FrecencyStore:
     """Canonical frecency document owner; query text is never written."""
 
@@ -45,7 +66,8 @@ class FrecencyStore:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self.path = Path(path).resolve() if path is not None else None
+        # Keep the lexical path so safety checks can still see symlinks.
+        self.path = Path(path).expanduser().absolute() if path is not None else None
         self.lock_path = self.path.with_name(f"{self.path.name}.lock") if self.path is not None else None
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._entries: dict[str, tuple[int, datetime]] = {}
@@ -61,22 +83,27 @@ class FrecencyStore:
         return _utc(self._clock())
 
     def _load(self) -> None:
-        if self.path is None or not self.path.exists():
+        if self.path is None:
             return
         try:
-            payload = read_json_object(self.path)
+            assert_no_link_ancestors(self.path)
+            if not self.path.exists():
+                self._entries = {}
+                self.diagnostics = ()
+                return
+            with self.path.open("rb") as stream:
+                raw = stream.read(MAX_DISCOVERY_FRECENCY_BYTES + 1)
+            if len(raw) > MAX_DISCOVERY_FRECENCY_BYTES:
+                raise ValueError("frecency document exceeds its bound")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("invalid frecency document")
             if payload is None or payload.get("schema_version") != 1 or not isinstance(payload.get("entries"), list):
                 raise ValueError("invalid frecency document")
             merged: dict[str, tuple[int, datetime]] = {}
             now = self._now()
             for item in payload["entries"][:MAX_DISCOVERY_FRECENCY_ENTRIES * 2]:
-                if not isinstance(item, dict):
-                    raise ValueError("invalid frecency entry")
-                entry_id = item.get("entry_id")
-                count = item.get("use_count")
-                stamp = item.get("last_used_utc")
-                if not isinstance(entry_id, str) or not entry_id or isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= MAX_DISCOVERY_USE_COUNT:
-                    raise ValueError("invalid frecency entry")
+                entry_id, count, stamp = _validated_entry_fields(item)
                 timestamp = _parse_stamp(stamp)
                 if timestamp > now + timedelta(seconds=MAX_FUTURE_CLOCK_SKEW_SECONDS):
                     continue
@@ -89,6 +116,7 @@ class FrecencyStore:
                         max(previous[1], timestamp),
                     )
             self._entries = dict(sorted(merged.items())[:MAX_DISCOVERY_FRECENCY_ENTRIES])
+            self.diagnostics = ()
         except Exception:
             self._entries = {}
             self.diagnostics = ("DISCOVERY_FRECENCY_CORRUPT",)
@@ -101,27 +129,42 @@ class FrecencyStore:
         ]
         return {"schema_version": 1, "entries": entries}
 
-    def _persist(self) -> None:
+    def _persist(self, entry_id: str, timestamp: datetime) -> None:
         if self.path is None or self.lock_path is None:
             return
+        # Validate before mkdir/lock acquisition: otherwise a link-like path
+        # could redirect the writer before the atomic file helper sees it.
+        assert_no_link_ancestors(self.path)
+        assert_no_link_ancestors(self.lock_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with InstanceLock.create(self.lock_path, create_parent=False):
+            self._load()
+            self._record_in_memory(entry_id, timestamp)
             write_text_atomic(
                 self.path,
                 json.dumps(self._document(), ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
                 create_parent=False,
             )
 
-    def record(self, entry_id: str, *, now: datetime | None = None) -> None:
-        if not isinstance(entry_id, str) or not entry_id:
-            raise ValueError("entry_id is required")
-        timestamp = _utc(now or self._now())
+    def _record_in_memory(self, entry_id: str, timestamp: datetime) -> None:
         count = min(self._entries.get(entry_id, (0, timestamp))[0] + 1, MAX_DISCOVERY_USE_COUNT)
         self._entries[entry_id] = (count, timestamp)
         if len(self._entries) > MAX_DISCOVERY_FRECENCY_ENTRIES:
             ordered = sorted(self._entries.items(), key=lambda item: (item[1][1], item[0]), reverse=True)
             self._entries = dict(ordered[:MAX_DISCOVERY_FRECENCY_ENTRIES])
-        self._persist()
+
+    def record(self, entry_id: str, *, now: datetime | None = None) -> None:
+        if (
+            not isinstance(entry_id, str)
+            or not entry_id
+            or len(entry_id.encode("utf-8")) > MAX_DISCOVERY_ENTRY_ID_BYTES
+        ):
+            raise ValueError("entry_id is required")
+        timestamp = _utc(now or self._now())
+        if self.path is None:
+            self._record_in_memory(entry_id, timestamp)
+            return
+        self._persist(entry_id, timestamp)
 
     def score(self, entry_id: str, *, now: datetime | None = None) -> int:
         value = self._entries.get(entry_id)
@@ -143,6 +186,7 @@ class FrecencyStore:
 __all__ = [
     "FrecencyStore",
     "MAX_DISCOVERY_FRECENCY_ENTRIES",
+    "MAX_DISCOVERY_FRECENCY_BYTES",
     "MAX_DISCOVERY_USE_COUNT",
     "MAX_FUTURE_CLOCK_SKEW_SECONDS",
 ]

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from llm_agent.agent.planning.completion_observations import (
     eligible_waiver_observations,
     refresh_executed_effects,
     terminal_failure,
+)
+from llm_agent.agent.planning.completion_requirement_verification import (
+    review_requirement_verification,
 )
 from llm_agent.agent.planning.reasoning_boundary import BoundaryContinuationResult
 from llm_agent.agent.planning.reasoning_boundary import (
@@ -19,6 +21,7 @@ from llm_agent.agent.planning.task_completion_constraints import (
     required_validation_satisfied,
 )
 from llm_agent.agent.planning.task_completion_dispatch import accept_review, reject_review
+from llm_agent.agent.planning.task_completion_review import CompletionReview
 from llm_agent.agent.planning.task_completion_types import CompletionDisposition
 from llm_agent.agent.planning.task_continuation import (
     continue_after_observation as _continue_after_observation,
@@ -34,21 +37,6 @@ from llm_agent.agent.planning.task_terminal import (
     mark_unfinished_obligation,
 )
 from llm_agent.agent.runtime.recovery import RecoveryPolicy, RecoveryScope
-
-
-@dataclass(frozen=True, slots=True)
-class CompletionReview:
-    """Read-only decision produced by the canonical completion owner."""
-    accepted: bool
-    reason_code: str | None = None
-    existing_disposition: str | None = None
-    pending_effects: tuple[str, ...] = ()
-    pending_obligations: tuple[TaskObligation, ...] = ()
-    blocked_obligations: tuple[TaskObligation, ...] = ()
-    prohibited_effects: tuple[str, ...] = ()
-    unrequested_effects: tuple[str, ...] = ()
-    unrecovered_failure: bool = False
-
 
 # Backward-compatible read-only projection; ``needs_effect_continuation`` and
 # ``continue_after_observation`` consult the task-owned budget directly.
@@ -182,6 +170,7 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         include_invocation_history=True,
         hard_only=True,
     )
+    verification, verification_reason = review_requirement_verification(orchestrator)
     reason = _completion_block_reason(
         orchestrator,
         state,
@@ -192,11 +181,13 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
         prohibited,
         unrequested,
         hard_failure,
+        verification_reason,
     )
     if reason is None:
         review = CompletionReview(
             accepted=True,
             existing_disposition=existing,
+            requirement_verification=verification or None,
         )
     else:
         review = CompletionReview(
@@ -209,6 +200,7 @@ def review_task_completion(orchestrator: Any) -> CompletionReview:
             prohibited_effects=prohibited,
             unrequested_effects=unrequested,
             unrecovered_failure=hard_failure or reason == "terminal_failure",
+            requirement_verification=verification or None,
         )
     emit_completion_constraint_audit(orchestrator, review)
     return review
@@ -224,6 +216,7 @@ def _completion_block_reason(
     prohibited: tuple[str, ...],
     unrequested: tuple[str, ...],
     hard_failure: bool,
+    verification_reason: str | None,
 ) -> str | None:
     checks = (
         ("cancelled", lambda: bool(getattr(orchestrator, "_cancelled", False))),
@@ -248,7 +241,7 @@ def _completion_block_reason(
         ("requested_effect_pending", lambda: bool(pending_effects)),
         ("task_obligation_pending", lambda: bool(pending_obligations)),
     )
-    return next((reason for reason, condition in checks if condition()), None)
+    return next((reason for reason, condition in checks if condition()), None) or verification_reason
 
 
 def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> BoundaryContinuationResult:
@@ -264,6 +257,8 @@ def continue_after_reasoning_boundary(orchestrator: Any, objective: str) -> Boun
         blocker = allow_linear_completion(orchestrator, objective)
         return BoundaryContinuationResult(answer=blocker, completed=blocker is None)
     return boundary
+
+
 def allow_linear_completion(orchestrator: Any, objective: str) -> str | None:
     existing = getattr(orchestrator.agent_state, "terminal_disposition", None)
     if existing == "succeeded":
@@ -273,6 +268,8 @@ def allow_linear_completion(orchestrator: Any, objective: str) -> str | None:
     if review.accepted:
         return accept_review(orchestrator, existing)
     return reject_review(orchestrator, objective, review)
+
+
 def complete_direct_answer(orchestrator: Any, objective: str, answer: str) -> str:
     return allow_linear_completion(orchestrator, objective) or answer
 

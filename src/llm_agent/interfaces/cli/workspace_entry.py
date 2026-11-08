@@ -1,14 +1,16 @@
 """Interactive workspace selection at the CLI application boundary."""
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Iterable
-from pathlib import Path
+from functools import partial
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, cast
 
 from llm_agent.application.context import WorkspaceContext
-from llm_agent.application.persistence import AtomicJsonWriteError, write_json_atomic
+from llm_agent.application.workspace_preferences import load_last_workspace as load_last_workspace
+from llm_agent.application.workspace_preferences import remember_workspace as remember_workspace
+from llm_agent.interfaces.cli.interactive_input import read_prompt
 
 
 class NativePickerUnavailable(RuntimeError):
@@ -37,47 +39,14 @@ def canonical_workspace(path: str | Path) -> Path:
     """Resolve and validate one user-selected workspace."""
     return cast(Path, WorkspaceContext.create(path).root)
 def workspace_storage_path(ctx: Any, attribute: str, filename: str) -> str | Path:
-    """Return a path supplied by the active workspace authority."""
     workspace_paths = getattr(ctx, "workspace_paths", None)
     if workspace_paths is None:
         raise RuntimeError("workspace storage requires explicit WorkspacePaths")
     selected = getattr(workspace_paths, attribute, None)
     if selected is None:
-        raise RuntimeError(
-            f"workspace storage authority does not provide {attribute}"
-        )
+        raise RuntimeError(f"workspace storage authority does not provide {attribute}")
     del filename
     return cast(str | Path, selected)
-def load_last_workspace(app_paths: Any) -> Path | None:
-    """Load the optional last workspace, failing closed for stale state."""
-    path = getattr(app_paths, "last_workspace_file", None)
-    if path is None:
-        return None
-    path = Path(path)
-    try:
-        if path.is_symlink() or not path.is_file():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        candidate = payload.get("workspace") if isinstance(payload, dict) else None
-        if not isinstance(candidate, str) or not candidate.strip():
-            return None
-        return canonical_workspace(candidate)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return None
-def remember_workspace(app_paths: Any, workspace: str | Path) -> None:
-    """Persist one successfully opened workspace without affecting startup."""
-    path = getattr(app_paths, "last_workspace_file", None)
-    if path is None:
-        return
-    try:
-        root = canonical_workspace(workspace)
-        destination = Path(path)
-        write_json_atomic(destination, {"schema_version": 1, "workspace": str(root)})
-        from llm_agent.application.workspace_recents import remember_recent_workspace
-        remember_recent_workspace(app_paths, root)
-    except (AtomicJsonWriteError, OSError, TypeError, ValueError):
-        # The optional convenience must never make a valid startup fail.
-        return
 def render_active_workspace(
     console: Any,
     workspace: WorkspaceContext,
@@ -147,10 +116,11 @@ def _choose_manual_workspace(
     if prompt is None:
         from llm_agent.interfaces.cli.interactive_shell import prompt_from
 
-        raw = prompt_from(console, "Pasta do workspace: ")
-    else:
-        raw = prompt("Pasta do workspace: ")
-    entered = (raw or "").strip()
+        prompt = partial(prompt_from, console)
+    raw = read_prompt(prompt, "Pasta do workspace: ")
+    if raw is None:
+        raise WorkspaceSelectionCancelled()
+    entered = raw.strip()
     if not entered:
         if cancel_on_blank:
             raise WorkspaceSelectionCancelled()
@@ -171,13 +141,20 @@ def _read_workspace_choice(
     if prompt is None:
         from llm_agent.interfaces.cli.interactive_shell import prompt_from
 
-        raw_choice = prompt_from(console, "> ")
-    else:
-        raw_choice = prompt("> ")
-    choice = (raw_choice or "").strip()
-    return str(int(choice)) if choice.isdecimal() and 1 <= int(choice) <= numbered_count else choice
+        prompt = partial(prompt_from, console)
+    raw_choice = read_prompt(prompt, "> ")
+    if raw_choice is None:
+        raise WorkspaceSelectionCancelled()
+    choice = raw_choice.strip()
+    if choice.casefold() in {"q", "cancel", "cancelar", "voltar"}:
+        raise WorkspaceSelectionCancelled()
+    return str(int(choice)) if choice.isdecimal() and len(choice) < 4 and 1 <= int(choice) <= numbered_count else choice
 
 
+def is_system_workspace(path: str | Path) -> bool:
+    """Approximate UX hint for standard Windows roots; never an access policy."""
+    parts = tuple(part.casefold() for part in PureWindowsPath(path).parts)
+    return len(parts) > 1 and parts[1] in {"windows", "program files", "program files (x86)"}
 def _recent_workspace_paths(
     current_path: Path,
     last_path: Path | None,
@@ -205,8 +182,10 @@ def _render_workspace_choices(
 ) -> None:
     console.print("\n[bold]LLM Agent[/bold]")
     console.print("Workspace:")
+    console.print("Escolha a pasta do seu projeto. Digite o número; q cancela.")
     for number, (label, path) in enumerate(choices, start=1):
-        console.print(f"[{number}] {label}\n    {path}")
+        warning = " — pasta de sistema; prefira a pasta do projeto" if is_system_workspace(path) else ""
+        console.print(f"[{number}] {label}{warning}\n    {path}", markup=False)
     if native_choice is not None:
         console.print(f"[{native_choice}] Procurar pasta...")
     console.print(f"[{manual_choice}] Informar caminho manualmente")
@@ -230,7 +209,8 @@ def _choose_from_workspace_paths(
 
         choice = _read_workspace_choice(console, prompt, len(choices))
         if not choice:
-            if cancel_on_blank:
+            if cancel_on_blank or is_system_workspace(current_path):
+                console.print("Seleção cancelada. Informe explicitamente a pasta do projeto ao reabrir o chat.")
                 raise WorkspaceSelectionCancelled()
             return current_path
         if choice in numbered_paths:
@@ -247,7 +227,7 @@ def _choose_from_workspace_paths(
             if selected is not None:
                 return selected
             continue
-        console.print(f"[yellow]Escolha 1, 2 ou {3 if picker_available else 2}.[/yellow]")
+        console.print(f"[yellow]Escolha um número de 1 a {manual_choice}, ou q para cancelar.[/yellow]")
 
 
 def choose_workspace(
@@ -285,16 +265,7 @@ def choose_workspace(
 
 
 __all__ = [
-    "NativePickerUnavailable",
-    "TaskWorkspaceRequiredError",
-    "WorkspaceSelectionCancelled",
-    "argument_workspace",
-    "canonical_workspace",
-    "choose_directory_native",
-    "choose_workspace",
-    "load_last_workspace",
-    "native_picker_available",
-    "require_task_workspace",
-    "remember_workspace",
-    "render_active_workspace",
+    "NativePickerUnavailable", "TaskWorkspaceRequiredError", "WorkspaceSelectionCancelled", "argument_workspace",
+    "canonical_workspace", "choose_directory_native", "choose_workspace", "load_last_workspace",
+    "native_picker_available", "require_task_workspace", "remember_workspace", "render_active_workspace",
 ]

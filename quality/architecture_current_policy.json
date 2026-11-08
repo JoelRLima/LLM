@@ -20,6 +20,8 @@
         "llm_agent.agent.runtime.event_kinds",
         "llm_agent.application.inspection.errors",
         "llm_agent.agent.application",
+        "llm_agent.agent.application_result",
+        "llm_agent.agent.llm.errors",
         "llm_agent.agent.approval",
         "llm_agent.agent.interaction.task_directives",
         "llm_agent.agent.interaction.types",
@@ -27,6 +29,7 @@
         "llm_agent.application.configuration_errors",
         "llm_agent.application.context",
         "llm_agent.application.conversation",
+        "llm_agent.application.task_results",
         "llm_agent.application.approval"
     ],
     "exports": [
@@ -141,8 +144,11 @@
             "_bind_task_activity"
         ],
         "src/llm_agent/application/_task_observation.py": [
+            "_Settlement",
             "_primitive",
             "_receipt",
+            "_interaction_fields",
+            "_run_report_fields",
             "_observe_task_settlement",
             "_read_runtime_inspection"
         ],
@@ -888,7 +894,8 @@
                                                              "implementation_modules":  [
                                                                                             "src/llm_agent/application/services/queries.py",
                                                                                             "src/llm_agent/application/services/query_find.py",
-                                                                                            "src/llm_agent/application/services/query_git.py"
+                                                                                            "src/llm_agent/application/services/query_git.py",
+                                                                                            "src/llm_agent/application/services/query_utf8.py"
                                                                                         ],
                                                              "allowed_consumer_owners":  [
                                                                                              "Interfaces"
@@ -996,9 +1003,12 @@
                                                              "responsibility":  "Typed, UI-neutral, read-only workspace query operations for list, read, find, git status, and diff.",
                                                              "implementation_responsibilities":  {
                                                                                                      "src/llm_agent/application/services/queries.py":  [
+                                                                                                                                                           "QueryCancellation",
                                                                                                                                                            "ReadOnlyWorkspaceQueryService",
+                                                                                                                                                           "WorkspaceQueryKind",
                                                                                                                                                            "WorkspaceQueryRequest",
-                                                                                                                                                           "WorkspaceQueryResult"
+                                                                                                                                                           "WorkspaceQueryResult",
+                                                                                                                                                           "WorkspaceQueryStatus"
                                                                                                                                                        ],
                                                                                                      "src/llm_agent/application/services/query_find.py":  [
                                                                                                                                                               "execute_find"
@@ -1006,6 +1016,9 @@
                                                                                                      "src/llm_agent/application/services/query_git.py":  [
                                                                                                                                                              "execute_git_status",
                                                                                                                                                              "execute_diff"
+                                                                                                                                                         ],
+                                                                                                     "src/llm_agent/application/services/query_utf8.py": [
+                                                                                                                                                            "decode_utf8_prefix"
                                                                                                                                                          ]
                                                                                                  }
                                                          },
@@ -2033,7 +2046,8 @@
                                                   "actions",
                                                   "discovery",
                                                   "outputs",
-                                                  "health"
+        "health",
+        "interactive"
                                               ],
                               "Interfaces":  [
                                                  "interfaces"

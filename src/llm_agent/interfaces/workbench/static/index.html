@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Workbench &mdash; Ambiente de projetos</title>
+  <link rel="stylesheet" href="workbench.css">
+  <link rel="stylesheet" href="candidate-overrides.css">
+  <link rel="stylesheet" href="workbench-functional.css">
+</head>
+<body>
+  <div class="app-shell" id="shell">
+    <aside class="rail" id="rail">
+      <div class="brand"><div class="brand-mark">W</div><div class="brand-copy"><b>Workbench</b><span>PROJETO LOCAL</span></div><button class="icon-button collapse" id="collapse-nav" title="Recolher navegação">‹</button></div>
+      <button class="workspace-switch" id="workspace-switch" type="button" title="Escolher projeto" aria-label="Escolher projeto" aria-haspopup="dialog" aria-controls="command-palette-backdrop"><span class="workspace-glyph" aria-hidden="true">⌘</span><span class="workspace-switch-copy"><span class="eyebrow">WORKSPACE ATIVO</span><b id="workspace-name">agent-workbench</b></span></button>
+      <div class="nav-section">PROJETO</div>
+      <nav class="nav-list" aria-label="Navegação principal">
+        <button class="nav-item selected" id="nav-home" aria-current="page" title="Vis&#xE3;o geral do projeto"><span class="nav-icon" aria-hidden="true">&#x2302;</span><span>Vis&#xE3;o geral</span></button>
+        <button class="nav-item" id="nav-chat" title="Abrir o assistente; o uso da LLM &#xE9; controlado no topo"><span class="nav-icon" aria-hidden="true">&#x25C9;</span><span>Assistente</span></button>
+        <button class="nav-item" id="nav-files" title="Consultar arquivos do workspace pelos serviços locais"><span class="nav-icon">▦</span><span>Arquivos</span><small id="nav-files-availability" class="unavailable-label">Carregando</small></button>
+        <button class="nav-item" id="nav-tasks" title="Consultar execução corrente e registros recuperáveis"><span class="nav-icon">◷</span><span>Tarefas</span><small id="nav-tasks-availability" class="unavailable-label">Carregando</small></button>
+        <button class="nav-item" id="open-tests" type="button" aria-haspopup="dialog" aria-controls="tests-dialog"><span class="nav-icon" aria-hidden="true">✓</span><span>Testes</span><small id="tests-nav-status"></small></button>
+      </nav>
+      <button class="nav-item more-resources-toggle" id="more-resources-toggle" type="button" aria-expanded="false" aria-controls="more-resources-panel" title="Mostrar ferramentas e artefatos"><span class="nav-icon" aria-hidden="true">⋯</span><span>Mais recursos</span></button>
+      <div class="more-resources-panel" id="more-resources-panel" hidden>
+        <nav class="nav-list secondary-nav" aria-label="Mais recursos">
+          <button class="nav-item" id="open-plugins" type="button" aria-haspopup="dialog" aria-controls="plugins-dialog"><span class="nav-icon" aria-hidden="true">+</span><span>Plugins</span></button>
+          <button class="nav-item" id="nav-tools" title="Consultar o inventário do runtime compartilhado"><span class="nav-icon">⚒</span><span>Ferramentas</span><small id="nav-tools-availability" class="unavailable-label">Carregando</small></button>
+        </nav>
+        <div class="nav-section artifacts-heading">ARTEFATOS <button class="tiny-icon" id="refresh-artifacts" title="Atualizar lista de outputs persistidos" aria-label="Atualizar artefatos">↻</button></div>
+        <button class="artifact-link" id="artifact-link" title="Abrir relatórios e outputs disponíveis"><span class="file-icon">▤</span><span>Relatórios e outputs</span><span class="nav-count" id="artifact-count">0</span></button>
+      </div>
+      <div class="rail-spacer"></div>
+      <div class="profile"><div class="avatar">U</div><div class="profile-copy"><b>Workbench</b><span id="session-mode">Inicializando sessão…</span></div><button class="tiny-icon" id="profile-menu" title="Configurar sessão, perfil e workspace" aria-label="Configurar sessão, perfil e workspace">⚙</button></div>
+    </aside>
+    <main class="main-column">
+      <header class="topbar"><div class="crumb"><span>Workspace</span><span class="slash">/</span><b id="main-view-title">Vis&#xE3;o geral</b></div><div class="top-actions"><button class="session-open" id="session-open" type="button" aria-haspopup="dialog" aria-controls="session-dialog">Sessão</button><button class="llm-toggle" id="llm-toggle" type="button" aria-pressed="false" disabled>Ativar LLM</button><span class="model-health" id="model-health" role="status">Servidor não verificado</span><button class="icon-button" id="theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">◐</button><button class="icon-button" id="shortcuts" title="Mostrar atalhos" aria-label="Mostrar atalhos">⌘</button><div class="avatar small">U</div></div></header>
+      <section class="home-dashboard" id="home-dashboard" aria-labelledby="home-title">
+        <div class="home-content">
+          <header class="home-heading">
+            <span class="eyebrow">AMBIENTE DE PROJETO</span>
+            <h1 id="home-title">Seu projeto, pronto para trabalhar</h1>
+            <p>Consulte o c&#xF3;digo, acompanhe execu&#xE7;&#xF5;es e organize testes. Essas ferramentas locais funcionam sem chamadas &#xE0; LLM.</p>
+          </header>
+          <section class="home-active-run" id="home-active-run" hidden role="region" aria-label="Estado da execução">
+            <span id="home-active-run-label" role="status" aria-live="polite">Solicita&#xE7;&#xE3;o em andamento.</span>
+            <button id="home-cancel-request" type="button" hidden>Solicitar parada</button>
+            <button id="home-open-result" type="button" hidden>Abrir resultado</button>
+          </section>
+          <section class="home-project" aria-labelledby="home-workspace-name">
+            <div class="home-project-copy">
+              <span class="eyebrow">PROJETO ATIVO</span>
+              <h2 id="home-workspace-name">Carregando projeto&#x2026;</h2>
+              <code id="home-workspace-root">Pasta do projeto carregando&#x2026;</code>
+            </div>
+            <button class="home-secondary-action" id="home-switch-project" type="button">Trocar projeto</button>
+          </section>
+          <section aria-labelledby="home-local-title">
+            <div class="home-section-heading">
+              <div><span class="eyebrow">RECURSOS LOCAIS</span><h2 id="home-local-title">Trabalhar no projeto</h2></div>
+              <p>Arquivos, an&#xE1;lises e prepara&#xE7;&#xE3;o de testes n&#xE3;o exigem modelo.</p>
+            </div>
+            <div class="home-grid">
+              <button class="home-card" id="home-open-files" type="button">
+                <span class="home-card-icon" aria-hidden="true">&#x2315;</span><b>Arquivos, Git e an&#xE1;lise</b>
+                <small>Leia e pesquise arquivos, consulte o Git e rode an&#xE1;lise est&#xE1;tica de c&#xF3;digo.</small>
+                <span class="home-card-link">Explorar o projeto <span aria-hidden="true">&#x2192;</span></span>
+              </button>
+              <button class="home-card" id="home-open-tests" type="button">
+                <span class="home-card-icon" aria-hidden="true">&#x2713;</span><b>Baterias de testes</b>
+                <small>Prepare tarefas, revise verifica&#xE7;&#xF5;es e acompanhe resultados. Executar tarefas com IA exige LLM.</small>
+                <span class="home-card-link">Organizar testes <span aria-hidden="true">&#x2192;</span></span>
+              </button>
+              <button class="home-card" id="home-open-tasks" type="button">
+                <span class="home-card-icon" aria-hidden="true">&#x25F7;</span><b>Execu&#xE7;&#xF5;es e resultados</b>
+                <small>Veja atividade atual, execu&#xE7;&#xF5;es recuper&#xE1;veis, relat&#xF3;rios e evid&#xEA;ncias dispon&#xED;veis.</small>
+                <span class="home-card-link">Ver atividade <span aria-hidden="true">&#x2192;</span></span>
+              </button>
+              <button class="home-card" id="home-open-plugins" type="button">
+                <span class="home-card-icon" aria-hidden="true">+</span><b>Plugins e extens&#xF5;es</b>
+                <small>Gerencie integra&#xE7;&#xF5;es do runtime. Cada plugin mant&#xE9;m permiss&#xF5;es e autoriza&#xE7;&#xF5;es expl&#xED;citas.</small>
+                <span class="home-card-link">Gerenciar plugins <span aria-hidden="true">&#x2192;</span></span>
+              </button>
+              <button class="home-card" id="home-open-terminal" type="button">
+                <span class="home-card-icon" aria-hidden="true">&gt;_</span><b>Comando local</b>
+                <small>Execute comandos pontuais do shell no projeto, sem LLM. Cada envio abre um processo novo; o diret&#xF3;rio n&#xE3;o persiste e programas interativos n&#xE3;o funcionam como num terminal. Usa sua conta do Windows, sem isolamento, e pede confirma&#xE7;&#xE3;o.</small>
+                <span class="home-card-link">Preparar comando <span aria-hidden="true">&#x2192;</span></span>
+              </button>
+            </div>
+          </section>
+          <section class="home-assistant" aria-labelledby="home-assistant-title">
+            <div><span class="eyebrow">CAPACIDADE OPCIONAL</span><h2 id="home-assistant-title">Assistente com LLM</h2>
+              <p>Use conversa e tarefas ag&#xEA;nticas quando precisar. Ativar a LLM libera o uso; uma chamada s&#xF3; come&#xE7;a quando voc&#xEA; envia uma solicita&#xE7;&#xE3;o.</p>
+              <p class="home-llm-state" id="home-llm-state" role="status" aria-live="polite">Carregando estado da LLM&#x2026;</p>
+            </div>
+            <div class="home-assistant-actions">
+              <button class="home-secondary-action" id="home-configure-profile" type="button" hidden>Escolher perfil</button>
+              <button class="home-secondary-action" id="home-open-assistant" type="button">Abrir assistente</button>
+            </div>
+          </section>
+        </div>
+      </section>
+      <section class="conversation" id="conversation" hidden aria-label="Conversa">
+        <div class="welcome" id="welcome"><div class="welcome-icon">✳</div><div class="eyebrow">ASSISTENTE DO PROJETO</div><h1>Por onde<br><em>começamos?</em></h1><p>Ative a LLM no topo para conversar e pedir trabalho agêntico. As ferramentas locais do projeto ficam na Visão geral.</p><button class="suggestion" id="suggestion"><span>⌕</span><span><b>Ver arquivos do projeto</b><small>Veja os arquivos e escolha por onde começar</small></span><span class="arrow">↗</span></button></div>
+        <p class="llm-mode-note" id="llm-mode-note" role="status" aria-live="polite">Uso local: arquivos, análise estática e preparação de testes. Ative a LLM para conversar e executar tarefas com IA.</p><div class="messages" id="messages"></div>
+      </section>
+      <button id="scroll-latest" class="scroll-latest" type="button" hidden aria-label="Rolar para a mensagem mais recente">Ir para o fim</button>
+      <section class="approval-card" id="approval-card" hidden aria-live="polite"><div><span class="eyebrow">APROVAÇÃO PENDENTE</span><b id="approval-action"></b><small id="approval-resource"></small></div><p id="approval-prompt"></p><pre id="approval-diff" hidden></pre><div class="approval-actions"><button id="approval-details">Ver diff</button><button id="approval-deny">Negar</button><button id="approval-approve">Aprovar</button></div></section>
+      <div class="composer-wrap" id="composer-wrap" hidden><div class="composer"><textarea id="prompt" rows="2" placeholder="Descreva o que você quer fazer…" aria-label="Mensagem"></textarea><div class="composer-tools"><div class="composer-hint"><span>Enviar</span> <kbd>Ctrl</kbd><kbd>Enter</kbd> <button class="palette-shortcut" id="open-command-palette" type="button" title="Abrir comandos">Comandos <kbd>Ctrl</kbd><kbd>K</kbd></button><button class="palette-shortcut" id="restore-draft" type="button" hidden disabled title="Recuperar rascunho substituído">Recuperar rascunho</button></div><div class="composer-actions"><button class="attach" id="attach-file" title="Adicionar referência a um arquivo do workspace" aria-label="Adicionar arquivo do workspace">＋</button><button class="cancel" id="cancel" title="Solicitar cancelamento" hidden>Parar</button><button class="send" id="send" title="Enviar">↑</button></div></div></div><div class="composer-caption">O Agent trabalha no workspace ativo e segue as permissões da sessão.</div></div>
+      <footer class="statusbar"><span class="status-left"><i class="status-dot"></i><b id="session-mode-label">READ ONLY</b><span class="status-sep">·</span><span id="run-status" role="status" aria-live="polite" aria-atomic="true">Pronto</span></span><span class="status-right"><span>Modelo <b id="model-name">não informado</b></span><span class="status-sep">·</span><span>Workspace <b id="workspace-name-status">carregando…</b></span></span></footer>
+    </main>
+    <div class="resize-grip" id="resize-grip" hidden aria-label="Redimensionar painel"></div>
+    <aside class="inspector" id="inspector" hidden>
+      <div class="inspector-header"><div class="tabs" id="tabs"><div class="tab active" role="tab"><span class="file-icon">▤</span><span id="tab-title">Relatório</span><button class="tab-close" id="close-panel" title="Fechar painel">×</button></div></div><button class="icon-button" id="report-options" title="Alternar quebra de linhas do painel" aria-label="Quebra de linhas do painel" aria-pressed="true">↔</button></div>
+      <div class="report-toolbar"><div><div class="eyebrow" id="panel-kind-label">RELATÓRIO DE EXECUÇÃO</div><h2 id="report-heading">Relatório do Agent</h2></div><span class="complete-badge" id="complete-badge"><i></i><span id="completeness-label">não informada</span></span></div>
+      <div class="report-meta"><div><span class="eyebrow">ORIGEM</span><b id="report-source">origem da aplicação</b></div><div><span class="eyebrow">EXECUÇÃO</span><b id="report-run">execução associada</b></div><div><span class="eyebrow">WORKSPACE</span><b id="report-workspace">workspace ativo</b></div></div>
+      <div class="workspace-query" id="workspace-query" hidden>
+        <div class="query-row"><label for="query-kind">Consulta</label><select id="query-kind"><option value="list_files">Listar diretório</option><option value="read">Abrir arquivo textual</option><option value="find">Buscar texto</option><option value="git_status">Estado do Git</option><option value="diff">Diff existente</option></select><button id="run-workspace-query">Consultar</button></div>
+        <div class="query-row" id="query-path-row"><label for="query-path">Caminho relativo</label><input id="query-path" value="." autocomplete="off" spellcheck="false"></div>
+        <div class="query-row" id="query-pattern-row" hidden><label for="query-pattern">Texto de busca</label><input id="query-pattern" autocomplete="off"></div>
+        <div class="query-row" id="query-diff-row" hidden><label for="query-diff-paths">Arquivos para diff</label><textarea id="query-diff-paths" rows="2" placeholder="arquivo.py, outro.txt"></textarea></div>
+        <div class="query-reference"><small id="workspace-query-help">Consultar arquivos não usa LLM. Os caminhos ficam dentro do workspace.</small><button id="analyze-file-locally" disabled title="Análise estática de código, sem LLM e sem alterar o arquivo">Analisar código</button><button id="use-file-in-chat" disabled title="Leia um arquivo textual e adicione o caminho à mensagem">Usar no chat</button></div>
+      </div>
+      <div class="task-history" id="task-history" hidden><div class="task-current"><span class="eyebrow">EXECU&#xC7;&#xC3;O CORRENTE</span><div id="task-current-summary" role="status" aria-live="polite"></div><details class="task-current-technical"><summary>Dados t&#xE9;cnicos da execu&#xE7;&#xE3;o</summary><pre id="task-current-state">Carregando estado da sess&#xE3;o...</pre></details></div><section class="pending-queue" id="pending-queue"><h3>Fila de pedidos</h3><p id="pending-queue-note" role="status" aria-live="polite">Carregando fila...</p><div id="pending-queue-items"></div></section><div class="task-runs-heading"><span class="eyebrow">EXECUÇÕES RECUPERÁVEIS</span><button id="refresh-tasks">Atualizar</button></div><div id="task-runs"></div><pre id="task-run-detail" hidden></pre><small id="task-history-note">Relatórios históricos não são listados pelo serviço disponível; relatórios da sessão permanecem em Artefatos.</small></div>
+      <div class="report-content" id="report-content"><div class="report-banner"><span>✓</span><div><b id="report-state">Relatório recebido</b><small>Conteúdo original fornecido pela aplicação</small></div></div><div class="markdown" id="report-body"><div class="skeleton"></div><div class="skeleton short"></div></div></div>
+      <div class="inspector-footer"><span id="report-integrity">Metadados pendentes</span><button id="copy-report" disabled>Copiar conteúdo</button></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="command-palette-backdrop" id="command-palette-backdrop" hidden><section class="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-palette-title"><div class="command-palette-heading"><b id="command-palette-title">Comandos</b><kbd>Esc</kbd></div><input id="command-filter" type="search" autocomplete="off" placeholder="Filtrar comandos" aria-label="Filtrar comandos"><div id="command-list" class="command-list"></div><small>Selecionar preenche o composer. Envie quando estiver pronto.</small></section></div>
+  <dialog id="session-dialog" class="session-dialog" aria-labelledby="session-heading" aria-describedby="session-intro">
+    <div class="session-dialog-heading"><div><span class="eyebrow">RESUMO DA SESSÃO ATUAL</span><h2 id="session-heading">Sessão</h2></div><button id="session-close" type="button" aria-label="Fechar resumo da sessão">×</button></div>
+    <p id="session-intro">Informações do workspace e do perfil em uso. Verificar o catálogo não testa geração; o modo também não substitui permissões, aprovações ou limites.</p>
+    <dl class="session-summary">
+      <div><dt>Projeto</dt><dd id="session-workspace-name">Não informado</dd><dd class="session-secondary" id="session-workspace-root">Pasta não informada</dd></div>
+      <div><dt>Perfil e modelo</dt><dd id="session-profile-name">Não configurado</dd><dd class="session-secondary" id="session-profile-description">Provedor e modelo não informados</dd></div>
+      <div><dt>Modo efetivo</dt><dd id="session-mode-value">Desconhecido</dd><dd class="session-secondary" id="session-mode-note">O modo limita as ações; cada mudança continua sujeita às permissões, aprovações e limites do projeto.</dd></div>
+      <div><dt>Conectividade</dt><dd id="session-connectivity">Não verificada</dd></div>
+      <div><dt>Inferência</dt><dd id="session-inference">Não verificada</dd></div>
+    </dl>
+    <details class="session-technical"><summary>Detalhes técnicos</summary><dl>
+      <div><dt>ID do workspace</dt><dd id="session-tech-workspace-id">Não informado</dd></div>
+      <div><dt>Modo reportado</dt><dd id="session-tech-mode">Não informado</dd></div>
+      <div><dt>Backend configurado</dt><dd id="session-tech-configured">Desconhecido</dd></div>
+      <div><dt>Estado do backend</dt><dd id="session-tech-backend-state">Desconhecido</dd></div>
+      <div><dt>Conectividade reportada</dt><dd id="session-tech-connectivity">Desconhecida</dd></div>
+      <div><dt>Presença no catálogo reportada (model_readiness)</dt><dd id="session-tech-readiness">Desconhecida</dd></div>
+      <div><dt>Motivo reportado</dt><dd id="session-tech-reason">Não informado</dd></div>
+      <div><dt>Geração da disponibilidade</dt><dd id="session-tech-generation">Não informada</dd></div>
+      <div><dt>Recursos</dt><dd id="session-tech-resources">Não informado</dd></div>
+    </dl></details>
+    <button class="offline-pill" id="model-availability" disabled title="Verificar o catálogo do provedor">Conexão não verificada</button><div class="session-dialog-actions"><button id="session-choose-workspace" type="button">Escolher projeto</button><button id="session-profile-model" type="button">Perfil e modelo</button><button id="session-work-mode" type="button">Modo de trabalho</button></div>
+  </dialog>
+  <dialog id="navigation-dialog" class="session-dialog navigation-dialog" aria-labelledby="navigation-title" aria-describedby="navigation-help">
+    <div class="session-dialog-heading"><h2 id="navigation-title">Escolher projeto</h2><button id="navigation-close" type="button" aria-label="Fechar seleção">×</button></div>
+    <p id="navigation-help"></p>
+    <label id="navigation-label" for="navigation-value">Pasta do projeto</label>
+    <input id="navigation-value" type="text" autocomplete="off" spellcheck="false" maxlength="15000">
+    <p id="navigation-status" role="status" aria-live="polite"></p>
+    <div id="navigation-options" class="navigation-options"></div>
+    <details class="session-technical"><summary>Comando equivalente</summary><pre id="navigation-command"></pre></details>
+    <p>Seu rascunho permanece no campo da conversa. A troca será aplicada somente ao clicar abaixo.</p>
+    <div class="session-dialog-actions"><button id="navigation-add-profile" type="button" hidden>Configurar perfil…</button><button id="navigation-apply" type="button" disabled>Aplicar seleção</button></div>
+  </dialog>
+  <dialog id="profile-setup-dialog" class="session-dialog navigation-dialog" aria-labelledby="profile-setup-title" aria-describedby="profile-setup-help">
+    <div class="session-dialog-heading"><h2 id="profile-setup-title">Configurar modelo</h2><button id="profile-setup-close" type="button" aria-label="Fechar configuração do modelo">×</button></div>
+    <p id="profile-setup-help">Cria ou atualiza um perfil OpenAI-compatible. Não salva chave de API. Para servidores remotos, configure credenciais separadamente.</p>
+    <label for="profile-setup-name">Nome do perfil</label><input id="profile-setup-name" type="text" maxlength="64" value="local" autocomplete="off">
+    <label for="profile-setup-model">Identificador do modelo</label><input id="profile-setup-model" type="text" maxlength="256" value="default" autocomplete="off">
+    <label for="profile-setup-endpoint">URL base do servidor</label><input id="profile-setup-endpoint" type="url" maxlength="2048" value="http://127.0.0.1:8080/v1" autocomplete="url">
+    <p id="profile-setup-status" role="status" aria-live="polite">A configuração usa o perfil escolhido para esta sessão. Salvar não testa conexão nem geração.</p>
+    <div class="session-dialog-actions"><button id="profile-setup-save" type="button">Salvar e selecionar</button></div>
+  </dialog>
+  <dialog id="tests-dialog" class="session-dialog tests-dialog" aria-labelledby="tests-title" aria-describedby="tests-help">
+    <div class="session-dialog-heading"><h2 id="tests-title">Baterias de testes</h2><button id="tests-close" type="button" aria-label="Fechar painel de testes">×</button></div>
+    <p id="tests-help">Prepare várias tarefas e acompanhe a execução automática. Os projetos e o armazenamento dos testes são separados da conversa. Fechar este painel mantém a bateria rodando. Para continuar após fechar o app, selecione a execução em processo independente abaixo. Após reiniciar o computador, a fila não recomeça sozinha; revise tarefas interrompidas antes de retomar.</p>
+    <label for="tests-recent">Filas recentes</label><div class="tests-inline"><select id="tests-recent"><option value="">Nenhuma fila selecionada</option></select><button id="tests-open" type="button">Abrir fila existente…</button></div>
+    <details><summary>Abrir uma fila pelo caminho</summary><label for="tests-existing">Pasta que contém manifest.json e state.json</label><div class="tests-inline"><input id="tests-existing" type="text" maxlength="15000" placeholder="Caminho completo da fila"><button id="tests-open-path" type="button">Abrir pelo caminho</button></div></details>
+    <details id="tests-prepare"><summary>1. Preparar uma nova bateria</summary>
+      <label for="tests-source">Pasta das tarefas</label><div class="tests-inline"><input id="tests-source" type="text" maxlength="15000" placeholder="Escolha a pasta que contém as tarefas"><button id="tests-browse" type="button">Escolher pasta…</button></div>
+      <p>Cada subpasta deve conter task.md; seed/ guarda arquivos iniciais, checks.json ou verify.py definem a verificação. A importação cria uma cópia para este experimento. Verificadores Python executam código com os privilégios da sua conta, sem isolamento, e podem acessar outros arquivos e a rede. Importe somente tarefas confiáveis.</p>
+      <details class="tests-case-authoring"><summary>Criar uma tarefa simples sem editar arquivos</summary>
+        <p>Escolha acima a pasta das tarefas. A tarefa será criada em uma subpasta nova; depois prepare uma bateria para importá-la. O critério é escrito por você e não é inferido da resposta do modelo.</p>
+        <label for="tests-case-id">Nome curto da tarefa</label><input id="tests-case-id" type="text" maxlength="64" placeholder="ex.: criar-relatorio">
+        <label for="tests-case-objective">Pedido para o Agent</label><textarea id="tests-case-objective" rows="3" maxlength="16000" placeholder="Descreva o resultado esperado"></textarea>
+        <label for="tests-check-kind">Como verificar o resultado</label><select id="tests-check-kind"><option value="exists">O arquivo deve existir</option><option value="absent">O arquivo não deve existir</option><option value="text_equals">O texto deve ser igual</option><option value="json_equals">O JSON deve ser igual</option></select>
+        <label for="tests-check-path">Caminho do arquivo relativo ao projeto de teste</label><input id="tests-check-path" type="text" maxlength="1024" placeholder="ex.: relatorio.txt">
+        <div id="tests-check-expected-wrap"><label for="tests-check-expected">Conteúdo esperado (texto exato ou JSON)</label><textarea id="tests-check-expected" rows="3" maxlength="65536" placeholder="Conteúdo definido por você"></textarea></div>
+        <label for="tests-seed-path">Arquivo inicial (opcional)</label><input id="tests-seed-path" type="text" maxlength="1024" placeholder="ex.: src/app.py">
+        <label for="tests-seed-content">Conteúdo inicial</label><textarea id="tests-seed-content" rows="3" maxlength="65536" placeholder="O arquivo será criado em seed/ na tarefa"></textarea>
+        <button id="tests-case-create" type="button">Criar tarefa e critério</button><p id="tests-case-status" role="status" aria-live="polite"></p>
+      </details>
+      <button id="tests-create" type="button">Preparar bateria</button>
+      <details><summary>Exemplo de organização</summary><pre>minhas-tarefas/
+  01-tarefa/task.md
+  01-tarefa/checks.json
+  02-tarefa/task.md
+  02-tarefa/seed/arquivo.py
+  02-tarefa/verify.py</pre></details>
+    </details>
+    <section class="tests-settings" aria-labelledby="tests-settings-title"><h3 id="tests-settings-title">2. Conferir e executar</h3>
+      <p>O modo da conversa não é aplicado à bateria. Valem os limites e permissões de teste definidos abaixo.</p>
+      <p id="tests-llm-note" role="status"></p><button id="tests-model-toggle" type="button" hidden>Ativar LLM para executar</button><label for="tests-profile">Modelo para executar as tarefas</label><select id="tests-profile"></select>
+      <p id="tests-approval-note"></p>
+      <details><summary>Limites e permissões</summary><div class="tests-limits"><label>Segundos por tarefa<input id="tests-case-seconds" type="number" min="1" max="3600" value="300"></label><label>Segundos acumulados da fila<input id="tests-total-seconds" type="number" min="1" max="86400" value="3600"></label></div>
+      <label class="tests-check"><input id="tests-auto" type="checkbox">Autorizar ferramentas automaticamente nos projetos de teste. Não fornece sandbox.</label>
+      <label class="tests-check"><input id="tests-skip" type="checkbox">Já revisei as tarefas interrompidas; preservá-las e seguir com as pendentes.</label></details>
+      <div class="session-dialog-actions"><button id="tests-check" type="button">Conferir preparação</button><span class="disabled-help" id="tests-start-help"><button id="tests-start" type="button" disabled>Iniciar / retomar</button></span></div>
+      <label class="tests-check"><input id="tests-live" type="checkbox">Autorizo chamadas à LLM configurada nesta execução, com possível custo.</label>
+      <label class="tests-check"><input id="tests-background" type="checkbox">Continuar em processo independente ao fechar o app. Acompanhe em Testes; pausa e parada continuam disponíveis. Não reinicia com o Windows.</label>
+      <p id="tests-preflight" role="status" aria-live="polite">Confira a preparação antes de iniciar.</p>
+    </section>
+    <section aria-labelledby="tests-progress-title"><h3 id="tests-progress-title">3. Acompanhar e verificar</h3>
+      <p>“Verificado” confirma sucesso do runtime e os critérios que você definiu. Revise os critérios: o status não prova requisitos que não foram cobertos.</p>
+      <p id="tests-status" role="status" aria-live="polite">Carregando filas…</p><progress id="tests-progress" value="0" max="1" aria-label="Tarefas finalizadas"></progress>
+      <div class="session-dialog-actions"><button id="tests-refresh" type="button">Atualizar</button><button id="tests-pause" type="button" disabled>Pausar após a atual</button><button id="tests-stop" type="button" disabled>Parar agora</button><button id="tests-export" type="button" disabled>Gerar relatório HTML</button></div>
+      <label for="tests-filter">Mostrar resultados</label><select id="tests-filter"><option value="all">Todas as tarefas</option><option value="attention">Precisam de atenção</option><option value="pending">Pendentes</option><option value="verified">Verificadas</option></select>
+      <div id="tests-cases"></div><button id="tests-more" type="button" hidden>Mostrar mais tarefas</button>
+      <section id="tests-detail" hidden aria-label="Evidências da tarefa"><h3 id="tests-detail-title"></h3><pre id="tests-detail-summary"></pre><details><summary>Dados técnicos e evidências</summary><pre id="tests-detail-data"></pre></details></section>
+      <details><summary>Identidade e pasta da fila</summary><pre id="tests-location"></pre></details>
+    </section>
+  </dialog>
+  <dialog id="plugins-dialog" class="session-dialog plugins-dialog" aria-labelledby="plugins-title" aria-describedby="plugins-help">
+    <div class="session-dialog-heading"><h2 id="plugins-title">Plugins locais</h2><button id="plugins-close" type="button" aria-label="Fechar plugins">×</button></div>
+    <p id="plugins-help">Registre somente código de confiança. O protocolo stdio inicia programas locais e não fornece sandbox. O fingerprint identifica o manifest, não todo o código do plugin.</p>
+    <p>Habilitar, conceder permissões e autorizar na sessão são passos separados. Alterações administrativas limpam as autorizações temporárias. As alterações retornam o modo para somente leitura; ajuste o modo em Sessão → Modo de trabalho quando precisar executar processos. Aprovações continuam obrigatórias.</p>
+    <label for="plugins-manifest">Caminho completo do manifest JSON</label>
+    <input id="plugins-manifest" type="text" autocomplete="off" spellcheck="false" maxlength="15000" placeholder="Ex.: D:\Plugins\scanner\manifest.json">
+    <button id="plugins-browse" type="button">Escolher arquivo JSON…</button>
+    <div class="session-dialog-actions"><button id="plugins-register" type="button" disabled>Registrar manifest</button><button id="plugins-refresh" type="button">Atualizar lista</button><button id="plugins-clear" type="button" disabled>Limpar autorizações da sessão</button></div>
+    <p id="plugins-status" role="status" aria-live="polite">Carregando plugins…</p>
+    <div id="plugins-items"></div>
+  </dialog>
+  <dialog id="updates-dialog" class="updates-dialog" aria-labelledby="updates-heading">
+    <h2 id="updates-heading">Atualizações do Workbench</h2>
+    <p id="updates-version"></p>
+    <p id="updates-message" role="status" aria-live="polite">Verificando instalação…</p>
+    <p>As atualizações usam o código deste projeto, sem downloads. Configurações e histórico são preservados. A nova versão entra em uso ao reiniciar.</p>
+    <p>A versão anterior pode ser restaurada em <b>Workbench.cmd → Gerenciar instalação</b>, que também permite instalar e desinstalar.</p>
+    <div class="updates-actions">
+      <button id="updates-check" type="button">Verificar novamente</button>
+      <button id="updates-apply" type="button" hidden>Instalar atualização</button>
+      <button id="updates-restart" type="button" hidden>Reiniciar agora</button>
+      <button id="updates-close" type="button">Fechar</button>
+    </div>
+  </dialog>
+  <script src="workbench.js"></script>
+  <script src="workbench-controls.js"></script>
+  <script src="workbench-navigation.js"></script>
+  <script src="workbench-plugins.js"></script>
+  <script src="workbench-tests.js"></script>
+  <script src="workbench-queue.js"></script>
+  <script src="workbench-updates.js"></script>
+</body>
+</html>

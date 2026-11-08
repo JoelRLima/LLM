@@ -99,18 +99,28 @@ def wire_runtime_orchestration(
     selected_approval: ApprovalPort,
     task_authority: TaskAuthoritySnapshot | None,
     task_authority_capabilities: Iterable[str] | None,
+    task_authority_extension_ids: Iterable[str] | None = None,
+    task_authority_extension_fingerprints: Mapping[str, str] | None = None,
     extension_bootstrap: Any,
     skill_registry: Any,
 ) -> RuntimeOrchestrationComponents:
+    if task_authority_extension_ids is not None and task_authority_capabilities is None:
+        raise ValueError("extension scope requires explicit task capabilities")
     if task_authority is not None and task_authority_capabilities is not None:
         raise ValueError("forneca task_authority ou task_authority_capabilities, nao ambos")
+    if task_authority_extension_ids is not None:
+        if isinstance(task_authority_extension_ids, str):
+            raise TypeError("extension ids must be a collection")
+        task_authority_extension_ids = tuple(task_authority_extension_ids)
+    _validate_extension_reviews(extension_bootstrap, task_authority_extension_ids, task_authority_extension_fingerprints)
     selected_task_authority = (
         task_authority
         if task_authority_capabilities is None
         else bind_task_authority(
             task_authority_capabilities,
             extension_bootstrap.authority,
-            policy_source="cli.task_authority",
+            policy_source="product.task_authority" if task_authority_extension_ids is not None else "cli.task_authority",
+            allowed_extension_ids=task_authority_extension_ids,
         )
     )
     tool_registry = extension_bootstrap.registry
@@ -161,3 +171,13 @@ __all__ = [
     "prepare_application_environment",
     "wire_runtime_orchestration",
 ]
+
+
+def _validate_extension_reviews(bootstrap: Any, selected: Iterable[str] | None, expected: Mapping[str, str] | None) -> None:
+    if expected is None:
+        return
+    if selected is None or set(selected) != set(expected):
+        raise ValueError("extension review scope mismatch")
+    actual = {binding.extension_id: binding.approved_fingerprint for binding in bootstrap.materialization.bindings}
+    if any(actual.get(extension_id) != fingerprint for extension_id, fingerprint in expected.items()):
+        raise ValueError("Plugin changed or became unavailable; review authorization again")

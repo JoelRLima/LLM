@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from requests.exceptions import HTTPError
 
 from llm_agent.agent.llm.contracts import (
     ModelMessage,
@@ -179,6 +180,24 @@ def test_credential_free_profile_preserves_unauthenticated_request_shape() -> No
     assert "headers" not in post.call_args.kwargs
 
 
+def test_http_error_closes_response_and_keeps_metadata() -> None:
+    gateway = OpenAICompatibleGateway(
+        {"api_url": "http://localhost/chat", "model": "local", "capabilities": {}}
+    )
+    response = MagicMock()
+    response.raise_for_status.side_effect = HTTPError("upstream failed", response=response)
+
+    with patch(
+        "llm_agent.agent.llm.providers.openai_compatible.requests.post",
+        return_value=response,
+    ):
+        with pytest.raises(ModelConnectionError) as caught:
+            gateway.complete(_request())
+
+    response.close.assert_called_once_with()
+    assert caught.value.response is response
+
+
 def test_complete_normalizes_openai_response():
     gateway = OpenAICompatibleGateway(
         {"api_url": "http://localhost/chat", "model": "local", "capabilities": {}}
@@ -243,6 +262,29 @@ def test_stream_normalizes_content_reasoning_and_done():
         StreamEventType.DONE,
     ]
     assert events[1].text == "ok"
+    response.close.assert_called_once_with()
+
+
+def test_stream_closes_response_when_consumer_stops_early():
+    gateway = OpenAICompatibleGateway(
+        {
+            "api_url": "http://localhost/chat",
+            "model": "local",
+            "capabilities": {"streaming": True},
+        }
+    )
+    response = MagicMock()
+    response.iter_lines.return_value = [
+        b'data: {"choices":[{"delta":{"content":"first"}}]}',
+        b'data: {"choices":[{"delta":{"content":"second"}}]}',
+    ]
+
+    with patch.object(gateway, "_send_payload", return_value=response):
+        stream = gateway.stream(_request(stream=True))
+        assert next(stream).text == "first"
+        stream.close()
+
+    response.close.assert_called_once_with()
 
 
 def test_stream_exposes_provider_usage_event() -> None:

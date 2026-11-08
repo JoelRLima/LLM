@@ -1,2 +1,0 @@
-# Runtime e memória semântica opcional declarados em pyproject.toml.
-.[ml]

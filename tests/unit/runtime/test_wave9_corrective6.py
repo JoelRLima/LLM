@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -37,6 +37,29 @@ def _event(run_id: str, timestamp: str = "2026-09-02T12:00:00+00:00") -> Runtime
         {"summary": "corrective six"},
         timestamp=timestamp,
     )
+
+
+def _publication_completion(
+    store: TraceStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[int, float], bool]:
+    condition = threading.Condition()
+    calls = 0
+    original = store._publish_metadata
+
+    def publish(**kwargs: Any) -> None:
+        nonlocal calls
+        original(**kwargs)
+        with condition:
+            calls += 1
+            condition.notify_all()
+
+    def wait_for(count: int, timeout: float) -> bool:
+        with condition:
+            return condition.wait_for(lambda: calls >= count, timeout)
+
+    monkeypatch.setattr(store, "_publish_metadata", publish)
+    return wait_for
 
 
 def test_queued_envelope_wins_over_dirty_control_publication(
@@ -95,8 +118,186 @@ def test_multiple_queued_envelopes_coalesce_metadata_publication(
     assert store.metadata.highest_sequence_persisted == 3
     assert [record.sequence for record in TraceStore.open(_paths(tmp_path), store.run_id).read()] == [1, 2, 3]
     assert 0 < len(publication_calls) < 2 * 3
-    assert publication_calls.count("metadata") == publication_calls.count("index")
+    assert publication_calls.count("metadata") == 1
+    assert publication_calls.count("index") == 0
     store.close(timeout_seconds=2)
+
+
+def test_flush_waits_for_event_metadata_after_forced_accepted_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TraceStore(_paths(tmp_path), "c6-frontier-event", auto_start=False)
+    store.append(_event(store.run_id))
+    store._publish_metadata(force=True)
+    assert store._published_metadata_revision == store._metadata_revision
+    assert store._published_highest_sequence == 0
+
+    entered_write = threading.Event()
+    release_write = threading.Event()
+    flush_waiting = threading.Event()
+    flush_finished = threading.Event()
+    result: dict[str, bool] = {}
+    original_persist = store._persist_envelope
+    original_wait = store._condition.wait
+
+    def block_envelope(item: Any) -> None:
+        entered_write.set()
+        if not release_write.wait(2):
+            raise AssertionError("envelope barrier was not released")
+        original_persist(item)
+
+    def observe_wait(timeout: float | None = None) -> bool:
+        flush_waiting.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(store, "_persist_envelope", block_envelope)
+    monkeypatch.setattr(store._condition, "wait", observe_wait)
+    store.start()
+    assert entered_write.wait(2)
+
+    def flush_frontier() -> None:
+        result["clean"] = store.flush(2)
+        flush_finished.set()
+
+    thread = threading.Thread(target=flush_frontier, name="c6-event-frontier-flush")
+    thread.start()
+    try:
+        assert flush_waiting.wait(1)
+        assert flush_finished.is_set() is False
+        assert store._published_metadata_revision >= 1
+        release_write.set()
+        assert flush_finished.wait(2)
+        thread.join(timeout=1)
+        assert result["clean"] is True
+        persisted = TraceStore.open(store.trace_root.parent, store.run_id).metadata
+        assert persisted.highest_sequence_persisted == 1
+        assert store._published_highest_sequence == 1
+    finally:
+        release_write.set()
+        thread.join(timeout=2)
+        store.close(timeout_seconds=2)
+
+
+def test_live_flush_uses_run_metadata_before_final_index_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(paths, "c6-frontier-index", auto_start=False)
+    store.append(_event(store.run_id))
+    original_index = store._update_index
+    index_updates: list[dict[str, Any] | None] = []
+
+    def block_index(metadata: Any = None) -> None:
+        index_updates.append(metadata)
+        original_index(metadata)
+
+    monkeypatch.setattr(store, "_update_index", block_index)
+    store.start()
+    assert store.flush(2) is True
+    assert index_updates == []
+
+    catalog = TraceCatalog(paths)
+    live_metadata = catalog.find(store.run_id)
+    initial_index = catalog._index()["runs"][store.run_key]
+    assert live_metadata.highest_sequence_persisted == 1
+    assert initial_index["highest_sequence"] == 0
+
+    store.close(timeout_seconds=2)
+    final_index = catalog._index()["runs"][store.run_key]
+    assert len(index_updates) == 1
+    assert final_index["highest_sequence"] == 1
+    assert final_index["active"] is False
+
+
+def test_flush_stays_failed_after_writer_failure_is_latched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _paths(tmp_path)
+    store = TraceStore(paths, "c6-frontier-writer-failure", auto_start=False)
+    store.append(_event(store.run_id))
+    failure_latched = threading.Event()
+    original_note_failure = store._note_writer_failure
+
+    def fail_envelope(_item: Any) -> None:
+        raise OSError("controlled envelope failure")
+
+    def observe_failure(exc: BaseException, *, failed_sequence: int | None = None) -> None:
+        original_note_failure(exc, failed_sequence=failed_sequence)
+        failure_latched.set()
+
+    monkeypatch.setattr(store, "_persist_envelope", fail_envelope)
+    monkeypatch.setattr(store, "_note_writer_failure", observe_failure)
+    store.start()
+    assert failure_latched.wait(2)
+
+    assert store.flush(timeout_seconds=0.1) is False
+    metadata = store.close(timeout_seconds=2)
+
+    assert metadata.completeness is TraceCompleteness.UNCLEAN
+    persisted = TraceStore.open(paths, store.run_id).metadata
+    assert persisted.completeness is TraceCompleteness.UNCLEAN
+
+
+def test_flush_frontier_is_not_starved_by_later_queued_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TraceStore(_paths(tmp_path), "c6-frontier-later-event", auto_start=False)
+    store.append(_event(store.run_id))
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    release_second = threading.Event()
+    flush_waiting = threading.Event()
+    flush_finished = threading.Event()
+    result: dict[str, bool] = {}
+    original_persist = store._persist_envelope
+    original_wait = store._condition.wait
+
+    def block_envelope(item: Any) -> None:
+        if item.envelope.sequence == 1:
+            first_entered.set()
+            if not release_first.wait(2):
+                raise AssertionError("first envelope barrier was not released")
+        elif item.envelope.sequence == 2:
+            second_entered.set()
+            if not release_second.wait(2):
+                raise AssertionError("second envelope barrier was not released")
+        original_persist(item)
+
+    def observe_wait(timeout: float | None = None) -> bool:
+        flush_waiting.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(store, "_persist_envelope", block_envelope)
+    monkeypatch.setattr(store._condition, "wait", observe_wait)
+    store.start()
+    assert first_entered.wait(2)
+
+    def flush_frontier() -> None:
+        result["clean"] = store.flush(2)
+        flush_finished.set()
+
+    thread = threading.Thread(target=flush_frontier, name="c6-later-event-flush")
+    thread.start()
+    try:
+        assert flush_waiting.wait(1)
+        store.append(_event(store.run_id, "2026-09-02T12:00:01+00:00"))
+        release_first.set()
+        assert second_entered.wait(2)
+        assert flush_finished.wait(2)
+        thread.join(timeout=1)
+        assert result["clean"] is True
+        assert store._published_highest_sequence >= 1
+        assert release_second.is_set() is False
+    finally:
+        release_first.set()
+        release_second.set()
+        thread.join(timeout=2)
+        store.close(timeout_seconds=2)
 
 
 def test_heartbeat_is_coalescible_and_cannot_starve_flush(
@@ -106,6 +307,7 @@ def test_heartbeat_is_coalescible_and_cannot_starve_flush(
     paths = _paths(tmp_path)
     store = TraceStore(paths, "c6-heartbeat", auto_start=False, shutdown_timeout_seconds=2)
     store.append(_event(store.run_id))
+    publication_finished = _publication_completion(store, monkeypatch)
     entered_publication = threading.Event()
     release_publication = threading.Event()
     heartbeats_done = threading.Event()
@@ -147,6 +349,7 @@ def test_heartbeat_is_coalescible_and_cannot_starve_flush(
         assert all(thread is store._worker for thread in atomic_threads)
         release_publication.set()
         assert store.flush(2)
+        assert publication_finished(1, 2)
         persisted = TraceStore.open(paths, store.run_id).metadata
         assert persisted.last_observer_heartbeat == latest
     finally:
@@ -279,6 +482,7 @@ def test_heartbeat_during_bounded_followup_remains_dirty_until_durable(
     paths = _paths(tmp_path)
     store = TraceStore(paths, "c6-heartbeat-followup", auto_start=False, shutdown_timeout_seconds=2)
     store.append(_event(store.run_id))
+    recovery_finished = _publication_completion(store, monkeypatch)
     entered_first = threading.Event()
     release_first = threading.Event()
     entered_followup = threading.Event()
@@ -311,6 +515,7 @@ def test_heartbeat_during_bounded_followup_remains_dirty_until_durable(
     release_followup.set()
 
     try:
+        assert recovery_finished(2, 5)
         assert store.flush(timeout_seconds=2)
         persisted = TraceStore.open(paths, store.run_id).metadata
         assert persisted.last_observer_heartbeat == heartbeat_two
@@ -333,6 +538,7 @@ def test_heartbeat_after_bounded_recovery_rearms_publication(
     paths = _paths(tmp_path)
     store = TraceStore(paths, "c6-heartbeat-rearm", auto_start=False, shutdown_timeout_seconds=2)
     store.append(_event(store.run_id))
+    publications_finished = _publication_completion(store, monkeypatch)
     entered_first = threading.Event()
     release_first = threading.Event()
     entered_followup = threading.Event()
@@ -387,6 +593,7 @@ def test_heartbeat_after_bounded_recovery_rearms_publication(
 
     try:
         assert recovery_snapshot_finished.wait(2)
+        assert publications_finished(2, 5)
         assert store.flush(timeout_seconds=2)
         with store._condition:
             assert store._publication_in_flight == 0
@@ -398,6 +605,7 @@ def test_heartbeat_after_bounded_recovery_rearms_publication(
         with store._condition:
             assert store._heartbeat_quiesced is False
         assert store.flush(timeout_seconds=2)
+        assert publications_finished(3, 5)
         persisted = TraceStore.open(paths, store.run_id).metadata
         assert persisted.last_observer_heartbeat == heartbeat_four
         with store._condition:

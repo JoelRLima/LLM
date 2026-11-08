@@ -13,6 +13,7 @@ from llm_agent.agent.llm.contracts import (
     ProviderCapabilities,
     StreamEvent,
     StreamEventType,
+    StructuredOutputMode,
     TokenUsage,
 )
 from llm_agent.agent.llm.errors import ModelResponseError
@@ -53,10 +54,18 @@ class _Gateway:
 class _GrammarUnsupported(Exception):
     def __init__(self) -> None:
         super().__init__("grammar unsupported")
-        self.response = type("Response", (), {"status_code": 400, "text": "grammar"})()
+        self.response = type(
+            "Response",
+            (),
+            {"status_code": 400, "text": "grammar is not supported"},
+        )()
 
 
 class _FallbackGateway(_Gateway):
+    capabilities = ProviderCapabilities(
+        structured_output_modes=(StructuredOutputMode.GBNF,)
+    )
+
     def complete(self, request: ModelRequest) -> ModelResponse:
         self.calls += 1
         if request.structured_output is not None:

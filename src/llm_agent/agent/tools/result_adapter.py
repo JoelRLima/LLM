@@ -10,6 +10,15 @@ from llm_agent.agent.contracts import LegacyToolResult
 from llm_agent.agent.tools.contracts import ToolError, ToolResult, ToolStatus
 
 
+def result_explicitly_succeeded(result: Any) -> bool:
+    """Read explicit success at the legacy boundary without inferring missing status."""
+    if isinstance(result, Mapping):
+        ok, status = result.get("ok"), result.get("status")
+    else:
+        ok, status = getattr(result, "ok", None), getattr(result, "status", None)
+    return bool(ok is True and getattr(status, "value", status) == ToolStatus.SUCCEEDED.value)
+
+
 def to_legacy_result(result: Any) -> LegacyToolResult:
     """Project a canonical result only when a legacy mapping is required."""
 

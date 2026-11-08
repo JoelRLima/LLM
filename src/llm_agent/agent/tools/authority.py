@@ -156,6 +156,7 @@ class TaskAuthoritySnapshot:
     policy_source: str | None = None
     snapshot_id: str = field(default_factory=lambda: str(uuid4()))
     runtime_identity: RuntimeSnapshotIdentity | None = field(default=None, kw_only=True)
+    allowed_extension_ids: frozenset[str] | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_capabilities", _capabilities(self.allowed_capabilities))
@@ -165,6 +166,8 @@ class TaskAuthoritySnapshot:
             raise TypeError("policy_source inválido")
 
 
+        if self.allowed_extension_ids is not None:
+            object.__setattr__(self, "allowed_extension_ids", _capabilities(self.allowed_extension_ids))
         if self.runtime_identity is not None and not isinstance(
             self.runtime_identity, RuntimeSnapshotIdentity
         ):
@@ -176,6 +179,7 @@ def bind_task_authority(
     application_authority: ApplicationAuthoritySnapshot | None,
     *,
     policy_source: str,
+    allowed_extension_ids: Iterable[str] | None = None,
 ) -> TaskAuthoritySnapshot:
     """Bind explicit product input to the current trusted runtime snapshot.
 
@@ -189,6 +193,7 @@ def bind_task_authority(
     return TaskAuthoritySnapshot(
         allowed_capabilities=_capabilities(capabilities),
         policy_source=policy_source,
+        allowed_extension_ids=None if allowed_extension_ids is None else _capabilities(allowed_extension_ids),
         runtime_identity=application_authority.runtime_identity,
     )
 

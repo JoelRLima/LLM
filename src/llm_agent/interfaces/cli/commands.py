@@ -99,7 +99,10 @@ def handle_command(texto: str, ctx: CommandContext) -> Tuple[bool, bool]:
         if match.action_id == "discovery.help":
             # Keep the historical zero-argument UI renderer compatible
             # with isolated callers while the registry owns its routing.
-            exibir_menu()
+            if match.raw_payload.strip().casefold() in {"all", "todos", "avancado", "avançado"}:
+                exibir_menu(complete=True)
+            else:
+                exibir_menu()
             return True, False
         if match.binding.routing_kind == "QUERY" and match.action_id.startswith("query."):
             from llm_agent.interfaces.cli import interactive_rendering

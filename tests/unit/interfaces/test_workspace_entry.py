@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from llm_agent.agent.runtime.config_repository import ConfigRepository
+from llm_agent.application import workspace_preferences as application_workspace_preferences
 from llm_agent.application import workspace_recents as application_workspace_recents
 from llm_agent.application.configuration_errors import ConfigurationNotFound
 from llm_agent.application.context import AppPaths, WorkspaceContext, WorkspacePaths
@@ -140,7 +141,7 @@ def test_remember_workspace_absorbs_atomic_writer_failure(
     def fail(_path: object, _payload: object) -> None:
         raise AtomicJsonWriteError(Path("last-workspace.json"), OSError("read-only"))
 
-    monkeypatch.setattr(workspace_entry, "write_json_atomic", fail)
+    monkeypatch.setattr(application_workspace_preferences, "write_json_atomic", fail)
 
     remember_workspace(app_paths, workspace)
 
@@ -366,7 +367,7 @@ def test_chat_tty_without_override_passes_selected_workspace_to_bootstrap(
     monkeypatch.setattr(cli, "_create_application", create)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
 
-    assert cli.main(["chat", "--home", str(app_home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(app_home)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
     assert "Workspace ativo" not in "\n".join(output.output)
@@ -391,9 +392,9 @@ def test_chat_continues_when_optional_workspace_persistence_fails(
     monkeypatch.setattr(cli.first_run, "is_interactive_terminal", lambda: True)
     monkeypatch.setattr(cli, "_create_application", lambda *args, **kwargs: runtime)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: reached_chat.append(True))
-    monkeypatch.setattr(workspace_entry, "write_json_atomic", fail)
+    monkeypatch.setattr(application_workspace_preferences, "write_json_atomic", fail)
 
-    assert cli.main(["chat", "--home", str(app_home), "--workspace", str(workspace)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(app_home), "--workspace", str(workspace)]) == 0
     assert reached_chat == [True]
 
 
@@ -417,7 +418,7 @@ def test_chat_tty_reopens_persisted_last_workspace_and_records_active_root(
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
     monkeypatch.setattr(workspace_entry, "native_picker_available", lambda: False)
 
-    assert cli.main(["chat", "--home", str(app_home)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--home", str(app_home)]) == 0
 
     rendered = "\n".join(output.output)
     assert "Reabrir último diretório" in rendered
@@ -445,7 +446,7 @@ def test_chat_explicit_workspace_bypasses_chooser(
     monkeypatch.setattr(cli, "_create_application", create)
     monkeypatch.setattr(cli, "_chat_loop", lambda _context: None)
 
-    assert cli.main(["chat", "--workspace", str(selected)]) == 0
+    assert cli.main(["chat", "--legacy-session", "--workspace", str(selected)]) == 0
 
     assert Path(seen["args"].workspace).resolve() == selected.resolve()
     assert output.output == []
@@ -506,5 +507,5 @@ def test_first_run_recovery_happens_before_workspace_display(
     )
     monkeypatch.setattr(cli.first_run, "recover_first_run_config", lambda *args, **kwargs: 0)
 
-    assert cli.main(["chat"]) == 0
+    assert cli.main(["chat", "--legacy-session"]) == 0
     assert "Workspace ativo" not in "\n".join(output.output)

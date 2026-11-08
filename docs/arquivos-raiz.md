@@ -189,11 +189,11 @@ terminar antes de liberar a aplicação.
 
 ## Dependências
 
-- `pyproject.toml`: fonte de verdade para runtime e extras `dev`/`ml`;
-- `requirements-core.txt`, `requirements-ml.txt`, `requirements-dev.txt` e
-  `requirements.txt`: fachadas compatíveis para pip;
-- `requirements.lock`: snapshot completo e congelado do ambiente usado para
-  reprodução exata.
+- `pyproject.toml`: fonte única das dependências de runtime e dos extras
+  `dev`/`ml`/`desktop`/`mcp`;
+- `requirements-ci.lock`: versões fixadas para o ambiente de aceitação de CI;
+- `requirements.lock`: versões fixadas do perfil de desenvolvimento com a
+  memória semântica opcional (`.[dev,ml]`).
 
 Nenhuma dependência nova é necessária para AST Python, `TaskGraph`, ChangeSet
 ou validação básica.
@@ -215,8 +215,8 @@ exceção. O mesmo gate roda em `.github/workflows/ci.yml`.
 
 ## Documentação arquitetural
 
-`README.md` cobre instalação e uso, `EstruturaProjeto.md` é um mapa secundário
-da estrutura e das responsabilidades do código, e os guias permanentes ficam em
-`docs/`. `docs/README.md` é o índice authoritative de ownership documental.
+`README.md` cobre instalação e uso; [`arquitetura-detalhada.md`](arquitetura-detalhada.md)
+descreve a estrutura e as responsabilidades do código. Os guias permanentes
+ficam em `docs/`, com [`README.md`](README.md) como índice de ownership documental.
 Artefatos intermediários de análise, roadmap, tasks e revisão não fazem parte
 da documentação versionada.

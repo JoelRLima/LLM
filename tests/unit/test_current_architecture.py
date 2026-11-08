@@ -18,6 +18,7 @@ from scripts.check_current_architecture import (
     _application_public_import_errors,
     _application_surface_errors,
     _begin_chat_turn_retains_presentation_fallback,
+    _builtin_action_registry_errors,
     _c14_logging_boundary_errors,
     _c19_evaluation_errors,
     _c21_engineering_errors,
@@ -502,6 +503,7 @@ def test_current_application_api_catalog_has_only_authorized_surfaces() -> None:
         "src/llm_agent/application/services/queries.py",
         "src/llm_agent/application/services/query_find.py",
         "src/llm_agent/application/services/query_git.py",
+        "src/llm_agent/application/services/query_utf8.py",
     }
     health = policy["application_api_surfaces"]["health_diagnostics"]
     assert health["canonical_owner"] == "Application"
@@ -1113,6 +1115,13 @@ def test_health_lane_does_not_add_interface_to_agent_import_edges() -> None:
     ]
 
 
+def test_builtin_cli_action_checker_follows_shared_command_binding_owner() -> None:
+    source = RepositorySource(ROOT, SourceLayout.for_profile(ROOT, "final-w22"))
+    graph = build_graph(source)
+
+    assert _builtin_action_registry_errors(source, graph, _load_policy()) == []
+
+
 def test_c23_final_broker_retirement_contract() -> None:
     policy = _load_policy()
     assert policy["expected_broker_export_count"] == 0
@@ -1619,7 +1628,11 @@ def test_c7_surface_is_finite_and_rejects_agent_type_leak(tmp_path: Path) -> Non
     target = tmp_path / "src/llm_agent/application/code_commands.py"
     target.parent.mkdir(parents=True)
     target.write_text(
-        original.replace("conversation: ConversationRuntime,", "conversation: ModelGateway,"), encoding="utf-8"
+        original.replace(
+            "conversation: ConversationRuntime | None,",
+            "conversation: ModelGateway | None,",
+        ),
+        encoding="utf-8",
     )
     errors = _code_commands_boundary_errors(tmp_path)
     assert any("public annotation leaks Agent type" in error for error in errors)

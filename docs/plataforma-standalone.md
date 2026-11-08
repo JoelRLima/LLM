@@ -4,6 +4,8 @@
 > [ADR 0002](adr/0002-visao-do-assistente-standalone.md); operação concreta em
 > [operacao-standalone.md](operacao-standalone.md).
 
+Product purpose and change criteria: [proposito.md](proposito.md). The original vision is recorded in ADR 0002.
+
 ## Escopo entregue
 
 O pacote instalado separa aplicação, workspace e estado; compõe um único

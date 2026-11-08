@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Dict, Optional, cast
 
+from llm_agent.agent.llm.contract_schemas import schema_for_request_contract
 from llm_agent.agent.llm.contracts import (
     ModelMessage,
     ModelRequest,
@@ -104,11 +105,23 @@ def build_model_request(
         getattr(session, "gateway", None), "capabilities", None
     )
     reasoning_supported = bool(getattr(capabilities, "reasoning", False))
-    structured = (
-        None
-        if grammar is None
-        else StructuredOutputRequest(mode=StructuredOutputMode.GBNF, grammar=grammar)
+    exact_contract = coerce_request_contract(request_contract)
+    schema = schema_for_request_contract(exact_contract)
+    grammar_supported = bool(
+        getattr(capabilities, "supports", lambda _mode: False)(StructuredOutputMode.GBNF)
     )
+    schema_supported = bool(
+        getattr(capabilities, "supports", lambda _mode: False)(StructuredOutputMode.JSON_SCHEMA)
+    )
+    grammar_verified_unsupported = getattr(session, "_grammar_supports_grammar", None) is False
+    # Keep existing grammar requests when explicitly supported. Native schema is
+    # used only for an exact known contract and a declared provider capability.
+    if grammar is not None and grammar_supported and not grammar_verified_unsupported:
+        structured = StructuredOutputRequest(mode=StructuredOutputMode.GBNF, grammar=grammar)
+    elif schema is not None and schema_supported:
+        structured = StructuredOutputRequest(mode=StructuredOutputMode.JSON_SCHEMA, schema=schema)
+    else:
+        structured = None
     geometry = resolve_effective_request_geometry(
         _integer(getattr(session, "thinking_budget", 0), 0),
         output_tokens,
@@ -142,7 +155,7 @@ def build_model_request(
         compatibility_reason_code=geometry.compatibility_reason_code,
         structured_output=structured,
         context_limit=getattr(hardware_profile, "context_limit", None),
-        request_contract=coerce_request_contract(request_contract),
+        request_contract=exact_contract,
     )
 
 
@@ -169,6 +182,17 @@ def build_ephemeral_model_request(
     capabilities = getattr(profile, "capabilities", None) or getattr(
         getattr(session, "gateway", None), "capabilities", None
     )
+    exact_contract = coerce_request_contract(request_contract)
+    if structured_output is None:
+        schema = schema_for_request_contract(exact_contract)
+        supports_schema = bool(
+            getattr(capabilities, "supports", lambda _mode: False)(StructuredOutputMode.JSON_SCHEMA)
+        )
+        if schema is not None and supports_schema:
+            structured_output = StructuredOutputRequest(
+                mode=StructuredOutputMode.JSON_SCHEMA,
+                schema=schema,
+            )
     reasoning_supported = bool(getattr(capabilities, "reasoning", False))
     geometry = resolve_effective_request_geometry(
         _integer(getattr(session, "thinking_budget", 0), 0),
@@ -196,7 +220,7 @@ def build_ephemeral_model_request(
         compatibility_reason_code=geometry.compatibility_reason_code,
         structured_output=structured_output,
         context_limit=getattr(hardware_profile, "context_limit", None),
-        request_contract=coerce_request_contract(request_contract),
+        request_contract=exact_contract,
     )
 
 

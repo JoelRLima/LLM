@@ -29,6 +29,14 @@ def thinking_label(conversation: ConversationRuntime) -> str:
     return cast(str, THINKING_LABEL_BY_BUDGET.get(value, str(value)))
 
 
+def model_summary(conversation: ConversationRuntime) -> str:
+    view = read_conversation(conversation)
+    identity = f"{view.model} · {view.provider}"
+    if view.model.casefold() == "default":
+        identity += " · alias do servidor; modelo efetivo não confirmado"
+    return f"Modelo configurado: {identity}\nConectividade não verificada nesta consulta; /doctor --online testa o provedor."
+
+
 def render_startup_status(console: Console, ctx: Any) -> None:
     workspace = getattr(ctx, "workspace", None)
     root = getattr(workspace, "root", workspace)
@@ -36,8 +44,10 @@ def render_startup_status(console: Console, ctx: Any) -> None:
     level = int(getattr(ctx, "modo_diagnostico", 0))
     console.print("LLM Agent", style="bold cyan")
     console.print(f"Workspace: {root}", markup=False)
+    console.print(model_summary(ctx.conversation), markup=False)
     console.print(
         f"{mode} · Think {thinking_label(ctx.conversation)} · Diag {diagnostic_label(level)}",
         markup=False,
     )
-    console.print("Digite /help para comandos.", style="dim")
+    console.print("Modo da sessão; capacidade de escrita da pasta não concede permissão ao Agent. /modo explica as opções.", style="dim")
+    console.print('Descreva seu objetivo em português. Ex.: "Explique este projeto". /help orienta; /commands busca recursos.', style="dim")

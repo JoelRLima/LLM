@@ -5,6 +5,7 @@ import pytest
 
 from llm_agent.agent.execution_state import StepExecutionRecord, StepStatus
 from llm_agent.agent.final_response import compose_operational_answer
+from llm_agent.agent.planning import outcome_verification
 from llm_agent.agent.planning.plan_builder import PlanBuilder, PlanBuildResult, PlanningDecisionKind
 from llm_agent.agent.planning.plan_execution_loop import run_plan_loop
 from llm_agent.agent.planning.reasoning_boundary import (
@@ -25,6 +26,71 @@ from llm_agent.agent.state import AgentState
 from scripts.w21_architecture.source import SourceLayout
 
 SOURCE_LAYOUT = SourceLayout.for_profile(Path(__file__).resolve().parents[3], "final-w22")
+
+
+@pytest.mark.parametrize(
+    ("overall_status", "reason_code"),
+    [
+        ("satisfied", None),
+        ("violated", "REQUIREMENT_VERIFICATION_FAILED"),
+        ("inconclusive", "REQUIREMENT_VERIFICATION_INCONCLUSIVE"),
+    ],
+)
+def test_structured_requirement_checks_gate_completion(
+    monkeypatch: pytest.MonkeyPatch, overall_status: str, reason_code: str | None
+) -> None:
+    state = AgentState()
+    orchestrator = SimpleNamespace(agent_state=state)
+    initialize_task_progression(orchestrator, "Leia o arquivo.")
+    document = {
+        "status": "available",
+        "overall_status": overall_status,
+        "checks": [{"check_id": "check:1", "status": overall_status}],
+    }
+    monkeypatch.setattr(
+        outcome_verification, "requirement_verification_document", lambda _orchestrator: document
+    )
+
+    review = review_task_completion(orchestrator)
+
+    assert review.accepted is (reason_code is None)
+    assert review.reason_code == reason_code
+    assert review.requirement_verification == document
+
+
+def test_structured_requirement_failure_does_not_override_canonical_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = AgentState()
+    orchestrator = SimpleNamespace(agent_state=state, _cancelled=True)
+    initialize_task_progression(orchestrator, "Leia o arquivo.")
+    monkeypatch.setattr(
+        outcome_verification,
+        "requirement_verification_document",
+        lambda _orchestrator: {"status": "available", "overall_status": "violated", "checks": [{}]},
+    )
+
+    review = review_task_completion(orchestrator)
+
+    assert review.accepted is False
+    assert review.reason_code == "cancelled"
+    assert review.requirement_verification["overall_status"] == "violated"
+
+
+def test_legacy_task_without_structured_checks_keeps_completion_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = AgentState()
+    orchestrator = SimpleNamespace(agent_state=state)
+    initialize_task_progression(orchestrator, "Leia o arquivo.")
+    monkeypatch.setattr(
+        outcome_verification, "requirement_verification_document", lambda _orchestrator: {}
+    )
+
+    review = review_task_completion(orchestrator)
+
+    assert review.accepted is True
+    assert review.requirement_verification is None
 
 
 @pytest.mark.parametrize(

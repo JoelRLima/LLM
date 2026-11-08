@@ -28,7 +28,8 @@
       "actions",
       "discovery",
       "outputs",
-      "health"
+      "health",
+      "interactive"
     ],
     "Interfaces": [
       "interfaces"

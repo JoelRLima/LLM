@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence, cast
 
+from llm_agent.agent.planning.outcome_planning import plan_coverage_document
 from llm_agent.agent.reporting.metrics import RunMetricsSnapshot, project_run_metrics
 from llm_agent.agent.reporting.observation_evidence import result_error_code
 from llm_agent.agent.reporting.public_safety import sanitize_public_text
@@ -233,6 +234,7 @@ def build_canonical_run_snapshot(
         state,
         observed_at=observed_at,
         operational_outcome=outcome,
+        plan_coverage=plan_coverage_document(orchestrator),
     )
     diagnostic_values: Sequence[Mapping[str, Any]] = diagnostics
     if not diagnostic_values and error:

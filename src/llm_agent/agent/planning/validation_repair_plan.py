@@ -90,7 +90,14 @@ def _replace_typed_step(
             candidate = Plan(
                 (
                     *plan.steps[:index],
-                    ToolPlanStep(step.step_id, step.tool, args, bindings or None),
+                    ToolPlanStep(
+                        step.step_id,
+                        step.tool,
+                        args,
+                        bindings or None,
+                        step.requirement_ids,
+                        step.obligation_ids,
+                    ),
                     *plan.steps[index + 1 :],
                 )
             )
@@ -170,6 +177,8 @@ def _replace_typed_step(
         tool=action_step.tool,
         args=action_step.args,
         bindings=action_step.bindings,
+        requirement_ids=step.requirement_ids,
+        obligation_ids=step.obligation_ids,
     )
     candidate = Plan(
         (*plan.steps[:index], replacement, *plan.steps[index + 1 :])

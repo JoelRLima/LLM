@@ -682,7 +682,7 @@ def _scenario_group_11(root: Path) -> tuple[Callable[[], None], ...]:
 
     def a42() -> None:
         source = _current_source("agent/interfaces/cli/interactive_worker.py")
-        assert 'envelope.command_id == "retry"' in source
+        assert 'envelope.command_id == "run.retry"' in source
 
 
 

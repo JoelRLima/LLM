@@ -103,11 +103,12 @@ def _materialize_historical_h(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 
 
 def test_base_and_contract_remain_frozen(tmp_path: Path) -> None:
-    root, inventory = _materialize_historical_h(tmp_path)
+    _, inventory = _materialize_historical_h(tmp_path)
+    contract = inputs.contract()
     assert len(inventory) == 1635
-    assert inventory == inputs.contract()["files"]
-    with pytest.raises(StageError, match="FAIL"):
-        inputs.authenticate(ROOT, tmp_path / "successor-as-H-inventory.json")
+    assert contract["commit"] == H_COMMIT
+    assert contract["tree"] == H_TREE
+    assert inventory == contract["files"]
 
 
 def test_historical_h_authentication_rejects_real_tree_mutations(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any, Dict
 
 from llm_agent.agent.llm.admitted_decisions import ModelDecisionValue
+from llm_agent.agent.llm.context_model_prepare import _prepare_model_state as _prepare_model_state
 from llm_agent.agent.llm.context_model_request_support import (
     _resolve_grammar,
     _retry_fit_request,
@@ -17,9 +18,9 @@ from llm_agent.agent.llm.context_pressure import decide_context_pressure
 from llm_agent.agent.llm.context_projection import (
     REQUIRED_EVIDENCE,
     ContextFitError,
-    fixed_untrusted_data_policy,
 )
 from llm_agent.agent.llm.decision_contract import ModelRequestContract, resolve_request_contract
+from llm_agent.agent.llm.decision_repair_feedback import DecisionRepairFeedback
 from llm_agent.agent.llm.grammars import AutoGrammar
 from llm_agent.agent.llm.structured_output import resolve_model_decision
 from llm_agent.agent.runtime.worker_output import emit_worker_output
@@ -158,45 +159,6 @@ def _prepare_attempt(
     return fit
 
 
-def _prepare_model_state(
-    manager: Any,
-    prompt: str,
-    base_prompt: str | None,
-    include_task_definition: bool,
-    step_type: str,
-    effective_grammar: str | None,
-    exact_contract: ModelRequestContract | None,
-    step_budgets: Mapping[str, int],
-    default_max_tokens: int,
-) -> tuple[int, str | None, list[dict[str, Any]], tuple[Any, ...]]:
-    if base_prompt is None:
-        base_prompt = manager.build_base_system_prompt("", "")
-    system_content = base_prompt
-    fixed_policy = fixed_untrusted_data_policy()
-    if fixed_policy not in system_content:
-        system_content = system_content + "\n\n" + fixed_policy
-    if include_task_definition:
-        trusted_builder = getattr(manager, "build_trusted_task_context", None)
-        if callable(trusted_builder):
-            trusted_context = str(trusted_builder() or "")
-            if trusted_context:
-                system_content = system_content + "\n\n" + trusted_context
-    manager.session.messages[0]["content"] = system_content
-    manager.session.add_user_message(prompt)
-    config_max = manager.session.config.get("agent_max_tokens")
-    budget = config_max if config_max is not None else min(
-        step_budgets.get(step_type, default_max_tokens),
-        manager.hardware_profile.default_output_tokens,
-    )
-    grammar_for_request = _supported_grammar(manager, effective_grammar)
-    base_messages = [message.copy() for message in manager.session.messages]
-    optional_builder = getattr(manager, "build_auxiliary_records", None)
-    optional_records = (
-        tuple(optional_builder(prompt))
-        if callable(optional_builder)
-        else ()
-    )
-    return int(budget), grammar_for_request, base_messages, optional_records
 
 
 def _resolve_fitted_request(
@@ -211,6 +173,7 @@ def _resolve_fitted_request(
     step_type: str,
     request_contract: ModelRequestContract | str | None,
     typed: bool,
+    feedback: DecisionRepairFeedback,
 ) -> Dict[str, Any] | ModelDecisionValue:
     return resolve_model_decision(
         request,
@@ -234,6 +197,7 @@ def _resolve_fitted_request(
             current, structured_output=None
         ),
         retry_authorizer=manager._authorize_structured_response_repair,
+        on_initial_response=feedback.observe,
         step_type=step_type,
         request_contract=(
             request_contract if request_contract is not None else exact_contract
@@ -283,18 +247,18 @@ def run_model_call(
             prompt,
             base_prompt,
             include_task_definition,
-            step_type,
             effective_grammar,
             exact_contract,
-            step_budgets,
-            default_max_tokens,
+            step_budgets.get(step_type, default_max_tokens),
         )
+
+        feedback = DecisionRepairFeedback(exact_contract)
 
         def prepare_attempt(max_output_tokens: int) -> Any:
             return _prepare_attempt(
                 manager,
                 max_output_tokens,
-                base_messages,
+                feedback.messages(base_messages),
                 optional_records,
                 effective_grammar,
                 exact_contract,
@@ -323,6 +287,7 @@ def run_model_call(
             step_type=step_type,
             request_contract=request_contract,
             typed=typed,
+            feedback=feedback,
         )
     except ContextFitError as exc:
         return {

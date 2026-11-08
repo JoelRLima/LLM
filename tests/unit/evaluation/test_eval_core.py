@@ -56,6 +56,12 @@ def test_set_aggregates_exports_and_keeps_expected_observed_outcomes(tmp_path: P
     assert json.loads(destination.read_text(encoding="utf-8")) == exported
 
 
+def test_empty_set_does_not_report_a_perfect_pass_rate() -> None:
+    report = EvaluationSetReport(())
+
+    assert report.to_dict()["summary"]["pass_rate"] == 0.0
+
+
 def test_set_requires_empty_root_to_prevent_cross_task_contamination(tmp_path: Path) -> None:
     root = tmp_path / "set"
     root.mkdir()

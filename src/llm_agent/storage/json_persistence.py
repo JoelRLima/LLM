@@ -75,8 +75,13 @@ def write_json_atomic(
     payload: Any,
     *,
     default: Callable[[Any], Any] | None = None,
+    compact: bool = False,
 ) -> bool:
-    """Grava JSON em arquivo temporário e substitui o destino atomicamente."""
+    """Grava JSON em arquivo temporário e substitui o destino atomicamente.
+
+    ``compact`` removes formatting whitespace for machine-owned snapshots while
+    preserving the same flush, fsync and atomic replacement behavior.
+    """
 
     destination = Path(path)
     temporary_path: Path | None = None
@@ -92,7 +97,10 @@ def write_json_atomic(
             delete=False,
         ) as stream:
             temporary_path = Path(stream.name)
-            json.dump(payload, stream, ensure_ascii=False, indent=2, default=default)
+            if compact:
+                json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"), default=default)
+            else:
+                json.dump(payload, stream, ensure_ascii=False, indent=2, default=default)
             stream.flush()
             os.fsync(stream.fileno())
         reject_link_like(destination)

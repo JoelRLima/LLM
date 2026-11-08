@@ -88,12 +88,14 @@ def test_startup_reexports_preserve_exact_output_and_label_fallbacks(monkeypatch
     for budget, label in ((-1, "OFF"), (0, "OFF"), (2048, "ALTO"), (17, "17")):
         monkeypatch.setattr(startup_rendering, "read_conversation", lambda _value, budget=budget: SimpleNamespace(thinking_budget=budget))
         assert turn_rendering.thinking_label(_context().conversation) == label
-    monkeypatch.setattr(startup_rendering, "read_conversation", lambda _value: SimpleNamespace(thinking_budget=2048))
+    monkeypatch.setattr(startup_rendering, "read_conversation", lambda _value: SimpleNamespace(thinking_budget=2048, model="m", provider="p"))
     console = _console()
     turn_rendering.render_startup_status(console, _context())
-    assert console.export_text() == (
-        "LLM Agent\nWorkspace: /tmp/project\nREAD ONLY · Think ALTO · Diag OFF\nDigite /help para comandos.\n"
-    )
+    output = console.export_text()
+    assert "READ ONLY · Think ALTO · Diag OFF" in output
+    assert "Modelo configurado: m · p" in output
+    assert "Conectividade não verificada" in output
+    assert "Descreva seu objetivo em português" in output
 
 
 def test_ux_t02_help_is_explicit_and_t03_chat_does_not_auto_help(monkeypatch: pytest.MonkeyPatch) -> None:

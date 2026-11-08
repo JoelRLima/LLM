@@ -55,11 +55,11 @@ class CodeIntelligenceService:
         return analysis
 
     def index_repository(self) -> RepositoryIndex:
-        profile = self.discovery.discover()
+        profile, paths = self.discovery.discover_with_files()
         analyses: list[CodeAnalysis] = []
         symbols: defaultdict[str, list[Symbol]] = defaultdict(list)
         diagnostics: list[Diagnostic] = []
-        for path in self.discovery.iter_files():
+        for path in paths:
             if path.suffix.lower() not in LANGUAGE_BY_EXTENSION:
                 continue
             relative = path.relative_to(self.root).as_posix()

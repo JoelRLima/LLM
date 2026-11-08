@@ -270,6 +270,8 @@ def _eligible_extension(
     grants = grants_by_extension.get(extension_id)
     if task_authority is None or grants is None or effective is None:
         return False
+    if task_authority.allowed_extension_ids is not None and extension_id not in task_authority.allowed_extension_ids:
+        return False
     required = frozenset(descriptor.capabilities)
     return required.issubset(grants) and required.issubset(effective.allowed_capabilities)
 

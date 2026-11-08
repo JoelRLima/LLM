@@ -121,7 +121,12 @@ def _direction_decision(policy: Mapping[str, Any], source: str, destination: str
         destination_selector = direction.get("destination")
         if not isinstance(source_selector, str) or not isinstance(destination_selector, str):
             continue
-        if (source == source_selector or _package_match(source, source_selector)) and (destination == destination_selector or _package_match(destination, destination_selector)):
+        exact = direction.get("exact") is True
+        source_matches = source == source_selector or (not exact and _package_match(source, source_selector))
+        destination_matches = destination == destination_selector or (
+            not exact and _package_match(destination, destination_selector)
+        )
+        if source_matches and destination_matches:
             return EdgeDecision(str(direction.get("class", "canonical")), str(direction.get("direction_id", "W21-DIRECTION")), str(direction.get("constraint", "")))
     return None
 

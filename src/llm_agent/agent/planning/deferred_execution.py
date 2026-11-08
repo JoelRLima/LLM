@@ -53,6 +53,8 @@ def execute_deferred_condition(
             step_id=state._new_step_id(),
             tool=step.on_true.tool,
             args=step.on_true.args,
+            requirement_ids=step.requirement_ids,
+            obligation_ids=step.obligation_ids,
         )
         materialization_problem = _validate_materialized_step(
             executor,

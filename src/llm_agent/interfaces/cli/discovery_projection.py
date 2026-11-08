@@ -102,11 +102,14 @@ def build_service(
     config_path: str | Path | None = None,
     profile: str | None = None,
     home: str | Path | None = None,
+    entry_ids: frozenset[str] | None = None,
 ) -> tuple[DiscoveryService, DiscoveryExecutionContext]:
     catalog, availability = build_catalog(
         engineering_views=engineering_views,
         workspace_bound=workspace_bound,
     )
+    if entry_ids is not None:
+        catalog = DiscoveryCatalog(entry for entry in catalog.entries() if entry.entry_id in entry_ids)
     state = controller_state(controller)
     projected = dict(availability)
     for binding in DEFAULT_CLI_ACTION_REGISTRY._bindings:
@@ -150,6 +153,7 @@ def discover_commands(
     config_path: str | Path | None = None,
     profile: str | None = None,
     home: str | Path | None = None,
+    entry_ids: frozenset[str] | None = None,
 ) -> DiscoveryResultV1:
     service, context = build_service(
         app_paths=app_paths,
@@ -161,6 +165,7 @@ def discover_commands(
         config_path=config_path,
         profile=profile,
         home=home,
+        entry_ids=entry_ids,
     )
     return service.search(
         query,

@@ -149,6 +149,49 @@ def test_fresh_progression_reset_clears_terminal_disposition(monkeypatch):
     assert state.terminal_disposition is None
 
 
+def test_requirement_replan_fingerprints_survive_resume_and_reset_for_new_task(monkeypatch):
+    fingerprint = "a" * 64
+    state = _state(monkeypatch)
+    state.requirement_replan_fingerprints = (fingerprint,)
+
+    restored = _state(monkeypatch)
+    restored.from_checkpoint_dict(state.to_checkpoint_dict())
+
+    assert restored.requirement_replan_fingerprints == (fingerprint,)
+    restored.reset_task_progression()
+    assert restored.requirement_replan_fingerprints == ()
+
+
+def test_requirement_replan_fingerprints_default_for_legacy_checkpoint(monkeypatch):
+    state = _state(monkeypatch)
+    checkpoint = state.to_checkpoint_dict()
+    checkpoint.pop("requirement_replan_fingerprints")
+
+    restored = _state(monkeypatch)
+    restored.from_checkpoint_dict(checkpoint)
+
+    assert restored.requirement_replan_fingerprints == ()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a" * 64,
+        ["g" * 64],
+        ["a" * 63],
+        ["a" * 64] * 65,
+        ["a" * 64, 7],
+    ],
+)
+def test_checkpoint_rejects_malformed_requirement_replan_fingerprints(monkeypatch, value):
+    state = _state(monkeypatch)
+    checkpoint = state.to_checkpoint_dict()
+    checkpoint["requirement_replan_fingerprints"] = value
+
+    with pytest.raises(ValueError, match="requirement replan fingerprints are invalid"):
+        _state(monkeypatch).from_checkpoint_dict(checkpoint)
+
+
 def test_replan_replaces_step_and_its_execution_record(monkeypatch):
     state = _state(monkeypatch)
     state.set_plan([{"tool": "missing", "args": {}}])

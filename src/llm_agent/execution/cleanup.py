@@ -25,6 +25,9 @@ class CommandContext:
     stop_readers: Any
     reader_errors: list[str]
     fail_on_orphaned_group: bool = False
+    stdin_writer: Any = None
+    stdin_errors: list[str] | None = None
+    ignore_stdin_errors: bool = False
 
 
 def _join_readers(context: CommandContext, timeout_seconds: float = 1.0) -> str | None:
@@ -72,6 +75,26 @@ def _settle_readers(context: CommandContext, errors: list[str]) -> None:
         errors.append(f"readers raised {type(exc).__name__}: {exc}")
 
 
+def _settle_stdin_writer(context: CommandContext, errors: list[str]) -> None:
+    writer = context.stdin_writer
+    if writer is not None:
+        try:
+            writer.join(0.5)
+            if writer.is_alive():
+                try:
+                    if context.process.stdin is not None:
+                        context.process.stdin.close()
+                except Exception as exc:
+                    errors.append(f"stdin pipe close raised {type(exc).__name__}: {exc}")
+                writer.join(0.5)
+            if writer.is_alive():
+                errors.append("stdin writer did not settle")
+        except Exception as exc:
+            errors.append(f"stdin writer raised {type(exc).__name__}: {exc}")
+    if context.stdin_errors and not context.ignore_stdin_errors:
+        errors.extend(f"stdin: {error}" for error in context.stdin_errors)
+
+
 def _close_process_pipes(context: CommandContext, errors: list[str]) -> None:
     try:
         errors.extend(f"pipes: {error}" for error in close_pipes(context.process))
@@ -114,6 +137,7 @@ def cleanup_command(context: CommandContext | None, *, terminate_tree: bool) -> 
         if getattr(context, "fail_on_orphaned_group", False):
             _record_orphaned_group(context, errors)
         _terminate_tree(context, errors)
+    _settle_stdin_writer(context, errors)
     _settle_readers(context, errors)
     _close_process_pipes(context, errors)
     if context.windows_job is not None:

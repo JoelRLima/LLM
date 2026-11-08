@@ -5,6 +5,7 @@
   "temperature": 0.6,
   "max_tokens": 4096,
   "agent_max_tokens": null,
+  "agent_execution_profile": "standard",
   "timeout": 300,
   "hardware_profile": "low_vram_8gb",
   "semantic_memory_enabled": false,

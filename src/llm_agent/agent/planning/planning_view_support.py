@@ -37,6 +37,32 @@ def resume_planning_view(
     return cast(PlanningPresentationSnapshot, context.present(planner_kind, names))
 
 
+def execution_planning_view(
+    orchestrator: Any,
+    planning_view: PlanningPresentationSnapshot | None,
+) -> PlanningPresentationSnapshot | None:
+    """Project a reactive selector view into execution's canonical linear view.
+
+    Execution validates plans against the linear presentation contract. This
+    conversion validates the exact source snapshot first, then asks that same
+    immutable context for a linear projection over the identical names.
+    """
+
+    if planning_view is None:
+        return None
+    context = getattr(orchestrator, "planning_context", None)
+    if context is None:
+        raise PlanningContextError("planning view sem contexto canônico")
+    if not isinstance(planning_view, PlanningPresentationSnapshot):
+        raise PlanningContextError("planning view reativa com tipo inválido")
+    validate_planning_view_binding(context, planning_view, "reactive")
+    projected = context.present("linear", planning_view.presented_names)
+    validate_planning_view_binding(context, projected, "linear")
+    if projected.presented_names != planning_view.presented_names:
+        raise PlanningContextError("projeção de execução ampliou a seleção reativa")
+    return cast(PlanningPresentationSnapshot, projected)
+
+
 def _collect_plan_tool_names(item: Any, names: set[str]) -> None:
     if isinstance(item, DeferredConditionStep):
         _collect_plan_tool_names(item.on_true, names)

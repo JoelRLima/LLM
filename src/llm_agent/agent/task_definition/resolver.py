@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from llm_agent.agent.task_definition.errors import TaskDefinitionMismatchError, TaskDefinitionValidationError
 from llm_agent.agent.task_definition.models import TaskContract, TaskDefinitionRef, TaskSpec, TaskSpecPhase
 from llm_agent.agent.task_definition.repository import TaskDefinitionRepository
+from llm_agent.agent.task_definition.requirement_refs import RequirementReference, requirement_references
 from llm_agent.agent.task_definition.serialization import contract_digest, spec_digest
 
 AUTHORITY_HEADER = "--- TASK DEFINITION AUTHORITY (TRUSTED PRODUCT STATE) ---"
@@ -39,6 +40,11 @@ class TaskContextMaterialization:
     def authority_text(self) -> str:
         return self.trusted_text
 
+    @property
+    def requirement_references(self) -> tuple[RequirementReference, ...]:
+        """Read-only inspection addresses; no duplicate catalogue in model input."""
+        return requirement_references(self.structured)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -50,6 +56,7 @@ class TaskContextMaterialization:
             "phase_id": self.phase_id,
             "context": self.trusted_text,
             "authority": _thaw(self.structured),
+            "requirement_refs": [item.to_dict() for item in self.requirement_references],
         }
 
 
@@ -176,6 +183,13 @@ class TaskContextResolver:
                 "success_criteria": list(contract.success_criteria),
                 "out_of_scope": list(contract.out_of_scope),
                 "stop_conditions": list(contract.stop_conditions),
+                "assumptions": list(contract.assumptions),
+                "open_questions": list(contract.open_questions),
+                **(
+                    {"verification_checks": [check.to_dict() for check in contract.verification_checks]}
+                    if contract.verification_checks
+                    else {}
+                ),
             },
             "spec": {
                 "version": spec.version,
@@ -201,16 +215,7 @@ class TaskContextResolver:
             authority["phase_selection"] = "whole_spec_bounded"
         else:
             phase_map = {item.phase_id: item for item in spec.phases}
-            dependencies = [
-                {
-                    "phase_id": dependency,
-                    "title": phase_map[dependency].title,
-                    "goal": phase_map[dependency].goal,
-                    "requirements": list(phase_map[dependency].requirements),
-                    "acceptance_criteria": list(phase_map[dependency].acceptance_criteria),
-                }
-                for dependency in phase.depends_on
-            ]
+            dependencies = [phase_map[dependency].to_dict() for dependency in phase.depends_on]
             authority["phase_selection"] = phase.phase_id
             authority["selected_phase"] = phase.to_dict()
             authority["dependency_facts"] = dependencies

@@ -2,16 +2,39 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from contextlib import closing
 from typing import Any
 from urllib.parse import urlsplit
 
 import requests
 
 from llm_agent.agent.llm.contracts import ModelRequest
+from llm_agent.agent.llm.errors import UnsupportedModelCapability
 from llm_agent.agent.runtime.budget_estimation import (
     PROVIDER_CHAT_INPUT_TOKENS,
     RequestInputMeasurement,
 )
+
+
+def request_measurement_fingerprint(gateway: Any, request: Any) -> str | None:
+    """Hash effective wire geometry; never retain or expose prompt contents."""
+    if not isinstance(request, ModelRequest) or not gateway.capabilities.token_counting:
+        return None
+    try:
+        payload = {
+            "request": gateway.build_payload(request),
+            "endpoint": gateway.api_url,
+            "profile": gateway.resolved_profile.fingerprint,
+            "capabilities": gateway.capabilities.to_dict(),
+            "provider_options": gateway.provider_options,
+            "credential_reference": repr(gateway.credential_ref),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    except (AttributeError, TypeError, ValueError, RecursionError, UnsupportedModelCapability):
+        return None
 
 
 def extension_url(api_url: str, path: str) -> str:
@@ -46,12 +69,13 @@ def _count_request_input_tokens(gateway: Any, request: ModelRequest) -> int | No
         if headers is not None:
             request_kwargs["headers"] = headers
         response = requests.post(extension_url(gateway.api_url, path), **request_kwargs)
-        if response.status_code in (404, 405):
-            gateway._request_input_tokens_supported = False
-            return None
-        if response.status_code != 200:
-            return None
-        data = response.json()
+        with closing(response):
+            if response.status_code in (404, 405):
+                gateway._request_input_tokens_supported = False
+                return None
+            if response.status_code != 200:
+                return None
+            data = response.json()
     except Exception:
         return None
     if not isinstance(data, dict):

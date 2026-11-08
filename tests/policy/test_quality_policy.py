@@ -1,8 +1,11 @@
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 from scripts.check_quality import (
     QUALITY_EVIDENCE_ROOT,
@@ -104,6 +107,59 @@ def test_quality_artifact_checks_skip_only_the_authenticated_root(tmp_path, monk
 
 def test_quality_ratchet_accepts_only_the_recorded_debt() -> None:
     assert _ratchet_failures(label="test", current={"module": 12}, allowed={"module": 12}) == []
+
+
+@pytest.mark.parametrize("ignored_name", [".tmp", ".venv", "runtime", "reports", "tmp_pytest"])
+def test_artifact_checks_prune_ignored_directories_before_scanning(tmp_path, monkeypatch, ignored_name):
+    monkeypatch.setattr("scripts.check_quality.ROOT", tmp_path)
+    ignored = tmp_path / ignored_name
+    ignored.mkdir()
+    (ignored / "unreadable.md").write_text("[missing](absent.md)", encoding="utf-8")
+    sibling = tmp_path / (ignored_name + "-sibling")
+    sibling.mkdir()
+    (sibling / "broken.md").write_text("[missing](absent.md)", encoding="utf-8")
+    (sibling / "broken.json").write_bytes(b"\xff")
+    original_scandir = os.scandir
+
+    def bounded_scandir(path):
+        assert Path(path) != ignored, "ignored directory was traversed"
+        return original_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", bounded_scandir)
+
+    failures, count = check_markdown_links()
+    encoding_failures, text_count = check_text_encoding()
+
+    assert count == len(failures) == 1
+    assert text_count == 2  # Visible Markdown and invalid JSON.
+    assert len(encoding_failures) == 1
+    assert ignored_name + "-sibling/broken.md" in failures[0]
+
+
+def test_workbench_install_artifacts_are_ignored_but_prototype_sources_are_scanned(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("scripts.check_quality.ROOT", tmp_path)
+    generated = tmp_path / ".workbench-installed-local" / "build-source" / "source-ready"
+    generated.mkdir(parents=True)
+    (generated / "generated.md").write_text("[missing](absent.md)\n", encoding="utf-8")
+    (generated / "generated.json").write_bytes(b"\xff")
+
+    prototype = tmp_path / "prototypes" / "workbench-comparison" / "source"
+    prototype.mkdir(parents=True)
+    (prototype / "active.md").write_text("[missing](absent.md)\n", encoding="utf-8")
+    (prototype / "active.json").write_bytes(b"\xff")
+
+    link_failures, checked_links = check_markdown_links()
+    encoding_failures, checked_text = check_text_encoding()
+
+    assert checked_links == len(link_failures) == 1
+    assert "prototypes/workbench-comparison/source/active.md" in link_failures[0]
+    assert checked_text == 2
+    assert len(encoding_failures) == 1
+    assert "prototypes/workbench-comparison/source/active.json" in encoding_failures[0]
+    assert _is_ignored(generated / "generated.md")
+    assert not _is_ignored(prototype / "active.md")
 
 
 def test_quality_ratchet_rejects_new_or_increased_debt() -> None:

@@ -118,7 +118,8 @@ def render_health_report(
             "-" * 34,
             report["summary"],
             f"Prontidão offline: {'SIM' if readiness['offline_ready'] else 'NÃO'}",
-            f"Modo do workspace: {str(readiness['operation_mode']).upper()}",
+            f"Capacidade do filesystem do workspace: {str(readiness['operation_mode']).upper()}",
+            "Essa capacidade não concede permissão ao Agent. O chat inicia em READ ONLY; consulte /modo.",
             "Conectividade do backend: NÃO TESTADA",
         )
     )

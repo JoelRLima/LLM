@@ -225,11 +225,16 @@ class ExtensionCatalogService:
         path: str | Path,
         *,
         expected_fingerprint: str,
+        expected_replacement_fingerprint: str | None = None,
         base_dir: str | Path | None = None,
     ) -> CatalogOperationResult:
         validate_extension_id(extension_id)
         validate_manifest_fingerprint(expected_fingerprint)
         replacement = self.prepare_entry(path, base_dir=base_dir)
+        if expected_replacement_fingerprint is not None:
+            validate_manifest_fingerprint(expected_replacement_fingerprint)
+            if replacement.manifest_sha256 != expected_replacement_fingerprint:
+                raise CatalogReplaceConflictError("replacement changed since review")
         if replacement.extension_id != extension_id:
             raise CatalogManifestIncompatibleError(
                 "novo manifest.id não corresponde ao extension_id substituído"

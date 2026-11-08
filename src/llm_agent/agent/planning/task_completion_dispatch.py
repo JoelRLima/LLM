@@ -69,6 +69,16 @@ def reject_review(orchestrator: Any, objective: str, review: Any) -> str | None:
             reason_code="task_obligation_blocked",
             message="A tarefa foi bloqueada por uma obrigacao canonica.",
         ),
+        "REQUIREMENT_VERIFICATION_FAILED": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="REQUIREMENT_VERIFICATION_FAILED",
+            message="A tarefa foi bloqueada: uma verificacao de requisito falhou.",
+        ),
+        "REQUIREMENT_VERIFICATION_INCONCLUSIVE": lambda: mark_terminal_blocked(
+            orchestrator,
+            reason_code="REQUIREMENT_VERIFICATION_INCONCLUSIVE",
+            message="A tarefa foi bloqueada: nao foi possivel concluir as verificacoes de requisito.",
+        ),
     }
     handler = handlers.get(getattr(review, "reason_code", None) or "")
     if handler is not None:
