@@ -377,15 +377,18 @@ def test_native_fatal_checkpoint_never_claims_restoration(tmp_path: Path) -> Non
 
 
 @WINDOWS
-def test_native_junction_observation_is_rejected(tmp_path: Path) -> None:
+def test_native_junction_observation_is_rejected(tmp_path: Path, monkeypatch: Any) -> None:
     target, junction = tmp_path / "target", tmp_path / "link"
     target.mkdir()
-    env = dict(os.environ, W23_FIXTURE_TARGET=str(target), W23_FIXTURE_LINK=str(junction))
+    # A PowerShell 7 parent must not override Windows PowerShell's native modules.
+    monkeypatch.setenv("PSModulePath", str(tmp_path / "foreign-powershell-modules"))
+    env = {key: value for key, value in os.environ.items() if key.casefold() != "psmodulepath"}
+    env.update(W23_FIXTURE_TARGET=str(target), W23_FIXTURE_LINK=str(junction))
     powershell = Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command",
                              "New-Item -ItemType Junction -Path $env:W23_FIXTURE_LINK -Target $env:W23_FIXTURE_TARGET -ErrorAction Stop | Out-Null"],
                             env=env, capture_output=True, timeout=10, check=False)
-    assert result.returncode == 0
+    assert result.returncode == 0, result.stdout + result.stderr
     with pytest.raises(ValueError, match="Reparse"):
         milestones.Milestones(junction, junction)
     assert list(target.iterdir()) == []
